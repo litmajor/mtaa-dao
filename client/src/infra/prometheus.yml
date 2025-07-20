@@ -1,0 +1,107 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'mtaadao-api'
+    static_configs:
+      - targets: ['api:4000']
+  - job_name: 'mtaadao-db'
+    static_configs:
+      - targets: ['db:5432']
+
+  - job_name: 'mtaadao-redis'
+    static_configs:
+      - targets: ['redis:6379']
+  - job_name: 'mtaadao-pgadmin'
+    static_configs:
+      - targets: ['pgadmin:80']
+  - job_name: 'mtaadao-prometheus'
+    static_configs:
+      - 
+        targets: ['prometheus:9090']
+  - job_name: 'mtaadao-grafana'
+    static_configs:
+      - targets: ['grafana:3000']
+
+  - job_name: 'nodejs'
+    static_configs:
+      - targets: ['api:4000']
+    metrics_path: '/metrics'
+    scheme: 'http'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __address__
+        replacement: api:4000  # Address of the Node.js application
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['db:5432']
+    metrics_path: '/metrics'
+    scheme: 'http'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __address__
+        replacement: db:5432  # Address of the PostgreSQL database
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    metrics_path: '/metrics'
+    scheme: 'http'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __address__
+        replacement: redis:6379  # Address of the Redis instance
+  - job_name: 'pgadmin'
+    static_configs:
+      - targets: ['pgadmin:80']
+    metrics_path: '/metrics'
+    scheme: 'http'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __address__
+        replacement: pgadmin:80  # Address of the pgAdmin instance
+  - job_name: 'prometheus'
+
+    static_configs:
+      - targets: ['prometheus:9090']
+    metrics_path: '/metrics'
+    scheme: 'http'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __address__
+        replacement: prometheus:9090  # Address of the Prometheus instance
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['grafana:3000']
+    metrics_path: '/metrics'
+    scheme: 'http'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __address__
+        replacement: grafana:3000  # Address of the Grafana instance
+  - job_name: 'mtaadao'
+    static_configs:
+      - targets: ['api:4000']
+    metrics_path: '/metrics'
+    scheme: 'http'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __address__
+        replacement: api:4000  # Address of the Mtaa Connect API
+  - job_name: 'mtaadao-db'
+    static_configs:
+      - targets: ['db:5432']
+    metrics_path: '/metrics'
+    scheme: 'http'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __address__
+        replacement: db:5432  # Address of the Mtaa Connect database
+        
