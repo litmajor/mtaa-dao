@@ -1,0 +1,39 @@
+# Node modules and package manager artifacts
+node_modules
+npm-debug.log
+yarn-error.log
+pnpm-debug.log
+
+# Git
+.git
+.gitignore
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs
+*.log
+
+# Build output
+dist
+client/dist
+server/dist
+*.sqlite
+coverage
+
+# Editor folders
+.vscode
+.idea
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Docker files themselves
+Dockerfile
+Dockerfile.*
+docker-compose.yml
+docker-compose.yaml
