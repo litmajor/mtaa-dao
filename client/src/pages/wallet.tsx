@@ -1,6 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Send, Download, History, DollarSign, ArrowUpRight, ArrowDownLeft, User, Wallet, CreditCard, TrendingUp, Shield, Zap, Star, Crown, Sparkles, Eye, EyeOff, RefreshCw } from 'lucide-react';
 
+import { Line, Pie, Bar } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement,
+  BarElement
+} from 'chart.js';
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, ArcElement, BarElement);
+
 const EnhancedWalletPage = () => {
   const [activeTab, setActiveTab] = useState("overview");
   const [depositOpen, setDepositOpen] = useState(false);
@@ -11,26 +27,133 @@ const EnhancedWalletPage = () => {
   const [vaults, setVaults] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
 
+  // Analytics state
+  const [analytics, setAnalytics] = useState<any>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
+  const [analyticsError, setAnalyticsError] = useState('');
+
   useEffect(() => {
-    // Fetch vaults and transactions from API
+    // Fetch wallet balance, portfolio, and transaction status from API
     async function fetchWalletData() {
       try {
-        const vaultRes = await fetch('/api/wallet/vaults');
-        const vaultData = await vaultRes.json();
-        setVaults(vaultData);
-        const txRes = await fetch('/api/wallet/transactions');
-        const txData = await txRes.json();
-        setTransactions(txData);
+        // Native balance
+        const balanceRes = await fetch('/api/wallet/balance');
+        const balanceData = await balanceRes.json();
+        // Portfolio (tokens)
+        const portfolioRes = await fetch('/api/wallet/portfolio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tokenAddresses: [] }) // Optionally pass token addresses
+        });
+        const portfolioData = await portfolioRes.json();
+        // Compose vaults array for UI
+        const vaultsArr = [
+          {
+            id: 'native',
+            currency: balanceData.symbol || 'ETH',
+            balance: balanceData.balance || '0',
+            type: 'personal',
+            monthlyGoal: '0',
+          },
+          ...(Array.isArray(portfolioData) ? portfolioData.map((token: any, i: number) => ({
+            id: token.address || `token-${i}`,
+            currency: token.symbol || 'TOKEN',
+            balance: token.balance || '0',
+            type: 'token',
+            monthlyGoal: '0',
+          })) : [])
+        ];
+        setVaults(vaultsArr);
+        // Transactions: (for demo, fetch last 10 txs for native address)
+        if (balanceData.address) {
+          const txStatusRes = await fetch(`/api/wallet/tx-status/${balanceData.address}`);
+          const txStatusData = await txStatusRes.json();
+          setTransactions(Array.isArray(txStatusData) ? txStatusData : []);
+        } else {
+          setTransactions([]);
+        }
       } catch (e) {
-        // fallback to empty
         setVaults([]);
         setTransactions([]);
       }
     }
     fetchWalletData();
+
+    // Fetch analytics
+    async function fetchAnalytics() {
+      setAnalyticsLoading(true);
+      setAnalyticsError('');
+      try {
+        const res = await fetch('/api/wallet/analytics');
+        if (!res.ok) throw new Error('Failed to fetch analytics');
+        const data = await res.json();
+        setAnalytics(data);
+      } catch (e: any) {
+        setAnalyticsError(e.message);
+        setAnalytics(null);
+      } finally {
+        setAnalyticsLoading(false);
+      }
+    }
+    fetchAnalytics();
   }, []);
 
   const totalBalance = vaults?.reduce((sum, vault) => sum + parseFloat((vault.balance || '0').replace(/,/g, '')), 0) || 0;
+
+  // --- Send, Deposit, Withdraw Actions ---
+  const [sendAmount, setSendAmount] = useState('');
+  const [sendTo, setSendTo] = useState('');
+  const [depositAmount, setDepositAmount] = useState('');
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState('');
+
+  async function handleSendNative() {
+    setActionLoading(true); setActionError('');
+    try {
+      const res = await fetch('/api/wallet/send-native', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toAddress: sendTo, amount: sendAmount })
+      });
+      if (!res.ok) throw new Error('Send failed');
+      setSendAmount(''); setSendTo(''); setDepositOpen(false);
+    } catch (e: any) {
+      setActionError(e.message);
+    } finally { setActionLoading(false); }
+  }
+
+  async function handleDeposit() {
+    setActionLoading(true); setActionError('');
+    try {
+      // For demo, treat deposit as send-native (or use /api/wallet/send-native)
+      const res = await fetch('/api/wallet/send-native', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toAddress: sendTo, amount: depositAmount })
+      });
+      if (!res.ok) throw new Error('Deposit failed');
+      setDepositAmount(''); setPaymentOpen(false);
+    } catch (e: any) {
+      setActionError(e.message);
+    } finally { setActionLoading(false); }
+  }
+
+  async function handleWithdraw() {
+    setActionLoading(true); setActionError('');
+    try {
+      // For demo, treat withdraw as send-native (or use /api/wallet/send-native)
+      const res = await fetch('/api/wallet/send-native', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toAddress: sendTo, amount: withdrawAmount })
+      });
+      if (!res.ok) throw new Error('Withdraw failed');
+      setWithdrawAmount(''); setWithdrawOpen(false);
+    } catch (e: any) {
+      setActionError(e.message);
+    } finally { setActionLoading(false); }
+  }
 
   const getTransactionIcon = (type: string) => {
     switch (type) {
@@ -122,6 +245,84 @@ const EnhancedWalletPage = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 relative overflow-hidden">
+      {/* Analytics Section */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-900 to-purple-900 bg-clip-text text-transparent">Wallet Analytics</h2>
+        {analyticsLoading ? (
+          <div className="text-gray-500">Loading analytics...</div>
+        ) : analyticsError ? (
+          <div className="text-red-500">{analyticsError}</div>
+        ) : analytics ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
+            {/* Portfolio Value Over Time (Line Chart) */}
+            <div className="bg-white rounded-xl shadow p-4">
+              <h3 className="font-semibold mb-2">Portfolio Value Over Time</h3>
+              <Line
+                data={{
+                  labels: Object.keys(analytics.valueOverTime),
+                  datasets: [
+                    {
+                      label: 'Value',
+                      data: Object.values(analytics.valueOverTime),
+                      borderColor: '#6366f1',
+                      backgroundColor: 'rgba(99,102,241,0.1)',
+                      fill: true,
+                    },
+                  ],
+                }}
+                options={{
+                  responsive: true,
+                  plugins: { legend: { display: false } },
+                }}
+                height={200}
+              />
+            </div>
+            {/* Token Breakdown (Pie Chart) */}
+            <div className="bg-white rounded-xl shadow p-4">
+              <h3 className="font-semibold mb-2">Token Breakdown</h3>
+              <Pie
+                data={{
+                  labels: Object.keys(analytics.tokenBreakdown),
+                  datasets: [
+                    {
+                      data: Object.values(analytics.tokenBreakdown),
+                      backgroundColor: [
+                        '#6366f1', '#f59e42', '#10b981', '#f43f5e', '#a21caf', '#fbbf24', '#0ea5e9', '#14b8a6', '#eab308', '#f472b6'
+                      ],
+                    },
+                  ],
+                }}
+                options={{
+                  responsive: true,
+                  plugins: { legend: { position: 'bottom' } },
+                }}
+                height={200}
+              />
+            </div>
+            {/* Transaction Type Summary (Bar Chart) */}
+            <div className="bg-white rounded-xl shadow p-4">
+              <h3 className="font-semibold mb-2">Transaction Type Summary</h3>
+              <Bar
+                data={{
+                  labels: Object.keys(analytics.typeSummary),
+                  datasets: [
+                    {
+                      label: 'Total',
+                      data: Object.values(analytics.typeSummary),
+                      backgroundColor: '#6366f1',
+                    },
+                  ],
+                }}
+                options={{
+                  responsive: true,
+                  plugins: { legend: { display: false } },
+                }}
+                height={200}
+              />
+            </div>
+          </div>
+        ) : null}
+      </div>
       {/* Animated Background Elements */}
       <div className="absolute inset-0 bg-gradient-to-br from-blue-400/5 via-purple-400/5 to-pink-400/5" />
       <div className="absolute top-0 left-0 w-96 h-96 bg-gradient-to-br from-blue-400/10 to-purple-400/10 rounded-full blur-3xl animate-pulse" />
@@ -363,12 +564,13 @@ const EnhancedWalletPage = () => {
               <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
                 <Download className="w-6 h-6 text-white" />
               </div>
-              <h3 className="text-xl font-bold">Deposit Funds</h3>
+              <h3 className="text-xl font-bold">Send Money</h3>
             </div>
-            <p className="text-gray-600 mb-6">Modal content would go here</p>
-            <Button onClick={() => setDepositOpen(false)} className="w-full">
-              Close
-            </Button>
+            <input type="text" placeholder="Recipient Address" className="w-full mb-3 p-2 border rounded" value={sendTo} onChange={e => setSendTo(e.target.value)} />
+            <input type="number" placeholder="Amount" className="w-full mb-3 p-2 border rounded" value={sendAmount} onChange={e => setSendAmount(e.target.value)} />
+            {actionError && <p className="text-red-500 mb-2">{actionError}</p>}
+            <Button onClick={handleSendNative} className="w-full" disabled={actionLoading}>{actionLoading ? 'Sending...' : 'Send'}</Button>
+            <Button onClick={() => setDepositOpen(false)} className="w-full mt-2" variant="outline">Close</Button>
           </Card>
         </div>
       )}
@@ -382,10 +584,11 @@ const EnhancedWalletPage = () => {
               </div>
               <h3 className="text-xl font-bold">Add Funds</h3>
             </div>
-            <p className="text-gray-600 mb-6">Payment modal content would go here</p>
-            <Button onClick={() => setPaymentOpen(false)} className="w-full">
-              Close
-            </Button>
+            <input type="text" placeholder="Recipient Address" className="w-full mb-3 p-2 border rounded" value={sendTo} onChange={e => setSendTo(e.target.value)} />
+            <input type="number" placeholder="Amount" className="w-full mb-3 p-2 border rounded" value={depositAmount} onChange={e => setDepositAmount(e.target.value)} />
+            {actionError && <p className="text-red-500 mb-2">{actionError}</p>}
+            <Button onClick={handleDeposit} className="w-full" disabled={actionLoading}>{actionLoading ? 'Depositing...' : 'Deposit'}</Button>
+            <Button onClick={() => setPaymentOpen(false)} className="w-full mt-2" variant="outline">Close</Button>
           </Card>
         </div>
       )}
@@ -399,10 +602,11 @@ const EnhancedWalletPage = () => {
               </div>
               <h3 className="text-xl font-bold">Withdraw Funds</h3>
             </div>
-            <p className="text-gray-600 mb-6">Withdrawal modal content would go here</p>
-            <Button onClick={() => setWithdrawOpen(false)} className="w-full">
-              Close
-            </Button>
+            <input type="text" placeholder="Recipient Address" className="w-full mb-3 p-2 border rounded" value={sendTo} onChange={e => setSendTo(e.target.value)} />
+            <input type="number" placeholder="Amount" className="w-full mb-3 p-2 border rounded" value={withdrawAmount} onChange={e => setWithdrawAmount(e.target.value)} />
+            {actionError && <p className="text-red-500 mb-2">{actionError}</p>}
+            <Button onClick={handleWithdraw} className="w-full" disabled={actionLoading}>{actionLoading ? 'Withdrawing...' : 'Withdraw'}</Button>
+            <Button onClick={() => setWithdrawOpen(false)} className="w-full mt-2" variant="outline">Close</Button>
           </Card>
         </div>
       )}

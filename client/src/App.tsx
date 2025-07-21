@@ -21,7 +21,12 @@ import Proposals from "./pages/proposals";
 import Vault from "./pages/vault";
 import Profile from "./pages/profile";
 import DAOs from "./pages/daos";
+
 import Wallet from "./pages/wallet";
+import WalletDashboard from "./components/WalletDashboard";
+import BatchTransfer from "./components/batch-transfer";
+import Multisig from "./components/multisig";
+import DaoTreasury from "./components/dao-treasury";
 
 import NotFound from "./pages/not-found";
 import ForgotPassword from "./pages/forgot-password";
@@ -94,6 +99,10 @@ function Router() {
               <Route path="/profile" component={Profile} />
               <Route path="/daos" component={DAOs} />
               <Route path="/wallet" component={Wallet} />
+              <Route path="/wallet/dashboard" component={WalletDashboard} />
+              <Route path="/wallet/batch-transfer" component={BatchTransfer} />
+              <Route path="/wallet/multisig" component={Multisig} />
+              <Route path="/wallet/dao-treasury" component={DaoTreasury} />
               <Route path="/referrals" component={Referrals} />
               <Route path="/maonovault" component={MaonoVaultWeb3Page} />
             </div>

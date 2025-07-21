@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import express, { Express, Request, Response, NextFunction } from "express";
 import { createServer, Server } from "http";
 import { storage, isDaoPremium, deductVaultFee } from "./storage";
+import walletRouter from './routes/wallet';
 import { isAuthenticated } from "./nextAuthMiddleware";
 import { z, ZodError } from "zod";
 import { MaonoVaultService } from "./blockchain";
@@ -57,7 +58,14 @@ function errorHandler(err: any, req: Request, res: Response, next: NextFunction)
   res.status(err.status || 500).json({ message, ...(details && { errors: details }) });
 }
 
+import daoTreasuryRouter from './routes/dao_treasury';
+
 export function registerRoutes(app: Express): void {
+  // --- Wallet API ---
+  app.use('/api/wallet', isAuthenticated, walletRouter);
+
+  // --- DAO Treasury API ---
+  app.use('/api/dao/treasury', daoTreasuryRouter);
   // Validate JWT_SECRET
   if (!process.env.JWT_SECRET) {
     throw new Error("JWT_SECRET environment variable is required");
@@ -502,8 +510,8 @@ export function registerRoutes(app: Express): void {
     const { vaultId } = req.params;
     const { limit = 10, offset = 0 } = req.query;
     const userId = (req .user as any).claims.sub;
-    const vault = await storage.getUserVaults(userId).then(vaults => 
-      vaults.find((v) => v.id === vaultId)
+    const vault = await storage.getUserVaults(userId).then((vaults: any[]) => 
+      vaults.find((v: any) => v.id === vaultId)
     );
     if (!vault) return res.status(403).json({ message: 'Vault not found or unauthorized' });
     const transactions = await storage.getVaultTransactions(vaultId, Number(limit), Number(offset));
