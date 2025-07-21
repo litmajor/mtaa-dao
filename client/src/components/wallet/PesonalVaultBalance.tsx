@@ -19,17 +19,36 @@ const isValidAmount = (value: string) => {
   }
 }
 
+
+// Example: In a real app, fetch these from API or context
+const useVaultCounts = () => {
+  // Demo: 1 personal, 1 DAO, 2 multisig vaults
+  return {
+    personal: 1,
+    dao: 1,
+    multisig: 2,
+    total: 4
+  };
+};
+
 export function PersonalVaultSection() {
+  const vaultCounts = useVaultCounts();
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-bold">Your Personal Vault</h2>
+      <div className="flex gap-4 text-sm text-muted-foreground">
+        <span>Vaults: {vaultCounts.total}</span>
+        <span>Personal: {vaultCounts.personal}</span>
+        <span>DAO: {vaultCounts.dao}</span>
+        <span>Multisig: {vaultCounts.multisig}</span>
+      </div>
       <VaultBalanceCard />
       <VaultReceiveCard />
       <VaultSendCard />
       <VaultDepositCard />
       <VaultWithdrawCard />
     </div>
-  )
+  );
 }
 
 function VaultBalanceCard() {

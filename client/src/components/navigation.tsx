@@ -50,6 +50,16 @@ export default function Navigation() {
     { href: "/daos", label: "DAOs", icon: "🏛️" },
     { href: "/wallet", label: "Wallet", icon: "💳" },
     { href: "/referrals", label: "Referrals", icon: "🤝" },
+    { href: "/wallet/dashboard", label: "Wallet Dashboard", icon: "📋" },
+    { href: "/wallet/batch-transfer", label: "Batch Transfer", icon: "📦" },
+    { href: "/wallet/multisig", label: "Multisig", icon: "🔑" },
+    { href: "/wallet/dao-treasury", label: "DAO Treasury", icon: "🏦" },
+    // Only show Admin Panel for admin/elder users
+    ...(user?.roles === "admin" || user?.roles === "elder"
+      ? [
+          { href: "/admin", label: "Admin Panel", icon: "🛠️" },
+        ]
+      : []),
   ];
 
   return (
@@ -159,7 +169,7 @@ export default function Navigation() {
                         {user?.firstName} {user?.lastName}
                       </span>
                       <Badge className="bg-gradient-to-r from-mtaa-emerald to-green-500 text-white text-xs px-2 py-0.5 rounded-full shadow-md">
-                        {user?.role === "elder" ? "Elder" : user?.role === "proposer" ? "Proposer" : "Member"}
+                        {user?.roles === "elder" ? "Elder" : user?.roles === "proposer" ? "Proposer" : "Member"}
                       </Badge>
                     </div>
                     <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform duration-300 ${showProfileDropdown ? 'rotate-180' : ''}`} />
