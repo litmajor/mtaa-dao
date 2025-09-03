@@ -1,21 +1,42 @@
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Bell, Moon, Sun, Settings, LogOut, ChevronDown, Sparkles } from "lucide-react";
 import { useAuth } from "@/pages/hooks/useAuth";
 import { useEffect, useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation as useWouterLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useTheme } from "@/components/theme-provider";
 import type { User } from "../../../shared/schema";
+import NotificationCenter from "./NotificationCenter";
 
 export default function Navigation() {
   const { user } = useAuth() as { user?: User };
-  const [, setLocation] = useLocation();
+  const [, setLocation] = useWouterLocation();
   const [isScrolled, setIsScrolled] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
-  const [notifications, setNotifications] = useState(3);
+  const [notificationCount, setNotificationCount] = useState(0); // Changed from 'notifications' to 'notificationCount' for clarity
+
+  // Fetch notification count
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      try {
+        // Assuming you have an endpoint to fetch unread notification count
+        const response = await apiRequest("GET", "/api/notifications/count");
+        setNotificationCount(response.count);
+      } catch (error) {
+        console.error("Failed to fetch notification count:", error);
+        // Optionally handle error state, e.g., set a default value or show an error message
+      }
+    };
+
+    fetchNotifications();
+    // Refetch notifications periodically or when relevant events occur
+    const intervalId = setInterval(fetchNotifications, 60000); // Refetch every minute
+    return () => clearInterval(intervalId);
+  }, []);
+
 
   // Scroll effect
   useEffect(() => {
@@ -70,7 +91,7 @@ export default function Navigation() {
     }`}>
       {/* Premium glow effect */}
       <div className="absolute inset-0 bg-gradient-to-r from-transparent via-mtaa-orange/5 to-transparent opacity-50"></div>
-      
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
         <div className="flex justify-between items-center h-16">
           {/* Logo Section */}
@@ -137,18 +158,10 @@ export default function Navigation() {
               <>
                 {/* Notifications */}
                 <div className="relative">
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="p-2 rounded-full text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-gray-100/50 dark:hover:bg-gray-800/50 transition-all duration-300"
-                  >
-                    <Bell className="w-5 h-5 hover:animate-bounce" />
-                    {notifications > 0 && (
-                      <span className="absolute -top-1 -right-1 w-5 h-5 bg-gradient-to-r from-red-500 to-red-600 text-white text-xs rounded-full flex items-center justify-center font-bold shadow-lg animate-pulse">
-                        {notifications}
-                      </span>
-                    )}
-                  </Button>
+                  <NotificationCenter
+                    count={notificationCount}
+                    onNotificationClick={() => setNotificationCount(0)} // Reset count on click for simplicity, ideally mark as read
+                  />
                 </div>
 
                 {/* Profile Dropdown */}
@@ -192,21 +205,21 @@ export default function Navigation() {
                           </div>
                         </div>
                       </div>
-                      
+
                       <Link href="/profile">
                         <Button variant="ghost" className="w-full justify-start px-4 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 rounded-none">
                           <span className="mr-3">👤</span>
                           Profile
                         </Button>
                       </Link>
-                      
+
                       <Link href="/settings">
                         <Button variant="ghost" className="w-full justify-start px-4 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 rounded-none">
                           <Settings className="w-4 h-4 mr-3" />
                           Settings
                         </Button>
                       </Link>
-                      
+
                       <div className="border-t border-gray-100 dark:border-gray-700 mt-2 pt-2">
                         <Button
                           variant="ghost"
@@ -227,8 +240,8 @@ export default function Navigation() {
                   <Button
                     variant="outline"
                     className={`font-medium px-6 py-2 rounded-lg border-2 transition-all duration-300 ${
-                      isActive("/login") 
-                        ? "border-mtaa-orange text-mtaa-orange bg-mtaa-orange/10 shadow-lg shadow-mtaa-orange/20" 
+                      isActive("/login")
+                        ? "border-mtaa-orange text-mtaa-orange bg-mtaa-orange/10 shadow-lg shadow-mtaa-orange/20"
                         : "border-gray-300 text-gray-700 hover:border-mtaa-orange hover:text-mtaa-orange"
                     }`}
                   >
