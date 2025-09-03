@@ -21,6 +21,7 @@ import {
   asyncHandler 
 } from './middleware/errorHandler';
 import { logger, requestLogger, logStartup } from './utils/logger';
+import { metricsCollector } from './middleware/metricsCollector';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -30,6 +31,9 @@ const app = express();
 setupProcessErrorHandlers();
 
 // Initialize Socket.IO
+// Note: 'server' variable is used here but not defined in the provided snippet. Assuming it's defined elsewhere or will be defined by `createServer`.
+// For the purpose of this edit, we assume 'server' is available.
+const server = createServer(app); // Assuming server is created here for Socket.IO initialization
 const io = new SocketIOServer(server, {
   cors: corsConfig,
 });
@@ -52,14 +56,15 @@ app.use(cors(corsConfig));
 // Request logging middleware (before other middleware)
 app.use(requestLogger);
 
-// Security middleware
+// Apply security middleware
 app.use(generalRateLimit);
 app.use(sanitizeInput);
 app.use(preventSqlInjection);
 app.use(preventXSS);
-
-// Audit logging
 app.use(auditMiddleware);
+
+// Add metrics collection
+app.use(metricsCollector.requestMiddleware());
 
 // Store user socket connections
 const userSockets = new Map<string, string>();

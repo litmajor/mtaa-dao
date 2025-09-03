@@ -32,6 +32,10 @@ import sse from './routes/sse';
 import governanceRoutes from './routes/governance';
 import proposalExecutionRoutes from './routes/proposal-execution';
 
+// Import monitoring and health check routes
+import monitoringRouter from './routes/monitoring';
+import healthRouter from './routes/health';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -1253,7 +1257,14 @@ export function registerRoutes(app: Express): void {
   });
 
   // Mount analytics routes
-  app.use('/api/analytics', analyticsRouter);
+  app.use('/api/analytics', isAuthenticated, analyticsRouter);
+
+  // --- Monitoring API ---
+  app.use('/api/monitoring', monitoringRouter);
+
+  // --- Health Check API ---
+  app.use('/api/health', healthRouter);
+  app.use('/health', healthRouter); // Alternative path for load balancers
 }
 
 export function createAppServer(): Server {
