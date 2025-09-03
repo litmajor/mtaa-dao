@@ -25,6 +25,7 @@ import disbursementRoutes from './routes/disbursements';
 import taskRoutes from './routes/tasks';
 import bountyEscrowRoutes from './routes/bounty-escrow';
 import notificationRoutes from './routes/notifications';
+import sse from './routes/sse';
 import governanceRoutes from './routes/governance';
 import proposalExecutionRoutes from './routes/proposal-execution';
 
@@ -109,7 +110,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/reputation', reputationRouter);
 
   // --- Notifications API ---
-  app.use('/api/notifications', notificationsRouter);
+  app.use('/api/notifications', isAuthenticated, notificationsRouter);
   // Validate JWT_SECRET
   if (!process.env.JWT_SECRET) {
     throw new Error("JWT_SECRET environment variable is required");
@@ -1209,6 +1210,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/tasks', isAuthenticated, taskRoutes);
   app.use('/api/bounty-escrow', isAuthenticated, bountyEscrowRoutes);
   app.use('/api/notifications', isAuthenticated, notificationRoutes);
+  app.use('/api/sse', sse);
   app.use('/api/governance', governanceRoutes);
   app.use('/api/proposal-execution', proposalExecutionRoutes);
 
