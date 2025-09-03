@@ -146,7 +146,7 @@ function PaymentModal({ open, onClose }: PaymentModalProps) {
             <div className="space-y-6">
               {/* Provider Selection */}
               <div className="space-y-3">
-                <label className="block text-sm font-semibold text-gray-700">Payment Method</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Payment Method</label>
                 <div className="relative">
                   <button
                     type="button"
@@ -168,7 +168,7 @@ function PaymentModal({ open, onClose }: PaymentModalProps) {
                       </svg>
                     </div>
                   </button>
-                  
+
                   {showProviders && (
                     <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-2xl shadow-xl z-10 max-h-64 overflow-y-auto">
                       {PROVIDERS.map((p) => (
@@ -370,7 +370,7 @@ export default function App() {
           Open Payment Modal
         </button>
       </div>
-      
+
       <PaymentModal 
         open={modalOpen} 
         onClose={() => setModalOpen(false)} 
