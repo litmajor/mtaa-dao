@@ -85,6 +85,7 @@ import paymentReconciliationRouter from './routes/payment-reconciliation';
 import kotaniPayStatusRouter from './routes/kotanipay-status';
 import mpesaStatusRouter from './routes/mpesa-status';
 import stripeStatusRouter from './routes/stripe-status';
+import analyticsRouter from './routes/analytics';
 
 // Placeholder for session management functions (replace with actual implementations)
 const sessionMiddleware = (req: Request, res: Response, next: NextFunction) => { next(); };
@@ -1242,6 +1243,9 @@ export function registerRoutes(app: Express): void {
     const sessions = getUserActiveSessions(userId);
     res.status(200).json({ sessions });
   });
+
+  // Mount analytics routes
+  app.use('/api/analytics', analyticsRouter);
 }
 
 export function createAppServer(): Server {
