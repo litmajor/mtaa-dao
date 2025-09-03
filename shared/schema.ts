@@ -392,6 +392,49 @@ export const logs = pgTable("logs", {
   details: jsonb("details"), // additional details about the action
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// Audit logs table for security logging
+export const auditLogs = pgTable("audit_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  userId: varchar("user_id").references(() => users.id),
+  userEmail: varchar("user_email"),
+  action: varchar("action").notNull(),
+  resource: varchar("resource").notNull(),
+  resourceId: varchar("resource_id"),
+  method: varchar("method").notNull(),
+  endpoint: varchar("endpoint").notNull(),
+  ipAddress: varchar("ip_address").notNull(),
+  userAgent: varchar("user_agent").notNull(),
+  status: integer("status").notNull(),
+  details: jsonb("details"),
+  severity: varchar("severity").default("low").notNull(),
+  category: varchar("category").default("security").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// System logs table for application logging
+export const systemLogs = pgTable("system_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  level: varchar("level").default("info").notNull(),
+  message: text("message").notNull(),
+  service: varchar("service").default("api").notNull(),
+  metadata: jsonb("metadata"),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+});
+
+// Notification history table
+export const notificationHistory = pgTable("notification_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  type: varchar("type").notNull(),
+  title: varchar("title").notNull(),
+  message: text("message").notNull(),
+  read: boolean("read").default(false),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+  readAt: timestamp("read_at"),
+});
   
 // Recent DAO type for dashboard
 export type RecentDao = {

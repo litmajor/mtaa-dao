@@ -13,54 +13,53 @@ import { generalRateLimit } from './security/rateLimiter';
 import { sanitizeInput, preventSqlInjection, preventXSS } from './security/inputSanitizer';
 import { auditMiddleware } from './security/auditLogger';
 import { BackupSystem, BackupScheduler } from './security/backupSystem';
+import { env, corsConfig } from "@shared/config";
+import { 
+  errorHandler, 
+  notFoundHandler, 
+  setupProcessErrorHandlers,
+  asyncHandler 
+} from './middleware/errorHandler';
+import { logger, requestLogger, logStartup } from './utils/logger';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
 const app = express();
 
+// Setup process error handlers
+setupProcessErrorHandlers();
+
+// Initialize Socket.IO
+const io = new SocketIOServer(server, {
+  cors: corsConfig,
+});
+
+// Trust proxy for accurate IP addresses
+app.set('trust proxy', 1);
+
+// Body parsing middleware
+app.use(express.json({ 
+  limit: '10mb',
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// CORS Configuration
+app.use(cors(corsConfig));
+
+// Request logging middleware (before other middleware)
+app.use(requestLogger);
+
 // Security middleware
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com"],
-      imgSrc: ["'self'", "data:", "https:"],
-      scriptSrc: ["'self'"],
-      connectSrc: ["'self'", "wss:", "https:"],
-    },
-  },
-  crossOriginEmbedderPolicy: false
-}));
-
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? [process.env.FRONTEND_URL] 
-    : ['http://localhost:5000', 'http://0.0.0.0:5000'],
-  credentials: true
-}));
-
-// Rate limiting
 app.use(generalRateLimit);
-
-// Input sanitization and security
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 app.use(sanitizeInput);
 app.use(preventSqlInjection);
 app.use(preventXSS);
 
 // Audit logging
 app.use(auditMiddleware);
-
-// Initialize Socket.IO for real-time notifications
-const server = createServer(app);
-const io = new SocketIOServer(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
-});
 
 // Store user socket connections
 const userSockets = new Map<string, string>();
@@ -110,12 +109,12 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (reqPath.startsWith("/api")) {
-      let logLine = `${req.method} ${reqPath} ${res.statusCode} in ${duration}ms`;
+      let logLine = `${req.method} ${req.url} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
       if (logLine.length > 80) logLine = logLine.slice(0, 79) + "…";
-      log(logLine);
+      logger.http(logLine);
     }
   });
 
@@ -136,7 +135,7 @@ ProposalExecutionService.startScheduler();
       location: process.env.BACKUP_LOCATION || './backups',
       encryptionKey: process.env.BACKUP_ENCRYPTION_KEY
     };
-    
+
     if (backupConfig.enabled) {
       const backupSystem = BackupSystem.getInstance(backupConfig);
       const scheduler = new BackupScheduler(backupSystem);
@@ -146,17 +145,57 @@ ProposalExecutionService.startScheduler();
 
     await registerRoutes(app);
 
-    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-      const status = err.status || err.statusCode || 500;
-      const message = err.message || "Internal Server Error";
-      res.status(status).json({ message });
-      throw err;
+    // Health check endpoint
+    app.get('/health', asyncHandler(async (req, res) => {
+      res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        environment: env.NODE_ENV,
+        version: process.env.npm_package_version || '1.0.0',
+        uptime: process.uptime(),
+      });
+    }));
+
+    // 404 handler (must be after all routes)
+    app.use(notFoundHandler);
+
+    // Error handling middleware (must be last)
+    app.use(errorHandler);
+
+    const PORT = parseInt(env.PORT);
+    const HOST = env.HOST;
+
+    server.listen(PORT, HOST, () => {
+      logStartup(PORT.toString());
+      logger.info('Server configuration', {
+        port: PORT,
+        host: HOST,
+        frontendUrl: env.FRONTEND_URL,
+        backendUrl: env.BACKEND_URL,
+        environment: env.NODE_ENV,
+        nodeVersion: process.version,
+      });
     });
 
-    const port = Number(process.env.PORT) || 4000;
-    server.listen(port, "0.0.0.0", () => {
-      log(`🚀 Server running on http://localhost:${port}`);
-    });
+    // Graceful shutdown
+    const gracefulShutdown = (signal: string) => {
+      logger.warn(`Received ${signal}, shutting down gracefully`);
+
+      server.close(() => {
+        logger.info('HTTP server closed');
+        process.exit(0);
+      });
+
+      // Force close after 30 seconds
+      setTimeout(() => {
+        logger.error('Could not close connections in time, forcefully shutting down');
+        process.exit(1);
+      }, 30000);
+    };
+
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 
     const isDev = process.env.NODE_ENV !== "production";
     if (isDev) {
