@@ -25,7 +25,7 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
-    port: 5173,
+    port: 5000,
     host: "0.0.0.0",
     allowedHosts: ["all"],
   },

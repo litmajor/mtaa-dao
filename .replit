@@ -1,0 +1,39 @@
+modules = ["nodejs-20", "web"]
+[agent]
+expertMode = true
+
+[nix]
+channel = "stable-25_05"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Frontend"
+
+[[workflows.workflow]]
+name = "Frontend"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "node -e \"const http = require('http'); const fs = require('fs'); const path = require('path'); const server = http.createServer((req, res) => { const filePath = path.join('./client', req.url === '/' ? '/index.html' : req.url); if (fs.existsSync(filePath)) { const ext = path.extname(filePath); const contentType = ext === '.js' ? 'text/javascript' : ext === '.css' ? 'text/css' : 'text/html'; res.writeHead(200, {'Content-Type': contentType}); res.end(fs.readFileSync(filePath)); } else { res.writeHead(404); res.end('Not found'); } }); server.listen(5000, '0.0.0.0', () => console.log('Simple server running on port 5000'));\""
+waitForPort = 5000
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[deployment]
+deploymentTarget = "vm"
+run = ["npm", "start"]
+build = ["npm", "run", "build"]
