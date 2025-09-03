@@ -113,8 +113,9 @@ export default function VaultAnalyticsDashboard() {
                   <h3 className="text-3xl font-bold text-gray-900">{balance}</h3>
                 </div>
                 <div className="flex flex-col items-end">
-                  <label className="text-xs text-gray-600 mb-1">Currency</label>
+                  <label htmlFor="currency-select" className="text-xs text-gray-600 mb-1">Currency</label>
                   <select 
+                    id="currency-select"
                     value={currency} 
                     onChange={e => setCurrency(e.target.value)} 
                     className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500"

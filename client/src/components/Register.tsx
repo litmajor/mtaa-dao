@@ -605,6 +605,8 @@ export default function StunningRegister() {
                       type="checkbox"
                       className="mt-1 w-5 h-5 text-purple-600 bg-white/10 border border-white/20 rounded focus:ring-purple-500 focus:ring-2"
                       required
+                      title="Agree to Terms and Conditions"
+                      placeholder="Agree to Terms and Conditions"
                     />
                     <label className="text-sm text-white/80 leading-relaxed">
                       I agree to the{' '}

@@ -210,8 +210,9 @@ function PaymentModal({ open, onClose }: PaymentModalProps) {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Currency</label>
+                  <label htmlFor="currency-select" className="block text-sm font-semibold text-gray-700 mb-2">Currency</label>
                   <select
+                    id="currency-select"
                     value={currency}
                     onChange={(e) => setCurrency(e.target.value)}
                     className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-lg font-semibold focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"

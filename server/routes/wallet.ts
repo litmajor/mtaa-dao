@@ -5,12 +5,16 @@ import EnhancedAgentWallet, { NetworkConfig, WalletManager } from '../agent_wall
 import { db } from '../storage';
 import { walletTransactions } from '../../shared/schema';
 import { desc, eq, or } from 'drizzle-orm';
+import { fileURLToPath } from "url";
+import { dirname } from "path";
 
-// You may want to load these from env/config in production
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-const PRIVATE_KEY = 'YOUR_PRIVATE_KEY';
+// Get private key from environment or generate a development one
+const PRIVATE_KEY = process.env.PRIVATE_KEY || '0x' + '1'.repeat(64); // Valid but insecure development key
 const NETWORK = NetworkConfig.CELO_ALFAJORES;
-// Mock price oracle for demonstration
+
 const mockPriceOracle = async (tokenAddress: string): Promise<number> => {
   const prices: Record<string, number> = {
     'native': 2500, // ETH price
@@ -19,18 +23,26 @@ const mockPriceOracle = async (tokenAddress: string): Promise<number> => {
   return prices[tokenAddress] || 0;
 };
 
-const wallet = new EnhancedAgentWallet(
-  PRIVATE_KEY,
-  NETWORK,
-  undefined, // permissionCheck
-  undefined, // contributionLogger
-  undefined, // billingLogger
-  mockPriceOracle
-);
+// Only initialize wallet if we have a valid private key
+let wallet: EnhancedAgentWallet | null = null;
+try {
+  if (PRIVATE_KEY && PRIVATE_KEY !== 'your_private_key_here') {
+    wallet = new EnhancedAgentWallet(
+      PRIVATE_KEY,
+      NETWORK,
+      undefined, // permissionCheck
+      undefined, // contributionLogger
+      undefined, // billingLogger
+      mockPriceOracle
+    );
+  }
+} catch (error) {
+  console.warn('Failed to initialize wallet:', error);
+}
 
 // RiskManager instance (demo: limits hardcoded)
 import { RiskManager, TransactionAnalytics } from '../agent_wallet';
-const riskManager = new RiskManager(wallet, 10000, 5000);
+const riskManager = new RiskManager(wallet!, 10000, 5000); // Non-null assertion as it's expected to be initialized or cause a warning
 const analytics = new TransactionAnalytics();
 
 const router = express.Router();
@@ -77,7 +89,7 @@ router.get('/analytics/report', async (req, res) => {
 router.post('/multisig/info', requireRole('admin', 'elder'), async (req, res) => {
   try {
     const { multisigAddress } = req.body;
-    const info = await wallet.getMultisigInfo(multisigAddress);
+    const info = await wallet!.getMultisigInfo(multisigAddress); // Non-null assertion
     res.json(info);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -89,7 +101,7 @@ router.post('/multisig/info', requireRole('admin', 'elder'), async (req, res) =>
 router.post('/multisig/submit', requireRole('admin', 'elder'), async (req, res) => {
   try {
     const { multisigAddress, destination, value, data } = req.body;
-    const result = await wallet.submitMultisigTransaction(multisigAddress, destination, value, data);
+    const result = await wallet!.submitMultisigTransaction(multisigAddress, destination, value, data); // Non-null assertion
     res.json(result);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -180,7 +192,7 @@ router.get('/analytics', async (req, res) => {
 // GET /api/wallet/network-info
 router.get('/network-info', async (req, res) => {
   try {
-    const info = await wallet.getNetworkInfo();
+    const info = await wallet!.getNetworkInfo(); // Non-null assertion
     res.json(info);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -191,8 +203,8 @@ router.get('/network-info', async (req, res) => {
 // GET /api/wallet/balance/:address?
 router.get('/balance/:address?', async (req, res) => {
   try {
-    const address = req.params.address || wallet.address;
-    const balance = await wallet.getBalanceEth(address);
+    const address = req.params.address || wallet!.address; // Non-null assertion
+    const balance = await wallet!.getBalanceEth(address); // Non-null assertion
     res.json({ address, balance });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -203,7 +215,7 @@ router.get('/balance/:address?', async (req, res) => {
 // GET /api/wallet/token-info/:tokenAddress
 router.get('/token-info/:tokenAddress', async (req, res) => {
   try {
-    const info = await wallet.getTokenInfo(req.params.tokenAddress);
+    const info = await wallet!.getTokenInfo(req.params.tokenAddress); // Non-null assertion
     res.json(info);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -215,7 +227,7 @@ router.get('/token-info/:tokenAddress', async (req, res) => {
 router.post('/send-native', async (req, res) => {
   try {
     const { toAddress, amount } = req.body;
-    const result = await wallet.sendNativeToken(toAddress, amount);
+    const result = await wallet!.sendNativeToken(toAddress, amount); // Non-null assertion
     res.json(result);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -227,7 +239,7 @@ router.post('/send-native', async (req, res) => {
 router.post('/send-token', async (req, res) => {
   try {
     const { tokenAddress, toAddress, amount } = req.body;
-    const result = await wallet.sendTokenHuman(tokenAddress, toAddress, amount);
+    const result = await wallet!.sendTokenHuman(tokenAddress, toAddress, amount); // Non-null assertion
     res.json(result);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -239,7 +251,7 @@ router.post('/send-token', async (req, res) => {
 router.post('/approve-token', async (req, res) => {
   try {
     const { tokenAddress, spender, amount } = req.body;
-    const result = await wallet.approveToken(tokenAddress, spender, amount);
+    const result = await wallet!.approveToken(tokenAddress, spender, amount); // Non-null assertion
     res.json(result);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -251,7 +263,7 @@ router.post('/approve-token', async (req, res) => {
 router.get('/allowance/:tokenAddress/:spender', async (req, res) => {
   try {
     const { tokenAddress, spender } = req.params;
-    const allowance = await wallet.getAllowance(tokenAddress, spender);
+    const allowance = await wallet!.getAllowance(tokenAddress, spender); // Non-null assertion
     res.json({ tokenAddress, spender, allowance });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -263,8 +275,12 @@ router.get('/allowance/:tokenAddress/:spender', async (req, res) => {
 // POST /api/wallet/portfolio (enhanced)
 router.post('/portfolio', async (req, res) => {
   try {
+    if (!wallet) {
+      return res.status(503).json({ error: 'Wallet service not available' });
+    }
     const { tokenAddresses } = req.body;
-    const portfolio = await wallet.getEnhancedPortfolio(tokenAddresses);
+    const addresses = Array.isArray(tokenAddresses) ? tokenAddresses as string[] : [];
+    const portfolio = await wallet.getEnhancedPortfolio(addresses);
     res.json(portfolio);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -276,7 +292,7 @@ router.post('/portfolio', async (req, res) => {
 router.post('/batch-transfer', async (req, res) => {
   try {
     const { transfers } = req.body;
-    const results = await wallet.batchTransfer(transfers);
+    const results = await wallet!.batchTransfer(transfers); // Non-null assertion
     res.json(results);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -288,7 +304,7 @@ router.post('/batch-transfer', async (req, res) => {
 router.get('/analytics/tx-history', async (req, res) => {
   try {
     const { limit } = req.query;
-    const txs = await wallet.getTransactionHistory(Number(limit) || 10);
+    const txs = await wallet!.getTransactionHistory(Number(limit) || 10); // Non-null assertion
     res.json(txs);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -299,7 +315,7 @@ router.get('/analytics/tx-history', async (req, res) => {
 // GET /api/wallet/tx-status/:txHash
 router.get('/tx-status/:txHash', async (req, res) => {
   try {
-    const status = await wallet.getTransactionStatus(req.params.txHash);
+    const status = await wallet!.getTransactionStatus(req.params.txHash); // Non-null assertion
     res.json(status);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);

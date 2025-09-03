@@ -89,6 +89,7 @@ export function VaultProposalLinkPanel({ vaultId }: { vaultId: string }) {
               className="w-28"
             />
             <select
+              aria-label="Filter proposals by status"
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value)}
               className="text-sm border rounded px-2 py-1"

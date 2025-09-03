@@ -1,7 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import bcrypt from 'bcryptjs';
-import { db } from '../../../../server/db';
-import { users } from '../../../../shared/schema';
+import { db } from '../server/db';
+// Update the import path below if your schema file is located elsewhere
+// Update the import path below if your schema file is located elsewhere
+import { users } from '../shared/schema';
 import { eq, or } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 

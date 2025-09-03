@@ -17,7 +17,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: path.resolve(__dirname, "client/dist"), // 👈 changed from dist/public
+    outDir: path.resolve(__dirname, "dist/public"),
     emptyOutDir: true,
   },
   server: {
@@ -26,5 +26,7 @@ export default defineConfig({
       deny: ["**/.*"],
     },
     port: 5173,
+    host: "0.0.0.0",
+    allowedHosts: ["all"],
   },
 });

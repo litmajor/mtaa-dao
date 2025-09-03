@@ -62,8 +62,13 @@ export function DepositModal({ open, onClose }: { open: boolean; onClose: () => 
             <Input type="number" min="1" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Enter amount" />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Provider</label>
-            <select className="w-full p-2 rounded border" value={provider} onChange={e => setProvider(e.target.value)}>
+            <label htmlFor="provider-select" className="block text-sm font-medium mb-1">Provider</label>
+            <select
+              id="provider-select"
+              className="w-full p-2 rounded border"
+              value={provider}
+              onChange={e => setProvider(e.target.value)}
+            >
               {PROVIDERS.map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
