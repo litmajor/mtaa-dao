@@ -7,6 +7,7 @@ import BigNumber from "bignumber.js"
 import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { LockedSavingsSection } from "./LockedSavingsSection"
 // import QRCode from "react-qr-code" // Uncomment if installed
 
 const isValidAddress = (addr: string) => /^0x[a-fA-F0-9]{40}$/.test(addr)
@@ -33,6 +34,9 @@ const useVaultCounts = () => {
 
 export function PersonalVaultSection() {
   const vaultCounts = useVaultCounts();
+  // Get user ID from auth context or props
+  const userId = "current-user-id"; // Replace with actual user ID from auth context
+  
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-bold">Your Personal Vault</h2>
@@ -47,6 +51,9 @@ export function PersonalVaultSection() {
       <VaultSendCard />
       <VaultDepositCard />
       <VaultWithdrawCard />
+      
+      {/* Enhanced: Locked Savings and Goals */}
+      <LockedSavingsSection userId={userId} />
     </div>
   );
 }

@@ -323,4 +323,176 @@ router.get('/tx-status/:txHash', async (req, res) => {
   }
 });
 
+// === LOCKED SAVINGS ENDPOINTS ===
+
+// POST /api/wallet/locked-savings/create
+router.post('/locked-savings/create', async (req, res) => {
+  try {
+    const { userId, amount, currency, lockPeriod, interestRate } = req.body;
+    
+    // Calculate unlock date
+    const unlocksAt = new Date();
+    unlocksAt.setDate(unlocksAt.getDate() + lockPeriod);
+    
+    const lockedSaving = await db.insert(lockedSavings).values({
+      userId,
+      amount,
+      currency: currency || 'KES',
+      lockPeriod,
+      interestRate: interestRate || '0.05',
+      unlocksAt,
+    }).returning();
+    
+    res.json(lockedSaving[0]);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// GET /api/wallet/locked-savings/:userId
+router.get('/locked-savings/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const savings = await db
+      .select()
+      .from(lockedSavings)
+      .where(eq(lockedSavings.userId, userId))
+      .orderBy(desc(lockedSavings.createdAt));
+    
+    res.json(savings);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// POST /api/wallet/locked-savings/withdraw/:id
+router.post('/locked-savings/withdraw/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isEarlyWithdrawal } = req.body;
+    
+    // Get the locked saving
+    const saving = await db
+      .select()
+      .from(lockedSavings)
+      .where(eq(lockedSavings.id, id))
+      .limit(1);
+    
+    if (!saving.length) {
+      return res.status(404).json({ error: 'Locked saving not found' });
+    }
+    
+    const lockSaving = saving[0];
+    const now = new Date();
+    const isUnlocked = now >= new Date(lockSaving.unlocksAt);
+    
+    let penalty = 0;
+    if (isEarlyWithdrawal && !isUnlocked) {
+      // Apply 10% penalty for early withdrawal
+      penalty = parseFloat(lockSaving.amount) * 0.1;
+    }
+    
+    const withdrawalAmount = parseFloat(lockSaving.amount) - penalty;
+    
+    // Update status
+    await db
+      .update(lockedSavings)
+      .set({ 
+        status: 'withdrawn',
+        penalty: penalty.toString(),
+        updatedAt: new Date()
+      })
+      .where(eq(lockedSavings.id, id));
+    
+    res.json({ 
+      withdrawalAmount, 
+      penalty, 
+      isEarlyWithdrawal: isEarlyWithdrawal && !isUnlocked 
+    });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// === SAVINGS GOALS ENDPOINTS ===
+
+// POST /api/wallet/savings-goals/create
+router.post('/savings-goals/create', async (req, res) => {
+  try {
+    const { userId, title, description, targetAmount, targetDate, category, currency } = req.body;
+    
+    const goal = await db.insert(savingsGoals).values({
+      userId,
+      title,
+      description,
+      targetAmount,
+      targetDate: targetDate ? new Date(targetDate) : null,
+      category: category || 'general',
+      currency: currency || 'KES',
+    }).returning();
+    
+    res.json(goal[0]);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// GET /api/wallet/savings-goals/:userId
+router.get('/savings-goals/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const goals = await db
+      .select()
+      .from(savingsGoals)
+      .where(eq(savingsGoals.userId, userId))
+      .orderBy(desc(savingsGoals.createdAt));
+    
+    res.json(goals);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// POST /api/wallet/savings-goals/:id/contribute
+router.post('/savings-goals/:id/contribute', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount } = req.body;
+    
+    // Get current goal
+    const goal = await db
+      .select()
+      .from(savingsGoals)
+      .where(eq(savingsGoals.id, id))
+      .limit(1);
+    
+    if (!goal.length) {
+      return res.status(404).json({ error: 'Savings goal not found' });
+    }
+    
+    const currentGoal = goal[0];
+    const newAmount = parseFloat(currentGoal.currentAmount) + parseFloat(amount);
+    const isCompleted = newAmount >= parseFloat(currentGoal.targetAmount);
+    
+    await db
+      .update(savingsGoals)
+      .set({ 
+        currentAmount: newAmount.toString(),
+        isCompleted,
+        updatedAt: new Date()
+      })
+      .where(eq(savingsGoals.id, id));
+    
+    res.json({ newAmount, isCompleted });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
 export default router;
