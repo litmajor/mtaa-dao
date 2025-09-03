@@ -64,6 +64,7 @@ function errorHandler(err: any, req: Request, res: Response, next: NextFunction)
 }
 
 import daoTreasuryRouter from './routes/dao_treasury';
+import reputationRouter from './routes/reputation';
 
 export function registerRoutes(app: Express): void {
   // --- Wallet API ---
@@ -71,6 +72,9 @@ export function registerRoutes(app: Express): void {
 
   // --- DAO Treasury API ---
   app.use('/api/dao/treasury', daoTreasuryRouter);
+
+  // --- Reputation & MsiaMo Tokens API ---
+  app.use('/api/reputation', reputationRouter);
   // Validate JWT_SECRET
   if (!process.env.JWT_SECRET) {
     throw new Error("JWT_SECRET environment variable is required");
@@ -312,6 +316,21 @@ export function registerRoutes(app: Express): void {
     throw new Error(`Failed to create DAO: ${err instanceof Error ? err.message : String(err)}`);
   }
 });
+
+  app.post('/api/proposals', isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const proposal = await storage.createProposal({ ...req.body, proposerId: userId });
+
+      // Award reputation points for creating proposal
+      const { ReputationService } = await import('../reputationService');
+      await ReputationService.onProposalCreated(userId, proposal.id, proposal.daoId);
+
+      res.status(201).json(proposal);
+    } catch (err) {
+      throw new Error(`Failed to create proposal: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
   async function handleDaoJoin(
     daoId: string,
     userId: string,
@@ -353,6 +372,13 @@ export function registerRoutes(app: Express): void {
       const { daoId } = req.body;
       const userId = (req.user as any).claims.sub;
       const result = await handleDaoJoin(daoId, userId);
+      
+      // Award reputation points for joining DAO if approved
+      if (result.status === 201 && result.data.status === 'approved') {
+        const { ReputationService } = await import('../reputationService');
+        await ReputationService.onDaoJoin(userId, daoId);
+      }
+      
       res.status(result.status).json(result.data);
     } catch (err) {
       throw new Error(`Failed to join DAO: ${err instanceof Error ? err.message : String(err)}`);
@@ -469,6 +495,12 @@ export function registerRoutes(app: Express): void {
         userId,
       });
       await storage.updateProposalVotes(validatedData.proposalId, validatedData.voteType);
+
+      // Award reputation points for voting
+      const { ReputationService } = await import('../reputationService');
+      const proposal = await storage.getProposal(validatedData.proposalId);
+      await ReputationService.onVote(userId, validatedData.proposalId, proposal.daoId);
+
       res.status(201).json(vote);
     } catch (err) {
       if (err instanceof ZodError) {
