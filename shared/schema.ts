@@ -198,6 +198,41 @@ export const contributions = pgTable("contributions", {
 
 });
 
+// Locked Savings table
+export const lockedSavings = pgTable("locked_savings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  currency: varchar("currency").default("KES"),
+  lockPeriod: integer("lock_period").notNull(), // in days
+  interestRate: decimal("interest_rate", { precision: 5, scale: 4 }).default("0.05"), // 5% default
+  lockedAt: timestamp("locked_at").defaultNow(),
+  unlocksAt: timestamp("unlocks_at").notNull(),
+  status: varchar("status").default("locked"), // locked, unlocked, withdrawn
+  penalty: decimal("penalty", { precision: 10, scale: 2 }).default("0"), // early withdrawal penalty
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Savings Goals table
+export const savingsGoals = pgTable("savings_goals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  title: varchar("title").notNull(),
+  description: text("description"),
+  targetAmount: decimal("target_amount", { precision: 10, scale: 2 }).notNull(),
+  currentAmount: decimal("current_amount", { precision: 10, scale: 2 }).default("0"),
+  currency: varchar("currency").default("KES"),
+  targetDate: timestamp("target_date"),
+  category: varchar("category").default("general"), // emergency, education, business, housing, etc.
+  isCompleted: boolean("is_completed").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+
+
 // Personal Finance Vaults table
 export const vaults = pgTable("vaults", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -205,13 +240,12 @@ export const vaults = pgTable("vaults", {
   currency: varchar("currency").notNull(),
   balance: decimal("balance", { precision: 10, scale: 2 }).default("0"),
   monthlyGoal: decimal("monthly_goal", { precision: 10, scale: 2 }).default("0"),
+  vaultType: varchar("vault_type").default("regular"), // regular, savings, locked_savings
+  lockDuration: integer("lock_duration"), // in days for locked savings
+  lockedUntil: timestamp("locked_until"), // when locked savings unlocks
+  interestRate: decimal("interest_rate", { precision: 5, scale: 4 }).default("0"), // annual interest rate for savings
   updatedAt: timestamp("updated_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
-  // Note: no need for a vault name, just a single vault per user
-  // This simplifies the vault management and aligns with the personal finance focus
-  // Users can have multiple vaults for different currencies if needed
-  // Each vault can have its own budget and spending limits
-  // This allows for better financial management and tracking
 });
 
 // Budget Plans table
