@@ -2,18 +2,56 @@ import express, { type Request, Response, NextFunction } from "express";
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
+import helmet from 'helmet';
 import { registerRoutes } from "./routes";
 import {setupVite, serveStatic, log } from "./vite"; // ← fix here
 import path from "path";
 import { dirname } from "path";
 import { fileURLToPath } from "url";
 import { notificationService } from './notificationService';
+import { generalRateLimit } from './security/rateLimiter';
+import { sanitizeInput, preventSqlInjection, preventXSS } from './security/inputSanitizer';
+import { auditMiddleware } from './security/auditLogger';
+import { BackupSystem, BackupScheduler } from './security/backupSystem';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+
+// Security middleware
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https:"],
+      scriptSrc: ["'self'"],
+      connectSrc: ["'self'", "wss:", "https:"],
+    },
+  },
+  crossOriginEmbedderPolicy: false
+}));
+
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? [process.env.FRONTEND_URL] 
+    : ['http://localhost:5000', 'http://0.0.0.0:5000'],
+  credentials: true
+}));
+
+// Rate limiting
+app.use(generalRateLimit);
+
+// Input sanitization and security
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: false, limit: '10mb' }));
+app.use(sanitizeInput);
+app.use(preventSqlInjection);
+app.use(preventXSS);
+
+// Audit logging
+app.use(auditMiddleware);
 
 // Initialize Socket.IO for real-time notifications
 const server = createServer(app);
@@ -90,6 +128,22 @@ ProposalExecutionService.startScheduler();
 
 (async () => {
   try {
+    // Initialize backup system
+    const backupConfig = {
+      enabled: process.env.BACKUPS_ENABLED === 'true',
+      schedule: '0 2 * * *', // Daily at 2 AM
+      retentionDays: 30,
+      location: process.env.BACKUP_LOCATION || './backups',
+      encryptionKey: process.env.BACKUP_ENCRYPTION_KEY
+    };
+    
+    if (backupConfig.enabled) {
+      const backupSystem = BackupSystem.getInstance(backupConfig);
+      const scheduler = new BackupScheduler(backupSystem);
+      scheduler.start();
+      log('✅ Backup system initialized');
+    }
+
     await registerRoutes(app);
 
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

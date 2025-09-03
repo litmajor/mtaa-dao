@@ -8,6 +8,9 @@ import { isAuthenticated } from "./nextAuthMiddleware";
 import { z, ZodError } from "zod";
 import { MaonoVaultService } from "./blockchain";
 import multer from "multer";
+import { authRateLimit, paymentRateLimit, proposalRateLimit, vaultRateLimit } from './security/rateLimiter';
+import { validateAndSanitize, sanitizedStringSchema, sanitizedEmailSchema } from './security/inputSanitizer';
+import { logSecurityEvent } from './security/auditLogger';
 import { insertContributionSchema, insertVaultSchema, insertBudgetPlanSchema, insertVoteSchema, insertProposalCommentSchema, insertDaoMessageSchema } from "../shared/schema";
 import fs from "fs";
 import path from "path";
@@ -308,9 +311,10 @@ export function registerRoutes(app: Express): void {
   });
 
   // --- Custom Login Endpoint ---
-  app.post('/api/auth/login', async (req: Request, res: Response) => {
+  app.post('/api/auth/login', authRateLimit, async (req: Request, res: Response) => {
     const { email, phone, password } = req.body;
     if ((!email && !phone) || !password) {
+      await logSecurityEvent.failedAuth(email || phone || 'unknown', req.ip, 'Missing credentials');
       return res.status(400).json({ message: 'Email/phone and password required' });
     }
     try {
@@ -318,10 +322,12 @@ export function registerRoutes(app: Express): void {
         ? await storage.getUserByEmail(email)
         : await storage.getUserByPhone(phone);
       if (!user) {
+        await logSecurityEvent.failedAuth(email || phone, req.ip, 'User not found');
         return res.status(401).json({ message: 'User not found' });
       }
       const valid = await bcrypt.compare(password, user.password);
       if (!valid) {
+        await logSecurityEvent.failedAuth(email || phone, req.ip, 'Invalid password');
         return res.status(401).json({ message: 'Invalid credentials' });
       }
       const token = jwt.sign(
@@ -353,7 +359,7 @@ export function registerRoutes(app: Express): void {
   }
 });
 
-  app.post('/api/proposals', isAuthenticated, async (req: Request, res: Response) => {
+  app.post('/api/proposals', isAuthenticated, proposalRateLimit, async (req: Request, res: Response) => {
     try {
       const userId = (req.user as any).claims.sub;
       const proposal = await storage.createProposal({ ...req.body, proposerId: userId });
@@ -1112,7 +1118,7 @@ export function registerRoutes(app: Express): void {
     }
   });
 
-  app.post('/api/maonovault/deposit', isAuthenticated, async (req: Request, res: Response) => {
+  app.post('/api/maonovault/deposit', isAuthenticated, vaultRateLimit, async (req: Request, res: Response) => {
     try {
       const { amount } = req.body;
       const userAddress = extractWalletAddress(req);
@@ -1125,7 +1131,7 @@ export function registerRoutes(app: Express): void {
     }
   });
 
-  app.post('/api/maonovault/withdraw', isAuthenticated, async (req: Request, res: Response) => {
+  app.post('/api/maonovault/withdraw', isAuthenticated, vaultRateLimit, async (req: Request, res: Response) => {
     try {
       const { amount } = req.body;
       const userAddress = extractWalletAddress(req);

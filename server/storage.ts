@@ -1115,3 +1115,35 @@ export const deleteDaoMessage = (messageId: string, userId: string) => storage.d
 export default storage;
 export {  Dao, User, Vote, Contribution, Vault, BudgetPlan, BillingHistory, InsertBillingHistory, Task, InsertTask, Proposal, InsertProposal, InsertVote, InsertContribution, InsertVault, InsertBudgetPlan, UpsertUser };
 export { db }; // Export the database instance for direct access if needed
+// Add these functions to the existing storage.ts file
+
+export async function createAuditLog(entry: any): Promise<void> {
+  // Implementation would depend on your database schema
+  // This is a placeholder - you'll need to create the audit_logs table
+  console.log('Audit log entry:', entry);
+}
+
+export async function createBackupRecord(metadata: any): Promise<void> {
+  // Implementation for storing backup metadata
+  console.log('Backup record created:', metadata);
+}
+
+export async function getBackupRecord(backupId: string): Promise<any> {
+  // Implementation for retrieving backup metadata
+  return null;
+}
+
+export async function getBackupsOlderThan(date: Date): Promise<any[]> {
+  // Implementation for finding old backups
+  return [];
+}
+
+export async function deleteBackupRecord(backupId: string): Promise<void> {
+  // Implementation for deleting backup metadata
+  console.log('Backup record deleted:', backupId);
+}
+
+export async function getDataChangedSince(date: Date): Promise<any> {
+  // Implementation for incremental backups
+  return {};
+}
