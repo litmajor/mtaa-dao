@@ -166,3 +166,32 @@ router.post('/send', isAuthenticated, async (req: Request, res: Response) => {
 });
 
 export default router;
+// Search notifications
+router.get('/search', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { q, limit = 20, offset = 0 } = req.query;
+    const userId = (req.user as any).claims.sub;
+    
+    if (!q || typeof q !== 'string') {
+      return res.status(400).json({ error: 'Search query is required' });
+    }
+    
+    const notifications = await storage.searchNotifications(
+      userId,
+      q,
+      Number(limit),
+      Number(offset)
+    );
+    
+    res.json({ 
+      notifications, 
+      total: notifications.length,
+      query: q
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      error: 'Failed to search notifications',
+      message: err instanceof Error ? err.message : String(err)
+    });
+  }
+});

@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNotifications, useNotificationData } from '../hooks/useNotifications';
 import { Bell, X, Check, CheckCheck, Trash2, Settings, Filter } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -29,20 +30,29 @@ interface NotificationCenterProps {
 export default function NotificationCenter({ trigger }: NotificationCenterProps) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<'all' | 'unread' | 'high'>('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const queryClient = useQueryClient();
+  
+  // Initialize real-time notifications
+  const { isConnected, requestNotificationPermission } = useNotifications();
+  
+  // Request notification permission on mount
+  useEffect(() => {
+    requestNotificationPermission();
+  }, [requestNotificationPermission]);
 
-  const { data: notificationsData, isLoading } = useQuery({
-    queryKey: ['notifications', filter],
+  const { data: notificationsData, isLoading } = useNotificationData(filter);
+
+  // Search notifications
+  const { data: searchResults } = useQuery({
+    queryKey: ['notifications', 'search', searchTerm],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (filter === 'unread') params.append('read', 'false');
-      if (filter === 'high') params.append('priority', 'high,urgent');
-      
-      const response = await fetch(`/api/notifications?${params}`);
-      if (!response.ok) throw new Error('Failed to fetch notifications');
+      if (!searchTerm.trim()) return null;
+      const response = await fetch(`/api/notifications/search?q=${encodeURIComponent(searchTerm)}`);
+      if (!response.ok) throw new Error('Failed to search notifications');
       return response.json();
     },
-    refetchInterval: 30000, // Refetch every 30 seconds
+    enabled: searchTerm.length > 2,
   });
 
   const markAsReadMutation = useMutation({
