@@ -166,6 +166,78 @@ export class ReputationService {
     return currentLevel * 100;
   }
 
+  // Apply reputation decay based on inactivity
+  static async applyReputationDecay(userId: string): Promise<void> {
+    const reputation = await db
+      .select()
+      .from(userReputation)
+      .where(eq(userReputation.userId, userId));
+
+    if (!reputation[0]) return;
+
+    const lastActivity = new Date(reputation[0].lastActivity);
+    const now = new Date();
+    const daysSinceActivity = Math.floor((now.getTime() - lastActivity.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (daysSinceActivity > 7) {
+      // Start decay after 7 days of inactivity
+      // Lose 1% per day after the first week, max 50% total decay
+      const decayDays = Math.min(daysSinceActivity - 7, 50);
+      const decayFactor = 1 - (decayDays * 0.01);
+      
+      const decayedPoints = Math.floor(reputation[0].totalPoints * decayFactor);
+      const pointsLost = reputation[0].totalPoints - decayedPoints;
+
+      if (pointsLost > 0) {
+        await db
+          .update(userReputation)
+          .set({
+            totalPoints: decayedPoints,
+            badge: this.calculateBadge(decayedPoints),
+            level: this.calculateLevel(decayedPoints),
+            nextLevelPoints: this.getNextLevelThreshold(this.calculateLevel(decayedPoints)),
+            updatedAt: new Date(),
+          })
+          .where(eq(userReputation.userId, userId));
+
+        // Log decay event
+        await this.awardPoints(
+          userId,
+          'REPUTATION_DECAY',
+          -pointsLost,
+          undefined,
+          `Reputation decay: ${pointsLost} points lost due to ${daysSinceActivity} days of inactivity`,
+          1.0
+        );
+      }
+    }
+  }
+
+  // Run decay for all users (scheduled job)
+  static async runGlobalReputationDecay(): Promise<{ processed: number; decayed: number }> {
+    const allUsers = await db.select().from(userReputation);
+    let processed = 0;
+    let decayed = 0;
+
+    for (const user of allUsers) {
+      const beforePoints = user.totalPoints;
+      await this.applyReputationDecay(user.userId);
+      
+      // Check if points actually decayed
+      const afterReputation = await db
+        .select()
+        .from(userReputation)
+        .where(eq(userReputation.userId, user.userId));
+      
+      if (afterReputation[0] && afterReputation[0].totalPoints < beforePoints) {
+        decayed++;
+      }
+      processed++;
+    }
+
+    return { processed, decayed };
+  }
+
   // Get user's current reputation
   static async getUserReputation(userId: string): Promise<any> {
     const reputation = await db
@@ -179,7 +251,16 @@ export class ReputationService {
       return await this.getUserReputation(userId);
     }
 
-    return reputation[0];
+    // Apply decay check when getting reputation
+    await this.applyReputationDecay(userId);
+    
+    // Get updated reputation after potential decay
+    const updatedReputation = await db
+      .select()
+      .from(userReputation)
+      .where(eq(userReputation.userId, userId));
+
+    return updatedReputation[0];
   }
 
   // Get leaderboard
