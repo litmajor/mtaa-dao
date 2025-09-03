@@ -10,6 +10,10 @@ import { TooltipProvider } from "./components/ui/tooltip";
 import { ThemeProvider } from "./components/theme-provider";
 import { useAuth } from "./pages/hooks/useAuth";
 import { Helmet, HelmetProvider } from "react-helmet-async";
+import ErrorBoundary from "./components/ErrorBoundary";
+import { AsyncErrorBoundary } from "./components/AsyncErrorBoundary";
+import { SkipLink } from "./components/ui/skip-link";
+import { PageLoading } from "./components/ui/page-loading";
 
 import SuperUserDashboard from './components/SuperUserDashboard';
 import Navigation from "./components/navigation";
@@ -52,18 +56,17 @@ function Router() {
   const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-mtaa-orange"></div>
-      </div>
-    );
+    return <PageLoading message="Loading Mtaa DAO..." />;
   }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <SkipLink />
       <Helmet>
         <title>{isAuthenticated ? "Dashboard | Mtaa DAO" : "Welcome | Mtaa DAO"}</title>
         <meta name="description" content="Mtaa DAO — decentralized community finance platform" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="theme-color" content="#1e40af" />
       </Helmet>
 
       <Switch>
@@ -92,7 +95,7 @@ function Router() {
         ) : (
           <>
             <Navigation />
-            <div className="pb-16 lg:pb-0">
+            <main id="main-content" className="pb-16 lg:pb-0" role="main">
               <Route path="/" component={Dashboard} />
               <Route path="/dashboard" component={Dashboard} />
               <Route path="/proposals" component={Proposals} />
@@ -106,7 +109,7 @@ function Router() {
               <Route path="/wallet/dao-treasury" component={DaoTreasury} />
               <Route path="/referrals" component={Referrals} />
               <Route path="/maonovault" component={MaonoVaultWeb3Page} />
-            </div>
+            </main>
             <MobileNav />
           </>
         )}
@@ -119,16 +122,20 @@ function Router() {
 
 function App() {
   return (
-    <HelmetProvider>
-      <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Router />
-          </TooltipProvider>
-        </ThemeProvider>
-      </QueryClientProvider>
-    </HelmetProvider>
+    <ErrorBoundary>
+      <HelmetProvider>
+        <QueryClientProvider client={queryClient}>
+          <AsyncErrorBoundary>
+            <ThemeProvider>
+              <TooltipProvider>
+                <Toaster />
+                <Router />
+              </TooltipProvider>
+            </ThemeProvider>
+          </AsyncErrorBoundary>
+        </QueryClientProvider>
+      </HelmetProvider>
+    </ErrorBoundary>
   );
 }
 
