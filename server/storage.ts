@@ -26,7 +26,7 @@ export function isDaoPremium(dao: Dao): boolean {
   return dao.plan === 'premium';
 }
 
-import { daos, daoMemberships, users, votes, contributions, vaults, budgetPlans, billingHistory, tasks, proposals, walletTransactions, config, logs, sessions, chains, notifications, taskHistory } from '../shared/schema';
+import { daos, daoMemberships, users, votes, contributions, vaults, budgetPlans, billingHistory, tasks, proposals, walletTransactions, config, logs, sessions, chains, notifications, taskHistory, proposalComments, proposalLikes, commentLikes, daoMessages } from '../shared/schema';
 import { and, desc } from 'drizzle-orm';
 
 // Drizzle type aliases
@@ -48,6 +48,14 @@ type InsertContribution = typeof contributions.$inferInsert;
 type InsertVault = typeof vaults.$inferInsert;
 type InsertBudgetPlan = typeof budgetPlans.$inferInsert;
 type UpsertUser = typeof users.$inferInsert;
+type ProposalComment = typeof proposalComments.$inferSelect;
+type InsertProposalComment = typeof proposalComments.$inferInsert;
+type ProposalLike = typeof proposalLikes.$inferSelect;
+type InsertProposalLike = typeof proposalLikes.$inferInsert;
+type CommentLike = typeof commentLikes.$inferSelect;
+type InsertCommentLike = typeof commentLikes.$inferInsert;
+type DaoMessage = typeof daoMessages.$inferSelect;
+type InsertDaoMessage = typeof daoMessages.$inferInsert;
 
 // Wallet transaction input type
 export type WalletTransactionInput = {
@@ -848,6 +856,192 @@ async getTaskHistory(taskId: string, limit = 10, offset = 0): Promise<any[]> {
     .limit(limit)
     .offset(offset);
 }
+
+// ===== ENGAGEMENT FEATURES =====
+
+// --- Proposal Comments ---
+async createProposalComment(comment: InsertProposalComment): Promise<ProposalComment> {
+  if (!comment.proposalId || !comment.userId || !comment.content) {
+    throw new Error('Proposal ID, user ID, and content are required');
+  }
+  comment.createdAt = new Date();
+  comment.updatedAt = new Date();
+  const result = await db.insert(proposalComments).values(comment).returning();
+  if (!result[0]) throw new Error('Failed to create comment');
+  return result[0];
+}
+
+async getProposalComments(proposalId: string, limit = 10, offset = 0): Promise<ProposalComment[]> {
+  if (!proposalId) throw new Error('Proposal ID required');
+  return await db.select().from(proposalComments)
+    .where(eq(proposalComments.proposalId, proposalId))
+    .orderBy(desc(proposalComments.createdAt))
+    .limit(limit)
+    .offset(offset);
+}
+
+async updateProposalComment(commentId: string, content: string, userId: string): Promise<ProposalComment> {
+  if (!commentId || !content || !userId) throw new Error('Comment ID, content, and user ID required');
+  
+  // Check if user owns the comment
+  const existingComment = await db.select().from(proposalComments)
+    .where(eq(proposalComments.id, commentId));
+  if (!existingComment[0]) throw new Error('Comment not found');
+  if (existingComment[0].userId !== userId) throw new Error('Only comment author can edit');
+  
+  const result = await db.update(proposalComments)
+    .set({ content, updatedAt: new Date() })
+    .where(eq(proposalComments.id, commentId))
+    .returning();
+  if (!result[0]) throw new Error('Failed to update comment');
+  return result[0];
+}
+
+async deleteProposalComment(commentId: string, userId: string): Promise<void> {
+  if (!commentId || !userId) throw new Error('Comment ID and user ID required');
+  
+  const existingComment = await db.select().from(proposalComments)
+    .where(eq(proposalComments.id, commentId));
+  if (!existingComment[0]) throw new Error('Comment not found');
+  if (existingComment[0].userId !== userId) throw new Error('Only comment author can delete');
+  
+  await db.delete(proposalComments).where(eq(proposalComments.id, commentId));
+}
+
+// --- Proposal Likes ---
+async toggleProposalLike(proposalId: string, userId: string, daoId: string): Promise<{ liked: boolean; likesCount: number }> {
+  if (!proposalId || !userId || !daoId) {
+    throw new Error('Proposal ID, user ID, and DAO ID are required');
+  }
+  
+  // Check if user already liked this proposal
+  const existingLike = await db.select().from(proposalLikes)
+    .where(and(eq(proposalLikes.proposalId, proposalId), eq(proposalLikes.userId, userId)));
+  
+  if (existingLike[0]) {
+    // Unlike: remove the like
+    await db.delete(proposalLikes)
+      .where(and(eq(proposalLikes.proposalId, proposalId), eq(proposalLikes.userId, userId)));
+    
+    const likesCount = await db.select().from(proposalLikes)
+      .where(eq(proposalLikes.proposalId, proposalId));
+    
+    return { liked: false, likesCount: likesCount.length };
+  } else {
+    // Like: add the like
+    await db.insert(proposalLikes).values({
+      proposalId,
+      userId,
+      daoId,
+      createdAt: new Date(),
+    });
+    
+    const likesCount = await db.select().from(proposalLikes)
+      .where(eq(proposalLikes.proposalId, proposalId));
+    
+    return { liked: true, likesCount: likesCount.length };
+  }
+}
+
+async getProposalLikes(proposalId: string): Promise<{ likes: ProposalLike[]; count: number; userLiked?: boolean; userId?: string }> {
+  if (!proposalId) throw new Error('Proposal ID required');
+  
+  const likes = await db.select().from(proposalLikes)
+    .where(eq(proposalLikes.proposalId, proposalId))
+    .orderBy(desc(proposalLikes.createdAt));
+  
+  return { likes, count: likes.length };
+}
+
+// --- Comment Likes ---
+async toggleCommentLike(commentId: string, userId: string, daoId: string): Promise<{ liked: boolean; likesCount: number }> {
+  if (!commentId || !userId || !daoId) {
+    throw new Error('Comment ID, user ID, and DAO ID are required');
+  }
+  
+  const existingLike = await db.select().from(commentLikes)
+    .where(and(eq(commentLikes.commentId, commentId), eq(commentLikes.userId, userId)));
+  
+  if (existingLike[0]) {
+    await db.delete(commentLikes)
+      .where(and(eq(commentLikes.commentId, commentId), eq(commentLikes.userId, userId)));
+    
+    const likesCount = await db.select().from(commentLikes)
+      .where(eq(commentLikes.commentId, commentId));
+    
+    return { liked: false, likesCount: likesCount.length };
+  } else {
+    await db.insert(commentLikes).values({
+      commentId,
+      userId,
+      daoId,
+      createdAt: new Date(),
+    });
+    
+    const likesCount = await db.select().from(commentLikes)
+      .where(eq(commentLikes.commentId, commentId));
+    
+    return { liked: true, likesCount: likesCount.length };
+  }
+}
+
+async getCommentLikes(commentId: string): Promise<{ likes: CommentLike[]; count: number }> {
+  if (!commentId) throw new Error('Comment ID required');
+  
+  const likes = await db.select().from(commentLikes)
+    .where(eq(commentLikes.commentId, commentId))
+    .orderBy(desc(commentLikes.createdAt));
+  
+  return { likes, count: likes.length };
+}
+
+// --- DAO Messages (Group Chat) ---
+async createDaoMessage(message: InsertDaoMessage): Promise<DaoMessage> {
+  if (!message.daoId || !message.userId || !message.content) {
+    throw new Error('DAO ID, user ID, and content are required');
+  }
+  message.createdAt = new Date();
+  message.updatedAt = new Date();
+  const result = await db.insert(daoMessages).values(message).returning();
+  if (!result[0]) throw new Error('Failed to create message');
+  return result[0];
+}
+
+async getDaoMessages(daoId: string, limit = 50, offset = 0): Promise<DaoMessage[]> {
+  if (!daoId) throw new Error('DAO ID required');
+  return await db.select().from(daoMessages)
+    .where(eq(daoMessages.daoId, daoId))
+    .orderBy(desc(daoMessages.createdAt))
+    .limit(limit)
+    .offset(offset);
+}
+
+async updateDaoMessage(messageId: string, content: string, userId: string): Promise<DaoMessage> {
+  if (!messageId || !content || !userId) throw new Error('Message ID, content, and user ID required');
+  
+  const existingMessage = await db.select().from(daoMessages)
+    .where(eq(daoMessages.id, messageId));
+  if (!existingMessage[0]) throw new Error('Message not found');
+  if (existingMessage[0].userId !== userId) throw new Error('Only message author can edit');
+  
+  const result = await db.update(daoMessages)
+    .set({ content, updatedAt: new Date() })
+    .where(eq(daoMessages.id, messageId))
+    .returning();
+  if (!result[0]) throw new Error('Failed to update message');
+  return result[0];
+}
+
+async deleteDaoMessage(messageId: string, userId: string): Promise<void> {
+  if (!messageId || !userId) throw new Error('Message ID and user ID required');
+  
+  const existingMessage = await db.select().from(daoMessages)
+    .where(eq(daoMessages.id, messageId));
+  if (!existingMessage[0]) throw new Error('Message not found');
+  if (existingMessage[0].userId !== userId) throw new Error('Only message author can delete');
+  
+  await db.delete(daoMessages).where(eq(daoMessages.id, messageId));
+}
 }
 
 // Export a singleton instance for use in routes and elsewhere
@@ -923,6 +1117,21 @@ export const deleteProposal = (id: string, userId: string) => storage.deleteProp
 export const updateProposal = (id: string, data: any, userId: string) => storage.updateProposal(id, data, userId);
 export const getVaultTransactions = (vaultId: string, limit?: number, offset?: number) => storage.getVaultTransactions(vaultId, limit, offset);
 export const getDaoAnalytics = (daoId: string) => storage.getDaoAnalytics(daoId);
+
+// --- Engagement Features Exports ---
+export const createProposalComment = (comment: any) => storage.createProposalComment(comment);
+export const getProposalComments = (proposalId: string, limit?: number, offset?: number) => storage.getProposalComments(proposalId, limit, offset);
+export const updateProposalComment = (commentId: string, content: string, userId: string) => storage.updateProposalComment(commentId, content, userId);
+export const deleteProposalComment = (commentId: string, userId: string) => storage.deleteProposalComment(commentId, userId);
+export const toggleProposalLike = (proposalId: string, userId: string, daoId: string) => storage.toggleProposalLike(proposalId, userId, daoId);
+export const getProposalLikes = (proposalId: string) => storage.getProposalLikes(proposalId);
+export const toggleCommentLike = (commentId: string, userId: string, daoId: string) => storage.toggleCommentLike(commentId, userId, daoId);
+export const getCommentLikes = (commentId: string) => storage.getCommentLikes(commentId);
+export const createDaoMessage = (message: any) => storage.createDaoMessage(message);
+export const getDaoMessages = (daoId: string, limit?: number, offset?: number) => storage.getDaoMessages(daoId, limit, offset);
+export const updateDaoMessage = (messageId: string, content: string, userId: string) => storage.updateDaoMessage(messageId, content, userId);
+export const deleteDaoMessage = (messageId: string, userId: string) => storage.deleteDaoMessage(messageId, userId);
+
 // Export the storage instance for use in other modules
 export default storage;
 export {  Dao, User, Vote, Contribution, Vault, BudgetPlan, BillingHistory, InsertBillingHistory, Task, InsertTask, Proposal, InsertProposal, InsertVote, InsertContribution, InsertVault, InsertBudgetPlan, UpsertUser };
