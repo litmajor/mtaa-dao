@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, Mail, Lock, AlertCircle, UserPlus, Check, Phone, Send, Sparkles, Shield, Zap, ArrowLeft } from 'lucide-react';
 
@@ -18,7 +19,7 @@ export default function StunningRegister() {
   const [method, setMethod] = useState<'email' | 'phone' | ''>('');
   const [countryInfo, setCountryInfo] = useState<{ code: string; flag: string; name: string } | null>(null);
   
-  // Country code map (demo, add more as needed)
+  // Extended country code map
   const countryCodes: Record<string, { flag: string; name: string }> = {
     '+1': { flag: '🇺🇸', name: 'United States' },
     '+44': { flag: '🇬🇧', name: 'United Kingdom' },
@@ -30,13 +31,56 @@ export default function StunningRegister() {
     '+33': { flag: '🇫🇷', name: 'France' },
     '+234': { flag: '🇳🇬', name: 'Nigeria' },
     '+27': { flag: '🇿🇦', name: 'South Africa' },
-    // ...add more as needed
+    '+86': { flag: '🇨🇳', name: 'China' },
+    '+7': { flag: '🇷🇺', name: 'Russia' },
+    '+55': { flag: '🇧🇷', name: 'Brazil' },
+    '+52': { flag: '🇲🇽', name: 'Mexico' },
+    '+39': { flag: '🇮🇹', name: 'Italy' },
+    '+34': { flag: '🇪🇸', name: 'Spain' },
+    '+31': { flag: '🇳🇱', name: 'Netherlands' },
+    '+46': { flag: '🇸🇪', name: 'Sweden' },
+    '+47': { flag: '🇳🇴', name: 'Norway' },
+    '+45': { flag: '🇩🇰', name: 'Denmark' },
+    '+358': { flag: '🇫🇮', name: 'Finland' },
+    '+41': { flag: '🇨🇭', name: 'Switzerland' },
+    '+43': { flag: '🇦🇹', name: 'Austria' },
+    '+32': { flag: '🇧🇪', name: 'Belgium' },
+    '+351': { flag: '🇵🇹', name: 'Portugal' },
+    '+30': { flag: '🇬🇷', name: 'Greece' },
+    '+48': { flag: '🇵🇱', name: 'Poland' },
+    '+420': { flag: '🇨🇿', name: 'Czech Republic' },
+    '+36': { flag: '🇭🇺', name: 'Hungary' },
+    '+40': { flag: '🇷🇴', name: 'Romania' },
+    '+359': { flag: '🇧🇬', name: 'Bulgaria' },
+    '+385': { flag: '🇭🇷', name: 'Croatia' },
+    '+386': { flag: '🇸🇮', name: 'Slovenia' },
+    '+421': { flag: '🇸🇰', name: 'Slovakia' },
+    '+370': { flag: '🇱🇹', name: 'Lithuania' },
+    '+371': { flag: '🇱🇻', name: 'Latvia' },
+    '+372': { flag: '🇪🇪', name: 'Estonia' },
+  };
+  
+  // Phone number validation
+  const validatePhoneNumber = (phoneNumber: string) => {
+    if (!phoneNumber.startsWith('+')) return false;
+    
+    // Remove the + and check if the rest are digits
+    const digits = phoneNumber.slice(1);
+    if (!/^\d+$/.test(digits)) return false;
+    
+    // Check if it's a valid country code
+    const sortedCodes = Object.keys(countryCodes).sort((a, b) => b.length - a.length);
+    const matchedCode = sortedCodes.find(code => phoneNumber.startsWith(code));
+    
+    if (!matchedCode) return false;
+    
+    // Check minimum length (country code + at least 6 digits)
+    return digits.length >= 7 && digits.length <= 15;
   };
   
   // Detect country code from phone input
   useEffect(() => {
     if (method === 'phone' && phone.startsWith('+')) {
-      // Try to match the longest code first
       const sortedCodes = Object.keys(countryCodes).sort((a, b) => b.length - a.length);
       const match = sortedCodes.find(code => phone.startsWith(code));
       if (match) {
@@ -57,6 +101,18 @@ export default function StunningRegister() {
     window.addEventListener('mousemove', handleMouseMove);
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
+
+  // Reset form when method changes
+  const resetForm = () => {
+    setEmail('');
+    setPhone('');
+    setPassword('');
+    setConfirmPassword('');
+    setError('');
+    setOtp('');
+    setOtpSent(false);
+    setCountryInfo(null);
+  };
 
   // Password strength checker
   const checkPasswordStrength = (password: string) => {
@@ -92,6 +148,25 @@ export default function StunningRegister() {
       setError('Password is too weak. Please choose a stronger password.');
       setIsLoading(false);
       return;
+    }
+
+    // Additional validation based on method
+    if (method === 'email' && !email) {
+      setError('Please enter your email address.');
+      setIsLoading(false);
+      return;
+    }
+    if (method === 'phone') {
+      if (!phone) {
+        setError('Please enter your phone number.');
+        setIsLoading(false);
+        return;
+      }
+      if (!validatePhoneNumber(phone)) {
+        setError('Please enter a valid phone number with country code (e.g., +254712345678).');
+        setIsLoading(false);
+        return;
+      }
     }
 
     try {
@@ -183,7 +258,7 @@ export default function StunningRegister() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 relative">
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 relative overflow-hidden">
       {/* Animated background */}
       <div className="fixed inset-0">
         {/* Floating orbs */}
@@ -230,250 +305,144 @@ export default function StunningRegister() {
             }}
           />
         ))}
+      </div>
 
       {/* Main content */}
       <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
         <div className="w-full max-w-md">
-          <div className="overflow-y-auto max-h-[90vh] scrollbar-thin scrollbar-thumb-purple-500 scrollbar-track-transparent">
-          {/* Success animation */}
-          {step === 'success' && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-              <div className="bg-white/10 backdrop-blur-md rounded-3xl p-8 text-center border border-white/20">
-                <div className="w-20 h-20 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
-                  <Check className="w-10 h-10 text-white" />
-                </div>
-                <h3 className="text-2xl font-bold text-white mb-2">Welcome aboard! 🎉</h3>
-                <p className="text-white/80">Your account has been created successfully</p>
-              </div>
-            </div>
-          )}
-
-          {/* Main card */}
-          <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-3xl shadow-2xl p-8 transition-all duration-500 hover:shadow-3xl hover:bg-white/15">
-            {/* Header with animated icon */}
-            <div className="text-center mb-8">
-              <div className="relative mb-6">
-                <div className="w-20 h-20 bg-gradient-to-br from-purple-500 via-pink-500 to-red-500 rounded-full flex items-center justify-center mx-auto shadow-2xl relative overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-br from-purple-400 via-pink-400 to-red-400 rounded-full animate-pulse opacity-75"></div>
-                  <UserPlus className="w-10 h-10 text-white relative z-10" />
-                  <Sparkles className="absolute top-1 right-1 w-4 h-4 text-yellow-300 animate-pulse" />
-                </div>
-                <div className="absolute -top-2 -right-2 w-6 h-6 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full flex items-center justify-center">
-                  <Zap className="w-3 h-3 text-white" />
-                </div>
-              </div>
-              <h2 className="text-4xl font-bold bg-gradient-to-r from-white via-purple-200 to-pink-200 bg-clip-text text-transparent mb-3">
-                Join the Future
-              </h2>
-              <p className="text-white/80 text-lg">Choose how you'd like to sign up</p>
-            </div>
-
-            {/* Registration method buttons */}
-            {step === 'method' && (
-              <div className="space-y-4">
-                <button
-                  type="button"
-                  onClick={() => { setMethod('email'); setStep('email'); }}
-                  className="w-full flex items-center justify-center py-4 px-6 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-white transition-all duration-300 transform hover:scale-105 backdrop-blur-sm group"
-                >
-                  <Mail className="w-6 h-6 mr-3 transition-transform duration-300 group-hover:scale-110" />
-                  <span className="font-medium">Continue with Email</span>
-                </button>
-                
-                <button
-                  type="button"
-                  onClick={() => { setMethod('phone'); setStep('phone'); }}
-                  className="w-full flex items-center justify-center py-4 px-6 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-white transition-all duration-300 transform hover:scale-105 backdrop-blur-sm group"
-                >
-                  <Phone className="w-6 h-6 mr-3 transition-transform duration-300 group-hover:scale-110" />
-                  <span className="font-medium">Continue with Phone</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleGoogleRegister}
-                  className="w-full flex items-center justify-center py-4 px-6 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-white transition-all duration-300 transform hover:scale-105 backdrop-blur-sm group"
-                >
-                  <div className="w-6 h-6 mr-3 transition-transform duration-300 group-hover:scale-110">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                    </svg>
+          {/* Scrollable container */}
+          <div className="max-h-[95vh] overflow-y-auto scrollbar-thin scrollbar-thumb-purple-500/50 scrollbar-track-transparent hover:scrollbar-thumb-purple-400/70 pr-2">
+            
+            {/* Success animation */}
+            {step === 'success' && (
+              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+                <div className="bg-white/10 backdrop-blur-md rounded-3xl p-8 text-center border border-white/20">
+                  <div className="w-20 h-20 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+                    <Check className="w-10 h-10 text-white" />
                   </div>
-                  <span className="font-medium">Continue with Google</span>
-                </button>
-
-                <button
-                  type="button"
-                  className="w-full flex items-center justify-center py-4 px-6 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-white transition-all duration-300 transform hover:scale-105 backdrop-blur-sm group"
-                >
-                  <Send className="w-6 h-6 mr-3 transition-transform duration-300 group-hover:scale-110" />
-                  <span className="font-medium">Continue with Telegram</span>
-                </button>
-              </div>
-            )}
-
-            {/* Back button and Progress indicator */}
-            {step !== 'method' && (
-              <div className="mb-8 space-y-4">
-                <button
-                  type="button"
-                  onClick={() => setStep('method')}
-                  className="flex items-center text-white/70 hover:text-white transition-colors"
-                >
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Back to methods
-                </button>
-                
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-white/70">Progress</span>
-                    <span className="text-sm text-white/70">{step === 'email' || step === 'phone' ? '1' : step === 'password' ? '2' : '3'}/3</span>
-                  </div>
-                  <div className="w-full bg-white/10 rounded-full h-2">
-                    <div 
-                      className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500"
-                      style={{ width: step === 'otp' ? '100%' : step === 'password' ? '66%' : '33%' }}
-                    />
-                  </div>
+                  <h3 className="text-2xl font-bold text-white mb-2">Welcome aboard! 🎉</h3>
+                  <p className="text-white/80">Your account has been created successfully</p>
                 </div>
               </div>
             )}
 
-            {/* Error message */}
-            {error && (
-              <div className="mb-6 p-4 bg-red-500/20 border border-red-500/30 rounded-2xl flex items-center text-red-100 animate-pulse backdrop-blur-sm">
-                <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
-                <span className="text-sm">{error}</span>
-              </div>
-            )}
-
-            {/* Email form */}
-            {step === 'email' && (
-              <form onSubmit={(e) => { e.preventDefault(); setStep('password'); }} className="space-y-6">
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-white/90">Email</label>
-                  <div className="relative group">
-                    <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
-                    <input
-                      type="email"
-                      className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15"
-                      placeholder="Enter your email address"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                    />
+            {/* Main card */}
+            <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-3xl shadow-2xl p-8 transition-all duration-500 hover:shadow-3xl hover:bg-white/15 mb-4">
+              {/* Header with animated icon */}
+              <div className="text-center mb-8">
+                <div className="relative mb-6">
+                  <div className="w-20 h-20 bg-gradient-to-br from-purple-500 via-pink-500 to-red-500 rounded-full flex items-center justify-center mx-auto shadow-2xl relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-br from-purple-400 via-pink-400 to-red-400 rounded-full animate-pulse opacity-75"></div>
+                    <UserPlus className="w-10 h-10 text-white relative z-10" />
+                    <Sparkles className="absolute top-1 right-1 w-4 h-4 text-yellow-300 animate-pulse" />
+                  </div>
+                  <div className="absolute -top-2 -right-2 w-6 h-6 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full flex items-center justify-center">
+                    <Zap className="w-3 h-3 text-white" />
                   </div>
                 </div>
-                <button
-                  type="submit"
-                  className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-red-600 text-white py-4 rounded-2xl font-semibold shadow-2xl hover:from-purple-700 hover:via-pink-700 hover:to-red-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:scale-105 group"
-                >
-                  <div className="absolute inset-0 bg-gradient-to-r from-purple-400 via-pink-400 to-red-400 opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
-                  Continue
-                </button>
-              </form>
-            )}
+                <h2 className="text-4xl font-bold bg-gradient-to-r from-white via-purple-200 to-pink-200 bg-clip-text text-transparent mb-3">
+                  Join the Future
+                </h2>
+                <p className="text-white/80 text-lg">Choose how you'd like to sign up</p>
+              </div>
 
-            {/* Phone form */}
-            {step === 'phone' && (
-              <form onSubmit={(e) => { e.preventDefault(); setStep('password'); }} className="space-y-6">
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-white/90">Phone Number</label>
-                  <div className="relative group flex items-center">
-                    <Phone className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
-                    <input
-                      type="tel"
-                      className="w-full pl-12 pr-20 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15"
-                      placeholder="Enter your phone number (e.g. +254...)"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      required
-                    />
-                    {countryInfo ? (
-                      <div
-                        className="absolute right-4 top-1/2 flex items-center space-x-2 bg-white/10 px-2 py-1 rounded-xl border border-white/20 shadow-lg transition-all duration-300"
-                        style={{
-                          transform: 'translateY(-50%) scale(1)',
-                          opacity: countryInfo ? 1 : 0,
-                          right: countryInfo ? '1rem' : '-2rem',
-                        }}
-                      >
-                        <span className="text-xl transition-transform duration-300" style={{ transform: countryInfo ? 'scale(1.2)' : 'scale(1)' }}>{countryInfo.flag}</span>
-                        <span className="text-xs text-white/80 transition-opacity duration-300" style={{ opacity: countryInfo ? 1 : 0 }}>{countryInfo.code}</span>
-                      </div>
-                    ) : phone.startsWith('+') && phone.length > 1 ? (
-                      <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-xs text-red-300 bg-white/10 px-2 py-1 rounded-xl border border-red-400/30 transition-all duration-300" style={{ opacity: 1 }}>
-                        Invalid code
-                      </div>
-                    ) : null}
-                  </div>
-                  {countryInfo && (
-                    <div className="mt-2 text-xs text-white/70">
-                      Detected: {countryInfo.name}
+              {/* Registration method buttons */}
+              {step === 'method' && (
+                <div className="space-y-4">
+                  <button
+                    type="button"
+                    onClick={() => { 
+                      resetForm();
+                      setMethod('email'); 
+                      setStep('email'); 
+                    }}
+                    className="w-full flex items-center justify-center py-4 px-6 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-white transition-all duration-300 transform hover:scale-105 backdrop-blur-sm group"
+                  >
+                    <Mail className="w-6 h-6 mr-3 transition-transform duration-300 group-hover:scale-110" />
+                    <span className="font-medium">Continue with Email</span>
+                  </button>
+                  
+                  <button
+                    type="button"
+                    onClick={() => { 
+                      resetForm();
+                      setMethod('phone'); 
+                      setStep('phone'); 
+                    }}
+                    className="w-full flex items-center justify-center py-4 px-6 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-white transition-all duration-300 transform hover:scale-105 backdrop-blur-sm group"
+                  >
+                    <Phone className="w-6 h-6 mr-3 transition-transform duration-300 group-hover:scale-110" />
+                    <span className="font-medium">Continue with Phone</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleGoogleRegister}
+                    className="w-full flex items-center justify-center py-4 px-6 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-white transition-all duration-300 transform hover:scale-105 backdrop-blur-sm group"
+                  >
+                    <div className="w-6 h-6 mr-3 transition-transform duration-300 group-hover:scale-110">
+                      <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                      </svg>
                     </div>
-                  )}
-                </div>
-                <button
-                  type="submit"
-                  className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-red-600 text-white py-4 rounded-2xl font-semibold shadow-2xl hover:from-purple-700 hover:via-pink-700 hover:to-red-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:scale-105 group"
-                >
-                  <div className="absolute inset-0 bg-gradient-to-r from-purple-400 via-pink-400 to-red-400 opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
-                  Continue
-                </button>
-              </form>
-            )}
+                    <span className="font-medium">Continue with Google</span>
+                  </button>
 
-            {/* Form content */}
-            {/* OTP form */}
-            {step === 'otp' && (
-              <form onSubmit={handleVerifyOtp} className="space-y-6">
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-white/90">
-                    Enter OTP
-                  </label>
-                  <div className="relative group">
-                    <Shield className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
-                    <input
-                      type="text"
-                      className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15"
-                      placeholder="Enter the OTP sent to your email/phone"
-                      value={otp}
-                      onChange={(e) => setOtp(e.target.value)}
-                      required
-                    />
+                  <button
+                    type="button"
+                    className="w-full flex items-center justify-center py-4 px-6 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-white transition-all duration-300 transform hover:scale-105 backdrop-blur-sm group"
+                  >
+                    <Send className="w-6 h-6 mr-3 transition-transform duration-300 group-hover:scale-110" />
+                    <span className="font-medium">Continue with Telegram</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Back button and Progress indicator */}
+              {step !== 'method' && (
+                <div className="mb-8 space-y-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep('method');
+                      setMethod('');
+                      resetForm();
+                    }}
+                    className="flex items-center text-white/70 hover:text-white transition-colors"
+                  >
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Back to methods
+                  </button>
+                  
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-white/70">Progress</span>
+                      <span className="text-sm text-white/70">{step === 'email' || step === 'phone' ? '1' : step === 'password' ? '2' : '3'}/3</span>
+                    </div>
+                    <div className="w-full bg-white/10 rounded-full h-2">
+                      <div 
+                        className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500"
+                        style={{ width: step === 'otp' ? '100%' : step === 'password' ? '66%' : '33%' }}
+                      />
+                    </div>
                   </div>
-                  <p className="text-white/60 text-sm">
-                    A verification code has been sent to {method === 'email' ? email : phone}
-                  </p>
                 </div>
-                <button
-                  type="submit"
-                  disabled={otpLoading}
-                  className="w-full bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 text-white py-4 rounded-2xl font-semibold shadow-2xl hover:from-green-700 hover:via-emerald-700 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none relative overflow-hidden group"
-                >
-                  <div className="absolute inset-0 bg-gradient-to-r from-green-400 via-emerald-400 to-teal-400 opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
-                  {otpLoading ? (
-                    <div className="flex items-center justify-center">
-                      <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin mr-3"></div>
-                      Verifying...
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center">
-                      <Check className="w-5 h-5 mr-2" />
-                      Verify & Create Account
-                    </div>
-                  )}
-                </button>
-              </form>
-            )}
+              )}
 
-            {/* Password form */}
-            {step === 'password' && (
-              <form onSubmit={handleSubmit} className="space-y-6">
-                  {/* Email/Phone field */}
+              {/* Error message */}
+              {error && (
+                <div className="mb-6 p-4 bg-red-500/20 border border-red-500/30 rounded-2xl flex items-center text-red-100 animate-pulse backdrop-blur-sm">
+                  <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
+                  <span className="text-sm">{error}</span>
+                </div>
+              )}
+
+              {/* Email form */}
+              {step === 'email' && (
+                <form onSubmit={(e) => { e.preventDefault(); setStep('password'); }} className="space-y-6">
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-white/90">Email</label>
                     <div className="relative group">
@@ -484,20 +453,95 @@ export default function StunningRegister() {
                         placeholder="Enter your email address"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
+                        required
                       />
                     </div>
                   </div>
+                  <button
+                    type="submit"
+                    className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-red-600 text-white py-4 rounded-2xl font-semibold shadow-2xl hover:from-purple-700 hover:via-pink-700 hover:to-red-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:scale-105 group"
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-r from-purple-400 via-pink-400 to-red-400 opacity-0 group-hover:opacity-20 transition-opacity duration-300 rounded-2xl"></div>
+                    Continue
+                  </button>
+                </form>
+              )}
+
+              {/* Phone form */}
+              {step === 'phone' && (
+                <form onSubmit={(e) => { e.preventDefault(); setStep('password'); }} className="space-y-6">
                   <div className="space-y-2">
-                    <label className="block text-sm font-medium text-white/90">Phone (with country code)</label>
-                    <div className="relative group">
-                      <Phone className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
+                    <label className="block text-sm font-medium text-white/90">Phone Number</label>
+                    <div className="relative group flex items-center">
+                      <Phone className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5 z-10" />
                       <input
                         type="tel"
-                        className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15"
-                        placeholder="e.g. +1234567890"
+                        className="w-full pl-12 pr-20 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15"
+                        placeholder="Enter phone with country code (e.g. +254712345678)"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
+                        required
                       />
+                      {countryInfo && validatePhoneNumber(phone) ? (
+                        <div className="absolute right-4 top-1/2 flex items-center space-x-2 bg-green-500/20 px-2 py-1 rounded-xl border border-green-400/30 shadow-lg transition-all duration-300 transform -translate-y-1/2">
+                          <span className="text-xl">{countryInfo.flag}</span>
+                          <span className="text-xs text-green-300">{countryInfo.code}</span>
+                        </div>
+                      ) : phone.startsWith('+') && phone.length > 1 ? (
+                        <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-xs text-red-300 bg-red-500/20 px-2 py-1 rounded-xl border border-red-400/30">
+                          {countryInfo ? 'Invalid format' : 'Unknown code'}
+                        </div>
+                      ) : null}
+                    </div>
+                    {countryInfo && validatePhoneNumber(phone) && (
+                      <div className="mt-2 text-xs text-green-300 flex items-center">
+                        <Check className="w-3 h-3 mr-1" />
+                        Valid number from {countryInfo.name}
+                      </div>
+                    )}
+                    {phone && !phone.startsWith('+') && (
+                      <div className="mt-2 text-xs text-yellow-300">
+                        Please include country code (e.g., +254 for Kenya)
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={!validatePhoneNumber(phone)}
+                    className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-red-600 text-white py-4 rounded-2xl font-semibold shadow-2xl hover:from-purple-700 hover:via-pink-700 hover:to-red-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:scale-105 group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-r from-purple-400 via-pink-400 to-red-400 opacity-0 group-hover:opacity-20 transition-opacity duration-300 rounded-2xl"></div>
+                    Continue
+                  </button>
+                </form>
+              )}
+
+              {/* Password form */}
+              {step === 'password' && (
+                <form onSubmit={handleSubmit} className="space-y-6">
+                  {/* Display selected method info */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-white/90">
+                      {method === 'email' ? 'Email' : 'Phone Number'}
+                    </label>
+                    <div className="relative group">
+                      {method === 'email' ? (
+                        <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
+                      ) : (
+                        <Phone className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
+                      )}
+                      <input
+                        type={method === 'email' ? 'email' : 'tel'}
+                        className="w-full pl-12 pr-4 py-4 bg-white/5 border border-white/10 rounded-2xl text-white/70 cursor-not-allowed"
+                        value={method === 'email' ? email : phone}
+                        disabled
+                        readOnly
+                      />
+                      {method === 'phone' && countryInfo && (
+                        <div className="absolute right-4 top-1/2 flex items-center space-x-2 transform -translate-y-1/2">
+                          <span className="text-sm">{countryInfo.flag}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -605,8 +649,6 @@ export default function StunningRegister() {
                       type="checkbox"
                       className="mt-1 w-5 h-5 text-purple-600 bg-white/10 border border-white/20 rounded focus:ring-purple-500 focus:ring-2"
                       required
-                      title="Agree to Terms and Conditions"
-                      placeholder="Agree to Terms and Conditions"
                     />
                     <label className="text-sm text-white/80 leading-relaxed">
                       I agree to the{' '}
@@ -626,7 +668,7 @@ export default function StunningRegister() {
                     disabled={isLoading}
                     className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-red-600 text-white py-4 rounded-2xl font-semibold shadow-2xl hover:from-purple-700 hover:via-pink-700 hover:to-red-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none relative overflow-hidden group"
                   >
-                    <div className="absolute inset-0 bg-gradient-to-r from-purple-400 via-pink-400 to-red-400 opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
+                    <div className="absolute inset-0 bg-gradient-to-r from-purple-400 via-pink-400 to-red-400 opacity-0 group-hover:opacity-20 transition-opacity duration-300 rounded-2xl"></div>
                     {isLoading ? (
                       <div className="flex items-center justify-center">
                         <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin mr-3"></div>
@@ -641,8 +683,50 @@ export default function StunningRegister() {
                   </button>
                 </form>
               )}
-            </div>
 
+              {/* OTP form */}
+              {step === 'otp' && (
+                <form onSubmit={handleVerifyOtp} className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-white/90">
+                      Enter OTP
+                    </label>
+                    <div className="relative group">
+                      <Shield className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
+                      <input
+                        type="text"
+                        className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15"
+                        placeholder="Enter the OTP sent to your email/phone"
+                        value={otp}
+                        onChange={(e) => setOtp(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <p className="text-white/60 text-sm">
+                      A verification code has been sent to {method === 'email' ? email : phone}
+                    </p>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={otpLoading}
+                    className="w-full bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 text-white py-4 rounded-2xl font-semibold shadow-2xl hover:from-green-700 hover:via-emerald-700 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none relative overflow-hidden group"
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-r from-green-400 via-emerald-400 to-teal-400 opacity-0 group-hover:opacity-20 transition-opacity duration-300 rounded-2xl"></div>
+                    {otpLoading ? (
+                      <div className="flex items-center justify-center">
+                        <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin mr-3"></div>
+                        Verifying...
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center">
+                        <Check className="w-5 h-5 mr-2" />
+                        Verify & Create Account
+                      </div>
+                    )}
+                  </button>
+                </form>
+              )}
+            </div>
 
             {/* Sign in link */}
             <div className="mt-8 text-center">
@@ -657,7 +741,6 @@ export default function StunningRegister() {
           </div>
         </div>
       </div>
-    </div>
     </div>
   );
 }
