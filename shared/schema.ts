@@ -1,4 +1,5 @@
 
+
 import {
   pgTable,
   text,
@@ -89,6 +90,7 @@ export const users = pgTable("users", {
   isBanned: boolean("is_banned").default(false),
   banReason: text("ban_reason"),
   isSuperUser: boolean("is_super_user").default(false), // for superuser dashboard access
+  votingPower: decimal("voting_power", { precision: 10, scale: 2 }).default("1.0"), // for weighted voting
 });
 
 // DAOs table
@@ -114,6 +116,9 @@ export const daos = pgTable("daos", {
   archivedBy: varchar("archived_by").references(() => users.id),
   isFeatured: boolean("is_featured").default(false), // for featured DAOs on landing page
   featureOrder: integer("feature_order").default(0), // order of featured DAOs
+  quorumPercentage: integer("quorum_percentage").default(20), // percentage of active members for quorum
+  votingPeriod: integer("voting_period").default(72), // voting period in hours
+  executionDelay: integer("execution_delay").default(24), // execution delay in hours
 });
 
 export const roles = ["member", "proposer", "elder", "admin", "superUser", "moderator"] as const;
@@ -150,27 +155,65 @@ export const billingHistory = pgTable("billing_history", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Proposal Templates table
+export const proposalTemplates = pgTable("proposal_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id),
+  name: varchar("name").notNull(),
+  category: varchar("category").notNull(), // budget, governance, member, treasury, etc.
+  description: text("description").notNull(),
+  titleTemplate: text("title_template").notNull(),
+  descriptionTemplate: text("description_template").notNull(),
+  requiredFields: jsonb("required_fields").default([]), // array of field definitions
+  votingPeriod: integer("voting_period").default(72), // hours
+  quorumOverride: integer("quorum_override"), // override DAO default
+  isGlobal: boolean("is_global").default(false), // available to all DAOs
+  createdBy: varchar("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Proposals table
 export const proposals = pgTable("proposals", {
   id: uuid("id").primaryKey().defaultRandom(),
   title: text("title").notNull(),
   description: text("description").notNull(),
   proposalType: varchar("proposal_type").default("general"), // general, budget, emergency
+  templateId: uuid("template_id").references(() => proposalTemplates.id),
   tags: jsonb("tags").default([]), // e.g., ["infrastructure", "education"]
   imageUrl: varchar("image_url"),
   proposer: varchar("proposer").references(() => users.id).notNull(),
   proposerId: varchar("proposer_id").references(() => users.id).notNull(),
   daoId: uuid("dao_id").references(() => daos.id).notNull(),
-  status: varchar("status").default("active"), // draft, active, resolved, expired
+  status: varchar("status").default("active"), // draft, active, passed, failed, executed, expired
   voteStartTime: timestamp("vote_start_time").defaultNow(),
   voteEndTime: timestamp("vote_end_time").notNull(),
   quorumRequired: integer("quorum_required").default(100),
   yesVotes: integer("yes_votes").default(0),
   noVotes: integer("no_votes").default(0),
   abstainVotes: integer("abstain_votes").default(0),
+  totalVotingPower: decimal("total_voting_power", { precision: 10, scale: 2 }).default("0"),
+  executionData: jsonb("execution_data"), // data needed for automatic execution
+  executedAt: timestamp("executed_at"),
+  executedBy: varchar("executed_by").references(() => users.id),
+  executionTxHash: varchar("execution_tx_hash"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   isFeatured: boolean("is_featured").default(false), // for featured proposals on DAO page
+});
+
+// Vote Delegations table
+export const voteDelegations = pgTable("vote_delegations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  delegatorId: varchar("delegator_id").references(() => users.id).notNull(),
+  delegateId: varchar("delegate_id").references(() => users.id).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  scope: varchar("scope").default("all"), // all, category-specific, proposal-specific
+  category: varchar("category"), // if scope is category-specific
+  proposalId: uuid("proposal_id").references(() => proposals.id), // if scope is proposal-specific
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Votes table
@@ -181,12 +224,40 @@ export const votes = pgTable("votes", {
   daoId: uuid("dao_id").references(() => daos.id).notNull(),
   voteType: varchar("vote_type").notNull(), // yes, no, abstain
   weight: decimal("weight", { precision: 3, scale: 2 }).default("1.0"),
+  votingPower: decimal("voting_power", { precision: 10, scale: 2 }).default("1.0"),
+  isDelegated: boolean("is_delegated").default(false),
+  delegatedBy: varchar("delegated_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-
 });
 
+// Quorum Calculations table (for historical tracking)
+export const quorumHistory = pgTable("quorum_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  proposalId: uuid("proposal_id").references(() => proposals.id),
+  activeMemberCount: integer("active_member_count").notNull(),
+  requiredQuorum: integer("required_quorum").notNull(),
+  achievedQuorum: integer("achieved_quorum").default(0),
+  quorumMet: boolean("quorum_met").default(false),
+  calculatedAt: timestamp("calculated_at").defaultNow(),
+});
 
+// Proposal Execution Queue table
+export const proposalExecutionQueue = pgTable("proposal_execution_queue", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  proposalId: uuid("proposal_id").references(() => proposals.id).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  scheduledFor: timestamp("scheduled_for").notNull(),
+  executionType: varchar("execution_type").notNull(), // treasury_transfer, member_action, etc.
+  executionData: jsonb("execution_data").notNull(),
+  status: varchar("status").default("pending"), // pending, executing, completed, failed
+  attempts: integer("attempts").default(0),
+  lastAttempt: timestamp("last_attempt"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
 
 // Contributions table
 export const contributions = pgTable("contributions", {
@@ -238,8 +309,6 @@ export const savingsGoals = pgTable("savings_goals", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-
-
 // Personal Finance Vaults table
 export const vaults = pgTable("vaults", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -281,8 +350,8 @@ export const daoMemberships = pgTable("dao_memberships", {
   banReason: text("ban_reason"), // reason for banning, if applicable
   isElder: boolean("is_elder").default(false), // for elder members with special privileges
   isAdmin: boolean("is_admin").default(false), // for DAO admins with full control
+  lastActive: timestamp("last_active").defaultNow(), // for quorum calculations
 });
-
 
 // Wallet Transactions table
 export const walletTransactions = pgTable("wallet_transactions", {
@@ -466,6 +535,8 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   proposalLikes: many(proposalLikes),
   commentLikes: many(commentLikes),
   daoMessages: many(daoMessages),
+  delegationsGiven: many(voteDelegations, { relationName: "delegationsGiven" }),
+  delegationsReceived: many(voteDelegations, { relationName: "delegationsReceived" }),
 }));
 
 export const daosRelations = relations(daos, ({ one, many }) => ({
@@ -476,6 +547,8 @@ export const daosRelations = relations(daos, ({ one, many }) => ({
   memberships: many(daoMemberships),
   proposals: many(proposals),
   messages: many(daoMessages),
+  templates: many(proposalTemplates),
+  delegations: many(voteDelegations),
 }));
 
 export const daoMembershipsRelations = relations(daoMemberships, ({ one }) => ({
@@ -498,9 +571,15 @@ export const proposalsRelations = relations(proposals, ({ one, many }) => ({
     fields: [proposals.daoId],
     references: [daos.id],
   }),
+  template: one(proposalTemplates, {
+    fields: [proposals.templateId],
+    references: [proposalTemplates.id],
+  }),
   votes: many(votes),
   comments: many(proposalComments),
   likes: many(proposalLikes),
+  delegations: many(voteDelegations),
+  executionQueue: many(proposalExecutionQueue),
 }));
 
 export const votesRelations = relations(votes, ({ one }) => ({
@@ -512,6 +591,43 @@ export const votesRelations = relations(votes, ({ one }) => ({
     fields: [votes.userId],
     references: [users.id],
   }),
+  delegatedByUser: one(users, {
+    fields: [votes.delegatedBy],
+    references: [users.id],
+  }),
+}));
+
+export const voteDelegationsRelations = relations(voteDelegations, ({ one }) => ({
+  delegator: one(users, {
+    fields: [voteDelegations.delegatorId],
+    references: [users.id],
+    relationName: "delegationsGiven",
+  }),
+  delegate: one(users, {
+    fields: [voteDelegations.delegateId],
+    references: [users.id],
+    relationName: "delegationsReceived",
+  }),
+  dao: one(daos, {
+    fields: [voteDelegations.daoId],
+    references: [daos.id],
+  }),
+  proposal: one(proposals, {
+    fields: [voteDelegations.proposalId],
+    references: [proposals.id],
+  }),
+}));
+
+export const proposalTemplatesRelations = relations(proposalTemplates, ({ one, many }) => ({
+  dao: one(daos, {
+    fields: [proposalTemplates.daoId],
+    references: [daos.id],
+  }),
+  creator: one(users, {
+    fields: [proposalTemplates.createdBy],
+    references: [users.id],
+  }),
+  proposals: many(proposals),
 }));
 
 export const contributionsRelations = relations(contributions, ({ one }) => ({
@@ -620,15 +736,28 @@ export type WalletTransaction = typeof walletTransactions.$inferSelect;
 export type ReferralReward = typeof referralRewards.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type TaskHistory = typeof taskHistory.$inferSelect;
+export type ProposalTemplate = typeof proposalTemplates.$inferSelect;
+export type VoteDelegation = typeof voteDelegations.$inferSelect;
+export type QuorumHistory = typeof quorumHistory.$inferSelect;
+export type ProposalExecutionQueue = typeof proposalExecutionQueue.$inferSelect;
 
 export const insertTaskSchema = createInsertSchema(tasks);
 export const insertNotificationSchema = createInsertSchema(notifications);
 export const insertTaskHistorySchema = createInsertSchema(taskHistory);
+export const insertProposalTemplateSchema = createInsertSchema(proposalTemplates);
+export const insertVoteDelegationSchema = createInsertSchema(voteDelegations);
+export const insertQuorumHistorySchema = createInsertSchema(quorumHistory);
+export const insertProposalExecutionQueueSchema = createInsertSchema(proposalExecutionQueue);
+
 export type InsertDaoMembership = typeof daoMemberships.$inferInsert;
 export type InsertWalletTransaction = typeof walletTransactions.$inferInsert;
 export type InsertReferralReward = typeof referralRewards.$inferInsert;
 export type InsertNotification = typeof notifications.$inferInsert;
 export type InsertTaskHistory = typeof taskHistory.$inferInsert;
+export type InsertProposalTemplate = typeof proposalTemplates.$inferInsert;
+export type InsertVoteDelegation = typeof voteDelegations.$inferInsert;
+export type InsertQuorumHistory = typeof quorumHistory.$inferInsert;
+export type InsertProposalExecutionQueue = typeof proposalExecutionQueue.$inferInsert;
 
 // Relations for new engagement tables
 export const proposalCommentsRelations = relations(proposalComments, ({ one, many }) => ({

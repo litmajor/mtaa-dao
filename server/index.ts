@@ -38,6 +38,10 @@ app.use((req, res, next) => {
   next();
 });
 
+// Start proposal execution scheduler
+import { ProposalExecutionService } from './proposalExecutionService';
+ProposalExecutionService.startScheduler();
+
 (async () => {
   try {
     await registerRoutes(app);

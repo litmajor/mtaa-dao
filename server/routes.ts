@@ -22,8 +22,11 @@ import daoSubscriptionRoutes from './routes/dao-subscriptions';
 import disbursementRoutes from './routes/disbursements';
 
 // Import task and bounty escrow routes
-import tasksRouter from './routes/tasks';
-import bountyEscrowRouter from './routes/bounty-escrow';
+import taskRoutes from './routes/tasks';
+import bountyEscrowRoutes from './routes/bounty-escrow';
+import notificationRoutes from './routes/notifications';
+import governanceRoutes from './routes/governance';
+import proposalExecutionRoutes from './routes/proposal-execution';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -1187,8 +1190,11 @@ export function registerRoutes(app: Express): void {
   app.use('/api/disbursements', disbursementRoutes);
 
   // Register task and escrow routes
-  app.use('/api/tasks', isAuthenticated, tasksRouter);
-  app.use('/api/bounty-escrow', isAuthenticated, bountyEscrowRouter);
+  app.use('/api/tasks', isAuthenticated, taskRoutes);
+  app.use('/api/bounty-escrow', isAuthenticated, bountyEscrowRoutes);
+  app.use('/api/notifications', isAuthenticated, notificationRoutes);
+  app.use('/api/governance', governanceRoutes);
+  app.use('/api/proposal-execution', proposalExecutionRoutes);
 }
 
 export function createAppServer(): Server {
