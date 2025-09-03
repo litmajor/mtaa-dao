@@ -495,4 +495,254 @@ router.post('/savings-goals/:id/contribute', async (req, res) => {
   }
 });
 
+// === ENHANCED TRANSACTION HISTORY ===
+
+// GET /api/wallet/transactions
+router.get('/transactions', async (req, res) => {
+  try {
+    const { 
+      userId, 
+      walletAddress, 
+      type, 
+      status, 
+      currency, 
+      search, 
+      dateRange = '30',
+      page = '1',
+      limit = '10'
+    } = req.query;
+
+    const pageNum = parseInt(page as string);
+    const limitNum = parseInt(limit as string);
+    const offset = (pageNum - 1) * limitNum;
+
+    // Build where conditions
+    const conditions = [];
+    if (userId) {
+      conditions.push(or(eq(walletTransactions.fromUserId, userId as string), eq(walletTransactions.toUserId, userId as string)));
+    }
+    if (walletAddress) {
+      conditions.push(eq(walletTransactions.walletAddress, walletAddress as string));
+    }
+    if (type) {
+      conditions.push(eq(walletTransactions.type, type as string));
+    }
+    if (status) {
+      conditions.push(eq(walletTransactions.status, status as string));
+    }
+    if (currency) {
+      conditions.push(eq(walletTransactions.currency, currency as string));
+    }
+
+    // Date range filter
+    const dateFilter = new Date();
+    dateFilter.setDate(dateFilter.getDate() - parseInt(dateRange as string));
+
+    let whereClause = undefined;
+    if (conditions.length > 0) {
+      whereClause = and(...conditions);
+    }
+
+    const transactions = await db
+      .select()
+      .from(walletTransactions)
+      .where(whereClause)
+      .orderBy(desc(walletTransactions.createdAt))
+      .limit(limitNum)
+      .offset(offset);
+
+    // If search is provided, filter in memory (for simple implementation)
+    let filteredTransactions = transactions;
+    if (search) {
+      const searchTerm = (search as string).toLowerCase();
+      filteredTransactions = transactions.filter(tx => 
+        tx.description?.toLowerCase().includes(searchTerm) ||
+        tx.transactionHash?.toLowerCase().includes(searchTerm) ||
+        tx.type?.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    res.json({
+      transactions: filteredTransactions,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total: filteredTransactions.length
+      }
+    });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// === RECURRING PAYMENTS ===
+
+// GET /api/wallet/recurring-payments
+router.get('/recurring-payments', async (req, res) => {
+  try {
+    const { walletAddress } = req.query;
+    
+    // For demo, return mock data. In production, query from database
+    const recurringPayments = [
+      {
+        id: '1',
+        title: 'Monthly DAO Contribution',
+        description: 'Regular contribution to community vault',
+        amount: '50.00',
+        currency: 'cUSD',
+        toAddress: '0x742d35Cc6634C0532925a3b8D421C63F10bFe2D0',
+        frequency: 'monthly',
+        nextPayment: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        lastPayment: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+        totalPaid: '200.00',
+        paymentCount: 4
+      }
+    ];
+
+    res.json({ payments: recurringPayments });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// POST /api/wallet/recurring-payments
+router.post('/recurring-payments', async (req, res) => {
+  try {
+    const { title, description, amount, currency, toAddress, frequency, walletAddress } = req.body;
+    
+    // In production, save to database
+    const newPayment = {
+      id: Date.now().toString(),
+      title,
+      description,
+      amount,
+      currency,
+      toAddress,
+      frequency,
+      walletAddress,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      nextPayment: calculateNextPayment(frequency),
+      totalPaid: '0.00',
+      paymentCount: 0
+    };
+
+    res.json(newPayment);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// PATCH /api/wallet/recurring-payments/:id/toggle
+router.patch('/recurring-payments/:id/toggle', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isActive } = req.body;
+    
+    // In production, update in database
+    res.json({ success: true, id, isActive });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// DELETE /api/wallet/recurring-payments/:id
+router.delete('/recurring-payments/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // In production, delete from database
+    res.json({ success: true, id });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// === EXCHANGE RATES ===
+
+// GET /api/wallet/exchange-rates
+router.get('/exchange-rates', async (req, res) => {
+  try {
+    // In production, fetch from external APIs like CoinGecko, CoinMarketCap, etc.
+    const mockRates = {
+      'CELO-USD': { pair: 'CELO-USD', rate: 0.65, change24h: 2.5, lastUpdated: new Date().toISOString() },
+      'cUSD-USD': { pair: 'cUSD-USD', rate: 1.0, change24h: 0.1, lastUpdated: new Date().toISOString() },
+      'cEUR-EUR': { pair: 'cEUR-EUR', rate: 1.0, change24h: -0.05, lastUpdated: new Date().toISOString() },
+      'USD-KES': { pair: 'USD-KES', rate: 150.25, change24h: 1.2, lastUpdated: new Date().toISOString() },
+      'USD-NGN': { pair: 'USD-NGN', rate: 825.50, change24h: -0.8, lastUpdated: new Date().toISOString() },
+      'USD-GHS': { pair: 'USD-GHS', rate: 12.85, change24h: 0.5, lastUpdated: new Date().toISOString() }
+    };
+
+    res.json({ rates: mockRates });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// === ENHANCED MULTISIG ENDPOINTS ===
+
+// POST /api/wallet/multisig/create
+router.post('/multisig/create', requireRole('admin', 'elder'), async (req, res) => {
+  try {
+    const { owners, threshold } = req.body;
+    
+    // In production, deploy multisig contract
+    const mockMultisig = {
+      address: '0x' + Math.random().toString(16).substr(2, 40),
+      owners,
+      threshold,
+      transactionCount: 0
+    };
+
+    res.json(mockMultisig);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// GET /api/wallet/multisig/:address/transactions
+router.get('/multisig/:address/transactions', requireRole('admin', 'elder'), async (req, res) => {
+  try {
+    const { address } = req.params;
+    const { pending } = req.query;
+    
+    // In production, fetch from blockchain
+    const mockTransactions = [];
+    
+    res.json({ transactions: mockTransactions });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// Helper function
+function calculateNextPayment(frequency: string): string {
+  const now = new Date();
+  switch (frequency) {
+    case 'daily':
+      now.setDate(now.getDate() + 1);
+      break;
+    case 'weekly':
+      now.setDate(now.getDate() + 7);
+      break;
+    case 'monthly':
+      now.setMonth(now.getMonth() + 1);
+      break;
+    case 'yearly':
+      now.setFullYear(now.getFullYear() + 1);
+      break;
+  }
+  return now.toISOString();
+}
+
 export default router;
