@@ -73,6 +73,32 @@ export const isWalletAvailable = (): boolean => {
   return !!(window as EthereumWindow).ethereum;
 };
 
+// MiniPay specific features
+export const getMiniPayFeatures = () => {
+  return {
+    isMiniPay: isMiniPay(),
+    supportsLocalPayments: isMiniPay(), // MiniPay supports local payment methods
+    supportsCUSD: isMiniPay(), // MiniPay natively supports cUSD
+    supportsPhoneNumber: isMiniPay(), // MiniPay can access phone numbers
+    supportsBiometric: isMiniPay(), // MiniPay supports biometric authentication
+  };
+};
+
+// Get user's phone number from MiniPay (if available)
+export const getMiniPayPhoneNumber = async (): Promise<string | null> => {
+  if (!isMiniPay()) return null;
+  
+  try {
+    const phoneNumber = await (window as EthereumWindow).ethereum!.request({
+      method: 'eth_requestPhoneNumber',
+    });
+    return phoneNumber;
+  } catch (error) {
+    console.warn('Could not get phone number from MiniPay:', error);
+    return null;
+  }
+};
+
 // --- Wallet Client Initialization ---
 // Custom function to get a viem wallet client instance
 // Renamed from createWalletClient to avoid shadowing viem's createWalletClient
@@ -124,6 +150,72 @@ export const getBalance = async (address: string): Promise<string> => {
 };
 
 // --- Transaction Sending ---
+// cUSD token contract address on Celo
+export const CUSD_TOKEN_ADDRESS = '0x765DE816845861e75A25fCA122bb6898B8B1282a';
+
+// Get cUSD balance
+export const getCUSDBalance = async (address: string): Promise<string> => {
+  try {
+    const balance = await publicClient.readContract({
+      address: CUSD_TOKEN_ADDRESS as `0x${string}`,
+      abi: [
+        {
+          name: 'balanceOf',
+          type: 'function',
+          stateMutability: 'view',
+          inputs: [{ name: 'account', type: 'address' }],
+          outputs: [{ name: '', type: 'uint256' }],
+        },
+      ],
+      functionName: 'balanceOf',
+      args: [address as `0x${string}`],
+    });
+    return formatEther(balance as bigint);
+  } catch (error) {
+    console.error('Error getting cUSD balance:', error);
+    return '0';
+  }
+};
+
+// Send cUSD tokens
+export const sendCUSD = async (
+  to: string,
+  amount: string
+): Promise<string> => {
+  if (!isWalletAvailable()) {
+    throw new Error('No wallet available');
+  }
+
+  try {
+    const walletClient = getWalletClientInstance();
+    const [account] = await walletClient.getAddresses();
+
+    const hash = await walletClient.writeContract({
+      address: CUSD_TOKEN_ADDRESS as `0x${string}`,
+      abi: [
+        {
+          name: 'transfer',
+          type: 'function',
+          stateMutability: 'nonpayable',
+          inputs: [
+            { name: 'to', type: 'address' },
+            { name: 'amount', type: 'uint256' },
+          ],
+          outputs: [{ name: '', type: 'bool' }],
+        },
+      ],
+      functionName: 'transfer',
+      args: [to as `0x${string}`, parseEther(amount)],
+      account,
+    });
+
+    return hash;
+  } catch (error) {
+    console.error('Error sending cUSD:', error);
+    throw error;
+  }
+};
+
 // --- Gas Estimation ---
 // Estimate gas fee for native CELO transfer
 export const estimateCeloGasFee = async (
@@ -141,6 +233,38 @@ export const estimateCeloGasFee = async (
     return formatEther(fee);
   } catch (error) {
     console.error('Error estimating CELO gas fee:', error);
+    return '0';
+  }
+};
+
+// Estimate gas fee for cUSD transfer
+export const estimateCUSDGasFee = async (
+  to: string,
+  amount: string
+): Promise<string> => {
+  try {
+    const gas = await publicClient.estimateContractGas({
+      address: CUSD_TOKEN_ADDRESS as `0x${string}`,
+      abi: [
+        {
+          name: 'transfer',
+          type: 'function',
+          stateMutability: 'nonpayable',
+          inputs: [
+            { name: 'to', type: 'address' },
+            { name: 'amount', type: 'uint256' },
+          ],
+          outputs: [{ name: '', type: 'bool' }],
+        },
+      ],
+      functionName: 'transfer',
+      args: [to as `0x${string}`, parseEther(amount)],
+    });
+    const gasPrice = await publicClient.getGasPrice();
+    const fee = gas * gasPrice;
+    return formatEther(fee);
+  } catch (error) {
+    console.error('Error estimating cUSD gas fee:', error);
     return '0';
   }
 };
