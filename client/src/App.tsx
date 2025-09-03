@@ -36,6 +36,7 @@ import AdminBillingDashboard from "./pages/AdminBillingDashboard";
 import DaoSettings from "./pages/DaoSettings";
 import ReputationLeaderboard from "./pages/ReputationLeaderboard";
 import MaonoVaultWeb3Page from "./pages/maonovault-web3";
+import AnalyticsPage from "./pages/AnalyticsPage";
 
 
 function Router() {
