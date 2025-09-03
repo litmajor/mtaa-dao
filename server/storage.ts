@@ -1,8 +1,8 @@
 // --- User Profile & Settings ---
 // Add these methods to the main DatabaseStorage class below:
 import { db } from './db';
-import { eq, inArray, or, sql, and, desc } from 'drizzle-orm';
-import { users, daos, daoMemberships, votes, contributions, vaults, budgetPlans, billingHistory, tasks, proposals, walletTransactions, config, logs, sessions, chains, notifications, taskHistory, proposalComments, proposalLikes, commentLikes, daoMessages, notificationPreferences } from '../shared/schema';
+import { eq, inArray, or, and, desc } from 'drizzle-orm';
+import { users, daos, daoMemberships, votes, contributions, vaults, budgetPlans, billingHistory, tasks, proposals, walletTransactions, config, logs, sessions, chains, notifications, taskHistory, proposalComments, proposalLikes, commentLikes, daoMessages, notificationPreferences, auditLogs, systemLogs, notificationHistory } from '../shared/schema';
 
 
 // Deduct a fee from a vault's balance
@@ -119,6 +119,16 @@ export interface IStorage {
   getUserNotificationPreferences(userId: string): Promise<any>;
   updateUserNotificationPreferences(userId: string, updates: any): Promise<any>;
   getAllActiveUsers(): Promise<any[]>;
+  // Audit logging operations
+  createAuditLog(entry: any): Promise<any>;
+  getAuditLogs({ limit?: number; offset?: number; userId?: string; severity?: string }): Promise<any[]>;
+  // System logging operations
+  createSystemLog(level: string, message: string, service?: string, metadata?: any): Promise<any>;
+  getSystemLogs({ limit?: number; offset?: number; level?: string; service?: string }): Promise<any[]>;
+  // Notification history operations
+  createNotificationHistory(userId: string, type: string, title: string, message: string, metadata?: any): Promise<any>;
+  getUserNotificationHistory(userId: string, { limit?: number; offset?: number }): Promise<any[]>;
+  markNotificationAsRead(notificationId: string, userId: string): Promise<any>;
 }
 
 export interface DaoAnalytics {
@@ -127,6 +137,8 @@ export interface DaoAnalytics {
   totalContributions: number;
   vaultBalance: number;
   recentActivity: Array<{ type: 'proposal' | 'contribution' | 'membership'; createdAt: Date }>;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -195,9 +207,9 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getSystemLogs({ limit = 10, offset = 0 }: { limit?: number; offset?: number } = {}): Promise<any[]> {
+  async getSystemLogs(): Promise<any[]> {
     // Fetch logs from logs table, sorted by createdAt desc
-    return await this.db.select().from(logs).orderBy(desc(logs.createdAt)).limit(limit).offset(offset);
+    return await this.db.select().from(logs).orderBy(desc(logs.createdAt));
   }
 
   async updateTask(id: string, data: any, userId: string): Promise<Task> {
@@ -376,7 +388,7 @@ export class DatabaseStorage implements IStorage {
     if (!result[0]) throw new Error('Failed to create wallet transaction');
     return result[0];
   }
-// Export a singleton instance for use in routes and elsewhere
+// Export a singleton instance for use in other modules
 async getBudgetPlanCount(userId: string, month: string): Promise<number> {
     if (!userId || !month) throw new Error('User ID and month required');
     const result = await this.db.select().from(budgetPlans)
@@ -1021,6 +1033,96 @@ const vaultBalance = vaults.reduce((sum: number, v: Vault) => sum + (parseFloat(
       return [];
     }
   }
+
+  // Audit logging operations
+  async createAuditLog(entry: any): Promise<any> {
+    const result = await this.db.insert(auditLogs).values({
+      timestamp: entry.timestamp || new Date(),
+      userId: entry.userId,
+      userEmail: entry.userEmail,
+      action: entry.action,
+      resource: entry.resource,
+      resourceId: entry.resourceId,
+      method: entry.method,
+      endpoint: entry.endpoint,
+      ipAddress: entry.ipAddress,
+      userAgent: entry.userAgent,
+      status: entry.status,
+      details: entry.details,
+      severity: entry.severity,
+      category: entry.category,
+      createdAt: new Date(),
+    }).returning();
+    return result[0];
+  }
+
+  async getAuditLogs({ limit = 50, offset = 0, userId, severity }: { limit?: number; offset?: number; userId?: string; severity?: string } = {}): Promise<any[]> {
+    let query = this.db.select().from(auditLogs);
+
+    if (userId) {
+      query = query.where(eq(auditLogs.userId, userId));
+    }
+    if (severity) {
+      query = query.where(eq(auditLogs.severity, severity));
+    }
+
+    return await query.orderBy(desc(auditLogs.timestamp)).limit(limit).offset(offset);
+  }
+
+  // System logging operations
+  async createSystemLog(level: string, message: string, service: string = 'api', metadata?: any): Promise<any> {
+    const result = await this.db.insert(systemLogs).values({
+      level,
+      message,
+      service,
+      metadata,
+      timestamp: new Date(),
+    }).returning();
+    return result[0];
+  }
+
+  async getSystemLogs({ limit = 50, offset = 0, level, service }: { limit?: number; offset?: number; level?: string; service?: string } = {}): Promise<any[]> {
+    let query = this.db.select().from(systemLogs);
+
+    if (level) {
+      query = query.where(eq(systemLogs.level, level));
+    }
+    if (service) {
+      query = query.where(eq(systemLogs.service, service));
+    }
+
+    return await query.orderBy(desc(systemLogs.timestamp)).limit(limit).offset(offset);
+  }
+
+  // Notification history operations
+  async createNotificationHistory(userId: string, type: string, title: string, message: string, metadata?: any): Promise<any> {
+    const result = await this.db.insert(notificationHistory).values({
+      userId,
+      type,
+      title,
+      message,
+      metadata,
+      createdAt: new Date(),
+    }).returning();
+    return result[0];
+  }
+
+  async getUserNotificationHistory(userId: string, { limit = 20, offset = 0 }: { limit?: number; offset?: number } = {}): Promise<any[]> {
+    return await this.db.select()
+      .from(notificationHistory)
+      .where(eq(notificationHistory.userId, userId))
+      .orderBy(desc(notificationHistory.createdAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  async markNotificationAsRead(notificationId: string, userId: string): Promise<any> {
+    const result = await this.db.update(notificationHistory)
+      .set({ read: true, readAt: new Date() })
+      .where(and(eq(notificationHistory.id, notificationId), eq(notificationHistory.userId, userId)))
+      .returning();
+    return result[0];
+  }
 }
 
 // Export a singleton instance for use in other modules
@@ -1118,14 +1220,31 @@ export { db }; // Export the database instance for direct access if needed
 // Add these functions to the existing storage.ts file
 
 export async function createAuditLog(entry: any): Promise<void> {
-  // Implementation would depend on your database schema
-  // This is a placeholder - you'll need to create the audit_logs table
-  console.log('Audit log entry:', entry);
+  await storage.createAuditLog(entry);
 }
 
-export async function createBackupRecord(metadata: any): Promise<void> {
-  // Implementation for storing backup metadata
-  console.log('Backup record created:', metadata);
+export async function getAuditLogs(params: { limit?: number; offset?: number; userId?: string; severity?: string }): Promise<any[]> {
+  return await storage.getAuditLogs(params);
+}
+
+export async function createSystemLog(level: string, message: string, service?: string, metadata?: any): Promise<void> {
+  await storage.createSystemLog(level, message, service, metadata);
+}
+
+export async function getSystemLogs(params: { limit?: number; offset?: number; level?: string; service?: string }): Promise<any[]> {
+  return await storage.getSystemLogs(params);
+}
+
+export async function createNotificationHistory(userId: string, type: string, title: string, message: string, metadata?: any): Promise<void> {
+  await storage.createNotificationHistory(userId, type, title, message, metadata);
+}
+
+export async function getUserNotificationHistory(userId: string, params: { limit?: number; offset?: number }): Promise<any[]> {
+  return await storage.getUserNotificationHistory(userId, params);
+}
+
+export async function markNotificationAsRead(notificationId: string, userId: string): Promise<any> {
+  return await storage.markNotificationAsRead(notificationId, userId);
 }
 
 export async function getBackupRecord(backupId: string): Promise<any> {
