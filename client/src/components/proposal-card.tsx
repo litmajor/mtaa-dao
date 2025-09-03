@@ -4,6 +4,7 @@ import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Calendar, User, ThumbsUp, ThumbsDown, Minus, Clock, TrendingUp, Sparkles, Eye, MessageCircle } from "lucide-react";
 import { useState } from "react";
+import ProposalLikeButton from "./proposal-like-button";
 
 interface ProposalCardProps {
   proposal: any;
@@ -257,6 +258,25 @@ export default function ProposalCard({ proposal, onVote, showFullDescription = f
           </div>
           <div className="text-xs text-gray-500 text-center">
             {quorumProgress >= 100 ? "🎉 Quorum reached!" : "More votes needed to reach quorum"}
+          </div>
+        </div>
+        
+        {/* Engagement Actions */}
+        <div className="mt-4 flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <ProposalLikeButton 
+              proposalId={proposal?.id} 
+              size="sm" 
+              variant="ghost"
+            />
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="text-gray-500 hover:text-mtaa-purple"
+            >
+              <MessageCircle className="w-4 h-4 mr-1" />
+              <span className="text-sm">Comments</span>
+            </Button>
           </div>
         </div>
         

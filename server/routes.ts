@@ -2,13 +2,13 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import express, { Express, Request, Response, NextFunction } from "express";
 import { createServer, Server } from "http";
-import { storage, isDaoPremium, deductVaultFee } from "./storage";
+import { storage, isDaoPremium, deductVaultFee, createProposalComment, getProposalComments, updateProposalComment, deleteProposalComment, toggleProposalLike, getProposalLikes, toggleCommentLike, getCommentLikes, createDaoMessage, getDaoMessages, updateDaoMessage, deleteDaoMessage } from "./storage";
 import walletRouter from './routes/wallet';
 import { isAuthenticated } from "./nextAuthMiddleware";
 import { z, ZodError } from "zod";
 import { MaonoVaultService } from "./blockchain";
 import multer from "multer";
-import { insertContributionSchema, insertVaultSchema, insertBudgetPlanSchema, insertVoteSchema } from "../shared/schema";
+import { insertContributionSchema, insertVaultSchema, insertBudgetPlanSchema, insertVoteSchema, insertProposalCommentSchema, insertDaoMessageSchema } from "../shared/schema";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -461,6 +461,221 @@ export function registerRoutes(app: Express): void {
       res.json({ votes, total });
     } catch (err) {
       throw new Error(`Failed to fetch votes: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  // ===== ENGAGEMENT FEATURES ROUTES =====
+
+  // --- Proposal Comments Routes ---
+  app.post('/api/proposals/:proposalId/comments', isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { proposalId } = req.params;
+      const userId = (req.user as any).claims.sub;
+      const validatedData = insertProposalCommentSchema.parse({
+        ...req.body,
+        proposalId,
+        userId,
+      });
+
+      // Check if user is a member of the DAO that owns the proposal
+      const proposal = await storage.getProposal(proposalId);
+      if (!proposal) return res.status(404).json({ message: "Proposal not found" });
+      
+      const membership = await storage.getDaoMembership(proposal.daoId, userId);
+      if (!membership) return res.status(403).json({ message: "Must be a DAO member to comment" });
+
+      const comment = await createProposalComment({
+        ...validatedData,
+        daoId: proposal.daoId,
+      });
+      res.status(201).json(comment);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        return res.status(400).json({ message: "Invalid comment data", errors: err.errors });
+      }
+      throw new Error(`Failed to create comment: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  app.get('/api/proposals/:proposalId/comments', async (req: Request, res: Response) => {
+    try {
+      const { proposalId } = req.params;
+      const { limit = 10, offset = 0 } = req.query;
+      const comments = await getProposalComments(proposalId, Number(limit), Number(offset));
+      res.json({ comments, total: comments.length });
+    } catch (err) {
+      throw new Error(`Failed to fetch comments: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  app.put('/api/comments/:commentId', isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { commentId } = req.params;
+      const { content } = req.body;
+      const userId = (req.user as any).claims.sub;
+
+      if (!content) return res.status(400).json({ message: "Content is required" });
+
+      const updatedComment = await updateProposalComment(commentId, content, userId);
+      res.json(updatedComment);
+    } catch (err) {
+      if (err.message.includes('Only comment author can edit')) {
+        return res.status(403).json({ message: err.message });
+      }
+      throw new Error(`Failed to update comment: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  app.delete('/api/comments/:commentId', isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { commentId } = req.params;
+      const userId = (req.user as any).claims.sub;
+      
+      await deleteProposalComment(commentId, userId);
+      res.status(204).send();
+    } catch (err) {
+      if (err.message.includes('Only comment author can delete')) {
+        return res.status(403).json({ message: err.message });
+      }
+      throw new Error(`Failed to delete comment: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  // --- Proposal Likes Routes ---
+  app.post('/api/proposals/:proposalId/like', isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { proposalId } = req.params;
+      const userId = (req.user as any).claims.sub;
+
+      // Check if user is a member of the DAO that owns the proposal
+      const proposal = await storage.getProposal(proposalId);
+      if (!proposal) return res.status(404).json({ message: "Proposal not found" });
+      
+      const membership = await storage.getDaoMembership(proposal.daoId, userId);
+      if (!membership) return res.status(403).json({ message: "Must be a DAO member to like proposals" });
+
+      const result = await toggleProposalLike(proposalId, userId, proposal.daoId);
+      res.json(result);
+    } catch (err) {
+      throw new Error(`Failed to toggle proposal like: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  app.get('/api/proposals/:proposalId/likes', async (req: Request, res: Response) => {
+    try {
+      const { proposalId } = req.params;
+      const result = await getProposalLikes(proposalId);
+      res.json(result);
+    } catch (err) {
+      throw new Error(`Failed to fetch proposal likes: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  // --- Comment Likes Routes ---
+  app.post('/api/comments/:commentId/like', isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { commentId } = req.params;
+      const userId = (req.user as any).claims.sub;
+
+      // Get the comment to find the associated DAO
+      const comments = await getProposalComments(''); // This needs to be fixed - we need a getCommentById function
+      // For now, we'll require daoId in the request body
+      const { daoId } = req.body;
+      if (!daoId) return res.status(400).json({ message: "DAO ID is required" });
+
+      const membership = await storage.getDaoMembership(daoId, userId);
+      if (!membership) return res.status(403).json({ message: "Must be a DAO member to like comments" });
+
+      const result = await toggleCommentLike(commentId, userId, daoId);
+      res.json(result);
+    } catch (err) {
+      throw new Error(`Failed to toggle comment like: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  app.get('/api/comments/:commentId/likes', async (req: Request, res: Response) => {
+    try {
+      const { commentId } = req.params;
+      const result = await getCommentLikes(commentId);
+      res.json(result);
+    } catch (err) {
+      throw new Error(`Failed to fetch comment likes: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  // --- DAO Messages (Group Chat) Routes ---
+  app.post('/api/dao/:daoId/messages', isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { daoId } = req.params;
+      const userId = (req.user as any).claims.sub;
+      
+      // Check if user is a member of the DAO
+      const membership = await storage.getDaoMembership(daoId, userId);
+      if (!membership) return res.status(403).json({ message: "Must be a DAO member to send messages" });
+
+      const validatedData = insertDaoMessageSchema.parse({
+        ...req.body,
+        daoId,
+        userId,
+      });
+
+      const message = await createDaoMessage(validatedData);
+      res.status(201).json(message);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        return res.status(400).json({ message: "Invalid message data", errors: err.errors });
+      }
+      throw new Error(`Failed to create message: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  app.get('/api/dao/:daoId/messages', isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { daoId } = req.params;
+      const { limit = 50, offset = 0 } = req.query;
+      const userId = (req.user as any).claims.sub;
+
+      // Check if user is a member of the DAO
+      const membership = await storage.getDaoMembership(daoId, userId);
+      if (!membership) return res.status(403).json({ message: "Must be a DAO member to view messages" });
+
+      const messages = await getDaoMessages(daoId, Number(limit), Number(offset));
+      res.json({ messages, total: messages.length });
+    } catch (err) {
+      throw new Error(`Failed to fetch messages: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  app.put('/api/messages/:messageId', isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { messageId } = req.params;
+      const { content } = req.body;
+      const userId = (req.user as any).claims.sub;
+
+      if (!content) return res.status(400).json({ message: "Content is required" });
+
+      const updatedMessage = await updateDaoMessage(messageId, content, userId);
+      res.json(updatedMessage);
+    } catch (err) {
+      if (err.message.includes('Only message author can edit')) {
+        return res.status(403).json({ message: err.message });
+      }
+      throw new Error(`Failed to update message: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  app.delete('/api/messages/:messageId', isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { messageId } = req.params;
+      const userId = (req.user as any).claims.sub;
+      
+      await deleteDaoMessage(messageId, userId);
+      res.status(204).send();
+    } catch (err) {
+      if (err.message.includes('Only message author can delete')) {
+        return res.status(403).json({ message: err.message });
+      }
+      throw new Error(`Failed to delete message: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
 

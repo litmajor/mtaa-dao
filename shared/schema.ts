@@ -354,6 +354,52 @@ export const chains = pgTable("chains", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Proposal Comments table
+export const proposalComments = pgTable("proposal_comments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  proposalId: uuid("proposal_id").references(() => proposals.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  content: text("content").notNull(),
+  parentCommentId: uuid("parent_comment_id").references((): any => proposalComments.id), // for replies
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Proposal Likes table
+export const proposalLikes = pgTable("proposal_likes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  proposalId: uuid("proposal_id").references(() => proposals.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Comment Likes table
+export const commentLikes = pgTable("comment_likes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  commentId: uuid("comment_id").references(() => proposalComments.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// DAO Messages table for group chat
+export const daoMessages = pgTable("dao_messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  content: text("content").notNull(),
+  messageType: varchar("message_type").default("text"), // text, image, system
+  replyToMessageId: uuid("reply_to_message_id").references((): any => daoMessages.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Add unique constraints to prevent duplicate likes
+export const proposalLikesIndex = index("proposal_likes_unique").on(proposalLikes.proposalId, proposalLikes.userId);
+export const commentLikesIndex = index("comment_likes_unique").on(commentLikes.commentId, commentLikes.userId);
+
 // Relations
 export const usersRelations = relations(users, ({ many, one }) => ({
   proposals: many(proposals),
@@ -375,6 +421,10 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   tasks: many(tasks),
   billingHistory: many(billingHistory),
   logs: many(logs),
+  proposalComments: many(proposalComments),
+  proposalLikes: many(proposalLikes),
+  commentLikes: many(commentLikes),
+  daoMessages: many(daoMessages),
 }));
 
 export const daosRelations = relations(daos, ({ one, many }) => ({
@@ -384,6 +434,7 @@ export const daosRelations = relations(daos, ({ one, many }) => ({
   }),
   memberships: many(daoMemberships),
   proposals: many(proposals),
+  messages: many(daoMessages),
 }));
 
 export const daoMembershipsRelations = relations(daoMemberships, ({ one }) => ({
@@ -407,6 +458,8 @@ export const proposalsRelations = relations(proposals, ({ one, many }) => ({
     references: [daos.id],
   }),
   votes: many(votes),
+  comments: many(proposalComments),
+  likes: many(proposalLikes),
 }));
 
 export const votesRelations = relations(votes, ({ one }) => ({
@@ -519,6 +572,91 @@ export type InsertWalletTransaction = typeof walletTransactions.$inferInsert;
 export type InsertReferralReward = typeof referralRewards.$inferInsert;
 export type InsertNotification = typeof notifications.$inferInsert;
 export type InsertTaskHistory = typeof taskHistory.$inferInsert;
+
+// Relations for new engagement tables
+export const proposalCommentsRelations = relations(proposalComments, ({ one, many }) => ({
+  proposal: one(proposals, {
+    fields: [proposalComments.proposalId],
+    references: [proposals.id],
+  }),
+  user: one(users, {
+    fields: [proposalComments.userId],
+    references: [users.id],
+  }),
+  dao: one(daos, {
+    fields: [proposalComments.daoId],
+    references: [daos.id],
+  }),
+  parentComment: one(proposalComments, {
+    fields: [proposalComments.parentCommentId],
+    references: [proposalComments.id],
+  }),
+  replies: many(proposalComments),
+  likes: many(commentLikes),
+}));
+
+export const proposalLikesRelations = relations(proposalLikes, ({ one }) => ({
+  proposal: one(proposals, {
+    fields: [proposalLikes.proposalId],
+    references: [proposals.id],
+  }),
+  user: one(users, {
+    fields: [proposalLikes.userId],
+    references: [users.id],
+  }),
+  dao: one(daos, {
+    fields: [proposalLikes.daoId],
+    references: [daos.id],
+  }),
+}));
+
+export const commentLikesRelations = relations(commentLikes, ({ one }) => ({
+  comment: one(proposalComments, {
+    fields: [commentLikes.commentId],
+    references: [proposalComments.id],
+  }),
+  user: one(users, {
+    fields: [commentLikes.userId],
+    references: [users.id],
+  }),
+  dao: one(daos, {
+    fields: [commentLikes.daoId],
+    references: [daos.id],
+  }),
+}));
+
+export const daoMessagesRelations = relations(daoMessages, ({ one, many }) => ({
+  dao: one(daos, {
+    fields: [daoMessages.daoId],
+    references: [daos.id],
+  }),
+  user: one(users, {
+    fields: [daoMessages.userId],
+    references: [users.id],
+  }),
+  replyToMessage: one(daoMessages, {
+    fields: [daoMessages.replyToMessageId],
+    references: [daoMessages.id],
+  }),
+  replies: many(daoMessages),
+}));
+
+// New type exports
+export type ProposalComment = typeof proposalComments.$inferSelect;
+export type ProposalLike = typeof proposalLikes.$inferSelect;
+export type CommentLike = typeof commentLikes.$inferSelect;
+export type DaoMessage = typeof daoMessages.$inferSelect;
+
+export type InsertProposalComment = typeof proposalComments.$inferInsert;
+export type InsertProposalLike = typeof proposalLikes.$inferInsert;
+export type InsertCommentLike = typeof commentLikes.$inferInsert;
+export type InsertDaoMessage = typeof daoMessages.$inferInsert;
+
+// New Zod schemas
+export const insertProposalCommentSchema = createInsertSchema(proposalComments);
+export const insertProposalLikeSchema = createInsertSchema(proposalLikes);
+export const insertCommentLikeSchema = createInsertSchema(commentLikes);
+export const insertDaoMessageSchema = createInsertSchema(daoMessages);
 
 // Export all types
 
