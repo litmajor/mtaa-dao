@@ -2,6 +2,63 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  /* Responsive typography */
+  html {
+    font-size: 16px;
+  }
+  
+  @media (max-width: 640px) {
+    html {
+      font-size: 14px;
+    }
+  }
+  
+  /* Responsive spacing */
+  .container-responsive {
+    @apply px-4 sm:px-6 lg:px-8;
+  }
+  
+  /* Touch targets for mobile */
+  .touch-target {
+    @apply min-h-[44px] min-w-[44px];
+  }
+}
+
+@layer components {
+  /* Responsive grid utilities */
+  .grid-responsive {
+    @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6;
+  }
+  
+  .grid-responsive-cards {
+    @apply grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6;
+  }
+  
+  /* Mobile-first navigation */
+  .nav-mobile {
+    @apply fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2 z-50;
+  }
+  
+  .nav-desktop {
+    @apply hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:left-0 lg:w-64;
+  }
+  
+  /* Responsive text */
+  .text-responsive-lg {
+    @apply text-lg sm:text-xl md:text-2xl lg:text-3xl;
+  }
+  
+  .text-responsive-base {
+    @apply text-sm sm:text-base md:text-lg;
+  }
+  
+  /* Card responsive padding */
+  .card-responsive {
+    @apply p-4 sm:p-6 lg:p-8;
+  }
+}
+
 :root {
   --background: hsl(0, 0%, 100%);
   --foreground: hsl(20, 14.3%, 4.1%);
