@@ -72,6 +72,8 @@ function errorHandler(err: any, req: Request, res: Response, next: NextFunction)
 
 import daoTreasuryRouter from './routes/dao_treasury';
 import reputationRouter from './routes/reputation';
+import notificationsRouter from './routes/notifications';
+import { NotificationService } from './notificationService';
 
 export function registerRoutes(app: Express): void {
   // --- Wallet API ---
@@ -82,6 +84,9 @@ export function registerRoutes(app: Express): void {
 
   // --- Reputation & MsiaMo Tokens API ---
   app.use('/api/reputation', reputationRouter);
+
+  // --- Notifications API ---
+  app.use('/api/notifications', notificationsRouter);
   // Validate JWT_SECRET
   if (!process.env.JWT_SECRET) {
     throw new Error("JWT_SECRET environment variable is required");
@@ -332,6 +337,10 @@ export function registerRoutes(app: Express): void {
       // Award reputation points for creating proposal
       const { ReputationService } = await import('../reputationService');
       await ReputationService.onProposalCreated(userId, proposal.id, proposal.daoId);
+
+      // Send notification to DAO members
+      const user = await storage.getUserProfile(userId);
+      await NotificationService.onProposalCreated(proposal.id, proposal.daoId, user?.firstName || 'A member');
 
       res.status(201).json(proposal);
     } catch (err) {

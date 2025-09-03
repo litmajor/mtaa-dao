@@ -569,8 +569,24 @@ export const notifications = pgTable("notifications", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: varchar("user_id").references(() => users.id).notNull(),
   type: varchar("type").notNull(), // membership, task, proposal, etc.
+  title: varchar("title").notNull(),
   message: text("message").notNull(),
   read: boolean("read").default(false),
+  priority: varchar("priority").default("medium"), // low, medium, high, urgent
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Notification Preferences table
+export const notificationPreferences = pgTable("notification_preferences", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id).notNull().unique(),
+  emailNotifications: boolean("email_notifications").default(true),
+  pushNotifications: boolean("push_notifications").default(true),
+  daoUpdates: boolean("dao_updates").default(true),
+  proposalUpdates: boolean("proposal_updates").default(true),
+  taskUpdates: boolean("task_updates").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
