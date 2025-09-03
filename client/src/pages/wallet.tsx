@@ -17,6 +17,11 @@ import {
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, ArcElement, BarElement);
 
+// Import new components for wallet features
+import TransactionHistory from '../components/wallet/TransactionHistory';
+import RecurringPayments from '../components/wallet/RecurringPayments';
+import ExchangeRateWidget from '../components/wallet/ExchangeRateWidget';
+
 const EnhancedWalletPage = () => {
   const [activeTab, setActiveTab] = useState("overview");
   const [depositOpen, setDepositOpen] = useState(false);
@@ -26,6 +31,10 @@ const EnhancedWalletPage = () => {
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [vaults, setVaults] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
+
+  // Mock user and address for new components
+  const user = { id: 'mockUserId' };
+  const address = '0x1234567890abcdef'; // Mock wallet address
 
   // Analytics state
   const [analytics, setAnalytics] = useState<any>(null);
@@ -207,7 +216,7 @@ const EnhancedWalletPage = () => {
       orange: "bg-gradient-to-r from-orange-400 to-pink-500",
       outline: "border-2 border-gray-200 text-gray-700 bg-white/80"
     };
-    
+
     return (
       <span className={`${variants[variant]} text-white text-xs font-semibold px-3 py-1 rounded-full ${className}`}>
         {children}
@@ -231,9 +240,9 @@ const EnhancedWalletPage = () => {
       purple: "bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white shadow-purple-500/25",
       glass: "bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm"
     };
-    
+
     return (
-      <button 
+      <button
         onClick={onClick}
         disabled={disabled}
         className={`${variants[variant]} px-6 py-3 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
@@ -328,7 +337,7 @@ const EnhancedWalletPage = () => {
       <div className="absolute top-0 left-0 w-96 h-96 bg-gradient-to-br from-blue-400/10 to-purple-400/10 rounded-full blur-3xl animate-pulse" />
       <div className="absolute bottom-0 right-0 w-72 h-72 bg-gradient-to-br from-purple-400/10 to-pink-400/10 rounded-full blur-3xl animate-pulse delay-1000" />
       <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-gradient-to-br from-emerald-400/10 to-teal-400/10 rounded-full blur-3xl animate-pulse delay-500" />
-      
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
         {/* Premium Header */}
         <div className="flex items-center justify-between mb-12">
@@ -362,7 +371,7 @@ const EnhancedWalletPage = () => {
             <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent" />
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl" />
             <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full blur-2xl" />
-            
+
             <div className="relative z-10">
               <div className="flex items-center justify-between mb-8">
                 <div>
@@ -387,7 +396,7 @@ const EnhancedWalletPage = () => {
                   <DollarSign className="w-10 h-10 text-white" />
                 </div>
               </div>
-              
+
               <div className="grid grid-cols-2 gap-4">
                 <Button variant="glass" className="py-4 text-lg">
                   <Send className="mr-2 h-5 w-5" />
@@ -444,12 +453,12 @@ const EnhancedWalletPage = () => {
               Add Currency
             </Button>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {vaults?.map((vault, index) => (
               <Card key={vault.id} hover className="p-6 bg-gradient-to-br from-white/80 to-gray-50/80 relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-full blur-xl" />
-                
+
                 <div className="relative z-10">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center space-x-3">
@@ -468,7 +477,7 @@ const EnhancedWalletPage = () => {
                       <span>Live</span>
                     </Badge>
                   </div>
-                  
+
                   <div className="space-y-2">
                     <p className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-blue-900 bg-clip-text text-transparent">
                       ${parseFloat(vault.balance.replace(/,/g, '')).toLocaleString()}
@@ -477,10 +486,10 @@ const EnhancedWalletPage = () => {
                       Goal: ${parseFloat(vault.monthlyGoal || 0).toLocaleString()}
                     </p>
                     <div className="w-full bg-gray-200 rounded-full h-2 mt-3">
-                      <div 
+                      <div
                         className="bg-gradient-to-r from-emerald-400 to-teal-500 h-2 rounded-full transition-all duration-700"
-                        style={{ 
-                          width: `${Math.min((parseFloat(vault.balance.replace(/,/g, '')) / parseFloat(vault.monthlyGoal || 1)) * 100, 100)}%` 
+                        style={{
+                          width: `${Math.min((parseFloat(vault.balance.replace(/,/g, '')) / parseFloat(vault.monthlyGoal || 1)) * 100, 100)}%`
                         }}
                       />
                     </div>
@@ -491,69 +500,19 @@ const EnhancedWalletPage = () => {
           </div>
         </Card>
 
-        {/* Enhanced Transaction History */}
-        <Card className="p-8">
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-purple-900 bg-clip-text text-transparent">
-              Transaction History
-            </h2>
-            <div className="flex items-center space-x-4">
-              <Badge variant="outline" className="flex items-center space-x-1">
-                <Crown className="w-4 h-4" />
-                <span>All Time</span>
-              </Badge>
-              <Button variant="outline" className="text-sm">
-                <History className="mr-2 h-4 w-4" />
-                View All
-              </Button>
-            </div>
-          </div>
-          
-          <div className="space-y-4">
-            {transactions.map((transaction, index) => (
-              <Card key={transaction.id} hover className="p-6 bg-gradient-to-r from-white/60 to-gray-50/60 relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-blue-500/5 to-purple-500/5 rounded-full blur-lg" />
-                
-                <div className="relative z-10 flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center shadow-lg">
-                      {getTransactionIcon(transaction.type)}
-                    </div>
-                    <div>
-                      <div className="flex items-center space-x-3 mb-1">
-                        <p className="font-bold text-gray-900 text-lg">
-                          {transaction.type === "received" || transaction.type === "deposit" 
-                            ? `From ${transaction.from}` 
-                            : `To ${transaction.to}`
-                          }
-                        </p>
-                        <Badge variant="outline" className="text-xs">
-                          {transaction.type}
-                        </Badge>
-                      </div>
-                      <p className="text-gray-600 mb-1">
-                        {transaction.description}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {new Date(transaction.date).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className={`font-bold text-2xl ${getTransactionColor(transaction.type)}`}>
-                      {transaction.type === "received" || transaction.type === "deposit" ? "+" : "-"}
-                      ${transaction.amount.toLocaleString()}
-                    </p>
-                    <p className="text-sm text-gray-500 font-medium">{transaction.currency}</p>
-                    <Badge variant="emerald" className="text-xs mt-1">
-                      {transaction.status}
-                    </Badge>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </Card>
+        {/* New Wallet Features Section */}
+        <div className="space-y-6">
+          {/* Exchange Rate Widget */}
+          <ExchangeRateWidget onConvert={(fromAmount, fromCurrency, toCurrency, toAmount) => {
+            console.log(`Converting ${fromAmount} ${fromCurrency} to ${toAmount} ${toCurrency}`);
+          }} />
+
+          {/* Recurring Payments */}
+          {address && <RecurringPayments walletAddress={address} />}
+
+          {/* Transaction History */}
+          <TransactionHistory userId={user?.id} walletAddress={address} />
+        </div>
       </div>
 
       {/* Mock Modals */}

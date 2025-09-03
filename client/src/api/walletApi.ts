@@ -38,6 +38,39 @@ export async function getAllowedTokens() {
   return res.json();
 }
 
+// Enhanced Multisig Functions
+export async function createMultisigWallet(owners: string[], threshold: number) {
+  const res = await fetch('/api/wallet/multisig/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ owners, threshold })
+  });
+  return res.json();
+}
+
+export async function getMultisigTransactions(multisigAddress: string, pending = false) {
+  const res = await fetch(`/api/wallet/multisig/${multisigAddress}/transactions?pending=${pending}`);
+  return res.json();
+}
+
+export async function confirmMultisigTransaction(multisigAddress: string, transactionId: string) {
+  const res = await fetch('/api/wallet/multisig/confirm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ multisigAddress, transactionId })
+  });
+  return res.json();
+}
+
+export async function executeMultisigTransaction(multisigAddress: string, transactionId: string) {
+  const res = await fetch('/api/wallet/multisig/execute', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ multisigAddress, transactionId })
+  });
+  return res.json();
+}
+
 export async function addAllowedToken(tokenAddress: string) {
   const res = await fetch('/api/wallet/allowed-tokens/add', {
     method: 'POST',
