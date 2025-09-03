@@ -17,9 +17,13 @@ import { dirname } from "path";
 // Import payment status routes
 import mpesaStatusRoutes from './routes/mpesa-status';
 import stripeStatusRoutes from './routes/stripe-status';
-import kotaniStatusRoutes from './routes/kotanipay-status';
+import kotanipayStatusRoutes from './routes/kotanipay-status';
 import daoSubscriptionRoutes from './routes/dao-subscriptions';
 import disbursementRoutes from './routes/disbursements';
+
+// Import task and bounty escrow routes
+import tasksRouter from './routes/tasks';
+import bountyEscrowRouter from './routes/bounty-escrow';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -1178,9 +1182,13 @@ export function registerRoutes(app: Express): void {
   // Use payment status routes
   app.use('/api/payments/mpesa', mpesaStatusRoutes);
   app.use('/api/payments/stripe', stripeStatusRoutes);
-  app.use('/api/payments/kotanipay', kotaniStatusRoutes);
+  app.use('/api/payments/kotanipay', kotanipayStatusRoutes);
   app.use('/api/dao-subscriptions', daoSubscriptionRoutes);
   app.use('/api/disbursements', disbursementRoutes);
+
+  // Register task and escrow routes
+  app.use('/api/tasks', isAuthenticated, tasksRouter);
+  app.use('/api/bounty-escrow', isAuthenticated, bountyEscrowRouter);
 }
 
 export function createAppServer(): Server {

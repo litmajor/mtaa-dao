@@ -35,9 +35,16 @@ export const tasks = pgTable("tasks", {
   title: text("title").notNull(),
   description: text("description").notNull(),
   reward: decimal("reward", { precision: 10, scale: 2 }).notNull(),
-  status: varchar("status").default("open"),// open, claimed, completed
+  status: varchar("status").default("open"), // open, claimed, submitted, completed, disputed
   claimerId: varchar("claimer_id").references(() => users.id),
   claimedBy: varchar("claimed_by").references(() => users.id), // legacy, keep for now
+  category: varchar("category").notNull(),
+  difficulty: varchar("difficulty").notNull(), // easy, medium, hard
+  estimatedTime: varchar("estimated_time"),
+  deadline: timestamp("deadline"),
+  requiresVerification: boolean("requires_verification").default(false),
+  proofUrl: text("proof_url"),
+  verificationNotes: text("verification_notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(), 
 });
