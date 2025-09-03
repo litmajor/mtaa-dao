@@ -81,6 +81,10 @@ import daoTreasuryRouter from './routes/dao_treasury';
 import reputationRouter from './routes/reputation';
 import notificationsRouter from './routes/notifications';
 import { NotificationService } from './notificationService';
+import paymentReconciliationRouter from './routes/payment-reconciliation';
+import kotaniPayStatusRouter from './routes/kotanipay-status';
+import mpesaStatusRouter from './routes/mpesa-status';
+import stripeStatusRouter from './routes/stripe-status';
 
 // Placeholder for session management functions (replace with actual implementations)
 const sessionMiddleware = (req: Request, res: Response, next: NextFunction) => { next(); };
