@@ -104,4 +104,112 @@ router.post('/award', isAuthenticated, async (req: Request, res: Response) => {
   }
 });
 
+// Achievement endpoints
+router.get('/achievements', async (req: Request, res: Response) => {
+  try {
+    const achievements = await db.select().from(achievements).where(eq(achievements.isActive, true));
+    res.json({ achievements });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.get('/achievements/user/:userId', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const authUserId = (req.user as any).claims.sub;
+    
+    if (userId !== authUserId && userId !== 'me') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const targetUserId = userId === 'me' ? authUserId : userId;
+    const userAchievements = await AchievementService.getUserAchievements(targetUserId);
+    const stats = await AchievementService.getUserAchievementStats(targetUserId);
+    
+    res.json({ achievements: userAchievements, stats });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post('/achievements/claim/:achievementId', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const userId = (req.user as any).claims.sub;
+    const { achievementId } = req.params;
+    
+    const success = await AchievementService.claimAchievementReward(userId, achievementId);
+    
+    if (success) {
+      res.json({ message: 'Reward claimed successfully' });
+    } else {
+      res.status(400).json({ message: 'Unable to claim reward' });
+    }
+  } catch (err) {
+    res.status(400).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Airdrop endpoints
+router.get('/airdrops/eligible', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const userId = (req.user as any).claims.sub;
+    const eligibleAirdrops = await AirdropService.getUserAirdropEligibility(userId);
+    res.json({ airdrops: eligibleAirdrops });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post('/airdrops/claim/:airdropId', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const userId = (req.user as any).claims.sub;
+    const { airdropId } = req.params;
+    
+    const txHash = await AirdropService.claimAirdrop(userId, airdropId);
+    res.json({ message: 'Airdrop claimed successfully', transactionHash: txHash });
+  } catch (err) {
+    res.status(400).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Vesting endpoints
+router.get('/vesting/overview', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const userId = (req.user as any).claims.sub;
+    const overview = await VestingService.getUserVestingOverview(userId);
+    res.json(overview);
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.get('/vesting/claimable', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const userId = (req.user as any).claims.sub;
+    const claimable = await VestingService.getClaimableTokens(userId);
+    res.json({ claimable });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post('/vesting/claim/:scheduleId', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const userId = (req.user as any).claims.sub;
+    const { scheduleId } = req.params;
+    
+    const txHash = await VestingService.claimVestedTokens(userId, scheduleId);
+    res.json({ message: 'Tokens claimed successfully', transactionHash: txHash });
+  } catch (err) {
+    res.status(400).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Import statements for new services
+import { AchievementService } from '../achievementService';
+import { AirdropService } from '../airdropService';
+import { VestingService } from '../vestingService';
+import { achievements } from '../../shared/achievementSchema';
+
 export default router;
