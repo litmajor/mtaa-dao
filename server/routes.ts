@@ -11,6 +11,11 @@ import multer from "multer";
 import { insertContributionSchema, insertVaultSchema, insertBudgetPlanSchema, insertVoteSchema } from "../shared/schema";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, "uploads", "avatars");

@@ -415,6 +415,8 @@ export default function ArchitectSetup() {
                       type="checkbox"
                       className="mt-1 w-4 h-4 text-emerald-600 bg-white/10 border border-white/20 rounded focus:ring-emerald-500 focus:ring-2"
                       required
+                      title="Agree to Terms and Privacy Policy"
+                      placeholder="Agree to Terms and Privacy Policy"
                     />
                     <label className="text-sm text-white/80 leading-5">
                       I agree to the{' '}

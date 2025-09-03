@@ -1,12 +1,22 @@
 var __defProp = Object.defineProperty;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __esm = (fn, res) => function __init() {
-  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
-};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
 };
+
+// server/index.ts
+import express5 from "express";
+
+// server/routes.ts
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import express3 from "express";
+
+// server/db.ts
+import "dotenv/config";
+import { Pool, neonConfig } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-serverless";
+import ws from "ws";
 
 // shared/schema.ts
 var schema_exports = {};
@@ -14,8 +24,12 @@ __export(schema_exports, {
   billingHistory: () => billingHistory,
   budgetPlans: () => budgetPlans,
   budgetPlansRelations: () => budgetPlansRelations,
+  chainInfo: () => chainInfo,
+  chains: () => chains,
+  config: () => config,
   contributions: () => contributions,
   contributionsRelations: () => contributionsRelations,
+  createSessionSchema: () => createSessionSchema,
   daoMemberships: () => daoMemberships,
   daoMembershipsRelations: () => daoMembershipsRelations,
   daos: () => daos,
@@ -24,15 +38,25 @@ __export(schema_exports, {
   insertContributionSchema: () => insertContributionSchema,
   insertDaoMembershipSchema: () => insertDaoMembershipSchema,
   insertDaoSchema: () => insertDaoSchema,
+  insertNotificationSchema: () => insertNotificationSchema,
   insertProposalSchema: () => insertProposalSchema,
+  insertReferralRewardSchema: () => insertReferralRewardSchema,
+  insertTaskHistorySchema: () => insertTaskHistorySchema,
+  insertTaskSchema: () => insertTaskSchema,
   insertUserSchema: () => insertUserSchema,
   insertVaultSchema: () => insertVaultSchema,
   insertVoteSchema: () => insertVoteSchema,
   insertWalletTransactionSchema: () => insertWalletTransactionSchema,
+  logs: () => logs,
+  notifications: () => notifications,
   proposals: () => proposals,
   proposalsRelations: () => proposalsRelations,
   referralRewards: () => referralRewards,
   referralRewardsRelations: () => referralRewardsRelations,
+  roles: () => roles,
+  sessionSchema: () => sessionSchema,
+  sessions: () => sessions,
+  taskHistory: () => taskHistory,
   tasks: () => tasks,
   users: () => users,
   usersRelations: () => usersRelations,
@@ -49,6 +73,7 @@ import {
   varchar,
   timestamp,
   jsonb,
+  serial,
   integer,
   decimal,
   boolean,
@@ -56,640 +81,520 @@ import {
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
-var referralRewards, tasks, users, daos, billingHistory, proposals, votes, contributions, vaults, budgetPlans, daoMemberships, walletTransactions, usersRelations, daosRelations, daoMembershipsRelations, proposalsRelations, votesRelations, contributionsRelations, vaultsRelations, budgetPlansRelations, walletTransactionsRelations, referralRewardsRelations, insertUserSchema, insertDaoSchema, insertProposalSchema, insertVoteSchema, insertContributionSchema, insertVaultSchema, insertBudgetPlanSchema, insertDaoMembershipSchema, insertWalletTransactionSchema;
-var init_schema = __esm({
-  "shared/schema.ts"() {
-    "use strict";
-    referralRewards = pgTable("referral_rewards", {
-      id: uuid("id").primaryKey().defaultRandom(),
-      referrerId: varchar("referrer_id").references(() => users.id).notNull(),
-      referredUserId: varchar("referred_user_id").references(() => users.id).notNull(),
-      rewardAmount: decimal("reward_amount", { precision: 10, scale: 2 }).default("0"),
-      rewardType: varchar("reward_type").default("signup"),
-      // signup, first_contribution, milestone
-      claimed: boolean("claimed").default(false),
-      createdAt: timestamp("created_at").defaultNow()
-    });
-    tasks = pgTable("tasks", {
-      id: uuid("id").primaryKey().defaultRandom(),
-      title: varchar("title").notNull(),
-      description: text("description").notNull(),
-      reward: decimal("reward", { precision: 10, scale: 2 }).notNull(),
-      status: varchar("status").default("open"),
-      // open, claimed, completed
-      claimerId: varchar("claimer_id").references(() => users.id),
-      claimedBy: varchar("claimed_by").references(() => users.id),
-      // legacy, keep for now
-      createdAt: timestamp("created_at").defaultNow(),
-      updatedAt: timestamp("updated_at").defaultNow()
-    });
-    users = pgTable("users", {
-      id: varchar("id").primaryKey().notNull(),
-      email: varchar("email").unique(),
-      phone: varchar("phone").unique(),
-      firstName: varchar("first_name"),
-      lastName: varchar("last_name"),
-      profileImageUrl: varchar("profile_image_url"),
-      role: varchar("role").default("member"),
-      // member, proposer, elder
-      totalContributions: decimal("total_contributions", { precision: 10, scale: 2 }).default("0"),
-      currentStreak: integer("current_streak").default(0),
-      referralCode: varchar("referral_code").unique(),
-      referredBy: varchar("referred_by"),
-      totalReferrals: integer("total_referrals").default(0),
-      darkMode: boolean("dark_mode").default(false),
-      joinedAt: timestamp("joined_at").defaultNow(),
-      createdAt: timestamp("created_at").defaultNow(),
-      updatedAt: timestamp("updated_at").defaultNow(),
-      otp: varchar("otp", { length: 10 }),
-      otpExpiresAt: timestamp("otp_expires_at")
-    });
-    daos = pgTable("daos", {
-      id: uuid("id").primaryKey().defaultRandom(),
-      name: varchar("name").notNull(),
-      description: text("description"),
-      access: varchar("access").default("public"),
-      // "public" | "private"
-      inviteOnly: boolean("invite_only").default(false),
-      inviteCode: varchar("invite_code"),
-      creatorId: varchar("creator_id").references(() => users.id).notNull(),
-      isPublic: boolean("is_public").default(true),
-      // legacy, keep for now
-      memberCount: integer("member_count").default(1),
-      treasuryBalance: decimal("treasury_balance", { precision: 10, scale: 2 }).default("0"),
-      plan: varchar("plan").default("free"),
-      // free, premium
-      planExpiresAt: timestamp("plan_expires_at"),
-      createdAt: timestamp("created_at").defaultNow(),
-      updatedAt: timestamp("updated_at").defaultNow(),
-      imageUrl: varchar("image_url")
-    });
-    billingHistory = pgTable("billing_history", {
-      id: uuid("id").primaryKey().defaultRandom(),
-      daoId: uuid("dao_id").references(() => daos.id).notNull(),
-      amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-      currency: varchar("currency").default("KES"),
-      status: varchar("status").default("paid"),
-      description: text("description"),
-      createdAt: timestamp("created_at").defaultNow()
-    });
-    proposals = pgTable("proposals", {
-      id: uuid("id").primaryKey().defaultRandom(),
-      title: text("title").notNull(),
-      description: text("description").notNull(),
-      proposalType: varchar("proposal_type").default("general"),
-      // general, budget, emergency
-      tags: jsonb("tags").default([]),
-      // e.g., ["infrastructure", "education"]
-      imageUrl: varchar("image_url"),
-      proposer: varchar("proposer").references(() => users.id).notNull(),
-      proposerId: varchar("proposer_id").references(() => users.id).notNull(),
-      daoId: uuid("dao_id").references(() => daos.id).notNull(),
-      status: varchar("status").default("active"),
-      // draft, active, resolved, expired
-      voteStartTime: timestamp("vote_start_time").defaultNow(),
-      voteEndTime: timestamp("vote_end_time").notNull(),
-      quorumRequired: integer("quorum_required").default(100),
-      yesVotes: integer("yes_votes").default(0),
-      noVotes: integer("no_votes").default(0),
-      abstainVotes: integer("abstain_votes").default(0),
-      createdAt: timestamp("created_at").defaultNow(),
-      updatedAt: timestamp("updated_at").defaultNow()
-    });
-    votes = pgTable("votes", {
-      id: uuid("id").primaryKey().defaultRandom(),
-      proposalId: uuid("proposal_id").references(() => proposals.id).notNull(),
-      userId: varchar("user_id").references(() => users.id).notNull(),
-      daoId: uuid("dao_id").references(() => daos.id).notNull(),
-      voteType: varchar("vote_type").notNull(),
-      // yes, no, abstain
-      weight: decimal("weight", { precision: 3, scale: 2 }).default("1.0"),
-      createdAt: timestamp("created_at").defaultNow()
-    });
-    contributions = pgTable("contributions", {
-      id: uuid("id").primaryKey().defaultRandom(),
-      userId: varchar("user_id").references(() => users.id).notNull(),
-      proposalId: uuid("proposal_id").references(() => proposals.id),
-      daoId: uuid("dao_id").references(() => daos.id).notNull(),
-      amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-      currency: varchar("currency").default("cUSD"),
-      purpose: varchar("purpose").default("general"),
-      // general, emergency, education, infrastructure
-      isAnonymous: boolean("is_anonymous").default(false),
-      transactionHash: varchar("transaction_hash"),
-      createdAt: timestamp("created_at").defaultNow()
-    });
-    vaults = pgTable("vaults", {
-      id: uuid("id").primaryKey().defaultRandom(),
-      userId: varchar("user_id").references(() => users.id).notNull(),
-      currency: varchar("currency").notNull(),
-      balance: decimal("balance", { precision: 10, scale: 2 }).default("0"),
-      monthlyGoal: decimal("monthly_goal", { precision: 10, scale: 2 }).default("0"),
-      updatedAt: timestamp("updated_at").defaultNow(),
-      createdAt: timestamp("created_at").defaultNow()
-    });
-    budgetPlans = pgTable("budget_plans", {
-      id: uuid("id").primaryKey().defaultRandom(),
-      userId: varchar("user_id").references(() => users.id).notNull(),
-      category: varchar("category").notNull(),
-      // food, bills, mtaa_fund, savings, etc.
-      allocatedAmount: decimal("allocated_amount", { precision: 10, scale: 2 }).notNull(),
-      spentAmount: decimal("spent_amount", { precision: 10, scale: 2 }).default("0"),
-      month: varchar("month").notNull(),
-      // YYYY-MM format
-      createdAt: timestamp("created_at").defaultNow(),
-      updatedAt: timestamp("updated_at").defaultNow()
-    });
-    daoMemberships = pgTable("dao_memberships", {
-      id: uuid("id").primaryKey().defaultRandom(),
-      userId: varchar("user_id").references(() => users.id).notNull(),
-      daoId: uuid("dao_id").references(() => daos.id).notNull(),
-      role: varchar("role").default("member"),
-      // member, proposer, elder, admin
-      status: varchar("status").default("approved"),
-      // "approved" | "pending" | "rejected"
-      joinedAt: timestamp("joined_at").defaultNow(),
-      createdAt: timestamp("created_at").defaultNow(),
-      updatedAt: timestamp("updated_at").defaultNow()
-    });
-    walletTransactions = pgTable("wallet_transactions", {
-      id: uuid("id").primaryKey().defaultRandom(),
-      fromUserId: varchar("from_user_id").references(() => users.id),
-      toUserId: varchar("to_user_id").references(() => users.id),
-      amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-      currency: varchar("currency").default("cUSD"),
-      type: varchar("type").notNull(),
-      // deposit, withdrawal, transfer, contribution
-      status: varchar("status").default("completed"),
-      // pending, completed, failed
-      transactionHash: varchar("transaction_hash"),
-      description: text("description"),
-      createdAt: timestamp("created_at").defaultNow(),
-      updatedAt: timestamp("updated_at").defaultNow()
-      // Note: fromUserId and toUserId can be null for deposits or contributions
-      // e.g., deposit to vault, contribution to DAO, etc.
-      // This allows tracking of all wallet-related transactions in one table
-      // and simplifies the wallet history retrieval for users
-    });
-    usersRelations = relations(users, ({ many, one }) => ({
-      proposals: many(proposals),
-      votes: many(votes),
-      contributions: many(contributions),
-      vaults: many(vaults),
-      budgetPlans: many(budgetPlans),
-      daoMemberships: many(daoMemberships),
-      createdDaos: many(daos),
-      referralRewards: many(referralRewards),
-      sentTransactions: many(walletTransactions, { relationName: "sentTransactions" }),
-      receivedTransactions: many(walletTransactions, { relationName: "receivedTransactions" }),
-      referrer: one(users, {
-        fields: [users.referredBy],
-        references: [users.id]
-      }),
-      referrals: many(users)
-    }));
-    daosRelations = relations(daos, ({ one, many }) => ({
-      creator: one(users, {
-        fields: [daos.creatorId],
-        references: [users.id]
-      }),
-      memberships: many(daoMemberships),
-      proposals: many(proposals)
-    }));
-    daoMembershipsRelations = relations(daoMemberships, ({ one }) => ({
-      user: one(users, {
-        fields: [daoMemberships.userId],
-        references: [users.id]
-      }),
-      dao: one(daos, {
-        fields: [daoMemberships.daoId],
-        references: [daos.id]
-      })
-    }));
-    proposalsRelations = relations(proposals, ({ one, many }) => ({
-      proposer: one(users, {
-        fields: [proposals.proposerId],
-        references: [users.id]
-      }),
-      dao: one(daos, {
-        fields: [proposals.daoId],
-        references: [daos.id]
-      }),
-      votes: many(votes)
-    }));
-    votesRelations = relations(votes, ({ one }) => ({
-      proposal: one(proposals, {
-        fields: [votes.proposalId],
-        references: [proposals.id]
-      }),
-      user: one(users, {
-        fields: [votes.userId],
-        references: [users.id]
-      })
-    }));
-    contributionsRelations = relations(contributions, ({ one }) => ({
-      user: one(users, {
-        fields: [contributions.userId],
-        references: [users.id]
-      })
-    }));
-    vaultsRelations = relations(vaults, ({ one }) => ({
-      user: one(users, {
-        fields: [vaults.userId],
-        references: [users.id]
-      })
-    }));
-    budgetPlansRelations = relations(budgetPlans, ({ one }) => ({
-      user: one(users, {
-        fields: [budgetPlans.userId],
-        references: [users.id]
-      })
-    }));
-    walletTransactionsRelations = relations(walletTransactions, ({ one }) => ({
-      fromUser: one(users, {
-        fields: [walletTransactions.fromUserId],
-        references: [users.id],
-        relationName: "sentTransactions"
-      }),
-      toUser: one(users, {
-        fields: [walletTransactions.toUserId],
-        references: [users.id],
-        relationName: "receivedTransactions"
-      })
-    }));
-    referralRewardsRelations = relations(referralRewards, ({ one }) => ({
-      referrer: one(users, {
-        fields: [referralRewards.referrerId],
-        references: [users.id]
-      }),
-      referredUser: one(users, {
-        fields: [referralRewards.referredUserId],
-        references: [users.id]
-      })
-    }));
-    insertUserSchema = createInsertSchema(users);
-    insertDaoSchema = createInsertSchema(daos);
-    insertProposalSchema = createInsertSchema(proposals);
-    insertVoteSchema = createInsertSchema(votes);
-    insertContributionSchema = createInsertSchema(contributions);
-    insertVaultSchema = createInsertSchema(vaults);
-    insertBudgetPlanSchema = createInsertSchema(budgetPlans);
-    insertDaoMembershipSchema = createInsertSchema(daoMemberships);
-    insertWalletTransactionSchema = createInsertSchema(walletTransactions);
-  }
+var referralRewards = pgTable("referral_rewards", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  referrerId: varchar("referrer_id").references(() => users.id).notNull(),
+  referredUserId: varchar("referred_user_id").references(() => users.id).notNull(),
+  rewardAmount: decimal("reward_amount", { precision: 10, scale: 2 }).default("0"),
+  rewardType: varchar("reward_type").default("signup"),
+  // signup, first_contribution, milestone
+  claimed: boolean("claimed").default(false),
+  createdAt: timestamp("created_at").defaultNow()
 });
+var tasks = pgTable("tasks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  creatorId: varchar("creator_id").references(() => users.id).notNull(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  reward: decimal("reward", { precision: 10, scale: 2 }).notNull(),
+  status: varchar("status").default("open"),
+  // open, claimed, completed
+  claimerId: varchar("claimer_id").references(() => users.id),
+  claimedBy: varchar("claimed_by").references(() => users.id),
+  // legacy, keep for now
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+var users = pgTable("users", {
+  id: varchar("id").primaryKey().notNull(),
+  username: varchar("username").unique(),
+  password: varchar("password").notNull(),
+  email: varchar("email").unique(),
+  phone: varchar("phone").unique(),
+  emailVerified: boolean("email_verified").default(false),
+  phoneVerified: boolean("phone_verified").default(false),
+  emailVerificationToken: varchar("email_verification_token"),
+  phoneVerificationToken: varchar("phone_verification_token"),
+  emailVerificationExpiresAt: timestamp("email_verification_expires_at"),
+  phoneVerificationExpiresAt: timestamp("phone_verification_expires_at"),
+  passwordResetToken: varchar("password_reset_token"),
+  firstName: varchar("first_name"),
+  lastName: varchar("last_name"),
+  profileImageUrl: varchar("profile_image_url"),
+  roles: varchar("roles").default("member"),
+  // member, proposer, elder
+  totalContributions: decimal("total_contributions", { precision: 10, scale: 2 }).default("0"),
+  currentStreak: integer("current_streak").default(0),
+  referralCode: varchar("referral_code").unique(),
+  referredBy: varchar("referred_by"),
+  totalReferrals: integer("total_referrals").default(0),
+  darkMode: boolean("dark_mode").default(false),
+  joinedAt: timestamp("joined_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  otp: varchar("otp", { length: 10 }),
+  otpExpiresAt: timestamp("otp_expires_at"),
+  isEmailVerified: boolean("is_email_verified").default(false),
+  isPhoneVerified: boolean("is_phone_verified").default(false),
+  isBanned: boolean("is_banned").default(false),
+  banReason: text("ban_reason"),
+  isSuperUser: boolean("is_super_user").default(false)
+  // for superuser dashboard access
+});
+var daos = pgTable("daos", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: varchar("name").notNull(),
+  description: text("description"),
+  access: varchar("access").default("public"),
+  // "public" | "private"
+  inviteOnly: boolean("invite_only").default(false),
+  inviteCode: varchar("invite_code"),
+  creatorId: varchar("creator_id").references(() => users.id).notNull(),
+  isPublic: boolean("is_public").default(true),
+  // legacy, keep for now
+  memberCount: integer("member_count").default(1),
+  treasuryBalance: decimal("treasury_balance", { precision: 10, scale: 2 }).default("0"),
+  plan: varchar("plan").default("free"),
+  // free, premium
+  planExpiresAt: timestamp("plan_expires_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  imageUrl: varchar("image_url"),
+  bannerUrl: varchar("banner_url"),
+  isArchived: boolean("is_archived").default(false),
+  // for soft deletion
+  archivedAt: timestamp("archived_at"),
+  archivedBy: varchar("archived_by").references(() => users.id),
+  isFeatured: boolean("is_featured").default(false),
+  // for featured DAOs on landing page
+  featureOrder: integer("feature_order").default(0)
+  // order of featured DAOs
+});
+var roles = ["member", "proposer", "elder", "admin", "superUser", "moderator"];
+var sessions = pgTable("sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  sessionToken: varchar("session_token").unique().notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+var createSessionSchema = createInsertSchema(sessions);
+var sessionSchema = createSessionSchema;
+var billingHistory = pgTable("billing_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  currency: varchar("currency").default("KES"),
+  status: varchar("status").default("paid"),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+var proposals = pgTable("proposals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  proposalType: varchar("proposal_type").default("general"),
+  // general, budget, emergency
+  tags: jsonb("tags").default([]),
+  // e.g., ["infrastructure", "education"]
+  imageUrl: varchar("image_url"),
+  proposer: varchar("proposer").references(() => users.id).notNull(),
+  proposerId: varchar("proposer_id").references(() => users.id).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  status: varchar("status").default("active"),
+  // draft, active, resolved, expired
+  voteStartTime: timestamp("vote_start_time").defaultNow(),
+  voteEndTime: timestamp("vote_end_time").notNull(),
+  quorumRequired: integer("quorum_required").default(100),
+  yesVotes: integer("yes_votes").default(0),
+  noVotes: integer("no_votes").default(0),
+  abstainVotes: integer("abstain_votes").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  isFeatured: boolean("is_featured").default(false)
+  // for featured proposals on DAO page
+});
+var votes = pgTable("votes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  proposalId: uuid("proposal_id").references(() => proposals.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  voteType: varchar("vote_type").notNull(),
+  // yes, no, abstain
+  weight: decimal("weight", { precision: 3, scale: 2 }).default("1.0"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+var contributions = pgTable("contributions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  proposalId: uuid("proposal_id").references(() => proposals.id),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  currency: varchar("currency").default("cUSD"),
+  purpose: varchar("purpose").default("general"),
+  // general, emergency, education, infrastructure
+  isAnonymous: boolean("is_anonymous").default(false),
+  transactionHash: varchar("transaction_hash"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  vault: boolean("vault").default(false)
+  // true if contribution goes to DAO vault
+});
+var vaults = pgTable("vaults", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  currency: varchar("currency").notNull(),
+  balance: decimal("balance", { precision: 10, scale: 2 }).default("0"),
+  monthlyGoal: decimal("monthly_goal", { precision: 10, scale: 2 }).default("0"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow()
+  // Note: no need for a vault name, just a single vault per user
+  // This simplifies the vault management and aligns with the personal finance focus
+  // Users can have multiple vaults for different currencies if needed
+  // Each vault can have its own budget and spending limits
+  // This allows for better financial management and tracking
+});
+var budgetPlans = pgTable("budget_plans", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  category: varchar("category").notNull(),
+  // food, bills, mtaa_fund, savings, etc.
+  allocatedAmount: decimal("allocated_amount", { precision: 10, scale: 2 }).notNull(),
+  spentAmount: decimal("spent_amount", { precision: 10, scale: 2 }).default("0"),
+  month: varchar("month").notNull(),
+  // YYYY-MM format
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+var daoMemberships = pgTable("dao_memberships", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  role: varchar("role").default("member"),
+  // member, proposer, elder, admin
+  status: varchar("status").default("approved"),
+  // "approved" | "pending" | "rejected"
+  joinedAt: timestamp("joined_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  isBanned: boolean("is_banned").default(false),
+  // for banning members from DAOs
+  banReason: text("ban_reason"),
+  // reason for banning, if applicable
+  isElder: boolean("is_elder").default(false),
+  // for elder members with special privileges
+  isAdmin: boolean("is_admin").default(false)
+  // for DAO admins with full control
+});
+var walletTransactions = pgTable("wallet_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  vaultId: uuid("vault_id").references(() => vaults.id),
+  // optional, for vault transactions
+  fromUserId: varchar("from_user_id").references(() => users.id),
+  toUserId: varchar("to_user_id").references(() => users.id),
+  walletAddress: varchar("wallet_address").notNull(),
+  daoId: uuid("dao_id").references(() => daos.id),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  currency: varchar("currency").default("cUSD"),
+  type: varchar("type").notNull(),
+  // deposit, withdrawal, transfer, contribution
+  status: varchar("status").default("completed"),
+  // pending, completed, failed
+  transactionHash: varchar("transaction_hash"),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+  // Note: fromUserId and toUserId can be null for deposits or contributions
+  // e.g., deposit to vault, contribution to DAO, etc.
+  // This allows tracking of all wallet-related transactions in one table
+  // and simplifies the wallet history retrieval for users
+});
+var config = pgTable("config", {
+  id: serial("id").primaryKey(),
+  key: varchar("key").unique().notNull(),
+  value: jsonb("value").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+var logs = pgTable("logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id),
+  action: text("action").notNull(),
+  // e.g., "create_dao", "vote", "contribute"
+  details: jsonb("details"),
+  // additional details about the action
+  createdAt: timestamp("created_at").defaultNow()
+});
+var chainInfo = pgTable("chain_info", {
+  id: serial("id").primaryKey(),
+  chainId: integer("chain_id").notNull(),
+  chainName: varchar("chain_name").notNull(),
+  nativeCurrency: jsonb("native_currency").notNull(),
+  // e.g., { name: "Ether", symbol: "ETH", decimals: 18 }
+  rpcUrl: varchar("rpc_url").notNull(),
+  blockExplorerUrl: varchar("block_explorer_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+var chains = pgTable("chains", {
+  id: serial("id").primaryKey(),
+  name: varchar("name").notNull(),
+  chainId: integer("chain_id").notNull(),
+  rpcUrl: varchar("rpc_url").notNull(),
+  blockExplorerUrl: varchar("block_explorer_url"),
+  nativeCurrency: jsonb("native_currency").notNull(),
+  // e.g., { name: "Ether", symbol: "ETH", decimals: 18 }
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+var usersRelations = relations(users, ({ many, one }) => ({
+  proposals: many(proposals),
+  votes: many(votes),
+  contributions: many(contributions),
+  vaults: many(vaults),
+  budgetPlans: many(budgetPlans),
+  daoMemberships: many(daoMemberships),
+  createdDaos: many(daos),
+  referralRewards: many(referralRewards),
+  sentTransactions: many(walletTransactions, { relationName: "sentTransactions" }),
+  receivedTransactions: many(walletTransactions, { relationName: "receivedTransactions" }),
+  referrer: one(users, {
+    fields: [users.referredBy],
+    references: [users.id]
+  }),
+  referrals: many(users),
+  sessions: many(sessions),
+  tasks: many(tasks),
+  billingHistory: many(billingHistory),
+  logs: many(logs)
+}));
+var daosRelations = relations(daos, ({ one, many }) => ({
+  creator: one(users, {
+    fields: [daos.creatorId],
+    references: [users.id]
+  }),
+  memberships: many(daoMemberships),
+  proposals: many(proposals)
+}));
+var daoMembershipsRelations = relations(daoMemberships, ({ one }) => ({
+  user: one(users, {
+    fields: [daoMemberships.userId],
+    references: [users.id]
+  }),
+  dao: one(daos, {
+    fields: [daoMemberships.daoId],
+    references: [daos.id]
+  })
+}));
+var proposalsRelations = relations(proposals, ({ one, many }) => ({
+  proposer: one(users, {
+    fields: [proposals.proposerId],
+    references: [users.id]
+  }),
+  dao: one(daos, {
+    fields: [proposals.daoId],
+    references: [daos.id]
+  }),
+  votes: many(votes)
+}));
+var votesRelations = relations(votes, ({ one }) => ({
+  proposal: one(proposals, {
+    fields: [votes.proposalId],
+    references: [proposals.id]
+  }),
+  user: one(users, {
+    fields: [votes.userId],
+    references: [users.id]
+  })
+}));
+var contributionsRelations = relations(contributions, ({ one }) => ({
+  user: one(users, {
+    fields: [contributions.userId],
+    references: [users.id]
+  })
+}));
+var vaultsRelations = relations(vaults, ({ one }) => ({
+  user: one(users, {
+    fields: [vaults.userId],
+    references: [users.id]
+  })
+}));
+var budgetPlansRelations = relations(budgetPlans, ({ one }) => ({
+  user: one(users, {
+    fields: [budgetPlans.userId],
+    references: [users.id]
+  })
+}));
+var walletTransactionsRelations = relations(walletTransactions, ({ one }) => ({
+  fromUser: one(users, {
+    fields: [walletTransactions.fromUserId],
+    references: [users.id],
+    relationName: "sentTransactions"
+  }),
+  toUser: one(users, {
+    fields: [walletTransactions.toUserId],
+    references: [users.id],
+    relationName: "receivedTransactions"
+  })
+}));
+var referralRewardsRelations = relations(referralRewards, ({ one }) => ({
+  referrer: one(users, {
+    fields: [referralRewards.referrerId],
+    references: [users.id]
+  }),
+  referredUser: one(users, {
+    fields: [referralRewards.referredUserId],
+    references: [users.id]
+  })
+}));
+var insertUserSchema = createInsertSchema(users);
+var insertDaoSchema = createInsertSchema(daos);
+var insertProposalSchema = createInsertSchema(proposals);
+var insertVoteSchema = createInsertSchema(votes);
+var insertContributionSchema = createInsertSchema(contributions);
+var insertVaultSchema = createInsertSchema(vaults);
+var insertBudgetPlanSchema = createInsertSchema(budgetPlans);
+var insertDaoMembershipSchema = createInsertSchema(daoMemberships);
+var insertWalletTransactionSchema = createInsertSchema(walletTransactions);
+var insertReferralRewardSchema = createInsertSchema(referralRewards);
+var notifications = pgTable("notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  type: varchar("type").notNull(),
+  // membership, task, proposal, etc.
+  message: text("message").notNull(),
+  read: boolean("read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+var taskHistory = pgTable("task_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  taskId: uuid("task_id").references(() => tasks.id).notNull(),
+  userId: varchar("user_id").references(() => users.id),
+  action: varchar("action").notNull(),
+  // created, claimed, completed, etc.
+  details: jsonb("details"),
+  createdAt: timestamp("created_at").defaultNow()
+});
+var insertTaskSchema = createInsertSchema(tasks);
+var insertNotificationSchema = createInsertSchema(notifications);
+var insertTaskHistorySchema = createInsertSchema(taskHistory);
 
 // server/db.ts
-import "dotenv/config";
-import { Pool, neonConfig } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-serverless";
-import ws from "ws";
-var pool, db;
-var init_db = __esm({
-  "server/db.ts"() {
-    "use strict";
-    init_schema();
-    neonConfig.webSocketConstructor = ws;
-    if (!process.env.DATABASE_URL) {
-      throw new Error(
-        "DATABASE_URL must be set. Did you forget to provision a database?"
-      );
-    }
-    pool = new Pool({ connectionString: process.env.DATABASE_URL });
-    db = drizzle({ client: pool, schema: schema_exports });
-  }
-});
-
-// server/otp.ts
-var otp_exports = {};
-__export(otp_exports, {
-  generateAndSendOTP: () => generateAndSendOTP,
-  verifyOTP: () => verifyOTP
-});
-import { eq as eq2 } from "drizzle-orm";
-import nodemailer from "nodemailer";
-async function generateAndSendOTP({ email, phone }) {
-  const otp = Math.floor(1e5 + Math.random() * 9e5).toString();
-  const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1e3);
-  if (email) {
-    await db.update(users).set({ otp, otpExpiresAt: expiresAt }).where(eq2(users.email, email));
-    await sendEmailOTP(email, otp);
-  } else if (phone) {
-    await db.update(users).set({ otp, otpExpiresAt: expiresAt }).where(eq2(users.phone, phone));
-    await sendSMSOTP(phone, otp);
-  }
+neonConfig.webSocketConstructor = ws;
+if (!process.env.DATABASE_URL) {
+  throw new Error(
+    "DATABASE_URL must be set. Did you forget to provision a database?"
+  );
 }
-async function verifyOTP({ email, phone, otp }) {
-  let user;
-  if (email) {
-    [user] = await db.select().from(users).where(eq2(users.email, email));
-  } else if (phone) {
-    [user] = await db.select().from(users).where(eq2(users.phone, phone));
-  }
-  if (!user || !user.otp || !user.otpExpiresAt) return false;
-  if (user.otp !== otp) return false;
-  if (new Date(user.otpExpiresAt) < /* @__PURE__ */ new Date()) return false;
-  await db.update(users).set({ otp: null, otpExpiresAt: null }).where(eq2(users.id, user.id));
-  return true;
-}
-async function sendEmailOTP(email, otp) {
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT),
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
-    }
-  });
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM,
-    to: email,
-    subject: "Your OTP Code",
-    text: `Your OTP code is: ${otp}`
-  });
-}
-async function sendSMSOTP(phone, otp) {
-  console.log(`Send SMS to ${phone}: Your OTP code is ${otp}`);
-}
-var OTP_EXPIRY_MINUTES;
-var init_otp = __esm({
-  "server/otp.ts"() {
-    "use strict";
-    init_db();
-    init_schema();
-    OTP_EXPIRY_MINUTES = 10;
-  }
-});
-
-// server/index.ts
-import express4 from "express";
-
-// server/routes.ts
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
-import express2 from "express";
-
-// server/payments.ts
-import express from "express";
-var router = express.Router();
-router.post("/billing/initiate", async (req, res) => {
-  const { amount, daoId, description, billingType } = req.body;
-  if (!amount || !daoId || !billingType) {
-    return res.status(400).json({ success: false, message: "Amount, daoId, and billingType are required" });
-  }
-  const feePercent = 0.02;
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  res.json({
-    success: true,
-    message: "Billing payment initiated (mock)",
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    description,
-    billingType
-  });
-});
-router.post("/stripe/initiate", async (req, res) => {
-  const { amount, daoId, description } = req.body;
-  if (!amount || !daoId) {
-    return res.status(400).json({ success: false, message: "Amount and daoId are required" });
-  }
-  const feePercent = 0.02;
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  res.json({
-    success: true,
-    message: "Stripe payment initiated (mock)",
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    description
-  });
-});
-router.post("/stripe/webhook", async (req, res) => {
-  res.json({ success: true, message: "Stripe webhook received (mock)" });
-});
-router.post("/paystack/initiate", async (req, res) => {
-  const { amount, daoId, description } = req.body;
-  if (!amount || !daoId) {
-    return res.status(400).json({ success: false, message: "Amount and daoId are required" });
-  }
-  const feePercent = 0.02;
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  res.json({
-    success: true,
-    message: "Paystack payment initiated (mock)",
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    description
-  });
-});
-router.post("/paystack/webhook", async (req, res) => {
-  res.json({ success: true, message: "Paystack webhook received (mock)" });
-});
-router.post("/flutterwave/initiate", async (req, res) => {
-  const { amount, daoId, description } = req.body;
-  if (!amount || !daoId) {
-    return res.status(400).json({ success: false, message: "Amount and daoId are required" });
-  }
-  const feePercent = 0.02;
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  res.json({
-    success: true,
-    message: "Flutterwave payment initiated (mock)",
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    description
-  });
-});
-router.post("/flutterwave/webhook", async (req, res) => {
-  res.json({ success: true, message: "Flutterwave webhook received (mock)" });
-});
-router.post("/coinbase/initiate", async (req, res) => {
-  const { amount, daoId, description } = req.body;
-  if (!amount || !daoId) {
-    return res.status(400).json({ success: false, message: "Amount and daoId are required" });
-  }
-  const feePercent = 0.02;
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  res.json({
-    success: true,
-    message: "Coinbase payment initiated (mock)",
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    description
-  });
-});
-router.post("/coinbase/webhook", async (req, res) => {
-  res.json({ success: true, message: "Coinbase webhook received (mock)" });
-});
-router.post("/transak/initiate", async (req, res) => {
-  const { amount, daoId, description } = req.body;
-  if (!amount || !daoId) {
-    return res.status(400).json({ success: false, message: "Amount and daoId are required" });
-  }
-  const feePercent = 0.02;
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  res.json({
-    success: true,
-    message: "Transak payment initiated (mock)",
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    description
-  });
-});
-router.post("/transak/webhook", async (req, res) => {
-  res.json({ success: true, message: "Transak webhook received (mock)" });
-});
-router.post("/ramp/initiate", async (req, res) => {
-  const { amount, daoId, description } = req.body;
-  if (!amount || !daoId) {
-    return res.status(400).json({ success: false, message: "Amount and daoId are required" });
-  }
-  const feePercent = 0.02;
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  res.json({
-    success: true,
-    message: "Ramp payment initiated (mock)",
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    description
-  });
-});
-router.post("/ramp/webhook", async (req, res) => {
-  res.json({ success: true, message: "Ramp webhook received (mock)" });
-});
-router.post("/kotanipay/initiate", async (req, res) => {
-  const { amount, daoId, description } = req.body;
-  if (!amount || !daoId) {
-    return res.status(400).json({ success: false, message: "Amount and daoId are required" });
-  }
-  const feePercent = 0.02;
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  res.json({
-    success: true,
-    message: "Kotani Pay payment initiated (mock)",
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    description
-  });
-});
-router.post("/kotanipay/webhook", async (req, res) => {
-  res.json({ success: true, message: "Kotani Pay webhook received (mock)" });
-});
-router.post("/bank/initiate", async (req, res) => {
-  const { amount, daoId, description } = req.body;
-  if (!amount || !daoId) {
-    return res.status(400).json({ success: false, message: "Amount and daoId are required" });
-  }
-  const feePercent = 0.02;
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  res.json({
-    success: true,
-    message: "Bank transfer initiated (mock)",
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    description
-  });
-});
-router.post("/bank/webhook", async (req, res) => {
-  res.json({ success: true, message: "Bank webhook received (mock)" });
-});
-router.post("/mpesa/initiate", async (req, res) => {
-  const { phone, amount, daoId, accountReference, description } = req.body;
-  if (!phone || !amount || !daoId) {
-    return res.status(400).json({ success: false, message: "Phone, amount, and daoId are required" });
-  }
-  const feePercent = 0.02;
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  const mockMpesaTransactionId = "MPESA-" + Date.now();
-  res.json({
-    success: true,
-    transactionId: mockMpesaTransactionId,
-    message: "M-Pesa payment initiated (mock)",
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    accountReference,
-    description
-  });
-});
-router.post("/mpesa/webhook", async (req, res) => {
-  const { transactionId, status } = req.body;
-  res.json({ success: true, message: `M-Pesa webhook received for ${transactionId} (mock)` });
-});
-router.post("/crypto/initiate", async (req, res) => {
-  const { amount, currency, daoId } = req.body;
-  if (!amount || !currency || !daoId) {
-    return res.status(400).json({ success: false, message: "Amount, currency, and daoId are required" });
-  }
-  const feePercent = 0.02;
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  const mockAddress = "0x" + Math.random().toString(16).substr(2, 40);
-  res.json({
-    success: true,
-    address: mockAddress,
-    message: "Send crypto to this address (mock)",
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    currency
-  });
-});
-router.post("/crypto/webhook", async (req, res) => {
-  const { address, txHash, status } = req.body;
-  res.json({ success: true, message: `Crypto webhook received for ${address} (mock)` });
-});
-var payments_default = router;
+var pool = new Pool({ connectionString: process.env.DATABASE_URL });
+var db = drizzle({ client: pool, schema: schema_exports });
 
 // server/storage.ts
-init_db();
-init_schema();
-import { eq } from "drizzle-orm";
+import { eq, inArray, or } from "drizzle-orm";
 import { and, desc } from "drizzle-orm";
-async function deductVaultFee(vaultId, fee) {
-  const [vault] = await db.select().from(vaults).where(eq(vaults.id, vaultId));
-  if (!vault || vault.balance == null) return false;
-  const currentBalance = typeof vault.balance === "string" ? parseFloat(vault.balance) : vault.balance;
-  if (isNaN(currentBalance) || currentBalance < fee) return false;
-  const newBalance = (currentBalance - fee).toString();
-  await db.update(vaults).set({ balance: newBalance, updatedAt: /* @__PURE__ */ new Date() }).where(eq(vaults.id, vaultId));
-  return true;
-}
 function isDaoPremium(dao) {
   if (!dao || !dao.plan) return false;
   return dao.plan === "premium";
 }
 var DatabaseStorage = class {
+  async incrementDaoMemberCount(daoId) {
+    if (!daoId) throw new Error("DAO ID required");
+    const dao = await db.select().from(daos).where(eq(daos.id, daoId));
+    if (!dao[0]) throw new Error("DAO not found");
+    const newCount = (dao[0].memberCount || 0) + 1;
+    const result = await db.update(daos).set({ memberCount: newCount, updatedAt: /* @__PURE__ */ new Date() }).where(eq(daos.id, daoId)).returning();
+    return result[0];
+  }
+  // --- Admin Functions ---
+  async getAllDaos({ limit = 10, offset = 0 } = {}) {
+    return await db.select().from(daos).orderBy(desc(daos.createdAt)).limit(limit).offset(offset);
+  }
+  async getDaoCount() {
+    const result = await db.select().from(daos);
+    return result.length;
+  }
+  async getAllUsers({ limit = 10, offset = 0 } = {}) {
+    return await db.select().from(users).orderBy(desc(users.createdAt)).limit(limit).offset(offset);
+  }
+  async getUserCount() {
+    const result = await db.select().from(users);
+    return result.length;
+  }
+  async getPlatformFeeInfo() {
+    const keys = [
+      "vaultDisbursementFee",
+      "offrampWithdrawalFee",
+      "bulkPayoutFee",
+      "stakingYieldFee",
+      "platformFeeCurrency"
+    ];
+    const configRows = await db.select().from(config).where(inArray(config.key, keys));
+    const configMap = {};
+    configRows.forEach((row) => {
+      configMap[row.key] = typeof row.value === "string" ? JSON.parse(row.value) : row.value;
+    });
+    return {
+      vaultDisbursementFee: configMap.vaultDisbursementFee ?? "1\u20132% per action",
+      offrampWithdrawalFee: configMap.offrampWithdrawalFee ?? "2\u20133% (DAO or user)",
+      bulkPayoutFee: configMap.bulkPayoutFee ?? "Flat or % fee",
+      stakingYieldFee: configMap.stakingYieldFee ?? "Platform takes cut (opt-in)",
+      notes: "Fees are paid by the DAO/group, not individuals. All fees are abstracted into vault mechanics for simplicity.",
+      currency: configMap.platformFeeCurrency ?? "USD"
+    };
+  }
+  async getSystemLogs({ limit = 10, offset = 0 } = {}) {
+    return await db.select().from(logs).orderBy(desc(logs.createdAt)).limit(limit).offset(offset);
+  }
+  async updateTask(id, data, userId) {
+    const task = await db.select().from(tasks).where(eq(tasks.id, id));
+    if (!task[0]) throw new Error("Task not found");
+    const membership = await this.getDaoMembership(task[0].daoId, userId);
+    if (!membership || membership.role !== "admin") throw new Error("Only DAO admins can update tasks");
+    const result = await db.update(tasks).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq(tasks.id, id)).returning();
+    if (!result[0]) throw new Error("Failed to update task");
+    return result[0];
+  }
+  async getTaskCount(daoId, status) {
+    if (!daoId) throw new Error("DAO ID required");
+    let whereClause;
+    if (status) {
+      whereClause = and(eq(tasks.daoId, daoId), eq(tasks.status, status));
+    } else {
+      whereClause = eq(tasks.daoId, daoId);
+    }
+    const result = await db.select().from(tasks).where(whereClause);
+    return result.length;
+  }
+  async getLogCount() {
+    const result = await db.select().from(logs);
+    return result.length;
+  }
+  async getBillingCount() {
+    const result = await db.select().from(billingHistory);
+    return result.length;
+  }
+  async getChainInfo() {
+    const result = await db.select().from(chains).where(eq(chains.id, 1));
+    if (!result[0]) throw new Error("Chain not found");
+    return {
+      chainId: result[0].id,
+      name: result[0].name,
+      rpcUrl: result[0].rpcUrl
+    };
+  }
+  async getTopMembers({ limit = 10 } = {}) {
+    const allContributions = await db.select().from(contributions);
+    const counts = {};
+    allContributions.forEach((c) => {
+      if (c.userId) counts[c.userId] = (counts[c.userId] || 0) + 1;
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, limit).map(([userId, count]) => ({ userId, count }));
+  }
   async createUser(userData) {
     const allowed = (({ firstName, lastName, email, phone, googleId, telegramId }) => ({ firstName, lastName, email, phone, googleId, telegramId }))(userData);
     allowed.createdAt = /* @__PURE__ */ new Date();
@@ -713,7 +618,20 @@ var DatabaseStorage = class {
     if (!result[0]) throw new Error("User not found");
     return result[0];
   }
-  // ...existing methods...
+  async getUserById(userId) {
+    if (!userId) throw new Error("User ID required");
+    const result = await db.select().from(users).where(eq(users.id, userId));
+    if (!result[0]) throw new Error("User not found");
+    return result[0];
+  }
+  async getUserByEmailOrPhone(emailOrPhone) {
+    if (!emailOrPhone) throw new Error("Email or phone required");
+    const result = await db.select().from(users).where(
+      or(eq(users.email, emailOrPhone), eq(users.phone, emailOrPhone))
+    );
+    if (!result[0]) throw new Error("User not found");
+    return result[0];
+  }
   async getUserProfile(userId) {
     return this.getUser(userId);
   }
@@ -760,10 +678,15 @@ var DatabaseStorage = class {
     return result[0];
   }
   async getUserSessions(userId) {
-    return [];
+    const result = await db.select().from(sessions).where(eq(sessions.userId, userId));
+    return result;
   }
   async revokeUserSession(userId, sessionId) {
-    return;
+    if (!userId || !sessionId) throw new Error("User ID and session ID required");
+    const result = await db.delete(sessions).where(
+      and(eq(sessions.userId, userId), eq(sessions.id, sessionId))
+    );
+    if (!result) throw new Error("Session not found or already revoked");
   }
   async deleteUserAccount(userId) {
     await db.delete(users).where(eq(users.id, userId));
@@ -779,6 +702,21 @@ var DatabaseStorage = class {
     return result[0];
   }
   // Export a singleton instance for use in routes and elsewhere
+  async getBudgetPlanCount(userId, month) {
+    if (!userId || !month) throw new Error("User ID and month required");
+    const result = await db.select().from(budgetPlans).where(and(eq(budgetPlans.userId, userId), eq(budgetPlans.month, month)));
+    return result.length;
+  }
+  async createDao(dao) {
+    if (!dao.name || !dao.creatorId) throw new Error("Name and creatorId required");
+    dao.createdAt = /* @__PURE__ */ new Date();
+    dao.updatedAt = /* @__PURE__ */ new Date();
+    dao.memberCount = 1;
+    const result = await db.insert(daos).values(dao).returning();
+    if (!result[0]) throw new Error("Failed to create DAO");
+    await this.createDaoMembership({ daoId: result[0].id, userId: dao.creatorId, status: "approved", role: "admin" });
+    return result[0];
+  }
   async setDaoInviteCode(daoId, code) {
     if (!code) throw new Error("Invite code required");
     const result = await db.update(daos).set({ inviteCode: code, updatedAt: /* @__PURE__ */ new Date() }).where(eq(daos.id, daoId)).returning();
@@ -848,6 +786,22 @@ var DatabaseStorage = class {
     if (!result[0]) throw new Error("Failed to create proposal");
     return result[0];
   }
+  async updateProposal(id, data, userId) {
+    if (!id || !data.title) throw new Error("Proposal ID and title required");
+    const proposal = await this.getProposal(id);
+    if (proposal.userId !== userId) throw new Error("Only proposal creator can update");
+    const result = await db.update(proposals).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq(proposals.id, id)).returning();
+    if (!result[0]) throw new Error("Failed to update proposal");
+    return result[0];
+  }
+  async deleteProposal(id, userId) {
+    const proposal = await this.getProposal(id);
+    const membership = await this.getDaoMembership(proposal.daoId, userId);
+    if (proposal.userId !== userId && (!membership || membership.role !== "admin")) {
+      throw new Error("Only proposal creator or DAO admin can delete");
+    }
+    await db.delete(proposals).where(eq(proposals.id, id));
+  }
   async updateProposalVotes(proposalId, voteType) {
     const proposal = await this.getProposal(proposalId);
     if (!proposal) throw new Error("Proposal not found");
@@ -888,6 +842,16 @@ var DatabaseStorage = class {
       return await db.select().from(contributions).orderBy(desc(contributions.createdAt));
     }
   }
+  async getContributionsCount(userId, daoId) {
+    if (!userId || !daoId) throw new Error("User ID and DAO ID required");
+    const result = await db.select().from(contributions).where(and(eq(contributions.userId, userId), eq(contributions.daoId, daoId)));
+    return result.length;
+  }
+  async getVotesCount(daoId, proposalId) {
+    if (!proposalId || !daoId) throw new Error("User ID and DAO ID required");
+    const result = await db.select().from(votes).where(and(eq(votes.userId, proposalId), eq(votes.daoId, daoId)));
+    return result.length;
+  }
   async getVotesByUserAndDao(userId, daoId) {
     if (!userId || !daoId) throw new Error("User ID and DAO ID required");
     return await db.select().from(votes).where(and(eq(votes.userId, userId), eq(votes.daoId, daoId)));
@@ -924,6 +888,10 @@ var DatabaseStorage = class {
     if (!inserted[0]) throw new Error("Failed to upsert vault");
     return inserted[0];
   }
+  async getVaultTransactions(vaultId, limit = 10, offset = 0) {
+    if (!vaultId) throw new Error("Vault ID required");
+    return await db.select().from(walletTransactions).where(eq(walletTransactions.vaultId, vaultId)).orderBy(desc(walletTransactions.createdAt)).limit(limit).offset(offset);
+  }
   async getUserBudgetPlans(userId, month) {
     if (!userId || !month) throw new Error("User ID and month required");
     return await db.select().from(budgetPlans).where(and(eq(budgetPlans.userId, userId), eq(budgetPlans.month, month)));
@@ -938,7 +906,24 @@ var DatabaseStorage = class {
     if (!inserted[0]) throw new Error("Failed to upsert budget plan");
     return inserted[0];
   }
-  async getTasks() {
+  async updateDaoInviteCode(daoId, code) {
+    if (!daoId || !code) throw new Error("DAO ID and code required");
+    const result = await db.update(daos).set({ inviteCode: code, updatedAt: /* @__PURE__ */ new Date() }).where(eq(daos.id, daoId)).returning();
+    if (!result[0]) throw new Error("Failed to update invite code");
+    return result[0];
+  }
+  async getTasks(daoId, status) {
+    let whereClause;
+    if (daoId && status) {
+      whereClause = and(eq(tasks.daoId, daoId), eq(tasks.status, status));
+    } else if (daoId) {
+      whereClause = eq(tasks.daoId, daoId);
+    } else if (status) {
+      whereClause = eq(tasks.status, status);
+    }
+    if (whereClause) {
+      return await db.select().from(tasks).where(whereClause).orderBy(desc(tasks.createdAt));
+    }
     return await db.select().from(tasks).orderBy(desc(tasks.createdAt));
   }
   async createTask(task) {
@@ -969,6 +954,14 @@ var DatabaseStorage = class {
     const result = await db.select().from(daoMemberships).where(and(eq(daoMemberships.daoId, daoId), eq(daoMemberships.userId, userId)));
     if (!result[0]) throw new Error("Membership not found");
     return result[0];
+  }
+  async getDaoMembers(daoId, userId, status, role, limit = 10, offset = 0) {
+    if (!daoId) throw new Error("DAO ID required");
+    let whereClause = eq(daoMemberships.daoId, daoId);
+    if (userId) whereClause = and(whereClause, eq(daoMemberships.userId, userId));
+    if (status) whereClause = and(whereClause, eq(daoMemberships.status, status));
+    if (role) whereClause = and(whereClause, eq(daoMemberships.role, role));
+    return await db.select().from(daoMemberships).where(whereClause).orderBy(desc(daoMemberships.createdAt)).limit(limit).offset(offset);
   }
   async createDaoMembership(args) {
     if (!args.daoId || !args.userId) throw new Error("Membership must have daoId and userId");
@@ -1002,6 +995,10 @@ var DatabaseStorage = class {
     if (!daoId) throw new Error("DAO ID required");
     return await db.select().from(billingHistory).where(eq(billingHistory.daoId, daoId)).orderBy(desc(billingHistory.createdAt));
   }
+  async getAllDaoBillingHistory() {
+    if (!billingHistory) throw new Error("Billing history table not found");
+    return await db.select().from(billingHistory).orderBy(desc(billingHistory.createdAt));
+  }
   async addDaoBillingHistory(entry) {
     if (!entry.daoId || !entry.amount || !entry.type) throw new Error("Billing history must have daoId, amount, and type");
     entry.createdAt = /* @__PURE__ */ new Date();
@@ -1009,6 +1006,35 @@ var DatabaseStorage = class {
     const result = await db.insert(billingHistory).values(entry).returning();
     if (!result[0]) throw new Error("Failed to add billing history");
     return result[0];
+  }
+  async getDaoAnalytics(daoId) {
+    if (!daoId) throw new Error("DAO ID required");
+    const [dao, members, proposals2, contributions2, vaults2] = await Promise.all([
+      this.getDao(daoId),
+      this.getDaoMembershipsByStatus(daoId, "approved"),
+      this.getProposals().then(
+        (proposals3) => proposals3.filter((p) => p.daoId === daoId && p.status === "active")
+      ),
+      this.getContributions(void 0, daoId),
+      this.getUserVaults(daoId)
+    ]);
+    const recentActivity = [
+      ...proposals2.map((p) => ({ type: "proposal", createdAt: p.createdAt })),
+      ...contributions2.map((c) => ({ type: "contribution", createdAt: c.createdAt })),
+      ...members.map((m) => ({ type: "membership", createdAt: m.createdAt }))
+    ].sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+    ).slice(0, 10);
+    const vaultBalance = vaults2.reduce((sum, v) => sum + (parseFloat(v.balance) || 0), 0);
+    return {
+      memberCount: members.length,
+      activeProposals: proposals2.length,
+      totalContributions: contributions2.length,
+      vaultBalance,
+      recentActivity,
+      createdAt: dao.createdAt,
+      updatedAt: dao.updatedAt
+    };
   }
   /**
    * Checks if a user has any active contributions or votes in a DAO.
@@ -1023,8 +1049,1451 @@ var DatabaseStorage = class {
     }
     return false;
   }
+  async revokeAllUserSessions(userId) {
+    if (!userId) throw new Error("User ID required");
+    await db.delete(sessions).where(eq(sessions.userId, userId));
+    process.stdout.write(`Revoked all sessions for user ${userId}
+`);
+  }
+  async createNotification(notification) {
+    notification.createdAt = /* @__PURE__ */ new Date();
+    notification.updatedAt = /* @__PURE__ */ new Date();
+    const result = await db.insert(notifications).values(notification).returning();
+    if (!result[0]) throw new Error("Failed to create notification");
+    return result[0];
+  }
+  async getUserNotifications(userId, read, limit = 10, offset = 0) {
+    let whereClause = eq(notifications.userId, userId);
+    if (read !== void 0) whereClause = and(whereClause, eq(notifications.read, read));
+    return await db.select().from(notifications).where(whereClause).orderBy(desc(notifications.createdAt)).limit(limit).offset(offset);
+  }
+  async getTaskHistory(taskId, limit = 10, offset = 0) {
+    return await db.select().from(taskHistory).where(eq(taskHistory.taskId, taskId)).orderBy(desc(taskHistory.createdAt)).limit(limit).offset(offset);
+  }
 };
 var storage = new DatabaseStorage();
+
+// server/routes/wallet.ts
+import express from "express";
+
+// server/agent_wallet.ts
+import Web3 from "web3";
+import { isAddress } from "web3-validator";
+import dotenv from "dotenv";
+dotenv.config();
+var ENHANCED_ERC20_ABI = [
+  {
+    "constant": true,
+    "inputs": [],
+    "name": "name",
+    "outputs": [{ "name": "", "type": "string" }],
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [],
+    "name": "symbol",
+    "outputs": [{ "name": "", "type": "string" }],
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [],
+    "name": "decimals",
+    "outputs": [{ "name": "", "type": "uint8" }],
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [],
+    "name": "totalSupply",
+    "outputs": [{ "name": "", "type": "uint256" }],
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [{ "name": "_owner", "type": "address" }],
+    "name": "balanceOf",
+    "outputs": [{ "name": "balance", "type": "uint256" }],
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      { "name": "_to", "type": "address" },
+      { "name": "_value", "type": "uint256" }
+    ],
+    "name": "transfer",
+    "outputs": [{ "name": "", "type": "bool" }],
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      { "name": "_spender", "type": "address" },
+      { "name": "_value", "type": "uint256" }
+    ],
+    "name": "approve",
+    "outputs": [{ "name": "", "type": "bool" }],
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [
+      { "name": "_owner", "type": "address" },
+      { "name": "_spender", "type": "address" }
+    ],
+    "name": "allowance",
+    "outputs": [{ "name": "", "type": "uint256" }],
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      { "name": "_from", "type": "address" },
+      { "name": "_to", "type": "address" },
+      { "name": "_value", "type": "uint256" }
+    ],
+    "name": "transferFrom",
+    "outputs": [{ "name": "", "type": "bool" }],
+    "type": "function"
+  }
+];
+var MULTISIG_ABI = [
+  {
+    "constant": true,
+    "inputs": [],
+    "name": "getOwners",
+    "outputs": [{ "name": "", "type": "address[]" }],
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [],
+    "name": "required",
+    "outputs": [{ "name": "", "type": "uint256" }],
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      { "name": "destination", "type": "address" },
+      { "name": "value", "type": "uint256" },
+      { "name": "data", "type": "bytes" }
+    ],
+    "name": "submitTransaction",
+    "outputs": [{ "name": "transactionId", "type": "uint256" }],
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [{ "name": "transactionId", "type": "uint256" }],
+    "name": "confirmTransaction",
+    "outputs": [],
+    "type": "function"
+  }
+];
+var EnhancedAgentWallet = class {
+  /**
+   * Approve a spender to spend a specified amount of ERC-20 tokens.
+   * @param tokenAddress ERC-20 token contract address
+   * @param spender Spender address
+   * @param amount Amount in human units (not wei)
+   * @param gasConfig Optional gas config
+   */
+  async approveToken(tokenAddress, spender, amount, gasConfig) {
+    if (!isAddress(tokenAddress)) {
+      throw new Error("Invalid token address");
+    }
+    if (!isAddress(spender)) {
+      throw new Error("Invalid spender address");
+    }
+    try {
+      const tokenInfo = await this.getTokenInfo(tokenAddress);
+      const amountWei = BigInt(Math.floor(amount * Math.pow(10, tokenInfo.decimals)));
+      const contract = new this.web3.eth.Contract(ENHANCED_ERC20_ABI, tokenAddress);
+      const nonce = await this.web3.eth.getTransactionCount(this.account.address);
+      const optimalGasConfig = gasConfig || await this.getOptimalGasConfig();
+      const transaction = {
+        to: tokenAddress,
+        data: contract.methods.approve(spender, amountWei.toString()).encodeABI(),
+        chainId: this.chainId,
+        gas: 1e5,
+        nonce: Number(nonce),
+        ...optimalGasConfig
+      };
+      transaction.gas = await this.estimateGasWithBuffer(transaction);
+      const signedTxn = await this.account.signTransaction(transaction);
+      const txHash = await this.web3.eth.sendSignedTransaction(signedTxn.rawTransaction);
+      console.log(`Token approval sent: ${txHash.transactionHash}`);
+      const result = {
+        hash: typeof txHash.transactionHash === "string" ? txHash.transactionHash : "",
+        status: "pending",
+        timestamp: Date.now()
+      };
+      this.transactionCache.set(result.hash, result);
+      return result;
+    } catch (error) {
+      console.error("Token approval failed:", error);
+      throw new Error(`Token approval failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  /**
+   * Get the allowance for a spender on an ERC-20 token.
+   * @param tokenAddress ERC-20 token contract address
+   * @param spender Spender address
+   * @returns Allowance in human units
+   */
+  async getAllowance(tokenAddress, spender) {
+    if (!isAddress(tokenAddress)) {
+      throw new Error("Invalid token address");
+    }
+    if (!isAddress(spender)) {
+      throw new Error("Invalid spender address");
+    }
+    try {
+      const contract = new this.web3.eth.Contract(ENHANCED_ERC20_ABI, tokenAddress);
+      const tokenInfo = await this.getTokenInfo(tokenAddress);
+      const allowance = await contract.methods.allowance(this.account.address, spender).call();
+      return Number(allowance) / Math.pow(10, tokenInfo.decimals);
+    } catch (error) {
+      throw new Error(`Failed to get allowance: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  /**
+   * Get the status of a transaction by hash.
+   * @param txHash Transaction hash
+   * @returns TransactionResult with status
+   */
+  async getTransactionStatus(txHash) {
+    try {
+      const receipt = await this.web3.eth.getTransactionReceipt(txHash);
+      if (!receipt) {
+        return {
+          hash: txHash,
+          status: "pending",
+          timestamp: Date.now()
+        };
+      }
+      return {
+        hash: txHash,
+        status: receipt.status ? "success" : "failed",
+        blockNumber: Number(receipt.blockNumber),
+        gasUsed: Number(receipt.gasUsed),
+        effectiveGasPrice: receipt.effectiveGasPrice ? Number(receipt.effectiveGasPrice) : void 0,
+        timestamp: Date.now()
+      };
+    } catch (error) {
+      return {
+        hash: txHash,
+        status: "failed",
+        errorReason: error instanceof Error ? error.message : String(error),
+        timestamp: Date.now()
+      };
+    }
+  }
+  web3;
+  account;
+  chainId;
+  networkConfig;
+  permissionCheck;
+  contributionLogger;
+  billingLogger;
+  priceOracle;
+  transactionCache = /* @__PURE__ */ new Map();
+  constructor(privateKey, networkConfig, permissionCheck, contributionLogger, billingLogger, priceOracle) {
+    this.web3 = new Web3(networkConfig.rpcUrl);
+    this.networkConfig = networkConfig;
+    const normalizedKey = WalletManager.normalizePrivateKey(privateKey);
+    if (!WalletManager.validatePrivateKey(normalizedKey)) {
+      throw new Error("Invalid private key format");
+    }
+    this.account = this.web3.eth.accounts.privateKeyToAccount(normalizedKey);
+    this.chainId = networkConfig.chainId;
+    this.permissionCheck = permissionCheck;
+    this.contributionLogger = contributionLogger;
+    this.billingLogger = billingLogger;
+    this.priceOracle = priceOracle;
+  }
+  // Utility to normalize private key (add 0x, trim whitespace)
+  static normalizePrivateKey(privateKey) {
+    let key = privateKey.trim();
+    if (!key.startsWith("0x")) {
+      key = "0x" + key;
+    }
+    return key;
+  }
+  // Enhanced balance operations
+  async getBalance() {
+    const balance = await this.web3.eth.getBalance(this.account.address);
+    return BigInt(balance);
+  }
+  async getBalanceCelo(address) {
+    const targetAddress = address || this.account.address;
+    const balance = await this.web3.eth.getBalance(targetAddress);
+    return parseFloat(this.web3.utils.fromWei(balance, "ether"));
+  }
+  async getBalanceEth(address) {
+    const targetAddress = address || this.account.address;
+    const balance = await this.web3.eth.getBalance(targetAddress);
+    return parseFloat(this.web3.utils.fromWei(balance, "ether"));
+  }
+  async getNetworkInfo() {
+    try {
+      const [latestBlock, gasPrice] = await Promise.all([
+        this.web3.eth.getBlockNumber(),
+        this.web3.eth.getGasPrice()
+      ]);
+      return {
+        chainId: this.chainId,
+        latestBlock: Number(latestBlock),
+        gasPrice: Number(gasPrice),
+        connected: true,
+        networkName: this.networkConfig.name,
+        explorerUrl: this.networkConfig.explorerUrl
+      };
+    } catch (error) {
+      return {
+        chainId: this.chainId,
+        connected: false,
+        error: error instanceof Error ? error.message : String(error),
+        networkName: this.networkConfig.name
+      };
+    }
+  }
+  async getTokenInfo(tokenAddress, includePrice = false) {
+    try {
+      const contract = new this.web3.eth.Contract(ENHANCED_ERC20_ABI, tokenAddress);
+      const [symbol, name, decimals, balance, totalSupply] = await Promise.all([
+        contract.methods.symbol().call(),
+        contract.methods.name().call(),
+        contract.methods.decimals().call(),
+        contract.methods.balanceOf(this.account.address).call(),
+        contract.methods.totalSupply().call().catch(() => "0")
+      ]);
+      const decimalCount = Number(decimals);
+      const balanceFormatted = Number(balance) / Math.pow(10, decimalCount);
+      const tokenInfo = {
+        symbol: String(symbol),
+        name: String(name),
+        decimals: decimalCount,
+        balance: String(balance),
+        balanceFormatted,
+        totalSupply: String(totalSupply)
+      };
+      if (includePrice && this.priceOracle) {
+        try {
+          tokenInfo.priceUsd = await this.priceOracle(tokenAddress);
+        } catch (error) {
+          console.warn(`Failed to get price for ${tokenAddress}:`, error);
+        }
+      }
+      return tokenInfo;
+    } catch (error) {
+      throw new Error(`Failed to get token info: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  // Enhanced gas estimation with EIP-1559 support
+  async getOptimalGasConfig() {
+    try {
+      if (this.supportsEIP1559()) {
+        const block = await this.web3.eth.getBlock("latest");
+        if (block.baseFeePerGas) {
+          const baseFee = BigInt(block.baseFeePerGas);
+          const priorityFee = BigInt(this.web3.utils.toWei("2", "gwei"));
+          const maxFee = baseFee * BigInt(2) + priorityFee;
+          return {
+            maxFeePerGas: maxFee.toString(),
+            maxPriorityFeePerGas: priorityFee.toString()
+          };
+        }
+      }
+      const gasPrice = await this.web3.eth.getGasPrice();
+      return { gasPrice: gasPrice.toString() };
+    } catch (error) {
+      console.warn("Failed to get optimal gas config:", error);
+      return { gasPrice: this.web3.utils.toWei("20", "gwei") };
+    }
+  }
+  supportsEIP1559() {
+    const eip1559Networks = [1, 5, 137, 80001, 42161, 421613];
+    return eip1559Networks.includes(this.chainId);
+  }
+  async estimateGasWithBuffer(transaction) {
+    try {
+      const estimated = await this.web3.eth.estimateGas(transaction);
+      const buffered = Math.floor(Number(estimated) * 1.2);
+      console.log(`Gas estimate: ${estimated}, with buffer: ${buffered}`);
+      return buffered;
+    } catch (error) {
+      console.warn("Gas estimation failed, using default:", error);
+      return 1e5;
+    }
+  }
+  // Enhanced transaction methods
+  async sendNativeToken(toAddress, amountEth, gasConfig) {
+    if (!isAddress(toAddress)) {
+      throw new Error("Invalid recipient address");
+    }
+    const amountWei = this.web3.utils.toWei(amountEth.toString(), "ether");
+    const balance = await this.getBalance();
+    if (balance < BigInt(amountWei)) {
+      const balanceEth = this.web3.utils.fromWei(balance.toString(), "ether");
+      throw new Error(`Insufficient balance. Have ${balanceEth} ETH, need ${amountEth}`);
+    }
+    try {
+      const nonce = await this.web3.eth.getTransactionCount(this.account.address);
+      const optimalGasConfig = gasConfig || await this.getOptimalGasConfig();
+      const transaction = {
+        to: toAddress,
+        value: amountWei,
+        gas: 21e3,
+        nonce: Number(nonce),
+        chainId: this.chainId,
+        ...optimalGasConfig
+      };
+      const signedTxn = await this.account.signTransaction(transaction);
+      const txHash = await this.web3.eth.sendSignedTransaction(signedTxn.rawTransaction);
+      console.log(`Native token transfer sent: ${txHash.transactionHash}`);
+      const result = {
+        hash: typeof txHash.transactionHash === "string" ? txHash.transactionHash : "",
+        status: "pending",
+        timestamp: Date.now()
+      };
+      this.transactionCache.set(result.hash, result);
+      return result;
+    } catch (error) {
+      console.error("Native token transfer failed:", error);
+      throw new Error(`Transaction failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  async sendTokenHuman(tokenAddress, toAddress, amount, gasConfig) {
+    if (!isAddress(tokenAddress)) {
+      throw new Error("Invalid token address");
+    }
+    if (!isAddress(toAddress)) {
+      throw new Error("Invalid recipient address");
+    }
+    try {
+      const tokenInfo = await this.getTokenInfo(tokenAddress);
+      const amountWei = BigInt(Math.floor(amount * Math.pow(10, tokenInfo.decimals)));
+      if (BigInt(tokenInfo.balance) < amountWei) {
+        throw new Error(
+          `Insufficient token balance. Have ${tokenInfo.balanceFormatted.toFixed(6)} ${tokenInfo.symbol}, need ${amount}`
+        );
+      }
+      const contract = new this.web3.eth.Contract(ENHANCED_ERC20_ABI, tokenAddress);
+      const nonce = await this.web3.eth.getTransactionCount(this.account.address);
+      const optimalGasConfig = gasConfig || await this.getOptimalGasConfig();
+      const transaction = {
+        to: tokenAddress,
+        data: contract.methods.transfer(toAddress, amountWei.toString()).encodeABI(),
+        chainId: this.chainId,
+        gas: 1e5,
+        nonce: Number(nonce),
+        ...optimalGasConfig
+      };
+      transaction.gas = await this.estimateGasWithBuffer(transaction);
+      const signedTxn = await this.account.signTransaction(transaction);
+      const txHash = await this.web3.eth.sendSignedTransaction(signedTxn.rawTransaction);
+      console.log(`Token transfer sent: ${txHash.transactionHash}`);
+      const result = {
+        hash: typeof txHash.transactionHash === "string" ? txHash.transactionHash : "",
+        status: "pending",
+        timestamp: Date.now()
+      };
+      this.transactionCache.set(result.hash, result);
+      return result;
+    } catch (error) {
+      console.error("Token transfer failed:", error);
+      throw new Error(`Token transfer failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  // Batch operations
+  async batchTransfer(transfers) {
+    const results = [];
+    for (const transfer of transfers) {
+      try {
+        let result;
+        if (transfer.tokenAddress) {
+          result = await this.sendTokenHuman(transfer.tokenAddress, transfer.toAddress, transfer.amount);
+        } else {
+          result = await this.sendNativeToken(transfer.toAddress, transfer.amount);
+        }
+        results.push(result);
+        await new Promise((resolve) => setTimeout(resolve, 1e3));
+      } catch (error) {
+        console.error(`Batch transfer failed for ${transfer.toAddress}:`, error);
+        results.push({
+          hash: "",
+          status: "failed",
+          errorReason: error instanceof Error ? error.message : String(error),
+          timestamp: Date.now()
+        });
+      }
+    }
+    return results;
+  }
+  // Enhanced portfolio management
+  async getEnhancedPortfolio(tokenAddresses) {
+    const portfolio = {
+      address: this.account.address,
+      nativeBalance: await this.getBalanceEth(),
+      tokens: {},
+      networkInfo: await this.getNetworkInfo(),
+      lastUpdated: Date.now()
+    };
+    let totalValueUsd = 0;
+    if (this.priceOracle) {
+      try {
+        const nativeTokenPrice = await this.priceOracle("native");
+        portfolio.nativeBalanceUsd = portfolio.nativeBalance * nativeTokenPrice;
+        totalValueUsd += portfolio.nativeBalanceUsd;
+      } catch (error) {
+        console.warn("Failed to get native token price:", error);
+      }
+    }
+    for (const tokenAddress of tokenAddresses) {
+      try {
+        const tokenInfo = await this.getTokenInfo(tokenAddress, true);
+        portfolio.tokens[tokenAddress] = tokenInfo;
+        if (tokenInfo.priceUsd && tokenInfo.balanceFormatted > 0) {
+          totalValueUsd += tokenInfo.balanceFormatted * tokenInfo.priceUsd;
+        }
+      } catch (error) {
+        console.warn(`Failed to get info for token ${tokenAddress}:`, error);
+        portfolio.tokens[tokenAddress] = {
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+    }
+    if (totalValueUsd > 0) {
+      portfolio.totalValueUsd = totalValueUsd;
+    }
+    return portfolio;
+  }
+  // Multisig support
+  async getMultisigInfo(multisigAddress) {
+    try {
+      const contract = new this.web3.eth.Contract(MULTISIG_ABI, multisigAddress);
+      const [ownersRaw, required] = await Promise.all([
+        contract.methods.getOwners().call(),
+        contract.methods.required().call()
+      ]);
+      const owners = Array.isArray(ownersRaw) ? ownersRaw : [];
+      const isOwner = owners.includes(this.account.address);
+      return {
+        owners,
+        required: Number(required),
+        isOwner
+      };
+    } catch (error) {
+      throw new Error(`Failed to get multisig info: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  async submitMultisigTransaction(multisigAddress, destination, value, data = "0x") {
+    try {
+      const contract = new this.web3.eth.Contract(MULTISIG_ABI, multisigAddress);
+      const nonce = await this.web3.eth.getTransactionCount(this.account.address);
+      const gasConfig = await this.getOptimalGasConfig();
+      const transaction = {
+        to: multisigAddress,
+        data: contract.methods.submitTransaction(destination, value, data).encodeABI(),
+        chainId: this.chainId,
+        gas: 2e5,
+        nonce: Number(nonce),
+        ...gasConfig
+      };
+      transaction.gas = await this.estimateGasWithBuffer(transaction);
+      const signedTxn = await this.account.signTransaction(transaction);
+      const txHash = await this.web3.eth.sendSignedTransaction(signedTxn.rawTransaction);
+      console.log(`Multisig transaction submitted: ${txHash.transactionHash}`);
+      return {
+        hash: typeof txHash.transactionHash === "string" ? txHash.transactionHash : "",
+        status: "pending",
+        timestamp: Date.now()
+      };
+    } catch (error) {
+      throw new Error(`Multisig transaction failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  // Enhanced transaction monitoring
+  async waitForTransaction(txHash, timeout = 120, pollLatency = 2) {
+    try {
+      console.log(`Waiting for transaction: ${txHash}`);
+      const receipt = await new Promise((resolve, reject) => {
+        const startTime = Date.now();
+        const poll = async () => {
+          try {
+            const receipt2 = await this.web3.eth.getTransactionReceipt(txHash);
+            if (receipt2) {
+              resolve(receipt2);
+              return;
+            }
+          } catch (error) {
+          }
+          if (Date.now() - startTime > timeout * 1e3) {
+            reject(new Error("Transaction timeout"));
+            return;
+          }
+          setTimeout(poll, pollLatency * 1e3);
+        };
+        poll();
+      });
+      const result = {
+        hash: txHash,
+        status: receipt.status ? "success" : "failed",
+        blockNumber: Number(receipt.blockNumber),
+        gasUsed: Number(receipt.gasUsed),
+        effectiveGasPrice: receipt.effectiveGasPrice ? Number(receipt.effectiveGasPrice) : void 0,
+        timestamp: Date.now()
+      };
+      this.transactionCache.set(txHash, result);
+      console.log(`Transaction ${txHash} ${result.status} in block ${result.blockNumber}`);
+      return result;
+    } catch (error) {
+      const failedResult = {
+        hash: txHash,
+        status: "failed",
+        errorReason: error instanceof Error ? error.message : String(error),
+        timestamp: Date.now()
+      };
+      this.transactionCache.set(txHash, failedResult);
+      throw new Error(`Transaction confirmation failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  // DAO Treasury Management with enhanced features
+  async scheduleDisburse(daoId, userId, disbursements, executeAt) {
+    const scheduledId = `${daoId}-${Date.now()}`;
+    const scheduledDisbursements = disbursements.map((d) => ({
+      ...d,
+      scheduledAt: executeAt || Date.now()
+    }));
+    console.log(`Scheduled disbursement ${scheduledId} for ${new Date(executeAt || Date.now())}`);
+    return { scheduledId, disbursements: scheduledDisbursements };
+  }
+  async estimateDisbursementCost(disbursements) {
+    const breakdown = [];
+    let totalGasCost = 0;
+    for (let i = 0; i < disbursements.length; i++) {
+      const d = disbursements[i];
+      let gasEstimate;
+      if (d.tokenAddress) {
+        gasEstimate = 65e3;
+      } else {
+        gasEstimate = 21e3;
+      }
+      const gasPrice = await this.web3.eth.getGasPrice();
+      const gasCost = Number(gasPrice) * gasEstimate;
+      breakdown.push({ index: i, gasCost });
+      totalGasCost += gasCost;
+    }
+    const result = { totalGasCost, breakdown };
+    if (this.priceOracle) {
+      try {
+        const ethPrice = await this.priceOracle("native");
+        result.totalGasCostUsd = totalGasCost / 1e18 * ethPrice;
+      } catch (error) {
+        console.warn("Failed to get ETH price for cost estimation:", error);
+      }
+    }
+    return result;
+  }
+  // Utility methods
+  async getTransactionHistory(limit = 10) {
+    return Array.from(this.transactionCache.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, limit);
+  }
+  async clearTransactionCache() {
+    this.transactionCache.clear();
+  }
+  getExplorerUrl(txHash) {
+    return `${this.networkConfig.explorerUrl}/tx/${txHash}`;
+  }
+  // Getters
+  get address() {
+    return this.account.address;
+  }
+  get network() {
+    return this.networkConfig;
+  }
+};
+var NetworkConfig = class _NetworkConfig {
+  static CELO_MAINNET = new _NetworkConfig(
+    "https://forno.celo.org",
+    42220,
+    "Celo Mainnet",
+    "https://explorer.celo.org"
+  );
+  static CELO_ALFAJORES = new _NetworkConfig(
+    "https://alfajores-forno.celo-testnet.org",
+    44787,
+    "Celo Alfajores Testnet",
+    "https://alfajores-blockscout.celo-testnet.org"
+  );
+  static ETHEREUM_MAINNET = new _NetworkConfig(
+    "https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY",
+    1,
+    "Ethereum Mainnet",
+    "https://etherscan.io"
+  );
+  static POLYGON_MAINNET = new _NetworkConfig(
+    "https://polygon-rpc.com",
+    137,
+    "Polygon Mainnet",
+    "https://polygonscan.com"
+  );
+  static ARBITRUM_ONE = new _NetworkConfig(
+    "https://arb1.arbitrum.io/rpc",
+    42161,
+    "Arbitrum One",
+    "https://arbiscan.io"
+  );
+  rpcUrl;
+  chainId;
+  name;
+  explorerUrl;
+  constructor(rpcUrl, chainId, name, explorerUrl = "") {
+    this.rpcUrl = rpcUrl;
+    this.chainId = chainId;
+    this.name = name;
+    this.explorerUrl = explorerUrl;
+  }
+};
+var WalletManager = class _WalletManager {
+  static createWallet() {
+    const account = new Web3().eth.accounts.create();
+    return {
+      address: account.address,
+      privateKey: account.privateKey
+    };
+  }
+  static validateAddress(address) {
+    return isAddress(address);
+  }
+  static normalizePrivateKey(privateKey) {
+    let key = privateKey.trim();
+    if (!key.startsWith("0x")) {
+      key = "0x" + key;
+    }
+    return key;
+  }
+  static validatePrivateKey(privateKey) {
+    try {
+      const key = _WalletManager.normalizePrivateKey(privateKey);
+      if (key.length !== 66) return false;
+      if (!/^0x[0-9a-fA-F]{64}$/.test(key)) return false;
+      new Web3().eth.accounts.privateKeyToAccount(key);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  static checksumAddress(address) {
+    return Web3.utils.toChecksumAddress(address);
+  }
+  static async isContract(web3, address) {
+    const code = await web3.eth.getCode(address);
+    return code !== "0x";
+  }
+};
+async function enhancedExample() {
+  try {
+    const config2 = NetworkConfig.CELO_ALFAJORES;
+    const mockPriceOracle2 = async (tokenAddress) => {
+      const prices = {
+        "native": 0.65,
+        // CELO price (more realistic for Celo network)
+        // Celo testnet token addresses
+        "0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1": 1,
+        // cUSD on Alfajores
+        "0xF194afDf50B03e69Bd7D057c1Aa9e10c9954E4C9": 1,
+        // cEUR on Alfajores  
+        "0x7037F7296B2fc7908de7b57a89efaa8319f0C500": 0.65
+        // mCELO on Alfajores
+      };
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const price = prices[tokenAddress.toLowerCase()] || prices[tokenAddress] || 0;
+      console.log(`Price for ${tokenAddress}: $${price}`);
+      return price;
+    };
+    const permissionCheck = async (daoId, userId, action) => {
+      console.log(`Permission check: ${userId} attempting ${action} on ${daoId}`);
+      const allowedActions = ["transfer", "approve", "disburse"];
+      return allowedActions.includes(action);
+    };
+    const contributionLogger = async (log2) => {
+      console.log("Contribution logged:", {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        ...log2
+      });
+    };
+    const isValidPrivateKey = (key) => {
+      if (!key || typeof key !== "string") return false;
+      key = key.trim();
+      if (!key.startsWith("0x")) return false;
+      if (key.length !== 66) return false;
+      return /^[0-9a-fA-F]{64}$/.test(key.slice(2));
+    };
+    let WALLET_PRIVATE_KEY = process.env.WALLET_PRIVATE_KEY;
+    if (typeof WALLET_PRIVATE_KEY !== "string") {
+      throw new Error("WALLET_PRIVATE_KEY is not set or not a string.");
+    }
+    WALLET_PRIVATE_KEY = WALLET_PRIVATE_KEY.trim();
+    console.log("[DEBUG] WALLET_PRIVATE_KEY:", WALLET_PRIVATE_KEY);
+    if (!isValidPrivateKey(WALLET_PRIVATE_KEY)) {
+      console.log("[DEBUG] WALLET_PRIVATE_KEY length:", WALLET_PRIVATE_KEY.length);
+      throw new Error("Invalid private key format. Must be 0x + 64 hex characters.");
+    }
+    const wallet2 = new EnhancedAgentWallet(
+      WALLET_PRIVATE_KEY,
+      config2,
+      permissionCheck,
+      contributionLogger,
+      void 0,
+      // billingLogger
+      mockPriceOracle2
+    );
+    console.log(`
+=== Enhanced Wallet Demo ===`);
+    console.log(`Wallet Address: ${wallet2.address}`);
+    console.log(`Network: ${config2.name}`);
+    console.log("\n--- Network Information ---");
+    const networkInfo = await wallet2.getNetworkInfo();
+    console.log(`Connected: ${networkInfo.connected}`);
+    console.log(`Latest Block: ${networkInfo.latestBlock}`);
+    console.log(`Gas Price: ${networkInfo.gasPrice ? (networkInfo.gasPrice / 1e9).toFixed(2) + " Gwei" : "N/A"}`);
+    console.log("\n--- Balance Information ---");
+    try {
+      const balance = await wallet2.getBalanceEth();
+      console.log(`Native Balance: ${balance.toFixed(6)} CELO`);
+      if (balance > 0) {
+        const balanceUsd = balance * 0.65;
+        console.log(`Balance (USD): $${balanceUsd.toFixed(2)}`);
+      }
+    } catch (error) {
+      console.log(`Balance check failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    console.log("\n--- Enhanced Portfolio ---");
+    const sampleTokens = [
+      "0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1",
+      // cUSD
+      "0xF194afDf50B03e69Bd7D057c1Aa9e10c9954E4C9"
+      // cEUR
+    ];
+    try {
+      const portfolio = await wallet2.getEnhancedPortfolio(sampleTokens);
+      console.log("Portfolio Summary:");
+      console.log(`- Address: ${portfolio.address}`);
+      console.log(`- Native Balance: ${portfolio.nativeBalance.toFixed(6)} CELO`);
+      console.log(`- Native Balance (USD): $${(portfolio.nativeBalanceUsd || 0).toFixed(2)}`);
+      console.log(`- Total Value (USD): $${(portfolio.totalValueUsd || 0).toFixed(2)}`);
+      Object.entries(portfolio.tokens).forEach(([address, token]) => {
+        const t = token;
+        if (!t.error) {
+          console.log(`- ${t.symbol}: ${t.balanceFormatted.toFixed(6)} (${t.name})`);
+        }
+      });
+    } catch (error) {
+      console.log(`Portfolio fetch failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    console.log("\n--- DAO Treasury Management ---");
+    const treasuryManager = new DaoTreasuryManager(
+      wallet2,
+      wallet2.address,
+      // Using wallet address as treasury for demo
+      sampleTokens
+    );
+    try {
+      const treasurySnapshot = await treasuryManager.getTreasurySnapshot();
+      console.log("Treasury Snapshot:");
+      console.log(`- Native Balance: ${treasurySnapshot.nativeBalance.toFixed(6)} CELO`);
+      console.log(`- Total Value (USD): $${(treasurySnapshot.totalValueUsd || 0).toFixed(2)}`);
+      const report = await treasuryManager.generateTreasuryReport("monthly");
+      console.log("Treasury Report:");
+      console.log(`- Period: ${report.period}`);
+      console.log(`- Top Holdings: ${report.topHoldings.length} positions`);
+      console.log(`- Recommendations: ${report.recommendations.length} items`);
+      report.recommendations.forEach((rec, i) => {
+        console.log(`  ${i + 1}. ${rec}`);
+      });
+    } catch (error) {
+      console.log(`Treasury management failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    console.log("\n--- Risk Management ---");
+    const riskManager2 = new RiskManager(wallet2, 1e3, 500);
+    const testTransfers = [
+      { amount: 0.1, description: "Small CELO transfer" },
+      { amount: 100, description: "Large CELO transfer" },
+      { amount: 1e3, description: "Very large transfer (should be blocked)" }
+    ];
+    for (const test of testTransfers) {
+      try {
+        const validation = await riskManager2.validateTransfer(test.amount, void 0, wallet2.address);
+        console.log(`${test.description}:`);
+        console.log(`  - Allowed: ${validation.allowed}`);
+        console.log(`  - Risk Score: ${validation.riskScore}/100`);
+        if (validation.reason) {
+          console.log(`  - Reason: ${validation.reason}`);
+        }
+      } catch (error) {
+        console.log(`Risk validation failed for ${test.description}: ${error}`);
+      }
+    }
+    console.log("\n--- Gas Estimation ---");
+    try {
+      const disbursements = [
+        { toAddress: wallet2.address, amount: 0.1 },
+        { toAddress: wallet2.address, amount: 0.1, tokenAddress: sampleTokens[0] }
+      ];
+      const gasEstimate = await wallet2.estimateDisbursementCost(disbursements);
+      console.log(`Gas Cost Estimate:`);
+      console.log(`- Total Gas Cost: ${gasEstimate.totalGasCost} wei`);
+      console.log(`- Gas Cost (CELO): ${(gasEstimate.totalGasCost / 1e18).toFixed(8)}`);
+      if (gasEstimate.totalGasCostUsd) {
+        console.log(`- Gas Cost (USD): $${gasEstimate.totalGasCostUsd.toFixed(4)}`);
+      }
+      console.log(`- Breakdown: ${gasEstimate.breakdown.length} transactions`);
+    } catch (error) {
+      console.log(`Gas estimation failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    console.log("\n--- Transaction Utilities ---");
+    const sampleTxHash = "0x6e1e7e2e2b7e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2";
+    console.log(`Explorer URL for tx: ${wallet2.getExplorerUrl(sampleTxHash)}`);
+    const txHistory = await wallet2.getTransactionHistory(5);
+    console.log(`Transaction Cache: ${txHistory.length} transactions`);
+    console.log("\n=== Demo Complete ===");
+    console.log("\u2713 Network connection tested");
+    console.log("\u2713 Balance operations demonstrated");
+    console.log("\u2713 Portfolio management shown");
+    console.log("\u2713 DAO treasury features previewed");
+    console.log("\u2713 Risk management validated");
+    console.log("\u2713 Gas estimation completed");
+  } catch (error) {
+    console.error("Enhanced example failed:", error);
+    console.error("Stack trace:", error instanceof Error ? error.stack : "No stack trace available");
+  }
+}
+var DaoTreasuryManager = class {
+  wallet;
+  treasuryAddress;
+  allowedTokens;
+  constructor(wallet2, treasuryAddress, allowedTokens2 = []) {
+    this.wallet = wallet2;
+    this.treasuryAddress = treasuryAddress;
+    this.allowedTokens = new Set(allowedTokens2);
+  }
+  async getTreasurySnapshot() {
+    const nativeBalance = await this.wallet.getBalanceEth(this.treasuryAddress);
+    const tokenBalances = {};
+    let totalValueUsd = 0;
+    for (const tokenAddress of Array.from(this.allowedTokens)) {
+      try {
+        const contract = new this.wallet["web3"].eth.Contract(ENHANCED_ERC20_ABI, tokenAddress);
+        const balance = await contract.methods.balanceOf(this.treasuryAddress).call();
+        const [symbol, name, decimals] = await Promise.all([
+          contract.methods.symbol().call(),
+          contract.methods.name().call(),
+          contract.methods.decimals().call()
+        ]);
+        const decimalCount = Number(decimals);
+        const balanceFormatted = Number(balance) / Math.pow(10, decimalCount);
+        const tokenInfo = {
+          symbol: String(symbol),
+          name: String(name),
+          decimals: decimalCount,
+          balance: String(balance),
+          balanceFormatted
+        };
+        if (this.wallet["priceOracle"] && balanceFormatted > 0) {
+          try {
+            const price = await this.wallet["priceOracle"](tokenAddress);
+            tokenInfo.priceUsd = price;
+            totalValueUsd += balanceFormatted * price;
+          } catch (error) {
+            console.warn(`Failed to get price for ${tokenAddress}:`, error);
+          }
+        }
+        tokenBalances[tokenAddress] = tokenInfo;
+      } catch (error) {
+        console.warn(`Failed to get treasury balance for ${tokenAddress}:`, error);
+      }
+    }
+    if (this.wallet["priceOracle"]) {
+      try {
+        const nativePrice = await this.wallet["priceOracle"]("native");
+        totalValueUsd += nativeBalance * nativePrice;
+      } catch (error) {
+        console.warn("Failed to get native token price:", error);
+      }
+    }
+    return {
+      nativeBalance,
+      tokenBalances,
+      totalValueUsd: totalValueUsd > 0 ? totalValueUsd : void 0,
+      lastUpdated: Date.now()
+    };
+  }
+  async generateTreasuryReport(period = "monthly") {
+    const currentSnapshot = await this.getTreasurySnapshot();
+    const topHoldings = [];
+    const recommendations = [];
+    const totalValue = currentSnapshot.totalValueUsd || 0;
+    if (totalValue > 0) {
+      if (this.wallet["priceOracle"]) {
+        try {
+          const nativePrice = await this.wallet["priceOracle"]("native");
+          const nativeValue = currentSnapshot.nativeBalance * nativePrice;
+          topHoldings.push({
+            token: "Native Token",
+            value: nativeValue,
+            percentage: nativeValue / totalValue * 100
+          });
+        } catch (error) {
+          console.warn("Failed to calculate native token value:", error);
+        }
+      }
+      for (const [address, token] of Object.entries(currentSnapshot.tokenBalances)) {
+        if (token.priceUsd && token.balanceFormatted > 0) {
+          const value = token.balanceFormatted * token.priceUsd;
+          topHoldings.push({
+            token: `${token.symbol} (${token.name})`,
+            value,
+            percentage: value / totalValue * 100
+          });
+        }
+      }
+      topHoldings.sort((a, b) => b.value - a.value);
+    }
+    if (topHoldings.length > 0) {
+      const largestHolding = topHoldings[0];
+      if (largestHolding.percentage > 70) {
+        recommendations.push(`Consider diversifying: ${largestHolding.token} represents ${largestHolding.percentage.toFixed(1)}% of treasury`);
+      }
+      if (currentSnapshot.nativeBalance < 0.1) {
+        recommendations.push("Treasury has low native token balance, consider maintaining more for gas fees");
+      }
+    }
+    return {
+      period,
+      currentSnapshot,
+      topHoldings,
+      recommendations
+    };
+  }
+  addAllowedToken(tokenAddress) {
+    if (WalletManager.validateAddress(tokenAddress)) {
+      this.allowedTokens.add(tokenAddress);
+    } else {
+      throw new Error("Invalid token address");
+    }
+  }
+  removeAllowedToken(tokenAddress) {
+    this.allowedTokens.delete(tokenAddress);
+  }
+  getAllowedTokens() {
+    return Array.from(this.allowedTokens);
+  }
+};
+var RiskManager = class {
+  wallet;
+  maxDailyVolume;
+  maxSingleTransfer;
+  dailyVolumeTracking = /* @__PURE__ */ new Map();
+  constructor(wallet2, maxDailyVolume = 1e4, maxSingleTransfer = 5e3) {
+    this.wallet = wallet2;
+    this.maxDailyVolume = maxDailyVolume;
+    this.maxSingleTransfer = maxSingleTransfer;
+  }
+  async validateTransfer(amount, tokenAddress, toAddress) {
+    let riskScore = 0;
+    let amountUsd = amount;
+    if (this.wallet["priceOracle"]) {
+      try {
+        const price = await this.wallet["priceOracle"](tokenAddress || "native");
+        amountUsd = amount * price;
+      } catch (error) {
+        console.warn("Failed to get price for risk assessment:", error);
+        riskScore += 10;
+      }
+    }
+    if (amountUsd > this.maxSingleTransfer) {
+      return {
+        allowed: false,
+        reason: `Transfer amount ${amountUsd.toFixed(2)} exceeds single transfer limit of ${this.maxSingleTransfer}`,
+        riskScore: 100
+      };
+    }
+    const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+    const dailyKey = `${this.wallet.address}-${today}`;
+    const dailyData = this.dailyVolumeTracking.get(dailyKey) || { date: today, volume: 0 };
+    if (dailyData.volume + amountUsd > this.maxDailyVolume) {
+      return {
+        allowed: false,
+        reason: `Transfer would exceed daily volume limit. Current: ${dailyData.volume.toFixed(2)}, Limit: ${this.maxDailyVolume}`,
+        riskScore: 100
+      };
+    }
+    if (toAddress && !WalletManager.validateAddress(toAddress)) {
+      return {
+        allowed: false,
+        reason: "Invalid recipient address",
+        riskScore: 100
+      };
+    }
+    if (toAddress && this.wallet["web3"]) {
+      try {
+        const isContract = await WalletManager.isContract(this.wallet["web3"], toAddress);
+        if (isContract) {
+          riskScore += 20;
+        }
+      } catch (error) {
+        riskScore += 10;
+      }
+    }
+    const amountRisk = amountUsd / this.maxSingleTransfer * 30;
+    riskScore += Math.min(amountRisk, 30);
+    dailyData.volume += amountUsd;
+    this.dailyVolumeTracking.set(dailyKey, dailyData);
+    return {
+      allowed: true,
+      riskScore: Math.min(riskScore, 100)
+    };
+  }
+  getDailyVolumeReport() {
+    return Array.from(this.dailyVolumeTracking.values()).map((data) => ({
+      date: data.date,
+      volume: data.volume,
+      percentage: data.volume / this.maxDailyVolume * 100
+    })).sort((a, b) => b.date.localeCompare(a.date));
+  }
+  setLimits(maxDailyVolume, maxSingleTransfer) {
+    if (maxDailyVolume !== void 0) this.maxDailyVolume = maxDailyVolume;
+    if (maxSingleTransfer !== void 0) this.maxSingleTransfer = maxSingleTransfer;
+  }
+  getLimits() {
+    return {
+      maxDailyVolume: this.maxDailyVolume,
+      maxSingleTransfer: this.maxSingleTransfer
+    };
+  }
+};
+var TransactionAnalytics = class {
+  transactions = [];
+  addTransaction(tx) {
+    this.transactions.push(tx);
+    if (this.transactions.length > 1e3) {
+      this.transactions = this.transactions.slice(-1e3);
+    }
+  }
+  getSuccessRate(timeframe = 24 * 60 * 60 * 1e3) {
+    const since = Date.now() - timeframe;
+    const recentTxs = this.transactions.filter((tx) => (tx.timestamp || 0) > since);
+    if (recentTxs.length === 0) return 100;
+    const successful = recentTxs.filter((tx) => tx.status === "success").length;
+    return successful / recentTxs.length * 100;
+  }
+  getAverageGasUsed(timeframe = 24 * 60 * 60 * 1e3) {
+    const since = Date.now() - timeframe;
+    const recentTxs = this.transactions.filter(
+      (tx) => (tx.timestamp || 0) > since && tx.gasUsed && tx.status === "success"
+    );
+    if (recentTxs.length === 0) return 0;
+    const totalGas = recentTxs.reduce((sum, tx) => sum + (tx.gasUsed || 0), 0);
+    return totalGas / recentTxs.length;
+  }
+  getFailureReasons() {
+    const reasons = {};
+    this.transactions.filter((tx) => tx.status === "failed" && tx.errorReason).forEach((tx) => {
+      const reason = tx.errorReason;
+      reasons[reason] = (reasons[reason] || 0) + 1;
+    });
+    return reasons;
+  }
+  generateReport(timeframe = 7 * 24 * 60 * 60 * 1e3) {
+    const since = Date.now() - timeframe;
+    const recentTxs = this.transactions.filter((tx) => (tx.timestamp || 0) > since);
+    const dailyGas = {};
+    recentTxs.filter((tx) => tx.gasUsed && tx.status === "success").forEach((tx) => {
+      const date = new Date(tx.timestamp || 0).toISOString().split("T")[0];
+      if (!dailyGas[date]) dailyGas[date] = [];
+      dailyGas[date].push(tx.gasUsed);
+    });
+    const gasEfficiencyTrend = Object.entries(dailyGas).map(([date, gasValues]) => ({
+      date,
+      avgGas: gasValues.reduce((a, b) => a + b, 0) / gasValues.length
+    })).sort((a, b) => a.date.localeCompare(b.date));
+    return {
+      totalTransactions: recentTxs.length,
+      successRate: this.getSuccessRate(timeframe),
+      averageGasUsed: this.getAverageGasUsed(timeframe),
+      failureReasons: this.getFailureReasons(),
+      gasEfficiencyTrend
+    };
+  }
+};
+var agent_wallet_default = EnhancedAgentWallet;
+enhancedExample();
+
+// server/routes/wallet.ts
+import { desc as desc2, eq as eq2, or as or2 } from "drizzle-orm";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+var __filename = fileURLToPath(import.meta.url);
+var __dirname = dirname(__filename);
+var PRIVATE_KEY = process.env.PRIVATE_KEY || "0x" + "1".repeat(64);
+var NETWORK = NetworkConfig.CELO_ALFAJORES;
+var mockPriceOracle = async (tokenAddress) => {
+  const prices = {
+    "native": 2500,
+    // ETH price
+    "0x...": 1
+    // USDC price
+  };
+  return prices[tokenAddress] || 0;
+};
+var wallet = null;
+try {
+  if (PRIVATE_KEY && PRIVATE_KEY !== "your_private_key_here") {
+    wallet = new agent_wallet_default(
+      PRIVATE_KEY,
+      NETWORK,
+      void 0,
+      // permissionCheck
+      void 0,
+      // contributionLogger
+      void 0,
+      // billingLogger
+      mockPriceOracle
+    );
+  }
+} catch (error) {
+  console.warn("Failed to initialize wallet:", error);
+}
+var riskManager = new RiskManager(wallet, 1e4, 5e3);
+var analytics = new TransactionAnalytics();
+var router = express.Router();
+function requireRole(...roles2) {
+  return (req, res, next) => {
+    const user = req.user;
+    if (!user || !roles2.includes(user.role)) {
+      return res.status(403).json({ error: "Forbidden: insufficient permissions" });
+    }
+    next();
+  };
+}
+var allowedTokens = /* @__PURE__ */ new Set();
+router.post("/risk/validate", async (req, res) => {
+  try {
+    const { amount, tokenAddress, toAddress } = req.body;
+    const result = await riskManager.validateTransfer(amount, tokenAddress, toAddress);
+    res.json(result);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+router.get("/analytics/report", async (req, res) => {
+  try {
+    const { timeframe } = req.query;
+    const report = analytics.generateReport(Number(timeframe) || 7 * 24 * 60 * 60 * 1e3);
+    res.json(report);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+router.post("/multisig/info", requireRole("admin", "elder"), async (req, res) => {
+  try {
+    const { multisigAddress } = req.body;
+    const info = await wallet.getMultisigInfo(multisigAddress);
+    res.json(info);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+router.post("/multisig/submit", requireRole("admin", "elder"), async (req, res) => {
+  try {
+    const { multisigAddress, destination, value, data } = req.body;
+    const result = await wallet.submitMultisigTransaction(multisigAddress, destination, value, data);
+    res.json(result);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+router.get("/allowed-tokens", requireRole("admin", "elder"), (req, res) => {
+  res.json({ allowedTokens: Array.from(allowedTokens) });
+});
+router.post("/allowed-tokens/add", requireRole("admin", "elder"), (req, res) => {
+  const { tokenAddress } = req.body;
+  if (WalletManager.validateAddress(tokenAddress)) {
+    allowedTokens.add(tokenAddress);
+    res.json({ success: true, allowedTokens: Array.from(allowedTokens) });
+  } else {
+    res.status(400).json({ error: "Invalid token address" });
+  }
+});
+router.post("/allowed-tokens/remove", requireRole("admin", "elder"), (req, res) => {
+  const { tokenAddress } = req.body;
+  allowedTokens.delete(tokenAddress);
+  res.json({ success: true, allowedTokens: Array.from(allowedTokens) });
+});
+router.get("/analytics", async (req, res) => {
+  try {
+    const { userId, walletAddress } = req.query;
+    let whereClause = void 0;
+    if (typeof userId === "string") {
+      whereClause = or2(eq2(walletTransactions.fromUserId, userId), eq2(walletTransactions.toUserId, userId));
+    } else if (typeof walletAddress === "string") {
+      whereClause = eq2(walletTransactions.walletAddress, walletAddress);
+    }
+    const txs = await db.select().from(walletTransactions).where(whereClause).orderBy(desc2(walletTransactions.createdAt));
+    const valueOverTime = {};
+    const tokenBreakdown = {};
+    let total = 0;
+    for (const tx of txs) {
+      const month = tx.createdAt ? new Date(tx.createdAt).toISOString().slice(0, 7) : "unknown";
+      const amt = typeof tx.amount === "string" ? parseFloat(tx.amount) : tx.amount;
+      if (!valueOverTime[month]) valueOverTime[month] = 0;
+      valueOverTime[month] += amt;
+      const currency = tx.currency || "UNKNOWN";
+      if (!tokenBreakdown[currency]) tokenBreakdown[currency] = 0;
+      tokenBreakdown[currency] += amt;
+      total += amt;
+    }
+    const typeSummary = {};
+    for (const tx of txs) {
+      const type = tx.type || "unknown";
+      if (!typeSummary[type]) typeSummary[type] = 0;
+      const amt = typeof tx.amount === "string" ? parseFloat(tx.amount) : tx.amount;
+      typeSummary[type] += amt;
+    }
+    res.json({
+      valueOverTime,
+      tokenBreakdown,
+      typeSummary,
+      total,
+      txCount: txs.length,
+      recent: txs.slice(0, 10)
+    });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+router.get("/network-info", async (req, res) => {
+  try {
+    const info = await wallet.getNetworkInfo();
+    res.json(info);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+router.get("/balance/:address?", async (req, res) => {
+  try {
+    const address = req.params.address || wallet.address;
+    const balance = await wallet.getBalanceEth(address);
+    res.json({ address, balance });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+router.get("/token-info/:tokenAddress", async (req, res) => {
+  try {
+    const info = await wallet.getTokenInfo(req.params.tokenAddress);
+    res.json(info);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+router.post("/send-native", async (req, res) => {
+  try {
+    const { toAddress, amount } = req.body;
+    const result = await wallet.sendNativeToken(toAddress, amount);
+    res.json(result);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+router.post("/send-token", async (req, res) => {
+  try {
+    const { tokenAddress, toAddress, amount } = req.body;
+    const result = await wallet.sendTokenHuman(tokenAddress, toAddress, amount);
+    res.json(result);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+router.post("/approve-token", async (req, res) => {
+  try {
+    const { tokenAddress, spender, amount } = req.body;
+    const result = await wallet.approveToken(tokenAddress, spender, amount);
+    res.json(result);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+router.get("/allowance/:tokenAddress/:spender", async (req, res) => {
+  try {
+    const { tokenAddress, spender } = req.params;
+    const allowance = await wallet.getAllowance(tokenAddress, spender);
+    res.json({ tokenAddress, spender, allowance });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+router.post("/portfolio", async (req, res) => {
+  try {
+    if (!wallet) {
+      return res.status(503).json({ error: "Wallet service not available" });
+    }
+    const { tokenAddresses } = req.body;
+    const addresses = Array.isArray(tokenAddresses) ? tokenAddresses : [];
+    const portfolio = await wallet.getEnhancedPortfolio(addresses);
+    res.json(portfolio);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+router.post("/batch-transfer", async (req, res) => {
+  try {
+    const { transfers } = req.body;
+    const results = await wallet.batchTransfer(transfers);
+    res.json(results);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+router.get("/analytics/tx-history", async (req, res) => {
+  try {
+    const { limit } = req.query;
+    const txs = await wallet.getTransactionHistory(Number(limit) || 10);
+    res.json(txs);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+router.get("/tx-status/:txHash", async (req, res) => {
+  try {
+    const status = await wallet.getTransactionStatus(req.params.txHash);
+    res.json(status);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+var wallet_default = router;
 
 // server/nextAuthMiddleware.ts
 import { getToken } from "next-auth/jwt";
@@ -1045,8 +2514,7 @@ var isAuthenticated = async (req, res, next) => {
 };
 
 // server/routes.ts
-init_schema();
-import { z } from "zod";
+import { ZodError } from "zod";
 
 // server/blockchain.ts
 import { ethers } from "ethers";
@@ -2754,9 +4222,9 @@ var MaonoVault_default = {
 // server/blockchain.ts
 var Maono_CONTRACT_ADDRESS = process.env.MAONO_CONTRACT_ADDRESS || "";
 var PROVIDER_URL = process.env.RPC_URL || "http://localhost:8545";
-var PRIVATE_KEY = process.env.MANAGER_PRIVATE_KEY || "";
+var PRIVATE_KEY2 = process.env.MANAGER_PRIVATE_KEY || "";
 var provider = new ethers.JsonRpcProvider(PROVIDER_URL);
-var signer = PRIVATE_KEY ? new ethers.Wallet(PRIVATE_KEY, provider) : void 0;
+var signer = PRIVATE_KEY2 ? new ethers.Wallet(PRIVATE_KEY2, provider) : void 0;
 var maonoVault = new ethers.Contract(
   Maono_CONTRACT_ADDRESS,
   MaonoVault_default.abi,
@@ -2792,61 +4260,359 @@ var MaonoVaultService = {
 
 // server/routes.ts
 import multer from "multer";
-import axios from "axios";
-var MPESA_CONFIG = {
-  consumerKey: process.env.MPESA_CONSUMER_KEY || "YOUR_CONSUMER_KEY",
-  consumerSecret: process.env.MPESA_CONSUMER_SECRET || "YOUR_CONSUMER_SECRET",
-  shortcode: process.env.MPESA_SHORTCODE || "YOUR_SHORTCODE",
-  passkey: process.env.MPESA_PASSKEY || "YOUR_PASSKEY",
-  callbackUrl: process.env.MPESA_CALLBACK_URL || "https://yourdomain.com/api/mpesa/callback"
-};
-async function initiateMpesaStkPush({ amount, phone, description }) {
-  const auth = Buffer.from(`${MPESA_CONFIG.consumerKey}:${MPESA_CONFIG.consumerSecret}`).toString("base64");
-  const tokenRes = await axios.get("https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials", {
-    headers: { Authorization: `Basic ${auth}` }
-  });
-  const accessToken = tokenRes.data.access_token;
-  const timestamp2 = (/* @__PURE__ */ new Date()).toISOString().replace(/[^0-9]/g, "").slice(0, 14);
-  const password = Buffer.from(`${MPESA_CONFIG.shortcode}${MPESA_CONFIG.passkey}${timestamp2}`).toString("base64");
-  const stkRes = await axios.post(
-    "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
-    {
-      BusinessShortCode: MPESA_CONFIG.shortcode,
-      Password: password,
-      Timestamp: timestamp2,
-      TransactionType: "CustomerPayBillOnline",
-      Amount: amount,
-      PartyA: phone,
-      PartyB: MPESA_CONFIG.shortcode,
-      PhoneNumber: phone,
-      CallBackURL: MPESA_CONFIG.callbackUrl,
-      AccountReference: "Deposit",
-      TransactionDesc: description || "Deposit to wallet"
-    },
-    {
-      headers: { Authorization: `Bearer ${accessToken}` }
+import fs from "fs";
+import path from "path";
+import { fileURLToPath as fileURLToPath2 } from "url";
+import { dirname as dirname2 } from "path";
+
+// server/routes/dao_treasury.ts
+import express2 from "express";
+var router2 = express2.Router();
+router2.get("/:daoId/balance", isAuthenticated, async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const dao = await storage.getDao(daoId);
+    if (!dao || !dao.treasuryPrivateKey) {
+      return res.status(404).json({ message: "DAO or treasury wallet not found" });
     }
-  );
-  return stkRes.data;
+    const config2 = NetworkConfig.CELO_ALFAJORES;
+    const mockPriceOracle2 = async (tokenAddress) => {
+      const prices = {
+        "native": 2500,
+        // ETH price
+        "0x...": 1
+        // USDC price
+      };
+      return prices[tokenAddress] || 0;
+    };
+    const wallet2 = new agent_wallet_default(
+      dao.treasuryPrivateKey,
+      config2,
+      void 0,
+      void 0,
+      void 0,
+      mockPriceOracle2
+    );
+    const treasuryManager = new DaoTreasuryManager(wallet2, dao.treasuryAddress, dao.allowedTokens || []);
+    const snapshot = await treasuryManager.getTreasurySnapshot();
+    res.json(snapshot);
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router2.post("/:daoId/transfer/native", isAuthenticated, async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const { toAddress, amount } = req.body;
+    const dao = await storage.getDao(daoId);
+    if (!dao || !dao.treasuryPrivateKey) {
+      return res.status(404).json({ message: "DAO or treasury wallet not found" });
+    }
+    const config2 = NetworkConfig.CELO_ALFAJORES;
+    const mockPriceOracle2 = async (tokenAddress) => {
+      const prices = {
+        "native": 2500,
+        "0x...": 1
+      };
+      return prices[tokenAddress] || 0;
+    };
+    const wallet2 = new agent_wallet_default(
+      dao.treasuryPrivateKey,
+      config2,
+      void 0,
+      void 0,
+      void 0,
+      mockPriceOracle2
+    );
+    const tx = await wallet2.sendNativeToken(toAddress, amount);
+    res.json({ tx });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router2.post("/:daoId/transfer/token", isAuthenticated, async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const { tokenAddress, toAddress, amount } = req.body;
+    const dao = await storage.getDao(daoId);
+    if (!dao || !dao.treasuryPrivateKey) {
+      return res.status(404).json({ message: "DAO or treasury wallet not found" });
+    }
+    const config2 = NetworkConfig.CELO_ALFAJORES;
+    const mockPriceOracle2 = async (tokenAddress2) => {
+      const prices = {
+        "native": 2500,
+        "0x...": 1
+      };
+      return prices[tokenAddress2] || 0;
+    };
+    const wallet2 = new agent_wallet_default(
+      dao.treasuryPrivateKey,
+      config2,
+      void 0,
+      void 0,
+      void 0,
+      mockPriceOracle2
+    );
+    const tx = await wallet2.sendTokenHuman(tokenAddress, toAddress, amount);
+    res.json({ tx });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router2.post("/:daoId/automation/payout", isAuthenticated, async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const { payouts } = req.body;
+    const dao = await storage.getDao(daoId);
+    if (!dao || !dao.treasuryPrivateKey) {
+      return res.status(404).json({ message: "DAO or treasury wallet not found" });
+    }
+    const config2 = NetworkConfig.CELO_ALFAJORES;
+    const mockPriceOracle2 = async (tokenAddress) => {
+      const prices = {
+        "native": 2500,
+        "0x...": 1
+      };
+      return prices[tokenAddress] || 0;
+    };
+    const wallet2 = new agent_wallet_default(
+      dao.treasuryPrivateKey,
+      config2,
+      void 0,
+      void 0,
+      void 0,
+      mockPriceOracle2
+    );
+    const results = await wallet2.batchTransfer(payouts);
+    res.json({ results });
+    router2.get("/:daoId/snapshot", isAuthenticated, async (req2, res2) => {
+      try {
+        const { daoId: daoId2 } = req2.params;
+        const dao2 = await storage.getDao(daoId2);
+        if (!dao2 || !dao2.treasuryPrivateKey) {
+          return res2.status(404).json({ message: "DAO or treasury wallet not found" });
+        }
+        const config3 = NetworkConfig.CELO_ALFAJORES;
+        const mockPriceOracle3 = async (tokenAddress) => {
+          const prices = {
+            "native": 2500,
+            "0x...": 1
+          };
+          return prices[tokenAddress] || 0;
+        };
+        const wallet3 = new agent_wallet_default(
+          dao2.treasuryPrivateKey,
+          config3,
+          void 0,
+          void 0,
+          void 0,
+          mockPriceOracle3
+        );
+        const treasuryManager = new DaoTreasuryManager(wallet3, dao2.treasuryAddress, dao2.allowedTokens || []);
+        const snapshot = await treasuryManager.getTreasurySnapshot();
+        res2.json(snapshot);
+      } catch (err) {
+        res2.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+      }
+    });
+    router2.get("/:daoId/report", isAuthenticated, async (req2, res2) => {
+      try {
+        const { daoId: daoId2 } = req2.params;
+        const { period } = req2.query;
+        const dao2 = await storage.getDao(daoId2);
+        if (!dao2 || !dao2.treasuryPrivateKey) {
+          return res2.status(404).json({ message: "DAO or treasury wallet not found" });
+        }
+        const config3 = NetworkConfig.CELO_ALFAJORES;
+        const mockPriceOracle3 = async (tokenAddress) => {
+          const prices = {
+            "native": 2500,
+            "0x...": 1
+          };
+          return prices[tokenAddress] || 0;
+        };
+        const wallet3 = new agent_wallet_default(
+          dao2.treasuryPrivateKey,
+          config3,
+          void 0,
+          void 0,
+          void 0,
+          mockPriceOracle3
+        );
+        const treasuryManager = new DaoTreasuryManager(wallet3, dao2.treasuryAddress, dao2.allowedTokens || []);
+        const report = await treasuryManager.generateTreasuryReport(period || "monthly");
+        res2.json(report);
+      } catch (err) {
+        res2.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+var dao_treasury_default = router2;
+
+// server/routes.ts
+var __filename2 = fileURLToPath2(import.meta.url);
+var __dirname2 = dirname2(__filename2);
+var uploadsDir = path.join(__dirname2, "uploads", "avatars");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
 }
 var storageConfig = multer.diskStorage({
   destination: function(req, file, cb) {
-    cb(null, "./uploads/avatars");
+    cb(null, uploadsDir);
   },
   filename: function(req, file, cb) {
     const ext = file.originalname.split(".").pop();
-    const userId = req.user && req.user.claims && req.user.claims.sub ? req.user.claims.sub : "unknown";
+    const userId = req.user?.claims?.sub ?? "unknown";
     cb(null, `${userId}.${ext}`);
   }
 });
 var upload = multer({ storage: storageConfig, limits: { fileSize: 2 * 1024 * 1024 } });
-function registerRoutes(app2) {
-  app2.post("/api/auth/login", async (req, res) => {
+function extractWalletAddress(req) {
+  const user = req.user;
+  return user?.walletAddress ?? user?.claims?.walletAddress ?? req.body?.userAddress;
+}
+async function withRetry(operation, maxAttempts = 3, delayMs = 1e3) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const { email, phone, password } = req.body;
-      if (!email && !phone || !password) {
-        return res.status(400).json({ message: "Email/phone and password required" });
+      return await operation();
+    } catch (error) {
+      if (attempt === maxAttempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw new Error("Max retry attempts reached");
+}
+function errorHandler(err, req, res, next) {
+  console.error(err);
+  const message = err instanceof ZodError ? "Invalid request data" : "Internal server error";
+  const details = err instanceof ZodError ? err.errors : void 0;
+  res.status(err.status || 500).json({ message, ...details && { errors: details } });
+}
+function registerRoutes(app2) {
+  app2.use("/api/wallet", isAuthenticated, wallet_default);
+  app2.use("/api/dao/treasury", dao_treasury_default);
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET environment variable is required");
+  }
+  app2.get("/api/notifications", isAuthenticated, async (req, res) => {
+    try {
+      const { limit = 10, offset = 0, read, userId } = req.query;
+      const authUserId = req.user.claims.sub;
+      if (userId && userId !== authUserId) {
+        return res.status(403).json({ message: "Forbidden: Cannot access other users' notifications" });
       }
+      const notifications2 = await storage.getUserNotifications(authUserId, read === "true", Number(limit), Number(offset));
+      res.json({ notifications: notifications2, total: notifications2.length });
+    } catch (err) {
+      throw new Error(`Failed to fetch notifications: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+  app2.get("/api/tasks/:id/history", isAuthenticated, async (req, res) => {
+    try {
+      const { limit = 10, offset = 0 } = req.query;
+      const userId = req.user.claims.sub;
+      const task = await storage.getTasks(void 0, void 0).then((ts) => ts.find((t) => t.id === req.params.id));
+      if (!task) return res.status(404).json({ message: "Task not found" });
+      const membership = await storage.getDaoMembership(task.daoId, userId);
+      if (!membership || membership.role !== "admin" && membership.role !== "moderator") {
+        return res.status(403).json({ message: "Admin or moderator role required to view task history" });
+      }
+      const history = await storage.getTaskHistory(req.params.id, Number(limit), Number(offset));
+      res.json({ history, total: history.length });
+    } catch (err) {
+      throw new Error(`Failed to fetch task history: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+  app2.put("/api/tasks/:id", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const updated = await storage.updateTask(req.params.id, req.body, userId);
+      res.json(updated);
+    } catch (err) {
+      throw new Error(`Failed to update task: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+  function isSuperuser(req, res, next) {
+    if (req.user && req.user.role === "superuser") {
+      return next();
+    }
+    res.status(403).json({ error: "Superuser access required" });
+  }
+  app2.get("/api/admin/daos", isAuthenticated, isSuperuser, async (req, res) => {
+    const { limit = 10, offset = 0 } = req.query;
+    try {
+      const daos2 = await storage.getAllDaos({ limit: Number(limit), offset: Number(offset) });
+      const total = await storage.getDaoCount();
+      res.json({ daos: daos2, total });
+    } catch (err) {
+      throw new Error(`Failed to fetch DAOs: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+  app2.get("/api/admin/users", isAuthenticated, isSuperuser, async (req, res) => {
+    const { limit = 10, offset = 0 } = req.query;
+    try {
+      const users2 = await storage.getAllUsers({ limit: Number(limit), offset: Number(offset) });
+      const total = await storage.getUserCount();
+      res.json({ users: users2, total });
+    } catch (err) {
+      throw new Error(`Failed to fetch users: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+  app2.get("/api/admin/fees", isAuthenticated, isSuperuser, async (req, res) => {
+    try {
+      const fees = await storage.getPlatformFeeInfo();
+      res.json({ fees });
+    } catch (err) {
+      throw new Error(`Failed to fetch fee info: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+  app2.get("/api/admin/logs", isAuthenticated, isSuperuser, async (req, res) => {
+    const { limit = 10, offset = 0 } = req.query;
+    try {
+      const logs2 = await storage.getSystemLogs({ limit: Number(limit), offset: Number(offset) });
+      const total = await storage.getLogCount();
+      res.json({ logs: logs2, total });
+    } catch (err) {
+      throw new Error(`Failed to fetch logs: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+  app2.get("/api/admin/billing", isAuthenticated, isSuperuser, async (req, res) => {
+    const { limit = 10, offset = 0 } = req.query;
+    try {
+      const billing = await storage.getAllDaoBillingHistory();
+      const total = await storage.getBillingCount();
+      res.json({ billing, total });
+    } catch (err) {
+      throw new Error(`Failed to fetch billing history: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+  app2.get("/api/admin/chaininfo", isAuthenticated, isSuperuser, async (req, res) => {
+    try {
+      const chainInfo2 = await storage.getChainInfo();
+      res.json({ chainInfo: chainInfo2 });
+    } catch (err) {
+      throw new Error(`Failed to fetch chain info: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+  app2.get("/api/admin/topmembers", isAuthenticated, isSuperuser, async (req, res) => {
+    const { limit = 10 } = req.query;
+    try {
+      const topMembers = await storage.getTopMembers({ limit: Number(limit) });
+      res.json({ topMembers });
+    } catch (err) {
+      throw new Error(`Failed to fetch top members: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+  app2.post("/api/auth/login", async (req, res) => {
+    const { email, phone, password } = req.body;
+    if (!email && !phone || !password) {
+      return res.status(400).json({ message: "Email/phone and password required" });
+    }
+    try {
       const user = email ? await storage.getUserByEmail(email) : await storage.getUserByPhone(phone);
       if (!user) {
         return res.status(401).json({ message: "User not found" });
@@ -2857,7 +4623,7 @@ function registerRoutes(app2) {
       }
       const token = jwt.sign(
         { sub: user.id, email: user.email, phone: user.phone },
-        process.env.JWT_SECRET || "changeme",
+        process.env.JWT_SECRET,
         { expiresIn: "7d" }
       );
       res.cookie("token", token, {
@@ -2867,271 +4633,142 @@ function registerRoutes(app2) {
         maxAge: 7 * 24 * 60 * 60 * 1e3
       });
       res.json({ user: { id: user.id, email: user.email, phone: user.phone }, token });
-    } catch (error) {
-      res.status(500).json({ message: "Login failed", error: error.message });
+    } catch (err) {
+      throw new Error(`Login failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
-  app2.get("/", (req, res) => {
-    res.json({ message: "Welcome to MTAA Connect API" });
-  });
-  app2.use("/api/payments", payments_default);
-  app2.post("/api/wallet/deposit", isAuthenticated, async (req, res) => {
+  app2.post("/api/daos", isAuthenticated, async (req, res) => {
     try {
-      const { amount, currency = "cUSD", provider: provider2, description } = req.body;
-      if (!amount || !provider2) {
-        return res.status(400).json({ message: "Amount and provider are required" });
-      }
       const userId = req.user.claims.sub;
-      let providerSessionUrl = null;
-      let providerSessionId = null;
-      switch (provider2) {
-        case "stripe":
-          break;
-        case "mpesa": {
-          const phone = req.body.phone;
-          if (!phone) {
-            return res.status(400).json({ message: "Phone number required for M-Pesa payment" });
-          }
-          try {
-            const mpesaRes = await initiateMpesaStkPush({ amount, phone, description });
-            providerSessionId = mpesaRes.CheckoutRequestID;
-            providerSessionUrl = null;
-            res.json({ providerSessionId, mpesaRes });
-            return;
-          } catch (err) {
-            return res.status(500).json({ message: "M-Pesa STK Push failed", error: err?.response?.data || err.message });
-          }
-        }
-        default:
-          return res.status(400).json({ message: "Unsupported payment provider" });
-      }
-      res.json({ providerSessionUrl, providerSessionId });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to initiate deposit" });
+      const dao = await storage.createDao({ ...req.body, creatorId: userId });
+      res.status(201).json(dao);
+    } catch (err) {
+      throw new Error(`Failed to create DAO: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
-  app2.post("/api/wallet/withdraw", isAuthenticated, async (req, res) => {
-    try {
-      const { amount, provider: provider2, currency = "cUSD", address, userVaultId, daoId } = req.body;
-      if (!amount || !provider2 || !userVaultId || !daoId) {
-        return res.status(400).json({ message: "Amount, provider, vault, and daoId are required" });
-      }
-      const userId = req.user.claims.sub;
-      const dao = await storage.getDao(daoId);
-      if (!dao) return res.status(404).json({ message: "DAO not found" });
-      if (!isDaoPremium(dao) && Number(amount) > 1e4) {
-        return res.status(403).json({ message: "Upgrade to premium to withdraw large amounts." });
-      }
-      const feeRate = isDaoPremium(dao) ? 0.01 : 0.02;
-      const fee = Math.ceil(Number(amount) * feeRate);
-      const netAmount = Number(amount) - fee;
-      const feeSuccess = await deductVaultFee(userVaultId, fee);
-      if (!feeSuccess) {
-        return res.status(400).json({ message: "Insufficient vault balance for fee deduction." });
-      }
-      const tx = await storage.createWalletTransaction({
-        fromUserId: userId,
-        vaultId: userVaultId,
-        toAddress: address,
-        amount: String(netAmount),
-        currency,
-        type: "withdrawal",
-        status: "pending",
-        provider: provider2
-      });
-      res.status(201).json({ transaction: tx, fee, message: "Withdrawal initiated." });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to initiate withdrawal" });
+  async function handleDaoJoin(daoId, userId, inviteCode) {
+    const existing = await storage.getDaoMembership(daoId, userId);
+    if (existing) return { status: 200, data: existing };
+    const dao = await storage.getDao(daoId);
+    if (!dao) return { status: 404, data: { message: "DAO not found" } };
+    if (dao.inviteOnly && !dao.inviteCode) {
+      return { status: 403, data: { message: "No invite code set for this DAO" } };
     }
-  });
+    if (dao.inviteCode && inviteCode !== dao.inviteCode) {
+      return { status: 403, data: { message: "Invalid invite code" } };
+    }
+    if (dao.plan === "free") {
+      const memberships = await storage.getDaoMembershipsByStatus(daoId, "approved");
+      if (memberships.length >= 25) {
+        return {
+          status: 403,
+          data: { message: "Free DAOs are limited to 25 members. Upgrade to premium for more." }
+        };
+      }
+    }
+    const status = dao.access === "private" || dao.inviteOnly ? "pending" : "approved";
+    const membership = await storage.createDaoMembership({ daoId, userId, status });
+    if (status === "approved") {
+      await storage.incrementDaoMemberCount(daoId);
+    }
+    return { status: 201, data: membership };
+  }
   app2.post("/api/dao/join", isAuthenticated, async (req, res) => {
     try {
       const { daoId } = req.body;
       const userId = req.user.claims.sub;
-      const existing = await storage.getDaoMembership(daoId, userId);
-      if (existing) {
-        return res.status(200).json(existing);
-      }
-      const dao = await storage.getDao(daoId);
-      if (!dao) return res.status(404).json({ message: "DAO not found" });
-      let status = dao.access === "private" ? "pending" : "approved";
-      const membership = await storage.createDaoMembership({ daoId, userId, status });
-      res.status(201).json(membership);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to join DAO" });
+      const result = await handleDaoJoin(daoId, userId);
+      res.status(result.status).json(result.data);
+    } catch (err) {
+      throw new Error(`Failed to join DAO: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.post("/api/dao/join-with-invite", isAuthenticated, async (req, res) => {
     try {
       const { daoId, inviteCode } = req.body;
       const userId = req.user.claims.sub;
-      const existing = await storage.getDaoMembership(daoId, userId);
-      if (existing) {
-        return res.status(200).json(existing);
-      }
-      const dao = await storage.getDao(daoId);
-      if (!dao) return res.status(404).json({ message: "DAO not found" });
-      if (!dao.inviteOnly && !dao.inviteCode) {
-        return res.status(400).json({ message: "DAO does not require an invite code" });
-      }
-      if (dao.inviteCode && dao.inviteCode !== inviteCode) {
-        return res.status(403).json({ message: "Invalid invite code" });
-      }
-      if (dao.inviteOnly && !dao.inviteCode) {
-        return res.status(403).json({ message: "No invite code set for this DAO" });
-      }
-      let status = dao.access === "private" || dao.inviteOnly ? "pending" : "approved";
-      const membership = await storage.createDaoMembership({ daoId, userId, status });
-      res.status(201).json(membership);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to join DAO with invite" });
+      const result = await handleDaoJoin(daoId, userId, inviteCode);
+      res.status(result.status).json(result.data);
+    } catch (err) {
+      throw new Error(`Failed to join DAO with invite: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.post("/api/dao/:daoId/invite/generate", isAuthenticated, async (req, res) => {
     try {
       const { daoId } = req.params;
       const code = Math.random().toString(36).substring(2, 10).toUpperCase();
-      const updated = await storage.setDaoInviteCode(daoId, code);
-      res.json({ inviteCode: code });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to generate invite code" });
+      await storage.updateDaoInviteCode(daoId, code);
+      res.status(201).json({ daoId, code });
+    } catch (err) {
+      throw new Error(`Failed to generate invite code: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
-  app2.get("/api/dao/:daoId/memberships/pending", isAuthenticated, async (req, res) => {
+  app2.post("/api/dao/:daoId/membership/:userId/approve", isAuthenticated, async (req, res) => {
     try {
-      const { daoId } = req.params;
-      const pending = await storage.getDaoMembershipsByStatus(daoId, "pending");
-      res.json(pending);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch pending memberships" });
-    }
-  });
-  app2.post("/api/dao/membership/:membershipId/approve", isAuthenticated, async (req, res) => {
-    try {
-      const { membershipId } = req.params;
-      const membership = await storage.updateDaoMembershipStatus(membershipId, "approved");
-      res.json(membership);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to approve membership" });
-    }
-  });
-  app2.post("/api/dao/membership/:membershipId/reject", isAuthenticated, async (req, res) => {
-    try {
-      const { membershipId } = req.params;
-      const membership = await storage.updateDaoMembershipStatus(membershipId, "rejected");
-      res.json(membership);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to reject membership" });
-    }
-  });
-  app2.post("/api/dao/leave", isAuthenticated, async (req, res) => {
-    try {
-      const { daoId } = req.body;
-      const userId = req.user.claims.sub;
-      const membership = await storage.getDaoMembership(daoId, userId);
-      if (!membership) {
-        return res.status(404).json({ message: "Membership not found" });
-      }
-      if (membership.status === "left") {
-        return res.status(400).json({ message: "You have already left this DAO" });
-      }
+      const { daoId, userId } = req.params;
       const dao = await storage.getDao(daoId);
-      if (dao && (dao.admins.length === 1 || dao.owners.length === 1) && membership.role === "admin") {
-        return res.status(403).json({ message: "Cannot leave DAO as the last admin/owner" });
+      if (!dao) return res.status(404).json({ message: "DAO not found" });
+      if (dao.plan === "free") {
+        const memberships = await storage.getDaoMembershipsByStatus(daoId, "approved");
+        if (memberships.length >= 25) {
+          return res.status(403).json({ message: "Free DAOs are limited to 25 members. Upgrade to premium for more." });
+        }
       }
-      const hasActiveContributions = await storage.hasActiveContributions(userId, daoId);
-      if (dao.isPremium && !hasActiveContributions) {
-        return res.status(403).json({ message: "Cannot leave DAO without active contributions or votes" });
-      }
-      await storage.updateDaoMembershipStatus(membership.id, "left");
-      res.status(200).json({ message: "Left DAO successfully" });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to leave DAO" });
+      const membershipRecord = await storage.getDaoMembership(daoId, userId);
+      if (!membershipRecord) return res.status(404).json({ message: "Membership not found" });
+      const membership = await storage.updateDaoMembershipStatus(membershipRecord.id, "approved");
+      await storage.incrementDaoMemberCount(daoId);
+      res.json(membership);
+    } catch (err) {
+      throw new Error(`Failed to approve membership: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
-  app2.get("/api/dao/:daoId/membership/status", isAuthenticated, async (req, res) => {
+  app2.post("/api/dao/:daoId/membership/:userId/reject", isAuthenticated, async (req, res) => {
+    try {
+      const { daoId, userId } = req.params;
+      const membershipRecord = await storage.getDaoMembership(daoId, userId);
+      if (!membershipRecord) return res.status(404).json({ message: "Membership not found" });
+      const membership = await storage.updateDaoMembershipStatus(membershipRecord.id, "rejected");
+      res.json(membership);
+    } catch (err) {
+      throw new Error(`Failed to reject membership: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+  app2.get("/api/dao/:daoId/members", isAuthenticated, async (req, res) => {
+    try {
+      const { daoId } = req.params;
+      const { limit = 10, offset = 0, status, role } = req.query;
+      const userId = req.user.claims.sub;
+      const membership = await storage.getDaoMembership(daoId, userId);
+      if (!membership || membership.role !== "admin" && membership.role !== "elder") {
+        return res.status(403).json({ message: "Admin or elder role required" });
+      }
+      const members = await storage.getDaoMembers(
+        daoId,
+        userId,
+        status,
+        role,
+        Number(limit),
+        Number(offset)
+      );
+      const total = await storage.getDaoMembershipsByStatus(daoId, status).then((m) => m.length);
+      res.json({ members, total });
+    } catch (err) {
+      throw new Error(`Failed to fetch DAO members: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+  app2.get("/api/dao/:daoId/analytics", isAuthenticated, async (req, res) => {
     try {
       const { daoId } = req.params;
       const userId = req.user.claims.sub;
       const membership = await storage.getDaoMembership(daoId, userId);
-      res.json(membership || { status: null });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch membership status" });
-    }
-  });
-  app2.get("/api/referrals/stats", isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const stats = await storage.getUserReferralStats(userId);
-      res.json(stats);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch referral stats" });
-    }
-  });
-  app2.get("/api/referrals/leaderboard", async (req, res) => {
-    try {
-      const limit = req.query.limit ? parseInt(req.query.limit, 10) : 10;
-      const leaderboard = await storage.getReferralLeaderboard(limit);
-      res.json(leaderboard);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch referral leaderboard" });
-    }
-  });
-  app2.post("/api/auth/send-otp", async (req, res) => {
-    try {
-      const { generateAndSendOTP: generateAndSendOTP2 } = await Promise.resolve().then(() => (init_otp(), otp_exports));
-      const { email, phone } = req.body;
-      if (!email && !phone) return res.status(400).json({ message: "Email or phone required" });
-      await generateAndSendOTP2({ email, phone });
-      res.json({ message: "OTP sent" });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to send OTP" });
-    }
-  });
-  app2.post("/api/auth/verify-otp", async (req, res) => {
-    try {
-      const { verifyOTP: verifyOTP2 } = await Promise.resolve().then(() => (init_otp(), otp_exports));
-      const { email, phone, otp } = req.body;
-      if (!otp || !email && !phone) return res.status(400).json({ message: "OTP and email/phone required" });
-      const valid = await verifyOTP2({ email, phone, otp });
-      if (!valid) return res.status(400).json({ message: "Invalid or expired OTP" });
-      res.json({ message: "OTP verified" });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to verify OTP" });
-    }
-  });
-  app2.get("/api/proposals", async (req, res) => {
-    try {
-      const proposals2 = await storage.getProposals();
-      res.json(proposals2);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch proposals" });
-    }
-  });
-  app2.get("/api/proposals/:id", async (req, res) => {
-    try {
-      const proposal = await storage.getProposal(req.params.id);
-      if (!proposal) {
-        return res.status(404).json({ message: "Proposal not found" });
+      if (!membership || membership.role !== "admin") {
+        return res.status(403).json({ message: "Admin role required" });
       }
-      res.json(proposal);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch proposal" });
-    }
-  });
-  app2.post("/api/proposals", isAuthenticated, async (req, res) => {
-    try {
-      const validatedData = insertProposalSchema.parse(req.body);
-      const proposal = await storage.createProposal({
-        ...validatedData,
-        proposerId: req.user.claims.sub
-      });
-      res.status(201).json(proposal);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid proposal data", errors: error.errors });
-      }
-      res.status(500).json({ message: "Failed to create proposal" });
+      const analytics2 = await storage.getDaoAnalytics(daoId);
+      res.json(analytics2);
+    } catch (err) {
+      throw new Error(`Failed to fetch DAO analytics: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.post("/api/votes", isAuthenticated, async (req, res) => {
@@ -3148,28 +4785,55 @@ function registerRoutes(app2) {
       });
       await storage.updateProposalVotes(validatedData.proposalId, validatedData.voteType);
       res.status(201).json(vote);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid vote data", errors: error.errors });
+    } catch (err) {
+      if (err instanceof ZodError) {
+        return res.status(400).json({ message: "Invalid vote data", errors: err.errors });
       }
-      res.status(500).json({ message: "Failed to create vote" });
+      throw new Error(`Failed to create vote: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
+  app2.put("/api/proposals/:id", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const updated = await storage.updateProposal(req.params.id, req.body, userId);
+      res.json(updated);
+    } catch (err) {
+      throw new Error(`Failed to update proposal: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    app2.delete("/api/proposals/:id", isAuthenticated, async (req2, res2) => {
+      try {
+        const userId = req2.user.claims.sub;
+        const proposal = await storage.getProposal(req2.params.id);
+        if (!proposal) return res2.status(404).json({ message: "Proposal not found" });
+        if (proposal.creatorId !== userId) {
+          return res2.status(403).json({ message: "Only the creator can delete this proposal" });
+        }
+        await storage.deleteProposal(req2.params.id, userId);
+        res2.status(204).send();
+      } catch (err) {
+        throw new Error(`Failed to delete proposal: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+  });
   app2.get("/api/votes/proposal/:proposalId", async (req, res) => {
+    const { limit = 10, offset = 0 } = req.query;
     try {
       const votes2 = await storage.getVotesByProposal(req.params.proposalId);
-      res.json(votes2);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch votes" });
+      const total = await storage.getVotesCount(req.params.proposalId, req.query.daoId);
+      res.json({ votes: votes2, total });
+    } catch (err) {
+      throw new Error(`Failed to fetch votes: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.get("/api/contributions", isAuthenticated, async (req, res) => {
+    const { limit = 10, offset = 0 } = req.query;
     try {
       const userId = req.query.userId === "me" ? req.user.claims.sub : req.query.userId;
-      const contributions2 = await storage.getContributions(userId);
-      res.json(contributions2);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch contributions" });
+      const contributions2 = await storage.getContributions(userId, userId);
+      const total = await storage.getContributionsCount(userId, userId);
+      res.json({ contributions: contributions2, total });
+    } catch (err) {
+      throw new Error(`Failed to fetch contributions: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.post("/api/contributions", isAuthenticated, async (req, res) => {
@@ -3180,27 +4844,11 @@ function registerRoutes(app2) {
         userId: req.user.claims.sub
       });
       res.status(201).json(contribution);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid contribution data", errors: error.errors });
+    } catch (err) {
+      if (err instanceof ZodError) {
+        return res.status(400).json({ message: "Invalid contribution data", errors: err.errors });
       }
-      res.status(500).json({ message: "Failed to create contribution" });
-    }
-  });
-  app2.get("/api/contributions/stats", isAuthenticated, async (req, res) => {
-    try {
-      const stats = await storage.getUserContributionStats(req.user.claims.sub);
-      res.json(stats);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch contribution stats" });
-    }
-  });
-  app2.get("/api/vaults", isAuthenticated, async (req, res) => {
-    try {
-      const vaults2 = await storage.getUserVaults(req.user.claims.sub);
-      res.json(vaults2);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch vaults" });
+      throw new Error(`Failed to create contribution: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.post("/api/vaults", isAuthenticated, async (req, res) => {
@@ -3211,19 +4859,37 @@ function registerRoutes(app2) {
         userId: req.user.claims.sub
       });
       res.status(201).json(vault);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid vault data", errors: error.errors });
+    } catch (err) {
+      if (err instanceof ZodError) {
+        return res.status(400).json({ message: "Invalid vault data", errors: err.errors });
       }
-      res.status(500).json({ message: "Failed to create/update vault" });
+      throw new Error(`Failed to create/update vault: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+  app2.get("/api/vaults/:vaultId/transactions", isAuthenticated, async (req, res) => {
+    try {
+      const { vaultId } = req.params;
+      const { limit = 10, offset = 0 } = req.query;
+      const userId = req.user.claims.sub;
+      const vault = await storage.getUserVaults(userId).then(
+        (vaults2) => vaults2.find((v) => v.id === vaultId)
+      );
+      if (!vault) return res.status(403).json({ message: "Vault not found or unauthorized" });
+      const transactions = await storage.getVaultTransactions(vaultId, Number(limit), Number(offset));
+      const total = await storage.getVaultTransactions(vaultId);
+      res.json({ transactions, total });
+    } catch (err) {
+      throw new Error(`Failed to fetch vault transactions: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.get("/api/budget/:month", isAuthenticated, async (req, res) => {
+    const { limit = 10, offset = 0 } = req.query;
     try {
       const plans = await storage.getUserBudgetPlans(req.user.claims.sub, req.params.month);
-      res.json(plans);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch budget plans" });
+      const total = await storage.getBudgetPlanCount(req.user.claims.sub, req.params.month);
+      res.json({ plans, total });
+    } catch (err) {
+      throw new Error(`Failed to fetch budget plans: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.post("/api/budget", isAuthenticated, async (req, res) => {
@@ -3234,44 +4900,61 @@ function registerRoutes(app2) {
         userId: req.user.claims.sub
       });
       res.status(201).json(plan);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid budget plan data", errors: error.errors });
+    } catch (err) {
+      if (err instanceof ZodError) {
+        return res.status(400).json({ message: "Invalid budget plan data", errors: err.errors });
       }
-      res.status(500).json({ message: "Failed to create/update budget plan" });
+      throw new Error(`Failed to create/update budget plan: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.get("/api/tasks", async (req, res) => {
+    const { daoId, status, limit = 10, offset = 0 } = req.query;
+    if (!daoId) return res.status(400).json({ message: "DAO ID required" });
     try {
+      const dao = await storage.getDao(daoId);
+      if (!isDaoPremium(dao)) {
+        return res.status(403).json({ message: "Task marketplace is a premium feature. Upgrade your DAO plan." });
+      }
       const tasks2 = await storage.getTasks();
-      res.json(tasks2);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch tasks" });
+      const total = await storage.getTaskCount(daoId, status);
+      res.json({ tasks: tasks2, total });
+    } catch (err) {
+      throw new Error(`Failed to fetch tasks: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.post("/api/tasks/:id/claim", isAuthenticated, async (req, res) => {
     try {
       const taskId = req.params.id;
       const userId = req.user.claims.sub;
+      const { daoId } = req.body;
+      if (!daoId) return res.status(400).json({ message: "DAO ID required" });
+      const dao = await storage.getDao(daoId);
+      if (!isDaoPremium(dao)) {
+        return res.status(403).json({ message: "Task claiming is a premium feature. Upgrade your DAO plan." });
+      }
       const claimedTask = await storage.claimTask(taskId, userId);
       if (!claimedTask) {
         return res.status(404).json({ message: "Task not found or already claimed" });
       }
       res.json(claimedTask);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to claim task" });
+    } catch (err) {
+      throw new Error(`Failed to claim task: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.post("/api/tasks", isAuthenticated, async (req, res) => {
     try {
-      const { title, description, reward } = req.body;
-      if (!title || !description || !reward) {
+      const { title, description, reward, daoId } = req.body;
+      if (!title || !description || !reward || !daoId) {
         return res.status(400).json({ message: "Missing required fields" });
       }
-      const newTask = await storage.createTask({ title, description, reward });
+      const dao = await storage.getDao(daoId);
+      if (!isDaoPremium(dao)) {
+        return res.status(403).json({ message: "Task creation is a premium feature. Upgrade your DAO plan." });
+      }
+      const newTask = await storage.createTask({ title, description, reward, daoId });
       res.status(201).json(newTask);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to create task" });
+    } catch (err) {
+      throw new Error(`Failed to create task: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.get("/api/user/profile", isAuthenticated, async (req, res) => {
@@ -3280,8 +4963,8 @@ function registerRoutes(app2) {
       const user = await storage.getUserProfile(userId);
       if (!user) return res.status(404).json({ message: "User not found" });
       res.json(user);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch user profile" });
+    } catch (err) {
+      throw new Error(`Failed to fetch user profile: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.put("/api/user/profile", isAuthenticated, async (req, res) => {
@@ -3289,8 +4972,8 @@ function registerRoutes(app2) {
       const userId = req.user.claims.sub;
       const updated = await storage.updateUserProfile(userId, req.body);
       res.json(updated);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update user profile" });
+    } catch (err) {
+      throw new Error(`Failed to update user profile: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.post("/api/user/avatar", isAuthenticated, upload.single("avatar"), async (req, res) => {
@@ -3301,8 +4984,8 @@ function registerRoutes(app2) {
       const avatarUrl = `/uploads/avatars/${req.file.filename}`;
       await storage.updateUserProfile(req.user.claims.sub, { avatar: avatarUrl });
       res.status(200).json({ message: "Avatar uploaded", avatarUrl });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to upload avatar" });
+    } catch (err) {
+      throw new Error(`Failed to upload avatar: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.get("/api/user/social", isAuthenticated, async (req, res) => {
@@ -3310,8 +4993,8 @@ function registerRoutes(app2) {
       const userId = req.user.claims.sub;
       const social = await storage.getUserSocialLinks(userId);
       res.json(social);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch social links" });
+    } catch (err) {
+      throw new Error(`Failed to fetch social links: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.post("/api/user/social", isAuthenticated, async (req, res) => {
@@ -3319,17 +5002,17 @@ function registerRoutes(app2) {
       const userId = req.user.claims.sub;
       const updated = await storage.updateUserSocialLinks(userId, req.body);
       res.json(updated);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update social links" });
+    } catch (err) {
+      throw new Error(`Failed to update social links: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.get("/api/user/wallet", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user.claims.sub;
-      const wallet = await storage.getUserWallet(userId);
-      res.json(wallet);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch wallet" });
+      const wallet2 = await storage.getUserWallet(userId);
+      res.json(wallet2);
+    } catch (err) {
+      throw new Error(`Failed to fetch wallet: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.post("/api/user/wallet", isAuthenticated, async (req, res) => {
@@ -3337,8 +5020,8 @@ function registerRoutes(app2) {
       const userId = req.user.claims.sub;
       const updated = await storage.updateUserWallet(userId, req.body);
       res.json(updated);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update wallet" });
+    } catch (err) {
+      throw new Error(`Failed to update wallet: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.get("/api/user/settings", isAuthenticated, async (req, res) => {
@@ -3346,8 +5029,8 @@ function registerRoutes(app2) {
       const userId = req.user.claims.sub;
       const settings = await storage.getUserSettings(userId);
       res.json(settings);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch settings" });
+    } catch (err) {
+      throw new Error(`Failed to fetch settings: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.put("/api/user/settings", isAuthenticated, async (req, res) => {
@@ -3355,17 +5038,17 @@ function registerRoutes(app2) {
       const userId = req.user.claims.sub;
       const updated = await storage.updateUserSettings(userId, req.body);
       res.json(updated);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update settings" });
+    } catch (err) {
+      throw new Error(`Failed to update settings: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.get("/api/user/sessions", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user.claims.sub;
-      const sessions = await storage.getUserSessions(userId);
-      res.json(sessions);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch sessions" });
+      const sessions2 = await storage.getUserSessions(userId);
+      res.json(sessions2);
+    } catch (err) {
+      throw new Error(`Failed to fetch sessions: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.delete("/api/user/sessions/:sessionId", isAuthenticated, async (req, res) => {
@@ -3374,8 +5057,17 @@ function registerRoutes(app2) {
       const { sessionId } = req.params;
       await storage.revokeUserSession(userId, sessionId);
       res.json({ message: "Session revoked" });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to revoke session" });
+    } catch (err) {
+      throw new Error(`Failed to revoke session: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+  app2.delete("/api/user/sessions/revoke-all", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      await storage.revokeAllUserSessions(userId);
+      res.json({ message: "All sessions revoked" });
+    } catch (err) {
+      throw new Error(`Failed to revoke all sessions: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.delete("/api/user", isAuthenticated, async (req, res) => {
@@ -3383,108 +5075,106 @@ function registerRoutes(app2) {
       const userId = req.user.claims.sub;
       await storage.deleteUserAccount(userId);
       res.json({ message: "Account deleted" });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete account" });
+    } catch (err) {
+      throw new Error(`Failed to delete account: ${err instanceof Error ? err.message : String(err)}`);
     }
-  });
-  app2.get("/api/health", (req, res) => {
-    res.json({ status: "ok" });
   });
   app2.get("/api/maonovault/nav", async (req, res) => {
     try {
-      const [nav, lastUpdate] = await MaonoVaultService.getNAV();
+      const [nav, lastUpdate] = await withRetry(() => MaonoVaultService.getNAV());
       res.json({ nav: nav.toString(), lastUpdate });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch NAV", error: error instanceof Error ? error.message : String(error) });
+    } catch (err) {
+      throw new Error(`Failed to fetch NAV: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.post("/api/maonovault/deposit", isAuthenticated, async (req, res) => {
     try {
       const { amount } = req.body;
-      let userAddress = void 0;
-      if (req.user && typeof req.user === "object") {
-        if ("walletAddress" in req.user) userAddress = req.user.walletAddress;
-        else if ("claims" in req.user && req.user.claims && typeof req.user.claims === "object" && "walletAddress" in req.user.claims) userAddress = req.user.claims.walletAddress;
-      }
-      if (!userAddress && req.body && req.body.userAddress) userAddress = req.body.userAddress;
+      const userAddress = extractWalletAddress(req);
       if (!amount || !userAddress) return res.status(400).json({ message: "Amount and user wallet required" });
-      const tx = await MaonoVaultService.deposit(BigInt(amount), userAddress);
+      if (BigInt(amount) <= 0) return res.status(400).json({ message: "Amount must be positive" });
+      const tx = await withRetry(() => MaonoVaultService.deposit(BigInt(amount), userAddress));
       res.json({ txHash: tx.hash });
-    } catch (error) {
-      res.status(500).json({ message: "Deposit failed", error: error instanceof Error ? error.message : String(error) });
+    } catch (err) {
+      throw new Error(`Deposit failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.post("/api/maonovault/withdraw", isAuthenticated, async (req, res) => {
     try {
       const { amount } = req.body;
-      let userAddress = void 0;
-      if (req.user && typeof req.user === "object") {
-        if ("walletAddress" in req.user) userAddress = req.user.walletAddress;
-        else if ("claims" in req.user && req.user.claims && typeof req.user.claims === "object" && "walletAddress" in req.user.claims) userAddress = req.user.claims.walletAddress;
-      }
-      if (!userAddress && req.body && req.body.userAddress) userAddress = req.body.userAddress;
+      const userAddress = extractWalletAddress(req);
       if (!amount || !userAddress) return res.status(400).json({ message: "Amount and user wallet required" });
-      const tx = await MaonoVaultService.withdraw(BigInt(amount), userAddress);
+      if (BigInt(amount) <= 0) return res.status(400).json({ message: "Amount must be positive" });
+      const tx = await withRetry(() => MaonoVaultService.withdraw(BigInt(amount), userAddress));
       res.json({ txHash: tx.hash });
-    } catch (error) {
-      res.status(500).json({ message: "Withdraw failed", error: error instanceof Error ? error.message : String(error) });
+    } catch (err) {
+      throw new Error(`Withdraw failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.post("/api/maonovault/nav", isAuthenticated, async (req, res) => {
     try {
       if (!MaonoVaultService.signer) return res.status(403).json({ message: "Not authorized" });
       const { newNav } = req.body;
-      if (!newNav) return res.status(400).json({ message: "newNav required" });
-      const tx = await MaonoVaultService.updateNAV(BigInt(newNav));
+      if (!newNav || BigInt(newNav) < 0) return res.status(400).json({ message: "Valid newNav required" });
+      const tx = await withRetry(() => MaonoVaultService.updateNAV(BigInt(newNav)));
       res.json({ txHash: tx.hash });
-    } catch (error) {
-      res.status(500).json({ message: "NAV update failed", error: error instanceof Error ? error.message : String(error) });
+    } catch (err) {
+      throw new Error(`NAV update failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   app2.post("/api/maonovault/fee", isAuthenticated, async (req, res) => {
     try {
       if (!MaonoVaultService.signer) return res.status(403).json({ message: "Not authorized" });
       const { profit } = req.body;
-      if (!profit) return res.status(400).json({ message: "profit required" });
-      const tx = await MaonoVaultService.distributePerformanceFee(BigInt(profit));
+      if (!profit || BigInt(profit) < 0) return res.status(400).json({ message: "Valid profit required" });
+      const tx = await withRetry(() => MaonoVaultService.distributePerformanceFee(BigInt(profit)));
       res.json({ txHash: tx.hash });
-    } catch (error) {
-      res.status(500).json({ message: "Performance fee distribution failed", error: error instanceof Error ? error.message : String(error) });
+    } catch (err) {
+      throw new Error(`Performance fee distribution failed: ${err instanceof Error ? err.message : String(err)}`);
     }
+  });
+  app2.get("/api/health", (req, res) => {
+    res.json({
+      status: "ok",
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      version: process.env.npm_package_version || "unknown"
+    });
   });
   app2.use((req, res) => {
     res.status(404).json({ message: "Not Found" });
   });
+  app2.use(errorHandler);
 }
 
 // server/vite.ts
-import express3 from "express";
-import path2 from "path";
-import { dirname } from "path";
-import { fileURLToPath as fileURLToPath2 } from "url";
-import fs from "fs";
+import express4 from "express";
+import path3 from "path";
+import { dirname as dirname3 } from "path";
+import { fileURLToPath as fileURLToPath4 } from "url";
+import fs2 from "fs";
 import { createServer as createViteServer, createLogger } from "vite";
 
 // vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import path from "path";
-import { fileURLToPath } from "url";
-var __filename = fileURLToPath(import.meta.url);
-var __dirname = path.dirname(__filename);
+import path2 from "path";
+import { fileURLToPath as fileURLToPath3 } from "url";
+var __filename3 = fileURLToPath3(import.meta.url);
+var __dirname3 = path2.dirname(__filename3);
 var vite_config_default = defineConfig({
-  root: path.resolve(__dirname, "client"),
+  root: path2.resolve(__dirname3, "client"),
   plugins: [react()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "client", "src"),
-      "@shared": path.resolve(__dirname, "shared"),
-      "@assets": path.resolve(__dirname, "attached_assets")
+      "@": path2.resolve(__dirname3, "client", "src"),
+      "@shared": path2.resolve(__dirname3, "shared"),
+      "@assets": path2.resolve(__dirname3, "attached_assets")
     }
   },
   build: {
-    outDir: path.resolve(__dirname, "client/dist"),
-    // 👈 changed from dist/public
+    outDir: path2.resolve(__dirname3, "dist/public"),
     emptyOutDir: true
   },
   server: {
@@ -3492,13 +5182,15 @@ var vite_config_default = defineConfig({
       strict: true,
       deny: ["**/.*"]
     },
-    port: 5173
+    port: 5173,
+    host: "0.0.0.0",
+    allowedHosts: ["all"]
   }
 });
 
 // server/vite.ts
 import { nanoid } from "nanoid";
-var __dirname2 = dirname(fileURLToPath2(import.meta.url));
+var __dirname4 = dirname3(fileURLToPath4(import.meta.url));
 var viteLogger = createLogger();
 function log(message, source = "express") {
   const formattedTime = (/* @__PURE__ */ new Date()).toLocaleTimeString("en-US", {
@@ -3522,7 +5214,9 @@ async function setupVite(app2, server) {
     },
     server: {
       middlewareMode: true,
-      hmr: { server }
+      hmr: { server },
+      host: "0.0.0.0",
+      allowedHosts: ["all"]
     },
     appType: "custom"
   });
@@ -3530,8 +5224,8 @@ async function setupVite(app2, server) {
   app2.use("*", async (req, res, next) => {
     const url = req.originalUrl;
     try {
-      const clientTemplate = path2.resolve(__dirname2, "../client/index.html");
-      let template = await fs.promises.readFile(clientTemplate, "utf-8");
+      const clientTemplate = path3.resolve(__dirname4, "../client/index.html");
+      let template = await fs2.promises.readFile(clientTemplate, "utf-8");
       template = template.replace(
         `src="/src/main.tsx"`,
         `src="/src/main.tsx?v=${nanoid()}"`
@@ -3545,26 +5239,26 @@ async function setupVite(app2, server) {
   });
 }
 function serveStatic(app2) {
-  const distPath = path2.resolve(__dirname2, "../dist/public");
-  if (!fs.existsSync(distPath)) {
+  const distPath = path3.resolve(__dirname4, "../../dist/public");
+  if (!fs2.existsSync(distPath)) {
     throw new Error(
       `\u274C Could not find the build directory: ${distPath}, make sure to run 'npm run build' first`
     );
   }
-  app2.use(express3.static(distPath));
+  app2.use(express4.static(distPath));
   app2.use("*", (_req, res) => {
-    res.sendFile(path2.join(distPath, "index.html"));
+    res.sendFile(path3.join(distPath, "index.html"));
   });
 }
 
 // server/index.ts
-import path3 from "path";
-import { dirname as dirname2 } from "path";
-import { fileURLToPath as fileURLToPath3 } from "url";
-var __dirname3 = dirname2(fileURLToPath3(import.meta.url));
-var app = express4();
-app.use(express4.json());
-app.use(express4.urlencoded({ extended: false }));
+import path4 from "path";
+import { dirname as dirname4 } from "path";
+import { fileURLToPath as fileURLToPath5 } from "url";
+var __dirname5 = dirname4(fileURLToPath5(import.meta.url));
+var app = express5();
+app.use(express5.json());
+app.use(express5.urlencoded({ extended: false }));
 app.use((req, res, next) => {
   const start = Date.now();
   const reqPath = req.path;
@@ -3606,7 +5300,7 @@ app.use((req, res, next) => {
     } else {
       serveStatic(app);
       app.get("*", (_, res) => {
-        res.sendFile(path3.join(__dirname3, "public", "index.html"));
+        res.sendFile(path4.join(__dirname5, "../../dist/public", "index.html"));
       });
     }
   } catch (err) {

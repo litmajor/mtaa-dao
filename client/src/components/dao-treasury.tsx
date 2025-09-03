@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getAnalyticsReport, getAllowedTokens, getPortfolio, getTxHistory } from '../api/walletApi';
+import './dao-treasury.css';
 
 export default function DaoTreasury() {
   const [portfolio, setPortfolio] = useState<any>(null);
@@ -32,33 +33,35 @@ export default function DaoTreasury() {
   }, []);
 
   return (
-    <div style={{ padding: 24 }}>
-      <h2>DAO Treasury Overview</h2>
-      {loading && <div>Loading...</div>}
-      {error && <div style={{ color: 'red' }}>{error}</div>}
-      {portfolio && (
+    <div className="dao-treasury-container">
+      <div style={{ padding: 24 }}>
+        <h2>DAO Treasury Overview</h2>
+        {loading && <div>Loading...</div>}
+        {error && <div style={{ color: 'red' }}>{error}</div>}
+        {portfolio && (
+          <div>
+            <h3>Portfolio</h3>
+            <pre>{JSON.stringify(portfolio, null, 2)}</pre>
+          </div>
+        )}
+        {analytics && (
+          <div>
+            <h3>Analytics</h3>
+            <pre>{JSON.stringify(analytics, null, 2)}</pre>
+          </div>
+        )}
         <div>
-          <h3>Portfolio</h3>
-          <pre>{JSON.stringify(portfolio, null, 2)}</pre>
+          <h3>Allowed Tokens</h3>
+          <ul>
+            {allowedTokens.map(addr => (
+              <li key={addr}>{addr}</li>
+            ))}
+          </ul>
         </div>
-      )}
-      {analytics && (
         <div>
-          <h3>Analytics</h3>
-          <pre>{JSON.stringify(analytics, null, 2)}</pre>
+          <h3>Disbursement History</h3>
+          <pre>{JSON.stringify(txHistory, null, 2)}</pre>
         </div>
-      )}
-      <div>
-        <h3>Allowed Tokens</h3>
-        <ul>
-          {allowedTokens.map(addr => (
-            <li key={addr}>{addr}</li>
-          ))}
-        </ul>
-      </div>
-      <div>
-        <h3>Disbursement History</h3>
-        <pre>{JSON.stringify(txHistory, null, 2)}</pre>
       </div>
     </div>
   );

@@ -79,8 +79,9 @@ export function WithdrawModal({ open, onClose, userVaultId, address, vaults }: {
         <div className="space-y-4">
           {vaults && vaults.length > 1 && (
             <div>
-              <label className="block text-sm font-medium mb-1">Select Vault</label>
+              <label htmlFor="vault-select" className="block text-sm font-medium mb-1">Select Vault</label>
               <select
+                id="vault-select"
                 className="w-full p-2 rounded border"
                 value={selectedVaultId}
                 onChange={e => {
@@ -102,8 +103,13 @@ export function WithdrawModal({ open, onClose, userVaultId, address, vaults }: {
             <Input type="number" min="1" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Enter amount" />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Currency</label>
-            <select className="w-full p-2 rounded border" value={currency} onChange={e => setCurrency(e.target.value)}>
+            <label htmlFor="currency-select" className="block text-sm font-medium mb-1">Currency</label>
+            <select
+              id="currency-select"
+              className="w-full p-2 rounded border"
+              value={currency}
+              onChange={e => setCurrency(e.target.value)}
+            >
               <option value="KES">KES</option>
               <option value="USD">USD</option>
               <option value="cUSD">cUSD</option>
@@ -116,8 +122,13 @@ export function WithdrawModal({ open, onClose, userVaultId, address, vaults }: {
             <Input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="Purpose or note (optional)" />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Provider</label>
-            <select className="w-full p-2 rounded border" value={provider} onChange={e => setProvider(e.target.value)}>
+            <label htmlFor="provider-select" className="block text-sm font-medium mb-1">Provider</label>
+            <select
+              id="provider-select"
+              className="w-full p-2 rounded border"
+              value={provider}
+              onChange={e => setProvider(e.target.value)}
+            >
               {WITHDRAW_PROVIDERS.map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}

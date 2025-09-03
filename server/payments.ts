@@ -3,8 +3,6 @@ import express, { Request, Response } from 'express';
 const router = express.Router();
 
 // --- Billing Services ---
-// ...existing code...
-// --- Billing Services ---
 router.post('/billing/initiate', async (req: Request, res: Response) => {
   // Example: Billing payment for premium services
   const { amount, daoId, description, billingType } = req.body;

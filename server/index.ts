@@ -60,7 +60,7 @@ app.use((req, res, next) => {
     } else {
       serveStatic(app);
       app.get("*", (_, res) => {
-        res.sendFile(path.join(__dirname, "public", "index.html"));
+        res.sendFile(path.join(__dirname, "../../dist/public", "index.html"));
       });
     }
   } catch (err) {
