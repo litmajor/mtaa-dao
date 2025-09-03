@@ -14,6 +14,13 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 
+// Import payment status routes
+import mpesaStatusRoutes from './routes/mpesa-status';
+import stripeStatusRoutes from './routes/stripe-status';
+import kotaniStatusRoutes from './routes/kotanipay-status';
+import daoSubscriptionRoutes from './routes/dao-subscriptions';
+import disbursementRoutes from './routes/disbursements';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -161,7 +168,7 @@ export function registerRoutes(app: Express): void {
     try {
       const { daoId } = req.params;
       const userId = (req.user as any).claims.sub;
-      
+
       if (!daoId) {
         return res.status(400).json({ error: 'DAO ID required' });
       }
@@ -183,7 +190,7 @@ export function registerRoutes(app: Express): void {
     try {
       const { daoId } = req.params;
       const userId = (req.user as any).claims.sub;
-      
+
       const membership = await storage.getDaoMembership(daoId, userId);
       if (!membership || (membership.role !== 'admin' && membership.role !== 'elder')) {
         return res.status(403).json({ error: 'DAO admin or elder role required' });
@@ -372,13 +379,13 @@ export function registerRoutes(app: Express): void {
       const { daoId } = req.body;
       const userId = (req.user as any).claims.sub;
       const result = await handleDaoJoin(daoId, userId);
-      
+
       // Award reputation points for joining DAO if approved
       if (result.status === 201 && result.data.status === 'approved') {
         const { ReputationService } = await import('../reputationService');
         await ReputationService.onDaoJoin(userId, daoId);
       }
-      
+
       res.status(result.status).json(result.data);
     } catch (err) {
       throw new Error(`Failed to join DAO: ${err instanceof Error ? err.message : String(err)}`);
@@ -564,7 +571,7 @@ export function registerRoutes(app: Express): void {
       // Check if user is a member of the DAO that owns the proposal
       const proposal = await storage.getProposal(proposalId);
       if (!proposal) return res.status(404).json({ message: "Proposal not found" });
-      
+
       const membership = await storage.getDaoMembership(proposal.daoId, userId);
       if (!membership) return res.status(403).json({ message: "Must be a DAO member to comment" });
 
@@ -614,7 +621,7 @@ export function registerRoutes(app: Express): void {
     try {
       const { commentId } = req.params;
       const userId = (req.user as any).claims.sub;
-      
+
       await deleteProposalComment(commentId, userId);
       res.status(204).send();
     } catch (err) {
@@ -634,7 +641,7 @@ export function registerRoutes(app: Express): void {
       // Check if user is a member of the DAO that owns the proposal
       const proposal = await storage.getProposal(proposalId);
       if (!proposal) return res.status(404).json({ message: "Proposal not found" });
-      
+
       const membership = await storage.getDaoMembership(proposal.daoId, userId);
       if (!membership) return res.status(403).json({ message: "Must be a DAO member to like proposals" });
 
@@ -692,7 +699,7 @@ export function registerRoutes(app: Express): void {
     try {
       const { daoId } = req.params;
       const userId = (req.user as any).claims.sub;
-      
+
       // Check if user is a member of the DAO
       const membership = await storage.getDaoMembership(daoId, userId);
       if (!membership) return res.status(403).json({ message: "Must be a DAO member to send messages" });
@@ -752,7 +759,7 @@ export function registerRoutes(app: Express): void {
     try {
       const { messageId } = req.params;
       const userId = (req.user as any).claims.sub;
-      
+
       await deleteDaoMessage(messageId, userId);
       res.status(204).send();
     } catch (err) {
@@ -814,7 +821,7 @@ export function registerRoutes(app: Express): void {
     const { vaultId } = req.params;
     const { limit = 10, offset = 0 } = req.query;
     const userId = (req .user as any).claims.sub;
-    const vault = await storage.getUserVaults(userId).then((vaults: any[]) => 
+    const vault = await storage.getUserVaults(userId).then((vaults: any[]) =>
       vaults.find((v: any) => v.id === vaultId)
     );
     if (!vault) return res.status(403).json({ message: 'Vault not found or unauthorized' });
@@ -858,9 +865,9 @@ export function registerRoutes(app: Express): void {
   app.get('/api/tasks', isAuthenticated, async (req: Request, res: Response) => {
     const { daoId, status, limit = 10, offset = 0 } = req.query;
     const userId = (req.user as any).claims.sub;
-    
+
     if (!daoId) return res.status(400).json({ message: "DAO ID required" });
-    
+
     try {
       // Check DAO membership
       const membership = await storage.getDaoMembership(daoId as string, userId);
@@ -904,7 +911,7 @@ export function registerRoutes(app: Express): void {
     try {
       const { title, description, reward, daoId } = req.body;
       const userId = (req.user as any).claims.sub;
-      
+
       if (!title || !description || !reward || !daoId) {
         return res.status(400).json({ message: "Missing required fields" });
       }
@@ -1158,6 +1165,13 @@ export function registerRoutes(app: Express): void {
 
   // Error handler middleware
   app.use(errorHandler);
+
+  // Use payment status routes
+  app.use('/api/payments/mpesa', mpesaStatusRoutes);
+  app.use('/api/payments/stripe', stripeStatusRoutes);
+  app.use('/api/payments/kotanipay', kotaniStatusRoutes);
+  app.use('/api/dao-subscriptions', daoSubscriptionRoutes);
+  app.use('/api/disbursements', disbursementRoutes);
 }
 
 export function createAppServer(): Server {

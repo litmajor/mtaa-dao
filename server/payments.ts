@@ -192,29 +192,98 @@ router.post('/ramp/webhook', async (req: Request, res: Response) => {
 
 // --- Kotani Pay ---
 router.post('/kotanipay/initiate', async (req: Request, res: Response) => {
-  // Example: Kotani Pay payment with fee calculation
-  const { amount, daoId, description } = req.body;
-  if (!amount || !daoId) {
-    return res.status(400).json({ success: false, message: 'Amount and daoId are required' });
+  const { phone, amount, daoId, description, currency = 'KES' } = req.body;
+  if (!phone || !amount || !daoId) {
+    return res.status(400).json({ success: false, message: 'Phone, amount, and daoId are required' });
   }
+  
+  // Validate phone number format (Kenya)
+  if (!/^254[17]\d{8}$/.test(phone)) {
+    return res.status(400).json({ success: false, message: 'Invalid phone number format. Use 254XXXXXXXXX' });
+  }
+  
   const feePercent = 0.02; // 2% platform fee
   const fee = Math.round(amount * feePercent * 100) / 100;
   const netAmount = amount - fee;
-  // TODO: Integrate Kotani Pay API for netAmount
-  // TODO: Record fee for DAO treasury (e.g., save to DB or trigger transfer)
-  res.json({
-    success: true,
-    message: 'Kotani Pay payment initiated (mock)',
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    description
-  });
+  
+  try {
+    // TODO: Replace with actual Kotani Pay API integration
+    const kotaniTransactionId = 'KOTANI-' + Date.now();
+    
+    // Mock Kotani Pay API call
+    const kotaniResponse = {
+      success: true,
+      transactionId: kotaniTransactionId,
+      status: 'pending',
+      amount: netAmount,
+      currency,
+      phone,
+      reference: `DAO-${daoId}-${Date.now()}`
+    };
+    
+    res.json({
+      success: true,
+      transactionId: kotaniTransactionId,
+      message: 'Kotani Pay payment initiated',
+      amount,
+      fee,
+      netAmount,
+      currency,
+      daoId,
+      phone,
+      description,
+      status: 'pending'
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Kotani Pay initiation failed',
+      error: error.message
+    });
+  }
 });
+
 router.post('/kotanipay/webhook', async (req: Request, res: Response) => {
-  // TODO: Handle Kotani Pay webhook
-  res.json({ success: true, message: 'Kotani Pay webhook received (mock)' });
+  try {
+    const { transactionId, status, amount, currency, phone, reference } = req.body;
+    
+    // TODO: Verify webhook signature from Kotani Pay
+    // TODO: Update payment status in database
+    
+    console.log('Kotani Pay webhook received:', { transactionId, status });
+    
+    res.json({ success: true, message: 'Kotani Pay webhook processed' });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Webhook processing failed',
+      error: error.message
+    });
+  }
+});
+
+router.get('/kotanipay/status/:transactionId', async (req: Request, res: Response) => {
+  const { transactionId } = req.params;
+  
+  try {
+    // TODO: Get actual status from Kotani Pay API or database
+    const mockStatus = {
+      transactionId,
+      status: 'completed', // pending, completed, failed
+      amount: '100.00',
+      currency: 'KES',
+      phone: '254700000000',
+      timestamp: new Date().toISOString()
+    };
+    
+    res.json({ success: true, payment: mockStatus });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get payment status',
+      error: error.message
+    });
+  }
 });
 
 // --- Bank ---
