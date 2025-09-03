@@ -314,4 +314,89 @@ router.post('/crypto/webhook', async (req: Request, res: Response) => {
   res.json({ success: true, message: `Crypto webhook received for ${address} (mock)` });
 });
 
+// --- MiniPay ---
+router.post('/minipay/initiate', async (req: Request, res: Response) => {
+  // MiniPay payment with fee calculation
+  const { amount, currency, daoId, description, recipientAddress } = req.body;
+  if (!amount || !currency || !daoId) {
+    return res.status(400).json({ success: false, message: 'Amount, currency, and daoId are required' });
+  }
+  
+  const feePercent = 0.02; // 2% platform fee
+  const fee = Math.round(amount * feePercent * 100) / 100;
+  const netAmount = amount - fee;
+  
+  // Generate a unique payment reference
+  const paymentReference = 'MINIPAY-' + Date.now();
+  
+  res.json({
+    success: true,
+    paymentReference,
+    message: 'MiniPay payment session created',
+    amount,
+    fee,
+    netAmount,
+    currency,
+    daoId,
+    description,
+    recipientAddress,
+    supportedCurrencies: ['cUSD', 'CELO'],
+    instructions: 'Complete payment using MiniPay wallet'
+  });
+});
+
+router.post('/minipay/confirm', async (req: Request, res: Response) => {
+  // Confirm MiniPay transaction
+  const { paymentReference, txHash, fromAddress, toAddress, amount, currency } = req.body;
+  
+  if (!paymentReference || !txHash) {
+    return res.status(400).json({ success: false, message: 'Payment reference and transaction hash are required' });
+  }
+  
+  try {
+    // TODO: Verify transaction on Celo blockchain
+    // TODO: Update payment status in database
+    // TODO: Credit user account or update DAO status
+    
+    res.json({
+      success: true,
+      message: 'MiniPay payment confirmed',
+      paymentReference,
+      txHash,
+      status: 'confirmed'
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Payment confirmation failed',
+      error: error.message
+    });
+  }
+});
+
+router.get('/minipay/status/:paymentReference', async (req: Request, res: Response) => {
+  const { paymentReference } = req.params;
+  
+  try {
+    // TODO: Get payment status from database
+    // Mock response for now
+    const status = {
+      paymentReference,
+      status: 'pending', // pending, confirmed, failed
+      amount: '10.00',
+      currency: 'cUSD',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    
+    res.json({ success: true, payment: status });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get payment status',
+      error: error.message
+    });
+  }
+});
+
 export default router;

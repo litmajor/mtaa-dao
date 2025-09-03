@@ -13,6 +13,7 @@ const estimateGasFee = async (currency: string, amount: string) => {
 };
 
 const PROVIDERS = [
+  { key: 'minipay', label: 'MiniPay', icon: Smartphone, color: 'from-yellow-500 to-yellow-600', description: 'Mobile wallet for Celo', featured: true },
   { key: 'mpesa', label: 'M-Pesa', icon: Smartphone, color: 'from-green-500 to-green-600', description: 'Mobile money transfer' },
   { key: 'crypto', label: 'Crypto', icon: Zap, color: 'from-purple-500 to-purple-600', description: 'Cryptocurrency payment' },
   { key: 'stripe', label: 'Stripe', icon: CreditCard, color: 'from-blue-500 to-blue-600', description: 'Credit & debit cards' },
