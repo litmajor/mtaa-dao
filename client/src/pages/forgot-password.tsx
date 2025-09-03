@@ -3,6 +3,9 @@ import { Button } from "../components/ui/button";
 import { ArrowLeft, Mail, Phone, Loader2, CheckCircle } from "lucide-react";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
+import { Input } from '../components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Alert, AlertDescription } from '../components/ui/alert';
 
 const ForgotPassword = () => {
   const [emailOrPhone, setEmailOrPhone] = useState("");

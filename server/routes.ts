@@ -82,6 +82,17 @@ import reputationRouter from './routes/reputation';
 import notificationsRouter from './routes/notifications';
 import { NotificationService } from './notificationService';
 
+// Placeholder for session management functions (replace with actual implementations)
+const sessionMiddleware = (req: Request, res: Response, next: NextFunction) => { next(); };
+const refreshTokenHandler = async (req: Request, res: Response) => { res.status(501).json({ message: "Not Implemented" }); };
+const requestPasswordReset = async (req: Request, res: Response) => { res.status(501).json({ message: "Not Implemented" }); };
+const resetPassword = async (req: Request, res: Response) => { res.status(501).json({ message: "Not Implemented" }); };
+const verifyResetToken = async (req: Request, res: Response) => { res.status(501).json({ message: "Not Implemented" }); };
+const destroySession = (sessionId: string) => {};
+const destroyAllUserSessions = (userId: string) => {};
+const getUserActiveSessions = (userId: string) => [];
+
+
 export function registerRoutes(app: Express): void {
   // --- Wallet API ---
   app.use('/api/wallet', isAuthenticated, walletRouter);
@@ -1195,6 +1206,38 @@ export function registerRoutes(app: Express): void {
   app.use('/api/notifications', isAuthenticated, notificationRoutes);
   app.use('/api/governance', governanceRoutes);
   app.use('/api/proposal-execution', proposalExecutionRoutes);
+
+  // Add auth and session routes
+  app.use(sessionMiddleware);
+  app.post('/api/auth/refresh-token', refreshTokenHandler);
+  app.post('/api/auth/forgot-password', requestPasswordReset);
+  app.post('/api/auth/reset-password', resetPassword);
+  app.get('/api/auth/verify-reset-token', verifyResetToken);
+
+  // Session management routes
+  app.post('/api/auth/logout', isAuthenticated, (req, res) => {
+    const sessionId = req.headers['x-session-id'] as string || req.cookies.sessionId;
+    if (sessionId) {
+      destroySession(sessionId);
+    }
+    res.clearCookie('refreshToken');
+    res.clearCookie('sessionId');
+    res.status(200).json({ message: 'Logged out successfully' });
+  });
+
+  app.post('/api/auth/logout-all', isAuthenticated, (req, res) => {
+    const userId = req.user!.claims.sub;
+    destroyAllUserSessions(userId);
+    res.clearCookie('refreshToken');
+    res.clearCookie('sessionId');
+    res.status(200).json({ message: 'Logged out from all devices' });
+  });
+
+  app.get('/api/auth/sessions', isAuthenticated, (req, res) => {
+    const userId = req.user!.claims.sub;
+    const sessions = getUserActiveSessions(userId);
+    res.status(200).json({ sessions });
+  });
 }
 
 export function createAppServer(): Server {
