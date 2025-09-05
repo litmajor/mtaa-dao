@@ -31,10 +31,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Create session
     const sessionId = uuidv4();
-    createSession(sessionId, user.id, {
-      email: user.email || undefined,
-      role: user.role || 'user'
-    }, req);
+    createSession(
+      sessionId,
+      user.id,
+      {
+        email: user.email || undefined,
+        role: user.role || 'user'
+      },
+      {
+        ip: (req.headers['x-forwarded-for'] as string) || req.socket?.remoteAddress || '',
+        userAgent: req.headers['user-agent'] || ''
+      }
+    );
 
     // Set cookies
     const cookieOptions = {

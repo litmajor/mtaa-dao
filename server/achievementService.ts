@@ -148,7 +148,7 @@ export class AchievementService {
         const proposalCount = await db
           .select({ count: sql<number>`count(*)` })
           .from(proposals)
-          .where(eq(proposals.createdBy, userId));
+          .where(eq(proposals.proposerId, userId));
         return (proposalCount[0]?.count || 0) >= criteria.count;
 
       case 'proposal_passed':
@@ -157,7 +157,7 @@ export class AchievementService {
           .from(proposals)
           .where(
             and(
-              eq(proposals.createdBy, userId),
+              eq(proposals.proposerId, userId),
               eq(proposals.status, 'passed')
             )
           );
@@ -234,7 +234,7 @@ export class AchievementService {
     });
 
     // Award reputation points
-    if (achievement[0].rewardPoints > 0) {
+    if (achievement[0] && achievement[0].rewardPoints && achievement[0].rewardPoints > 0) {
       await ReputationService.awardPoints(
         userId,
         'ACHIEVEMENT_UNLOCKED',

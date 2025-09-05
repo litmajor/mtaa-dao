@@ -176,11 +176,12 @@ router.get('/search', isAuthenticated, async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Search query is required' });
     }
     
-    const notifications = await storage.searchNotifications(
+    const notifications = await storage.getUserNotifications(
       userId,
-      q,
+      undefined,
       Number(limit),
-      Number(offset)
+      Number(offset),
+      q as string
     );
     
     res.json({ 

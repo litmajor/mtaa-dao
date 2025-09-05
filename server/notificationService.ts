@@ -34,7 +34,7 @@ class NotificationService extends EventEmitter {
   constructor() {
     super();
     // Initialize email transporter
-    this.emailTransporter = nodemailer.createTransporter({
+    this.emailTransporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || 'smtp.gmail.com',
       port: Number(process.env.SMTP_PORT) || 587,
       secure: false,
@@ -99,7 +99,14 @@ class NotificationService extends EventEmitter {
 
       // Send push notification
       if (channel.push) {
-        await this.sendPushNotification(recipient, this.formatPushMessage(notification));
+        await this.sendPushNotification(recipient, {
+          userId: recipient,
+          type: notification.type,
+          title: `Payment ${notification.type.replace('_', ' ')}`,
+          message: `${notification.amount} ${notification.currency} - ${notification.transactionId}`,
+          priority: 'medium',
+          metadata: notification.errorMessage ? { errorMessage: notification.errorMessage } : {}
+        });
       }
 
       // Send webhook notification

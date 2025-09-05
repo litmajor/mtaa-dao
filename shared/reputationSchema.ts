@@ -10,7 +10,7 @@ export const msiaMoPoints = pgTable("msiamo_points", {
   daoId: uuid("dao_id").references(() => daos.id), // null for platform-wide points
   points: integer("points").notNull(),
   action: varchar("action").notNull(), // vote, propose, contribute, refer, streak, etc.
-  description: text("description"),
+  description: varchar("description"),
   multiplier: decimal("multiplier", { precision: 3, scale: 2 }).default("1.0"),
   createdAt: timestamp("created_at").defaultNow(),
 });

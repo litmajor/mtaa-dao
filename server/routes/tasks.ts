@@ -30,18 +30,33 @@ const verifyTaskSchema = z.object({
 // Middleware for role checking
 function requireRole(...roles: string[]) {
   return async (req: any, res: any, next: any) => {
-    const userId = req.user.claims.sub;
-    const daoId = req.params.daoId || req.body.daoId;
-    
-    if (daoId) {
-      const membership = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(eq(daoMemberships.daoId, daoId), eq(daoMemberships.userId, userId)));
-      
-      if (!membership.length || !roles.includes(membership[0].role)) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
-      }
+  const userId = String(req.user?.claims?.sub ?? '');
+    const daoIdRaw = req.params.daoId || req.body.daoId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    let daoId: string | undefined = undefined;
+    if (typeof daoIdRaw === 'string') {
+      daoId = daoIdRaw;
+    } else if (daoIdRaw) {
+      daoId = String(daoIdRaw);
+    }
+    if (!daoId || daoId === 'null') {
+      return res.status(400).json({ error: 'Invalid DAO ID' });
+    }
+    if (!userId || typeof userId !== 'string') {
+      return res.status(401).json({ error: 'Unauthorized: Invalid user ID' });
+    }
+    const safeUserId = String(userId ?? '');
+    const membership = await db
+      .select()
+      .from(daoMemberships)
+      .where(and(eq(daoMemberships.daoId, String(daoId ?? '')), eq(daoMemberships.userId, String(userId ?? ''))));
+    if (
+      !membership.length ||
+      !roles.includes(typeof membership[0].role === 'string' ? membership[0].role : '')
+    ) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
     }
     next();
   };
@@ -51,23 +66,28 @@ function requireRole(...roles: string[]) {
 router.post('/create', requireRole('admin', 'moderator'), async (req, res) => {
   try {
     const validatedData = createTaskSchema.parse(req.body);
-    const userId = req.user.claims.sub;
-
-    // Create task with escrow
-    const task = await db.insert(tasks).values({
+    const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    // Ensure reward is string for DB
+    const insertData: any = {
       ...validatedData,
       creatorId: userId,
-      status: 'open'
-    }).returning();
-
+      status: 'open',
+      reward: String(validatedData.reward)
+    };
+    if (validatedData.deadline) {
+      insertData.deadline = new Date(validatedData.deadline);
+    }
+    const task = await db.insert(tasks).values(insertData).returning();
     // Log task creation
     await db.insert(taskHistory).values({
       taskId: task[0].id,
       userId,
       action: 'created',
-      details: { category: validatedData.category, reward: validatedData.reward }
+      details: { category: validatedData.category, reward: String(validatedData.reward) }
     });
-
     res.status(201).json(task[0]);
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -89,23 +109,18 @@ router.get('/', async (req, res) => {
       offset = 0 
     } = req.query;
 
-    let query = db.select().from(tasks);
     let conditions = [];
-
-    if (daoId) conditions.push(eq(tasks.daoId, daoId as string));
-    if (status) conditions.push(eq(tasks.status, status as string));
-    if (category) conditions.push(eq(tasks.category, category as string));
-    if (difficulty) conditions.push(eq(tasks.difficulty, difficulty as string));
-
+    if (daoId) conditions.push(eq(tasks.daoId, typeof daoId === 'string' ? daoId : ''));
+    if (status) conditions.push(eq(tasks.status, typeof status === 'string' ? status : ''));
+    if (category) conditions.push(eq(tasks.category, typeof category === 'string' ? category : ''));
+    if (difficulty) conditions.push(eq(tasks.difficulty, typeof difficulty === 'string' ? difficulty : ''));
+    let query;
     if (conditions.length > 0) {
-      query = query.where(and(...conditions));
+      query = db.select().from(tasks).where(and(...conditions));
+    } else {
+      query = db.select().from(tasks);
     }
-
-    const taskList = await query
-      .orderBy(desc(tasks.createdAt))
-      .limit(Number(limit))
-      .offset(Number(offset));
-
+    const taskList = await query.orderBy(desc(tasks.createdAt)).limit(Number(limit)).offset(Number(offset));
     res.json(taskList);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -130,7 +145,10 @@ router.get('/categories', async (req, res) => {
 router.post('/:taskId/claim', async (req, res) => {
   try {
     const { taskId } = req.params;
-    const userId = req.user.claims.sub;
+    const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
     // Check if task exists and is open
     const task = await db
@@ -176,7 +194,10 @@ router.post('/:taskId/claim', async (req, res) => {
 router.post('/:taskId/submit', async (req, res) => {
   try {
     const { taskId } = req.params;
-    const userId = req.user.claims.sub;
+    const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
     const validatedData = verifyTaskSchema.parse(req.body);
 
     // Verify user claimed the task
@@ -225,7 +246,10 @@ router.post('/:taskId/verify', requireRole('admin', 'moderator'), async (req, re
   try {
     const { taskId } = req.params;
     const { approved, feedback } = req.body;
-    const userId = req.user.claims.sub;
+    const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
     const task = await db
       .select()
@@ -265,11 +289,12 @@ router.post('/:taskId/verify', requireRole('admin', 'moderator'), async (req, re
       await db.insert(walletTransactions).values({
         fromUserId: task[0].daoId,
         toUserId: task[0].claimerId,
-        amount: task[0].reward,
+        amount: String(task[0].reward),
         currency: 'cUSD',
         type: 'bounty_payout',
         status: 'completed',
-        description: `Bounty payment for task: ${task[0].title}`
+        description: `Bounty payment for task: ${task[0].title}`,
+        walletAddress: '' // Provide wallet address if available
       });
     }
 
@@ -303,7 +328,10 @@ router.get('/:taskId/history', async (req, res) => {
 // Get user's claimed tasks
 router.get('/user/claimed', async (req, res) => {
   try {
-    const userId = req.user.claims.sub;
+    const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
     
     const claimedTasks = await db
       .select()
@@ -322,23 +350,31 @@ router.get('/analytics', async (req, res) => {
   try {
     const { daoId } = req.query;
     
-    let baseQuery = db.select().from(tasks);
-    if (daoId) {
-      baseQuery = baseQuery.where(eq(tasks.daoId, daoId as string));
-    }
-
     // Get task statistics
-    const taskStats = await db
-      .select({
-        status: tasks.status,
-        category: tasks.category,
-        difficulty: tasks.difficulty,
-        count: sql<number>`count(*)`,
-        totalReward: sql<number>`sum(cast(${tasks.reward} as numeric))`
-      })
-      .from(tasks)
-      .groupBy(tasks.status, tasks.category, tasks.difficulty);
-
+    let statsQuery;
+    if (daoId) {
+      statsQuery = db
+        .select({
+          status: tasks.status,
+          category: tasks.category,
+          difficulty: tasks.difficulty,
+          count: sql<number>`count(*)`,
+          totalReward: sql<number>`sum(cast(${tasks.reward} as numeric))`
+        })
+        .from(tasks)
+        .where(eq(tasks.daoId, typeof daoId === 'string' ? daoId : ''));
+    } else {
+      statsQuery = db
+        .select({
+          status: tasks.status,
+          category: tasks.category,
+          difficulty: tasks.difficulty,
+          count: sql<number>`count(*)`,
+          totalReward: sql<number>`sum(cast(${tasks.reward} as numeric))`
+        })
+        .from(tasks);
+    }
+    const taskStats = await statsQuery;
     res.json(taskStats);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });

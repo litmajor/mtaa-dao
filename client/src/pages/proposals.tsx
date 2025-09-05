@@ -7,7 +7,7 @@ import { Badge } from "../components/ui/badge";
 import { Plus, Filter, MessageSquare, Users } from "lucide-react";
 import ProposalCard from "../components/proposal-card";
 import { useState } from "react";
-import { useNavigate } from "wouter";
+import { useLocation } from "wouter";
 import VotingModal from "../components/voting-modal";
 import { ProposalLeaderboard } from "../components/proposal_leaderboard";
 import DaoChat from "../components/dao-chat";
@@ -17,7 +17,7 @@ export default function Proposals() {
   const [showVotingModal, setShowVotingModal] = useState(false);
   const [filter, setFilter] = useState("all");
   const [showChat, setShowChat] = useState(false);
-  const navigate = useNavigate();
+  const [, navigate] = useLocation();
 
   // Fetch proposals (live data)
   const { data: proposals, isLoading: proposalsLoading, error: proposalsError } = useQuery({
@@ -131,8 +131,7 @@ export default function Proposals() {
                 >
                   <ProposalCard
                     proposal={proposal}
-                    onVote={(e) => {
-                      e?.stopPropagation(); // Prevent navigation when voting
+                    onVote={() => {
                       handleVoteClick(proposal);
                     }}
                     showFullDescription={true}

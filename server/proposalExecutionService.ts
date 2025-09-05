@@ -92,8 +92,7 @@ export class ProposalExecutionService {
     
     // Record the transfer transaction
     await db.insert(walletTransactions).values({
-      daoId,
-      toUserId: recipient,
+      walletAddress: recipient,
       amount: amount.toString(),
       currency,
       type: 'transfer',
@@ -102,11 +101,12 @@ export class ProposalExecutionService {
     });
     
     // Update DAO treasury balance
+    const daoRecord = await db.select().from(daos).where(eq(daos.id, daoId)).limit(1);
+    const currentBalance = parseFloat(daoRecord[0]?.treasuryBalance || '0');
+    const newBalance = (currentBalance - amount).toString();
     await db.update(daos)
       .set({ 
-        treasuryBalance: db.select().from(daos).where(eq(daos.id, daoId)).limit(1).then(
-          dao => (parseFloat(dao[0]?.treasuryBalance || '0') - amount).toString()
-        )
+        treasuryBalance: newBalance
       })
       .where(eq(daos.id, daoId));
   }

@@ -2,6 +2,8 @@
 import express from 'express';
 import { db } from '../storage';
 import { daos } from '../../shared/schema';
+// Ensure billingStatus and nextBillingDate are present in the DAO schema
+// If not, add them to the schema definition in shared/schema.ts
 import { eq } from 'drizzle-orm';
 
 const router = express.Router();

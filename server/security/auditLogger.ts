@@ -168,8 +168,8 @@ export const logSecurityEvent = {
       category: 'security'
     });
   },
-  
-  failedAuth: async (email: string, ipAddress: string, reason: string) => {
+
+  failedAuth: async (email: string | undefined, ipAddress: string, reason: string) => {
     const auditLogger = AuditLogger.getInstance();
     await auditLogger.log({
       timestamp: new Date(),
@@ -186,7 +186,7 @@ export const logSecurityEvent = {
       category: 'auth'
     });
   },
-  
+
   privilegeEscalation: async (userId: string, fromRole: string, toRole: string, adminId: string) => {
     const auditLogger = AuditLogger.getInstance();
     await auditLogger.log({

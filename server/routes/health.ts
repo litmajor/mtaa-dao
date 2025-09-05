@@ -1,10 +1,9 @@
 // Simple health check endpoint for API
-import { Request, Response } from 'express';
+import express, { Request, Response } from 'express';
 
 export default function handler(req: Request, res: Response) {
   res.status(200).json({ status: 'ok', timestamp: Date.now() });
 }
-import express, { Request, Response } from 'express';
 import { db } from '../storage';
 import { metricsCollector } from '../monitoring/metricsCollector';
 import { logger } from '../utils/logger';
@@ -247,4 +246,4 @@ router.get('/metrics', (req: Request, res: Response) => {
   res.json(metrics);
 });
 
-export default router;
+// Only one default export allowed per file. Remove duplicate.

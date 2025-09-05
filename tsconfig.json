@@ -2,6 +2,8 @@
   "include": ["client/src/**/*", "shared/**/*", "server/**/*", "server/register.ts"],
   "exclude": ["node_modules", "build", "dist", "**/*.test.ts"],
   "compilerOptions": {
+  "target": "es2017",
+  "downlevelIteration": true,
     "incremental": true,
     "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo",
     "noEmit": true,

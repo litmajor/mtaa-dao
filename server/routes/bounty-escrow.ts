@@ -1,8 +1,8 @@
 
 import express from 'express';
 import { db } from '../storage';
-import { tasks, walletTransactions, daoMemberships } from '../../shared/schema';
-import { eq, and } from 'drizzle-orm';
+import { tasks, walletTransactions, daoMemberships, taskHistory } from '../../shared/schema';
+import { eq, and, desc } from 'drizzle-orm';
 import { z } from 'zod';
 
 const router = express.Router();
@@ -24,7 +24,7 @@ router.post('/create', async (req, res) => {
   try {
     const validatedData = createEscrowSchema.parse(req.body);
     const { taskId, amount, currency } = validatedData;
-    const userId = req.user.claims.sub;
+  const userId = req.user?.claims?.sub ?? '';
 
     // Verify task exists and user is creator
     const task = await db
@@ -57,14 +57,12 @@ router.post('/create', async (req, res) => {
 
     // Create escrow transaction
     const escrow = await db.insert(walletTransactions).values({
-      fromUserId: userId,
-      toUserId: 'escrow_system',
+      walletAddress: userId,
       amount: amount.toString(),
       currency,
       type: 'escrow_deposit',
       status: 'held',
-      description: `Escrow for task: ${taskId}`,
-      metadata: { taskId, escrowType: 'bounty' }
+      description: `Escrow for task: ${taskId}`
     }).returning();
 
     res.json({
@@ -87,7 +85,7 @@ router.post('/release', async (req, res) => {
   try {
     const validatedData = releaseEscrowSchema.parse(req.body);
     const { taskId, releaseToClaimant } = validatedData;
-    const userId = req.user.claims.sub;
+  const userId = req.user?.claims?.sub ?? '';
 
     // Get task and verify permissions
     const task = await db
@@ -112,7 +110,7 @@ router.post('/release', async (req, res) => {
         ))
         .limit(1);
       
-      if (!membership.length || !['admin', 'moderator'].includes(membership[0].role)) {
+  if (!membership.length || !['admin', 'moderator'].includes(membership[0].role ?? '')) {
         return res.status(403).json({ error: 'Insufficient permissions to release escrow' });
       }
     }
@@ -150,14 +148,12 @@ router.post('/release', async (req, res) => {
 
     // Create release transaction
     const release = await db.insert(walletTransactions).values({
-      fromUserId: 'escrow_system',
-      toUserId: recipient,
+      walletAddress: recipient,
       amount: escrowAmount.toString(),
       currency: escrow[0].currency,
       type: 'escrow_release',
       status: 'completed',
-      description: `Escrow release for task: ${taskId}`,
-      metadata: { originalEscrowId: escrow[0].id, taskId }
+      description: `Escrow release for task: ${taskId}`
     }).returning();
 
     // Update task status if released to claimant
@@ -222,7 +218,7 @@ router.post('/:taskId/dispute', async (req, res) => {
   try {
     const { taskId } = req.params;
     const { reason } = req.body;
-    const userId = req.user.claims.sub;
+  const userId = req.user?.claims?.sub ?? '';
 
     // Get task
     const task = await db

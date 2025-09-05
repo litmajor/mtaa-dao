@@ -6,7 +6,7 @@ import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { ArrowUpRight, ArrowDownLeft, Clock, CheckCircle, XCircle, Search, Filter } from 'lucide-react';
 import { Skeleton } from '../ui/skeleton';
-import ErrorBoundary from './ErrorBoundary'; // Assuming ErrorBoundary component is in './ErrorBoundary'
+import ErrorBoundary from '../ErrorBoundary'; // Using ErrorBoundary from parent components directory
 
 interface Transaction {
   id: string;
