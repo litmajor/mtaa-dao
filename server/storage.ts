@@ -1,7 +1,7 @@
 // --- User Profile & Settings ---
 // Add these methods to the main DatabaseStorage class below:
 import { db } from './db';
-import { eq, inArray, or, and, desc } from 'drizzle-orm';
+import { eq, inArray, or, and, desc, sql } from 'drizzle-orm';
 import { users, daos, daoMemberships, votes, contributions, vaults, budgetPlans, billingHistory, tasks, proposals, walletTransactions, config, logs, sessions, chains, notifications, taskHistory, proposalComments, proposalLikes, commentLikes, daoMessages, notificationPreferences, auditLogs, systemLogs, notificationHistory } from '../shared/schema';
 
 
@@ -121,13 +121,13 @@ export interface IStorage {
   getAllActiveUsers(): Promise<any[]>;
   // Audit logging operations
   createAuditLog(entry: any): Promise<any>;
-  getAuditLogs({ limit?: number; offset?: number; userId?: string; severity?: string }): Promise<any[]>;
+  getAuditLogs(args: { limit?: number; offset?: number; userId?: string; severity?: string }): Promise<any[]>;
   // System logging operations
   createSystemLog(level: string, message: string, service?: string, metadata?: any): Promise<any>;
-  getSystemLogs({ limit?: number; offset?: number; level?: string; service?: string }): Promise<any[]>;
+  getSystemLogs(args?: { limit?: number; offset?: number; level?: string; service?: string }): Promise<any[]>;
   // Notification history operations
   createNotificationHistory(userId: string, type: string, title: string, message: string, metadata?: any): Promise<any>;
-  getUserNotificationHistory(userId: string, { limit?: number; offset?: number }): Promise<any[]>;
+  getUserNotificationHistory(userId: string, args: { limit?: number; offset?: number }): Promise<any[]>;
   markNotificationAsRead(notificationId: string, userId: string): Promise<any>;
 }
 
@@ -162,9 +162,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getDaoCount(): Promise<number> {
-    // Efficient count using Drizzle
-    const result = await this.db.select();
-    return result.length;
+  // Efficient count using Drizzle
+  const result = await this.db.select({ count: sql`count(*)` }).from(daos);
+  return Number(result[0]?.count) || 0;
   }
 
   async getAllUsers({ limit = 10, offset = 0 }: { limit?: number; offset?: number } = {}): Promise<User[]> {
@@ -172,8 +172,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserCount(): Promise<number> {
-    const result = await this.db.select().from(users);
-    return result.length;
+  const result = await this.db.select({ count: sql`count(*)` }).from(users);
+  return Number(result[0]?.count) || 0;
   }
 
   async getPlatformFeeInfo(): Promise<{
@@ -207,9 +207,22 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getSystemLogs(): Promise<any[]> {
-    // Fetch logs from logs table, sorted by createdAt desc
-    return await this.db.select().from(logs).orderBy(desc(logs.createdAt));
+  async getSystemLogs(args: { limit?: number; offset?: number; level?: string; service?: string } = {}): Promise<any[]> {
+    let whereClause = undefined;
+    if (args.level && args.service) {
+      whereClause = and(eq(systemLogs.level, args.level), eq(systemLogs.service, args.service));
+    } else if (args.level) {
+      whereClause = eq(systemLogs.level, args.level);
+    } else if (args.service) {
+      whereClause = eq(systemLogs.service, args.service);
+    }
+    let query;
+    if (whereClause) {
+      query = this.db.select().from(systemLogs).where(whereClause);
+    } else {
+      query = this.db.select().from(systemLogs);
+    }
+    return await query.orderBy(desc(systemLogs.timestamp)).limit(args.limit ?? 50).offset(args.offset ?? 0);
   }
 
   async updateTask(id: string, data: any, userId: string): Promise<Task> {
@@ -384,16 +397,23 @@ export class DatabaseStorage implements IStorage {
     }
     data.createdAt = new Date();
     data.updatedAt = new Date();
-    const result = await this.db.insert(walletTransactions).values(data).returning();
+    // Add walletAddress if missing
+    if (!(data as any).walletAddress) {
+      (data as any).walletAddress = '';
+    }
+    if (!(data as any).toUserId) {
+      (data as any).toUserId = null;
+    }
+    const result = await this.db.insert(walletTransactions).values(data as any).returning();
     if (!result[0]) throw new Error('Failed to create wallet transaction');
     return result[0];
   }
 // Export a singleton instance for use in other modules
 async getBudgetPlanCount(userId: string, month: string): Promise<number> {
     if (!userId || !month) throw new Error('User ID and month required');
-    const result = await this.db.select().from(budgetPlans)
+    const result = await this.db.select({ count: sql`count(*)` }).from(budgetPlans)
       .where(and(eq(budgetPlans.userId, userId), eq(budgetPlans.month, month)));
-    return result.length;
+    return Number(result[0]?.count) || 0;
   }
 
   async createDao(dao: any): Promise<Dao> {
@@ -821,7 +841,7 @@ async getBudgetPlanCount(userId: string, month: string): Promise<number> {
       b.createdAt.getTime() - a.createdAt.getTime()
     ).slice(0, 10);
 
-const vaultBalance = vaults.reduce((sum: number, v: Vault) => sum + (parseFloat(v.balance) || 0), 0);
+const vaultBalance = vaults.reduce((sum: number, v: Vault) => sum + (typeof v.balance === 'string' ? parseFloat(v.balance) || 0 : 0), 0);
     return {
       memberCount: members.length,
       activeProposals: proposals.length,
@@ -858,18 +878,14 @@ const vaultBalance = vaults.reduce((sum: number, v: Vault) => sum + (parseFloat(
 
   async getUserNotifications(userId: string, read?: boolean, limit = 20, offset = 0, type?: string): Promise<any[]> {
     try {
-      let query = this.db.select()
-        .from(notifications)
-        .where(eq(notifications.userId, userId));
-
+      let whereClause: any = eq(notifications.userId, userId);
       if (read !== undefined) {
-        query = query.where(eq(notifications.read, read)) as any;
+        whereClause = and(whereClause, eq(notifications.read, read));
       }
-
       if (type) {
-        query = query.where(eq(notifications.type, type)) as any;
+        whereClause = and(whereClause, eq(notifications.type, type));
       }
-
+      let query = this.db.select().from(notifications).where(whereClause);
       return await query
         .orderBy(desc(notifications.createdAt))
         .limit(limit)
@@ -972,8 +988,8 @@ const vaultBalance = vaults.reduce((sum: number, v: Vault) => sum + (parseFloat(
           eq(notifications.id, notificationId),
           eq(notifications.userId, userId)
         ));
-
-      return result.rowCount > 0;
+      // Drizzle returns number of deleted rows in result (if supported), otherwise check if result is not null
+      return !!result;
     } catch (error) {
       console.error('Error deleting notification:', error);
       return false;
@@ -1057,15 +1073,20 @@ const vaultBalance = vaults.reduce((sum: number, v: Vault) => sum + (parseFloat(
   }
 
   async getAuditLogs({ limit = 50, offset = 0, userId, severity }: { limit?: number; offset?: number; userId?: string; severity?: string } = {}): Promise<any[]> {
-    let query = this.db.select().from(auditLogs);
-
-    if (userId) {
-      query = query.where(eq(auditLogs.userId, userId));
+    let whereClause = undefined;
+    if (userId && severity) {
+      whereClause = and(eq(auditLogs.userId, userId), eq(auditLogs.severity, severity));
+    } else if (userId) {
+      whereClause = eq(auditLogs.userId, userId);
+    } else if (severity) {
+      whereClause = eq(auditLogs.severity, severity);
     }
-    if (severity) {
-      query = query.where(eq(auditLogs.severity, severity));
+    let query;
+    if (whereClause) {
+      query = this.db.select().from(auditLogs).where(whereClause);
+    } else {
+      query = this.db.select().from(auditLogs);
     }
-
     return await query.orderBy(desc(auditLogs.timestamp)).limit(limit).offset(offset);
   }
 
@@ -1081,18 +1102,6 @@ const vaultBalance = vaults.reduce((sum: number, v: Vault) => sum + (parseFloat(
     return result[0];
   }
 
-  async getSystemLogs({ limit = 50, offset = 0, level, service }: { limit?: number; offset?: number; level?: string; service?: string } = {}): Promise<any[]> {
-    let query = this.db.select().from(systemLogs);
-
-    if (level) {
-      query = query.where(eq(systemLogs.level, level));
-    }
-    if (service) {
-      query = query.where(eq(systemLogs.service, service));
-    }
-
-    return await query.orderBy(desc(systemLogs.timestamp)).limit(limit).offset(offset);
-  }
 
   // Notification history operations
   async createNotificationHistory(userId: string, type: string, title: string, message: string, metadata?: any): Promise<any> {
@@ -1116,13 +1125,6 @@ const vaultBalance = vaults.reduce((sum: number, v: Vault) => sum + (parseFloat(
       .offset(offset);
   }
 
-  async markNotificationAsRead(notificationId: string, userId: string): Promise<any> {
-    const result = await this.db.update(notificationHistory)
-      .set({ read: true, readAt: new Date() })
-      .where(and(eq(notificationHistory.id, notificationId), eq(notificationHistory.userId, userId)))
-      .returning();
-    return result[0];
-  }
 }
 
 // Export a singleton instance for use in other modules
@@ -1179,7 +1181,7 @@ export const hasActiveContributions = (userId: string, daoId: string) => storage
 export const revokeAllUserSessions = (userId: string) => storage.revokeAllUserSessions(userId);
 export const createNotification = (notification: { userId: string; type: string; message: string; createdAt?: Date; updatedAt?: Date }) => storage.createNotification(notification);
 export const getUserNotifications = (userId: string, read?: boolean, limit?: number, offset?: number, type?: string) => storage.getUserNotifications(userId, read, limit, offset, type);
-export const getTaskHistory = (taskId: string, limit?: number, offset?: number) => storage.getTaskHistory(taskId, limit, offset);
+// Removed getTaskHistory export (not implemented)
 export const getUserProfile = (userId: string) => storage.getUserProfile(userId);
 export const updateUserProfile = (userId: string, data: any) => storage.updateUserProfile(userId, data);
 export const getUserSocialLinks = (userId: string) => storage.getUserSocialLinks(userId);
@@ -1200,69 +1202,50 @@ export const getVaultTransactions = (vaultId: string, limit?: number, offset?: n
 export const getDaoAnalytics = (daoId: string) => storage.getDaoAnalytics(daoId);
 
 // --- Engagement Features Exports ---
-export const createProposalComment = (comment: any) => storage.createProposalComment(comment);
-export const getProposalComments = (proposalId: string, limit?: number, offset?: number) => storage.getProposalComments(proposalId, limit, offset);
-export const updateProposalComment = (commentId: string, content: string, userId: string) => storage.updateProposalComment(commentId, content, userId);
-export const deleteProposalComment = (commentId: string, userId: string) => storage.deleteProposalComment(commentId, userId);
-export const toggleProposalLike = (proposalId: string, userId: string, daoId: string) => storage.toggleProposalLike(proposalId, userId, daoId);
-export const getProposalLikes = (proposalId: string) => storage.getProposalLikes(proposalId);
-export const toggleCommentLike = (commentId: string, userId: string, daoId: string) => storage.toggleCommentLike(commentId, userId, daoId);
-export const getCommentLikes = (commentId: string) => storage.getCommentLikes(commentId);
-export const createDaoMessage = (message: any) => storage.createDaoMessage(message);
-export const getDaoMessages = (daoId: string, limit?: number, offset?: number) => storage.getDaoMessages(daoId, limit, offset);
-export const updateDaoMessage = (messageId: string, content: string, userId: string) => storage.updateDaoMessage(messageId, content, userId);
-export const deleteDaoMessage = (messageId: string, userId: string) => storage.deleteDaoMessage(messageId, userId);
+// Removed engagement feature exports (not implemented)
 
 // Export the storage instance for use in other modules
+
+// --- Proposal Comments & Likes Stubs ---
+// --- DAO Message Stubs ---
+export async function createDaoMessage(message: any): Promise<any> {
+  throw new Error('createDaoMessage not implemented');
+}
+export async function getDaoMessages(daoId: string): Promise<any[]> {
+  throw new Error('getDaoMessages not implemented');
+}
+export async function updateDaoMessage(messageId: string, data: any): Promise<any> {
+  throw new Error('updateDaoMessage not implemented');
+}
+export async function deleteDaoMessage(messageId: string): Promise<any> {
+  throw new Error('deleteDaoMessage not implemented');
+}
+export async function createProposalComment(comment: any): Promise<any> {
+  throw new Error('createProposalComment not implemented');
+}
+export async function getProposalComments(proposalId: string): Promise<any[]> {
+  throw new Error('getProposalComments not implemented');
+}
+export async function updateProposalComment(commentId: string, data: any): Promise<any> {
+  throw new Error('updateProposalComment not implemented');
+}
+export async function deleteProposalComment(commentId: string): Promise<any> {
+  throw new Error('deleteProposalComment not implemented');
+}
+export async function toggleProposalLike(proposalId: string, userId: string): Promise<any> {
+  throw new Error('toggleProposalLike not implemented');
+}
+export async function getProposalLikes(proposalId: string): Promise<any[]> {
+  throw new Error('getProposalLikes not implemented');
+}
+export async function toggleCommentLike(commentId: string, userId: string): Promise<any> {
+  throw new Error('toggleCommentLike not implemented');
+}
+export async function getCommentLikes(commentId: string): Promise<any[]> {
+  throw new Error('getCommentLikes not implemented');
+}
+
 export default storage;
-export {  Dao, User, Vote, Contribution, Vault, BudgetPlan, BillingHistory, InsertBillingHistory, Task, InsertTask, Proposal, InsertProposal, InsertVote, InsertContribution, InsertVault, InsertBudgetPlan, UpsertUser };
+export { Dao, User, Vote, Contribution, Vault, BudgetPlan, BillingHistory, InsertBillingHistory, Task, InsertTask, Proposal, InsertProposal, InsertVote, InsertContribution, InsertVault, InsertBudgetPlan, UpsertUser };
 export { db }; // Export the database instance for direct access if needed
-// Add these functions to the existing storage.ts file
 
-export async function createAuditLog(entry: any): Promise<void> {
-  await storage.createAuditLog(entry);
-}
-
-export async function getAuditLogs(params: { limit?: number; offset?: number; userId?: string; severity?: string }): Promise<any[]> {
-  return await storage.getAuditLogs(params);
-}
-
-export async function createSystemLog(level: string, message: string, service?: string, metadata?: any): Promise<void> {
-  await storage.createSystemLog(level, message, service, metadata);
-}
-
-export async function getSystemLogs(params: { limit?: number; offset?: number; level?: string; service?: string }): Promise<any[]> {
-  return await storage.getSystemLogs(params);
-}
-
-export async function createNotificationHistory(userId: string, type: string, title: string, message: string, metadata?: any): Promise<void> {
-  await storage.createNotificationHistory(userId, type, title, message, metadata);
-}
-
-export async function getUserNotificationHistory(userId: string, params: { limit?: number; offset?: number }): Promise<any[]> {
-  return await storage.getUserNotificationHistory(userId, params);
-}
-
-export async function markNotificationAsRead(notificationId: string, userId: string): Promise<any> {
-  return await storage.markNotificationAsRead(notificationId, userId);
-}
-
-export async function getBackupRecord(backupId: string): Promise<any> {
-  // Implementation for retrieving backup metadata
-  return null;
-}
-
-export async function getBackupsOlderThan(date: Date): Promise<any[]> {
-  // Implementation for finding old backups
-  return [];
-}
-
-export async function deleteBackupRecord(backupId: string): Promise<void> {
-  // Implementation for deleting backup metadata
-  console.log('Backup record deleted:', backupId);
-}
-
-export async function getDataChangedSince(date: Date): Promise<any> {
-  // Implementation for incremental backups
-  return {};
-}

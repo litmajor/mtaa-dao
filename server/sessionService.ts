@@ -1,5 +1,5 @@
 
-import { Request, Response } from 'express';
+// import { Request, Response } from 'express';
 
 interface SessionData {
   userId: string;
@@ -18,15 +18,25 @@ const userSessions = new Map<string, Set<string>>(); // userId -> sessionIds
 const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 const MAX_SESSIONS_PER_USER = 5;
 
-export const createSession = (sessionId: string, userId: string, userData: Partial<SessionData>, req: Request) => {
+export interface SessionContext {
+  ip: string;
+  userAgent: string;
+}
+
+export const createSession = (
+  sessionId: string,
+  userId: string,
+  userData: Partial<SessionData>,
+  context: SessionContext
+) => {
   const sessionData: SessionData = {
     userId,
     email: userData.email,
     role: userData.role,
     loginTime: new Date(),
     lastActivity: new Date(),
-    ipAddress: req.ip,
-    userAgent: req.headers['user-agent']
+    ipAddress: context.ip,
+    userAgent: context.userAgent
   };
 
   // Clean up old sessions for this user
@@ -126,8 +136,14 @@ export const cleanupExpiredSessions = () => {
 // Clean up expired sessions every 10 minutes
 setInterval(cleanupExpiredSessions, 10 * 60 * 1000);
 
-export const sessionMiddleware = (req: Request, res: Response, next: any) => {
-  const sessionId = req.headers['x-session-id'] as string || req.cookies.sessionId;
+export const sessionMiddleware = (req: any, res: any, next: any) => {
+  let sessionId: string | undefined;
+  if (req.headers && typeof req.headers['x-session-id'] === 'string') {
+    sessionId = req.headers['x-session-id'] as string;
+  }
+  if (!sessionId && req.cookies && typeof req.cookies.sessionId === 'string') {
+    sessionId = req.cookies.sessionId;
+  }
   
   if (sessionId) {
     updateSessionActivity(sessionId);

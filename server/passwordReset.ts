@@ -14,7 +14,7 @@ const TOKEN_EXPIRY = 15 * 60 * 1000; // 15 minutes
 
 // Email transporter setup
 const createEmailTransporter = () => {
-  return nodemailer.createTransporter({
+  return nodemailer.createTransport({
     host: process.env.EMAIL_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.EMAIL_PORT || '587'),
     secure: false,

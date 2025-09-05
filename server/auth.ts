@@ -1,3 +1,18 @@
+import { NextFunction } from 'express';
+// Express middleware to check JWT access token
+export const isAuthenticated = (req: Request, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authorization header missing or malformed' });
+  }
+  const token = authHeader.split(' ')[1];
+  const payload = verifyAccessToken(token);
+  if (!payload) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+  (req as any).user = payload;
+  next();
+};
 
 import jwt from 'jsonwebtoken';
 import { Request, Response } from 'express';

@@ -1,7 +1,8 @@
 
 import { db } from './db';
-import { daos, proposals, votes, tasks, vaults, users, transactions } from '../shared/schema';
-import { eq, gte, lte, desc, asc, count, sum, avg, sql } from 'drizzle-orm';
+import { daos, proposals, votes, tasks, vaults, users } from '../shared/schema';
+import { eq, gte, lte, desc, asc, count, sum, avg, sql, and } from 'drizzle-orm';
+// 'and' is now imported for use in query conditions
 import { format, subDays, subMonths, subYears, startOfDay, endOfDay } from 'date-fns';
 
 export interface AnalyticsMetrics {
@@ -57,44 +58,21 @@ export class AnalyticsService {
       totalVotes,
       totalUsers,
       totalTasks,
-      transactionData,
       proposalData
     ] = await Promise.all([
-      // Total DAOs
       db.select({ count: count() }).from(daos).where(whereClause),
-      
-      // Total Proposals
       daoId 
         ? db.select({ count: count() }).from(proposals).where(eq(proposals.daoId, daoId))
         : db.select({ count: count() }).from(proposals),
-      
-      // Total Votes
       daoId
         ? db.select({ count: count() }).from(votes)
             .innerJoin(proposals, eq(votes.proposalId, proposals.id))
             .where(eq(proposals.daoId, daoId))
         : db.select({ count: count() }).from(votes),
-      
-      // Total Users
       db.select({ count: count() }).from(users),
-      
-      // Total Tasks
       daoId
         ? db.select({ count: count() }).from(tasks).where(eq(tasks.daoId, daoId))
         : db.select({ count: count() }).from(tasks),
-      
-      // Transaction Volume
-      daoId
-        ? db.select({ 
-            total: sum(sql`CAST(${transactions.amount} AS DECIMAL)`),
-            count: count()
-          }).from(transactions).where(eq(transactions.daoId, daoId))
-        : db.select({ 
-            total: sum(sql`CAST(${transactions.amount} AS DECIMAL)`),
-            count: count()
-          }).from(transactions),
-      
-      // Proposal Success Rate Data
       daoId
         ? db.select({ 
             status: proposals.status,
@@ -109,8 +87,8 @@ export class AnalyticsService {
             .groupBy(proposals.status)
     ]);
 
-    const totalProposalCount = proposalData.reduce((sum, item) => sum + item.count, 0);
-    const successfulProposals = proposalData.find(item => item.status === 'executed')?.count || 0;
+  const totalProposalCount = proposalData.reduce((sum: number, item: { status: string | null; count: number }) => sum + item.count, 0);
+  const successfulProposals = proposalData.find((item: { status: string | null; count: number }) => item.status === 'executed')?.count || 0;
     const avgProposalSuccessRate = totalProposalCount > 0 ? (successfulProposals / totalProposalCount) * 100 : 0;
 
     // Get top performing DAOs
@@ -122,7 +100,7 @@ export class AnalyticsService {
       totalVotes: totalVotes[0]?.count || 0,
       totalUsers: totalUsers[0]?.count || 0,
       totalTasks: totalTasks[0]?.count || 0,
-      totalTransactionVolume: Number(transactionData[0]?.total) || 0,
+      totalTransactionVolume: 0,
       avgProposalSuccessRate,
       avgUserEngagement: await this.calculateUserEngagement(daoId),
       topPerformingDaos
@@ -164,7 +142,7 @@ export class AnalyticsService {
       const dayStart = startOfDay(current);
       const dayEnd = endOfDay(current);
 
-      const [daoCount, userCount, proposalCount, transactionData, proposalSuccess] = await Promise.all([
+          const [daoCount, userCount, proposalCount, proposalSuccess] = await Promise.all([
         daoId 
           ? Promise.resolve([{ count: 1 }])
           : db.select({ count: count() }).from(daos)
@@ -173,27 +151,12 @@ export class AnalyticsService {
         db.select({ count: count() }).from(users)
           .where(lte(users.createdAt, dayEnd)),
         
-        daoId
-          ? db.select({ count: count() }).from(proposals)
-              .where(eq(proposals.daoId, daoId))
-              .where(gte(proposals.createdAt, dayStart))
-              .where(lte(proposals.createdAt, dayEnd))
-          : db.select({ count: count() }).from(proposals)
-              .where(gte(proposals.createdAt, dayStart))
-              .where(lte(proposals.createdAt, dayEnd)),
+    daoId
+      ? db.select({ count: count() }).from(proposals)
+        .where(and(eq(proposals.daoId, daoId), gte(proposals.createdAt, dayStart), lte(proposals.createdAt, dayEnd)))
+      : db.select({ count: count() }).from(proposals)
+        .where(and(gte(proposals.createdAt, dayStart), lte(proposals.createdAt, dayEnd))),
         
-        daoId
-          ? db.select({ 
-              total: sum(sql`CAST(${transactions.amount} AS DECIMAL)`)
-            }).from(transactions)
-              .where(eq(transactions.daoId, daoId))
-              .where(gte(transactions.createdAt, dayStart))
-              .where(lte(transactions.createdAt, dayEnd))
-          : db.select({ 
-              total: sum(sql`CAST(${transactions.amount} AS DECIMAL)`)
-            }).from(transactions)
-              .where(gte(transactions.createdAt, dayStart))
-              .where(lte(transactions.createdAt, dayEnd)),
         
         this.getSuccessRateForPeriod(dayStart, dayEnd, daoId)
       ]);
@@ -203,7 +166,7 @@ export class AnalyticsService {
         daoCount: daoCount[0]?.count || 0,
         userCount: userCount[0]?.count || 0,
         proposalCount: proposalCount[0]?.count || 0,
-        transactionVolume: Number(transactionData[0]?.total) || 0,
+            transactionVolume: 0,
         avgSuccessRate: proposalSuccess
       });
 
@@ -291,8 +254,7 @@ export class AnalyticsService {
     const daosList = await db.select({
       id: daos.id,
       name: daos.name,
-      memberCount: daos.memberCount,
-      treasuryAddress: daos.treasuryAddress
+      memberCount: daos.memberCount
     }).from(daos).limit(limit);
 
     return Promise.all(daosList.map(async dao => {
@@ -320,13 +282,12 @@ export class AnalyticsService {
         ? db.select({ count: count() }).from(users) // Would need DAO membership table
         : db.select({ count: count() }).from(users),
       
-      daoId
-        ? db.select({ count: count() }).from(votes)
-            .innerJoin(proposals, eq(votes.proposalId, proposals.id))
-            .where(eq(proposals.daoId, daoId))
-            .where(gte(votes.createdAt, thirtyDaysAgo))
-        : db.select({ count: count() }).from(votes)
-            .where(gte(votes.createdAt, thirtyDaysAgo))
+    daoId
+    ? db.select({ count: count() }).from(votes)
+      .innerJoin(proposals, eq(votes.proposalId, proposals.id))
+      .where(and(eq(proposals.daoId, daoId), gte(votes.createdAt, thirtyDaysAgo)))
+    : db.select({ count: count() }).from(votes)
+      .where(gte(votes.createdAt, thirtyDaysAgo))
     ]);
 
     const total = totalUsers[0]?.count || 0;
@@ -341,20 +302,17 @@ export class AnalyticsService {
           status: proposals.status,
           count: count()
         }).from(proposals)
-          .where(eq(proposals.daoId, daoId))
-          .where(gte(proposals.createdAt, start))
-          .where(lte(proposals.createdAt, end))
+          .where(and(eq(proposals.daoId, daoId), gte(proposals.createdAt, start), lte(proposals.createdAt, end)))
           .groupBy(proposals.status)
       : await db.select({ 
           status: proposals.status,
           count: count()
         }).from(proposals)
-          .where(gte(proposals.createdAt, start))
-          .where(lte(proposals.createdAt, end))
+          .where(and(gte(proposals.createdAt, start), lte(proposals.createdAt, end)))
           .groupBy(proposals.status);
 
-    const total = proposalsData.reduce((sum, item) => sum + item.count, 0);
-    const successful = proposalsData.find(item => item.status === 'executed')?.count || 0;
+  const total = proposalsData.reduce((sum: number, item: { status: string | null; count: number }) => sum + item.count, 0);
+  const successful = proposalsData.find((item: { status: string | null; count: number }) => item.status !== null && item.status === 'executed')?.count || 0;
 
     return total > 0 ? (successful / total) * 100 : 0;
   }
@@ -367,8 +325,8 @@ export class AnalyticsService {
       .where(eq(proposals.daoId, daoId))
       .groupBy(proposals.status);
 
-    const total = proposalsData.reduce((sum, item) => sum + item.count, 0);
-    const successful = proposalsData.find(item => item.status === 'executed')?.count || 0;
+  const total = proposalsData.reduce((sum: number, item: { status: string | null; count: number }) => sum + item.count, 0);
+  const successful = proposalsData.find((item: { status: string | null; count: number }) => item.status !== null && item.status === 'executed')?.count || 0;
 
     return total > 0 ? (successful / total) * 100 : 0;
   }

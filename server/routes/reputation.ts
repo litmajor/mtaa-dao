@@ -1,5 +1,11 @@
 
 import express, { Request, Response } from 'express';
+import { db } from '../db';
+import { eq } from 'drizzle-orm';
+import { AchievementService } from '../achievementService';
+import { AirdropService } from '../airdropService';
+import { VestingService } from '../vestingService';
+import { achievements } from '../../shared/achievementSchema';
 import { ReputationService } from '../reputationService';
 import { isAuthenticated } from '../nextAuthMiddleware';
 
@@ -107,8 +113,8 @@ router.post('/award', isAuthenticated, async (req: Request, res: Response) => {
 // Achievement endpoints
 router.get('/achievements', async (req: Request, res: Response) => {
   try {
-    const achievements = await db.select().from(achievements).where(eq(achievements.isActive, true));
-    res.json({ achievements });
+  const achievementRows = await db.select().from(achievements).where(eq(achievements.isActive, true));
+  res.json({ achievements: achievementRows });
   } catch (err) {
     res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
   }
@@ -207,9 +213,6 @@ router.post('/vesting/claim/:scheduleId', isAuthenticated, async (req: Request, 
 });
 
 // Import statements for new services
-import { AchievementService } from '../achievementService';
-import { AirdropService } from '../airdropService';
-import { VestingService } from '../vestingService';
-import { achievements } from '../../shared/achievementSchema';
+// ...existing code...
 
 export default router;

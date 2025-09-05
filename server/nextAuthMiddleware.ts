@@ -3,13 +3,14 @@ import { getToken } from "next-auth/jwt";
 import { verifyAccessToken } from "./auth";
 import { storage } from "./storage";
 
+export interface UserClaims {
+  sub: string;
+  role?: string;
+  email?: string;
+}
+
 declare global {
   namespace Express {
-    interface UserClaims {
-      sub: string;
-      role?: string;
-      email?: string;
-    }
     interface Request {
       user?: { claims: UserClaims };
     }

@@ -107,6 +107,8 @@ export const daos = pgTable("daos", {
   treasuryBalance: decimal("treasury_balance", { precision: 10, scale: 2 }).default("0"),
   plan: varchar("plan").default("free"), // free, premium
   planExpiresAt: timestamp("plan_expires_at"),
+  billingStatus: varchar("billing_status").default("active"),
+  nextBillingDate: timestamp("next_billing_date"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   imageUrl: varchar("image_url"),
@@ -367,13 +369,9 @@ export const walletTransactions = pgTable("wallet_transactions", {
   status: varchar("status").default("completed"), // pending, completed, failed
   transactionHash: varchar("transaction_hash"),
   description: text("description"),
+  disbursementId: varchar("disbursement_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-
-  // Note: fromUserId and toUserId can be null for deposits or contributions
-  // e.g., deposit to vault, contribution to DAO, etc.
-  // This allows tracking of all wallet-related transactions in one table
-  // and simplifies the wallet history retrieval for users
 });
 
 export const config = pgTable("config", {
@@ -550,7 +548,14 @@ export const daoMessages = pgTable("dao_messages", {
 });
 
 // Add unique constraints to prevent duplicate likes
+if (typeof proposalLikes.proposalId === 'undefined' || typeof proposalLikes.userId === 'undefined') {
+  console.error('proposalLikes index columns are undefined:', proposalLikes.proposalId, proposalLikes.userId);
+}
 export const proposalLikesIndex = index("proposal_likes_unique").on(proposalLikes.proposalId, proposalLikes.userId);
+
+if (typeof commentLikes.commentId === 'undefined' || typeof commentLikes.userId === 'undefined') {
+  console.error('commentLikes index columns are undefined:', commentLikes.commentId, commentLikes.userId);
+}
 export const commentLikesIndex = index("comment_likes_unique").on(commentLikes.commentId, commentLikes.userId);
 
 // Relations

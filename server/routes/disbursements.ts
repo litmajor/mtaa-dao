@@ -55,7 +55,7 @@ router.post('/create', async (req, res) => {
         fromUserId: daoId,
         toUserId: recipient.userId,
         walletAddress: recipient.walletAddress,
-        amount: recipient.amount,
+        amount: recipient.amount.toString(),
         currency,
         type: 'disbursement',
         status: 'pending',

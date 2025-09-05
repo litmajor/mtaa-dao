@@ -138,12 +138,12 @@ export class TaskVerificationService {
           .where(eq(walletTransactions.id, escrow[0].id));
 
         // Create payout transaction
+        // NOTE: users table does not have walletAddress column. You must implement wallet address retrieval differently if needed.
         await db.insert(walletTransactions).values({
-          fromUserId: 'escrow_system',
-          toUserId: taskData.claimerId,
-          amount: escrow[0].amount,
-          currency: escrow[0].currency,
           type: 'bounty_payout',
+          amount: (escrow[0].amount ?? '').toString(),
+          currency: (escrow[0].currency ?? '').toString(),
+          walletAddress: '', // No wallet address available, set as empty string or fallback
           status: 'completed',
           description: `Bounty payment for completed task: ${taskData.title}`
         });

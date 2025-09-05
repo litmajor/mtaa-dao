@@ -289,7 +289,7 @@ router.get('/reconcile', async (req, res) => {
         .reduce((sum, p) => sum + (p.amount / 100), 0), // Convert from cents
       successRate: payments.length > 0 ? 
         (payments.filter(p => p.status === 'completed').length / payments.length * 100).toFixed(2) + '%' : '0%',
-      topFailureReasons: this.getTopFailureReasons(payments.filter(p => p.status === 'failed'))
+      topFailureReasons: getTopFailureReasons(payments ? payments.filter(p => p.status === 'failed') : [])
     };
 
     res.json({

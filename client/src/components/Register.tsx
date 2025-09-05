@@ -170,8 +170,8 @@ export default function StunningRegister() {
     }
 
     try {
-      // Send registration details to backend
-      const response = await fetch('/api/auth/register', {
+  // Send registration details to backend
+  const response = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

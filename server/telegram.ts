@@ -31,6 +31,7 @@ export async function upsertTelegramUser({ telegramId, phone, firstName, lastNam
       lastName,
       profileImageUrl: photoUrl,
       email: username ? `${username}@telegram` : undefined,
+      password: '', // Set a default or generated password for Telegram users
     };
     await db.insert(users).values(newUser);
     return newUser;

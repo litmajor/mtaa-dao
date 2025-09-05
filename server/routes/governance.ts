@@ -88,18 +88,24 @@ router.post('/proposals/:proposalId/execute', isAuthenticated, async (req, res) 
         eq(daoMemberships.userId, userId)
       )).limit(1);
     
-    if (!membership.length || !['admin', 'elder'].includes(membership[0].role)) {
+  if (!membership.length || !['admin', 'elder'].includes(membership[0].role ?? '')) {
       return res.status(403).json({ message: 'Insufficient permissions to execute proposal' });
     }
     
     // Add to execution queue
-    const executionTime = new Date(Date.now() + (proposalData.executionDelay || 24) * 60 * 60 * 1000);
+    // Always use DAO's executionDelay
+    let delay = 24;
+    const dao = await db.select().from(daos).where(eq(daos.id, proposalData.daoId)).limit(1);
+    if (dao.length && typeof dao[0].executionDelay === 'number') {
+      delay = dao[0].executionDelay;
+    }
+    const executionTime = new Date(Date.now() + delay * 60 * 60 * 1000);
     
     await db.insert(proposalExecutionQueue).values({
-      proposalId,
-      daoId: proposalData.daoId,
+      proposalId: String(proposalId ?? ''),
+      daoId: String(proposalData.daoId ?? ''),
       scheduledFor: executionTime,
-      executionType: proposalData.proposalType,
+      executionType: String(proposalData.proposalType ?? ''),
       executionData: proposalData.executionData || {},
       status: 'pending'
     });
@@ -160,7 +166,7 @@ router.post('/:daoId/templates', isAuthenticated, async (req, res) => {
         eq(daoMemberships.userId, userId)
       )).limit(1);
     
-    if (!membership.length || !['admin', 'elder'].includes(membership[0].role)) {
+  if (!membership.length || !['admin', 'elder'].includes(membership[0].role ?? '')) {
       return res.status(403).json({ message: 'Insufficient permissions to create templates' });
     }
     
@@ -301,7 +307,10 @@ router.post('/proposals/:proposalId/check-quorum', isAuthenticated, async (req, 
     const proposalData = proposal[0];
     
     // Calculate total votes
-    const totalVotes = proposalData.yesVotes + proposalData.noVotes + proposalData.abstainVotes;
+  const yesVotes = typeof proposalData.yesVotes === 'number' ? proposalData.yesVotes : 0;
+  const noVotes = typeof proposalData.noVotes === 'number' ? proposalData.noVotes : 0;
+  const abstainVotes = typeof proposalData.abstainVotes === 'number' ? proposalData.abstainVotes : 0;
+  const totalVotes = yesVotes + noVotes + abstainVotes;
     
     // Get required quorum
     const quorumResponse = await fetch(`/api/governance/${proposalData.daoId}/quorum`);
@@ -309,7 +318,7 @@ router.post('/proposals/:proposalId/check-quorum', isAuthenticated, async (req, 
     const requiredQuorum = quorumData.data.requiredQuorum;
     
     const quorumMet = totalVotes >= requiredQuorum;
-    const passed = quorumMet && proposalData.yesVotes > proposalData.noVotes;
+  const passed = quorumMet && yesVotes > noVotes;
     
     // Record quorum history
     await db.insert(quorumHistory).values({

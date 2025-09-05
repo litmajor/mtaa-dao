@@ -175,7 +175,8 @@ export class ReputationService {
 
     if (!reputation[0]) return;
 
-    const lastActivity = new Date(reputation[0].lastActivity);
+  const lastActivityRaw = reputation[0].lastActivity;
+  const lastActivity = lastActivityRaw ? new Date(lastActivityRaw) : new Date();
     const now = new Date();
     const daysSinceActivity = Math.floor((now.getTime() - lastActivity.getTime()) / (1000 * 60 * 60 * 24));
 
@@ -185,8 +186,9 @@ export class ReputationService {
       const decayDays = Math.min(daysSinceActivity - 7, 50);
       const decayFactor = 1 - (decayDays * 0.01);
       
-      const decayedPoints = Math.floor(reputation[0].totalPoints * decayFactor);
-      const pointsLost = reputation[0].totalPoints - decayedPoints;
+    const totalPoints = reputation[0].totalPoints ?? 0;
+    const decayedPoints = Math.floor(totalPoints * decayFactor);
+    const pointsLost = totalPoints - decayedPoints;
 
       if (pointsLost > 0) {
         await db
@@ -220,7 +222,7 @@ export class ReputationService {
     let decayed = 0;
 
     for (const user of allUsers) {
-      const beforePoints = user.totalPoints;
+  const beforePoints = user.totalPoints ?? 0;
       await this.applyReputationDecay(user.userId);
       
       // Check if points actually decayed
@@ -229,7 +231,7 @@ export class ReputationService {
         .from(userReputation)
         .where(eq(userReputation.userId, user.userId));
       
-      if (afterReputation[0] && afterReputation[0].totalPoints < beforePoints) {
+  if (afterReputation[0] && (afterReputation[0].totalPoints ?? 0) < beforePoints) {
         decayed++;
       }
       processed++;

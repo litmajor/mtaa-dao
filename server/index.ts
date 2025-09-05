@@ -21,7 +21,7 @@ import {
   asyncHandler 
 } from './middleware/errorHandler';
 import { logger, requestLogger, logStartup } from './utils/logger';
-import { metricsCollector } from './middleware/metricsCollector';
+import { metricsCollector } from './monitoring/metricsCollector';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -69,7 +69,7 @@ app.use(metricsCollector.requestMiddleware());
 // Store user socket connections
 const userSockets = new Map<string, string>();
 
-io.on('connection', (socket) => {
+io.on('connection', (socket: any) => {
   console.log('User connected:', socket.id);
 
   socket.on('authenticate', (userId: string) => {
@@ -119,7 +119,7 @@ app.use((req, res, next) => {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
       if (logLine.length > 80) logLine = logLine.slice(0, 79) + "…";
-      logger.http(logLine);
+  logger.info(logLine);
     }
   });
 
@@ -151,7 +151,7 @@ ProposalExecutionService.startScheduler();
     await registerRoutes(app);
 
     // Health check endpoint
-    app.get('/health', asyncHandler(async (req, res) => {
+  app.get('/health', asyncHandler(async (req: Request, res: Response) => {
       res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),

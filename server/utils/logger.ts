@@ -6,7 +6,8 @@ import { storage } from '../storage';
 const { combine, timestamp, errors, json, colorize, simple, printf } = format;
 
 // Custom log format for development
-const devFormat = printf(({ level, message, timestamp, service, ...meta }) => {
+const devFormat = printf((info) => {
+  const { level, message, timestamp, service, ...meta } = info;
   const metaStr = Object.keys(meta).length > 0 ? `\n${JSON.stringify(meta, null, 2)}` : '';
   return `${timestamp} [${service}] ${level}: ${message}${metaStr}`;
 });

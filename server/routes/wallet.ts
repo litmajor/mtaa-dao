@@ -4,7 +4,9 @@ import EnhancedAgentWallet, { NetworkConfig, WalletManager } from '../agent_wall
 
 import { db } from '../storage';
 import { walletTransactions } from '../../shared/schema';
+import { lockedSavings, savingsGoals } from '../../shared/schema';
 import { desc, eq, or } from 'drizzle-orm';
+import { and } from 'drizzle-orm';
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 
@@ -329,20 +331,18 @@ router.get('/tx-status/:txHash', async (req, res) => {
 router.post('/locked-savings/create', async (req, res) => {
   try {
     const { userId, amount, currency, lockPeriod, interestRate } = req.body;
-    
     // Calculate unlock date
     const unlocksAt = new Date();
-    unlocksAt.setDate(unlocksAt.getDate() + lockPeriod);
-    
+    unlocksAt.setDate(unlocksAt.getDate() + Number(lockPeriod));
     const lockedSaving = await db.insert(lockedSavings).values({
       userId,
       amount,
       currency: currency || 'KES',
-      lockPeriod,
+      lockPeriod: Number(lockPeriod),
       interestRate: interestRate || '0.05',
       unlocksAt,
+      vaultId: 'default-vault', // Provide a valid vaultId or get from req.body
     }).returning();
-    
     res.json(lockedSaving[0]);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -359,7 +359,6 @@ router.get('/locked-savings/:userId', async (req, res) => {
       .from(lockedSavings)
       .where(eq(lockedSavings.userId, userId))
       .orderBy(desc(lockedSavings.createdAt));
-    
     res.json(savings);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -372,30 +371,24 @@ router.post('/locked-savings/withdraw/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { isEarlyWithdrawal } = req.body;
-    
     // Get the locked saving
     const saving = await db
       .select()
       .from(lockedSavings)
       .where(eq(lockedSavings.id, id))
       .limit(1);
-    
     if (!saving.length) {
       return res.status(404).json({ error: 'Locked saving not found' });
     }
-    
     const lockSaving = saving[0];
     const now = new Date();
     const isUnlocked = now >= new Date(lockSaving.unlocksAt);
-    
     let penalty = 0;
     if (isEarlyWithdrawal && !isUnlocked) {
       // Apply 10% penalty for early withdrawal
       penalty = parseFloat(lockSaving.amount) * 0.1;
     }
-    
     const withdrawalAmount = parseFloat(lockSaving.amount) - penalty;
-    
     // Update status
     await db
       .update(lockedSavings)
@@ -405,7 +398,6 @@ router.post('/locked-savings/withdraw/:id', async (req, res) => {
         updatedAt: new Date()
       })
       .where(eq(lockedSavings.id, id));
-    
     res.json({ 
       withdrawalAmount, 
       penalty, 
@@ -423,7 +415,6 @@ router.post('/locked-savings/withdraw/:id', async (req, res) => {
 router.post('/savings-goals/create', async (req, res) => {
   try {
     const { userId, title, description, targetAmount, targetDate, category, currency } = req.body;
-    
     const goal = await db.insert(savingsGoals).values({
       userId,
       title,
@@ -433,7 +424,6 @@ router.post('/savings-goals/create', async (req, res) => {
       category: category || 'general',
       currency: currency || 'KES',
     }).returning();
-    
     res.json(goal[0]);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -450,7 +440,6 @@ router.get('/savings-goals/:userId', async (req, res) => {
       .from(savingsGoals)
       .where(eq(savingsGoals.userId, userId))
       .orderBy(desc(savingsGoals.createdAt));
-    
     res.json(goals);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -463,22 +452,18 @@ router.post('/savings-goals/:id/contribute', async (req, res) => {
   try {
     const { id } = req.params;
     const { amount } = req.body;
-    
     // Get current goal
     const goal = await db
       .select()
       .from(savingsGoals)
       .where(eq(savingsGoals.id, id))
       .limit(1);
-    
     if (!goal.length) {
       return res.status(404).json({ error: 'Savings goal not found' });
     }
-    
     const currentGoal = goal[0];
-    const newAmount = parseFloat(currentGoal.currentAmount) + parseFloat(amount);
+    const newAmount = parseFloat(currentGoal.currentAmount ?? '0') + parseFloat(amount);
     const isCompleted = newAmount >= parseFloat(currentGoal.targetAmount);
-    
     await db
       .update(savingsGoals)
       .set({ 
@@ -487,7 +472,6 @@ router.post('/savings-goals/:id/contribute', async (req, res) => {
         updatedAt: new Date()
       })
       .where(eq(savingsGoals.id, id));
-    
     res.json({ newAmount, isCompleted });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -716,7 +700,7 @@ router.get('/multisig/:address/transactions', requireRole('admin', 'elder'), asy
     const { pending } = req.query;
     
     // In production, fetch from blockchain
-    const mockTransactions = [];
+  const mockTransactions: any[] = [];
     
     res.json({ transactions: mockTransactions });
   } catch (err) {
