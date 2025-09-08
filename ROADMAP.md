@@ -1,0 +1,76 @@
+# 🌍 **Mtaa DAO Roadmap**
+
+### **Phase 1 – Foundation (✅ Completed)**
+
+* **Schema & Backend**
+  * Full PostgreSQL + Drizzle ORM schema (tables, relations, enums, insert schemas).
+  * Redis & Prometheus integration for caching + monitoring.
+* **DAO Core**
+  * User profiles, contributions, proposal creation, voting.
+  * Governance logic (quorum, proposal lifecycle).
+* **UI Base**
+  * React + Tailwind + shadcn/ui setup.
+  * DAO stats dashboard, modals, contribution flow.
+  * Finalized **Design D Enhanced** as the main UI style.
+
+---
+
+### **Phase 2 – Financial Layer (🚧 In Progress)**
+
+* **Wallet Integration**
+  * CELO & cUSD support via `useWallet` hook.
+  * Wallet connection + MiniPay detection.
+* **Transactions**
+  * Send & receive CELO/cUSD.
+  * Fetch balances + display in user profile.
+* **Personal Finance Layer**
+  * Transaction history per user.
+  * Contribution tracking linked to wallet.
+* **UI**
+  * Animated cards for balances & transactions.
+  * Real-time notifications for activity.
+
+---
+
+### **Phase 3 – Expansion (🔜 Next)**
+
+* **Vaults & Treasury**
+  * Deposit/withdrawal system for community pools.
+  * DAO-managed treasury smart contracts.
+* **Stablecoin Expansion**
+  * Add support for USDT (TRC-20), DAI, and possibly M-Pesa on/off ramps.
+* **Advanced Finance**
+  * Yield farming integration (DAO treasury grows).
+  * Staking pools for members.
+
+---
+
+### **Phase 4 – Governance & Scaling**
+
+* **Authentication**
+  * Add Google OAuth, Auth0, Telegram login.
+  * DAO identity layer for cross-community use.
+* **Governance Upgrade**
+  * Role-based participation (voters, delegates, executors).
+  * Weighted voting (based on contribution or stake).
+* **Scaling**
+  * Multi-community support (separate DAOs under one system).
+  * Inter-DAO collaboration layer.
+
+---
+
+### **Phase 5 – Hedge Fund Layer (🚀 Vision)**
+
+* **Decentralized Hedge Fund**
+  * Pool investments across communities.
+  * Automated trading + AI-driven strategies (MirrorCore tie-in possible).
+* **Cross-border Finance**
+  * Multi-chain integration (ETH, BSC, Solana).
+  * Global remittances with low fees.
+* **Meta Layer**
+  * Mtaa DAO evolves into a platform for launching community DAOs.
+  * Local → Regional → Global finance movement.
+
+---
+
+⚡ This roadmap is **modular & living** → we can update it anytime when priorities shift.
