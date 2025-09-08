@@ -235,7 +235,7 @@ router.get('/balance/cusd', async (req, res) => {
     const address = user as string || wallet!.address;
     // Get cUSD token address for Celo network
     const CUSD_TOKEN_ADDRESS = '0x765DE816845861e75A25fCA122bb6898B8B1282a'; // Celo mainnet cUSD
-    const balance = await wallet!.getTokenBalanceHuman(CUSD_TOKEN_ADDRESS, address);
+    const balance = await wallet!.getTokenBalance(CUSD_TOKEN_ADDRESS, address);
     res.json({ address, balance, symbol: 'cUSD' });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
