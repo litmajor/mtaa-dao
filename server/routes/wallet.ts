@@ -235,7 +235,7 @@ router.get('/balance/cusd', async (req, res) => {
     const address = user as string || wallet!.address;
     // Get cUSD token address for Celo network
     const CUSD_TOKEN_ADDRESS = '0x765DE816845861e75A25fCA122bb6898B8B1282a'; // Celo mainnet cUSD
-    const balance = await wallet!.getTokenBalance(CUSD_TOKEN_ADDRESS, address);
+    const balance = await wallet!.getBalance(CUSD_TOKEN_ADDRESS, address);
     res.json({ address, balance, symbol: 'cUSD' });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -567,15 +567,13 @@ router.post('/contribute', async (req, res) => {
     // Create corresponding wallet transaction
     if (transactionHash) {
       await db.insert(walletTransactions).values({
-        fromUserId: userId,
-        toUserId: daoId,
+        walletAddress: userId, // Use userId as wallet address for now
         amount,
         currency: currency || 'cUSD',
         type: 'contribution',
         status: 'completed',
         transactionHash,
-        description: `Contribution to DAO ${daoId}${proposalId ? ` for proposal ${proposalId}` : ''}`,
-        contributionId: contribution[0].id
+        description: `Contribution to DAO ${daoId}${proposalId ? ` for proposal ${proposalId}` : ''}`
       });
     }
 
