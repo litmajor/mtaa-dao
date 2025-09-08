@@ -1,3 +1,7 @@
+// Unique constraints for proposal_likes and comment_likes are enforced at the database level.
+// Add these to your migration or run manually:
+// ALTER TABLE proposal_likes ADD CONSTRAINT proposal_likes_unique UNIQUE (proposal_id, user_id);
+// ALTER TABLE comment_likes ADD CONSTRAINT comment_likes_unique UNIQUE (comment_id, user_id);
 
 
 import {
@@ -547,16 +551,10 @@ export const daoMessages = pgTable("dao_messages", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Add unique constraints to prevent duplicate likes
-if (typeof proposalLikes.proposalId === 'undefined' || typeof proposalLikes.userId === 'undefined') {
-  console.error('proposalLikes index columns are undefined:', proposalLikes.proposalId, proposalLikes.userId);
-}
-export const proposalLikesIndex = index("proposal_likes_unique").on(proposalLikes.proposalId, proposalLikes.userId);
 
-if (typeof commentLikes.commentId === 'undefined' || typeof commentLikes.userId === 'undefined') {
-  console.error('commentLikes index columns are undefined:', commentLikes.commentId, commentLikes.userId);
-}
-export const commentLikesIndex = index("comment_likes_unique").on(commentLikes.commentId, commentLikes.userId);
+// Add unique constraints to prevent duplicate likes (temporarily commented out for debugging)
+// export const proposalLikesIndex = index("proposal_likes_unique").on(proposalLikes.proposalId, proposalLikes.userId);
+//export const commentLikesIndex = index("comment_likes_unique").on(commentLikes.commentId, commentLikes.userId);
 
 // Relations
 export const usersRelations = relations(users, ({ many, one }) => ({
