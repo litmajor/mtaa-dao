@@ -8,6 +8,8 @@ import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { LockedSavingsSection } from "./LockedSavingsSection"
+import { motion } from "framer-motion"
+import { Wallet, TrendingUp, TrendingDown, RefreshCw } from "lucide-react"
 // import QRCode from "react-qr-code" // Uncomment if installed
 
 const isValidAddress = (addr: string) => /^0x[a-fA-F0-9]{40}$/.test(addr)
@@ -59,33 +61,125 @@ export function PersonalVaultSection() {
 }
 
 function VaultBalanceCard() {
-  const { address } = useWallet();
-  const { data: celo = "0" } = useQuery({
+  const { address, refreshBalances, isRefreshingBalances } = useWallet();
+  const { data: celo = "0", isLoading: celoLoading } = useQuery({
     queryKey: ["celo", address],
     queryFn: async () => {
       const res = await fetch(`/api/wallet/balance/celo?user=${address}`);
       const { balance } = await res.json();
       return balance;
     },
-    enabled: !!address
+    enabled: !!address,
+    refetchInterval: 30000 // Refresh every 30 seconds
   });
 
-  const { data: cusd = "0" } = useQuery({
+  const { data: cusd = "0", isLoading: cusdLoading } = useQuery({
     queryKey: ["cusd", address],
     queryFn: async () => {
       const res = await fetch(`/api/wallet/balance/cusd?user=${address}`);
       const { balance } = await res.json();
       return balance;
     },
-    enabled: !!address
+    enabled: !!address,
+    refetchInterval: 30000 // Refresh every 30 seconds
   });
 
+  const containerVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { 
+      opacity: 1, 
+      y: 0,
+      transition: { duration: 0.5, staggerChildren: 0.1 }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, x: -20 },
+    visible: { opacity: 1, x: 0 }
+  };
+
+  const isLoading = celoLoading || cusdLoading;
+
   return (
-    <div className="p-4 border rounded-xl space-y-1 text-sm">
-      <p><strong>Address:</strong> {address}</p>
-      <p><strong>CELO:</strong> {String(celo)}</p>
-      <p><strong>cUSD:</strong> {String(cusd)}</p>
-    </div>
+    <motion.div 
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+      className="relative overflow-hidden bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/20 dark:to-indigo-900/20 p-6 border rounded-xl space-y-4"
+    >
+      <div className="flex items-center justify-between">
+        <motion.div variants={itemVariants} className="flex items-center gap-2">
+          <Wallet className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Wallet Balance</h3>
+        </motion.div>
+        <motion.button
+          variants={itemVariants}
+          onClick={refreshBalances}
+          disabled={isRefreshingBalances}
+          className="p-2 rounded-lg hover:bg-white/50 dark:hover:bg-gray-800/50 transition-colors"
+        >
+          <RefreshCw className={`h-4 w-4 ${isRefreshingBalances ? 'animate-spin' : ''} text-gray-600 dark:text-gray-400`} />
+        </motion.button>
+      </div>
+
+      <motion.div variants={itemVariants} className="space-y-1 text-sm text-gray-600 dark:text-gray-400">
+        <p className="break-all">
+          <span className="font-medium">Address:</span> {address || 'Not connected'}
+        </p>
+      </motion.div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <motion.div 
+          variants={itemVariants}
+          className="bg-white/70 dark:bg-gray-800/70 p-4 rounded-lg backdrop-blur-sm"
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <TrendingUp className="h-4 w-4 text-yellow-600" />
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">CELO</span>
+          </div>
+          <motion.p 
+            className="text-xl font-bold text-gray-900 dark:text-gray-100"
+            key={celo} // Re-animate when value changes
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 500, damping: 25 }}
+          >
+            {isLoading ? (
+              <span className="animate-pulse bg-gray-300 dark:bg-gray-600 rounded h-6 w-16 block"></span>
+            ) : (
+              parseFloat(celo).toFixed(4)
+            )}
+          </motion.p>
+        </motion.div>
+
+        <motion.div 
+          variants={itemVariants}
+          className="bg-white/70 dark:bg-gray-800/70 p-4 rounded-lg backdrop-blur-sm"
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <TrendingUp className="h-4 w-4 text-green-600" />
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">cUSD</span>
+          </div>
+          <motion.p 
+            className="text-xl font-bold text-gray-900 dark:text-gray-100"
+            key={cusd} // Re-animate when value changes
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 500, damping: 25 }}
+          >
+            {isLoading ? (
+              <span className="animate-pulse bg-gray-300 dark:bg-gray-600 rounded h-6 w-16 block"></span>
+            ) : (
+              `$${parseFloat(cusd).toFixed(2)}`
+            )}
+          </motion.p>
+        </motion.div>
+      </div>
+
+      {/* Background decoration */}
+      <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-400/10 to-indigo-400/10 rounded-full -translate-y-16 translate-x-16"></div>
+      <div className="absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-tr from-purple-400/10 to-pink-400/10 rounded-full translate-y-12 -translate-x-12"></div>
+    </motion.div>
   );
 }
 
