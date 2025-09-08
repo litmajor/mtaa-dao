@@ -9,6 +9,7 @@ import { desc, eq, or } from 'drizzle-orm';
 import { and } from 'drizzle-orm';
 import { fileURLToPath } from "url";
 import { dirname } from "path";
+import { notificationService } from '../notificationService';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -214,6 +215,34 @@ router.get('/balance/:address?', async (req, res) => {
   }
 });
 
+// GET /api/wallet/balance/celo
+router.get('/balance/celo', async (req, res) => {
+  try {
+    const { user } = req.query;
+    const address = user as string || wallet!.address;
+    const balance = await wallet!.getBalanceEth(address);
+    res.json({ address, balance, symbol: 'CELO' });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// GET /api/wallet/balance/cusd
+router.get('/balance/cusd', async (req, res) => {
+  try {
+    const { user } = req.query;
+    const address = user as string || wallet!.address;
+    // Get cUSD token address for Celo network
+    const CUSD_TOKEN_ADDRESS = '0x765DE816845861e75A25fCA122bb6898B8B1282a'; // Celo mainnet cUSD
+    const balance = await wallet!.getTokenBalanceHuman(CUSD_TOKEN_ADDRESS, address);
+    res.json({ address, balance, symbol: 'cUSD' });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
 // GET /api/wallet/token-info/:tokenAddress
 router.get('/token-info/:tokenAddress', async (req, res) => {
   try {
@@ -228,8 +257,25 @@ router.get('/token-info/:tokenAddress', async (req, res) => {
 // POST /api/wallet/send-native
 router.post('/send-native', async (req, res) => {
   try {
-    const { toAddress, amount } = req.body;
+    const { toAddress, amount, userId } = req.body;
     const result = await wallet!.sendNativeToken(toAddress, amount); // Non-null assertion
+    
+    // Create notification for successful transaction
+    if (userId && result.hash) {
+      await notificationService.createNotification({
+        userId,
+        type: 'transaction',
+        title: 'Transaction Sent',
+        message: `Successfully sent ${amount} CELO to ${toAddress.slice(0, 6)}...${toAddress.slice(-4)}`,
+        metadata: {
+          transactionHash: result.hash,
+          amount,
+          currency: 'CELO',
+          toAddress
+        }
+      });
+    }
+    
     res.json(result);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -240,8 +286,27 @@ router.post('/send-native', async (req, res) => {
 // POST /api/wallet/send-token
 router.post('/send-token', async (req, res) => {
   try {
-    const { tokenAddress, toAddress, amount } = req.body;
+    const { tokenAddress, toAddress, amount, userId } = req.body;
     const result = await wallet!.sendTokenHuman(tokenAddress, toAddress, amount); // Non-null assertion
+    
+    // Create notification for successful token transaction
+    if (userId && result.hash) {
+      const currency = tokenAddress.includes('cUSD') ? 'cUSD' : 'TOKEN';
+      await notificationService.createNotification({
+        userId,
+        type: 'transaction',
+        title: 'Token Sent',
+        message: `Successfully sent ${amount} ${currency} to ${toAddress.slice(0, 6)}...${toAddress.slice(-4)}`,
+        metadata: {
+          transactionHash: result.hash,
+          amount,
+          currency,
+          toAddress,
+          tokenAddress
+        }
+      });
+    }
+    
     res.json(result);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
