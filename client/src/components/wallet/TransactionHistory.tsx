@@ -116,7 +116,7 @@ const TransactionItem = ({ tx }: { tx: Transaction }) => {
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 };
 
