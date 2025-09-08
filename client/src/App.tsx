@@ -89,6 +89,19 @@ function Router() {
         <Route path="/contact" component={() => <div className="p-8">Contact Us (placeholder)</div>} />
         <Route path="/settings" component={() => <div className="p-8">User Settings (placeholder)</div>} />
         <Route path="/logout" component={() => <div className="p-8">Logging out... (placeholder)</div>} />
+        <Route path="/dashboard" component={Dashboard} />
+        <Route path="/proposals" component={Proposals} />
+        <Route path="/vault" component={Vault} />
+        <Route path="/profile" component={Profile} />
+        <Route path="/daos" component={DAOs} />
+        <Route path="/wallet" component={Wallet} />
+        <Route path="/wallet/dashboard" component={WalletDashboard} />
+        <Route path="/wallet/batch-transfer" component={BatchTransfer} />
+        <Route path="/wallet/multisig" component={Multisig} />
+        <Route path="/wallet/dao-treasury" component={DaoTreasury} />
+        <Route path="/referrals" component={Referrals} />
+         <Route path="/maonovault" component={MaonoVaultWeb3Page} />
+
         {/* Main app routes */}
         {!isAuthenticated ? (
           <Route path="/" component={Landing} />
