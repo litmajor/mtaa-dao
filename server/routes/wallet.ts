@@ -3,7 +3,7 @@ import express from 'express';
 import EnhancedAgentWallet, { NetworkConfig, WalletManager } from '../agent_wallet';
 
 import { db } from '../storage';
-import { walletTransactions } from '../../shared/schema';
+import { walletTransactions, contributions } from '../../shared/schema';
 import { lockedSavings, savingsGoals } from '../../shared/schema';
 import { desc, eq, or } from 'drizzle-orm';
 import { and } from 'drizzle-orm';
@@ -538,6 +538,120 @@ router.post('/savings-goals/:id/contribute', async (req, res) => {
       })
       .where(eq(savingsGoals.id, id));
     res.json({ newAmount, isCompleted });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// === CONTRIBUTION TRACKING WITH WALLET TRANSACTIONS ===
+
+// POST /api/wallet/contribute
+router.post('/contribute', async (req, res) => {
+  try {
+    const { userId, daoId, proposalId, amount, currency, transactionHash, purpose, isAnonymous = false } = req.body;
+    
+    // Create contribution record
+    const contribution = await db.insert(contributions).values({
+      userId,
+      daoId,
+      proposalId,
+      amount,
+      currency: currency || 'cUSD',
+      purpose: purpose || 'general',
+      isAnonymous,
+      transactionHash,
+      vault: true // Link to vault system
+    }).returning();
+
+    // Create corresponding wallet transaction
+    if (transactionHash) {
+      await db.insert(walletTransactions).values({
+        fromUserId: userId,
+        toUserId: daoId,
+        amount,
+        currency: currency || 'cUSD',
+        type: 'contribution',
+        status: 'completed',
+        transactionHash,
+        description: `Contribution to DAO ${daoId}${proposalId ? ` for proposal ${proposalId}` : ''}`,
+        contributionId: contribution[0].id
+      });
+    }
+
+    // Send real-time notification
+    if (userId) {
+      await notificationService.createNotification({
+        userId,
+        type: 'contribution',
+        title: 'Contribution Recorded',
+        message: `Successfully contributed ${amount} ${currency} to ${isAnonymous ? 'DAO' : `DAO ${daoId}`}`,
+        metadata: {
+          contributionId: contribution[0].id,
+          amount,
+          currency,
+          daoId,
+          proposalId,
+          transactionHash
+        }
+      });
+    }
+
+    res.json({
+      success: true,
+      contribution: contribution[0],
+      message: 'Contribution successfully tracked and linked to wallet transaction'
+    });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// GET /api/wallet/contributions/:userId
+router.get('/contributions/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { daoId, timeframe = '30' } = req.query;
+
+    // Build where conditions
+    const conditions = [eq(contributions.userId, userId)];
+    if (daoId) {
+      conditions.push(eq(contributions.daoId, daoId as string));
+    }
+
+    // Date filter
+    const dateFilter = new Date();
+    dateFilter.setDate(dateFilter.getDate() - parseInt(timeframe as string));
+
+    const userContributions = await db
+      .select()
+      .from(contributions)
+      .where(and(...conditions))
+      .orderBy(desc(contributions.createdAt));
+
+    // Calculate contribution analytics
+    const totalContributed = userContributions.reduce((sum, contrib) => 
+      sum + parseFloat(contrib.amount), 0
+    );
+    
+    const contributionsByDAO = userContributions.reduce((acc, contrib) => {
+      const daoId = contrib.daoId;
+      if (!acc[daoId]) acc[daoId] = { count: 0, total: 0 };
+      acc[daoId].count++;
+      acc[daoId].total += parseFloat(contrib.amount);
+      return acc;
+    }, {} as Record<string, { count: number; total: number }>);
+
+    res.json({
+      contributions: userContributions,
+      analytics: {
+        totalContributed,
+        contributionCount: userContributions.length,
+        contributionsByDAO,
+        averageContribution: userContributions.length > 0 ? totalContributed / userContributions.length : 0
+      }
+    });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: errorMsg });
