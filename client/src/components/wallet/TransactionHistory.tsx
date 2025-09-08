@@ -4,9 +4,10 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { ArrowUpRight, ArrowDownLeft, Clock, CheckCircle, XCircle, Search, Filter } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, Clock, CheckCircle, XCircle, Search, Filter, RefreshCw } from 'lucide-react';
 import { Skeleton } from '../ui/skeleton';
 import ErrorBoundary from '../ErrorBoundary'; // Using ErrorBoundary from parent components directory
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface Transaction {
   id: string;
@@ -64,12 +65,24 @@ const TransactionItem = ({ tx }: { tx: Transaction }) => {
   };
 
   return (
-    <div className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors focus-within:ring-2 focus-within:ring-blue-500" tabIndex={0} role="listitem">
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      whileHover={{ scale: 1.02, backgroundColor: 'rgba(59, 130, 246, 0.05)' }}
+      className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors focus-within:ring-2 focus-within:ring-blue-500 cursor-pointer" 
+      tabIndex={0} 
+      role="listitem"
+    >
       <div className="flex items-center space-x-4 w-full md:w-auto overflow-hidden">
-        <div className="flex items-center space-x-2 flex-shrink-0">
+        <motion.div 
+          className="flex items-center space-x-2 flex-shrink-0"
+          whileHover={{ scale: 1.1 }}
+          transition={{ type: "spring", stiffness: 400, damping: 17 }}
+        >
           {getTypeIcon(tx.type)}
           {getStatusIcon(tx.status)}
-        </div>
+        </motion.div>
 
         <div className="flex-1 min-w-0">
           <div className="font-medium flex items-center space-x-2 flex-wrap">
@@ -103,7 +116,7 @@ const TransactionItem = ({ tx }: { tx: Transaction }) => {
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 };
 

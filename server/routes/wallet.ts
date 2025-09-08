@@ -3,12 +3,13 @@ import express from 'express';
 import EnhancedAgentWallet, { NetworkConfig, WalletManager } from '../agent_wallet';
 
 import { db } from '../storage';
-import { walletTransactions } from '../../shared/schema';
+import { walletTransactions, contributions } from '../../shared/schema';
 import { lockedSavings, savingsGoals } from '../../shared/schema';
 import { desc, eq, or } from 'drizzle-orm';
 import { and } from 'drizzle-orm';
 import { fileURLToPath } from "url";
 import { dirname } from "path";
+import { notificationService } from '../notificationService';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -214,6 +215,34 @@ router.get('/balance/:address?', async (req, res) => {
   }
 });
 
+// GET /api/wallet/balance/celo
+router.get('/balance/celo', async (req, res) => {
+  try {
+    const { user } = req.query;
+    const address = user as string || wallet!.address;
+    const balance = await wallet!.getBalanceEth(address);
+    res.json({ address, balance, symbol: 'CELO' });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// GET /api/wallet/balance/cusd
+router.get('/balance/cusd', async (req, res) => {
+  try {
+    const { user } = req.query;
+    const address = user as string || wallet!.address;
+    // Get cUSD token address for Celo network
+    const CUSD_TOKEN_ADDRESS = '0x765DE816845861e75A25fCA122bb6898B8B1282a'; // Celo mainnet cUSD
+    const balance = await wallet!.getBalance(CUSD_TOKEN_ADDRESS, address);
+    res.json({ address, balance, symbol: 'cUSD' });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
 // GET /api/wallet/token-info/:tokenAddress
 router.get('/token-info/:tokenAddress', async (req, res) => {
   try {
@@ -228,8 +257,25 @@ router.get('/token-info/:tokenAddress', async (req, res) => {
 // POST /api/wallet/send-native
 router.post('/send-native', async (req, res) => {
   try {
-    const { toAddress, amount } = req.body;
+    const { toAddress, amount, userId } = req.body;
     const result = await wallet!.sendNativeToken(toAddress, amount); // Non-null assertion
+    
+    // Create notification for successful transaction
+    if (userId && result.hash) {
+      await notificationService.createNotification({
+        userId,
+        type: 'transaction',
+        title: 'Transaction Sent',
+        message: `Successfully sent ${amount} CELO to ${toAddress.slice(0, 6)}...${toAddress.slice(-4)}`,
+        metadata: {
+          transactionHash: result.hash,
+          amount,
+          currency: 'CELO',
+          toAddress
+        }
+      });
+    }
+    
     res.json(result);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -240,8 +286,27 @@ router.post('/send-native', async (req, res) => {
 // POST /api/wallet/send-token
 router.post('/send-token', async (req, res) => {
   try {
-    const { tokenAddress, toAddress, amount } = req.body;
+    const { tokenAddress, toAddress, amount, userId } = req.body;
     const result = await wallet!.sendTokenHuman(tokenAddress, toAddress, amount); // Non-null assertion
+    
+    // Create notification for successful token transaction
+    if (userId && result.hash) {
+      const currency = tokenAddress.includes('cUSD') ? 'cUSD' : 'TOKEN';
+      await notificationService.createNotification({
+        userId,
+        type: 'transaction',
+        title: 'Token Sent',
+        message: `Successfully sent ${amount} ${currency} to ${toAddress.slice(0, 6)}...${toAddress.slice(-4)}`,
+        metadata: {
+          transactionHash: result.hash,
+          amount,
+          currency,
+          toAddress,
+          tokenAddress
+        }
+      });
+    }
+    
     res.json(result);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -473,6 +538,118 @@ router.post('/savings-goals/:id/contribute', async (req, res) => {
       })
       .where(eq(savingsGoals.id, id));
     res.json({ newAmount, isCompleted });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// === CONTRIBUTION TRACKING WITH WALLET TRANSACTIONS ===
+
+// POST /api/wallet/contribute
+router.post('/contribute', async (req, res) => {
+  try {
+    const { userId, daoId, proposalId, amount, currency, transactionHash, purpose, isAnonymous = false } = req.body;
+    
+    // Create contribution record
+    const contribution = await db.insert(contributions).values({
+      userId,
+      daoId,
+      proposalId,
+      amount,
+      currency: currency || 'cUSD',
+      purpose: purpose || 'general',
+      isAnonymous,
+      transactionHash,
+      vault: true // Link to vault system
+    }).returning();
+
+    // Create corresponding wallet transaction
+    if (transactionHash) {
+      await db.insert(walletTransactions).values({
+        walletAddress: userId, // Use userId as wallet address for now
+        amount,
+        currency: currency || 'cUSD',
+        type: 'contribution',
+        status: 'completed',
+        transactionHash,
+        description: `Contribution to DAO ${daoId}${proposalId ? ` for proposal ${proposalId}` : ''}`
+      });
+    }
+
+    // Send real-time notification
+    if (userId) {
+      await notificationService.createNotification({
+        userId,
+        type: 'contribution',
+        title: 'Contribution Recorded',
+        message: `Successfully contributed ${amount} ${currency} to ${isAnonymous ? 'DAO' : `DAO ${daoId}`}`,
+        metadata: {
+          contributionId: contribution[0].id,
+          amount,
+          currency,
+          daoId,
+          proposalId,
+          transactionHash
+        }
+      });
+    }
+
+    res.json({
+      success: true,
+      contribution: contribution[0],
+      message: 'Contribution successfully tracked and linked to wallet transaction'
+    });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// GET /api/wallet/contributions/:userId
+router.get('/contributions/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { daoId, timeframe = '30' } = req.query;
+
+    // Build where conditions
+    const conditions = [eq(contributions.userId, userId)];
+    if (daoId) {
+      conditions.push(eq(contributions.daoId, daoId as string));
+    }
+
+    // Date filter
+    const dateFilter = new Date();
+    dateFilter.setDate(dateFilter.getDate() - parseInt(timeframe as string));
+
+    const userContributions = await db
+      .select()
+      .from(contributions)
+      .where(and(...conditions))
+      .orderBy(desc(contributions.createdAt));
+
+    // Calculate contribution analytics
+    const totalContributed = userContributions.reduce((sum, contrib) => 
+      sum + parseFloat(contrib.amount), 0
+    );
+    
+    const contributionsByDAO = userContributions.reduce((acc, contrib) => {
+      const daoId = contrib.daoId;
+      if (!acc[daoId]) acc[daoId] = { count: 0, total: 0 };
+      acc[daoId].count++;
+      acc[daoId].total += parseFloat(contrib.amount);
+      return acc;
+    }, {} as Record<string, { count: number; total: number }>);
+
+    res.json({
+      contributions: userContributions,
+      analytics: {
+        totalContributed,
+        contributionCount: userContributions.length,
+        contributionsByDAO,
+        averageContribution: userContributions.length > 0 ? totalContributed / userContributions.length : 0
+      }
+    });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: errorMsg });
