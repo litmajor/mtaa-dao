@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Progress } from '../components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { toast } from '../components/ui/use-toast';
+import { useToast } from '../components/ui/use-toast';
 
 interface Achievement {
   id: string;
@@ -45,6 +45,7 @@ export default function RewardsHub() {
   const [airdrops, setAirdrops] = useState<AirdropEligibility[]>([]);
   const [vesting, setVesting] = useState<VestingOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
   useEffect(() => {
     fetchRewardsData();
@@ -338,7 +339,7 @@ export default function RewardsHub() {
 
               {/* Individual Vesting Schedules */}
               <div className="grid gap-4">
-                {vesting.schedules.map((schedule) => (
+                {vesting.schedules.map((schedule: any) => (
                   <Card key={schedule.id}>
                     <CardHeader>
                       <CardTitle className="flex items-center justify-between">
@@ -346,7 +347,11 @@ export default function RewardsHub() {
                         <Badge variant="outline">{schedule.type}</Badge>
                       </CardTitle>
                       <CardDescription>
-                        {new Date(schedule.startDate).toLocaleDateString()} - {new Date(schedule.endDate).toLocaleDateString()}
+                        {schedule.startDate && schedule.endDate ? (
+                          `${new Date(schedule.startDate).toLocaleDateString()} - ${new Date(schedule.endDate).toLocaleDateString()}`
+                        ) : (
+                          'No vesting dates'
+                        )}
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -354,19 +359,19 @@ export default function RewardsHub() {
                         <div className="grid grid-cols-2 gap-4 text-sm">
                           <div>
                             <span className="text-gray-600">Allocated:</span>
-                            <span className="ml-2 font-semibold">{schedule.allocated.toFixed(2)} cUSD</span>
+                            <span className="ml-2 font-semibold">{typeof schedule.allocated === 'number' ? schedule.allocated.toFixed(2) : schedule.allocated} cUSD</span>
                           </div>
                           <div>
                             <span className="text-gray-600">Vested:</span>
-                            <span className="ml-2 font-semibold">{schedule.vested.toFixed(2)} cUSD</span>
+                            <span className="ml-2 font-semibold">{typeof schedule.vested === 'number' ? schedule.vested.toFixed(2) : schedule.vested} cUSD</span>
                           </div>
                           <div>
                             <span className="text-gray-600">Claimed:</span>
-                            <span className="ml-2 font-semibold">{schedule.claimed.toFixed(2)} cUSD</span>
+                            <span className="ml-2 font-semibold">{typeof schedule.claimed === 'number' ? schedule.claimed.toFixed(2) : schedule.claimed} cUSD</span>
                           </div>
                           <div>
                             <span className="text-gray-600">Claimable:</span>
-                            <span className="ml-2 font-semibold text-green-600">{schedule.claimable.toFixed(2)} cUSD</span>
+                            <span className="ml-2 font-semibold text-green-600">{typeof schedule.claimable === 'number' ? schedule.claimable.toFixed(2) : schedule.claimable} cUSD</span>
                           </div>
                         </div>
                         {schedule.claimable > 0 && (
@@ -374,7 +379,7 @@ export default function RewardsHub() {
                             className="w-full"
                             onClick={() => claimVestedTokens(schedule.id)}
                           >
-                            Claim {schedule.claimable.toFixed(2)} cUSD
+                            Claim {typeof schedule.claimable === 'number' ? schedule.claimable.toFixed(2) : schedule.claimable} cUSD
                           </Button>
                         )}
                       </div>

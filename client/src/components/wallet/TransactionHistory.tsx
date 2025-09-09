@@ -65,17 +65,17 @@ const TransactionItem = ({ tx }: { tx: Transaction }) => {
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       whileHover={{ scale: 1.02, backgroundColor: 'rgba(59, 130, 246, 0.05)' }}
-      className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors focus-within:ring-2 focus-within:ring-blue-500 cursor-pointer" 
-      tabIndex={0} 
+      className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors focus-within:ring-2 focus-within:ring-blue-500 cursor-pointer"
+      tabIndex={0}
       role="listitem"
     >
       <div className="flex items-center space-x-4 w-full md:w-auto overflow-hidden">
-        <motion.div 
+        <motion.div
           className="flex items-center space-x-2 flex-shrink-0"
           whileHover={{ scale: 1.1 }}
           transition={{ type: "spring", stiffness: 400, damping: 17 }}

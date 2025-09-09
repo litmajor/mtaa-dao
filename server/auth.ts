@@ -1,3 +1,13 @@
+// Helper for Next.js API routes to get user from accessToken cookie
+import type { NextApiRequest } from 'next';
+export function getUserFromToken(req: NextApiRequest): TokenPayload | null {
+  // Try to get accessToken from cookies
+  const cookie = req.headers.cookie || '';
+  const match = cookie.match(/accessToken=([^;]+)/);
+  if (!match) return null;
+  const token = match[1];
+  return verifyAccessToken(token);
+}
 import { NextFunction } from 'express';
 // Express middleware to check JWT access token
 export const isAuthenticated = (req: Request, res: Response, next: NextFunction) => {

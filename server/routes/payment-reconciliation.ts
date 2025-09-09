@@ -343,5 +343,111 @@ router.post('/notifications/subscribe', async (req, res) => {
     });
   }
 });
+import { db } from '../storage';
+import { walletTransactions } from '../../shared/schema';
+import { eq, and, desc, gte, count, sum } from 'drizzle-orm';
+
+
+// GET /api/payment-reconciliation/payments
+router.get('/payments', async (req, res) => {
+  try {
+    const {
+      status,
+      provider,
+      reconciled,
+      dateRange = '30'
+    } = req.query;
+
+    // Build where conditions
+    const conditions = [];
+    
+    if (status && status !== 'all') {
+      conditions.push(eq(walletTransactions.status, status as string));
+    }
+    
+    if (reconciled !== 'all') {
+      // Add reconciled filter logic here
+    }
+
+    // Date filter
+    const dateFilter = new Date();
+    dateFilter.setDate(dateFilter.getDate() - parseInt(dateRange as string));
+    conditions.push(gte(walletTransactions.createdAt, dateFilter));
+
+    let whereClause = undefined;
+    if (conditions.length > 0) {
+      whereClause = and(...conditions);
+    }
+
+    const payments = await db
+      .select()
+      .from(walletTransactions)
+      .where(whereClause)
+      .orderBy(desc(walletTransactions.createdAt))
+      .limit(100);
+
+    // Calculate stats
+    const stats = {
+      total: payments.length,
+      reconciled: payments.filter(p => p.status === 'completed').length,
+      pending: payments.filter(p => p.status === 'pending').length,
+      discrepancies: 0, // Calculate discrepancies based on your logic
+      totalAmount: payments.reduce((sum, p) => sum + parseFloat(p.amount), 0).toString()
+    };
+
+    res.json({ payments, stats });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch payments' });
+  }
+});
+
+// POST /api/payment-reconciliation/reconcile/:id
+router.post('/reconcile/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Update transaction status to reconciled
+    await db
+      .update(walletTransactions)
+      .set({ 
+        status: 'completed',
+        updatedAt: new Date()
+      })
+      .where(eq(walletTransactions.id, id));
+
+    res.json({ success: true, message: 'Payment reconciled successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Reconciliation failed' });
+  }
+});
+
+// POST /api/payment-reconciliation/bulk-reconcile
+router.post('/bulk-reconcile', async (req, res) => {
+  try {
+    const { paymentIds } = req.body;
+    
+    if (!Array.isArray(paymentIds)) {
+      return res.status(400).json({ error: 'Invalid payment IDs' });
+    }
+
+    // Bulk update transactions
+    for (const paymentId of paymentIds) {
+      await db
+        .update(walletTransactions)
+        .set({ 
+          status: 'completed',
+          updatedAt: new Date()
+        })
+        .where(eq(walletTransactions.id, paymentId));
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Successfully reconciled ${paymentIds.length} payments` 
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Bulk reconciliation failed' });
+  }
+});
 
 export default router;

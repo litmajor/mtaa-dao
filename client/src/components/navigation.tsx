@@ -65,28 +65,47 @@ export default function Navigation() {
   const isLoggedIn = !!user;
 
   const navItems = [
-    { href: "/", label: "Dashboard", icon: "📊" },
+    { href: "/dashboard", label: "Dashboard", icon: "📊" },
     { href: "/proposals", label: "Proposals", icon: "📋" },
     { href: "/vault", label: "Vault", icon: "🏦" },
     { href: "/daos", label: "DAOs", icon: "🏛️" },
     { href: "/wallet", label: "Wallet", icon: "💳" },
+    { href: "/wallet-setup", label: "Setup Wallet", icon: "⚙️" }, // Added wallet setup link
+    { href: "/maonovault", label: "MaonoVault", icon: "⚡" },
+    { href: "/tasks", label: "Tasks", icon: "🎯" },
+    { href: "/rewards", label: "Rewards", icon: "🎁" },
     { href: "/referrals", label: "Referrals", icon: "🤝" },
-    { href: "/wallet/dashboard", label: "Wallet Dashboard", icon: "📋" },
-    { href: "/wallet/batch-transfer", label: "Batch Transfer", icon: "📦" },
-    { href: "/wallet/multisig", label: "Multisig", icon: "🔑" },
-    { href: "/wallet/dao-treasury", label: "DAO Treasury", icon: "🏦" },
-    // Only show Admin Panel for admin/elder users
+    { href: "/analytics", label: "Analytics", icon: "📈" },
+    // Wallet sub-pages
+    { href: "/wallet/dashboard", label: "Wallet Dashboard", icon: "📋", parent: "wallet" },
+    { href: "/wallet/batch-transfer", label: "Batch Transfer", icon: "📦", parent: "wallet" },
+    { href: "/wallet/multisig", label: "Multisig", icon: "🔑", parent: "wallet" },
+    { href: "/wallet/dao-treasury", label: "DAO Treasury", icon: "🏦", parent: "wallet" },
+    // DAO sub-pages
+    { href: "/dao/treasury", label: "Treasury", icon: "💰", parent: "dao" },
+    { href: "/dao/treasury-overview", label: "Treasury Overview", icon: "📊", parent: "dao" },
+    { href: "/dao/contributors", label: "Contributors", icon: "👥", parent: "dao" },
+    { href: "/dao/analytics", label: "DAO Analytics", icon: "📈", parent: "dao" },
+    { href: "/dao/disbursements", label: "Disbursements", icon: "💸", parent: "dao" },
+    { href: "/dao/settings", label: "DAO Settings", icon: "⚙️", parent: "dao" },
+    // Admin routes for authorized users
     ...(user?.roles === "admin" || user?.roles === "elder"
       ? [
-          { href: "/admin", label: "Admin Panel", icon: "🛠️" },
+          { href: "/superuser", label: "Super User Dashboard", icon: "👑", parent: "admin" },
+          { href: "/admin/billing", label: "Admin Billing", icon: "💳", parent: "admin" },
+          { href: "/admin/payments", label: "Payment Reconciliation", icon: "🔄", parent: "admin" },
+          { href: "/analytics", label: "Analytics", icon: "📊", parent: "admin" },
         ]
       : []),
+    // Special pages
+    { href: "/pricing", label: "Pricing", icon: "💰" },
+    { href: "/leaderboard", label: "Leaderboard", icon: "🏆" },
   ];
 
   return (
     <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
-      isScrolled 
-        ? 'bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-700/50 shadow-lg shadow-black/5' 
+      isScrolled
+        ? 'bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-700/50 shadow-lg shadow-black/5'
         : 'bg-gradient-to-r from-white via-gray-50 to-white dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 border-b border-gray-100/50 dark:border-gray-800/50'
     }`}>
       {/* Premium glow effect */}

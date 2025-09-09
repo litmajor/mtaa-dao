@@ -1,114 +1,214 @@
 import React, { useState, useEffect } from "react";
+import { Check, Star, Zap, Shield, Users, DollarSign, TrendingUp, ArrowRight, Sparkles, Crown, Award, Target, Eye, Lock, AlertCircle, CheckCircle } from "lucide-react";
+import { motion } from "framer-motion";
 
-const pricingTiers = [
+type PricingTier = {
+  name: string;
+  price: { monthly: string; yearly: string };
+  description: string;
+  features: string[];
+  limitations?: string[];
+  cta: string;
+  popular?: boolean;
+  color: string;
+  icon: React.ReactNode;
+  badge?: string;
+};
+
+type PlatformFee = {
+  action: string;
+  fee: string;
+  notes: string;
+  category: 'vault' | 'payments' | 'governance' | 'yield';
+};
+
+const pricingTiers: PricingTier[] = [
   {
     name: "Free DAO",
-    priceMonthly: "KES 0",
-    priceYearly: "KES 0",
+    price: { monthly: "KES 0", yearly: "KES 0" },
+    description: "Perfect for starting your community journey",
     features: [
-      "Public DAO",
-      "Max 25 members",
+      "Public DAO creation",
+      "Up to 25 members",
+      "Basic proposal system",
+      "Simple voting mechanism",
+      "Community dashboard",
+      "Basic wallet integration",
+      "Email support"
     ],
-    unavailable: [
-      "Private DAO (invite-only)",
-      "Elder/Admin vetting",
-      "Treasury analytics + disbursement alerts",
-      "Vault dashboard + multiple vaults",
-      "Reputation ranking, proposal history",
+    limitations: [
+      "No private DAO (invite-only)",
+      "No advanced governance features",
+      "Limited treasury analytics",
+      "No multiple vaults",
+      "No reputation system",
+      "No advanced integrations"
     ],
-    cta: "Create Free DAO",
-    highlight: false,
-    gradient: "from-slate-600 to-slate-800"
+    cta: "Start Free",
+    color: "from-slate-600 to-slate-800",
+    icon: <Users className="w-8 h-8 text-white" />
   },
   {
     name: "Premium DAO",
-    priceMonthly: "KES 1,500/mo or $9.99/mo",
-    priceYearly: "KES 15,000/yr or $99/yr",
+    price: { monthly: "KES 1,500", yearly: "KES 15,000" },
+    description: "Full-featured platform for serious communities",
     features: [
-      "Public & Private DAO (invite-only)",
+      "Everything in Free",
+      "Private & Public DAOs",
       "Unlimited members",
-      "Elder/Admin vetting",
-      "Treasury analytics + disbursement alerts",
-      "Vault dashboard + multiple vaults",
-      "Reputation ranking, proposal history",
+      "Advanced governance system",
+      "Elder/Admin role management",
+      "Comprehensive treasury analytics",
+      "Multiple vault management",
+      "Reputation & ranking system",
+      "Proposal templates & automation",
+      "Advanced integrations (DeFi, MiniPay)",
+      "Bulk payment processing",
+      "Custom DAO branding",
+      "Priority support",
+      "API access"
     ],
-    unavailable: [],
     cta: "Upgrade to Premium",
-    highlight: true,
-    gradient: "from-orange-500 via-pink-500 to-purple-600"
+    popular: true,
+    color: "from-orange-500 via-red-500 to-purple-600",
+    icon: <Crown className="w-8 h-8 text-white" />,
+    badge: "Most Popular"
   },
+  {
+    name: "Enterprise",
+    price: { monthly: "Custom", yearly: "Custom" },
+    description: "Tailored solutions for large organizations",
+    features: [
+      "Everything in Premium",
+      "Custom feature development",
+      "Dedicated account manager",
+      "SLA guarantees",
+      "Advanced security features",
+      "Custom integrations",
+      "White-label solutions",
+      "On-premise deployment options",
+      "Training & onboarding",
+      "24/7 phone support"
+    ],
+    cta: "Contact Sales",
+    color: "from-purple-600 to-indigo-600",
+    icon: <Shield className="w-8 h-8 text-white" />,
+    badge: "Enterprise"
+  }
 ];
 
-const feeTable = [
+const platformFees: PlatformFee[] = [
   {
-    action: "Vault disbursement",
-    fee: "1–2% per action",
-    notes: "Deducted from vault at disbursement",
+    action: "Vault Deposits",
+    fee: "Free",
+    notes: "No fees for contributing to community vaults",
+    category: 'vault'
   },
   {
-    action: "Offramp withdrawals",
-    fee: "2–3% (DAO or user)",
-    notes: "Configurable per DAO policy",
+    action: "Vault Withdrawals",
+    fee: "1-2%",
+    notes: "Deducted from withdrawal amount",
+    category: 'vault'
   },
   {
-    action: "Bulk payouts / voting rewards",
-    fee: "Flat or % fee",
-    notes: "Optionally subsidized by DAO treasury",
+    action: "Vault Disbursements",
+    fee: "1-2%",
+    notes: "Deducted from vault at disbursement time",
+    category: 'vault'
   },
   {
-    action: "Earn yield via staking",
-    fee: "Platform takes cut (opt-in)",
-    notes: "Future: DAO earns + platform takes share",
+    action: "Yield Generation",
+    fee: "10-15%",
+    notes: "Platform takes percentage of yield earned",
+    category: 'yield'
   },
+  {
+    action: "Bulk Payments",
+    fee: "Flat rate",
+    notes: "Based on number of recipients",
+    category: 'payments'
+  },
+  {
+    action: "MiniPay Transactions",
+    fee: "Network fees",
+    notes: "Standard Celo network transaction costs",
+    category: 'payments'
+  },
+  {
+    action: "Governance Actions",
+    fee: "Free",
+    notes: "Voting and proposals are always free",
+    category: 'governance'
+  }
 ];
 
-type Particle = {
-  id: number;
-  x: number;
-  y: number;
-  size: number;
-  delay: number;
-  duration: number;
-};
+const featureCategories = [
+  {
+    title: "Core Features",
+    icon: <Target className="w-6 h-6" />,
+    features: [
+      "Community creation and management",
+      "Democratic governance and voting",
+      "Transparent treasury management",
+      "Member onboarding and verification"
+    ]
+  },
+  {
+    title: "Financial Tools", 
+    icon: <DollarSign className="w-6 h-6" />,
+    features: [
+      "Multi-currency wallet support",
+      "DeFi yield generation",
+      "Automated savings mechanisms",
+      "Bulk payment processing"
+    ]
+  },
+  {
+    title: "Analytics & Insights",
+    icon: <TrendingUp className="w-6 h-6" />,
+    features: [
+      "Real-time performance tracking",
+      "Member engagement metrics", 
+      "Financial growth analysis",
+      "Impact measurement tools"
+    ]
+  },
+  {
+    title: "Security & Trust",
+    icon: <Shield className="w-6 h-6" />,
+    features: [
+      "Blockchain-based transparency",
+      "Multi-signature security",
+      "Audit trail for all actions",
+      "Reputation-based trust system"
+    ]
+  }
+];
 
-const FloatingParticles = () => {
-  const [particles, setParticles] = useState<Particle[]>([]);
-
-  useEffect(() => {
-    const newParticles = Array.from({ length: 30 }, (_, i) => ({
-      id: i,
-      x: Math.random() * 100,
-      y: Math.random() * 100,
-      size: Math.random() * 4 + 2,
-      delay: Math.random() * 20,
-      duration: Math.random() * 20 + 10,
-    }));
-    setParticles(newParticles);
-  }, []);
-
-  return (
-    <div className="fixed inset-0 pointer-events-none overflow-hidden">
-      {particles.map((particle) => (
-        <div
-          key={particle.id}
-          className="absolute rounded-full bg-gradient-to-r from-orange-400/20 to-pink-400/20 animate-pulse"
-          style={{
-            left: `${particle.x}%`,
-            top: `${particle.y}%`,
-            width: `${particle.size}px`,
-            height: `${particle.size}px`,
-            animationDelay: `${particle.delay}s`,
-            animationDuration: `${particle.duration}s`,
-          }}
-        />
-      ))}
-    </div>
-  );
-};
+const tokenEcosystem = [
+  {
+    title: "MTAA Tokens",
+    icon: "🪙",
+    description: "Governance tokens for voting rights and platform decisions",
+    utility: "Vote on proposals, earn staking rewards, access premium features"
+  },
+  {
+    title: "Reputation Points",
+    icon: "⭐",
+    description: "Non-transferable points earned through community participation",
+    utility: "Unlock features, increase influence, build trust within community"
+  },
+  {
+    title: "Achievement Badges", 
+    icon: "🏆",
+    description: "Visual recognition for community contributions and milestones",
+    utility: "Status recognition, access to exclusive opportunities, community respect"
+  }
+];
 
 export default function PricingPage() {
-  const [paymentOpen, setPaymentOpen] = useState(false);
   const [isYearly, setIsYearly] = useState(false);
+  const [selectedTier, setSelectedTier] = useState<string>("Premium DAO");
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
@@ -119,255 +219,440 @@ export default function PricingPage() {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
+  const yearlyDiscount = (monthly: string, yearly: string) => {
+    const monthlyNum = parseFloat(monthly.replace(/[^\d.]/g, ''));
+    const yearlyNum = parseFloat(yearly.replace(/[^\d.]/g, ''));
+    if (monthlyNum && yearlyNum) {
+      const savings = (monthlyNum * 12 - yearlyNum) / (monthlyNum * 12) * 100;
+      return Math.round(savings);
+    }
+    return 0;
+  };
+
+  const FeatureItem = ({ feature, included = true }: { feature: string; included?: boolean }) => (
+    <div className={`flex items-center space-x-3 ${included ? 'text-gray-700' : 'text-gray-400'}`}>
+      {included ? (
+        <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+      ) : (
+        <div className="w-5 h-5 rounded-full border-2 border-gray-300 flex items-center justify-center flex-shrink-0">
+          <Lock className="w-3 h-3 text-gray-400" />
+        </div>
+      )}
+      <span className={`${included ? '' : 'line-through'}`}>{feature}</span>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white relative overflow-hidden">
-      <FloatingParticles />
-      
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-red-50 to-purple-100 relative overflow-hidden">
+      {/* Animated background elements */}
+      <div className="absolute inset-0">
+        <div className="absolute top-20 left-20 w-72 h-72 bg-gradient-to-r from-orange-300/30 to-red-300/30 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute bottom-20 right-20 w-96 h-96 bg-gradient-to-r from-purple-300/30 to-pink-300/30 rounded-full blur-3xl animate-pulse delay-1000" />
+      </div>
+
       {/* Dynamic cursor glow */}
       <div 
-        className="fixed pointer-events-none z-50 w-96 h-96 rounded-full opacity-20 blur-3xl bg-gradient-to-r from-orange-400 to-pink-400 transition-all duration-300"
+        className="fixed pointer-events-none w-96 h-96 rounded-full opacity-20 blur-3xl bg-gradient-to-r from-orange-400 to-pink-400 transition-all duration-300 z-10"
         style={{
           left: mousePosition.x - 192,
           top: mousePosition.y - 192,
         }}
       />
 
-      <div className="max-w-7xl mx-auto py-20 px-4 relative z-10">
+      <div className="relative z-20 max-w-7xl mx-auto py-12 px-6">
         {/* Hero Section */}
-        <div className="text-center mb-20">
-          <div className="inline-block mb-6">
-            <div className="bg-gradient-to-r from-orange-500 to-pink-500 bg-clip-text text-transparent text-7xl font-black tracking-tight animate-pulse">
-              MtaaDAO
+        <div className="text-center mb-16">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8"
+          >
+            <div className="inline-block mb-6">
+              <div className="bg-gradient-to-r from-orange-500 to-pink-500 bg-clip-text text-transparent text-5xl md:text-7xl font-black tracking-tight">
+                MtaaDAO Pricing
+              </div>
             </div>
-            <div className="h-2 bg-gradient-to-r from-orange-500 via-pink-500 to-purple-600 rounded-full mt-2 animate-pulse" />
-          </div>
-          
-          <h1 className="text-5xl md:text-6xl font-bold mb-6 bg-gradient-to-r from-white via-gray-100 to-gray-300 bg-clip-text text-transparent">
-            Revolutionary Pricing
-          </h1>
-          
-          <p className="text-xl md:text-2xl mb-8 text-gray-300 max-w-3xl mx-auto leading-relaxed">
-            Sustainable, group-first pricing for grassroots DAOs. 
-            <span className="bg-gradient-to-r from-orange-400 to-pink-400 bg-clip-text text-transparent font-semibold"> Only pay for what your group needs.</span>
-          </p>
+            <h1 className="text-3xl md:text-5xl font-bold mb-6 bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
+              Transparent, Community-First Pricing
+            </h1>
+            <p className="text-xl md:text-2xl text-gray-600 max-w-4xl mx-auto leading-relaxed">
+              Build stronger communities with pricing designed for grassroots organizations. 
+              <span className="bg-gradient-to-r from-orange-500 to-red-500 bg-clip-text text-transparent font-semibold"> Pay for what you need, when you need it.</span>
+            </p>
+          </motion.div>
 
-          {/* Animated stats */}
-          <div className="flex justify-center gap-12 mb-12">
+          {/* Key Statistics */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12">
             {[
-              { number: "10K+", label: "Active DAOs" },
-              { number: "500K+", label: "Members" },
-              { number: "99.9%", label: "Uptime" }
+              { number: "2,300+", label: "Active Communities" },
+              { number: "45,000+", label: "Members Served" },
+              { number: "KES 14M+", label: "Funds Managed" },
+              { number: "98%", label: "Success Rate" }
             ].map((stat, index) => (
-              <div key={index} className="text-center group">
-                <div className="text-3xl font-bold bg-gradient-to-r from-orange-400 to-pink-400 bg-clip-text text-transparent group-hover:scale-110 transition-transform duration-300">
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+                className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-lg"
+              >
+                <div className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-orange-500 to-red-500 bg-clip-text text-transparent mb-1">
                   {stat.number}
                 </div>
-                <div className="text-gray-400 text-sm">{stat.label}</div>
-              </div>
+                <div className="text-gray-600 text-sm">{stat.label}</div>
+              </motion.div>
             ))}
           </div>
         </div>
 
-        {/* Toggle Section */}
-        <div className="flex justify-center items-center gap-6 mb-16">
-          <span className={`text-xl font-bold transition-all duration-300 ${!isYearly ? 'text-orange-400 scale-110' : 'text-gray-400'}`}>
+        {/* Billing Toggle */}
+        <div className="flex justify-center items-center gap-6 mb-12">
+          <span className={`text-xl font-bold transition-all duration-300 ${!isYearly ? 'text-orange-500 scale-110' : 'text-gray-500'}`}>
             Monthly
           </span>
           <div className="relative">
             <button
               onClick={() => setIsYearly(!isYearly)}
-              className={`${isYearly ? 'bg-gradient-to-r from-orange-500 to-pink-500' : 'bg-gray-600'} relative inline-flex h-8 w-16 items-center rounded-full transition-all duration-300 shadow-lg cursor-pointer`}
+              className={`${isYearly ? 'bg-gradient-to-r from-orange-500 to-red-500' : 'bg-gray-300'} relative inline-flex h-8 w-16 items-center rounded-full transition-all duration-300 shadow-lg`}
+              title="Toggle billing period"
             >
-              <span className="sr-only">Toggle billing</span>
               <span
                 className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-lg transition-all duration-300 ${isYearly ? 'translate-x-9' : 'translate-x-1'}`}
               />
             </button>
             {isYearly && (
-              <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-emerald-500 to-blue-500 text-white px-3 py-1 rounded-full text-xs font-bold animate-bounce">
-                Save 17%!
+              <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-bold">
+                Save up to 17%!
               </div>
             )}
           </div>
-          <span className={`text-xl font-bold transition-all duration-300 ${isYearly ? 'text-orange-400 scale-110' : 'text-gray-400'}`}>
+          <span className={`text-xl font-bold transition-all duration-300 ${isYearly ? 'text-orange-500 scale-110' : 'text-gray-500'}`}>
             Yearly
           </span>
         </div>
 
-        {/* CTA Button */}
-        <div className="flex justify-center mb-16">
-          <button
-            className="relative group px-12 py-4 bg-gradient-to-r from-orange-500 via-pink-500 to-purple-600 rounded-2xl font-bold text-xl shadow-2xl hover:shadow-orange-500/25 transition-all duration-300 transform hover:scale-105 overflow-hidden"
-            onClick={() => setPaymentOpen(true)}
-          >
-            <div className="absolute inset-0 bg-gradient-to-r from-orange-600 via-pink-600 to-purple-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <div className="relative z-10 flex items-center gap-3">
-              <span>🚀</span>
-              Upgrade to Premium
-              <span>✨</span>
-            </div>
-            <div className="absolute inset-0 bg-white/20 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left" />
-          </button>
-        </div>
-
         {/* Pricing Cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-20">
-          {pricingTiers.map((tier, index) => (
-            <div
-              key={tier.name}
-              className={`relative group p-8 rounded-3xl backdrop-blur-xl border transition-all duration-500 hover:scale-105 ${
-                tier.highlight 
-                  ? 'bg-gradient-to-br from-orange-500/10 via-pink-500/10 to-purple-600/10 border-orange-500/50 shadow-2xl shadow-orange-500/20' 
-                  : 'bg-white/5 border-white/10 hover:bg-white/10'
-              }`}
-              style={{
-                animationDelay: `${index * 0.2}s`,
-              }}
-            >
-              {tier.highlight && (
-                <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-orange-500 to-pink-500 text-white px-6 py-2 rounded-full text-sm font-bold shadow-lg">
-                  🔥 POPULAR
-                </div>
-              )}
-              
-              <div className="text-center mb-8">
-                <h2 className={`text-3xl font-bold mb-4 ${tier.highlight ? 'bg-gradient-to-r from-orange-400 to-pink-400 bg-clip-text text-transparent' : 'text-white'}`}>
-                  {tier.name}
-                </h2>
-                <div className={`text-4xl font-black mb-2 ${tier.highlight ? 'bg-gradient-to-r from-orange-400 to-pink-400 bg-clip-text text-transparent' : 'text-white'}`}>
-                  {isYearly ? tier.priceYearly : tier.priceMonthly}
-                </div>
-                {tier.name === "Premium DAO" && (
-                  <div className="text-sm text-gray-400">
-                    {isYearly ? "Save KES 3,000 annually" : "Billed monthly"}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-16">
+          {pricingTiers.map((tier, index) => {
+            const isSelected = selectedTier === tier.name;
+            const savings = isYearly ? yearlyDiscount(tier.price.monthly, tier.price.yearly) : 0;
+            
+            return (
+              <motion.div
+                key={tier.name}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+                className={`relative group ${tier.popular ? 'lg:scale-105 z-10' : ''}`}
+              >
+                {tier.badge && (
+                  <div className={`absolute -top-4 left-1/2 transform -translate-x-1/2 ${
+                    tier.popular ? 'bg-gradient-to-r from-orange-500 to-red-500' : 'bg-purple-600'
+                  } text-white px-6 py-2 rounded-full text-sm font-bold shadow-lg z-20`}>
+                    {tier.badge}
                   </div>
                 )}
-              </div>
-
-              <div className="space-y-4 mb-8">
-                {tier.features.map((feature, i) => (
-                  <div key={i} className="flex items-center text-emerald-300 group-hover:text-emerald-200 transition-colors duration-300">
-                    <div className="w-6 h-6 rounded-full bg-gradient-to-r from-emerald-500 to-blue-500 flex items-center justify-center mr-3 text-white text-sm font-bold">
-                      ✓
+                
+                <div className={`bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-xl border-2 transition-all duration-300 hover:shadow-2xl h-full ${
+                  tier.popular ? 'border-orange-200 shadow-orange-100' : 'border-gray-200'
+                } ${isSelected ? 'ring-4 ring-orange-200' : ''}`}>
+                  
+                  {/* Header */}
+                  <div className="text-center mb-8">
+                    <div className={`w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-r ${tier.color} flex items-center justify-center shadow-lg`}>
+                      {tier.icon}
                     </div>
-                    <span className="text-lg">{feature}</span>
-                  </div>
-                ))}
-                {tier.unavailable.map((feature, i) => (
-                  <div key={i} className="flex items-center text-gray-500 opacity-70">
-                    <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center mr-3 text-white text-sm">
-                      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M6 8V6a4 4 0 118 0v2" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                        <rect x="4" y="8" width="12" height="8" rx="2" fill="#fff" fillOpacity="0.2" stroke="#fff" strokeWidth="2"/>
-                        <line x1="10" y1="12" x2="10" y2="14" stroke="#fff" strokeWidth="2" strokeLinecap="round"/>
-                      </svg>
+                    <h3 className="text-2xl font-bold text-gray-900 mb-2">{tier.name}</h3>
+                    <p className="text-gray-600 mb-4">{tier.description}</p>
+                    
+                    {/* Price */}
+                    <div className="mb-4">
+                      <div className={`text-4xl font-bold mb-1 ${tier.popular ? 'bg-gradient-to-r from-orange-500 to-red-500 bg-clip-text text-transparent' : 'text-gray-900'}`}>
+                        {isYearly ? tier.price.yearly : tier.price.monthly}
+                      </div>
+                      {tier.price.monthly !== "Custom" && (
+                        <div className="text-gray-500 text-sm">
+                          {isYearly ? (
+                            <span>
+                              {savings > 0 && <span className="text-green-600 font-semibold">Save {savings}%</span>}
+                              {savings > 0 && " • "}Billed annually
+                            </span>
+                          ) : (
+                            "Billed monthly"
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <span className="text-lg line-through mr-2">{feature}</span>
-                    <span className="text-xs bg-gradient-to-r from-orange-500 to-pink-500 text-white px-2 py-0.5 rounded-full ml-1 font-semibold">Premium only</span>
                   </div>
-                ))}
-              </div>
 
-              <button 
-                className={`w-full py-4 rounded-2xl font-bold text-lg shadow-xl transition-all duration-300 transform hover:scale-105 ${
-                  tier.highlight 
-                    ? 'bg-gradient-to-r from-orange-500 to-pink-500 text-white hover:from-orange-600 hover:to-pink-600 shadow-orange-500/25' 
-                    : 'bg-white/10 text-white hover:bg-white/20 backdrop-blur-sm'
-                }`}
-              >
-                {tier.cta}
-              </button>
-            </div>
-          ))}
+                  {/* Features */}
+                  <div className="space-y-4 mb-8 flex-grow">
+                    <div className="text-sm font-semibold text-gray-900 mb-3">What's included:</div>
+                    {tier.features.map((feature, i) => (
+                      <FeatureItem key={i} feature={feature} />
+                    ))}
+                    
+                    {tier.limitations && (
+                      <>
+                        <div className="text-sm font-semibold text-gray-500 mb-3 mt-6">Not included:</div>
+                        {tier.limitations.map((limitation, i) => (
+                          <FeatureItem key={i} feature={limitation} included={false} />
+                        ))}
+                      </>
+                    )}
+                  </div>
+
+                  {/* CTA Button */}
+                  <button
+                    onClick={() => setSelectedTier(tier.name)}
+                    className={`w-full py-4 rounded-2xl font-bold text-lg transition-all duration-300 transform hover:scale-105 ${
+                      tier.popular 
+                        ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg hover:shadow-xl' 
+                        : tier.name === "Enterprise"
+                        ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg hover:shadow-xl'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                    }`}
+                  >
+                    {tier.cta}
+                    {tier.name === "Premium DAO" && <ArrowRight className="inline-block w-5 h-5 ml-2" />}
+                  </button>
+                </div>
+              </motion.div>
+            );
+          })}
         </div>
 
-        {/* Platform Fees Section */}
-        <div className="mb-20">
-          <h2 className="text-4xl font-bold mb-8 text-center bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
-            Platform Fees
-          </h2>
-          <div className="backdrop-blur-xl bg-white/5 rounded-3xl p-8 border border-white/10">
+        {/* Feature Categories */}
+        <div className="mb-16">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+              Everything You Need to Succeed
+            </h2>
+            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+              Comprehensive tools for transparent community management and financial growth
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {featureCategories.map((category, index) => (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, x: index % 2 === 0 ? -20 : 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: index * 0.1 }}
+                className="bg-white/80 backdrop-blur-xl rounded-2xl p-8 shadow-lg hover:shadow-xl transition-all duration-300"
+              >
+                <div className="flex items-center mb-6">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white mr-4">
+                    {category.icon}
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900">{category.title}</h3>
+                </div>
+                <div className="space-y-3">
+                  {category.features.map((feature, i) => (
+                    <div key={i} className="flex items-center text-gray-600">
+                      <Star className="w-4 h-4 text-orange-400 mr-3 flex-shrink-0" />
+                      <span>{feature}</span>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+
+        {/* Platform Fees */}
+        <div className="mb-16">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+              Transparent Platform Fees
+            </h2>
+            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+              We believe in complete transparency. Here are all the fees you might encounter.
+            </p>
+          </div>
+
+          <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-8 shadow-lg">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-white/20">
-                    <th className="py-4 px-6 text-left text-lg font-semibold text-orange-400">Action</th>
-                    <th className="py-4 px-6 text-left text-lg font-semibold text-pink-400">Fee</th>
-                    <th className="py-4 px-6 text-left text-lg font-semibold text-purple-400">Notes</th>
+                  <tr className="border-b-2 border-gray-200">
+                    <th className="py-4 px-6 text-left text-lg font-semibold text-gray-900">Action</th>
+                    <th className="py-4 px-6 text-left text-lg font-semibold text-gray-900">Fee</th>
+                    <th className="py-4 px-6 text-left text-lg font-semibold text-gray-900">Notes</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {feeTable.map((row, index) => (
-                    <tr key={row.action} className="border-b border-white/10 hover:bg-white/5 transition-colors duration-300">
-                      <td className="py-4 px-6 text-white font-medium">{row.action}</td>
-                      <td className="py-4 px-6 text-orange-300 font-bold">{row.fee}</td>
-                      <td className="py-4 px-6 text-gray-400">{row.notes}</td>
+                  {platformFees.map((fee, index) => (
+                    <tr key={index} className="border-b border-gray-100 hover:bg-gray-50/50 transition-colors">
+                      <td className="py-4 px-6">
+                        <div className="flex items-center">
+                          <div className={`w-3 h-3 rounded-full mr-3 ${
+                            fee.category === 'vault' ? 'bg-blue-500' :
+                            fee.category === 'payments' ? 'bg-green-500' :
+                            fee.category === 'governance' ? 'bg-purple-500' :
+                            'bg-orange-500'
+                          }`}></div>
+                          <span className="font-medium text-gray-900">{fee.action}</span>
+                        </div>
+                      </td>
+                      <td className="py-4 px-6">
+                        <span className={`font-bold ${fee.fee === 'Free' ? 'text-green-600' : 'text-orange-600'}`}>
+                          {fee.fee}
+                        </span>
+                      </td>
+                      <td className="py-4 px-6 text-gray-600">{fee.notes}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </div>
-        </div>
-
-        {/* Important Note */}
-        <div className="mb-16 p-6 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 rounded-2xl border border-yellow-500/30 backdrop-blur-xl">
-          <div className="flex items-center gap-4">
-            <div className="text-3xl">💡</div>
-            <div>
-              <strong className="text-yellow-300">Important:</strong>
-              <span className="text-gray-200 ml-2">
-                Fees are paid by the DAO/group, not individuals. All fees are abstracted into vault mechanics for simplicity.
-              </span>
+            
+            {/* Fee Categories Legend */}
+            <div className="mt-6 flex flex-wrap gap-4">
+              <div className="flex items-center">
+                <div className="w-3 h-3 rounded-full bg-blue-500 mr-2"></div>
+                <span className="text-sm text-gray-600">Vault Operations</span>
+              </div>
+              <div className="flex items-center">
+                <div className="w-3 h-3 rounded-full bg-green-500 mr-2"></div>
+                <span className="text-sm text-gray-600">Payment Processing</span>
+              </div>
+              <div className="flex items-center">
+                <div className="w-3 h-3 rounded-full bg-purple-500 mr-2"></div>
+                <span className="text-sm text-gray-600">Governance</span>
+              </div>
+              <div className="flex items-center">
+                <div className="w-3 h-3 rounded-full bg-orange-500 mr-2"></div>
+                <span className="text-sm text-gray-600">Yield Generation</span>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Token Ecosystem */}
         <div className="mb-16">
-          <h2 className="text-4xl font-bold mb-8 text-center bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
-            Reputation & Token Ecosystem
-          </h2>
+          <div className="text-center mb-12">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+              Token & Reputation Ecosystem
+            </h2>
+            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+              Build trust, earn rewards, and unlock new opportunities through our comprehensive token system
+            </p>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {tokenEcosystem.map((token, index) => (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+                className="bg-white/80 backdrop-blur-xl rounded-2xl p-8 shadow-lg hover:shadow-xl transition-all duration-300 text-center"
+              >
+                <div className="text-4xl mb-4">{token.icon}</div>
+                <h3 className="text-xl font-bold text-gray-900 mb-3">{token.title}</h3>
+                <p className="text-gray-600 mb-4">{token.description}</p>
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <div className="text-sm font-semibold text-gray-900 mb-2">Key Benefits:</div>
+                  <p className="text-sm text-gray-600">{token.utility}</p>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+
+        {/* Important Notice */}
+        <div className="mb-16">
+          <div className="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-2xl p-8">
+            <div className="flex items-start space-x-4">
+              <AlertCircle className="w-8 h-8 text-blue-600 flex-shrink-0 mt-1" />
+              <div>
+                <h3 className="text-lg font-bold text-blue-900 mb-2">Important: Community-First Approach</h3>
+                <p className="text-blue-800 mb-4">
+                  All platform fees are paid by the DAO/community collectively, not by individual members. 
+                  This ensures that the cost of transparency and security is shared fairly across the community.
+                </p>
+                <ul className="text-blue-700 space-y-2">
+                  <li className="flex items-center">
+                    <CheckCircle className="w-4 h-4 text-green-600 mr-2" />
+                    <span>Individual members never pay hidden fees</span>
+                  </li>
+                  <li className="flex items-center">
+                    <CheckCircle className="w-4 h-4 text-green-600 mr-2" />
+                    <span>All costs are transparent and voted on by the community</span>
+                  </li>
+                  <li className="flex items-center">
+                    <CheckCircle className="w-4 h-4 text-green-600 mr-2" />
+                    <span>Fees are only charged when value is created</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* FAQ */}
+        <div className="mb-16">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+              Frequently Asked Questions
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {[
               {
-                title: "Vote Tokens",
-                icon: "🗳️",
-                description: "Tokenized voting rights, required for major decisions. Can be purchased or earned.",
-                gradient: "from-blue-500 to-purple-600"
+                question: "Can I switch plans anytime?",
+                answer: "Yes! You can upgrade or downgrade your plan at any time. Changes take effect immediately, and we'll prorate any billing adjustments."
               },
               {
-                title: "MsiaMo Points",
-                icon: "⭐",
-                description: "Non-transferable reputation, earned through activity, referrals, and participation.",
-                gradient: "from-emerald-500 to-blue-500"
+                question: "What happens if I exceed my member limit?",
+                answer: "Free DAOs are limited to 25 members. Once you reach this limit, you'll need to upgrade to Premium to add more members."
               },
               {
-                title: "Badges & Rewards",
-                icon: "🏆",
-                description: "Badges, leaderboards, and advanced features unlock as your reputation grows.",
-                gradient: "from-orange-500 to-pink-500"
+                question: "Are there any setup fees?",
+                answer: "No setup fees ever. You only pay the subscription fee, and all platform fees are clearly disclosed upfront."
+              },
+              {
+                question: "Can I cancel anytime?",
+                answer: "Absolutely. Cancel your subscription anytime with no penalties. Your data remains accessible for 30 days after cancellation."
+              },
+              {
+                question: "Do you offer refunds?",
+                answer: "We offer a 30-day money-back guarantee for annual plans. Monthly plans can be canceled anytime without charges for the next month."
+              },
+              {
+                question: "Is my community data secure?",
+                answer: "Yes! All data is encrypted, backed up regularly, and stored securely. We're also building on blockchain for maximum transparency."
               }
-            ].map((item, index) => (
-              <div key={index} className="group p-6 bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 hover:bg-white/10 transition-all duration-300 hover:scale-105">
-                <div className={`w-16 h-16 rounded-full bg-gradient-to-r ${item.gradient} flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform duration-300`}>
-                  {item.icon}
-                </div>
-                <h3 className="text-xl font-bold mb-3 text-white">{item.title}</h3>
-                <p className="text-gray-300">{item.description}</p>
+            ].map((faq, index) => (
+              <div key={index} className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-lg">
+                <h3 className="font-bold text-gray-900 mb-3">{faq.question}</h3>
+                <p className="text-gray-600">{faq.answer}</p>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Contact Section */}
-        <div className="text-center">
-          <div className="inline-block p-6 bg-gradient-to-r from-white/10 to-white/5 backdrop-blur-xl rounded-2xl border border-white/10">
-            <p className="text-gray-300 text-lg">
-              Need something custom? 
-              <span className="text-orange-400 font-semibold ml-2">Contact us for enterprise features.</span>
-            </p>
+        {/* Final CTA */}
+        <div className="text-center bg-white/90 backdrop-blur-xl rounded-3xl p-12 shadow-2xl">
+          <h2 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent mb-6">
+            Ready to Transform Your Community?
+          </h2>
+          <p className="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
+            Join thousands of communities already building stronger financial futures through transparent, 
+            democratic, and inclusive financial solutions.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <button className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-12 py-4 rounded-2xl font-bold text-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
+              Start Your Free DAO Today
+            </button>
+            <button className="bg-white text-orange-600 px-12 py-4 rounded-2xl font-bold text-xl border-2 border-orange-500 hover:bg-orange-50 transition-all duration-300">
+              Schedule a Demo
+            </button>
           </div>
+          <p className="text-gray-500 mt-6">No credit card required • Free forever • Upgrade anytime</p>
         </div>
       </div>
     </div>

@@ -1,7 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowRight, Users, Vote, Wallet, Target, Trophy, Zap, DollarSign, ClipboardList, Star, TrendingUp, Shield, Globe, CheckCircle, Sparkles, Heart, Coins, Award, Lock } from "lucide-react";
+import { ArrowRight, Users, Vote, Wallet, Target, Trophy, Zap, DollarSign, ClipboardList, Star, TrendingUp, Shield, Globe, CheckCircle, Sparkles, Heart, Coins, Award, Lock, BookOpen, Code, HelpCircle } from "lucide-react";
 import { useState, useEffect } from "react";
+import { Link } from 'react-router-dom';
 
 export default function MtaaDAOLanding() {
   const [isVisible, setIsVisible] = useState(false);
@@ -15,18 +16,18 @@ export default function MtaaDAOLanding() {
     const handleMouseMove = (e: MouseEvent) => {
       setMousePosition({ x: e.clientX, y: e.clientY });
     };
-    
+
     const handleScroll = () => {
       setScrollY(window.scrollY);
     };
-    
+
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('scroll', handleScroll);
-    
+
     const interval = setInterval(() => {
       setActiveFeature((prev) => (prev + 1) % 8);
     }, 3000);
-    
+
     return () => {
       clearInterval(interval);
       window.removeEventListener('mousemove', handleMouseMove);
@@ -165,7 +166,7 @@ export default function MtaaDAOLanding() {
           transform: `translate3d(0, 0, 0) scale(${mousePosition.x > 0 ? 1 : 0})`
         }}
       />
-      
+
       {/* Dynamic Background */}
       <div className="absolute inset-0 overflow-hidden">
         {/* Animated Gradient Orbs */}
@@ -193,7 +194,7 @@ export default function MtaaDAOLanding() {
             transform: `translate3d(${scrollY * 0.05}px, ${scrollY * 0.1}px, 0)`
           }}
         />
-        
+
         {/* Floating Particles */}
         {[...Array(20)].map((_, i) => (
           <div
@@ -207,7 +208,7 @@ export default function MtaaDAOLanding() {
             }}
           />
         ))}
-        
+
         {/* Grid Pattern */}
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:50px_50px]" />
       </div>
@@ -234,7 +235,7 @@ export default function MtaaDAOLanding() {
                 <p className="text-purple-200 font-medium text-lg">For Mtaa From Mtaa</p>
               </div>
             </div>
-            
+
             {/* Main Headline */}
             <div className="mb-8">
               <h1 className="text-7xl lg:text-8xl font-black mb-6 leading-tight">
@@ -247,7 +248,7 @@ export default function MtaaDAOLanding() {
                   Together
                 </span>
               </h1>
-              
+
               <div className="relative">
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent blur-sm"></div>
                 <p className="relative text-xl lg:text-2xl text-purple-100 max-w-4xl mx-auto leading-relaxed font-medium">
@@ -256,7 +257,7 @@ export default function MtaaDAOLanding() {
                 </p>
               </div>
             </div>
-            
+
             {/* CTA Buttons */}
             <div className="flex flex-col sm:flex-row gap-6 justify-center mb-20">
             <a href="/register">
@@ -319,7 +320,7 @@ export default function MtaaDAOLanding() {
               Combining traditional community values with cutting-edge blockchain technology
             </p>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             {features.map((feature, index) => {
               const Icon = feature.icon;
@@ -371,7 +372,7 @@ export default function MtaaDAOLanding() {
               Experience the next generation of community governance
             </p>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
             {benefits.map((benefit, index) => {
               const Icon = benefit.icon;
@@ -426,7 +427,7 @@ export default function MtaaDAOLanding() {
               Built on proven blockchain technology with community-first principles
             </p>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {trustFeatures.map((feature, index) => {
               const Icon = feature.icon;
@@ -447,11 +448,191 @@ export default function MtaaDAOLanding() {
         </div>
       </div>
 
+      {/* Success Stories Section */}
+      <div className="mb-20">
+        <div className="text-center mb-12">
+          <h2 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent mb-4">
+            Real Impact, Real Stories
+          </h2>
+          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+            See how communities across Kenya are transforming their financial futures through MtaaDAO
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
+          <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-lg">
+            <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center mb-4">
+              <span className="text-white text-2xl">💧</span>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Clean Water Access</h3>
+            <p className="text-gray-600 mb-4">Kibera community raised KES 2.3M for water infrastructure, serving 15,000+ residents</p>
+            <div className="text-sm text-blue-600 font-semibold">847 contributors • 8 months</div>
+          </div>
+
+          <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-lg">
+            <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-500 rounded-2xl flex items-center justify-center mb-4">
+              <span className="text-white text-2xl">📈</span>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Investment Success</h3>
+            <p className="text-gray-600 mb-4">Eastlands Chama achieved 340% ROI through transparent DeFi investments</p>
+            <div className="text-sm text-green-600 font-semibold">234 members • KES 5.8M managed</div>
+          </div>
+
+          <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-lg">
+            <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center mb-4">
+              <span className="text-white text-2xl">💼</span>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Business Growth</h3>
+            <p className="text-gray-600 mb-4">Market vendors increased business capital by 78% through automated savings</p>
+            <div className="text-sm text-purple-600 font-semibold">156 vendors • 23 new businesses</div>
+          </div>
+        </div>
+
+        <div className="text-center">
+          <Link 
+            to="/success-stories" 
+            className="inline-flex items-center bg-gradient-to-r from-orange-500 to-red-500 text-white px-8 py-4 rounded-2xl font-bold text-lg hover:shadow-lg transition-all duration-300 transform hover:scale-105"
+          >
+            View All Success Stories
+            <ArrowRight className="w-5 h-5 ml-2" />
+          </Link>
+        </div>
+      </div>
+
+      {/* Enhanced Features Section */}
+      <div className="mb-20">
+        <div className="text-center mb-12">
+          <h2 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent mb-4">
+            Complete Financial Ecosystem
+          </h2>
+          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+            Everything your community needs for transparent, efficient financial management
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[{ 
+              icon: "✨", 
+              title: "Create a DAO", 
+              description: "Launch your own decentralized community in minutes.",
+              link: "/create-dao"
+            },
+            { 
+              icon: "🏦", 
+              title: "Community Vaults", 
+              description: "Secure, yield-generating savings with transparent governance",
+              link: "/vault"
+            },
+            { 
+              icon: "💳", 
+              title: "Digital Wallet", 
+              description: "Multi-currency wallet with DeFi integrations and MiniPay support",
+              link: "/wallet"
+            },
+            { 
+              icon: "🗳️", 
+              title: "Governance Tools", 
+              description: "Transparent voting and proposal management for community decisions",
+              link: "/proposals"
+            },
+            { 
+              icon: "📊", 
+              title: "Real-time Analytics", 
+              description: "Track performance, growth, and impact with detailed insights",
+              link: "/analytics"
+            },
+            { 
+              icon: "🎯", 
+              title: "Task Bounties", 
+              description: "Incentivize community work through transparent task management",
+              link: "/tasks"
+            },
+            { 
+              icon: "🤝", 
+              title: "Referral System", 
+              description: "Grow your community with built-in referral rewards",
+              link: "/referrals"
+            },
+            { 
+              icon: "🔄", 
+              title: "Batch Transfers", 
+              description: "Efficient bulk payments and automated disbursements",
+              link: "/wallet/batch-transfer"
+            },
+            { 
+              icon: "🏆", 
+              title: "Reputation System", 
+              description: "Build trust through transparent contribution tracking",
+              link: "/leaderboard"
+            }
+          ].map((feature, index) => (
+            <Link
+              key={index}
+              to={feature.link}
+              className="group bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105"
+            >
+              <div className="text-4xl mb-4">{feature.icon}</div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-orange-600 transition-colors">
+                {feature.title}
+              </h3>
+              <p className="text-gray-600 text-sm">
+                {feature.description}
+              </p>
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {/* Documentation & Resources */}
+      <div className="mb-20 bg-white/80 backdrop-blur-xl rounded-3xl p-12 shadow-2xl">
+        <div className="text-center mb-8">
+          <h2 className="text-3xl font-bold text-gray-900 mb-4">Resources & Documentation</h2>
+          <p className="text-gray-600 max-w-2xl mx-auto">
+            Everything you need to get started and succeed with MtaaDAO
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <BookOpen className="w-8 h-8 text-white" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Getting Started Guide</h3>
+            <p className="text-gray-600 mb-4">Step-by-step tutorials for setting up your first DAO</p>
+            <Link to="/docs/getting-started" className="text-orange-600 hover:text-orange-700 font-medium">
+              Read Guide →
+            </Link>
+          </div>
+
+          <div className="text-center">
+            <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <Code className="w-8 h-8 text-white" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">API Documentation</h3>
+            <p className="text-gray-600 mb-4">Complete API reference for developers and integrations</p>
+            <Link to="/docs/api" className="text-orange-600 hover:text-orange-700 font-medium">
+              View Docs →
+            </Link>
+          </div>
+
+          <div className="text-center">
+            <div className="w-16 h-16 bg-gradient-to-r from-orange-500 to-red-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <HelpCircle className="w-8 h-8 text-white" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Community Support</h3>
+            <p className="text-gray-600 mb-4">Get help from our community and support team</p>
+            <Link to="/help" className="text-orange-600 hover:text-orange-700 font-medium">
+              Get Support →
+            </Link>
+          </div>
+        </div>
+      </div>
+
       {/* Final CTA */}
       <div className="py-32 bg-gradient-to-br from-orange-500 via-pink-600 to-purple-700 relative overflow-hidden">
         <div className="absolute inset-0 bg-black/20"></div>
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.1)_0%,transparent_70%)]"></div>
-        
+
         <div className="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-6xl font-black text-white mb-8">
             Ready to Build the Future?
@@ -493,7 +674,7 @@ export default function MtaaDAOLanding() {
           <span>© {new Date().getFullYear()} Mtaa DAO. All rights reserved.</span>
           <div className="flex space-x-6 mt-4 md:mt-0">
             <a href="#features" className="hover:text-white transition">Features</a>
-            <a href="#pricing" className="hover:text-white transition">Pricing</a>
+            <a href="/pricing" className="hover:text-white transition">Pricing</a>
             <a href="#benefits" className="hover:text-white transition">Benefits</a>
             <a href="#trust" className="hover:text-white transition">Trust</a>
           </div>

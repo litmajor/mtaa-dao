@@ -1,5 +1,5 @@
 
-// import { Request, Response } from 'express';
+//import { Request, Response } from 'express';
 
 interface SessionData {
   userId: string;
@@ -11,9 +11,74 @@ interface SessionData {
   userAgent?: string;
 }
 
-// In-memory session store (replace with Redis in production)
-const activeSessions = new Map<string, SessionData>();
-const userSessions = new Map<string, Set<string>>(); // userId -> sessionIds
+// Enhanced session storage with Redis-like functionality
+class SessionStore {
+  private sessions = new Map<string, SessionData>();
+  private userSessions = new Map<string, Set<string>>();
+  private sessionsByIp = new Map<string, Set<string>>();
+
+  set(sessionId: string, data: SessionData) {
+    this.sessions.set(sessionId, data);
+    
+    // Track by user
+    if (!this.userSessions.has(data.userId)) {
+      this.userSessions.set(data.userId, new Set());
+    }
+    this.userSessions.get(data.userId)!.add(sessionId);
+
+    // Track by IP
+    if (data.ipAddress) {
+      if (!this.sessionsByIp.has(data.ipAddress)) {
+        this.sessionsByIp.set(data.ipAddress, new Set());
+      }
+      this.sessionsByIp.get(data.ipAddress)!.add(sessionId);
+    }
+  }
+
+  get(sessionId: string): SessionData | undefined {
+    return this.sessions.get(sessionId);
+  }
+
+  delete(sessionId: string) {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      // Remove from user sessions
+      const userSessionSet = this.userSessions.get(session.userId);
+      if (userSessionSet) {
+        userSessionSet.delete(sessionId);
+        if (userSessionSet.size === 0) {
+          this.userSessions.delete(session.userId);
+        }
+      }
+
+      // Remove from IP sessions
+      if (session.ipAddress) {
+        const ipSessionSet = this.sessionsByIp.get(session.ipAddress);
+        if (ipSessionSet) {
+          ipSessionSet.delete(sessionId);
+          if (ipSessionSet.size === 0) {
+            this.sessionsByIp.delete(session.ipAddress);
+          }
+        }
+      }
+    }
+    this.sessions.delete(sessionId);
+  }
+
+  getUserSessions(userId: string): Set<string> {
+    return this.userSessions.get(userId) || new Set();
+  }
+
+  getIpSessions(ipAddress: string): Set<string> {
+    return this.sessionsByIp.get(ipAddress) || new Set();
+  }
+
+  getAllSessions(): SessionData[] {
+    return Array.from(this.sessions.values());
+  }
+}
+
+const sessionStore = new SessionStore();
 
 const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 const MAX_SESSIONS_PER_USER = 5;
@@ -39,13 +104,18 @@ export const createSession = (
     userAgent: context.userAgent
   };
 
-  // Clean up old sessions for this user
-  if (!userSessions.has(userId)) {
-    userSessions.set(userId, new Set());
+  // Check for suspicious activity (multiple IPs)
+  const userSessionSet = sessionStore.getUserSessions(userId);
+  const existingIps = new Set();
+  userSessionSet.forEach(sid => {
+    const session = sessionStore.get(sid);
+    if (session?.ipAddress) existingIps.add(session.ipAddress);
+  });
+
+  if (existingIps.size > 0 && !existingIps.has(context.ip)) {
+    console.warn(`Suspicious login: User ${userId} logging in from new IP ${context.ip}`);
   }
-  
-  const userSessionSet = userSessions.get(userId)!;
-  
+
   // If user has too many sessions, remove the oldest
   if (userSessionSet.size >= MAX_SESSIONS_PER_USER) {
     const sessionsArray = Array.from(userSessionSet);
@@ -53,12 +123,11 @@ export const createSession = (
     destroySession(oldestSessionId);
   }
 
-  activeSessions.set(sessionId, sessionData);
-  userSessionSet.add(sessionId);
+  sessionStore.set(sessionId, sessionData);
 };
 
 export const getSession = (sessionId: string): SessionData | null => {
-  const session = activeSessions.get(sessionId);
+  const session = sessionStore.get(sessionId);
   if (!session) return null;
 
   // Check if session has expired
@@ -72,49 +141,34 @@ export const getSession = (sessionId: string): SessionData | null => {
 
   // Update last activity
   session.lastActivity = now;
-  activeSessions.set(sessionId, session);
+  sessionStore.set(sessionId, session);
   
   return session;
 };
 
 export const updateSessionActivity = (sessionId: string) => {
-  const session = activeSessions.get(sessionId);
+  const session = sessionStore.get(sessionId);
   if (session) {
     session.lastActivity = new Date();
-    activeSessions.set(sessionId, session);
+    sessionStore.set(sessionId, session);
   }
 };
 
 export const destroySession = (sessionId: string) => {
-  const session = activeSessions.get(sessionId);
-  if (session) {
-    const userSessionSet = userSessions.get(session.userId);
-    if (userSessionSet) {
-      userSessionSet.delete(sessionId);
-      if (userSessionSet.size === 0) {
-        userSessions.delete(session.userId);
-      }
-    }
-  }
-  activeSessions.delete(sessionId);
+  sessionStore.delete(sessionId);
 };
 
 export const destroyAllUserSessions = (userId: string) => {
-  const userSessionSet = userSessions.get(userId);
-  if (userSessionSet) {
-    userSessionSet.forEach(sessionId => {
-      activeSessions.delete(sessionId);
-    });
-    userSessions.delete(userId);
-  }
+  const userSessionSet = sessionStore.getUserSessions(userId);
+  userSessionSet.forEach(sessionId => {
+    sessionStore.delete(sessionId);
+  });
 };
 
 export const getUserActiveSessions = (userId: string): SessionData[] => {
-  const userSessionSet = userSessions.get(userId);
-  if (!userSessionSet) return [];
-  
+  const userSessionSet = sessionStore.getUserSessions(userId);
   return Array.from(userSessionSet)
-    .map(sessionId => activeSessions.get(sessionId))
+    .map(sessionId => sessionStore.get(sessionId))
     .filter((session): session is SessionData => session !== undefined);
 };
 
@@ -122,15 +176,36 @@ export const cleanupExpiredSessions = () => {
   const now = new Date();
   const expiredSessions: string[] = [];
   
-  activeSessions.forEach((session, sessionId) => {
+  sessionStore.getAllSessions().forEach((session) => {
     const timeDiff = now.getTime() - session.lastActivity.getTime();
     if (timeDiff > SESSION_TIMEOUT) {
-      expiredSessions.push(sessionId);
+      expiredSessions.push(session.userId + '_' + session.loginTime.getTime());
     }
   });
   
   expiredSessions.forEach(sessionId => destroySession(sessionId));
   console.log(`Cleaned up ${expiredSessions.length} expired sessions`);
+};
+
+// Additional security functions
+export const detectAnomalousActivity = (userId: string): boolean => {
+  const sessions = getUserActiveSessions(userId);
+  const uniqueIps = new Set(sessions.map(s => s.ipAddress));
+  const uniqueUserAgents = new Set(sessions.map(s => s.userAgent));
+  
+  // Flag if user has sessions from more than 3 different IPs or user agents
+  return uniqueIps.size > 3 || uniqueUserAgents.size > 3;
+};
+
+export const getSessionStats = () => {
+  const allSessions = sessionStore.getAllSessions();
+  return {
+    totalSessions: allSessions.length,
+    uniqueUsers: new Set(allSessions.map(s => s.userId)).size,
+    uniqueIps: new Set(allSessions.map(s => s.ipAddress)).size,
+    avgSessionAge: allSessions.reduce((acc, s) => 
+      acc + (Date.now() - s.loginTime.getTime()), 0) / allSessions.length / 1000 / 60, // minutes
+  };
 };
 
 // Clean up expired sessions every 10 minutes

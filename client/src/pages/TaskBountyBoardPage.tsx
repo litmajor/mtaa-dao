@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { TaskBountyBoard, Task } from "../components/TaskBountyBoard";
+import TaskBountyBoard, { Task } from "../components/TaskBountyBoard";
 import { ClaimTaskModal } from "../components/ClaimTaskModal";
 import { useTasks } from "./hooks/useTasks";
 

@@ -320,6 +320,7 @@ export const vaults = pgTable("vaults", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: varchar("user_id").references(() => users.id).notNull(),
   currency: varchar("currency").notNull(),
+  address: varchar("address"), // wallet address for this vault
   balance: decimal("balance", { precision: 10, scale: 2 }).default("0"),
   monthlyGoal: decimal("monthly_goal", { precision: 10, scale: 2 }).default("0"),
   vaultType: varchar("vault_type").default("regular"), // regular, savings, locked_savings
@@ -551,6 +552,32 @@ export const daoMessages = pgTable("dao_messages", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Subscriptions table
+export const subscriptions = pgTable("subscriptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  plan: varchar("plan").default("free"), // free, premium
+  status: varchar("status").default("active"),
+  startDate: timestamp("start_date").defaultNow(),
+  endDate: timestamp("end_date"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// User Reputation table
+export const userReputation = pgTable("user_reputation", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id),
+  totalScore: integer("total_score").default(0),
+  proposalScore: integer("proposal_score").default(0),
+  voteScore: integer("vote_score").default(0),
+  contributionScore: integer("contribution_score").default(0),
+  lastUpdated: timestamp("last_updated").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
 
 // Add unique constraints to prevent duplicate likes (temporarily commented out for debugging)
 // export const proposalLikesIndex = index("proposal_likes_unique").on(proposalLikes.proposalId, proposalLikes.userId);

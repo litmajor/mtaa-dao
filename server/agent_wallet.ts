@@ -3,6 +3,59 @@ import { isAddress } from 'web3-validator';
 import type { TransactionReceipt, Contract } from 'web3';
 import dotenv from 'dotenv';
 dotenv.config();
+
+// Deploy a DAO contract using Web3
+export async function deployDaoContract(daoData: any): Promise<{ success: boolean; daoAddress?: string; error?: string }> {
+  try {
+    // Example: Replace with your actual contract ABI and bytecode
+    const DAO_ABI = daoData.abi || [];
+    const DAO_BYTECODE = daoData.bytecode || '';
+    if (!DAO_ABI.length || !DAO_BYTECODE) {
+      throw new Error('DAO ABI and bytecode are required');
+    }
+
+    // Use network config and private key from environment or daoData
+    const networkConfig = daoData.networkConfig || NetworkConfig.CELO_ALFAJORES;
+    const privateKey = daoData.privateKey || process.env.WALLET_PRIVATE_KEY;
+    if (!privateKey) throw new Error('Private key required for deployment');
+    const web3 = new Web3(networkConfig.rpcUrl);
+    const account = web3.eth.accounts.privateKeyToAccount(privateKey);
+    web3.eth.accounts.wallet.add(account);
+    web3.eth.defaultAccount = account.address;
+
+    // Prepare contract deployment
+    const contract = new web3.eth.Contract(DAO_ABI);
+    const deployTx = contract.deploy({
+      data: DAO_BYTECODE,
+      arguments: daoData.constructorArgs || []
+    });
+
+    // Estimate gas
+    const gas = await deployTx.estimateGas({ from: account.address });
+    const gasPrice = await web3.eth.getGasPrice();
+
+    // Send transaction
+    const tx = deployTx.send({
+      from: account.address,
+      gas: gas.toString(),
+      gasPrice: gasPrice.toString()
+    });
+
+    // Wait for receipt
+    const receipt = await new Promise<any>((resolve, reject) => {
+      tx.on('receipt', resolve).on('error', reject);
+    });
+
+    if (receipt && receipt.contractAddress) {
+      return { success: true, daoAddress: receipt.contractAddress };
+    } else {
+      return { success: false, error: 'No contract address returned' };
+    }
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Deployment failed' };
+  }
+}
+
 // Enhanced Interfaces
 export interface TransactionResult {
   hash: string;
@@ -1179,7 +1232,7 @@ const isValidPrivateKey = (key: string | undefined): boolean => {
     // 7. Transaction utilities
     console.log('\n--- Transaction Utilities ---');
   // Example real transaction hash from Celo Alfajores testnet
-  const sampleTxHash = "0x6e1e7e2e2b7e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2";
+  const sampleTxHash = "0x6e1e7e2e2b7e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2";
   console.log(`Explorer URL for tx: ${wallet.getExplorerUrl(sampleTxHash)}`);
     
     const txHistory = await wallet.getTransactionHistory(5);

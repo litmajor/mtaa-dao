@@ -536,6 +536,8 @@ export default function StunningRegister() {
                         value={method === 'email' ? email : phone}
                         disabled
                         readOnly
+                        placeholder={method === 'email' ? 'Your email address' : 'Your phone number'}
+                        title={method === 'email' ? 'Email address' : 'Phone number'}
                       />
                       {method === 'phone' && countryInfo && (
                         <div className="absolute right-4 top-1/2 flex items-center space-x-2 transform -translate-y-1/2">
@@ -614,13 +616,14 @@ export default function StunningRegister() {
                     <div className="relative group">
                       <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
                       <input
-                        type={showConfirmPassword ? 'text' : 'password'}
-                        className="w-full pl-12 pr-12 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15"
-                        placeholder="Confirm your password"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        required
-                      />
+                          type={showConfirmPassword ? 'text' : 'password'}
+                          className="w-full pl-12 pr-12 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15"
+                          placeholder="Confirm your password"
+                          title="Confirm your password"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          required
+                        />
                       <button
                         type="button"
                         className="absolute right-4 top-1/2 transform -translate-y-1/2 text-white/50 hover:text-white transition-colors"
@@ -647,10 +650,13 @@ export default function StunningRegister() {
                   <div className="flex items-start space-x-3 p-4 bg-white/5 rounded-2xl border border-white/10">
                     <input
                       type="checkbox"
+                      id="terms"
                       className="mt-1 w-5 h-5 text-purple-600 bg-white/10 border border-white/20 rounded focus:ring-purple-500 focus:ring-2"
                       required
+                      title="Agree to Terms and Privacy Policy"
+                      placeholder="Agree to Terms and Privacy Policy"
                     />
-                    <label className="text-sm text-white/80 leading-relaxed">
+                    <label htmlFor="terms" className="text-sm text-white/80 leading-relaxed">
                       I agree to the{' '}
                       <a href="#" className="text-purple-300 hover:text-purple-200 transition-colors underline">
                         Terms of Service
@@ -694,13 +700,14 @@ export default function StunningRegister() {
                     <div className="relative group">
                       <Shield className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
                       <input
-                        type="text"
-                        className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15"
-                        placeholder="Enter the OTP sent to your email/phone"
-                        value={otp}
-                        onChange={(e) => setOtp(e.target.value)}
-                        required
-                      />
+                          type="text"
+                          className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15"
+                          placeholder="Enter the OTP sent to your email/phone"
+                          title="OTP input"
+                          value={otp}
+                          onChange={(e) => setOtp(e.target.value)}
+                          required
+                        />
                     </div>
                     <p className="text-white/60 text-sm">
                       A verification code has been sent to {method === 'email' ? email : phone}
