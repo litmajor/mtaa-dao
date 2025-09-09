@@ -81,8 +81,9 @@ export function VaultSelector({ onSelect }: { onSelect: (vault: any) => void }) 
 
   return (
     <div className="space-y-1">
-      <label className="text-sm font-medium">Select Vault</label>
+      <label htmlFor="vault-select" className="text-sm font-medium">Select Vault</label>
       <select
+        id="vault-select"
         className="w-full border rounded px-3 py-2 text-sm"
         onChange={e => {
           const selected = (vaults as Array<any>).find((v: any) => v.address === e.target.value);

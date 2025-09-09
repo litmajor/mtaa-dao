@@ -142,6 +142,25 @@ export interface DaoAnalytics {
 }
 
 export class DatabaseStorage implements IStorage {
+  /**
+   * Update user info by userId. Accepts any allowed user fields.
+   */
+  async updateUser(userId: string, update: Partial<User>): Promise<User> {
+    if (!userId) throw new Error('User ID required');
+    if (!update || typeof update !== 'object') throw new Error('Update object required');
+    // Only allow fields that exist in the users table
+    const allowedFields = [
+      'name', 'avatar', 'email', 'phone', 'lastLoginAt', 'profile', 'authProvider', 'authProviderId', 'emailVerified', 'updatedAt'
+    ];
+    const allowedUpdate: any = {};
+    for (const key of allowedFields) {
+      if (key in update) allowedUpdate[key] = (update as any)[key];
+    }
+    allowedUpdate.updatedAt = new Date();
+    const result = await this.db.update(users).set(allowedUpdate).where(eq(users.id, userId)).returning();
+    if (!result[0]) throw new Error('Failed to update user');
+    return result[0];
+  }
   private db = db; // Make db instance available within the class
 
   async incrementDaoMemberCount(daoId: string): Promise<any> {

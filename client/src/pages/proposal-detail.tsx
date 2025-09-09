@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "wouter";
-import { useNavigate } from "wouter";
+import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

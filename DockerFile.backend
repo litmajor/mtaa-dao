@@ -1,9 +1,22 @@
+
 FROM node:18
 WORKDIR /app
 
-COPY . .
+COPY package*.json ./
 RUN npm install
+
+COPY . .
+
+# Install tsx for TypeScript execution
+RUN npm install -g tsx
+RUN npm install prisma --save-dev
+RUN npm install @prisma/client
 RUN npm run build:backend
 
+# Generate Prisma client if needed
+RUN npx prisma generate || echo "Skipping prisma generate..."
+
 EXPOSE 4000
-CMD ["node", "server/dist/index.js"]
+
+# Use tsx to run TypeScript directly
+CMD ["npx", "tsx", "server/index.ts"]

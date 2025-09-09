@@ -7,7 +7,7 @@ import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Label } from './ui/label';
 import { Checkbox } from './ui/checkbox';
-import { toast } from './ui/use-toast';
+import { useToast } from './ui/use-toast';
 
 interface CreateTaskModalProps {
   open: boolean;
@@ -52,6 +52,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
     requiresVerification: false
   });
   const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

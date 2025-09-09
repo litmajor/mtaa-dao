@@ -104,7 +104,11 @@ export default function DaoSettings({ daoName = "Your DAO" }) {
                   <p className="text-gray-300 text-sm">Who bears the cost of offramp fees</p>
                 </div>
               </div>
+              <label id="offrampWhoPaysLabel" className="sr-only">
+                Offramp Fee Responsibility
+              </label>
               <select
+                aria-labelledby="offrampWhoPaysLabel"
                 value={offrampWhoPays}
                 onChange={e => setOfframpWhoPays(e.target.value)}
                 className="w-full bg-white/5 border border-white/20 rounded-xl px-6 py-4 text-white text-lg focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50 focus:outline-none transition-all backdrop-blur-sm appearance-none cursor-pointer"

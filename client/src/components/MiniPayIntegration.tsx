@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -14,7 +13,8 @@ import {
   getCUSDBalance,
   sendCUSD,
   estimateCUSDGasFee,
-  estimateCeloGasFee 
+  estimateCeloGasFee,
+  getWalletClientInstance // Assuming this function exists to get a wallet client instance for sending CELO
 } from '../lib/blockchain';
 
 interface MiniPayIntegrationProps {
@@ -101,54 +101,63 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
         setPhoneNumber(phone);
       }
     } catch (error) {
-      console.warn('Could not get phone number:', error);
+      console.error('Error loading phone number:', error);
     }
   };
 
-  const estimateTransactionFee = async () => {
-    if (!sendAmount || !sendTo) return;
-    
-    try {
-      let fee;
-      if (selectedCurrency === 'cUSD') {
-        fee = await estimateCUSDGasFee(sendTo, sendAmount);
-      } else {
-        fee = await estimateCeloGasFee(sendTo, sendAmount);
-      }
-      setEstimatedFee(fee);
-    } catch (error) {
-      console.error('Error estimating fee:', error);
-      setEstimatedFee('0');
-    }
-  };
-
-  const sendPayment = async () => {
+  const sendTransaction = async () => {
     if (!sendAmount || !sendTo) return;
 
     setIsLoading(true);
     try {
-      let txHash;
+      const amount = parseFloat(sendAmount);
+      let txHash: string;
+
       if (selectedCurrency === 'cUSD') {
-        txHash = await sendCUSD(sendTo, sendAmount);
+        txHash = await sendCUSD(sendTo, amount.toString());
       } else {
-        // For CELO, you'd implement sendCELO similar to sendCUSD
-        throw new Error('CELO transfers not implemented yet');
+        // Send CELO (native token)
+        const walletClient = getWalletClientInstance();
+        const hash = await walletClient.sendTransaction({
+          to: sendTo as `0x${string}`,
+          value: parseFloat(sendAmount) * 1e18, // Convert to wei
+        });
+        txHash = hash;
       }
 
-      onPaymentSuccess?.(txHash, sendAmount, selectedCurrency);
-      
-      // Refresh balances
+      // Update balances
       await loadBalances(userAddress);
-      
+
       // Clear form
       setSendAmount('');
       setSendTo('');
-      
-    } catch (error) {
-      console.error('Payment error:', error);
-      onError?.(`Payment failed: ${error.message}`);
+
+      // Call success callback
+      onPaymentSuccess?.(txHash, sendAmount, selectedCurrency);
+
+    } catch (error: any) {
+      console.error('Transaction failed:', error);
+      onError?.(`Transaction failed: ${error.message}`);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const estimateTransactionFee = async () => {
+    try {
+      if (!sendAmount || !sendTo) return;
+
+      let fee: string;
+      if (selectedCurrency === 'cUSD') {
+        fee = await estimateCUSDGasFee(sendTo, parseFloat(sendAmount));
+      } else {
+        fee = await estimateCeloGasFee(sendTo, parseFloat(sendAmount));
+      }
+
+      setEstimatedFee(fee);
+    } catch (error) {
+      console.error('Error estimating fee:', error);
+      setEstimatedFee('0');
     }
   };
 
@@ -207,7 +216,7 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
                   </>
                 )}
               </div>
-              
+
               {/* Balances */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 bg-blue-50 rounded-lg text-center">
@@ -249,9 +258,8 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
                 size="sm"
                 onClick={() => setSelectedCurrency('CELO')}
                 className="flex-1"
-                disabled
               >
-                CELO (Soon)
+                CELO
               </Button>
             </div>
 
@@ -283,7 +291,7 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
               )}
 
               <Button
-                onClick={sendPayment}
+                onClick={sendTransaction}
                 disabled={!sendAmount || !sendTo || isLoading}
                 className="w-full"
               >
@@ -316,6 +324,10 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
             <div className="flex items-center gap-2">
               <CheckCircle className="h-4 w-4 text-green-500" />
               <span>Fast Transfers</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle className="h-4 w-4 text-green-500" />
+              <span>CELO Support</span>
             </div>
           </div>
         </CardContent>

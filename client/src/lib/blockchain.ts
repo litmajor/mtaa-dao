@@ -119,6 +119,8 @@ export const getWalletClientInstance = () => {
   });
 };
 
+// --- Balance Functions ---
+
 // --- Wallet Connection ---
 export const connectWallet = async (): Promise<string[]> => {
   if (!isWalletAvailable()) {
@@ -137,40 +139,30 @@ export const connectWallet = async (): Promise<string[]> => {
 // --- Balance Fetching ---
 // Get native CELO balance
 export const getBalance = async (address: string): Promise<string> => {
-  try {
-    const balance = await publicClient.getBalance({
-      address: address as `0x${string}`
-    });
-    // formatEther formats a BigInt to a string representing Ether (18 decimals)
-    return formatEther(balance);
-  } catch (error) {
-    console.error('Error getting CELO balance:', error);
-    return '0';
+  if (!isValidCeloAddress(address)) {
+    throw new Error('Invalid Celo address');
   }
+  const balanceBigInt = await publicClient.getBalance({ address: address as `0x${string}` });
+  return formatEther(balanceBigInt);
+};
+
+// --- cUSD Balance Fetching ---
+export const getCUSDBalance = async (address: string): Promise<string> => {
+  if (!isValidCeloAddress(address)) {
+    throw new Error('Invalid Celo address');
+  }
+  // Use viem publicClient to call balanceOf on cUSD contract
+  const balanceBigInt = await publicClient.readContract({
+    address: CUSD_TOKEN_ADDRESS as `0x${string}`,
+    abi: ERC20_ABI,
+    functionName: 'balanceOf',
+    args: [address as `0x${string}`]
+  });
+  // cUSD has 18 decimals
+  return formatUnits(balanceBigInt as bigint, 18);
 };
 
 // --- Transaction Sending ---
-
-// --- Gas Estimation ---
-// Estimate gas fee for native CELO transfer
-export const estimateCeloGasFee = async (
-  to: string,
-  amount: string
-): Promise<string> => {
-  try {
-    const gas = await publicClient.estimateGas({
-      account: to as `0x${string}`,
-      to: to as `0x${string}`,
-      value: parseEther(amount)
-    });
-    const gasPrice = await publicClient.getGasPrice();
-    const fee = gas * gasPrice;
-    return formatEther(fee);
-  } catch (error) {
-    console.error('Error estimating CELO gas fee:', error);
-    return '0';
-  }
-};
 
 // Send native CELO transaction
 export const sendCelo = async (
@@ -186,6 +178,33 @@ export const sendCelo = async (
     value: parseEther(amount) // parseEther converts string (e.g., "0.5") to BigInt (0.5 * 10^18)
   });
 
+  return hash;
+};
+
+// --- Send cUSD Transaction ---
+export const sendCUSD = async (
+  to: string,
+  amount: string // Amount in user-readable units (e.g., "10")
+): Promise<string> => {
+  if (!isValidCeloAddress(to)) {
+    throw new Error('Invalid recipient address');
+  }
+  const walletClient = getWalletClientInstance();
+  const [account] = await walletClient.getAddresses();
+  // Convert amount to BigInt (cUSD has 18 decimals)
+  const amountBigInt = parseUnits(amount, 18);
+  // Encode transfer data
+  const data = encodeFunctionData({
+    abi: ERC20_ABI,
+    functionName: 'transfer',
+    args: [to as `0x${string}`, amountBigInt]
+  });
+  // Send transaction
+  const hash = await walletClient.sendTransaction({
+    account,
+    to: CUSD_TOKEN_ADDRESS as `0x${string}`,
+    data
+  });
   return hash;
 };
 
@@ -218,74 +237,48 @@ const ERC20_ABI = [
   },
 ] as const; // 'as const' makes it a literal type, improving type safety with viem
 
-// Send cUSD transaction
-export const sendCUSD = async (
+// --- Estimate Gas Fee for cUSD (ERC-20) Transfer ---
+export const estimateCUSDGasFee = async (
+  from: string,
   to: string,
-  amount: string // Amount in user-readable units (e.g., "2.5")
+  amount: string // Amount in user-readable units (e.g., "10")
 ): Promise<string> => {
-  const walletClient = getWalletClientInstance();
-  const [account] = await walletClient.getAddresses();
-
-  // Encode the transfer function call using viem's encodeFunctionData
-  // parseUnits is used for ERC-20 tokens, explicitly specifying decimals (cUSD has 18)
+  if (!isValidCeloAddress(from) || !isValidCeloAddress(to)) {
+    throw new Error('Invalid Celo address');
+  }
+  const amountBigInt = parseUnits(amount, 18);
+  // Encode transfer data
   const data = encodeFunctionData({
     abi: ERC20_ABI,
     functionName: 'transfer',
-    args: [to as `0x${string}`, parseUnits(amount, 18)], // cUSD has 18 decimals
+    args: [to as `0x${string}`, amountBigInt]
   });
-
-  const hash = await walletClient.sendTransaction({
-    account,
-    to: CUSD_TOKEN_ADDRESS as `0x${string}`, // Target is the cUSD token contract
-    data: data,
-    value: BigInt(0), // No native currency (CELO) sent with ERC-20 transfer
+  // Estimate gas
+  const gas = await publicClient.estimateGas({
+    account: from as `0x${string}`,
+    to: CUSD_TOKEN_ADDRESS as `0x${string}`,
+    data
   });
-
-  return hash;
+  return gas.toString();
 };
 
-// Get cUSD balance
-export const getCUSDBalance = async (address: string): Promise<string> => {
-  try {
-    const data = await publicClient.readContract({
-      address: CUSD_TOKEN_ADDRESS as `0x${string}`,
-      abi: ERC20_ABI, // Use the defined ERC20_ABI
-      functionName: 'balanceOf',
-      args: [address as `0x${string}`],
-    });
-
-    // formatUnits is used for ERC-20 tokens, explicitly specifying decimals (cUSD has 18)
-    return formatUnits(data as bigint, 18); // cUSD has 18 decimals
-  } catch (error) {
-    console.error('Error getting cUSD balance:', error);
-    return '0';
-  }
-};
-
-// Estimate gas fee for cUSD (ERC-20) transfer
-export const estimateCUSDGasFee = async (
+// --- Estimate Gas Fee for Native CELO Transfer ---
+export const estimateCeloGasFee = async (
+  from: string,
   to: string,
-  amount: string
+  amount: string // Amount in user-readable units (e.g., "0.5")
 ): Promise<string> => {
-  try {
-    const data = encodeFunctionData({
-      abi: ERC20_ABI,
-      functionName: 'transfer',
-      args: [to as `0x${string}`, parseUnits(amount, 18)],
-    });
-    const gas = await publicClient.estimateGas({
-      account: to as `0x${string}`,
-      to: CUSD_TOKEN_ADDRESS as `0x${string}`,
-      data: data,
-      value: BigInt(0)
-    });
-    const gasPrice = await publicClient.getGasPrice();
-    const fee = gas * gasPrice;
-    return formatEther(fee);
-  } catch (error) {
-    console.error('Error estimating cUSD gas fee:', error);
-    return '0';
+  if (!isValidCeloAddress(from) || !isValidCeloAddress(to)) {
+    throw new Error('Invalid Celo address');
   }
+  const valueBigInt = parseEther(amount);
+  // Estimate gas
+  const gas = await publicClient.estimateGas({
+    account: from as `0x${string}`,
+    to: to as `0x${string}`,
+    value: valueBigInt
+  });
+  return gas.toString();
 };
 
 // --- Network Switching ---

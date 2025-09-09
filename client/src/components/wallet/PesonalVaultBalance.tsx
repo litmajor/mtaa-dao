@@ -226,7 +226,11 @@ function VaultSendCard() {
       <h3 className="text-lg font-semibold">Send</h3>
       <Input placeholder="Recipient address" value={to} onChange={e => setTo(e.target.value)} />
       <Input placeholder="Amount" value={amount} onChange={e => setAmount(e.target.value)} inputMode="decimal" />
+      <label htmlFor="currency-select" className="text-sm font-medium">
+        Currency
+      </label>
       <select
+        id="currency-select"
         value={currency}
         onChange={e => setCurrency(e.target.value as "cUSD" | "CELO")}
         className="w-full border rounded p-2 text-sm"
