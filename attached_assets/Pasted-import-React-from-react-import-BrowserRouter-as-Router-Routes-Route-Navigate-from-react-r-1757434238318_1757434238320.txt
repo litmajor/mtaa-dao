@@ -5,11 +5,7 @@ import { useAuth } from './pages/hooks/useAuth';
 import { PageLoading } from './components/ui/page-loading';
 import { SkipLink } from './components/ui/skip-link';
 import Navigation from './components/navigation';
-<<<<<<< HEAD
 import { MobileNav } from './components/mobile-nav';
-=======
-import MobileNav from './components/mobile-nav';
->>>>>>> 0c072ead7dff70b89d5ce5d77fb1575cc9762616
 import { ThemeProvider } from "./components/theme-provider";
 
 // Import all page components
@@ -44,13 +40,8 @@ import TaskBountyBoardPage from './pages/TaskBountyBoardPage';
 import RewardsHub from './pages/RewardsHub';
 import PaymentReconciliation from './pages/PaymentReconciliation';
 import MiniPayDemo from './pages/MiniPayDemo';
-<<<<<<< HEAD
 import SuccessStories from './pages/success-stories';
 import WalletSetupPage from './pages/wallet-setup';
-=======
-// import SuccessStories from './pages/success-stories';
-// import WalletSetupPage from './pages/wallet-setup';
->>>>>>> 0c072ead7dff70b89d5ce5d77fb1575cc9762616
 
 // DAO sub-pages
 import DaoTreasuryOverview from './pages/dao/dao_treasury_overview';
@@ -105,11 +96,6 @@ function App() {
             <meta name="description" content="Mtaa DAO — decentralized community finance platform" />
             <meta name="viewport" content="width=device-width, initial-scale=1.0" />
             <meta name="theme-color" content="#1e40af" />
-<<<<<<< HEAD
-            <meta name="color-scheme" content="light dark" />
-            {/* 'theme-color' is not supported by Firefox/Opera, but 'color-scheme' is */}
-=======
->>>>>>> 0c072ead7dff70b89d5ce5d77fb1575cc9762616
           </Helmet>
 
           {isAuthenticated && <Navigation />}
@@ -149,14 +135,6 @@ function App() {
               } />
 
               {/* Protected routes */}
-<<<<<<< HEAD
-              <Route path="/create-dao" element={
-                <ProtectedRoute>
-                  {React.createElement(require('./pages/create-dao').default)}
-                </ProtectedRoute>
-              } />
-=======
->>>>>>> 0c072ead7dff70b89d5ce5d77fb1575cc9762616
               <Route path="/dashboard" element={
                 <ProtectedRoute>
                   <Dashboard />
@@ -295,18 +273,10 @@ function App() {
               {/* Special routes */}
               <Route path="/architect-setup" element={<ArchitectSetupPage />} />
               <Route path="/pricing" element={<PricingPage />} />
-<<<<<<< HEAD
               <Route path="/wallet-setup" element={<WalletSetupPage />} />
               <Route path="/success-stories" element={<SuccessStories />} />
               <Route path="/leaderboard" element={<ReputationLeaderboard />} />
               <Route path="/minipay" element={<MiniPayDemo />} />
-              <Route path="/success-stories" element={<SuccessStories />} />
-              <Route path="/pricing" element={<PricingPage />} />
-              <Route path="*" element={<NotFound />} />
-=======
-              <Route path="/leaderboard" element={<ReputationLeaderboard />} />
-              <Route path="/minipay" element={<MiniPayDemo />} />
->>>>>>> 0c072ead7dff70b89d5ce5d77fb1575cc9762616
 
               {/* Static pages */}
               <Route path="/about" element={
