@@ -1,14 +1,6 @@
 
 # MtaaDAO TODO List
 
-## ✅ **SETUP COMPLETE** 
-- [x] GitHub import successful
-- [x] Frontend/backend working in Replit
-- [x] Database connected and migrated
-- [x] Routing converted to wouter
-- [x] Environment variables configured
-- [x] Workflow configuration set up
-
 ## High Priority - Core Development
 
 ### Code Quality & Maintenance
@@ -48,10 +40,13 @@
 - [ ] Complete achievement system
 
 ### Payments & Financial Features
-- [ ] Integrate payment systems (Stripe, Mpesa)
+- [ ] Configure Stripe product/pricing in dashboard
+- [ ] Set STRIPE_PRICE_ID environment variable
+- [ ] Add Mpesa integration for mobile payments
 - [ ] Implement crypto payment handling
 - [ ] Add financial analytics and reporting
 - [ ] Complete billing dashboard
+- [ ] Set up payment webhooks for production
 
 ### Analytics & Monitoring
 - [ ] Implement comprehensive analytics service
@@ -82,4 +77,4 @@
 
 ---
 
-**Status**: Application is now running successfully in Replit. Ready for feature development!
+**Status**: Platform is running with Stripe payments integrated. Ready for core DAO feature development!
