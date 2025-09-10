@@ -27,10 +27,12 @@ import { vaultEventIndexer } from './vaultEventsIndexer';
 import { vaultAutomationService } from './vaultAutomation';
 // Import activityTracker (assuming it's defined in ./monitoring/activityTracker)
 import { activityTracker } from './monitoring/activityTracker'; 
+import paymentReconciliationRoutes from './routes/payment-reconciliation';
 import healthRoutes from './routes/health';
 import analyticsRoutes from './routes/analytics';
 import notificationRoutes from './routes/notifications';
 import sseRoutes from './routes/sse';
+import billingRoutes from './routes/billing';
 import './middleware/validation'; // Added for validation middleware
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -187,8 +189,12 @@ app.use((req, res, next) => {
     }
 
     // Add API routes
+    app.use('/api/payment-reconciliation', paymentReconciliationRoutes);
+    app.use('/api/health', healthRoutes);
+    app.use('/api/analytics', analyticsRoutes);
     app.use('/api/notifications', notificationRoutes);
     app.use('/api/sse', sseRoutes);
+    app.use('/api/billing', billingRoutes);
 
     // 404 handler (must be after all routes and frontend serving)
     app.use(notFoundHandler);
