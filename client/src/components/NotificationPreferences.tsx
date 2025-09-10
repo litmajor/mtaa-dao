@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -11,6 +10,7 @@ import { Bell, Mail, Smartphone, Users, FileText, Briefcase } from 'lucide-react
 interface NotificationPreferences {
   emailNotifications: boolean;
   pushNotifications: boolean;
+  telegramNotifications: boolean;
   daoUpdates: boolean;
   proposalUpdates: boolean;
   taskUpdates: boolean;
@@ -45,12 +45,12 @@ export default function NotificationPreferences() {
 
   const handleToggle = (key: keyof NotificationPreferences) => {
     if (!preferences) return;
-    
+
     const newPreferences = {
       ...preferences,
       [key]: !preferences[key],
     };
-    
+
     updatePreferencesMutation.mutate(newPreferences);
   };
 
@@ -89,7 +89,7 @@ export default function NotificationPreferences() {
         {/* Delivery Methods */}
         <div className="space-y-4">
           <h3 className="font-medium text-sm text-gray-700">Delivery Methods</h3>
-          
+
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Mail className="w-4 h-4 text-gray-500" />
@@ -119,6 +119,21 @@ export default function NotificationPreferences() {
               disabled={updatePreferencesMutation.isPending}
             />
           </div>
+          
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Users className="w-4 h-4 text-gray-500" />
+              <Label htmlFor="telegram-notifications" className="text-sm">
+                Telegram Notifications
+              </Label>
+            </div>
+            <Switch
+              id="telegram-notifications"
+              checked={preferences?.telegramNotifications || false}
+              onCheckedChange={() => handleToggle('telegramNotifications')}
+              disabled={updatePreferencesMutation.isPending}
+            />
+          </div>
         </div>
 
         <Separator />
@@ -126,7 +141,7 @@ export default function NotificationPreferences() {
         {/* Content Types */}
         <div className="space-y-4">
           <h3 className="font-medium text-sm text-gray-700">Content Types</h3>
-          
+
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Users className="w-4 h-4 text-gray-500" />

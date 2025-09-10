@@ -240,10 +240,39 @@ router.get('/live', (req: Request, res: Response) => {
   });
 });
 
-// Metrics endpoint for monitoring systems
+// Metrics endpoint for monitoring systems (JSON format)
 router.get('/metrics', (req: Request, res: Response) => {
   const metrics = metricsCollector.getMetrics();
   res.json(metrics);
+});
+
+// Prometheus metrics endpoint
+router.get('/metrics/prometheus', (req: Request, res: Response) => {
+  res.set('Content-Type', 'text/plain');
+  res.send(metricsCollector.getPrometheusMetrics());
+});
+
+// System resource monitoring
+router.get('/system', (req: Request, res: Response) => {
+  const memoryUsage = process.memoryUsage();
+  const cpuUsage = process.cpuUsage();
+  
+  res.json({
+    memory: {
+      heapUsed: `${(memoryUsage.heapUsed / 1024 / 1024).toFixed(2)}MB`,
+      heapTotal: `${(memoryUsage.heapTotal / 1024 / 1024).toFixed(2)}MB`,
+      external: `${(memoryUsage.external / 1024 / 1024).toFixed(2)}MB`,
+      rss: `${(memoryUsage.rss / 1024 / 1024).toFixed(2)}MB`
+    },
+    cpu: {
+      user: `${(cpuUsage.user / 1000000).toFixed(2)}s`,
+      system: `${(cpuUsage.system / 1000000).toFixed(2)}s`
+    },
+    uptime: `${process.uptime().toFixed(2)}s`,
+    version: process.version,
+    platform: process.platform,
+    arch: process.arch
+  });
 });
 
 // Only one default export allowed per file. Remove duplicate.
