@@ -1,0 +1,112 @@
+Nice 🚀 — Phase 3 it is. Based on where we left off in Phase 2 (wallet integration, balances, transactions, DAO treasury, risk checks, gas estimation), Phase 3 will take **Mtaa DAO** into a real **financial engine**. Here’s the breakdown:
+
+---
+
+## 🔹 Phase 3 Scope: Vaults, Token Expansion & Yield
+
+We’ll expand beyond basic CELO/cUSD flows.
+
+### 1. **Vault System (Deposit / Withdraw / Strategy Layer)**
+
+* **Vault contracts**: Smart contracts that accept CELO/cUSD deposits.
+* **User interface**: Deposit/withdraw modal in the frontend.
+* **Accounting**: Shares/receipt tokens issued to track deposits.
+* **Strategy hooks**: Vaults can auto-deploy assets into yield strategies later.
+
+👉 Example:
+
+* User deposits **100 cUSD**.
+* Vault mints **100 vaultShares** (like aChamaVault token).
+* Vault can then lend that cUSD to Moola or other Celo DeFi for yield.
+
+---
+
+### 2. **Token Expansion**
+
+* Add support for **ERC20-compatible tokens**:
+
+  * ✅ CELO
+  * ✅ cUSD (already done)
+  * ➕ cEUR
+  * ➕ USDT (TRC-20 bridged via Celo’s Optics or Wormhole)
+  * ➕ Any custom community token (future “Mtaa Token”)
+
+👉 Add token registry in backend:
+
+```ts
+const supportedTokens = {
+  CELO: "0x471EcE3750Da237f93B8E339c536989b8978a438",
+  cUSD: "0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1",
+  cEUR: "0x10c892A6EC43a53E45a9D5ba3F7cFF4eD2E5b04B",
+  USDT: "0x...bridge-address",
+}
+```
+
+---
+
+### 3. **Staking / Yield Layer**
+
+* **Phase 3.1**: Integrate **Celo native staking** (CELO → validator groups).
+* **Phase 3.2**: Connect to **DeFi yield pools** (Moola Market, Ubeswap, Curve on Celo).
+* **Phase 3.3**: Allow DAO treasury to allocate % of assets into strategies.
+
+---
+
+### 4. **DAO Governance for Vaults**
+
+* Members vote on:
+
+  * Which vault strategies are active.
+  * What % of treasury goes into each vault.
+  * Whether to whitelist new tokens (e.g., USDT).
+
+👉 Example: Treasury DAO vote:
+
+* “Deploy 20% of cUSD treasury into Moola lending vault.”
+* “Whitelist cEUR for deposits.”
+
+---
+
+### 5. **UI/UX Additions**
+
+* **Vaults Dashboard**:
+
+  * My Deposits (with USD value)
+  * APY %
+  * Withdraw button
+* **Treasury Vaults Page**: DAO-level view of vault allocations.
+* **Governance Tab**: New proposals to expand vaults, add tokens, or adjust allocations.
+
+---
+
+### 6. **Risk & Compliance**
+
+* **Risk scoring extended to vaults**:
+
+  * Flagging risky assets (e.g., low-liquidity tokens).
+  * Capping single-user deposits to prevent exploits.
+* **Basic AML guardrails** (limit suspiciously high inflows).
+
+---
+
+## 🔹 Deliverables for Phase 3
+
+1. **Vault Smart Contract** (Solidity, upgradeable).
+2. **Backend Vault Service**:
+
+   * Handle deposits/withdrawals.
+   * Fetch APY data from strategies.
+   * Track vault balances + share tokens.
+3. **Frontend Vault UI** (React + Tailwind + shadcn/ui):
+
+   * Deposit modal.
+   * Withdraw modal.
+   * Vault dashboard.
+4. **DAO Governance Upgrade**: Voting on vault allocations + new tokens.
+5. **Extended Token Registry**: cEUR, USDT, custom tokens.
+
+---
+
+⚡ My suggestion: we start with **Vault MVP** (just deposit/withdraw CELO + cUSD, no yield yet). Once stable, we extend to **token expansion** and **staking/yield**.
+
+👉 Do you want me to sketch the **Vault Smart Contract (MVP, CELO + cUSD deposits/withdrawals)** first, or the **backend service layer (Vault API + accounting)**?

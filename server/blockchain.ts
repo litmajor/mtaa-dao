@@ -3,28 +3,41 @@ import { ethers } from "ethers";
 // If your TypeScript or Node.js setup does not support 'assert', use the following instead:
 // import MaonoVaultArtifact = require("../contracts/MaonoVault.json");
 import MaonoVaultArtifact from "../contracts/MaonoVault.json" with { type: "json" };
+import { TokenService, tokenService } from './services/tokenService';
+import { TokenRegistry } from '../shared/tokenRegistry';
 
-// Standard ERC-20 transfer function for cUSD
-export async function sendCUSD(to: string, amount: string | bigint): Promise<string> {
-  if (!signer) throw new Error("No manager signer configured");
-  // Convert amount to BigInt if needed
-  const value = typeof amount === 'string' ? BigInt(amount) : amount;
-  const tx = await cUSD.transfer(to, value);
-  await tx.wait();
-  return tx.hash;
+// Enhanced multi-token transfer function for Phase 3
+export async function sendToken(
+  symbol: string,
+  to: string,
+  amount: string | bigint
+): Promise<string> {
+  let amountStr: string;
+  
+  if (typeof amount === 'bigint') {
+    // Treat bigint as base units, need to get correct decimals
+    const token = TokenRegistry.getToken(symbol);
+    const decimals = token?.decimals || 18;
+    amountStr = ethers.formatUnits(amount, decimals);
+  } else {
+    amountStr = amount; // Already in human-readable units
+  }
+  
+  return tokenService.sendToken(symbol, to, amountStr);
 }
 
-
+// Legacy cUSD function for backward compatibility
+export async function sendCUSD(to: string, amount: string | bigint): Promise<string> {
+  return sendToken('cUSD', to, amount);
+}
 
 // --- Configuration ---
 const Maono_CONTRACT_ADDRESS = process.env.MAONO_CONTRACT_ADDRESS || ""; // Set in env
-const CUSD_CONTRACT_ADDRESS = process.env.CUSD_CONTRACT_ADDRESS || "";
-const PROVIDER_URL = process.env.RPC_URL || "http://localhost:8545";
-const PRIVATE_KEY = process.env.MANAGER_PRIVATE_KEY || ""; // For manager actions
+const PROVIDER_URL = process.env.RPC_URL || "https://alfajores-forno.celo-testnet.org";
 
-// --- Provider & Signer ---
-const provider = new ethers.JsonRpcProvider(PROVIDER_URL);
-const signer = PRIVATE_KEY ? new ethers.Wallet(PRIVATE_KEY, provider) : undefined;
+// --- Use tokenService provider and signer to avoid duplication ---
+const provider = tokenService.provider;
+const signer = tokenService.signer;
 
 // --- Contract Instances ---
 const maonoVault = new ethers.Contract(
@@ -32,11 +45,9 @@ const maonoVault = new ethers.Contract(
   MaonoVaultArtifact.abi,
   signer || provider
 );
-const cUSD = new ethers.Contract(
-  CUSD_CONTRACT_ADDRESS,
-  MaonoVaultArtifact.abi,
-  signer || provider
-);
+
+// Enhanced token service access
+export { tokenService };
 
 // --- Service Methods ---
 export const MaonoVaultService = {
