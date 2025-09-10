@@ -306,6 +306,16 @@ function App() {
                     <Dashboard />
                   </ProtectedRoute>
                 </Route>
+                <Route path="/checkout">
+                  <ProtectedRoute>
+                    <Checkout />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/subscribe">
+                  <ProtectedRoute>
+                    <Subscribe />
+                  </ProtectedRoute>
+                </Route>
 
                 {/* Static pages */}
                 <Route path="/about">
