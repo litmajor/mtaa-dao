@@ -1,6 +1,11 @@
 import { Request, Response } from 'express';
 import { vaultService } from '../services/vaultService';
 import { TokenRegistry } from '../../shared/tokenRegistry';
+import { vaultValidation } from '../middleware/validation';
+import { asyncHandler } from '../middleware/errorHandler';
+import { Logger } from '../utils/logger';
+
+const logger = new Logger('vault-api');
 
 // Create a new vault
 export async function createVaultHandler(req: Request, res: Response) {
@@ -261,29 +266,52 @@ export async function assessVaultRiskHandler(req: Request, res: Response) {
 }
 
 // Get vault transactions
-export async function getVaultTransactionsHandler(req: Request, res: Response) {
-  try {
-    const userId = req.user?.id;
-    const { vaultId } = req.params;
-    const { page = '1', limit = '20' } = req.query;
+export const getVaultTransactionsHandler = [
+  vaultValidation.getVaultTransactions,
+  asyncHandler(async (req: Request, res: Response) => {
+    const requestLogger = logger.child({
+      requestId: req.headers['x-request-id'],
+      userId: req.user?.id,
+      vaultId: req.params.vaultId,
+    });
 
+    const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
+      requestLogger.warn('Unauthorized access attempt');
+      return res.status(401).json({ 
+        success: false,
+        error: {
+          message: 'Authentication required',
+          code: 'UNAUTHORIZED',
+          statusCode: 401,
+          timestamp: new Date().toISOString(),
+          path: req.path,
+          method: req.method,
+        }
+      });
     }
+
+    const { vaultId } = req.params;
+    const { page, limit } = req.query as { page?: number; limit?: number };
+
+    requestLogger.info('Fetching vault transactions', { page, limit });
 
     const transactions = await vaultService.getVaultTransactions(
       vaultId, 
       userId, 
-      parseInt(page as string), 
-      parseInt(limit as string)
+      page || 1, 
+      limit || 20
     );
 
-    res.json({ transactions });
-  } catch (error: any) {
-    console.error('Error fetching vault transactions:', error);
-    res.status(500).json({ error: error.message || 'Failed to fetch vault transactions' });
-  }
-}
+    requestLogger.info('Vault transactions fetched successfully', { count: transactions.length });
+
+    res.json({ 
+      success: true,
+      data: { transactions },
+      message: 'Vault transactions fetched successfully'
+    });
+  })
+];
 
 // Get supported tokens
 export async function getSupportedTokensHandler(req: Request, res: Response) {
