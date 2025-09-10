@@ -2,7 +2,7 @@
 import { ethers } from "ethers";
 // If your TypeScript or Node.js setup does not support 'assert', use the following instead:
 // import MaonoVaultArtifact = require("../contracts/MaonoVault.json");
-import MaonoVaultArtifact from "../contracts/MaonoVault.json" assert { type: "json" };
+import MaonoVaultArtifact from "../contracts/MaonoVault.json" with { type: "json" };
 
 // Standard ERC-20 transfer function for cUSD
 export async function sendCUSD(to: string, amount: string | bigint): Promise<string> {
