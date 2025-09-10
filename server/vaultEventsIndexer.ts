@@ -1,5 +1,6 @@
 import { MaonoVaultService } from "./blockchain";
-import { db, vaultTransactions } from './db'; // Assuming db and vaultTransactions are available from a db module
+import { db } from './db';
+import { vaultTransactions } from '../shared/schema';
 
 // Define a class for better event management
 class VaultEventIndexer {
@@ -371,7 +372,7 @@ export async function startVaultEventIndexer() {
 }
 
 // Start indexer if called directly
-if (require.main === module) {
+if (import.meta.url === new URL(process.argv[1], 'file://').href) {
   vaultEventIndexer.start();
 
   // Graceful shutdown
