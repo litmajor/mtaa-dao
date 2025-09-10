@@ -73,6 +73,14 @@ export type WalletTransaction = typeof walletTransactions.$inferSelect;
 export interface IStorage {
   getUserByEmail(email: string): Promise<any>;
   getUserByPhone(phone: string): Promise<any>;
+  
+  // Phase 3: Enhanced Vault Operations (optional for now)
+  createVault?(request: any): Promise<Vault>;
+  depositToken?(request: any): Promise<any>;
+  withdrawToken?(request: any): Promise<any>;
+  getVaultPortfolio?(vaultId: string): Promise<any>;
+  performRiskAssessment?(vaultId: string): Promise<void>;
+  rebalanceVault?(vaultId: string): Promise<void>;
   createWalletTransaction(data: WalletTransactionInput): Promise<any>;
   setDaoInviteCode(daoId: string, code: string): Promise<any>;
   getDaoByInviteCode(code: string): Promise<any>;
