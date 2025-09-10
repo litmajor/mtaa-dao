@@ -214,8 +214,8 @@ export function registerRoutes(app: Express): void {
     throw new Error("JWT_SECRET environment variable is required");
   }
 
-  // --- Notifications API ---
-  app.get('/api/notifications', isAuthenticated, async (req: Request, res: Response) => {
+  // --- Additional notification endpoint ---
+  app.get('/api/notifications/list', isAuthenticated, async (req: Request, res: Response) => {
     try {
       const { limit = 10, offset = 0, read, userId } = req.query;
       const authUserId = (req.user as any).claims.sub;
@@ -250,8 +250,8 @@ export function registerRoutes(app: Express): void {
       if (!membership || (membership.role !== 'admin' && membership.role !== 'moderator')) {
         return res.status(403).json({ message: 'Admin or moderator role required to view task history' });
       }
-  // FIX: No valid method exists, commenting out this block
-  // const history = await storage.getTaskHistory(req.params.id, Number(limit), Number(offset));
+      // FIX: No valid method exists, returning empty history for now
+      const history: any[] = [];
       res.json({ history, total: history.length });
     } catch (err) {
       throw new Error(`Failed to fetch task history: ${err instanceof Error ? err.message : String(err)}`);
@@ -1408,13 +1408,7 @@ export function registerRoutes(app: Express): void {
   });
 });
 
-  // --- Catch-all 404 ---
-  app.use((req: Request, res: Response) => {
-    res.status(404).json({ message: 'Not Found' });
-  });
-
-  // Error handler middleware
-  app.use(errorHandler);
+  // Note: Global 404 and error handlers are registered in server/index.ts after Vite middleware
 
   // Use payment status routes
   app.use('/api/payments/mpesa', mpesaStatusRoutes);

@@ -5,7 +5,7 @@ import { Request, Response } from 'express';
 // Different rate limits for different endpoints
 export const generalRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: process.env.NODE_ENV === 'development' ? 1000 : 100, // Higher limit for development
   message: {
     error: 'Too many requests from this IP, please try again later.',
     retryAfter: 15 * 60
