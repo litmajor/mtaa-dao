@@ -114,11 +114,12 @@ router.get('/preferences', isAuthenticated, async (req: Request, res: Response) 
 router.put('/preferences', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const userId = (req.user as any).claims.sub;
-    const { emailNotifications, pushNotifications, daoUpdates, proposalUpdates, taskUpdates } = req.body;
+    const { emailNotifications, pushNotifications, telegramNotifications, daoUpdates, proposalUpdates, taskUpdates } = req.body;
     
     const preferences = await storage.updateUserNotificationPreferences(userId, {
       emailNotifications: emailNotifications ?? true,
       pushNotifications: pushNotifications ?? true,
+      telegramNotifications: telegramNotifications ?? false,
       daoUpdates: daoUpdates ?? true,
       proposalUpdates: proposalUpdates ?? true,
       taskUpdates: taskUpdates ?? true,
@@ -128,6 +129,40 @@ router.put('/preferences', isAuthenticated, async (req: Request, res: Response) 
   } catch (err) {
     res.status(500).json({ 
       error: 'Failed to update notification preferences',
+      message: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
+
+// Link Telegram account
+router.post('/telegram/link', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const userId = (req.user as any).claims.sub;
+    const { telegramId, chatId, username } = req.body;
+    
+    await storage.updateUserTelegramInfo(userId, { telegramId, chatId, username });
+    
+    res.json({ message: 'Telegram account linked successfully' });
+  } catch (err) {
+    res.status(500).json({ 
+      error: 'Failed to link Telegram account',
+      message: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
+
+// Get Telegram bot info
+router.get('/telegram/bot-info', async (req: Request, res: Response) => {
+  try {
+    const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'mtaadao_bot';
+    
+    res.json({ 
+      botUsername,
+      linkInstructions: `To link your Telegram account, send a message to @${botUsername} with the command: /link ${(req.user as any)?.claims?.sub || 'USER_ID'}`
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      error: 'Failed to get bot info',
       message: err instanceof Error ? err.message : String(err)
     });
   }

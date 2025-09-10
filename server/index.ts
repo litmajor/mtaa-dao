@@ -27,6 +27,10 @@ import { vaultEventIndexer } from './vaultEventsIndexer';
 import { vaultAutomationService } from './vaultAutomation';
 // Import activityTracker (assuming it's defined in ./monitoring/activityTracker)
 import { activityTracker } from './monitoring/activityTracker'; 
+import healthRoutes from './routes/health';
+import analyticsRoutes from './routes/analytics';
+import notificationRoutes from './routes/notifications';
+import sseRoutes from './routes/sse';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -180,6 +184,10 @@ app.use((req, res, next) => {
         res.sendFile(path.join(__dirname, "../../dist/public", "index.html"));
       });
     }
+
+    // Add API routes
+    app.use('/api/notifications', notificationRoutes);
+    app.use('/api/sse', sseRoutes);
 
     // 404 handler (must be after all routes and frontend serving)
     app.use(notFoundHandler);

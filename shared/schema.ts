@@ -51,7 +51,7 @@ export const tasks = pgTable("tasks", {
   proofUrl: text("proof_url"),
   verificationNotes: text("verification_notes"),
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(), 
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export type Task = typeof tasks.$inferSelect;
@@ -62,7 +62,7 @@ import { IsRestoringProvider } from "@tanstack/react-query";
 
 // User storage table (required for Replit Auth)
 export const users = pgTable("users", {
-  id: varchar("id").primaryKey().notNull(),
+  id: varchar("id").primaryKey(),
   username: varchar("username").unique(),
   password: varchar("password").notNull(),
   email: varchar("email").unique(),
@@ -95,6 +95,9 @@ export const users = pgTable("users", {
   banReason: text("ban_reason"),
   isSuperUser: boolean("is_super_user").default(false), // for superuser dashboard access
   votingPower: decimal("voting_power", { precision: 10, scale: 2 }).default("1.0"), // for weighted voting
+  telegramId: varchar("telegram_id"),
+  telegramChatId: varchar("telegram_chat_id"),
+  telegramUsername: varchar("telegram_username"),
 });
 
 // DAOs table
@@ -331,7 +334,7 @@ export const vaults = pgTable("vaults", {
   lockDuration: integer("lock_duration"), // in days for locked savings
   lockedUntil: timestamp("locked_until"), // when locked savings unlocks
   interestRate: decimal("interest_rate", { precision: 5, scale: 4 }).default("0"), // annual interest rate for savings
-  
+
   // Phase 3 enhancements
   isActive: boolean("is_active").default(true),
   riskLevel: varchar("risk_level").default("low"), // low, medium, high
@@ -341,7 +344,7 @@ export const vaults = pgTable("vaults", {
   yieldStrategy: varchar("yield_strategy"), // references YIELD_STRATEGIES
   performanceFee: decimal("performance_fee", { precision: 5, scale: 4 }).default("0.1"), // 10% default
   managementFee: decimal("management_fee", { precision: 5, scale: 4 }).default("0.02"), // 2% annual default
-  
+
   updatedAt: timestamp("updated_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -563,7 +566,7 @@ export const notificationHistory = pgTable("notification_history", {
   createdAt: timestamp("created_at").defaultNow(),
   readAt: timestamp("read_at"),
 });
-  
+
 // Recent DAO type for dashboard
 export type RecentDao = {
   id: string;
@@ -1068,4 +1071,3 @@ export const insertVaultStrategyAllocationSchema = createInsertSchema(vaultStrat
 export const insertVaultGovernanceProposalSchema = createInsertSchema(vaultGovernanceProposals);
 
 // Export all types
-
