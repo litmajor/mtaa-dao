@@ -1,6 +1,6 @@
 import React, { lazy, Suspense } from 'react';
 import { HelmetProvider } from 'react-helmet-async';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Router, Route, Switch, Redirect } from 'wouter';
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from './pages/hooks/useAuth';
 import { PageLoading } from './components/ui/page-loading';
@@ -61,7 +61,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Redirect to="/login" />;
   }
 
   return <>{children}</>;
@@ -76,7 +76,7 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }
 
   if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />;
+    return <Redirect to="/dashboard" />;
   }
 
   return <>{children}</>;
@@ -106,218 +106,234 @@ function App() {
             {isAuthenticated && <Navigation />}
 
             <main id="main-content" className={isAuthenticated ? "pb-16 lg:pb-0" : ""} role="main">
-              <Routes>
+              <Switch>
                 {/* Public routes */}
-                <Route path="/login" element={
+                <Route path="/login">
                   <PublicRoute>
                     <Login />
                   </PublicRoute>
-                } />
-                <Route path="/register" element={
+                </Route>
+                <Route path="/register">
                   <PublicRoute>
                     <Register />
                   </PublicRoute>
-                } />
-                <Route path="/forgot-password" element={
+                </Route>
+                <Route path="/forgot-password">
                   <PublicRoute>
-                  <ForgotPassword />
-                </PublicRoute>
-              } />
-              <Route path="/reset-password" element={
-                <PublicRoute>
-                  <ResetPassword />
-                </PublicRoute>
-              } />
+                    <ForgotPassword />
+                  </PublicRoute>
+                </Route>
+                <Route path="/reset-password">
+                  <PublicRoute>
+                    <ResetPassword />
+                  </PublicRoute>
+                </Route>
 
-              {/* Landing page - only shown if not authenticated */}
-              <Route path="/" element={
-                isAuthenticated ? <Navigate to="/dashboard" replace /> : <Landing />
-              } />
+                {/* Landing page - only shown if not authenticated */}
+                <Route path="/">
+                  {isAuthenticated ? <Redirect to="/dashboard" /> : <Landing />}
+                </Route>
 
-              {/* Root redirect for authenticated users */}
-              <Route path="/home" element={
-                <Navigate to="/dashboard" replace />
-              } />
+                {/* Root redirect for authenticated users */}
+                <Route path="/home">
+                  <Redirect to="/dashboard" />
+                </Route>
 
-              {/* Protected routes */}
-              <Route path="/create-dao" element={
-                <ProtectedRoute>
-                  <Suspense fallback={<PageLoading message="Loading Create DAO..." />}>
-                    <CreateDaoLazy />
-                  </Suspense>
-                </ProtectedRoute>
-              } />
-// ...existing code...
-              <Route path="/proposals" element={
-                <ProtectedRoute>
-                  <Proposals />
-                </ProtectedRoute>
-              } />
-              <Route path="/proposals/:id" element={
-                <ProtectedRoute>
-                  <ProposalDetail />
-                </ProtectedRoute>
-              } />
-              <Route path="/vault" element={
-                <ProtectedRoute>
-                  <Vault />
-                </ProtectedRoute>
-              } />
-              <Route path="/profile" element={
-                <ProtectedRoute>
-                  <Profile />
-                </ProtectedRoute>
-              } />
-              <Route path="/daos" element={
-                <ProtectedRoute>
-                  <DAOs />
-                </ProtectedRoute>
-              } />
-              <Route path="/wallet" element={
-                <ProtectedRoute>
-                  <Wallet />
-                </ProtectedRoute>
-              } />
-              <Route path="/wallet/dashboard" element={
-                <ProtectedRoute>
-                  <WalletDashboard />
-                </ProtectedRoute>
-              } />
-              <Route path="/wallet/batch-transfer" element={
-                <ProtectedRoute>
-                  <BatchTransfer />
-                </ProtectedRoute>
-              } />
-              <Route path="/wallet/multisig" element={
-                <ProtectedRoute>
-                  <Multisig />
-                </ProtectedRoute>
-              } />
-              <Route path="/wallet/dao-treasury" element={
-                <ProtectedRoute>
-                  <DaoTreasury />
-                </ProtectedRoute>
-              } />
-              <Route path="/referrals" element={
-                <ProtectedRoute>
-                  <Referrals />
-                </ProtectedRoute>
-              } />
-              <Route path="/maonovault" element={
-                <ProtectedRoute>
-                  <MaonoVaultWeb3Page />
-                </ProtectedRoute>
-              } />
-              <Route path="/settings" element={
-                <ProtectedRoute>
-                  <Settings />
-                </ProtectedRoute>
-              } />
-              <Route path="/analytics" element={
-                <ProtectedRoute>
-                  <AnalyticsPage />
-                </ProtectedRoute>
-              } />
-              <Route path="/tasks" element={
-                <ProtectedRoute>
-                  <TaskBountyBoardPage />
-                </ProtectedRoute>
-              } />
-              <Route path="/rewards" element={
-                <ProtectedRoute>
-                  <RewardsHub />
-                </ProtectedRoute>
-              } />
+                {/* Protected routes */}
+                <Route path="/create-dao">
+                  <ProtectedRoute>
+                    <Suspense fallback={<PageLoading message="Loading Create DAO..." />}>
+                      <CreateDaoLazy />
+                    </Suspense>
+                  </ProtectedRoute>
+                </Route>
+                
+                <Route path="/proposals">
+                  <ProtectedRoute>
+                    <Proposals />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/proposals/:id">
+                  <ProtectedRoute>
+                    <ProposalDetail />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/vault">
+                  <ProtectedRoute>
+                    <Vault />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/profile">
+                  <ProtectedRoute>
+                    <Profile />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/daos">
+                  <ProtectedRoute>
+                    <DAOs />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/wallet">
+                  <ProtectedRoute>
+                    <Wallet />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/wallet/dashboard">
+                  <ProtectedRoute>
+                    <WalletDashboard />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/wallet/batch-transfer">
+                  <ProtectedRoute>
+                    <BatchTransfer />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/wallet/multisig">
+                  <ProtectedRoute>
+                    <Multisig />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/wallet/dao-treasury">
+                  <ProtectedRoute>
+                    <DaoTreasury />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/referrals">
+                  <ProtectedRoute>
+                    <Referrals />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/maonovault">
+                  <ProtectedRoute>
+                    <MaonoVaultWeb3Page />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/settings">
+                  <ProtectedRoute>
+                    <Settings />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/analytics">
+                  <ProtectedRoute>
+                    <AnalyticsPage />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/tasks">
+                  <ProtectedRoute>
+                    <TaskBountyBoardPage />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/rewards">
+                  <ProtectedRoute>
+                    <RewardsHub />
+                  </ProtectedRoute>
+                </Route>
 
-              {/* DAO routes */}
-              <Route path="/dao/settings" element={
-                <ProtectedRoute>
-                  <DaoSettings />
-                </ProtectedRoute>
-              } />
-              <Route path="/dao/treasury" element={
-                <ProtectedRoute>
-                  <Treasury />
-                </ProtectedRoute>
-              } />
-              <Route path="/dao/treasury-overview" element={
-                <ProtectedRoute>
-                  <DaoTreasuryOverview />
-                </ProtectedRoute>
-              } />
-              <Route path="/dao/contributors" element={
-                <ProtectedRoute>
-                  <ContributorList />
-                </ProtectedRoute>
-              } />
-              <Route path="/dao/analytics" element={
-                <ProtectedRoute>
-                  <CommunityVaultAnalytics />
-                </ProtectedRoute>
-              } />
-              <Route path="/dao/disbursements" element={
-                <ProtectedRoute>
-                  <Disbursements />
-                </ProtectedRoute>
-              } />
+                {/* DAO routes */}
+                <Route path="/dao/settings">
+                  <ProtectedRoute>
+                    <DaoSettings />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/dao/treasury">
+                  <ProtectedRoute>
+                    <Treasury />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/dao/treasury-overview">
+                  <ProtectedRoute>
+                    <DaoTreasuryOverview />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/dao/contributors">
+                  <ProtectedRoute>
+                    <ContributorList />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/dao/analytics">
+                  <ProtectedRoute>
+                    <CommunityVaultAnalytics />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/dao/disbursements">
+                  <ProtectedRoute>
+                    <Disbursements />
+                  </ProtectedRoute>
+                </Route>
 
-              {/* Admin routes */}
-              <Route path="/superuser" element={
-                <ProtectedRoute>
-                  <SuperUserDashboard />
-                </ProtectedRoute>
-              } />
-              <Route path="/admin/billing" element={
-                <ProtectedRoute>
-                  <AdminBillingDashboard />
-                </ProtectedRoute>
-              } />
-              <Route path="/admin/payments" element={
-                <ProtectedRoute>
-                  <PaymentReconciliation />
-                </ProtectedRoute>
-              } />
+                {/* Admin routes */}
+                <Route path="/superuser">
+                  <ProtectedRoute>
+                    <SuperUserDashboard />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/admin/billing">
+                  <ProtectedRoute>
+                    <AdminBillingDashboard />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/admin/payments">
+                  <ProtectedRoute>
+                    <PaymentReconciliation />
+                  </ProtectedRoute>
+                </Route>
 
-              {/* Special routes */}
-              <Route path="/architect-setup" element={<ArchitectSetupPage />} />
-              <Route path="/pricing" element={<PricingPage />} />
-              <Route path="/wallet-setup" element={<WalletSetupPage />} />
-              <Route path="/success-stories" element={<SuccessStories />} />
-              <Route path="/leaderboard" element={<ReputationLeaderboard />} />
-              <Route path="/minipay" element={<MiniPayDemo />} />
-              <Route path="/success-stories" element={<SuccessStories />} />
-              <Route path="/pricing" element={<PricingPage />} />
-              <Route path="*" element={<NotFound />} />
+                {/* Special routes */}
+                <Route path="/architect-setup">
+                  <ArchitectSetupPage />
+                </Route>
+                <Route path="/pricing">
+                  <PricingPage />
+                </Route>
+                <Route path="/wallet-setup">
+                  <WalletSetupPage />
+                </Route>
+                <Route path="/success-stories">
+                  <SuccessStories />
+                </Route>
+                <Route path="/leaderboard">
+                  <ReputationLeaderboard />
+                </Route>
+                <Route path="/minipay">
+                  <MiniPayDemo />
+                </Route>
+                <Route path="/dashboard">
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                </Route>
 
-              {/* Static pages */}
-              <Route path="/about" element={
-                <div className="p-8 max-w-4xl mx-auto">
-                  <h1 className="text-3xl font-bold mb-6">About Mtaa DAO</h1>
-                  <p className="text-gray-600">Building decentralized community governance and finance solutions.</p>
-                </div>
-              } />
-              <Route path="/help" element={
-                <div className="p-8 max-w-4xl mx-auto">
-                  <h1 className="text-3xl font-bold mb-6">Help & Support</h1>
-                  <p className="text-gray-600">Get help with using Mtaa DAO platform.</p>
-                </div>
-              } />
-              <Route path="/faq" element={
-                <div className="p-8 max-w-4xl mx-auto">
-                  <h1 className="text-3xl font-bold mb-6">Frequently Asked Questions</h1>
-                  <p className="text-gray-600">Common questions about Mtaa DAO.</p>
-                </div>
-              } />
-              <Route path="/contact" element={
-                <div className="p-8 max-w-4xl mx-auto">
-                  <h1 className="text-3xl font-bold mb-6">Contact Us</h1>
-                  <p className="text-gray-600">Get in touch with the Mtaa DAO team.</p>
-                </div>
-              } />
+                {/* Static pages */}
+                <Route path="/about">
+                  <div className="p-8 max-w-4xl mx-auto">
+                    <h1 className="text-3xl font-bold mb-6">About Mtaa DAO</h1>
+                    <p className="text-gray-600">Building decentralized community governance and finance solutions.</p>
+                  </div>
+                </Route>
+                <Route path="/help">
+                  <div className="p-8 max-w-4xl mx-auto">
+                    <h1 className="text-3xl font-bold mb-6">Help & Support</h1>
+                    <p className="text-gray-600">Get help with using Mtaa DAO platform.</p>
+                  </div>
+                </Route>
+                <Route path="/faq">
+                  <div className="p-8 max-w-4xl mx-auto">
+                    <h1 className="text-3xl font-bold mb-6">Frequently Asked Questions</h1>
+                    <p className="text-gray-600">Common questions about Mtaa DAO.</p>
+                  </div>
+                </Route>
+                <Route path="/contact">
+                  <div className="p-8 max-w-4xl mx-auto">
+                    <h1 className="text-3xl font-bold mb-6">Contact Us</h1>
+                    <p className="text-gray-600">Get in touch with the Mtaa DAO team.</p>
+                  </div>
+                </Route>
 
-              {/* Catch-all for 404s */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+                {/* Catch-all for 404s */}
+                <Route path="/:rest*">
+                  <NotFound />
+                </Route>
+              </Switch>
           </main>
 
           <MobileNav />
