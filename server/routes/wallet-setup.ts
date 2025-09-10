@@ -1,4 +1,3 @@
-
 import express from 'express';
 import { WalletManager, EnhancedAgentWallet, NetworkConfig } from '../agent_wallet';
 import { db } from '../storage';
@@ -12,7 +11,7 @@ const router = express.Router();
 router.post('/create-wallet', async (req, res) => {
   try {
     const { userId, currency = 'cUSD', initialGoal = 0 } = req.body;
-    
+
     if (!userId) {
       return res.status(400).json({ error: 'User ID is required' });
     }
@@ -25,14 +24,14 @@ router.post('/create-wallet', async (req, res) => {
       .limit(1);
 
     if (existingVaults.length > 0) {
-      return res.status(400).json({ 
-        error: 'User already has a wallet. Use initialize-additional-vault instead.' 
+      return res.status(400).json({
+        error: 'User already has a wallet. Use initialize-additional-vault instead.'
       });
     }
 
     // Generate new wallet
     const walletCredentials = WalletManager.createWallet();
-    
+
     // Create primary vault
     const primaryVault = await db.insert(vaults).values({
       userId,
@@ -82,7 +81,7 @@ router.post('/create-wallet', async (req, res) => {
 router.post('/initialize-additional-vault', async (req, res) => {
   try {
     const { userId, currency, monthlyGoal = 0, vaultType = 'savings' } = req.body;
-    
+
     if (!userId || !currency) {
       return res.status(400).json({ error: 'User ID and currency are required' });
     }
@@ -95,8 +94,8 @@ router.post('/initialize-additional-vault', async (req, res) => {
       .limit(1);
 
     if (!userVaults.length) {
-      return res.status(400).json({ 
-        error: 'User must have a primary wallet before creating additional vaults' 
+      return res.status(400).json({
+        error: 'User must have a primary wallet before creating additional vaults'
       });
     }
 
@@ -179,7 +178,7 @@ router.get('/user-vaults/:userId', async (req, res) => {
 router.post('/initialize-assets', async (req, res) => {
   try {
     const { userId, assets } = req.body;
-    
+
     if (!userId || !Array.isArray(assets)) {
       return res.status(400).json({ error: 'User ID and assets array are required' });
     }
@@ -201,7 +200,7 @@ router.post('/initialize-assets', async (req, res) => {
     // Initialize each asset as a separate vault
     for (const asset of assets) {
       const { currency, initialAmount = 0, monthlyGoal = 0 } = asset;
-      
+
       // Check if vault for this currency already exists
       const existingVault = await db
         .select()
@@ -279,7 +278,7 @@ router.post('/initialize-assets', async (req, res) => {
 router.post('/import-wallet', async (req, res) => {
   try {
     const { userId, privateKey, currency = 'cUSD' } = req.body;
-    
+
     if (!userId || !privateKey) {
       return res.status(400).json({ error: 'User ID and private key are required' });
     }
@@ -325,7 +324,7 @@ router.post('/import-wallet', async (req, res) => {
     // Get actual balance from blockchain
     try {
       const actualBalance = await wallet.getBalanceEth();
-      
+
       // Update vault with actual balance
       await db
         .update(vaults)
