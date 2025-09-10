@@ -51,7 +51,12 @@ app.use(express.json({
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // CORS Configuration
-app.use(cors(corsConfig));
+app.use(cors({
+  origin: [env.FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3000'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+}));
 
 // Request logging middleware (before other middleware)
 app.use(requestLogger);
