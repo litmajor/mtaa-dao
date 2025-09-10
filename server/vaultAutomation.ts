@@ -362,7 +362,7 @@ export async function automatePerformanceFeeDistribution(profit: bigint) {
 }
 
 // Start automation service if called directly
-if (require.main === module) {
+if (import.meta.url === new URL(process.argv[1], 'file://').href) {
   vaultAutomationService.start();
   
   // Graceful shutdown
