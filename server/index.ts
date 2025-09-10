@@ -23,6 +23,8 @@ import {
 import { logger, requestLogger, logStartup } from './utils/logger';
 import { metricsCollector } from './monitoring/metricsCollector';
 import { ProposalExecutionService } from './proposalExecutionService';
+import { vaultEventIndexer } from './vaultEventsIndexer';
+import { vaultAutomationService } from './vaultAutomation';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -197,6 +199,17 @@ app.use((req, res, next) => {
       ProposalExecutionService.startScheduler();
       console.log('🔄 Proposal execution scheduler started');
     });
+
+    // Start blockchain automation services
+    console.log('🚀 Starting blockchain integration services...');
+
+    // Start vault event indexing
+    vaultEventIndexer.start();
+
+    // Start vault automation service  
+    vaultAutomationService.start();
+
+    console.log('✅ Blockchain services initialized successfully');
 
     // Graceful shutdown
     const gracefulShutdown = (signal: string) => {
