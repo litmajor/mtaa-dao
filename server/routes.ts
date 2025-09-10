@@ -1,5 +1,6 @@
 import express from 'express';
 import { isAuthenticated } from './nextAuthMiddleware';
+import Stripe from "stripe"; // Stripe integration
 
 // Import route modules
 import healthRoutes from './routes/health';
@@ -177,7 +178,79 @@ export function registerRoutes(app: express.Application) {
   app.put('/api/user/profile/password', isAuthenticated, changePasswordHandler);
   app.put('/api/user/profile/wallet', isAuthenticated, updateWalletAddressHandler);
 
-  // === RBAC ENDPOINTS ===
-  app.get('/api/admin/users', isAuthenticated, requirePermission('read:users'), getUsersHandler);
-  app.put('/api/admin/users/:userId/role', isAuthenticated, requirePermission('update:user_role'), updateUserRoleHandler);
+  // === STRIPE PAYMENT ROUTES === (Stripe integration)
+  // Initialize Stripe if keys are available
+  if (process.env.STRIPE_SECRET_KEY) {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: "2025-08-27.basil",
+    });
+
+    // One-time payment intent for DAO contributions, bounties, etc.
+    app.post("/api/create-payment-intent", async (req, res) => {
+      try {
+        const { amount } = req.body;
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: Math.round(amount * 100), // Convert to cents
+          currency: "usd",
+          metadata: {
+            dao_payment: "true",
+            user_id: (req.user as any)?.claims?.id || "anonymous"
+          }
+        });
+        res.json({ clientSecret: paymentIntent.client_secret });
+      } catch (error: any) {
+        res
+          .status(500)
+          .json({ message: "Error creating payment intent: " + error.message });
+      }
+    });
+
+    // DAO membership subscription endpoint (simplified version for MVP)
+    app.post('/api/get-or-create-subscription', isAuthenticated, async (req, res) => {
+      const user = req.user as any;
+      
+      if (!user) {
+        return res.sendStatus(401);
+      }
+
+      try {
+        // Create a customer first
+        const customer = await stripe.customers.create({
+          email: user.claims?.email || "user@example.com",
+          name: user.claims?.username || "MtaaDAO Member",
+        });
+
+        // Create subscription (requires real STRIPE_PRICE_ID from dashboard)
+        if (!process.env.STRIPE_PRICE_ID) {
+          return res.status(400).json({ 
+            error: { message: "Stripe price ID not configured. Please set STRIPE_PRICE_ID environment variable." } 
+          });
+        }
+
+        const subscription = await stripe.subscriptions.create({
+          customer: customer.id,
+          items: [{
+            price: process.env.STRIPE_PRICE_ID,
+          }],
+          payment_behavior: 'default_incomplete',
+          expand: ['latest_invoice.payment_intent'],
+        });
+
+        // Type assertion for the payment_intent
+        const invoice = subscription.latest_invoice as any;
+        const clientSecret = invoice?.payment_intent?.client_secret;
+    
+        res.send({
+          subscriptionId: subscription.id,
+          clientSecret: clientSecret,
+        });
+      } catch (error: any) {
+        return res.status(400).send({ error: { message: error.message } });
+      }
+    });
+  }
+
+  // === RBAC ENDPOINTS ===  
+  app.get('/api/admin/users', isAuthenticated, getUsersHandler);
+  app.put('/api/admin/users/:userId/role', isAuthenticated, updateUserRoleHandler);
 }

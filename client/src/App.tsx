@@ -52,6 +52,10 @@ import CommunityVaultAnalytics from './pages/dao/community_vault_analytics';
 import Disbursements from './pages/dao/disbursements';
 import Treasury from './pages/dao/treasury';
 
+// Payment pages (Stripe integration)
+import Checkout from './pages/Checkout';
+import Subscribe from './pages/Subscribe';
+
 // Protected Route wrapper
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
