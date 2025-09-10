@@ -546,6 +546,68 @@ export class VaultService {
     });
   }
 
+  // Get user's vaults
+  async getUserVaults(userId: string, daoId?: string): Promise<Vault[]> {
+    if (daoId) {
+      // Get DAO vaults where user has membership
+      const membership = await db.query.daoMemberships.findFirst({
+        where: and(
+          eq(daoMemberships.daoId, daoId),
+          eq(daoMemberships.userId, userId),
+          eq(daoMemberships.status, 'approved')
+        )
+      });
+      
+      if (!membership || membership.isBanned) {
+        return [];
+      }
+
+      return await db.query.vaults.findMany({
+        where: eq(vaults.daoId, daoId)
+      });
+    } else {
+      // Get personal vaults
+      return await db.query.vaults.findMany({
+        where: eq(vaults.userId, userId)
+      });
+    }
+  }
+
+  // Get vault performance
+  async getVaultPerformance(vaultId: string, userId?: string): Promise<any> {
+    if (userId) {
+      const hasPermission = await this.checkVaultPermissions(vaultId, userId, 'view');
+      if (!hasPermission) {
+        throw new Error('Unauthorized: You do not have permission to view this vault performance');
+      }
+    }
+
+    return await db.query.vaultPerformance.findMany({
+      where: eq(vaultPerformance.vaultId, vaultId),
+      orderBy: [desc(vaultPerformance.createdAt)],
+      limit: 10
+    });
+  }
+
+  // Get vault transactions
+  async getVaultTransactions(vaultId: string, userId?: string, page: number = 1, limit: number = 20): Promise<VaultTransaction[]> {
+    if (userId) {
+      const hasPermission = await this.checkVaultPermissions(vaultId, userId, 'view');
+      if (!hasPermission) {
+        throw new Error('Unauthorized: You do not have permission to view this vault transactions');
+      }
+    }
+
+    const offset = (page - 1) * limit;
+    
+    return await db.query.vaultTransactions.findMany({
+      where: eq(vaultTransactions.vaultId, vaultId),
+      orderBy: [desc(vaultTransactions.createdAt)],
+      limit,
+      offset
+    });
+  }
+
   // Get vault portfolio summary with authorization check
   async getVaultPortfolio(vaultId: string, userId?: string): Promise<{
     vault: Vault;
@@ -597,7 +659,7 @@ export class VaultService {
   }
 
   // Helper methods
-  private async getVaultById(vaultId: string): Promise<Vault | null> {
+  async getVaultById(vaultId: string): Promise<Vault | null> {
     const result = await db.query.vaults.findFirst({
       where: eq(vaults.id, vaultId)
     });

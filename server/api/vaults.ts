@@ -1,431 +1,321 @@
-
 import { Request, Response } from 'express';
-import { VaultService } from '../services/vaultService';
-import { TokenService } from '../services/tokenService';
-import { db } from '../storage';
-import { vaults, daoMemberships } from '../../shared/schema';
-import { eq, and } from 'drizzle-orm';
-import { z } from 'zod';
+import { vaultService } from '../services/vaultService';
+import { TokenRegistry } from '../../shared/tokenRegistry';
 
-const vaultService = new VaultService();
-const tokenService = new TokenService();
-
-// Validation schemas
-const createVaultSchema = z.object({
-  name: z.string().min(1, 'Vault name is required'),
-  description: z.string().optional(),
-  type: z.enum(['personal', 'dao']),
-  daoId: z.string().optional(),
-  isPublic: z.boolean().default(false),
-  allowedTokens: z.array(z.string()).optional(),
-  lockPeriodDays: z.number().min(0).optional(),
-  yieldStrategy: z.string().optional()
-});
-
-const depositSchema = z.object({
-  tokenAddress: z.string().min(1, 'Token address is required'),
-  amount: z.string().min(1, 'Amount is required'),
-  fromAddress: z.string().min(1, 'From address is required')
-});
-
-const withdrawalSchema = z.object({
-  tokenAddress: z.string().min(1, 'Token address is required'),
-  amount: z.string().min(1, 'Amount is required'),
-  toAddress: z.string().min(1, 'To address is required'),
-  reason: z.string().optional()
-});
-
-const allocationSchema = z.object({
-  tokenAddress: z.string().min(1, 'Token address is required'),
-  strategyId: z.string().min(1, 'Strategy ID is required'),
-  amount: z.string().min(1, 'Amount is required')
-});
-
-// Middleware for vault access authorization
-async function authorizeVaultAccess(req: any, res: Response, next: any) {
-  try {
-    const { vaultId } = req.params;
-    const userId = req.user?.claims?.sub;
-
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const vault = await db.select().from(vaults).where(eq(vaults.id, vaultId)).limit(1);
-    if (!vault.length) {
-      return res.status(404).json({ error: 'Vault not found' });
-    }
-
-    const vaultData = vault[0];
-
-    // Check access permissions
-    if (vaultData.type === 'personal' && vaultData.userId !== userId) {
-      return res.status(403).json({ error: 'Access denied to personal vault' });
-    }
-
-    if (vaultData.type === 'dao') {
-      const membership = await db.select().from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, vaultData.daoId!),
-          eq(daoMemberships.userId, userId),
-          eq(daoMemberships.status, 'approved')
-        )).limit(1);
-
-      if (!membership.length) {
-        return res.status(403).json({ error: 'Access denied to DAO vault' });
-      }
-
-      req.membership = membership[0];
-    }
-
-    req.vault = vaultData;
-    next();
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-}
-
-// CREATE VAULT
+// Create a new vault
 export async function createVaultHandler(req: Request, res: Response) {
   try {
-    const userId = (req as any).user?.claims?.sub;
+    const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const validatedData = createVaultSchema.parse(req.body);
+    const {
+      name,
+      description,
+      daoId,
+      vaultType,
+      primaryCurrency,
+      yieldStrategy,
+      riskLevel,
+      minDeposit,
+      maxDeposit
+    } = req.body;
 
-    // For DAO vaults, verify membership
-    if (validatedData.type === 'dao' && validatedData.daoId) {
-      const membership = await db.select().from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, validatedData.daoId),
-          eq(daoMemberships.userId, userId),
-          eq(daoMemberships.status, 'approved')
-        )).limit(1);
-
-      if (!membership.length || !['admin', 'elder'].includes(membership[0].role || '')) {
-        return res.status(403).json({ error: 'Insufficient permissions to create DAO vault' });
-      }
+    if (!name || !primaryCurrency || !vaultType) {
+      return res.status(400).json({ 
+        error: 'Name, primary currency, and vault type are required' 
+      });
     }
 
     const vault = await vaultService.createVault({
-      name: validatedData.name,
-      description: validatedData.description,
-      type: validatedData.type,
-      userId: validatedData.type === 'personal' ? userId : undefined,
-      daoId: validatedData.daoId,
-      isPublic: validatedData.isPublic,
-      allowedTokens: validatedData.allowedTokens,
-      lockPeriodDays: validatedData.lockPeriodDays,
-      yieldStrategy: validatedData.yieldStrategy
+      name,
+      description,
+      userId: daoId ? undefined : userId,
+      daoId: daoId || undefined,
+      vaultType,
+      primaryCurrency,
+      yieldStrategy,
+      riskLevel,
+      minDeposit,
+      maxDeposit
     });
 
-    res.status(201).json({
-      success: true,
-      data: vault,
-      message: 'Vault created successfully'
-    });
+    res.json({ vault });
   } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Validation error', details: error.errors });
-    }
-    res.status(500).json({ error: error.message });
+    console.error('Error creating vault:', error);
+    res.status(500).json({ error: error.message || 'Failed to create vault' });
   }
 }
 
-// GET USER'S VAULTS
+// Get user's vaults
 export async function getUserVaultsHandler(req: Request, res: Response) {
   try {
-    const userId = (req as any).user?.claims?.sub;
+    const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const { type, includeDao = 'true' } = req.query;
+    const { daoId } = req.query;
 
-    const userVaults = await vaultService.getUserVaults(userId, {
-      type: type as 'personal' | 'dao' | undefined,
-      includeDao: includeDao === 'true'
-    });
+    // For now, we'll implement a simple query to get vaults
+    // This should be enhanced with proper filtering in the VaultService
+    const vaults = await vaultService.getUserVaults(userId, daoId as string);
 
-    res.json({
-      success: true,
-      data: userVaults
-    });
+    res.json({ vaults });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching vaults:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch vaults' });
   }
 }
 
-// GET VAULT DETAILS
+// Get specific vault details
 export async function getVaultHandler(req: Request, res: Response) {
   try {
+    const userId = req.user?.id;
     const { vaultId } = req.params;
-    const vault = (req as any).vault;
 
-    const vaultDetails = await vaultService.getVaultDetails(vaultId);
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
 
-    res.json({
-      success: true,
-      data: vaultDetails
-    });
+    const portfolio = await vaultService.getVaultPortfolio(vaultId, userId);
+
+    res.json(portfolio);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching vault:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch vault' });
   }
 }
 
-// DEPOSIT TO VAULT
+// Deposit to vault
 export async function depositToVaultHandler(req: Request, res: Response) {
   try {
+    const userId = req.user?.id;
     const { vaultId } = req.params;
-    const userId = (req as any).user?.claims?.sub;
-    const vault = (req as any).vault;
-    
-    const validatedData = depositSchema.parse(req.body);
+    const { tokenSymbol, amount, transactionHash } = req.body;
 
-    // Verify deposit permissions
-    if (vault.type === 'dao') {
-      const membership = (req as any).membership;
-      if (!membership || !['admin', 'elder', 'member'].includes(membership.role || '')) {
-        return res.status(403).json({ error: 'Insufficient permissions for deposit' });
-      }
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const result = await vaultService.deposit(
+    if (!tokenSymbol || !amount) {
+      return res.status(400).json({ 
+        error: 'Token symbol and amount are required' 
+      });
+    }
+
+    const transaction = await vaultService.depositToken({
       vaultId,
-      validatedData.tokenAddress,
-      validatedData.amount,
-      validatedData.fromAddress,
-      userId
-    );
-
-    res.json({
-      success: true,
-      data: result,
-      message: 'Deposit completed successfully'
+      userId,
+      tokenSymbol,
+      amount,
+      transactionHash
     });
+
+    res.json({ transaction });
   } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Validation error', details: error.errors });
-    }
-    res.status(500).json({ error: error.message });
+    console.error('Error depositing to vault:', error);
+    res.status(500).json({ error: error.message || 'Failed to deposit to vault' });
   }
 }
 
-// WITHDRAW FROM VAULT
+// Withdraw from vault
 export async function withdrawFromVaultHandler(req: Request, res: Response) {
   try {
+    const userId = req.user?.id;
     const { vaultId } = req.params;
-    const userId = (req as any).user?.claims?.sub;
-    const vault = (req as any).vault;
-    
-    const validatedData = withdrawalSchema.parse(req.body);
+    const { tokenSymbol, amount, transactionHash } = req.body;
 
-    // Verify withdrawal permissions
-    if (vault.type === 'dao') {
-      const membership = (req as any).membership;
-      if (!membership || !['admin', 'elder'].includes(membership.role || '')) {
-        return res.status(403).json({ error: 'Insufficient permissions for withdrawal' });
-      }
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const result = await vaultService.withdraw(
+    if (!tokenSymbol || !amount) {
+      return res.status(400).json({ 
+        error: 'Token symbol and amount are required' 
+      });
+    }
+
+    const transaction = await vaultService.withdrawToken({
       vaultId,
-      validatedData.tokenAddress,
-      validatedData.amount,
-      validatedData.toAddress,
       userId,
-      validatedData.reason
-    );
-
-    res.json({
-      success: true,
-      data: result,
-      message: 'Withdrawal completed successfully'
+      tokenSymbol,
+      amount,
+      transactionHash
     });
+
+    res.json({ transaction });
   } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Validation error', details: error.errors });
-    }
-    res.status(500).json({ error: error.message });
+    console.error('Error withdrawing from vault:', error);
+    res.status(500).json({ error: error.message || 'Failed to withdraw from vault' });
   }
 }
 
-// GET VAULT PORTFOLIO
-export async function getVaultPortfolioHandler(req: Request, res: Response) {
-  try {
-    const { vaultId } = req.params;
-    
-    const portfolio = await vaultService.getPortfolio(vaultId);
-
-    res.json({
-      success: true,
-      data: portfolio
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-}
-
-// ALLOCATE TO YIELD STRATEGY
+// Allocate to strategy
 export async function allocateToStrategyHandler(req: Request, res: Response) {
   try {
+    const userId = req.user?.id;
     const { vaultId } = req.params;
-    const userId = (req as any).user?.claims?.sub;
-    const vault = (req as any).vault;
-    
-    const validatedData = allocationSchema.parse(req.body);
+    const { strategyId, tokenSymbol, allocationPercentage } = req.body;
 
-    // Verify allocation permissions
-    if (vault.type === 'dao') {
-      const membership = (req as any).membership;
-      if (!membership || !['admin', 'elder'].includes(membership.role || '')) {
-        return res.status(403).json({ error: 'Insufficient permissions for strategy allocation' });
-      }
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const result = await vaultService.allocateToStrategy(
+    if (!strategyId || !tokenSymbol || allocationPercentage === undefined) {
+      return res.status(400).json({ 
+        error: 'Strategy ID, token symbol, and allocation percentage are required' 
+      });
+    }
+
+    await vaultService.allocateToStrategy({
       vaultId,
-      validatedData.tokenAddress,
-      validatedData.strategyId,
-      validatedData.amount,
-      userId
-    );
-
-    res.json({
-      success: true,
-      data: result,
-      message: 'Strategy allocation completed successfully'
+      userId,
+      strategyId,
+      tokenSymbol,
+      allocationPercentage
     });
+
+    res.json({ success: true, message: 'Strategy allocation updated' });
   } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Validation error', details: error.errors });
-    }
-    res.status(500).json({ error: error.message });
+    console.error('Error allocating to strategy:', error);
+    res.status(500).json({ error: error.message || 'Failed to allocate to strategy' });
   }
 }
 
-// GET VAULT PERFORMANCE
+// Rebalance vault
+export async function rebalanceVaultHandler(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    const { vaultId } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    await vaultService.rebalanceVault(vaultId, userId);
+
+    res.json({ success: true, message: 'Vault rebalanced successfully' });
+  } catch (error: any) {
+    console.error('Error rebalancing vault:', error);
+    res.status(500).json({ error: error.message || 'Failed to rebalance vault' });
+  }
+}
+
+// Get vault portfolio
+export async function getVaultPortfolioHandler(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    const { vaultId } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const portfolio = await vaultService.getVaultPortfolio(vaultId, userId);
+
+    res.json(portfolio);
+  } catch (error: any) {
+    console.error('Error fetching vault portfolio:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch vault portfolio' });
+  }
+}
+
+// Get vault performance
 export async function getVaultPerformanceHandler(req: Request, res: Response) {
   try {
+    const userId = req.user?.id;
     const { vaultId } = req.params;
-    const { timeframe = '30' } = req.query;
-    
-    const performance = await vaultService.getPerformance(vaultId, Number(timeframe));
 
-    res.json({
-      success: true,
-      data: performance
-    });
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const performance = await vaultService.getVaultPerformance(vaultId, userId);
+
+    res.json({ performance });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching vault performance:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch vault performance' });
   }
 }
 
-// ASSESS VAULT RISK
+// Assess vault risk
 export async function assessVaultRiskHandler(req: Request, res: Response) {
   try {
+    const userId = req.user?.id;
     const { vaultId } = req.params;
-    
-    const riskAssessment = await vaultService.assessRisk(vaultId);
 
-    res.json({
-      success: true,
-      data: riskAssessment
-    });
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    await vaultService.performRiskAssessment(vaultId);
+
+    res.json({ success: true, message: 'Risk assessment completed' });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Error assessing vault risk:', error);
+    res.status(500).json({ error: error.message || 'Failed to assess vault risk' });
   }
 }
 
-// GET VAULT TRANSACTIONS
+// Get vault transactions
 export async function getVaultTransactionsHandler(req: Request, res: Response) {
   try {
+    const userId = req.user?.id;
     const { vaultId } = req.params;
-    const { 
-      limit = '50', 
-      offset = '0', 
-      type,
-      tokenAddress,
-      dateFrom,
-      dateTo 
-    } = req.query;
+    const { page = '1', limit = '20' } = req.query;
 
-    const transactions = await vaultService.getTransactionHistory(vaultId, {
-      limit: Number(limit),
-      offset: Number(offset),
-      type: type as string,
-      tokenAddress: tokenAddress as string,
-      dateFrom: dateFrom ? new Date(dateFrom as string) : undefined,
-      dateTo: dateTo ? new Date(dateTo as string) : undefined
-    });
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
 
-    res.json({
-      success: true,
-      data: transactions
-    });
+    const transactions = await vaultService.getVaultTransactions(
+      vaultId, 
+      userId, 
+      parseInt(page as string), 
+      parseInt(limit as string)
+    );
+
+    res.json({ transactions });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching vault transactions:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch vault transactions' });
   }
 }
 
-// GET SUPPORTED TOKENS
+// Get supported tokens
 export async function getSupportedTokensHandler(req: Request, res: Response) {
   try {
-    const tokens = await tokenService.getSupportedTokens();
-
-    res.json({
-      success: true,
-      data: tokens
-    });
+    const tokens = TokenRegistry.getAllTokens();
+    res.json({ tokens });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching supported tokens:', error);
+    res.status(500).json({ error: 'Failed to fetch supported tokens' });
   }
 }
 
-// GET TOKEN PRICE
+// Get token price
 export async function getTokenPriceHandler(req: Request, res: Response) {
   try {
     const { tokenAddress } = req.params;
-    
-    const price = await tokenService.getTokenPrice(tokenAddress);
 
-    res.json({
-      success: true,
-      data: { tokenAddress, price }
-    });
+    // For now, return mock price - this should integrate with actual price feeds
+    const mockPrices: Record<string, number> = {
+      'CELO': 0.65,
+      'cUSD': 1.00,
+      'cEUR': 1.08,
+      'USDT': 1.00,
+      'MTAA': 0.10
+    };
+
+    const token = TokenRegistry.getTokenByAddress(tokenAddress);
+    const price = token ? mockPrices[token.symbol] || 0.30 : 0;
+
+    res.json({ price, currency: 'USD' });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching token price:', error);
+    res.status(500).json({ error: 'Failed to fetch token price' });
   }
 }
-
-// REBALANCE VAULT
-export async function rebalanceVaultHandler(req: Request, res: Response) {
-  try {
-    const { vaultId } = req.params;
-    const userId = (req as any).user?.claims?.sub;
-    const vault = (req as any).vault;
-
-    // Verify rebalance permissions
-    if (vault.type === 'dao') {
-      const membership = (req as any).membership;
-      if (!membership || !['admin', 'elder'].includes(membership.role || '')) {
-        return res.status(403).json({ error: 'Insufficient permissions for rebalancing' });
-      }
-    }
-
-    const result = await vaultService.rebalanceVault(vaultId, userId);
-
-    res.json({
-      success: true,
-      data: result,
-      message: 'Vault rebalanced successfully'
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-}
-
-// Export middleware
-export { authorizeVaultAccess };
