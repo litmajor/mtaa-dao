@@ -21,6 +21,8 @@ import stripeStatusRoutes from './routes/stripe-status';
 import kotanipayStatusRoutes from './routes/kotanipay-status';
 import mpesaStatusRoutes from './routes/mpesa-status';
 import monitoringRoutes from './routes/monitoring';
+import taskTemplatesRoutes from './api/task_templates';
+import achievementsRouter from './api/achievements';
 
 // Import API handlers
 import { authUserHandler } from './api/authUser';
@@ -65,6 +67,7 @@ export function registerRoutes(app: express.Application) {
 
   // Task and bounty routes
   app.use('/api/tasks', tasksRoutes);
+  app.use('/api/task-templates', taskTemplatesRoutes);
   app.use('/api/bounty-escrow', bountyEscrowRoutes);
 
   // Reputation and analytics
@@ -145,4 +148,7 @@ export function registerRoutes(app: express.Application) {
   app.get('/api/reputation/user/:userId', isAuthenticated, getUserReputationHandler);
   app.get('/api/reputation/leaderboard', isAuthenticated, getReputationLeaderboardHandler);
   app.get('/api/reputation/leaderboard/:daoId', isAuthenticated, getDaoReputationLeaderboardHandler);
+
+  // === ACHIEVEMENTS API ===
+  app.use('/api/achievements', achievementsRouter);
 }

@@ -245,7 +245,7 @@ router.post('/:taskId/submit', async (req, res) => {
 router.post('/:taskId/verify', requireRole('admin', 'moderator'), async (req, res) => {
   try {
     const { taskId } = req.params;
-    const { approved, feedback } = req.body;
+    const { approved, feedback, autoVerify = false } = req.body;
     const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -265,43 +265,93 @@ router.post('/:taskId/verify', requireRole('admin', 'moderator'), async (req, re
       return res.status(400).json({ error: 'Task is not ready for verification' });
     }
 
-    const newStatus = approved ? 'completed' : 'claimed';
+    let verificationScore = 0;
+    let autoApproved = false;
+
+    // Auto-verification for simple tasks
+    if (autoVerify || task[0].category === 'Documentation' || task[0].difficulty === 'easy') {
+      const { TaskVerificationService } = await import('../taskVerificationService');
+      const submissionData = { 
+        proofUrl: task[0].proofUrl, 
+        description: task[0].verificationNotes || '',
+        screenshots: []
+      };
+      
+      verificationScore = await TaskVerificationService.calculateVerificationScore(taskId, submissionData);
+      autoApproved = verificationScore >= 70; // Auto-approve if score >= 70
+      
+      if (autoApproved && !approved) {
+        // Override manual decision with auto-approval
+        req.body.approved = true;
+        req.body.feedback = `Auto-approved with verification score: ${verificationScore}/100. ${feedback || ''}`;
+      }
+    }
+
+    const finalApproval = req.body.approved || autoApproved;
+    const newStatus = finalApproval ? 'completed' : 'claimed';
     
-    // Update task status
+    // Update task status with verification notes
     await db
       .update(tasks)
       .set({ 
         status: newStatus,
+        verificationNotes: req.body.feedback || feedback,
         updatedAt: new Date()
       })
       .where(eq(tasks.id, taskId));
 
-    // Log verification
+    // Log verification with score
     await db.insert(taskHistory).values({
       taskId,
       userId,
-      action: approved ? 'approved' : 'rejected',
-      details: { feedback, verifiedAt: new Date().toISOString() }
+      action: finalApproval ? 'approved' : 'rejected',
+      details: { 
+        feedback: req.body.feedback || feedback, 
+        verifiedAt: new Date().toISOString(),
+        verificationScore,
+        autoApproved 
+      }
     });
 
-    // If approved, process bounty payment
-    if (approved && task[0].claimerId) {
-      await db.insert(walletTransactions).values({
-        fromUserId: task[0].daoId,
-        toUserId: task[0].claimerId,
-        amount: String(task[0].reward),
-        currency: 'cUSD',
-        type: 'bounty_payout',
-        status: 'completed',
-        description: `Bounty payment for task: ${task[0].title}`,
-        walletAddress: '' // Provide wallet address if available
-      });
+    // If approved, process bounty payment and achievements
+    if (finalApproval && task[0].claimerId) {
+      // Process escrow release
+      const { TaskVerificationService } = await import('../taskVerificationService');
+      await TaskVerificationService.processEscrowRelease(taskId, true);
+      
+      // Award reputation points based on task difficulty
+      const { ReputationService } = await import('../reputationService');
+      const difficultyMultiplier = { easy: 1, medium: 2, hard: 3 }[task[0].difficulty] || 1;
+      await ReputationService.awardPoints(
+        task[0].claimerId,
+        'TASK_COMPLETED',
+        50 * difficultyMultiplier,
+        task[0].daoId,
+        `Completed task: ${task[0].title}`,
+        verificationScore / 100
+      );
+
+      // Check for achievement unlocks
+      const { AchievementService } = await import('../achievementService');
+      const newAchievements = await AchievementService.checkUserAchievements(task[0].claimerId);
+      
+      if (newAchievements.length > 0) {
+        // Notify about new achievements
+        const { notificationService } = await import('../notificationService');
+        await notificationService.sendNotification(task[0].claimerId, {
+          title: '🏆 New Achievement Unlocked!',
+          message: `You've unlocked: ${newAchievements.join(', ')}`,
+          type: 'achievement'
+        });
+      }
     }
 
     res.json({ 
-      message: approved ? 'Task approved and bounty paid' : 'Task rejected',
+      message: finalApproval ? 'Task approved and bounty paid' : 'Task rejected',
       taskId,
-      newStatus 
+      newStatus,
+      verificationScore,
+      autoApproved
     });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
