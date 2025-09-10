@@ -1,4 +1,3 @@
-
 import { Request, Response } from 'express';
 import { db } from '../db';
 import { walletTransactions } from '../../shared/schema';
