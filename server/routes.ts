@@ -44,6 +44,18 @@ import proposalExecutionRoutes from './routes/proposal-execution';
 import monitoringRouter from './routes/monitoring';
 import healthRouter from './routes/health';
 
+// Import API handlers that were using require()
+import { paymentsIndexHandler } from './api/payments_index';
+import { paymentsEstimateGasHandler } from './api/payments_estimate_gas';
+import { daoDeployHandler } from './api/dao_deploy';
+import { authUserHandler } from './api/auth_user';
+import { authTelegramLinkHandler } from './api/auth_telegram_link';
+import { authRegisterHandler } from './api/auth_register';
+import { authOAuthGoogleHandler } from './api/auth_oauth_google';
+import { authOAuthGoogleCallbackHandler } from './api/auth_oauth_google_callback';
+import { authLoginHandler } from './api/auth_login';
+import { accountDeleteHandler } from './api/account_delete';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -1521,16 +1533,16 @@ export function registerRoutes(app: Express): void {
   // Vault routes with specific rate limiting
   app.use('/api/vault', vaultRateLimit);
   // Wire up migrated API endpoints from server/api
-  app.get('/api/payments', require('./api/payments').paymentsIndexHandler);
-  app.post('/api/payments/estimate-gas', require('./api/payments').paymentsEstimateGasHandler);
-  app.post('/api/dao-deploy', require('./api/daoDeploy').daoDeployHandler);
-  app.get('/api/auth/user', isAuthenticated, require('./api/authUser').authUserHandler);
-  app.post('/api/auth/telegram-link', require('./api/authTelegramLink').authTelegramLinkHandler);
-  app.post('/api/auth/register', require('./api/authRegister').authRegisterHandler);
-  app.post('/api/auth/oauth-google', require('./api/authOAuthGoogle').authOAuthGoogleHandler);
-  app.post('/api/auth/oauth-google-callback', require('./api/authOAuthGoogleCallback').authOAuthGoogleCallbackHandler);
-  app.post('/api/auth/login', require('./api/authLogin').authLoginHandler);
-  app.delete('/api/account/delete', require('./api/accountDelete').accountDeleteHandler);
+  app.get('/api/payments', paymentsIndexHandler);
+  app.post('/api/payments/estimate-gas', paymentsEstimateGasHandler);
+  app.post('/api/dao-deploy', daoDeployHandler);
+  app.get('/api/auth/user', isAuthenticated, authUserHandler);
+  app.post('/api/auth/telegram-link', authTelegramLinkHandler);
+  app.post('/api/auth/register', authRegisterHandler);
+  app.post('/api/auth/oauth-google', authOAuthGoogleHandler);
+  app.post('/api/auth/oauth-google-callback', authOAuthGoogleCallbackHandler);
+  app.post('/api/auth/login', authLoginHandler);
+  app.delete('/api/account/delete', accountDeleteHandler);
 }
 
 export function createAppServer(): Server {
