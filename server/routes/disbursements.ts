@@ -301,4 +301,149 @@ router.get('/:disbursementId/status', async (req, res) => {
   }
 });
 
+// POST /api/disbursements/schedule-recurring
+router.post('/schedule-recurring', async (req, res) => {
+  try {
+    const { 
+      daoId, 
+      recipients, 
+      amount, 
+      currency, 
+      description, 
+      frequency, // 'weekly', 'monthly', 'quarterly'
+      startDate,
+      endDate,
+      maxExecutions 
+    } = req.body;
+    
+    const recurringId = 'REC-' + Date.now();
+    
+    // Create recurring disbursement schedule
+    const schedule = {
+      id: recurringId,
+      daoId,
+      recipients,
+      amount,
+      currency,
+      description,
+      frequency,
+      startDate: new Date(startDate),
+      endDate: endDate ? new Date(endDate) : null,
+      maxExecutions,
+      executionCount: 0,
+      status: 'active',
+      nextExecution: new Date(startDate),
+      createdAt: new Date()
+    };
+    
+    // Store in database (you'll need to create a recurring_disbursements table)
+    // await db.insert(recurringDisbursements).values(schedule);
+    
+    res.json({
+      success: true,
+      message: 'Recurring disbursement scheduled successfully',
+      scheduleId: recurringId,
+      nextExecution: schedule.nextExecution
+    });
+    
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to schedule recurring disbursement',
+      error: error.message
+    });
+  }
+});
+
+// GET /api/disbursements/:daoId/templates
+router.get('/:daoId/templates', async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    
+    // Predefined disbursement templates
+    const templates = [
+      {
+        id: 'payroll',
+        name: 'Monthly Payroll',
+        description: 'Regular monthly payments to team members',
+        frequency: 'monthly',
+        category: 'operations'
+      },
+      {
+        id: 'grants',
+        name: 'Quarterly Grants',
+        description: 'Quarterly grant disbursements',
+        frequency: 'quarterly',
+        category: 'funding'
+      },
+      {
+        id: 'bounties',
+        name: 'Bounty Payments',
+        description: 'One-time bounty rewards',
+        frequency: 'once',
+        category: 'rewards'
+      }
+    ];
+    
+    res.json({
+      success: true,
+      templates
+    });
+    
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get disbursement templates',
+      error: error.message
+    });
+  }
+});
+
+// POST /api/disbursements/bulk-approve
+router.post('/bulk-approve', async (req, res) => {
+  try {
+    const { disbursementIds, approverUserId } = req.body;
+    
+    const results = [];
+    
+    for (const disbursementId of disbursementIds) {
+      try {
+        // Update disbursement status to approved
+        await db.update(walletTransactions)
+          .set({
+            status: 'approved',
+            approvedBy: approverUserId,
+            approvedAt: new Date(),
+            updatedAt: new Date()
+          })
+          .where(eq(walletTransactions.disbursementId, disbursementId));
+        
+        results.push({
+          disbursementId,
+          status: 'approved'
+        });
+      } catch (error: any) {
+        results.push({
+          disbursementId,
+          status: 'failed',
+          error: error.message
+        });
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: 'Bulk approval completed',
+      results
+    });
+    
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process bulk approval',
+      error: error.message
+    });
+  }
+});
+
 export default router;

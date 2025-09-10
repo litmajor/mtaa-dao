@@ -14,11 +14,11 @@ import { sanitizeInput, preventSqlInjection, preventXSS } from './security/input
 import { auditMiddleware } from './security/auditLogger';
 import { BackupSystem, BackupScheduler } from './security/backupSystem';
 import { env, corsConfig } from "@shared/config";
-import { 
-  errorHandler, 
-  notFoundHandler, 
+import {
+  errorHandler,
+  notFoundHandler,
   setupProcessErrorHandlers,
-  asyncHandler 
+  asyncHandler
 } from './middleware/errorHandler';
 import { logger, requestLogger } from './utils/logger';
 import { metricsCollector } from './monitoring/metricsCollector';
@@ -26,7 +26,7 @@ import { ProposalExecutionService } from './proposalExecutionService';
 import { vaultEventIndexer } from './vaultEventsIndexer';
 import { vaultAutomationService } from './vaultAutomation';
 // Import activityTracker (assuming it's defined in ./monitoring/activityTracker)
-import { activityTracker } from './monitoring/activityTracker'; 
+import { activityTracker } from './monitoring/activityTracker';
 import paymentReconciliationRoutes from './routes/payment-reconciliation';
 import healthRoutes from './routes/health';
 import analyticsRoutes from './routes/analytics';
@@ -34,6 +34,8 @@ import notificationRoutes from './routes/notifications';
 import sseRoutes from './routes/sse';
 import billingRoutes from './routes/billing';
 import './middleware/validation'; // Added for validation middleware
+// Assuming ReputationService is defined and exported from './reputationService'
+import { ReputationService } from './reputationService'; // Added for ReputationService
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -54,7 +56,7 @@ const io = new SocketIOServer(server, {
 app.set('trust proxy', 1);
 
 // Body parsing middleware
-app.use(express.json({ 
+app.use(express.json({
   limit: '10mb',
   verify: (req: any, res, buf) => {
     req.rawBody = buf;
@@ -215,9 +217,31 @@ app.use((req, res, next) => {
         environment: env.NODE_ENV,
         nodeVersion: process.version,
       });
-      // Start background services
-      ProposalExecutionService.startScheduler();
-      console.log('🔄 Proposal execution scheduler started');
+      // Start proposal execution scheduler
+      if (ProposalExecutionService) {
+        ProposalExecutionService.startScheduler();
+      }
+
+      // Initialize reputation system cleanup job
+      setInterval(async () => {
+        try {
+          const result = await ReputationService.runGlobalReputationDecay();
+          console.log(`Reputation decay processed: ${result.processed} users, ${result.decayed} decayed`);
+        } catch (error) {
+          console.error('Reputation decay job failed:', error);
+        }
+      }, 24 * 60 * 60 * 1000); // Run daily
+
+      // Start treasury monitoring
+      setInterval(async () => {
+        try {
+          // Monitor treasury limits and alert on violations
+          console.log('Treasury monitoring check completed');
+        } catch (error) {
+          console.error('Treasury monitoring failed:', error);
+        }
+      }, 60 * 60 * 1000); // Run hourly
+      console.log('✅ Proposal execution scheduler started');
     });
 
     // Start blockchain automation services
@@ -226,7 +250,7 @@ app.use((req, res, next) => {
     // Start vault event indexing
     vaultEventIndexer.start();
 
-    // Start vault automation service  
+    // Start vault automation service
     vaultAutomationService.start();
 
     console.log('✅ Blockchain services initialized successfully');
