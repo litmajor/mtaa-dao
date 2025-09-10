@@ -56,8 +56,7 @@ app.use(cors(corsConfig));
 // Request logging middleware (before other middleware)
 app.use(requestLogger);
 
-// Apply security middleware
-app.use(generalRateLimit);
+// Apply security middleware (rate limiting handled per-route in API)
 app.use(sanitizeInput);
 app.use(preventSqlInjection);
 app.use(preventXSS);
@@ -161,7 +160,18 @@ ProposalExecutionService.startScheduler();
       });
     }));
 
-    // 404 handler (must be after all routes)
+    // Set up frontend serving (must be before 404 handler)
+    const isDev = process.env.NODE_ENV !== "production";
+    if (isDev) {
+      await setupVite(app, server); // ← dev inject
+    } else {
+      serveStatic(app);
+      app.get("*", (_, res) => {
+        res.sendFile(path.join(__dirname, "../../dist/public", "index.html"));
+      });
+    }
+
+    // 404 handler (must be after all routes and frontend serving)
     app.use(notFoundHandler);
 
     // Error handling middleware (must be last)
@@ -200,17 +210,6 @@ ProposalExecutionService.startScheduler();
 
     process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
     process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
-
-    const isDev = process.env.NODE_ENV !== "production";
-    if (isDev) {
-      await setupVite(app, server); // ← dev inject
-    } else {
-      serveStatic(app);
-      app.get("*", (_, res) => {
-        res.sendFile(path.join(__dirname, "../../dist/public", "index.html"));
-      });
-    }
   } catch (err) {
     console.error("Fatal server error:", err);
     process.exit(1);
