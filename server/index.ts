@@ -20,7 +20,7 @@ import {
   setupProcessErrorHandlers,
   asyncHandler 
 } from './middleware/errorHandler';
-import { logger, requestLogger, logStartup } from './utils/logger';
+import { logger, requestLogger } from './utils/logger';
 import { metricsCollector } from './monitoring/metricsCollector';
 import { ProposalExecutionService } from './proposalExecutionService';
 import { vaultEventIndexer } from './vaultEventsIndexer';
@@ -31,6 +31,7 @@ import healthRoutes from './routes/health';
 import analyticsRoutes from './routes/analytics';
 import notificationRoutes from './routes/notifications';
 import sseRoutes from './routes/sse';
+import './middleware/validation'; // Added for validation middleware
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 

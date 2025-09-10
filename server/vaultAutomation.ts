@@ -5,6 +5,7 @@ import { db } from "./db";
 import { vaults, vaultPerformance, vaultTransactions } from "../shared/schema";
 import { eq } from "drizzle-orm";
 import { ethers } from "ethers";
+import { Logger } from "./utils/logger";
 
 interface AutomationTask {
   id: string;
@@ -21,31 +22,47 @@ class VaultAutomationService {
   private isRunning = false;
   private tasks: AutomationTask[] = [];
   private intervalId: NodeJS.Timeout | null = null;
+  private logger: Logger;
+
+  constructor() {
+    this.logger = new Logger('vault-automation');
+  }
 
   // Start automation service
   start() {
     if (this.isRunning) {
-      console.log('Vault automation service is already running');
+      this.logger.warn('Vault automation service is already running');
       return;
     }
 
     this.isRunning = true;
-    console.log('🚀 Starting Vault Automation Service...');
+    this.logger.info('🚀 Starting Vault Automation Service...');
 
-    // Schedule regular tasks
-    this.scheduleRegularTasks();
-    
-    // Process tasks every 30 seconds
-    this.intervalId = setInterval(() => {
-      this.processTasks().catch(console.error);
-    }, 30000);
+    try {
+      // Schedule regular tasks
+      this.scheduleRegularTasks();
+      
+      // Process tasks every 30 seconds
+      this.intervalId = setInterval(() => {
+        this.processTasks().catch((error) => {
+          this.logger.error('Error processing automation tasks', error);
+        });
+      }, 30000);
 
-    console.log('✅ Vault Automation Service started successfully');
+      this.logger.info('✅ Vault Automation Service started successfully');
+    } catch (error) {
+      this.logger.error('Failed to start Vault Automation Service', error);
+      this.isRunning = false;
+      throw error;
+    }
   }
 
   // Stop automation service
   stop() {
-    if (!this.isRunning) return;
+    if (!this.isRunning) {
+      this.logger.warn('Vault automation service is not running');
+      return;
+    }
 
     this.isRunning = false;
     if (this.intervalId) {
@@ -53,7 +70,7 @@ class VaultAutomationService {
       this.intervalId = null;
     }
     
-    console.log('⏹️  Vault Automation Service stopped');
+    this.logger.info('⏹️  Vault Automation Service stopped');
   }
 
   // Schedule regular automation tasks
@@ -104,35 +121,58 @@ class VaultAutomationService {
 
   // Process pending tasks
   private async processTasks() {
-    const now = new Date();
-    const dueTasks = this.tasks.filter(task => task.scheduledAt <= now);
+    try {
+      const now = new Date();
+      const dueTasks = this.tasks.filter(task => task.scheduledAt <= now);
 
-    for (const task of dueTasks) {
-      try {
-        console.log(`🔄 Processing automation task: ${task.type} (${task.id})`);
-        
-        await this.executeTask(task);
-        
-        // Remove completed task
-        this.tasks = this.tasks.filter(t => t.id !== task.id);
-        
-        console.log(`✅ Completed automation task: ${task.type} (${task.id})`);
+      if (dueTasks.length === 0) {
+        return;
+      }
 
-      } catch (error) {
-        console.error(`❌ Task failed: ${task.type} (${task.id})`, error);
+      this.logger.info(`Processing ${dueTasks.length} due automation tasks`);
+
+      for (const task of dueTasks) {
+        const taskLogger = this.logger.child({ taskId: task.id, taskType: task.type });
         
-        task.retryCount++;
-        
-        if (task.retryCount < task.maxRetries) {
-          // Reschedule with exponential backoff
-          task.scheduledAt = new Date(now.getTime() + Math.pow(2, task.retryCount) * 60000);
-          console.log(`🔄 Rescheduling task ${task.id} (attempt ${task.retryCount + 1}/${task.maxRetries})`);
-        } else {
-          // Max retries exceeded
-          console.error(`💥 Task ${task.id} failed after ${task.maxRetries} attempts`);
+        try {
+          taskLogger.info(`🔄 Processing automation task: ${task.type}`);
+          
+          await this.executeTask(task);
+          
+          // Remove completed task
           this.tasks = this.tasks.filter(t => t.id !== task.id);
+          
+          taskLogger.info(`✅ Completed automation task: ${task.type}`);
+
+        } catch (error) {
+          taskLogger.error(`❌ Task failed: ${task.type}`, error);
+          
+          task.retryCount++;
+          
+          if (task.retryCount < task.maxRetries) {
+            // Reschedule with exponential backoff
+            const backoffMs = Math.pow(2, task.retryCount) * 60000;
+            task.scheduledAt = new Date(now.getTime() + backoffMs);
+            taskLogger.warn(`🔄 Rescheduling task (attempt ${task.retryCount + 1}/${task.maxRetries})`, {
+              nextAttempt: task.scheduledAt.toISOString(),
+              backoffMs
+            });
+          } else {
+            // Max retries exceeded
+            taskLogger.error(`💥 Task failed after ${task.maxRetries} attempts`);
+            this.tasks = this.tasks.filter(t => t.id !== task.id);
+            
+            // Log critical failure for monitoring
+            await this.logger.securityLog(`Task ${task.id} failed permanently`, 'medium', {
+              taskType: task.type,
+              vaultId: task.vaultId,
+              retryCount: task.retryCount
+            });
+          }
         }
       }
+    } catch (error) {
+      this.logger.error('Error in processTasks', error);
     }
   }
 
