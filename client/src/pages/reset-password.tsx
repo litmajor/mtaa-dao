@@ -1,14 +1,14 @@
-
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Alert, AlertDescription } from '../components/ui/alert';
 
 export default function ResetPassword() {
-  const router = useRouter();
-  const { token } = router.query;
+  const navigate = useNavigate();
+  const location = useLocation();
+  const token = new URLSearchParams(location.search).get('token');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -71,7 +71,7 @@ export default function ResetPassword() {
       if (response.ok) {
         setMessage('Password reset successful! Redirecting to login...');
         setTimeout(() => {
-          router.push('/login');
+          navigate('/login');
         }, 2000);
       } else {
         setError(data.error || 'Password reset failed');
@@ -107,7 +107,7 @@ export default function ResetPassword() {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
             <Button 
-              onClick={() => router.push('/forgot-password')} 
+              onClick={() => navigate('/forgot-password')} 
               className="w-full mt-4"
             >
               Request New Reset Link

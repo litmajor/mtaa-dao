@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
+import { HelmetProvider } from 'react-helmet-async';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from './pages/hooks/useAuth';
@@ -9,6 +10,7 @@ import { MobileNav } from './components/mobile-nav';
 import { ThemeProvider } from "./components/theme-provider";
 
 // Import all page components
+const CreateDaoLazy = lazy(() => import('./pages/create-dao'));
 import Landing from './pages/landing';
 import Dashboard from './pages/dashboard';
 import Login from './pages/login';
@@ -88,35 +90,36 @@ function App() {
   }
 
   return (
-    <ThemeProvider>
-      <Router>
-        <div className="min-h-screen bg-background text-foreground">
-          <Helmet>
-            <title>{isAuthenticated ? "Dashboard | Mtaa DAO" : "Welcome | Mtaa DAO"}</title>
-            <meta name="description" content="Mtaa DAO — decentralized community finance platform" />
-            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            <meta name="theme-color" content="#1e40af" />
-            <meta name="color-scheme" content="light dark" />
-            {/* 'theme-color' is not supported by Firefox/Opera, but 'color-scheme' is */}
-          </Helmet>
+    <HelmetProvider>
+      <ThemeProvider>
+        <Router>
+          <div className="min-h-screen bg-background text-foreground">
+            <Helmet>
+              <title>{isAuthenticated ? "Dashboard | Mtaa DAO" : "Welcome | Mtaa DAO"}</title>
+              <meta name="description" content="Mtaa DAO — decentralized community finance platform" />
+              <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+              <meta name="theme-color" content="#1e40af" />
+              <meta name="color-scheme" content="light dark" />
+              {/* 'theme-color' is not supported by Firefox/Opera, but 'color-scheme' is */}
+            </Helmet>
 
-          {isAuthenticated && <Navigation />}
+            {isAuthenticated && <Navigation />}
 
-          <main id="main-content" className={isAuthenticated ? "pb-16 lg:pb-0" : ""} role="main">
-            <Routes>
-              {/* Public routes */}
-              <Route path="/login" element={
-                <PublicRoute>
-                  <Login />
-                </PublicRoute>
-              } />
-              <Route path="/register" element={
-                <PublicRoute>
-                  <Register />
-                </PublicRoute>
-              } />
-              <Route path="/forgot-password" element={
-                <PublicRoute>
+            <main id="main-content" className={isAuthenticated ? "pb-16 lg:pb-0" : ""} role="main">
+              <Routes>
+                {/* Public routes */}
+                <Route path="/login" element={
+                  <PublicRoute>
+                    <Login />
+                  </PublicRoute>
+                } />
+                <Route path="/register" element={
+                  <PublicRoute>
+                    <Register />
+                  </PublicRoute>
+                } />
+                <Route path="/forgot-password" element={
+                  <PublicRoute>
                   <ForgotPassword />
                 </PublicRoute>
               } />
@@ -139,14 +142,12 @@ function App() {
               {/* Protected routes */}
               <Route path="/create-dao" element={
                 <ProtectedRoute>
-                  {React.createElement(require('./pages/create-dao').default)}
+                  <Suspense fallback={<PageLoading message="Loading Create DAO..." />}>
+                    <CreateDaoLazy />
+                  </Suspense>
                 </ProtectedRoute>
               } />
-              <Route path="/dashboard" element={
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              } />
+// ...existing code...
               <Route path="/proposals" element={
                 <ProtectedRoute>
                   <Proposals />
@@ -323,6 +324,7 @@ function App() {
         </div>
       </Router>
     </ThemeProvider>
+    </HelmetProvider>
   );
 }
 

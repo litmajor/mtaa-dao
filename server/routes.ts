@@ -28,6 +28,10 @@ import kotanipayStatusRoutes from './routes/kotanipay-status';
 import daoSubscriptionRoutes from './routes/dao-subscriptions';
 import disbursementRoutes from './routes/disbursements';
 
+// Import migrated payment handlers
+// import { paymentsIndexHandler, paymentsEstimateGasHandler, daoDeployHandler, authUserHandler, authTelegramLinkHandler, authRegisterHandler, authOAuthGoogleHandler, authOAuthGoogleCallbackHandler, authLoginHandler, accountDeleteHandler } from './routes/payments';
+// FIX: Removed import for missing './routes/payments'
+
 // Import task and bounty escrow routes
 import taskRoutes from './routes/tasks';
 import bountyEscrowRoutes from './routes/bounty-escrow';
@@ -1516,6 +1520,17 @@ export function registerRoutes(app: Express): void {
 
   // Vault routes with specific rate limiting
   app.use('/api/vault', vaultRateLimit);
+  // Wire up migrated API endpoints from server/api
+  app.get('/api/payments', require('./api/payments').paymentsIndexHandler);
+  app.post('/api/payments/estimate-gas', require('./api/payments').paymentsEstimateGasHandler);
+  app.post('/api/dao-deploy', require('./api/daoDeploy').daoDeployHandler);
+  app.get('/api/auth/user', isAuthenticated, require('./api/authUser').authUserHandler);
+  app.post('/api/auth/telegram-link', require('./api/authTelegramLink').authTelegramLinkHandler);
+  app.post('/api/auth/register', require('./api/authRegister').authRegisterHandler);
+  app.post('/api/auth/oauth-google', require('./api/authOAuthGoogle').authOAuthGoogleHandler);
+  app.post('/api/auth/oauth-google-callback', require('./api/authOAuthGoogleCallback').authOAuthGoogleCallbackHandler);
+  app.post('/api/auth/login', require('./api/authLogin').authLoginHandler);
+  app.delete('/api/account/delete', require('./api/accountDelete').accountDeleteHandler);
 }
 
 export function createAppServer(): Server {
@@ -1528,6 +1543,7 @@ export function createAppServer(): Server {
 
   return createServer(app);
 }
+
 
 export function startServer(port: number): Server {
   const server = createAppServer();
