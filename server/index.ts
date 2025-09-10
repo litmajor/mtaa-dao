@@ -22,6 +22,7 @@ import {
 } from './middleware/errorHandler';
 import { logger, requestLogger, logStartup } from './utils/logger';
 import { metricsCollector } from './monitoring/metricsCollector';
+import { ProposalExecutionService } from './proposalExecutionService';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -130,9 +131,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Start proposal execution scheduler
-import { ProposalExecutionService } from './proposalExecutionService';
-ProposalExecutionService.startScheduler();
 
 (async () => {
   try {
@@ -195,6 +193,9 @@ ProposalExecutionService.startScheduler();
         environment: env.NODE_ENV,
         nodeVersion: process.version,
       });
+      // Start background services
+      ProposalExecutionService.startScheduler();
+      console.log('🔄 Proposal execution scheduler started');
     });
 
     // Graceful shutdown

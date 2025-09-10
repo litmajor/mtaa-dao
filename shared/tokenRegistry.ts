@@ -55,7 +55,7 @@ export const TOKEN_REGISTRY: Record<string, TokenInfo> = {
     priceApi: 'coingecko:celo',
     riskLevel: 'low'
   },
-  
+
   cUSD: {
     symbol: 'cUSD',
     name: 'Celo Dollar',
@@ -202,7 +202,7 @@ export class TokenRegistry {
   static getSupportedTokensForStrategy(strategyId: string): TokenInfo[] {
     const strategy = YIELD_STRATEGIES[strategyId];
     if (!strategy) return [];
-    
+
     return strategy.supportedTokens
       .map(symbol => TOKEN_REGISTRY[symbol])
       .filter(token => token && token.isActive) as TokenInfo[];
@@ -219,6 +219,18 @@ export class TokenRegistry {
 
   static validateTokenAddress(address: string): boolean {
     return /^0x[a-fA-F0-9]{40}$/.test(address);
+  }
+
+  // Get all supported tokens
+  static getAllTokens(): SupportedTokenData[] {
+    return Object.values(this.tokens);
+  }
+
+  // Get token by address
+  static getTokenByAddress(address: string): SupportedTokenData | null {
+    return Object.values(this.tokens).find(token => 
+      token.address?.toLowerCase() === address.toLowerCase()
+    ) || null;
   }
 }
 

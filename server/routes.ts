@@ -36,9 +36,15 @@ import { paymentsIndexHandler } from './api/payments_index';
 import { getWalletTransactions, createWalletTransaction } from './api/wallet_transactions';
 
 // Import Vault API handlers
-import { createVaultHandler, getUserVaultsHandler, getVaultHandler, depositToVaultHandler, withdrawFromVaultHandler, allocateToStrategyHandler, rebalanceVaultHandler, getVaultPortfolioHandler, getVaultPerformanceHandler, assessVaultRiskHandler, getVaultTransactionsHandler } from './api/vault';
-import { getSupportedTokensHandler, getTokenPriceHandler } from './api/tokens';
+import { createVaultHandler, getUserVaultsHandler, getVaultHandler, depositToVaultHandler, withdrawFromVaultHandler, allocateToStrategyHandler, rebalanceVaultHandler, getVaultPortfolioHandler, getVaultPerformanceHandler, assessVaultRiskHandler, getVaultTransactionsHandler } from './api/vaults';
+import { getSupportedTokensHandler, getTokenPriceHandler } from './api/vaults';
 import { authorizeVaultAccess } from './api/authVault';
+
+// Import DAO Settings handlers
+import { getDaoSettingsHandler, updateDaoSettingsHandler, resetInviteCodeHandler, getDaoAnalyticsHandler } from './api/daoSettings';
+
+// Import Reputation handlers
+import { getUserReputationHandler, getReputationLeaderboardHandler, getDaoReputationLeaderboardHandler } from './api/reputation';
 
 
 export function registerRoutes(app: express.Application) {
@@ -128,4 +134,15 @@ export function registerRoutes(app: express.Application) {
   // Token utilities
   app.get('/api/tokens', getSupportedTokensHandler);
   app.get('/api/tokens/:tokenAddress/price', getTokenPriceHandler);
+
+  // === DAO SETTINGS API ===
+  app.get('/api/dao/:daoId/settings', isAuthenticated, getDaoSettingsHandler);
+  app.patch('/api/dao/:daoId/settings', isAuthenticated, updateDaoSettingsHandler);
+  app.post('/api/dao/:daoId/settings/reset-invite', isAuthenticated, resetInviteCodeHandler);
+  app.get('/api/dao/:daoId/analytics', isAuthenticated, getDaoAnalyticsHandler);
+
+  // === REPUTATION API ===
+  app.get('/api/reputation/user/:userId', isAuthenticated, getUserReputationHandler);
+  app.get('/api/reputation/leaderboard', isAuthenticated, getReputationLeaderboardHandler);
+  app.get('/api/reputation/leaderboard/:daoId', isAuthenticated, getDaoReputationLeaderboardHandler);
 }
