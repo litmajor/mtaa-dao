@@ -18,7 +18,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 import { auditMiddleware } from "./security/auditLogger";
-import { db} from "./db";  
+import { db} from "./db";
 import { daos, users, subscriptions, vaults, daoMemberships, userReputation } from "../shared/schema"; // Assuming these are your schema definitions
 import {sql, eq, desc} from "drizzle-orm";
 // Import payment status routes
@@ -27,10 +27,6 @@ import stripeStatusRoutes from './routes/stripe-status';
 import kotanipayStatusRoutes from './routes/kotanipay-status';
 import daoSubscriptionRoutes from './routes/dao-subscriptions';
 import disbursementRoutes from './routes/disbursements';
-
-// Import migrated payment handlers
-// import { paymentsIndexHandler, paymentsEstimateGasHandler, daoDeployHandler, authUserHandler, authTelegramLinkHandler, authRegisterHandler, authOAuthGoogleHandler, authOAuthGoogleCallbackHandler, authLoginHandler, accountDeleteHandler } from './routes/payments';
-// FIX: Removed import for missing './routes/payments'
 
 // Import task and bounty escrow routes
 import taskRoutes from './routes/tasks';
@@ -55,6 +51,12 @@ import { authOAuthGoogleHandler } from './api/auth_oauth_google';
 import { authOAuthGoogleCallbackHandler } from './api/auth_oauth_google_callback';
 import { authLoginHandler } from './api/auth_login';
 import { accountDeleteHandler } from './api/account_delete';
+
+// Import new API routes for migrated endpoints
+import { handleWalletSetup } from './routes/wallet-setup';
+import { handleSSE } from './routes/sse';
+import { deleteAccount } from './api/account_delete';
+import { getWalletTransactions, createTransaction } from './api/wallet_transactions';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -1536,7 +1538,17 @@ export function registerRoutes(app: Express): void {
   app.post('/api/auth/oauth-google', authOAuthGoogleHandler);
   app.post('/api/auth/oauth-google-callback', authOAuthGoogleCallbackHandler);
   app.post('/api/auth/login', authLoginHandler);
-  app.delete('/api/account/delete', accountDeleteHandler);
+  app.delete('/api/account/delete', deleteAccount);
+
+  // SSE endpoint
+  app.get('/api/sse', handleSSE);
+
+  // Account management
+  app.delete('/api/account/delete', deleteAccount);
+
+  // Wallet transactions
+  app.get('/api/wallet/transactions', getWalletTransactions);
+  app.post('/api/wallet/transactions', createTransaction);
 }
 
 export function createAppServer(): Server {
