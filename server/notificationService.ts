@@ -1,6 +1,6 @@
-
 import { EventEmitter } from 'events';
 import nodemailer from 'nodemailer';
+import TelegramBot from 'node-telegram-bot-api';
 import { storage } from './storage';
 
 interface PaymentNotification {
@@ -27,9 +27,17 @@ interface NotificationChannel {
   webhook?: string;
 }
 
+// Define TelegramUser interface for clarity
+interface TelegramUser {
+  chatId: string;
+  userId: string;
+}
+
 class NotificationService extends EventEmitter {
   private subscribers = new Map<string, NotificationChannel>();
   private emailTransporter: nodemailer.Transporter;
+  private telegramBot: TelegramBot | null = null;
+  private userTelegramMap = new Map<string, TelegramUser>();
 
   constructor() {
     super();
@@ -43,6 +51,81 @@ class NotificationService extends EventEmitter {
         pass: process.env.SMTP_PASS,
       },
     });
+
+    // Initialize Telegram bot if token is provided
+    if (process.env.TELEGRAM_BOT_TOKEN) {
+      this.telegramBot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
+      this.setupTelegramHandlers();
+    }
+  }
+
+  private setupTelegramHandlers(): void {
+    if (!this.telegramBot) return;
+
+    this.telegramBot.onText(/\/start/, async (msg) => {
+      const chatId = msg.chat.id;
+      const userId = msg.from.id.toString(); // Use Telegram user ID as a placeholder for internal userId
+      
+      // In a real app, you'd likely link a Telegram chat ID to your internal user ID
+      // For now, we'll store it directly.
+      this.userTelegramMap.set(userId, { chatId: chatId.toString(), userId: userId });
+      this.telegramBot?.sendMessage(chatId, 'Welcome to the notification service! Your Telegram is now linked.');
+    });
+
+    this.telegramBot.on('message', async (msg) => {
+      const chatId = msg.chat.id;
+      const text = msg.text;
+
+      // Basic command handling for linking user ID (replace with actual user authentication)
+      if (text && text.startsWith('/link ')) {
+        const internalUserId = text.split(' ')[1];
+        if (internalUserId) {
+          this.userTelegramMap.set(internalUserId, { chatId: chatId.toString(), userId: internalUserId });
+          this.telegramBot?.sendMessage(chatId, `User ${internalUserId} linked to this chat.`);
+        } else {
+          this.telegramBot?.sendMessage(chatId, 'Please use the format /link <your_user_id>');
+        }
+        return;
+      }
+      
+      // If it's not a command we recognize, and it's not a notification related message,
+      // echo it back or handle as needed. For now, we'll just acknowledge.
+      if (text && !text.startsWith('/')) {
+        console.log(`Received message from Telegram chat ${chatId}: ${text}`);
+        // Potentially store this message or trigger an action
+      }
+    });
+
+    this.telegramBot.on('polling_error', (error) => {
+      console.error('Telegram polling error:', error.code, error.message);
+    });
+  }
+
+  private async sendTelegramNotification(userId: string, notification: SystemNotification): Promise<void> {
+    if (!this.telegramBot) {
+      console.warn('Telegram bot not initialized. Cannot send notification.');
+      return;
+    }
+
+    const telegramUser = this.userTelegramMap.get(userId);
+    if (!telegramUser || !telegramUser.chatId) {
+      console.warn(`Telegram chat ID not found for user ${userId}. Cannot send notification.`);
+      // Optionally, try to find the user's chat ID if not mapped
+      return;
+    }
+
+    const message = `*${notification.title}*\n${notification.message}`;
+    try {
+      await this.telegramBot.sendMessage(telegramUser.chatId, message, { parse_mode: 'Markdown' });
+      console.log(`Telegram notification sent to user ${userId} (chatId: ${telegramUser.chatId})`);
+    } catch (error: any) {
+      console.error(`Failed to send Telegram notification to user ${userId}:`, error.message);
+      // Handle potential errors like chat not found, bot blocked, etc.
+      if (error.response && error.response.statusCode === 404) {
+        console.error(`Chat ID ${telegramUser.chatId} not found. Removing mapping.`);
+        this.userTelegramMap.delete(userId);
+      }
+    }
   }
 
   async createNotification(notification: SystemNotification) {
@@ -59,7 +142,7 @@ class NotificationService extends EventEmitter {
 
       // Get user's notification preferences
       const preferences = await storage.getUserNotificationPreferences(notification.userId);
-      
+
       // Send via different channels based on preferences
       if (preferences?.emailNotifications) {
         await this.sendEmailNotification(notification.userId, notification);
@@ -67,6 +150,10 @@ class NotificationService extends EventEmitter {
 
       if (preferences?.pushNotifications) {
         await this.sendPushNotification(notification.userId, notification);
+      }
+
+      if (preferences?.telegramNotifications) {
+        await this.sendTelegramNotification(notification.userId, notification);
       }
 
       // Emit real-time event
@@ -86,7 +173,7 @@ class NotificationService extends EventEmitter {
   async sendPaymentNotification(recipient: string, notification: PaymentNotification) {
     try {
       const channel = this.subscribers.get(recipient) || { sms: true };
-      
+
       // Send SMS notification
       if (channel.sms) {
         await this.sendSMS(recipient, this.formatSMSMessage(notification));
@@ -104,6 +191,21 @@ class NotificationService extends EventEmitter {
           type: notification.type,
           title: `Payment ${notification.type.replace('_', ' ')}`,
           message: `${notification.amount} ${notification.currency} - ${notification.transactionId}`,
+          priority: 'medium',
+          metadata: notification.errorMessage ? { errorMessage: notification.errorMessage } : {}
+        });
+      }
+
+      // Send Telegram notification for payments if enabled
+      // You would need to adjust preferences logic to include Telegram for payments
+      // For now, assuming a user's preference to receive payment notifications via Telegram
+      const userPreferences = await storage.getUserNotificationPreferences(recipient);
+      if (userPreferences?.telegramNotifications) {
+        await this.sendTelegramNotification(recipient, {
+          userId: recipient,
+          type: notification.type,
+          title: `Payment ${notification.type.replace('_', ' ')}`,
+          message: `Amount: ${notification.amount} ${notification.currency}\nTransaction ID: ${notification.transactionId}\n${notification.errorMessage ? `Error: ${notification.errorMessage}` : ''}`,
           priority: 'medium',
           metadata: notification.errorMessage ? { errorMessage: notification.errorMessage } : {}
         });
@@ -189,7 +291,7 @@ class NotificationService extends EventEmitter {
     try {
       // TODO: Integrate with Firebase Cloud Messaging (FCM) or Apple Push Notification service (APNS)
       console.log(`Push notification sent to user ${userId}: ${notification.title}`);
-      
+
       // Mock implementation - replace with actual push service
       const pushPayload = {
         title: notification.title,
@@ -227,7 +329,7 @@ class NotificationService extends EventEmitter {
 
   private formatEmailMessage(notification: PaymentNotification): { subject: string; body: string } {
     const subject = `Payment ${notification.type.replace('_', ' ')} - ${notification.transactionId}`;
-    
+
     let body = `
       <h2>Payment Update</h2>
       <p><strong>Transaction ID:</strong> ${notification.transactionId}</p>
@@ -245,14 +347,14 @@ class NotificationService extends EventEmitter {
   private formatPushMessage(notification: PaymentNotification): { title: string; body: string } {
     const title = `Payment ${notification.type.replace('_', ' ')}`;
     const body = `${notification.amount} ${notification.currency} - ${notification.transactionId}`;
-    
+
     return { title, body };
   }
 
   private async sendSMS(phone: string, message: string): Promise<void> {
     // TODO: Integrate with SMS provider (Twilio, Africa's Talking, etc.)
     console.log(`SMS to ${phone}: ${message}`);
-    
+
     // Mock SMS sending
     return new Promise((resolve) => {
       setTimeout(() => {
@@ -332,7 +434,7 @@ class NotificationService extends EventEmitter {
   // Bulk notification creation for announcements
   async createBulkNotifications(userIds: string[], notificationData: Omit<SystemNotification, 'userId'>) {
     const notifications = [];
-    
+
     for (const userId of userIds) {
       const notification = await this.createNotification({
         ...notificationData,
@@ -342,7 +444,7 @@ class NotificationService extends EventEmitter {
         notifications.push(notification);
       }
     }
-    
+
     return notifications;
   }
 
