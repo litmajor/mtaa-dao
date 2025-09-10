@@ -1,4 +1,3 @@
-
 import { db } from './db';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { users, votes, proposals, contributions, daoMemberships } from '../shared/schema';
@@ -40,7 +39,7 @@ export class ReputationService {
     multiplier: number = 1.0
   ): Promise<void> {
     const finalPoints = Math.floor(points * multiplier);
-    
+
     // Insert points record
     await db.insert(msiaMoPoints).values({
       userId,
@@ -61,7 +60,7 @@ export class ReputationService {
     // Scale points with contribution amount (1 point per 10 cUSD contributed)
     const amountBonus = Math.floor(amount / 10);
     const totalPoints = basePoints + amountBonus;
-    
+
     await this.awardPoints(
       userId,
       'CONTRIBUTION',
@@ -185,7 +184,7 @@ export class ReputationService {
       // Lose 1% per day after the first week, max 50% total decay
       const decayDays = Math.min(daysSinceActivity - 7, 50);
       const decayFactor = 1 - (decayDays * 0.01);
-      
+
     const totalPoints = reputation[0].totalPoints ?? 0;
     const decayedPoints = Math.floor(totalPoints * decayFactor);
     const pointsLost = totalPoints - decayedPoints;
@@ -224,13 +223,13 @@ export class ReputationService {
     for (const user of allUsers) {
   const beforePoints = user.totalPoints ?? 0;
       await this.applyReputationDecay(user.userId);
-      
+
       // Check if points actually decayed
       const afterReputation = await db
         .select()
         .from(userReputation)
         .where(eq(userReputation.userId, user.userId));
-      
+
   if (afterReputation[0] && (afterReputation[0].totalPoints ?? 0) < beforePoints) {
         decayed++;
       }
@@ -255,7 +254,7 @@ export class ReputationService {
 
     // Apply decay check when getting reputation
     await this.applyReputationDecay(userId);
-    
+
     // Get updated reputation after potential decay
     const updatedReputation = await db
       .select()
@@ -290,7 +289,7 @@ export class ReputationService {
     conversionRate: number = 100 // 100 points = 1 token by default
   ): Promise<{ tokensReceived: number; conversionId: string }> {
     const userRep = await this.getUserReputation(userId);
-    
+
     if (userRep.totalPoints < pointsToConvert) {
       throw new Error('Insufficient reputation points');
     }
@@ -321,7 +320,7 @@ export class ReputationService {
   ): Promise<{ eligible: boolean; amount: number; userReputation: number }> {
     const userRep = await this.getUserReputation(userId);
     const eligible = userRep.totalPoints >= minimumReputation;
-    
+
     // Calculate airdrop amount based on reputation (bonus for higher reputation)
     let amount = baseAmount;
     if (eligible) {
@@ -384,8 +383,8 @@ export interface ReputationUpdate {
   metadata?: any;
 }
 
-export class ReputationService {
-  
+class ReputationService {
+
   // Reputation scoring constants
   static readonly SCORING = {
     PROPOSAL_CREATED: 10,
@@ -403,19 +402,19 @@ export class ReputationService {
     CONSECUTIVE_PARTICIPATION: 5, // Bonus for consecutive voting
     LEADERSHIP_BONUS: 50 // Bonus for being promoted to elder/admin
   };
-  
+
   // Update user reputation
   static async updateReputation(update: ReputationUpdate): Promise<void> {
     try {
       const { userId, daoId, action, points, metadata } = update;
-      
+
       // Get or create reputation record
       let reputationRecord = await db.query.userReputation.findFirst({
         where: daoId 
           ? and(eq(userReputation.userId, userId), eq(userReputation.daoId, daoId))
           : and(eq(userReputation.userId, userId), sql`dao_id IS NULL`)
       });
-      
+
       if (!reputationRecord) {
         // Create new reputation record
         const [newRecord] = await db.insert(userReputation).values({
@@ -426,7 +425,7 @@ export class ReputationService {
           voteScore: action.includes('vote') ? points : 0,
           contributionScore: action.includes('contribution') ? points : 0
         }).returning();
-        
+
         reputationRecord = newRecord;
       } else {
         // Update existing record
@@ -434,7 +433,7 @@ export class ReputationService {
           totalScore: reputationRecord.totalScore + points,
           lastUpdated: new Date()
         };
-        
+
         if (action.includes('proposal')) {
           updates.proposalScore = reputationRecord.proposalScore + points;
         } else if (action.includes('vote')) {
@@ -442,22 +441,22 @@ export class ReputationService {
         } else if (action.includes('contribution')) {
           updates.contributionScore = reputationRecord.contributionScore + points;
         }
-        
+
         await db.update(userReputation)
           .set(updates)
           .where(eq(userReputation.id, reputationRecord.id));
       }
-      
+
       // Update user's global voting power based on reputation
       await this.updateVotingPower(userId, daoId);
-      
+
       console.log(`Updated reputation for user ${userId}: ${action} (+${points} points)`);
-      
+
     } catch (error) {
       console.error('Error updating reputation:', error);
     }
   }
-  
+
   // Calculate and update voting power based on reputation
   static async updateVotingPower(userId: string, daoId?: string): Promise<void> {
     try {
@@ -466,22 +465,22 @@ export class ReputationService {
           ? and(eq(userReputation.userId, userId), eq(userReputation.daoId, daoId))
           : and(eq(userReputation.userId, userId), sql`dao_id IS NULL`)
       });
-      
+
       if (!reputationRecord) return;
-      
+
       // Calculate voting power based on reputation score
       // Base voting power is 1.0, can increase up to 3.0 based on reputation
       const baseVotingPower = 1.0;
       const maxVotingPower = 3.0;
       const reputationThreshold = 1000; // Max reputation for calculation
-      
+
       const votingPowerMultiplier = Math.min(
         reputationRecord.totalScore / reputationThreshold,
         maxVotingPower - baseVotingPower
       );
-      
+
       const newVotingPower = baseVotingPower + votingPowerMultiplier;
-      
+
       if (daoId) {
         // Update DAO-specific voting power (if we implement per-DAO voting power)
         // For now, we'll update the global user voting power
@@ -494,21 +493,21 @@ export class ReputationService {
           .set({ votingPower: newVotingPower.toFixed(2) })
           .where(eq(users.id, userId));
       }
-      
+
     } catch (error) {
       console.error('Error updating voting power:', error);
     }
   }
-  
+
   // Process proposal-related reputation updates
   static async processProposalReputation(proposalId: string): Promise<void> {
     try {
       const proposal = await db.query.proposals.findFirst({
         where: eq(proposals.id, proposalId)
       });
-      
+
       if (!proposal) return;
-      
+
       // Award points to proposer based on outcome
       if (proposal.status === 'passed') {
         await this.updateReputation({
@@ -525,26 +524,26 @@ export class ReputationService {
           points: this.SCORING.PROPOSAL_FAILED
         });
       }
-      
+
       // Award points to voters
       const proposalVotes = await db.query.votes.findMany({
         where: eq(votes.proposalId, proposalId)
       });
-      
+
       for (const vote of proposalVotes) {
         let votePoints = this.SCORING.VOTE_CAST;
-        
+
         // Early voting bonus (voted in first 25% of voting period)
         const votingStart = new Date(proposal.voteStartTime);
         const votingEnd = new Date(proposal.voteEndTime);
         const voteTime = new Date(vote.createdAt);
         const votingDuration = votingEnd.getTime() - votingStart.getTime();
         const voteTimestamp = voteTime.getTime() - votingStart.getTime();
-        
+
         if (voteTimestamp <= votingDuration * 0.25) {
           votePoints += this.SCORING.EARLY_VOTE;
         }
-        
+
         await this.updateReputation({
           userId: vote.userId,
           daoId: proposal.daoId,
@@ -552,29 +551,29 @@ export class ReputationService {
           points: votePoints
         });
       }
-      
+
     } catch (error) {
       console.error('Error processing proposal reputation:', error);
     }
   }
-  
+
   // Process contribution-related reputation updates
   static async processContributionReputation(contributionId: string): Promise<void> {
     try {
       const contribution = await db.query.contributions.findFirst({
         where: eq(contributions.id, contributionId)
       });
-      
+
       if (!contribution) return;
-      
+
       const amount = parseFloat(contribution.amount);
       let points = Math.floor(amount * this.SCORING.CONTRIBUTION_MADE);
-      
+
       // Large contribution bonus
       if (amount >= 100) {
         points += this.SCORING.LARGE_CONTRIBUTION;
       }
-      
+
       await this.updateReputation({
         userId: contribution.userId,
         daoId: contribution.daoId,
@@ -582,24 +581,24 @@ export class ReputationService {
         points,
         metadata: { amount: contribution.amount, currency: contribution.currency }
       });
-      
+
     } catch (error) {
       console.error('Error processing contribution reputation:', error);
     }
   }
-  
+
   // Process task-related reputation updates
   static async processTaskReputation(taskId: string, action: 'completed' | 'verified' | 'rejected'): Promise<void> {
     try {
       const task = await db.query.tasks.findFirst({
         where: eq(tasks.id, taskId)
       });
-      
+
       if (!task || !task.claimerId) return;
-      
+
       let points = 0;
       let reputationAction: ReputationUpdate['action'];
-      
+
       switch (action) {
         case 'completed':
           points = this.SCORING.TASK_COMPLETED;
@@ -614,7 +613,7 @@ export class ReputationService {
           reputationAction = 'task_completed'; // Use same action type
           break;
       }
-      
+
       await this.updateReputation({
         userId: task.claimerId,
         daoId: task.daoId,
@@ -622,23 +621,23 @@ export class ReputationService {
         points,
         metadata: { taskId, taskTitle: task.title, reward: task.reward }
       });
-      
+
     } catch (error) {
       console.error('Error processing task reputation:', error);
     }
   }
-  
+
   // Get user reputation across all DAOs
   static async getUserReputation(userId: string): Promise<any> {
     try {
       const reputationRecords = await db.query.userReputation.findMany({
         where: eq(userReputation.userId, userId)
       });
-      
+
       const totalReputation = reputationRecords.reduce((sum, record) => sum + record.totalScore, 0);
       const globalRecord = reputationRecords.find(r => !r.daoId);
       const daoSpecific = reputationRecords.filter(r => r.daoId);
-      
+
       return {
         totalReputation,
         globalReputation: globalRecord?.totalScore || 0,
@@ -654,14 +653,14 @@ export class ReputationService {
       return { totalReputation: 0, globalReputation: 0, daoSpecificReputation: [], breakdown: {} };
     }
   }
-  
+
   // Get reputation leaderboard
   static async getReputationLeaderboard(daoId?: string, limit: number = 20): Promise<any[]> {
     try {
       const whereClause = daoId 
         ? eq(userReputation.daoId, daoId)
         : sql`dao_id IS NULL`;
-      
+
       const leaderboard = await db
         .select({
           userId: userReputation.userId,
@@ -677,19 +676,19 @@ export class ReputationService {
         .where(whereClause)
         .orderBy(desc(userReputation.totalScore))
         .limit(limit);
-      
+
       return leaderboard;
     } catch (error) {
       console.error('Error getting reputation leaderboard:', error);
       return [];
     }
   }
-  
+
   // Recalculate all user reputations (admin function)
   static async recalculateAllReputations(): Promise<void> {
     try {
       console.log('Starting reputation recalculation...');
-      
+
       // Clear existing reputation scores
       await db.update(userReputation).set({
         totalScore: 0,
@@ -697,19 +696,19 @@ export class ReputationService {
         voteScore: 0,
         contributionScore: 0
       });
-      
+
       // Recalculate from proposals
       const allProposals = await db.query.proposals.findMany();
       for (const proposal of allProposals) {
         await this.processProposalReputation(proposal.id);
       }
-      
+
       // Recalculate from contributions
       const allContributions = await db.query.contributions.findMany();
       for (const contribution of allContributions) {
         await this.processContributionReputation(contribution.id);
       }
-      
+
       // Recalculate from completed tasks
       const completedTasks = await db.query.tasks.findMany({
         where: eq(tasks.status, 'completed')
@@ -717,9 +716,9 @@ export class ReputationService {
       for (const task of completedTasks) {
         await this.processTaskReputation(task.id, 'completed');
       }
-      
+
       console.log('Reputation recalculation completed');
-      
+
     } catch (error) {
       console.error('Error recalculating reputations:', error);
     }
