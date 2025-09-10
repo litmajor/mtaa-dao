@@ -315,18 +315,33 @@ export const savingsGoals = pgTable("savings_goals", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Personal Finance Vaults table
+// Enhanced Multi-Token Vaults table for Phase 3
 export const vaults = pgTable("vaults", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: varchar("user_id").references(() => users.id).notNull(),
-  currency: varchar("currency").notNull(),
+  // Support both personal and DAO vaults
+  userId: varchar("user_id").references(() => users.id), // nullable for DAO vaults
+  daoId: uuid("dao_id").references(() => daos.id), // nullable for personal vaults
+  name: varchar("name").default("Personal Vault"), // vault name with default for backward compatibility
+  description: text("description"),
+  currency: varchar("currency").notNull(), // primary currency, kept for backward compatibility
   address: varchar("address"), // wallet address for this vault
-  balance: decimal("balance", { precision: 10, scale: 2 }).default("0"),
-  monthlyGoal: decimal("monthly_goal", { precision: 10, scale: 2 }).default("0"),
-  vaultType: varchar("vault_type").default("regular"), // regular, savings, locked_savings
+  balance: decimal("balance", { precision: 18, scale: 8 }).default("0"), // higher precision for crypto
+  monthlyGoal: decimal("monthly_goal", { precision: 18, scale: 8 }).default("0"),
+  vaultType: varchar("vault_type").default("regular"), // regular, savings, locked_savings, yield, dao_treasury
   lockDuration: integer("lock_duration"), // in days for locked savings
   lockedUntil: timestamp("locked_until"), // when locked savings unlocks
   interestRate: decimal("interest_rate", { precision: 5, scale: 4 }).default("0"), // annual interest rate for savings
+  
+  // Phase 3 enhancements
+  isActive: boolean("is_active").default(true),
+  riskLevel: varchar("risk_level").default("low"), // low, medium, high
+  minDeposit: decimal("min_deposit", { precision: 18, scale: 8 }).default("0"),
+  maxDeposit: decimal("max_deposit", { precision: 18, scale: 8 }),
+  totalValueLocked: decimal("total_value_locked", { precision: 18, scale: 8 }).default("0"), // TVL in USD equivalent
+  yieldStrategy: varchar("yield_strategy"), // references YIELD_STRATEGIES
+  performanceFee: decimal("performance_fee", { precision: 5, scale: 4 }).default("0.1"), // 10% default
+  managementFee: decimal("management_fee", { precision: 5, scale: 4 }).default("0.02"), // 2% annual default
+  
   updatedAt: timestamp("updated_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -375,6 +390,116 @@ export const walletTransactions = pgTable("wallet_transactions", {
   transactionHash: varchar("transaction_hash"),
   description: text("description"),
   disbursementId: varchar("disbursement_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Phase 3: Vault Token Holdings table for multi-token support
+export const vaultTokenHoldings = pgTable("vault_token_holdings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+  tokenSymbol: varchar("token_symbol").notNull(), // e.g., 'CELO', 'cUSD', 'cEUR', 'USDT'
+  balance: decimal("balance", { precision: 18, scale: 8 }).notNull(),
+  valueUSD: decimal("value_usd", { precision: 18, scale: 8 }).default("0"), // USD equivalent value
+  lastPriceUpdate: timestamp("last_price_update").defaultNow(),
+  averageEntryPrice: decimal("average_entry_price", { precision: 18, scale: 8 }), // for P&L calculations
+  totalDeposited: decimal("total_deposited", { precision: 18, scale: 8 }).default("0"), // lifetime deposits
+  totalWithdrawn: decimal("total_withdrawn", { precision: 18, scale: 8 }).default("0"), // lifetime withdrawals
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Phase 3: Vault Performance Metrics table
+export const vaultPerformance = pgTable("vault_performance", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+  period: varchar("period").notNull(), // daily, weekly, monthly, yearly
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  startingValue: decimal("starting_value", { precision: 18, scale: 8 }).notNull(),
+  endingValue: decimal("ending_value", { precision: 18, scale: 8 }).notNull(),
+  yield: decimal("yield", { precision: 18, scale: 8 }).default("0"), // yield earned in period
+  yieldPercentage: decimal("yield_percentage", { precision: 8, scale: 4 }).default("0"), // yield %
+  feesCollected: decimal("fees_collected", { precision: 18, scale: 8 }).default("0"),
+  deposits: decimal("deposits", { precision: 18, scale: 8 }).default("0"), // deposits in period
+  withdrawals: decimal("withdrawals", { precision: 18, scale: 8 }).default("0"), // withdrawals in period
+  sharpeRatio: decimal("sharpe_ratio", { precision: 8, scale: 4 }), // risk-adjusted return
+  maxDrawdown: decimal("max_drawdown", { precision: 8, scale: 4 }), // maximum loss percentage
+  volatility: decimal("volatility", { precision: 8, scale: 4 }), // price volatility
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Phase 3: Yield Strategy Allocations table
+export const vaultStrategyAllocations = pgTable("vault_strategy_allocations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+  strategyId: varchar("strategy_id").notNull(), // references YIELD_STRATEGIES from tokenRegistry
+  tokenSymbol: varchar("token_symbol").notNull(),
+  allocatedAmount: decimal("allocated_amount", { precision: 18, scale: 8 }).notNull(),
+  allocationPercentage: decimal("allocation_percentage", { precision: 5, scale: 2 }).notNull(), // % of vault
+  currentValue: decimal("current_value", { precision: 18, scale: 8 }).default("0"),
+  yieldEarned: decimal("yield_earned", { precision: 18, scale: 8 }).default("0"),
+  lastRebalance: timestamp("last_rebalance").defaultNow(),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Phase 3: Vault Transactions table for detailed tracking
+export const vaultTransactions = pgTable("vault_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  transactionType: varchar("transaction_type").notNull(), // deposit, withdrawal, yield_claim, rebalance, fee_collection
+  tokenSymbol: varchar("token_symbol").notNull(),
+  amount: decimal("amount", { precision: 18, scale: 8 }).notNull(),
+  valueUSD: decimal("value_usd", { precision: 18, scale: 8 }).default("0"),
+  transactionHash: varchar("transaction_hash"),
+  blockNumber: integer("block_number"),
+  gasUsed: decimal("gas_used", { precision: 18, scale: 8 }),
+  gasFee: decimal("gas_fee", { precision: 18, scale: 8 }),
+  status: varchar("status").default("completed"), // pending, completed, failed
+  strategyId: varchar("strategy_id"), // if related to strategy allocation
+  sharesMinted: decimal("shares_minted", { precision: 18, scale: 8 }), // vault shares for deposits
+  sharesBurned: decimal("shares_burned", { precision: 18, scale: 8 }), // vault shares for withdrawals
+  metadata: jsonb("metadata"), // additional transaction data
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Phase 3: Vault Risk Assessments table
+export const vaultRiskAssessments = pgTable("vault_risk_assessments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+  assessmentDate: timestamp("assessment_date").defaultNow(),
+  overallRiskScore: integer("overall_risk_score").notNull(), // 1-100 scale
+  liquidityRisk: integer("liquidity_risk").default(0), // 1-100 scale
+  smartContractRisk: integer("smart_contract_risk").default(0),
+  marketRisk: integer("market_risk").default(0),
+  concentrationRisk: integer("concentration_risk").default(0),
+  protocolRisk: integer("protocol_risk").default(0),
+  riskFactors: jsonb("risk_factors"), // detailed risk breakdown
+  recommendations: jsonb("recommendations"), // risk mitigation suggestions
+  nextAssessmentDue: timestamp("next_assessment_due"),
+  assessedBy: varchar("assessed_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Phase 3: DAO Vault Governance table
+export const vaultGovernanceProposals = pgTable("vault_governance_proposals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  proposalId: uuid("proposal_id").references(() => proposals.id),
+  governanceType: varchar("governance_type").notNull(), // strategy_change, allocation_change, fee_change, risk_parameter
+  proposedChanges: jsonb("proposed_changes").notNull(), // structured data of proposed changes
+  currentParameters: jsonb("current_parameters"), // snapshot of current state
+  requiredQuorum: integer("required_quorum").default(50), // percentage
+  votingDeadline: timestamp("voting_deadline").notNull(),
+  status: varchar("status").default("active"), // active, passed, failed, executed
+  executedAt: timestamp("executed_at"),
+  executionTxHash: varchar("execution_tx_hash"),
+  createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -916,6 +1041,31 @@ export const insertProposalCommentSchema = createInsertSchema(proposalComments);
 export const insertProposalLikeSchema = createInsertSchema(proposalLikes);
 export const insertCommentLikeSchema = createInsertSchema(commentLikes);
 export const insertDaoMessageSchema = createInsertSchema(daoMessages);
+
+// Phase 3: Enhanced Vault Types and Schemas
+export type Vault = typeof vaults.$inferSelect;
+export type InsertVault = typeof vaults.$inferInsert;
+export type VaultTokenHolding = typeof vaultTokenHoldings.$inferSelect;
+export type InsertVaultTokenHolding = typeof vaultTokenHoldings.$inferInsert;
+export type VaultPerformance = typeof vaultPerformance.$inferSelect;
+export type InsertVaultPerformance = typeof vaultPerformance.$inferInsert;
+export type VaultTransaction = typeof vaultTransactions.$inferSelect;
+export type InsertVaultTransaction = typeof vaultTransactions.$inferInsert;
+export type VaultRiskAssessment = typeof vaultRiskAssessments.$inferSelect;
+export type InsertVaultRiskAssessment = typeof vaultRiskAssessments.$inferInsert;
+export type VaultStrategyAllocation = typeof vaultStrategyAllocations.$inferSelect;
+export type InsertVaultStrategyAllocation = typeof vaultStrategyAllocations.$inferInsert;
+export type VaultGovernanceProposal = typeof vaultGovernanceProposals.$inferSelect;
+export type InsertVaultGovernanceProposal = typeof vaultGovernanceProposals.$inferInsert;
+
+// Create Zod schemas for validation (Phase 3 enhanced)
+export const insertEnhancedVaultSchema = createInsertSchema(vaults);
+export const insertVaultTokenHoldingSchema = createInsertSchema(vaultTokenHoldings);
+export const insertVaultTransactionSchema = createInsertSchema(vaultTransactions);
+export const insertVaultPerformanceSchema = createInsertSchema(vaultPerformance);
+export const insertVaultRiskAssessmentSchema = createInsertSchema(vaultRiskAssessments);
+export const insertVaultStrategyAllocationSchema = createInsertSchema(vaultStrategyAllocations);
+export const insertVaultGovernanceProposalSchema = createInsertSchema(vaultGovernanceProposals);
 
 // Export all types
 
