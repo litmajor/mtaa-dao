@@ -9,6 +9,27 @@ export function getUserFromToken(req: NextApiRequest): TokenPayload | null {
   return verifyAccessToken(token);
 }
 import { NextFunction } from 'express';
+
+// Logout handler
+export const logoutHandler = async (req: Request, res: Response) => {
+  try {
+    // Clear refresh token cookie
+    res.clearCookie('refreshToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+    });
+
+    res.json({
+      success: true,
+      message: 'Logged out successfully',
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({ error: 'Logout failed' });
+  }
+};
+
 // Express middleware to check JWT access token
 export const isAuthenticated = (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;

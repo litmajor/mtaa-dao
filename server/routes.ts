@@ -25,7 +25,7 @@ import taskTemplatesRoutes from './api/task_templates';
 import achievementsRouter from './api/achievements';
 
 // Import API handlers
-import { authUserHandler } from './api/authUser';
+import { authUserHandler } from './api/auth_user';
 import { authLoginHandler } from './api/auth_login';
 import { authRegisterHandler } from './api/auth_register';
 import { authTelegramLinkHandler } from './api/auth_telegram_link';
@@ -47,6 +47,23 @@ import { getDaoSettingsHandler, updateDaoSettingsHandler, resetInviteCodeHandler
 
 // Import Reputation handlers
 import { getUserReputationHandler, getReputationLeaderboardHandler, getDaoReputationLeaderboardHandler } from './api/reputation';
+
+// Auth handlers
+import { refreshTokenHandler, logoutHandler } from './auth';
+
+// User profile handlers
+import { 
+  getUserProfileHandler, 
+  updateUserProfileHandler, 
+  changePasswordHandler, 
+  updateWalletAddressHandler 
+} from './api/user_profile';
+
+// RBAC middleware
+import { requireRole, requireDAORole, requirePermission } from './middleware/rbac';
+
+// Admin handlers
+import { getUsersHandler, updateUserRoleHandler } from './api/admin_users';
 
 
 export function registerRoutes(app: express.Application) {
@@ -97,6 +114,8 @@ export function registerRoutes(app: express.Application) {
   app.post('/api/auth/telegram-link', authTelegramLinkHandler);
   app.get('/api/auth/oauth/google', authOauthGoogleHandler);
   app.get('/api/auth/oauth/google/callback', authOauthGoogleCallbackHandler);
+  app.post('/api/auth/refresh-token', refreshTokenHandler);
+  app.post('/api/auth/logout', logoutHandler);
 
   // Account management
   app.delete('/api/account/delete', isAuthenticated, accountDeleteHandler);
@@ -151,4 +170,14 @@ export function registerRoutes(app: express.Application) {
 
   // === ACHIEVEMENTS API ===
   app.use('/api/achievements', achievementsRouter);
+
+  // === USER PROFILE API ===
+  app.get('/api/user/profile', isAuthenticated, getUserProfileHandler);
+  app.put('/api/user/profile', isAuthenticated, updateUserProfileHandler);
+  app.put('/api/user/profile/password', isAuthenticated, changePasswordHandler);
+  app.put('/api/user/profile/wallet', isAuthenticated, updateWalletAddressHandler);
+
+  // === RBAC ENDPOINTS ===
+  app.get('/api/admin/users', isAuthenticated, requirePermission('read:users'), getUsersHandler);
+  app.put('/api/admin/users/:userId/role', isAuthenticated, requirePermission('update:user_role'), updateUserRoleHandler);
 }
