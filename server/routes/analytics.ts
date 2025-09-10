@@ -214,18 +214,119 @@ router.get('/live', isAuthenticated, async (req, res) => {
     // Send initial metrics
     await sendMetrics();
     
-    // Update every 30 seconds
-    const interval = setInterval(sendMetrics, 30000);
+    // Set up real-time updates
+    const unsubscribe = analyticsService.onMetricsUpdate((metricsMap) => {
+      const targetMetrics = metricsMap.get(daoId as string || 'global');
+      if (targetMetrics) {
+        res.write(`data: ${JSON.stringify({
+          type: 'metrics',
+          data: targetMetrics,
+          timestamp: new Date().toISOString()
+        })}\n\n`);
+      }
+    });
     
     // Clean up on client disconnect
     req.on('close', () => {
-      clearInterval(interval);
+      unsubscribe();
     });
     
   } catch (error: any) {
     res.status(500).json({
       success: false,
       message: 'Failed to start live metrics stream',
+      error: error.message
+    });
+  }
+});
+
+// GET /api/analytics/user-activity - User activity analytics
+router.get('/user-activity', isAuthenticated, async (req, res) => {
+  try {
+    const { userId, period = '7d', daoId } = req.query;
+    
+    let whereClause = '';
+    const params: any[] = [];
+    
+    if (userId) {
+      whereClause += ' AND user_id = $' + (params.length + 1);
+      params.push(userId);
+    }
+    
+    if (daoId) {
+      whereClause += ' AND metadata->\'daoId\' = $' + (params.length + 1);
+      params.push(daoId);
+    }
+    
+    // Calculate date range
+    const days = period === '30d' ? 30 : period === '7d' ? 7 : 1;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    
+    const query = `
+      SELECT 
+        action,
+        COUNT(*) as count,
+        DATE(created_at) as date
+      FROM user_activities 
+      WHERE created_at >= $${params.length + 1} ${whereClause}
+      GROUP BY action, DATE(created_at)
+      ORDER BY date DESC, count DESC
+    `;
+    
+    params.push(startDate);
+    
+    const activities = await db.execute(sql.raw(query, params));
+    
+    res.json({
+      success: true,
+      data: activities,
+      period,
+      userId: userId || 'all',
+      daoId: daoId || 'all'
+    });
+    
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch user activity data',
+      error: error.message
+    });
+  }
+});
+
+// GET /api/analytics/system-health - System health metrics
+router.get('/system-health', isAuthenticated, async (req, res) => {
+  try {
+    const metrics = metricsCollector.getMetrics();
+    const healthScore = metricsCollector.getHealthScore();
+    
+    const systemHealth = {
+      healthScore,
+      status: healthScore >= 80 ? 'healthy' : healthScore >= 60 ? 'degraded' : 'unhealthy',
+      metrics: {
+        ...metrics.summary,
+        memoryUsage: process.memoryUsage(),
+        cpuUsage: process.cpuUsage(),
+        uptime: process.uptime()
+      },
+      alerts: metrics.summary.errorRate > 5 ? ['High error rate detected'] : [],
+      recommendations: healthScore < 80 ? [
+        'Consider optimizing slow endpoints',
+        'Monitor memory usage',
+        'Review error logs'
+      ] : []
+    };
+    
+    res.json({
+      success: true,
+      data: systemHealth
+    });
+    
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch system health data',
       error: error.message
     });
   }

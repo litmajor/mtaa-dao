@@ -25,6 +25,8 @@ import { metricsCollector } from './monitoring/metricsCollector';
 import { ProposalExecutionService } from './proposalExecutionService';
 import { vaultEventIndexer } from './vaultEventsIndexer';
 import { vaultAutomationService } from './vaultAutomation';
+// Import activityTracker (assuming it's defined in ./monitoring/activityTracker)
+import { activityTracker } from './monitoring/activityTracker'; 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -72,6 +74,9 @@ app.use(auditMiddleware);
 
 // Add metrics collection
 app.use(metricsCollector.requestMiddleware());
+
+// User activity tracking middleware
+app.use(activityTracker());
 
 // Store user socket connections
 const userSockets = new Map<string, string>();

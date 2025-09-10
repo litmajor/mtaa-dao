@@ -47,7 +47,42 @@ export interface PerformanceBenchmarks {
 }
 
 export class AnalyticsService {
-  
+  private eventEmitter = new (require('events').EventEmitter)();
+  private realTimeMetrics: Map<string, AnalyticsMetrics> = new Map();
+  private userActivityCache: Map<string, { timestamp: Date; action: string }[]> = new Map();
+
+  constructor() {
+    // Update real-time metrics every 30 seconds
+    setInterval(() => this.updateRealTimeMetrics(), 30000);
+    
+    // Clean up old activity data every hour
+    setInterval(() => this.cleanupUserActivity(), 3600000);
+  }
+
+  // Track user activity for analytics
+  async trackUserActivity(userId: string, action: string, metadata?: any) {
+    const activity = { timestamp: new Date(), action, ...metadata };
+    
+    if (!this.userActivityCache.has(userId)) {
+      this.userActivityCache.set(userId, []);
+    }
+    
+    this.userActivityCache.get(userId)!.push(activity);
+    
+    // Store in database for persistence
+    try {
+      await db.insert(sql`
+        INSERT INTO user_activities (user_id, action, metadata, created_at)
+        VALUES (${userId}, ${action}, ${JSON.stringify(metadata || {})}, NOW())
+      `);
+    } catch (error) {
+      console.warn('Failed to persist user activity:', error);
+    }
+
+    // Emit real-time event
+    this.eventEmitter.emit('userActivity', { userId, action, metadata });
+  }
+
   // Real-time metrics collection
   async getRealTimeMetrics(daoId?: string): Promise<AnalyticsMetrics> {
     const whereClause = daoId ? eq(daos.id, daoId) : undefined;
@@ -274,26 +309,91 @@ export class AnalyticsService {
     }));
   }
 
+  // Update real-time metrics cache
+  private async updateRealTimeMetrics() {
+    try {
+      const globalMetrics = await this.getRealTimeMetrics();
+      this.realTimeMetrics.set('global', globalMetrics);
+
+      // Update metrics for active DAOs
+      const activeDaos = await db.select({ id: daos.id }).from(daos).limit(10);
+      for (const dao of activeDaos) {
+        const daoMetrics = await this.getRealTimeMetrics(dao.id);
+        this.realTimeMetrics.set(dao.id, daoMetrics);
+      }
+
+      // Emit updated metrics
+      this.eventEmitter.emit('metricsUpdate', this.realTimeMetrics);
+    } catch (error) {
+      console.error('Failed to update real-time metrics:', error);
+    }
+  }
+
+  // Get cached real-time metrics
+  getCachedMetrics(daoId?: string): AnalyticsMetrics | null {
+    return this.realTimeMetrics.get(daoId || 'global') || null;
+  }
+
+  // Subscribe to real-time updates
+  onMetricsUpdate(callback: (metrics: Map<string, AnalyticsMetrics>) => void) {
+    this.eventEmitter.on('metricsUpdate', callback);
+    return () => this.eventEmitter.off('metricsUpdate', callback);
+  }
+
+  // Subscribe to user activity
+  onUserActivity(callback: (activity: any) => void) {
+    this.eventEmitter.on('userActivity', callback);
+    return () => this.eventEmitter.off('userActivity', callback);
+  }
+
+  private cleanupUserActivity() {
+    const oneDayAgo = subDays(new Date(), 1);
+    
+    for (const [userId, activities] of this.userActivityCache.entries()) {
+      const filtered = activities.filter(a => a.timestamp > oneDayAgo);
+      if (filtered.length === 0) {
+        this.userActivityCache.delete(userId);
+      } else {
+        this.userActivityCache.set(userId, filtered);
+      }
+    }
+  }
+
+  // Enhanced user engagement calculation
   private async calculateUserEngagement(daoId?: string): Promise<number> {
     const thirtyDaysAgo = subDays(new Date(), 30);
+    const sevenDaysAgo = subDays(new Date(), 7);
     
-    const [totalUsers, activeUsers] = await Promise.all([
+    const [totalUsers, activeUsers, weeklyActive] = await Promise.all([
       daoId 
         ? db.select({ count: count() }).from(users) // Would need DAO membership table
         : db.select({ count: count() }).from(users),
       
-    daoId
-    ? db.select({ count: count() }).from(votes)
-      .innerJoin(proposals, eq(votes.proposalId, proposals.id))
-      .where(and(eq(proposals.daoId, daoId), gte(votes.createdAt, thirtyDaysAgo)))
-    : db.select({ count: count() }).from(votes)
-      .where(gte(votes.createdAt, thirtyDaysAgo))
+      daoId
+        ? db.select({ count: count() }).from(votes)
+            .innerJoin(proposals, eq(votes.proposalId, proposals.id))
+            .where(and(eq(proposals.daoId, daoId), gte(votes.createdAt, thirtyDaysAgo)))
+        : db.select({ count: count() }).from(votes)
+            .where(gte(votes.createdAt, thirtyDaysAgo)),
+
+      daoId
+        ? db.select({ count: count() }).from(votes)
+            .innerJoin(proposals, eq(votes.proposalId, proposals.id))
+            .where(and(eq(proposals.daoId, daoId), gte(votes.createdAt, sevenDaysAgo)))
+        : db.select({ count: count() }).from(votes)
+            .where(gte(votes.createdAt, sevenDaysAgo))
     ]);
 
     const total = totalUsers[0]?.count || 0;
-    const active = activeUsers[0]?.count || 0;
+    const monthly = activeUsers[0]?.count || 0;
+    const weekly = weeklyActive[0]?.count || 0;
 
-    return total > 0 ? (active / total) * 100 : 0;
+    // Calculate engagement score based on multiple factors
+    const monthlyEngagement = total > 0 ? (monthly / total) * 100 : 0;
+    const weeklyEngagement = total > 0 ? (weekly / total) * 100 : 0;
+    
+    // Weight weekly engagement more heavily
+    return (monthlyEngagement * 0.4 + weeklyEngagement * 0.6);
   }
 
   private async getSuccessRateForPeriod(start: Date, end: Date, daoId?: string): Promise<number> {
