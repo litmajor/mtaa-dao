@@ -1152,6 +1152,36 @@ const vaultBalance = vaults.reduce((sum: number, v: Vault) => sum + (typeof v.ba
       .offset(offset);
   }
 
+  // Telegram integration methods
+  async updateUserTelegramInfo(userId: string, telegramInfo: { telegramId: string; chatId: string; username?: string }) {
+    return await this.db.update(users)
+      .set({ 
+        telegramId: telegramInfo.telegramId,
+        telegramChatId: telegramInfo.chatId,
+        telegramUsername: telegramInfo.username
+      })
+      .where(eq(users.id, userId))
+      .returning();
+  }
+
+  async getUserTelegramInfo(userId: string) {
+    const user = await this.db.select({
+      telegramId: users.telegramId,
+      chatId: users.telegramChatId,
+      username: users.telegramUsername
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+    
+    return user[0] ? {
+      telegramId: user[0].telegramId || '',
+      chatId: user[0].chatId || '',
+      username: user[0].username || ''
+    } : null;
+  }
+  }
+
 }
 
 // Export a singleton instance for use in other modules
