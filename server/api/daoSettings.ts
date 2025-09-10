@@ -309,3 +309,112 @@ function generateInviteCode(): string {
   }
   return result;
 }
+
+// Bulk update DAO settings
+export async function bulkUpdateDaoSettingsHandler(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    const { daoId } = req.params;
+    const { updates } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Check if user has admin permissions
+    const membership = await db.query.daoMemberships.findFirst({
+      where: and(
+        eq(daoMemberships.daoId, daoId),
+        eq(daoMemberships.userId, userId),
+        eq(daoMemberships.status, 'approved')
+      )
+    });
+
+    if (!membership || !['admin', 'elder'].includes(membership.role || '')) {
+      return res.status(403).json({ error: 'Admin permissions required' });
+    }
+
+    const validUpdates: any = {};
+    const allowedFields = [
+      'name', 'description', 'imageUrl', 'bannerUrl', 'access', 'inviteOnly',
+      'quorumPercentage', 'votingPeriod', 'executionDelay'
+    ];
+
+    // Validate all updates
+    for (const [key, value] of Object.entries(updates)) {
+      if (allowedFields.includes(key)) {
+        // Apply specific validations
+        if (key === 'quorumPercentage' && (value < 1 || value > 100)) {
+          return res.status(400).json({ error: 'Quorum percentage must be between 1 and 100' });
+        }
+        if (key === 'votingPeriod' && value < 1) {
+          return res.status(400).json({ error: 'Voting period must be at least 1 hour' });
+        }
+        if (key === 'executionDelay' && value < 0) {
+          return res.status(400).json({ error: 'Execution delay cannot be negative' });
+        }
+        validUpdates[key] = value;
+      }
+    }
+
+    if (Object.keys(validUpdates).length === 0) {
+      return res.status(400).json({ error: 'No valid updates provided' });
+    }
+
+    validUpdates.updatedAt = new Date();
+    
+    await db.update(daos)
+      .set(validUpdates)
+      .where(eq(daos.id, daoId));
+
+    res.json({ 
+      success: true, 
+      message: 'Settings updated successfully',
+      updatedFields: Object.keys(validUpdates)
+    });
+  } catch (error: any) {
+    console.error('Error bulk updating DAO settings:', error);
+    res.status(500).json({ error: error.message || 'Failed to update DAO settings' });
+  }
+}
+
+// Export configuration for specific DAO
+export async function exportDaoConfigHandler(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    const { daoId } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const dao = await db.query.daos.findFirst({
+      where: eq(daos.id, daoId)
+    });
+
+    if (!dao) {
+      return res.status(404).json({ error: 'DAO not found' });
+    }
+
+    const config = {
+      basic: {
+        name: dao.name,
+        description: dao.description,
+        category: dao.category,
+        access: dao.access
+      },
+      governance: {
+        quorumPercentage: dao.quorumPercentage,
+        votingPeriod: dao.votingPeriod,
+        executionDelay: dao.executionDelay
+      },
+      exportedAt: new Date().toISOString(),
+      version: '1.0'
+    };
+
+    res.json({ config });
+  } catch (error: any) {
+    console.error('Error exporting DAO config:', error);
+    res.status(500).json({ error: error.message || 'Failed to export DAO config' });
+  }
+}

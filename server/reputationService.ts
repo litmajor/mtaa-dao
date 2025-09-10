@@ -362,4 +362,85 @@ export class ReputationService {
   static async onDaoJoin(userId: string, daoId: string): Promise<void> {
     await this.awardPoints(userId, 'DAO_MEMBERSHIP', REPUTATION_VALUES.DAO_MEMBERSHIP, daoId, 'Joined DAO');
   }
+
+  // Get DAO-specific reputation for governance voting power
+  static async getDaoReputation(userId: string, daoId: string): Promise<{
+    daoPoints: number;
+    globalPoints: number;
+    votingPower: number;
+    governanceLevel: string;
+  }> {
+    // Get DAO-specific points
+    const daoPointsResult = await db
+      .select({ total: sql<number>`sum(${msiaMoPoints.points})` })
+      .from(msiaMoPoints)
+      .where(and(
+        eq(msiaMoPoints.userId, userId),
+        eq(msiaMoPoints.daoId, daoId)
+      ));
+
+    const daoPoints = daoPointsResult[0]?.total || 0;
+
+    // Get global points
+    const globalRep = await this.getUserReputation(userId);
+    const globalPoints = globalRep.totalPoints || 0;
+
+    // Calculate voting power (combination of DAO and global reputation)
+    const votingPower = Math.floor((daoPoints * 0.7) + (globalPoints * 0.3));
+
+    // Determine governance level
+    let governanceLevel = 'member';
+    if (votingPower >= 1000) governanceLevel = 'elder';
+    if (votingPower >= 2500) governanceLevel = 'governor';
+    if (votingPower >= 5000) governanceLevel = 'sage';
+
+    return {
+      daoPoints,
+      globalPoints,
+      votingPower,
+      governanceLevel
+    };
+  }
+
+  // Award bonus points for successful proposals
+  static async onProposalPassed(userId: string, proposalId: string, daoId: string): Promise<void> {
+    await this.awardPoints(
+      userId, 
+      'PROPOSAL_PASSED', 
+      REPUTATION_VALUES.PROPOSAL_PASSED, 
+      daoId, 
+      `Proposal ${proposalId} passed and executed`
+    );
+  }
+
+  // Award points for delegation activities
+  static async onDelegationReceived(userId: string, daoId: string, delegatorCount: number): Promise<void> {
+    const bonus = Math.min(delegatorCount * 5, 50); // Max 50 points
+    await this.awardPoints(
+      userId, 
+      'DELEGATION_RECEIVED', 
+      bonus, 
+      daoId, 
+      `Received delegation from ${delegatorCount} members`
+    );
+  }
+
+  // Bulk reputation update for DAO events
+  static async awardBulkPoints(awards: Array<{
+    userId: string;
+    action: string;
+    points: number;
+    daoId?: string;
+    description?: string;
+  }>): Promise<void> {
+    for (const award of awards) {
+      await this.awardPoints(
+        award.userId,
+        award.action,
+        award.points,
+        award.daoId,
+        award.description
+      );
+    }
+  }
 }

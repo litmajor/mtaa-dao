@@ -413,4 +413,48 @@ export class ProposalExecutionService {
       this.processPendingExecutions();
     }, 10000); // Wait 10 seconds for app to initialize
   }
+
+  // Batch execute multiple proposals
+  static async batchExecuteProposals(proposalIds: string[]): Promise<{ successful: string[]; failed: string[] }> {
+    const successful: string[] = [];
+    const failed: string[] = [];
+
+    for (const proposalId of proposalIds) {
+      try {
+        const execution = await db.select()
+          .from(proposalExecutionQueue)
+          .where(and(
+            eq(proposalExecutionQueue.proposalId, proposalId),
+            eq(proposalExecutionQueue.status, 'pending')
+          ))
+          .limit(1);
+
+        if (execution.length > 0) {
+          await this.executeProposal(execution[0]);
+          successful.push(proposalId);
+        }
+      } catch (error) {
+        console.error(`Failed to execute proposal ${proposalId}:`, error);
+        failed.push(proposalId);
+      }
+    }
+
+    return { successful, failed };
+  }
+
+  // Get execution statistics
+  static async getExecutionStats(daoId: string): Promise<any> {
+    const stats = await db.select({
+      status: proposalExecutionQueue.status,
+      count: sql<number>`count(*)`
+    })
+    .from(proposalExecutionQueue)
+    .where(eq(proposalExecutionQueue.daoId, daoId))
+    .groupBy(proposalExecutionQueue.status);
+
+    return stats.reduce((acc, stat) => {
+      acc[stat.status] = stat.count;
+      return acc;
+    }, {} as Record<string, number>);
+  }
 }
