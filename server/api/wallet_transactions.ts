@@ -1,7 +1,7 @@
 
 import { Request, Response } from 'express';
 import { db } from '../db';
-import { transactions } from '../../shared/schema';
+import { walletTransactions } from '../../shared/schema';
 import { eq, desc } from 'drizzle-orm';
 
 export async function getWalletTransactions(req: Request, res: Response) {
@@ -13,9 +13,9 @@ export async function getWalletTransactions(req: Request, res: Response) {
 
     const userTransactions = await db
       .select()
-      .from(transactions)
-      .where(eq(transactions.userId, userId))
-      .orderBy(desc(transactions.createdAt))
+      .from(walletTransactions)
+      .where(eq(walletTransactions.fromUserId, userId))
+      .orderBy(desc(walletTransactions.createdAt))
       .limit(50);
 
     res.status(200).json(userTransactions);
@@ -32,15 +32,17 @@ export async function createTransaction(req: Request, res: Response) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const { amount, type, description, hash } = req.body;
+    const { amount, type, description, transactionHash, currency = 'cUSD', walletAddress } = req.body;
 
-    const newTransaction = await db.insert(transactions).values({
-      userId,
+    const newTransaction = await db.insert(walletTransactions).values({
+      fromUserId: userId,
       amount,
       type,
       description,
-      hash,
-      createdAt: new Date(),
+      transactionHash,
+      currency,
+      walletAddress: walletAddress || '',
+      status: 'completed',
     }).returning();
 
     res.status(201).json(newTransaction[0]);
