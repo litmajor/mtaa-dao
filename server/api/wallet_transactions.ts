@@ -24,7 +24,7 @@ export async function getWalletTransactions(req: Request, res: Response) {
   }
 }
 
-export async function createTransaction(req: Request, res: Response) {
+export async function createWalletTransaction(req: Request, res: Response) {
   try {
     const userId = req.user?.id;
     if (!userId) {
