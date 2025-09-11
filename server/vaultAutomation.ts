@@ -1,4 +1,3 @@
-
 import { MaonoVaultService } from "./blockchain";
 import { vaultService } from "./services/vaultService";
 import { db } from "./db";
@@ -6,6 +5,7 @@ import { vaults, vaultPerformance, vaultTransactions } from "../shared/schema";
 import { eq } from "drizzle-orm";
 import { ethers } from "ethers";
 import { Logger } from "./utils/logger";
+import { AppError } from "./utils/appError";
 
 interface AutomationTask {
   id: string;
@@ -29,31 +29,48 @@ class VaultAutomationService {
   }
 
   // Start automation service
-  start() {
+  start(): void {
     if (this.isRunning) {
       this.logger.warn('Vault automation service is already running');
       return;
     }
 
-    this.isRunning = true;
     this.logger.info('🚀 Starting Vault Automation Service...');
 
     try {
+      this.isRunning = true;
+
       // Schedule regular tasks
       this.scheduleRegularTasks();
-      
+
       // Process tasks every 30 seconds
-      this.intervalId = setInterval(() => {
-        this.processTasks().catch((error) => {
+      this.intervalId = setInterval(async () => {
+        try {
+          await this.processTasks();
+        } catch (error) {
+          await this.logger.securityLog(
+            'Critical error in automation task processing',
+            'high',
+            { error: error instanceof Error ? error.message : String(error) }
+          );
+
+          // Don't stop the service entirely, but log the error
           this.logger.error('Error processing automation tasks', error);
-        });
+        }
       }, 30000);
 
       this.logger.info('✅ Vault Automation Service started successfully');
+
+      // Log startup metrics
+      this.logger.performanceLog('automation_service_startup', Date.now(), {
+        scheduledTasks: this.tasks.length,
+        intervalMs: 30000
+      });
+
     } catch (error) {
       this.logger.error('Failed to start Vault Automation Service', error);
       this.isRunning = false;
-      throw error;
+      throw new AppError('Failed to start vault automation service', 500);
     }
   }
 
@@ -69,7 +86,7 @@ class VaultAutomationService {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
-    
+
     this.logger.info('⏹️  Vault Automation Service stopped');
   }
 
@@ -133,22 +150,22 @@ class VaultAutomationService {
 
       for (const task of dueTasks) {
         const taskLogger = this.logger.child({ taskId: task.id, taskType: task.type });
-        
+
         try {
           taskLogger.info(`🔄 Processing automation task: ${task.type}`);
-          
+
           await this.executeTask(task);
-          
+
           // Remove completed task
           this.tasks = this.tasks.filter(t => t.id !== task.id);
-          
+
           taskLogger.info(`✅ Completed automation task: ${task.type}`);
 
         } catch (error) {
           taskLogger.error(`❌ Task failed: ${task.type}`, error);
-          
+
           task.retryCount++;
-          
+
           if (task.retryCount < task.maxRetries) {
             // Reschedule with exponential backoff
             const backoffMs = Math.pow(2, task.retryCount) * 60000;
@@ -161,7 +178,7 @@ class VaultAutomationService {
             // Max retries exceeded
             taskLogger.error(`💥 Task failed after ${task.maxRetries} attempts`);
             this.tasks = this.tasks.filter(t => t.id !== task.id);
-            
+
             // Log critical failure for monitoring
             await this.logger.securityLog(`Task ${task.id} failed permanently`, 'medium', {
               taskType: task.type,
@@ -182,19 +199,19 @@ class VaultAutomationService {
       case 'nav_update':
         await this.executeNAVUpdate(task);
         break;
-      
+
       case 'performance_fee':
         await this.executePerformanceFeeDistribution(task);
         break;
-      
+
       case 'rebalance':
         await this.executeRebalancing(task);
         break;
-      
+
       case 'risk_assessment':
         await this.executeRiskAssessment(task);
         break;
-      
+
       default:
         throw new Error(`Unknown task type: ${task.type}`);
     }
@@ -205,7 +222,7 @@ class VaultAutomationService {
     try {
       // Get current on-chain NAV
       const [currentNAV, lastUpdate] = await MaonoVaultService.getNAV();
-      
+
       // Calculate new NAV based on vault performance
       const activeVaults = await db.query.vaults.findMany({
         where: eq(vaults.isActive, true)
@@ -225,13 +242,13 @@ class VaultAutomationService {
 
       // Update NAV on-chain if significant change
       const navChange = currentNAV > 0n ? (newNAV - currentNAV) * 100n / currentNAV : 100n;
-      
+
       if (navChange > 1n || navChange < -1n) { // More than 1% change
         console.log(`📈 Updating NAV: ${ethers.formatEther(currentNAV)} → ${ethers.formatEther(newNAV)}`);
-        
+
         const tx = await MaonoVaultService.updateNAV(newNAV);
         await tx.wait();
-        
+
         console.log(`✅ NAV updated on-chain: ${tx.hash}`);
       } else {
         console.log('📊 NAV change too small, skipping update');
@@ -263,7 +280,7 @@ class VaultAutomationService {
       });
 
       let totalProfit = 0n;
-      
+
       for (const performance of recentPerformance) {
         const yield_ = parseFloat(performance.yield || '0');
         if (yield_ > 0) {
@@ -273,10 +290,10 @@ class VaultAutomationService {
 
       if (totalProfit > ethers.parseUnits('100', 18)) { // Minimum $100 profit
         console.log(`💰 Distributing performance fees on profit: ${ethers.formatEther(totalProfit)} USD`);
-        
+
         const tx = await MaonoVaultService.distributePerformanceFee(totalProfit);
         await tx.wait();
-        
+
         console.log(`✅ Performance fees distributed: ${tx.hash}`);
       } else {
         console.log('💰 Insufficient profit for fee distribution');
@@ -404,7 +421,7 @@ export async function automatePerformanceFeeDistribution(profit: bigint) {
 // Start automation service if called directly
 if (import.meta.url === new URL(process.argv[1], 'file://').href) {
   vaultAutomationService.start();
-  
+
   // Graceful shutdown
   process.on('SIGINT', () => {
     console.log('Received SIGINT, shutting down automation service...');
