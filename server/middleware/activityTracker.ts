@@ -2,21 +2,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { analyticsService } from '../analyticsService';
 
-interface AuthenticatedRequest extends Request {
-  user?: {
-    id: string;
-    email?: string;
-    role?: string;
-  };
-}
-
 export function activityTracker() {
-  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  return (req: Request, res: Response, next: NextFunction) => {
     const startTime = Date.now();
 
     res.on('finish', async () => {
       // Only track authenticated user activities
-      if (req.user?.id && res.statusCode < 400) {
+      if (req.user?.claims?.sub && res.statusCode < 400) {
         const duration = Date.now() - startTime;
         
         // Determine activity type based on route and method
@@ -24,7 +16,7 @@ export function activityTracker() {
         
         if (activityType) {
           try {
-            await analyticsService.trackUserActivity(req.user.id, activityType, {
+            await analyticsService.trackUserActivity(req.user.claims.sub, activityType, {
               path: req.path,
               method: req.method,
               duration,

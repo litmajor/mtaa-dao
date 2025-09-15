@@ -4,7 +4,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
 import helmet from 'helmet';
 import { registerRoutes } from "./routes";
-import {setupVite, serveStatic, log } from "./vite"; // ← fix here
+import {setupVite, serveStatic, log } from "./vite";
 import path from "path";
 import { dirname } from "path";
 import { fileURLToPath } from "url";
@@ -20,13 +20,12 @@ import {
   setupProcessErrorHandlers,
   asyncHandler
 } from './middleware/errorHandler';
-import { logger, requestLogger } from './utils/logger';
+import { logger, requestLogger, logStartup } from './utils/logger';
 import { metricsCollector } from './monitoring/metricsCollector';
 import { ProposalExecutionService } from './proposalExecutionService';
 import { vaultEventIndexer } from './vaultEventsIndexer';
 import { vaultAutomationService } from './vaultAutomation';
-// Import activityTracker (assuming it's defined in ./monitoring/activityTracker)
-import { activityTracker } from './monitoring/activityTracker';
+import { activityTracker } from './middleware/activityTracker';
 import paymentReconciliationRoutes from './routes/payment-reconciliation';
 import healthRoutes from './routes/health';
 import analyticsRoutes from './routes/analytics';
