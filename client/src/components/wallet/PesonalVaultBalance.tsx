@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useWallet } from "@/pages/hooks/useWallet"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import BigNumber from "bignumber.js"
 import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { LockedSavingsSection } from "./LockedSavingsSection"
 import { motion } from "framer-motion"
 import { Wallet, TrendingUp, TrendingDown, RefreshCw } from "lucide-react"
+import { currentNetwork } from "@/lib/blockchain"
 // import QRCode from "react-qr-code" // Uncomment if installed
 
 const isValidAddress = (addr: string) => /^0x[a-fA-F0-9]{40}$/.test(addr)
@@ -62,6 +63,8 @@ export function PersonalVaultSection() {
 
 function VaultBalanceCard() {
   const { address, refreshBalances, isRefreshingBalances } = useWallet();
+  const queryClient = useQueryClient();
+  
   const { data: celo = "0", isLoading: celoLoading } = useQuery({
     queryKey: ["celo", address],
     queryFn: async () => {
@@ -114,7 +117,14 @@ function VaultBalanceCard() {
         </motion.div>
         <motion.button
           variants={itemVariants}
-          onClick={refreshBalances}
+          onClick={async () => {
+            await refreshBalances();
+            // Also refresh React Query data
+            if (address) {
+              queryClient.invalidateQueries({ queryKey: ["celo", address] });
+              queryClient.invalidateQueries({ queryKey: ["cusd", address] });
+            }
+          }}
           disabled={isRefreshingBalances}
           className="p-2 rounded-lg hover:bg-white/50 dark:hover:bg-gray-800/50 transition-colors"
         >
@@ -209,11 +219,20 @@ function VaultSendCard() {
 
     try {
       toast.loading("Sending transaction...");
-      const txHash = await sendTransaction({ to, amount, currency });
+      // sendTransaction expects (to, amount, tokenAddress?) parameters  
+      // Use correct cUSD address based on current network
+      const cUSDAddresses: Record<number, string> = {
+        42220: "0x765DE816845861e75A25fCA122bb6898B8B1282a", // Mainnet
+        44787: "0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1"  // Alfajores testnet
+      };
+      const tokenAddress = currency === "cUSD" ? 
+        cUSDAddresses[currentNetwork.id as number] || cUSDAddresses[44787] // Default to testnet
+        : undefined;
+      const txHash = await sendTransaction(to, amount, tokenAddress);
       toast.success("Transaction sent", {
         action: {
           label: "Explorer",
-          onClick: () => window.open(`https://celoscan.io/tx/${txHash}`, "_blank"),
+          onClick: () => window.open(`${currentNetwork.blockExplorers?.default.url}/tx/${txHash}`, "_blank"),
         },
       });
     } catch (err: any) {
