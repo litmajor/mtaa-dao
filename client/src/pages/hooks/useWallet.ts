@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { getBalance, connectWallet, currentNetwork, publicClient } from '@/lib/blockchain';
+import { parseUnits, encodeFunctionData } from 'viem';
 
 declare global {
   interface Window {
@@ -26,6 +28,7 @@ export const useWallet = () => {
   });
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Check if wallet is already connected
@@ -52,12 +55,18 @@ export const useWallet = () => {
       let chainId = null;
 
       if (window.ethereum) {
-        // Get balance
-        const balanceHex = await window.ethereum.request({
-          method: 'eth_getBalance',
-          params: [address, 'latest']
-        });
-        balance = (parseInt(balanceHex, 16) / 1e18).toFixed(4);
+        // Get balance using viem utilities
+        try {
+          balance = await getBalance(address);
+        } catch (balanceError) {
+          console.warn('Error fetching balance with viem, falling back to direct call:', balanceError);
+          // Fallback to direct ethereum call
+          const balanceHex = await window.ethereum.request({
+            method: 'eth_getBalance',
+            params: [address, 'latest']
+          });
+          balance = (parseInt(balanceHex, 16) / 1e18).toFixed(4);
+        }
 
         // Get chain ID
         const chainIdHex = await window.ethereum.request({ method: 'eth_chainId' });
@@ -77,6 +86,20 @@ export const useWallet = () => {
     }
   };
 
+  // Add refresh balances function
+  const refreshBalances = useCallback(async () => {
+    if (!walletState.address || !walletState.isConnected) return;
+    
+    setIsRefreshingBalances(true);
+    try {
+      await updateWalletState(walletState.address, walletState.provider || 'metamask');
+    } catch (error) {
+      console.error('Error refreshing balances:', error);
+    } finally {
+      setIsRefreshingBalances(false);
+    }
+  }, [walletState.address, walletState.isConnected, walletState.provider]);
+
   const connectMetaMask = async () => {
     setIsLoading(true);
     setError(null);
@@ -86,9 +109,8 @@ export const useWallet = () => {
         throw new Error('MetaMask is not installed');
       }
 
-      const accounts = await window.ethereum.request({
-        method: 'eth_requestAccounts'
-      });
+      // Use viem connection utility
+      const accounts = await connectWallet();
 
       if (accounts.length > 0) {
         await updateWalletState(accounts[0], 'metamask');
@@ -159,10 +181,13 @@ export const useWallet = () => {
     try {
       if (!window.ethereum) return;
 
-      // Try to switch to Celo Mainnet
+      // Use the current network from blockchain config (could be testnet or mainnet)
+      const targetChainId = `0x${currentNetwork.id.toString(16)}`;
+      
+      // Try to switch to the configured Celo network
       await window.ethereum.request({
         method: 'wallet_switchEthereumChain',
-        params: [{ chainId: '0xa4ec' }], // Celo Mainnet (42220)
+        params: [{ chainId: targetChainId }],
       });
     } catch (switchError: any) {
       // If the chain hasn't been added to MetaMask, add it
@@ -171,15 +196,11 @@ export const useWallet = () => {
           await window.ethereum.request({
             method: 'wallet_addEthereumChain',
             params: [{
-              chainId: '0xa4ec',
-              chainName: 'Celo Mainnet',
-              nativeCurrency: {
-                name: 'CELO',
-                symbol: 'CELO',
-                decimals: 18
-              },
-              rpcUrls: ['https://forno.celo.org'],
-              blockExplorerUrls: ['https://explorer.celo.org']
+              chainId: `0x${currentNetwork.id.toString(16)}`,
+              chainName: currentNetwork.name,
+              nativeCurrency: currentNetwork.nativeCurrency,
+              rpcUrls: currentNetwork.rpcUrls.default.http,
+              blockExplorerUrls: currentNetwork.blockExplorers ? [currentNetwork.blockExplorers.default.url] : []
             }]
           });
         } catch (addError) {
@@ -209,21 +230,35 @@ export const useWallet = () => {
       let txParams;
 
       if (tokenAddress) {
-        // ERC-20 token transfer
-        const transferData = `0xa9059cbb${to.slice(2).padStart(64, '0')}${(parseFloat(amount) * 1e18).toString(16).padStart(64, '0')}`;
+        // ERC-20 token transfer using viem for precise encoding
+        const transferData = encodeFunctionData({
+          abi: [{
+            inputs: [
+              { internalType: 'address', name: 'to', type: 'address' },
+              { internalType: 'uint256', name: 'amount', type: 'uint256' },
+            ],
+            name: 'transfer',
+            outputs: [{ internalType: 'bool', name: '', type: 'bool' }],
+            stateMutability: 'nonpayable',
+            type: 'function',
+          }],
+          functionName: 'transfer',
+          args: [to as `0x${string}`, parseUnits(amount, 18)]
+        });
+        
         txParams = {
           from: walletState.address,
           to: tokenAddress,
           data: transferData,
-          gas: '0x5208', // 21000
+          // Let provider estimate gas
         };
       } else {
-        // Native CELO transfer
+        // Native CELO transfer using viem for precise conversion
         txParams = {
           from: walletState.address,
           to,
-          value: `0x${(parseFloat(amount) * 1e18).toString(16)}`,
-          gas: '0x5208',
+          value: `0x${parseUnits(amount, 18).toString(16)}`,
+          // Let provider estimate gas
         };
       }
 
@@ -242,12 +277,14 @@ export const useWallet = () => {
   return {
     ...walletState,
     isLoading,
+    isRefreshingBalances,
     error,
     connectMetaMask,
     connectValora,
     connectMiniPay,
     disconnect,
     sendTransaction,
-    switchToCelo
+    switchToCelo,
+    refreshBalances
   };
 };

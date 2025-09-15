@@ -21,6 +21,9 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 import TransactionHistory from '../components/wallet/TransactionHistory';
 import RecurringPayments from '../components/wallet/RecurringPayments';
 import ExchangeRateWidget from '../components/wallet/ExchangeRateWidget';
+import { useWallet } from './hooks/useWallet';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const EnhancedWalletPage = () => {
   const [activeTab, setActiveTab] = useState("overview");
@@ -32,9 +35,9 @@ const EnhancedWalletPage = () => {
   const [vaults, setVaults] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
 
-  // Mock user and address for new components
-  const user = { id: 'mockUserId' };
-  const address = '0x1234567890abcdef'; // Mock wallet address
+  // Use real wallet data instead of mock data
+  const { address, isConnected, balance, connectMetaMask, connectValora, connectMiniPay, isLoading, error, disconnect } = useWallet();
+  const user = { id: address || 'no-wallet' };
 
   // Analytics state
   const [analytics, setAnalytics] = useState<any>(null);
@@ -108,6 +111,65 @@ const EnhancedWalletPage = () => {
   }, []);
 
   const totalBalance = vaults?.reduce((sum, vault) => sum + parseFloat((vault.balance || '0').replace(/,/g, '')), 0) || 0;
+
+  // Show wallet connection UI if not connected
+  if (!isConnected) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 p-6 flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <CardTitle className="flex items-center justify-center gap-2">
+              <Wallet className="h-6 w-6" />
+              Connect Your Wallet
+            </CardTitle>
+            <CardDescription>
+              Connect your wallet to access your MtaaDAO vault and manage your funds
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
+                {error}
+              </div>
+            )}
+            
+            <div className="space-y-3">
+              <button 
+                onClick={connectMetaMask} 
+                disabled={isLoading}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                data-testid="button-connect-metamask"
+              >
+                {isLoading ? "Connecting..." : "Connect MetaMask"}
+              </button>
+              
+              <button 
+                onClick={connectValora} 
+                disabled={isLoading}
+                className="w-full border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2 px-4 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                data-testid="button-connect-valora"
+              >
+                {isLoading ? "Connecting..." : "Connect Valora"}
+              </button>
+              
+              <button 
+                onClick={connectMiniPay} 
+                disabled={isLoading}
+                className="w-full border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2 px-4 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                data-testid="button-connect-minipay"
+              >
+                {isLoading ? "Connecting..." : "Connect MiniPay"}
+              </button>
+            </div>
+            
+            <div className="text-xs text-gray-500 text-center mt-4">
+              Make sure you're on the Celo network. We'll help you switch if needed.
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   // --- Send, Deposit, Withdraw Actions ---
   const [sendAmount, setSendAmount] = useState('');
@@ -192,7 +254,7 @@ const EnhancedWalletPage = () => {
     }
   };
 
-  const Card: React.FC<{ children: React.ReactNode; className?: string; hover?: boolean }> = ({ children, className = "", hover = false }) => (
+  const CustomCard: React.FC<{ children: React.ReactNode; className?: string; hover?: boolean }> = ({ children, className = "", hover = false }) => (
     <div className={`bg-white/90 backdrop-blur-xl rounded-2xl shadow-lg border border-white/20 ${hover ? 'hover:shadow-2xl hover:scale-[1.02] transition-all duration-300' : ''} ${className}`}>
       {children}
     </div>
@@ -367,7 +429,7 @@ const EnhancedWalletPage = () => {
         {/* Premium Balance Overview */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
           {/* Main Balance Card */}
-          <Card className="lg:col-span-2 bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 text-white p-8 relative overflow-hidden">
+          <CustomCard className="lg:col-span-2 bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 text-white p-8 relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent" />
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl" />
             <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full blur-2xl" />
@@ -408,10 +470,10 @@ const EnhancedWalletPage = () => {
                 </Button>
               </div>
             </div>
-          </Card>
+          </CustomCard>
 
           {/* Quick Actions Card */}
-          <Card className="bg-gradient-to-br from-white/90 to-gray-50/90 p-8">
+          <CustomCard className="bg-gradient-to-br from-white/90 to-gray-50/90 p-8">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-bold text-gray-900">Quick Actions</h3>
               <Zap className="w-6 h-6 text-yellow-500" />
@@ -439,11 +501,11 @@ const EnhancedWalletPage = () => {
                 Withdraw
               </Button>
             </div>
-          </Card>
+          </CustomCard>
         </div>
 
         {/* Enhanced Currency Breakdown */}
-        <Card className="mb-12 p-8">
+        <CustomCard className="mb-12 p-8">
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-blue-900 bg-clip-text text-transparent">
               Currency Portfolio
@@ -456,7 +518,7 @@ const EnhancedWalletPage = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {vaults?.map((vault, index) => (
-              <Card key={vault.id} hover className="p-6 bg-gradient-to-br from-white/80 to-gray-50/80 relative overflow-hidden">
+              <CustomCard key={vault.id} hover className="p-6 bg-gradient-to-br from-white/80 to-gray-50/80 relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-full blur-xl" />
 
                 <div className="relative z-10">
@@ -495,10 +557,10 @@ const EnhancedWalletPage = () => {
                     </div>
                   </div>
                 </div>
-              </Card>
+              </CustomCard>
             ))}
           </div>
-        </Card>
+        </CustomCard>
 
         {/* New Wallet Features Section */}
         <div className="space-y-6">
@@ -518,7 +580,7 @@ const EnhancedWalletPage = () => {
       {/* Mock Modals */}
       {depositOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <Card className="p-8 max-w-md w-full mx-4">
+          <CustomCard className="p-8 max-w-md w-full mx-4">
             <div className="flex items-center space-x-3 mb-6">
               <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
                 <Download className="w-6 h-6 text-white" />
@@ -530,13 +592,13 @@ const EnhancedWalletPage = () => {
             {actionError && <p className="text-red-500 mb-2">{actionError}</p>}
             <Button onClick={handleSendNative} className="w-full" disabled={actionLoading}>{actionLoading ? 'Sending...' : 'Send'}</Button>
             <Button onClick={() => setDepositOpen(false)} className="w-full mt-2" variant="outline">Close</Button>
-          </Card>
+          </CustomCard>
         </div>
       )}
 
       {paymentOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <Card className="p-8 max-w-md w-full mx-4">
+          <CustomCard className="p-8 max-w-md w-full mx-4">
             <div className="flex items-center space-x-3 mb-6">
               <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center">
                 <CreditCard className="w-6 h-6 text-white" />
@@ -548,13 +610,13 @@ const EnhancedWalletPage = () => {
             {actionError && <p className="text-red-500 mb-2">{actionError}</p>}
             <Button onClick={handleDeposit} className="w-full" disabled={actionLoading}>{actionLoading ? 'Depositing...' : 'Deposit'}</Button>
             <Button onClick={() => setPaymentOpen(false)} className="w-full mt-2" variant="outline">Close</Button>
-          </Card>
+          </CustomCard>
         </div>
       )}
 
       {withdrawOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <Card className="p-8 max-w-md w-full mx-4">
+          <CustomCard className="p-8 max-w-md w-full mx-4">
             <div className="flex items-center space-x-3 mb-6">
               <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl flex items-center justify-center">
                 <ArrowUpRight className="w-6 h-6 text-white" />
@@ -566,7 +628,7 @@ const EnhancedWalletPage = () => {
             {actionError && <p className="text-red-500 mb-2">{actionError}</p>}
             <Button onClick={handleWithdraw} className="w-full" disabled={actionLoading}>{actionLoading ? 'Withdrawing...' : 'Withdraw'}</Button>
             <Button onClick={() => setWithdrawOpen(false)} className="w-full mt-2" variant="outline">Close</Button>
-          </Card>
+          </CustomCard>
         </div>
       )}
     </div>
