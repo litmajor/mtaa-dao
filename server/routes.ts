@@ -25,6 +25,7 @@ import monitoringRoutes from './routes/monitoring';
 import taskTemplatesRoutes from './api/task_templates';
 import achievementsRouter from './api/achievements';
 import vaultRoutes from './routes/vault';
+import challengesRoutes from './routes/challenges';
 
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
@@ -91,7 +92,8 @@ export function registerRoutes(app: express.Application) {
 
   // Reputation and analytics
   app.use('/api/reputation', reputationRoutes);
-  app.use('/api/analytics', analyticsRoutes);
+  app.use("/api/analytics", analyticsRoutes);
+  app.use("/api/challenges", challengesRoutes);
 
   // Notifications and disbursements
   app.use('/api/notifications', notificationsRoutes);

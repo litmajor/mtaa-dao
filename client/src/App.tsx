@@ -151,7 +151,7 @@ function App() {
                     </Suspense>
                   </ProtectedRoute>
                 </Route>
-                
+
                 <Route path="/proposals">
                   <ProtectedRoute>
                     <Proposals />
@@ -164,7 +164,12 @@ function App() {
                 </Route>
                 <Route path="/vault">
                   <ProtectedRoute>
-                    <Vault />
+                    <VaultDashboard />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/vault-dashboard">
+                  <ProtectedRoute>
+                    <VaultDashboard />
                   </ProtectedRoute>
                 </Route>
                 <Route path="/profile">

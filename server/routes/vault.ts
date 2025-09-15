@@ -212,6 +212,117 @@ router.get('/info/:vaultAddress', asyncHandler(async (req, res) => {
   }
 }));
 
+// Get user's vaults
+router.get('/user/:address', asyncHandler(async (req, res) => {
+  const { address } = req.params;
+  
+  try {
+    const userVaults = await vaultService.getUserVaults(address);
+    
+    res.json({
+      success: true,
+      vaults: userVaults,
+      count: userVaults.length
+    });
+  } catch (error) {
+    logger.error('Failed to get user vaults:', error);
+    res.status(500).json({ error: 'Failed to fetch user vaults' });
+  }
+}));
+
+// Get vault statistics for user
+router.get('/stats/:address', asyncHandler(async (req, res) => {
+  const { address } = req.params;
+  
+  try {
+    const stats = await vaultService.getUserVaultStats(address);
+    
+    res.json({
+      success: true,
+      ...stats
+    });
+  } catch (error) {
+    logger.error('Failed to get vault stats:', error);
+    res.status(500).json({ error: 'Failed to fetch vault statistics' });
+  }
+}));
+
+// Get LP positions for user
+router.get('/lp-positions/:address', asyncHandler(async (req, res) => {
+  const { address } = req.params;
+  
+  try {
+    // Mock LP positions data - replace with actual service call
+    const positions = [
+      {
+        pair: 'CELO/cUSD',
+        value: '1,250.00',
+        share: '0.45',
+        rewards: '25.50'
+      },
+      {
+        pair: 'cUSD/cEUR',
+        value: '850.00', 
+        share: '0.32',
+        rewards: '18.25'
+      }
+    ];
+    
+    res.json({
+      success: true,
+      positions
+    });
+  } catch (error) {
+    logger.error('Failed to get LP positions:', error);
+    res.status(500).json({ error: 'Failed to fetch LP positions' });
+  }
+}));
+
+// Create new vault
+router.post('/create', asyncHandler(async (req, res) => {
+  const userId = req.user?.id;
+  
+  if (!userId) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  try {
+    const vaultData = req.body;
+    const newVault = await vaultService.createVault({
+      ...vaultData,
+      userId
+    });
+
+    res.json({
+      success: true,
+      vault: newVault,
+      message: 'Vault created successfully'
+    });
+  } catch (error) {
+    logger.error('Failed to create vault:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Failed to create vault' 
+    });
+  }
+}));
+
+// Get vault disbursement alerts
+router.get('/alerts/:vaultId', asyncHandler(async (req, res) => {
+  const { vaultId } = req.params;
+  
+  try {
+    const alerts = await vaultService.getVaultAlerts(vaultId);
+    
+    res.json({
+      success: true,
+      alerts
+    });
+  } catch (error) {
+    logger.error('Failed to get vault alerts:', error);
+    res.status(500).json({ error: 'Failed to fetch vault alerts' });
+  }
+}));
+
 // Helper function to generate mock chart data
 function generateMockChartData(period: string) {
   const points = period === '24h' ? 24 : period === '7d' ? 7 : 30;
