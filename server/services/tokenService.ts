@@ -32,17 +32,17 @@ export class TokenService {
     this.provider = new ethers.JsonRpcProvider(providerUrl);
     this.signer = privateKey ? new ethers.Wallet(privateKey, this.provider) : undefined;
     this.network = network;
-    
+
     // Initialize contracts for active tokens
     this.initializeContracts();
   }
 
   private initializeContracts(): void {
     const activeTokens = TokenRegistry.getActiveTokens();
-    
+
     for (const token of activeTokens) {
       if (token.symbol === 'CELO') continue; // Native token, no contract needed
-      
+
       const address = token.address[this.network];
       // Only initialize contracts with valid addresses
       if (address && address !== '0x0000000000000000000000000000000000000000') {
@@ -188,7 +188,7 @@ export class TokenService {
       try {
         const balance = await this.getTokenBalance(token.symbol, address);
         const balanceNum = parseFloat(balance);
-        
+
         if (balanceNum > 0) {
           // TODO: Integrate with price oracle for USD values
           const mockPriceUSD = this.getMockPrice(token.symbol);
@@ -294,7 +294,7 @@ export class TokenService {
     if (token.maxDailyVolume) {
       const maxVolume = parseFloat(token.maxDailyVolume);
       const requestedAmount = parseFloat(amount);
-      
+
       if (requestedAmount > maxVolume) {
         warnings.push(`Amount exceeds daily volume limit of ${token.maxDailyVolume} ${symbol}`);
         riskLevel = 'high';
@@ -318,11 +318,37 @@ export class TokenService {
       maxRecommendedAmount: token.maxDailyVolume
     };
   }
-}
 
-// Export singleton instance
-export const tokenService = new TokenService(
-  process.env.RPC_URL || 'https://alfajores-forno.celo-testnet.org',
-  process.env.MANAGER_PRIVATE_KEY,
-  process.env.NODE_ENV === 'production' ? 'mainnet' : 'testnet'
-);
+  // Get vault share value in USD
+  async getVaultShareValue(vaultAddress: string, shares: string): Promise<number> {
+    try {
+      // For demo purposes, calculate based on a fixed share price
+      const sharePrice = 1.25; // $1.25 per share
+      const shareCount = parseFloat(shares) / 1e18; // Convert from wei
+      return shareCount * sharePrice;
+    } catch (error) {
+      console.error(`Failed to get vault share value: ${error.message}`, error);
+      return 0;
+    }
+  }
+
+  // Get vault APY (Annual Percentage Yield)
+  async getVaultAPY(vaultAddress: string): Promise<number> {
+    try {
+      // For demo purposes, return a fixed APY with some variation
+      const baseAPY = 8.5;
+      const variation = (Math.random() - 0.5) * 2; // ±1% variation
+      return Math.max(baseAPY + variation, 0);
+    } catch (error) {
+      console.error(`Failed to get vault APY: ${error.message}`, error);
+      return 8.5; // Default APY
+    }
+  }
+
+  // Export singleton instance
+  export const tokenService = new TokenService(
+    process.env.RPC_URL || 'https://alfajores-forno.celo-testnet.org',
+    process.env.MANAGER_PRIVATE_KEY,
+    process.env.NODE_ENV === 'production' ? 'mainnet' : 'testnet'
+  );
+}
