@@ -6,6 +6,7 @@ import { useVaultInfo, useVaultBalance, useVaultPerformance, useVaultTransaction
 import { useWallet } from './hooks/useWallet';
 import DepositModal from '../components/vault/DepositModal';
 import WithdrawalModal from '../components/vault/WithdrawalModal';
+import VaultContextIndicator from '../components/vault/VaultContextIndicator';
 
 const DEMO_VAULT_ADDRESS = "0x1234567890123456789012345678901234567890"; // Replace with actual deployed vault
 
@@ -112,6 +113,12 @@ const VaultDashboard = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 relative overflow-hidden">
+      {/* Vault Context Indicator */}
+      <VaultContextIndicator 
+        currentVault="maono" 
+        onNavigateBack={() => window.location.href = '/vault/selector'}
+      />
+      
       {/* Background Elements */}
       <div className="absolute inset-0 bg-gradient-to-br from-blue-400/5 via-purple-400/5 to-pink-400/5" />
       <div className="absolute top-0 left-0 w-72 h-72 bg-gradient-to-br from-blue-400/10 to-purple-400/10 rounded-full blur-3xl animate-pulse" />
