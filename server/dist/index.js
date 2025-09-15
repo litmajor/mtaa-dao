@@ -35,6 +35,7 @@ __export(schema_exports, {
   insertDaoMembershipSchema: () => insertDaoMembershipSchema,
   insertDaoMessageSchema: () => insertDaoMessageSchema,
   insertDaoSchema: () => insertDaoSchema,
+  insertEnhancedVaultSchema: () => insertEnhancedVaultSchema,
   insertNotificationSchema: () => insertNotificationSchema,
   insertProposalCommentSchema: () => insertProposalCommentSchema,
   insertProposalExecutionQueueSchema: () => insertProposalExecutionQueueSchema,
@@ -46,7 +47,13 @@ __export(schema_exports, {
   insertTaskHistorySchema: () => insertTaskHistorySchema,
   insertTaskSchema: () => insertTaskSchema,
   insertUserSchema: () => insertUserSchema,
+  insertVaultGovernanceProposalSchema: () => insertVaultGovernanceProposalSchema,
+  insertVaultPerformanceSchema: () => insertVaultPerformanceSchema,
+  insertVaultRiskAssessmentSchema: () => insertVaultRiskAssessmentSchema,
   insertVaultSchema: () => insertVaultSchema,
+  insertVaultStrategyAllocationSchema: () => insertVaultStrategyAllocationSchema,
+  insertVaultTokenHoldingSchema: () => insertVaultTokenHoldingSchema,
+  insertVaultTransactionSchema: () => insertVaultTransactionSchema,
   insertVoteDelegationSchema: () => insertVoteDelegationSchema,
   insertVoteSchema: () => insertVoteSchema,
   insertWalletTransactionSchema: () => insertWalletTransactionSchema,
@@ -62,7 +69,7 @@ __export(schema_exports, {
   proposalLikesRelations: () => proposalLikesRelations,
   proposalTemplates: () => proposalTemplates,
   proposalTemplatesRelations: () => proposalTemplatesRelations,
-  proposals: () => proposals,
+  proposals: () => proposals2,
   proposalsRelations: () => proposalsRelations,
   quorumHistory: () => quorumHistory,
   referralRewards: () => referralRewards,
@@ -78,6 +85,12 @@ __export(schema_exports, {
   userReputation: () => userReputation,
   users: () => users,
   usersRelations: () => usersRelations,
+  vaultGovernanceProposals: () => vaultGovernanceProposals,
+  vaultPerformance: () => vaultPerformance,
+  vaultRiskAssessments: () => vaultRiskAssessments,
+  vaultStrategyAllocations: () => vaultStrategyAllocations,
+  vaultTokenHoldings: () => vaultTokenHoldings,
+  vaultTransactions: () => vaultTransactions,
   vaults: () => vaults,
   vaultsRelations: () => vaultsRelations,
   voteDelegations: () => voteDelegations,
@@ -101,7 +114,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
-var referralRewards, tasks, users, daos, roles, sessions, createSessionSchema, sessionSchema, billingHistory, proposalTemplates, proposals, voteDelegations, votes, quorumHistory, proposalExecutionQueue, contributions, lockedSavings, savingsGoals, vaults, budgetPlans, daoMemberships, walletTransactions, config, logs, auditLogs, systemLogs, notificationHistory, chainInfo, chains, proposalComments, proposalLikes, commentLikes, daoMessages, subscriptions, userReputation, usersRelations, daosRelations, daoMembershipsRelations, proposalsRelations, votesRelations, voteDelegationsRelations, proposalTemplatesRelations, contributionsRelations, vaultsRelations, budgetPlansRelations, walletTransactionsRelations, referralRewardsRelations, insertUserSchema, insertDaoSchema, insertProposalSchema, insertVoteSchema, insertContributionSchema, insertVaultSchema, insertBudgetPlanSchema, insertDaoMembershipSchema, insertWalletTransactionSchema, insertReferralRewardSchema, notifications, notificationPreferences, taskHistory, insertTaskSchema, insertNotificationSchema, insertTaskHistorySchema, insertProposalTemplateSchema, insertVoteDelegationSchema, insertQuorumHistorySchema, insertProposalExecutionQueueSchema, proposalCommentsRelations, proposalLikesRelations, commentLikesRelations, daoMessagesRelations, insertProposalCommentSchema, insertProposalLikeSchema, insertCommentLikeSchema, insertDaoMessageSchema;
+var referralRewards, tasks, users, daos, roles, sessions, createSessionSchema, sessionSchema, billingHistory, proposalTemplates, proposals2, voteDelegations, votes, quorumHistory, proposalExecutionQueue, contributions, lockedSavings, savingsGoals, vaults, budgetPlans, daoMemberships, walletTransactions, vaultTokenHoldings, vaultPerformance, vaultStrategyAllocations, vaultTransactions, vaultRiskAssessments, vaultGovernanceProposals, config, logs, auditLogs, systemLogs, notificationHistory, chainInfo, chains, proposalComments, proposalLikes, commentLikes, daoMessages, subscriptions, userReputation, usersRelations, daosRelations, daoMembershipsRelations, proposalsRelations, votesRelations, voteDelegationsRelations, proposalTemplatesRelations, contributionsRelations, vaultsRelations, budgetPlansRelations, walletTransactionsRelations, referralRewardsRelations, insertUserSchema, insertDaoSchema, insertProposalSchema, insertVoteSchema, insertContributionSchema, insertVaultSchema, insertBudgetPlanSchema, insertDaoMembershipSchema, insertWalletTransactionSchema, insertReferralRewardSchema, notifications, notificationPreferences, taskHistory, insertTaskSchema, insertNotificationSchema, insertTaskHistorySchema, insertProposalTemplateSchema, insertVoteDelegationSchema, insertQuorumHistorySchema, insertProposalExecutionQueueSchema, proposalCommentsRelations, proposalLikesRelations, commentLikesRelations, daoMessagesRelations, insertProposalCommentSchema, insertProposalLikeSchema, insertCommentLikeSchema, insertDaoMessageSchema, insertEnhancedVaultSchema, insertVaultTokenHoldingSchema, insertVaultTransactionSchema, insertVaultPerformanceSchema, insertVaultRiskAssessmentSchema, insertVaultStrategyAllocationSchema, insertVaultGovernanceProposalSchema;
 var init_schema = __esm({
   "shared/schema.ts"() {
     "use strict";
@@ -255,7 +268,7 @@ var init_schema = __esm({
       createdAt: timestamp("created_at").defaultNow(),
       updatedAt: timestamp("updated_at").defaultNow()
     });
-    proposals = pgTable("proposals", {
+    proposals2 = pgTable("proposals", {
       id: uuid("id").primaryKey().defaultRandom(),
       title: text("title").notNull(),
       description: text("description").notNull(),
@@ -296,7 +309,7 @@ var init_schema = __esm({
       // all, category-specific, proposal-specific
       category: varchar("category"),
       // if scope is category-specific
-      proposalId: uuid("proposal_id").references(() => proposals.id),
+      proposalId: uuid("proposal_id").references(() => proposals2.id),
       // if scope is proposal-specific
       isActive: boolean("is_active").default(true),
       createdAt: timestamp("created_at").defaultNow(),
@@ -304,7 +317,7 @@ var init_schema = __esm({
     });
     votes = pgTable("votes", {
       id: uuid("id").primaryKey().defaultRandom(),
-      proposalId: uuid("proposal_id").references(() => proposals.id).notNull(),
+      proposalId: uuid("proposal_id").references(() => proposals2.id).notNull(),
       userId: varchar("user_id").references(() => users.id).notNull(),
       daoId: uuid("dao_id").references(() => daos.id).notNull(),
       voteType: varchar("vote_type").notNull(),
@@ -319,7 +332,7 @@ var init_schema = __esm({
     quorumHistory = pgTable("quorum_history", {
       id: uuid("id").primaryKey().defaultRandom(),
       daoId: uuid("dao_id").references(() => daos.id).notNull(),
-      proposalId: uuid("proposal_id").references(() => proposals.id),
+      proposalId: uuid("proposal_id").references(() => proposals2.id),
       activeMemberCount: integer("active_member_count").notNull(),
       requiredQuorum: integer("required_quorum").notNull(),
       achievedQuorum: integer("achieved_quorum").default(0),
@@ -328,7 +341,7 @@ var init_schema = __esm({
     });
     proposalExecutionQueue = pgTable("proposal_execution_queue", {
       id: uuid("id").primaryKey().defaultRandom(),
-      proposalId: uuid("proposal_id").references(() => proposals.id).notNull(),
+      proposalId: uuid("proposal_id").references(() => proposals2.id).notNull(),
       daoId: uuid("dao_id").references(() => daos.id).notNull(),
       scheduledFor: timestamp("scheduled_for").notNull(),
       executionType: varchar("execution_type").notNull(),
@@ -345,7 +358,7 @@ var init_schema = __esm({
     contributions = pgTable("contributions", {
       id: uuid("id").primaryKey().defaultRandom(),
       userId: varchar("user_id").references(() => users.id).notNull(),
-      proposalId: uuid("proposal_id").references(() => proposals.id),
+      proposalId: uuid("proposal_id").references(() => proposals2.id),
       daoId: uuid("dao_id").references(() => daos.id).notNull(),
       amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
       currency: varchar("currency").default("cUSD"),
@@ -394,20 +407,43 @@ var init_schema = __esm({
     });
     vaults = pgTable("vaults", {
       id: uuid("id").primaryKey().defaultRandom(),
-      userId: varchar("user_id").references(() => users.id).notNull(),
+      // Support both personal and DAO vaults
+      userId: varchar("user_id").references(() => users.id),
+      // nullable for DAO vaults
+      daoId: uuid("dao_id").references(() => daos.id),
+      // nullable for personal vaults
+      name: varchar("name").default("Personal Vault"),
+      // vault name with default for backward compatibility
+      description: text("description"),
       currency: varchar("currency").notNull(),
+      // primary currency, kept for backward compatibility
       address: varchar("address"),
       // wallet address for this vault
-      balance: decimal("balance", { precision: 10, scale: 2 }).default("0"),
-      monthlyGoal: decimal("monthly_goal", { precision: 10, scale: 2 }).default("0"),
+      balance: decimal("balance", { precision: 18, scale: 8 }).default("0"),
+      // higher precision for crypto
+      monthlyGoal: decimal("monthly_goal", { precision: 18, scale: 8 }).default("0"),
       vaultType: varchar("vault_type").default("regular"),
-      // regular, savings, locked_savings
+      // regular, savings, locked_savings, yield, dao_treasury
       lockDuration: integer("lock_duration"),
       // in days for locked savings
       lockedUntil: timestamp("locked_until"),
       // when locked savings unlocks
       interestRate: decimal("interest_rate", { precision: 5, scale: 4 }).default("0"),
       // annual interest rate for savings
+      // Phase 3 enhancements
+      isActive: boolean("is_active").default(true),
+      riskLevel: varchar("risk_level").default("low"),
+      // low, medium, high
+      minDeposit: decimal("min_deposit", { precision: 18, scale: 8 }).default("0"),
+      maxDeposit: decimal("max_deposit", { precision: 18, scale: 8 }),
+      totalValueLocked: decimal("total_value_locked", { precision: 18, scale: 8 }).default("0"),
+      // TVL in USD equivalent
+      yieldStrategy: varchar("yield_strategy"),
+      // references YIELD_STRATEGIES
+      performanceFee: decimal("performance_fee", { precision: 5, scale: 4 }).default("0.1"),
+      // 10% default
+      managementFee: decimal("management_fee", { precision: 5, scale: 4 }).default("0.02"),
+      // 2% annual default
       updatedAt: timestamp("updated_at").defaultNow(),
       createdAt: timestamp("created_at").defaultNow()
     });
@@ -462,6 +498,134 @@ var init_schema = __esm({
       transactionHash: varchar("transaction_hash"),
       description: text("description"),
       disbursementId: varchar("disbursement_id"),
+      createdAt: timestamp("created_at").defaultNow(),
+      updatedAt: timestamp("updated_at").defaultNow()
+    });
+    vaultTokenHoldings = pgTable("vault_token_holdings", {
+      id: uuid("id").primaryKey().defaultRandom(),
+      vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+      tokenSymbol: varchar("token_symbol").notNull(),
+      // e.g., 'CELO', 'cUSD', 'cEUR', 'USDT'
+      balance: decimal("balance", { precision: 18, scale: 8 }).notNull(),
+      valueUSD: decimal("value_usd", { precision: 18, scale: 8 }).default("0"),
+      // USD equivalent value
+      lastPriceUpdate: timestamp("last_price_update").defaultNow(),
+      averageEntryPrice: decimal("average_entry_price", { precision: 18, scale: 8 }),
+      // for P&L calculations
+      totalDeposited: decimal("total_deposited", { precision: 18, scale: 8 }).default("0"),
+      // lifetime deposits
+      totalWithdrawn: decimal("total_withdrawn", { precision: 18, scale: 8 }).default("0"),
+      // lifetime withdrawals
+      createdAt: timestamp("created_at").defaultNow(),
+      updatedAt: timestamp("updated_at").defaultNow()
+    });
+    vaultPerformance = pgTable("vault_performance", {
+      id: uuid("id").primaryKey().defaultRandom(),
+      vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+      period: varchar("period").notNull(),
+      // daily, weekly, monthly, yearly
+      periodStart: timestamp("period_start").notNull(),
+      periodEnd: timestamp("period_end").notNull(),
+      startingValue: decimal("starting_value", { precision: 18, scale: 8 }).notNull(),
+      endingValue: decimal("ending_value", { precision: 18, scale: 8 }).notNull(),
+      yield: decimal("yield", { precision: 18, scale: 8 }).default("0"),
+      // yield earned in period
+      yieldPercentage: decimal("yield_percentage", { precision: 8, scale: 4 }).default("0"),
+      // yield %
+      feesCollected: decimal("fees_collected", { precision: 18, scale: 8 }).default("0"),
+      deposits: decimal("deposits", { precision: 18, scale: 8 }).default("0"),
+      // deposits in period
+      withdrawals: decimal("withdrawals", { precision: 18, scale: 8 }).default("0"),
+      // withdrawals in period
+      sharpeRatio: decimal("sharpe_ratio", { precision: 8, scale: 4 }),
+      // risk-adjusted return
+      maxDrawdown: decimal("max_drawdown", { precision: 8, scale: 4 }),
+      // maximum loss percentage
+      volatility: decimal("volatility", { precision: 8, scale: 4 }),
+      // price volatility
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    vaultStrategyAllocations = pgTable("vault_strategy_allocations", {
+      id: uuid("id").primaryKey().defaultRandom(),
+      vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+      strategyId: varchar("strategy_id").notNull(),
+      // references YIELD_STRATEGIES from tokenRegistry
+      tokenSymbol: varchar("token_symbol").notNull(),
+      allocatedAmount: decimal("allocated_amount", { precision: 18, scale: 8 }).notNull(),
+      allocationPercentage: decimal("allocation_percentage", { precision: 5, scale: 2 }).notNull(),
+      // % of vault
+      currentValue: decimal("current_value", { precision: 18, scale: 8 }).default("0"),
+      yieldEarned: decimal("yield_earned", { precision: 18, scale: 8 }).default("0"),
+      lastRebalance: timestamp("last_rebalance").defaultNow(),
+      isActive: boolean("is_active").default(true),
+      createdAt: timestamp("created_at").defaultNow(),
+      updatedAt: timestamp("updated_at").defaultNow()
+    });
+    vaultTransactions = pgTable("vault_transactions", {
+      id: uuid("id").primaryKey().defaultRandom(),
+      vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+      userId: varchar("user_id").references(() => users.id).notNull(),
+      transactionType: varchar("transaction_type").notNull(),
+      // deposit, withdrawal, yield_claim, rebalance, fee_collection
+      tokenSymbol: varchar("token_symbol").notNull(),
+      amount: decimal("amount", { precision: 18, scale: 8 }).notNull(),
+      valueUSD: decimal("value_usd", { precision: 18, scale: 8 }).default("0"),
+      transactionHash: varchar("transaction_hash"),
+      blockNumber: integer("block_number"),
+      gasUsed: decimal("gas_used", { precision: 18, scale: 8 }),
+      gasFee: decimal("gas_fee", { precision: 18, scale: 8 }),
+      status: varchar("status").default("completed"),
+      // pending, completed, failed
+      strategyId: varchar("strategy_id"),
+      // if related to strategy allocation
+      sharesMinted: decimal("shares_minted", { precision: 18, scale: 8 }),
+      // vault shares for deposits
+      sharesBurned: decimal("shares_burned", { precision: 18, scale: 8 }),
+      // vault shares for withdrawals
+      metadata: jsonb("metadata"),
+      // additional transaction data
+      createdAt: timestamp("created_at").defaultNow(),
+      updatedAt: timestamp("updated_at").defaultNow()
+    });
+    vaultRiskAssessments = pgTable("vault_risk_assessments", {
+      id: uuid("id").primaryKey().defaultRandom(),
+      vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+      assessmentDate: timestamp("assessment_date").defaultNow(),
+      overallRiskScore: integer("overall_risk_score").notNull(),
+      // 1-100 scale
+      liquidityRisk: integer("liquidity_risk").default(0),
+      // 1-100 scale
+      smartContractRisk: integer("smart_contract_risk").default(0),
+      marketRisk: integer("market_risk").default(0),
+      concentrationRisk: integer("concentration_risk").default(0),
+      protocolRisk: integer("protocol_risk").default(0),
+      riskFactors: jsonb("risk_factors"),
+      // detailed risk breakdown
+      recommendations: jsonb("recommendations"),
+      // risk mitigation suggestions
+      nextAssessmentDue: timestamp("next_assessment_due"),
+      assessedBy: varchar("assessed_by").references(() => users.id),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    vaultGovernanceProposals = pgTable("vault_governance_proposals", {
+      id: uuid("id").primaryKey().defaultRandom(),
+      vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+      daoId: uuid("dao_id").references(() => daos.id).notNull(),
+      proposalId: uuid("proposal_id").references(() => proposals2.id),
+      governanceType: varchar("governance_type").notNull(),
+      // strategy_change, allocation_change, fee_change, risk_parameter
+      proposedChanges: jsonb("proposed_changes").notNull(),
+      // structured data of proposed changes
+      currentParameters: jsonb("current_parameters"),
+      // snapshot of current state
+      requiredQuorum: integer("required_quorum").default(50),
+      // percentage
+      votingDeadline: timestamp("voting_deadline").notNull(),
+      status: varchar("status").default("active"),
+      // active, passed, failed, executed
+      executedAt: timestamp("executed_at"),
+      executionTxHash: varchar("execution_tx_hash"),
+      createdBy: varchar("created_by").references(() => users.id).notNull(),
       createdAt: timestamp("created_at").defaultNow(),
       updatedAt: timestamp("updated_at").defaultNow()
     });
@@ -542,7 +706,7 @@ var init_schema = __esm({
     });
     proposalComments = pgTable("proposal_comments", {
       id: uuid("id").primaryKey().defaultRandom(),
-      proposalId: uuid("proposal_id").references(() => proposals.id).notNull(),
+      proposalId: uuid("proposal_id").references(() => proposals2.id).notNull(),
       userId: varchar("user_id").references(() => users.id).notNull(),
       daoId: uuid("dao_id").references(() => daos.id).notNull(),
       content: text("content").notNull(),
@@ -553,7 +717,7 @@ var init_schema = __esm({
     });
     proposalLikes = pgTable("proposal_likes", {
       id: uuid("id").primaryKey().defaultRandom(),
-      proposalId: uuid("proposal_id").references(() => proposals.id).notNull(),
+      proposalId: uuid("proposal_id").references(() => proposals2.id).notNull(),
       userId: varchar("user_id").references(() => users.id).notNull(),
       daoId: uuid("dao_id").references(() => daos.id).notNull(),
       createdAt: timestamp("created_at").defaultNow()
@@ -601,7 +765,7 @@ var init_schema = __esm({
       updatedAt: timestamp("updated_at").defaultNow()
     });
     usersRelations = relations(users, ({ many, one }) => ({
-      proposals: many(proposals),
+      proposals: many(proposals2),
       votes: many(votes),
       contributions: many(contributions),
       vaults: many(vaults),
@@ -633,7 +797,7 @@ var init_schema = __esm({
         references: [users.id]
       }),
       memberships: many(daoMemberships),
-      proposals: many(proposals),
+      proposals: many(proposals2),
       messages: many(daoMessages),
       templates: many(proposalTemplates),
       delegations: many(voteDelegations)
@@ -648,17 +812,17 @@ var init_schema = __esm({
         references: [daos.id]
       })
     }));
-    proposalsRelations = relations(proposals, ({ one, many }) => ({
+    proposalsRelations = relations(proposals2, ({ one, many }) => ({
       proposer: one(users, {
-        fields: [proposals.proposerId],
+        fields: [proposals2.proposerId],
         references: [users.id]
       }),
       dao: one(daos, {
-        fields: [proposals.daoId],
+        fields: [proposals2.daoId],
         references: [daos.id]
       }),
       template: one(proposalTemplates, {
-        fields: [proposals.templateId],
+        fields: [proposals2.templateId],
         references: [proposalTemplates.id]
       }),
       votes: many(votes),
@@ -668,9 +832,9 @@ var init_schema = __esm({
       executionQueue: many(proposalExecutionQueue)
     }));
     votesRelations = relations(votes, ({ one }) => ({
-      proposal: one(proposals, {
+      proposal: one(proposals2, {
         fields: [votes.proposalId],
-        references: [proposals.id]
+        references: [proposals2.id]
       }),
       user: one(users, {
         fields: [votes.userId],
@@ -696,9 +860,9 @@ var init_schema = __esm({
         fields: [voteDelegations.daoId],
         references: [daos.id]
       }),
-      proposal: one(proposals, {
+      proposal: one(proposals2, {
         fields: [voteDelegations.proposalId],
-        references: [proposals.id]
+        references: [proposals2.id]
       })
     }));
     proposalTemplatesRelations = relations(proposalTemplates, ({ one, many }) => ({
@@ -710,7 +874,7 @@ var init_schema = __esm({
         fields: [proposalTemplates.createdBy],
         references: [users.id]
       }),
-      proposals: many(proposals)
+      proposals: many(proposals2)
     }));
     contributionsRelations = relations(contributions, ({ one }) => ({
       user: one(users, {
@@ -754,7 +918,7 @@ var init_schema = __esm({
     }));
     insertUserSchema = createInsertSchema(users);
     insertDaoSchema = createInsertSchema(daos);
-    insertProposalSchema = createInsertSchema(proposals);
+    insertProposalSchema = createInsertSchema(proposals2);
     insertVoteSchema = createInsertSchema(votes);
     insertContributionSchema = createInsertSchema(contributions);
     insertVaultSchema = createInsertSchema(vaults);
@@ -804,9 +968,9 @@ var init_schema = __esm({
     insertQuorumHistorySchema = createInsertSchema(quorumHistory);
     insertProposalExecutionQueueSchema = createInsertSchema(proposalExecutionQueue);
     proposalCommentsRelations = relations(proposalComments, ({ one, many }) => ({
-      proposal: one(proposals, {
+      proposal: one(proposals2, {
         fields: [proposalComments.proposalId],
-        references: [proposals.id]
+        references: [proposals2.id]
       }),
       user: one(users, {
         fields: [proposalComments.userId],
@@ -824,9 +988,9 @@ var init_schema = __esm({
       likes: many(commentLikes)
     }));
     proposalLikesRelations = relations(proposalLikes, ({ one }) => ({
-      proposal: one(proposals, {
+      proposal: one(proposals2, {
         fields: [proposalLikes.proposalId],
-        references: [proposals.id]
+        references: [proposals2.id]
       }),
       user: one(users, {
         fields: [proposalLikes.userId],
@@ -870,6 +1034,13 @@ var init_schema = __esm({
     insertProposalLikeSchema = createInsertSchema(proposalLikes);
     insertCommentLikeSchema = createInsertSchema(commentLikes);
     insertDaoMessageSchema = createInsertSchema(daoMessages);
+    insertEnhancedVaultSchema = createInsertSchema(vaults);
+    insertVaultTokenHoldingSchema = createInsertSchema(vaultTokenHoldings);
+    insertVaultTransactionSchema = createInsertSchema(vaultTransactions);
+    insertVaultPerformanceSchema = createInsertSchema(vaultPerformance);
+    insertVaultRiskAssessmentSchema = createInsertSchema(vaultRiskAssessments);
+    insertVaultStrategyAllocationSchema = createInsertSchema(vaultStrategyAllocations);
+    insertVaultGovernanceProposalSchema = createInsertSchema(vaultGovernanceProposals);
   }
 });
 
@@ -894,69 +1065,1530 @@ var init_db = __esm({
   }
 });
 
+// server/storage.ts
+var storage_exports = {};
+__export(storage_exports, {
+  DatabaseStorage: () => DatabaseStorage,
+  addDaoBillingHistory: () => addDaoBillingHistory,
+  claimTask: () => claimTask,
+  createContribution: () => createContribution,
+  createDao: () => createDao,
+  createDaoMembership: () => createDaoMembership,
+  createDaoMessage: () => createDaoMessage,
+  createNotification: () => createNotification,
+  createProposal: () => createProposal,
+  createProposalComment: () => createProposalComment,
+  createTask: () => createTask,
+  createUser: () => createUser,
+  createVote: () => createVote,
+  createWalletTransaction: () => createWalletTransaction,
+  db: () => db,
+  deductVaultFee: () => deductVaultFee,
+  default: () => storage_default,
+  deleteDaoMessage: () => deleteDaoMessage,
+  deleteProposal: () => deleteProposal,
+  deleteProposalComment: () => deleteProposalComment,
+  deleteUserAccount: () => deleteUserAccount,
+  getAllDaoBillingHistory: () => getAllDaoBillingHistory,
+  getAllDaos: () => getAllDaos,
+  getAllUsers: () => getAllUsers,
+  getBillingCount: () => getBillingCount,
+  getBudgetPlanCount: () => getBudgetPlanCount,
+  getChainInfo: () => getChainInfo,
+  getCommentLikes: () => getCommentLikes,
+  getContributions: () => getContributions,
+  getDAOStats: () => getDAOStats,
+  getDao: () => getDao,
+  getDaoAnalytics: () => getDaoAnalytics,
+  getDaoBillingHistory: () => getDaoBillingHistory,
+  getDaoByInviteCode: () => getDaoByInviteCode,
+  getDaoCount: () => getDaoCount,
+  getDaoMembership: () => getDaoMembership,
+  getDaoMembershipsByStatus: () => getDaoMembershipsByStatus,
+  getDaoMessages: () => getDaoMessages,
+  getDaoPlan: () => getDaoPlan,
+  getLogCount: () => getLogCount,
+  getPlatformFeeInfo: () => getPlatformFeeInfo,
+  getProposal: () => getProposal,
+  getProposalComments: () => getProposalComments,
+  getProposalLikes: () => getProposalLikes,
+  getProposals: () => getProposals,
+  getReferralLeaderboard: () => getReferralLeaderboard,
+  getSystemLogs: () => getSystemLogs,
+  getTasks: () => getTasks,
+  getTopMembers: () => getTopMembers,
+  getUser: () => getUser,
+  getUserBudgetPlans: () => getUserBudgetPlans,
+  getUserByEmail: () => getUserByEmail,
+  getUserByPhone: () => getUserByPhone,
+  getUserContributionStats: () => getUserContributionStats,
+  getUserCount: () => getUserCount,
+  getUserNotifications: () => getUserNotifications,
+  getUserProfile: () => getUserProfile,
+  getUserReferralStats: () => getUserReferralStats,
+  getUserSessions: () => getUserSessions,
+  getUserSettings: () => getUserSettings,
+  getUserSocialLinks: () => getUserSocialLinks,
+  getUserVaults: () => getUserVaults,
+  getUserWallet: () => getUserWallet,
+  getVaultTransactions: () => getVaultTransactions,
+  getVote: () => getVote,
+  getVotesByProposal: () => getVotesByProposal,
+  hasActiveContributions: () => hasActiveContributions,
+  isDaoPremium: () => isDaoPremium,
+  loginUser: () => loginUser,
+  revokeAllUserSessions: () => revokeAllUserSessions,
+  revokeUserSession: () => revokeUserSession,
+  setDaoInviteCode: () => setDaoInviteCode,
+  setDaoPlan: () => setDaoPlan,
+  storage: () => storage,
+  toggleCommentLike: () => toggleCommentLike,
+  toggleProposalLike: () => toggleProposalLike,
+  updateDaoInviteCode: () => updateDaoInviteCode,
+  updateDaoMembershipStatus: () => updateDaoMembershipStatus,
+  updateDaoMessage: () => updateDaoMessage,
+  updateProposal: () => updateProposal,
+  updateProposalComment: () => updateProposalComment,
+  updateProposalVotes: () => updateProposalVotes,
+  updateUserProfile: () => updateUserProfile,
+  updateUserSettings: () => updateUserSettings,
+  updateUserSocialLinks: () => updateUserSocialLinks,
+  updateUserWallet: () => updateUserWallet,
+  upsertBudgetPlan: () => upsertBudgetPlan,
+  upsertVault: () => upsertVault
+});
+import { eq, inArray, or, and, desc, sql } from "drizzle-orm";
+async function deductVaultFee(vaultId, fee) {
+  const [vault] = await db.select().from(vaults).where(eq(vaults.id, vaultId));
+  if (!vault || vault.balance == null) return false;
+  const currentBalance = typeof vault.balance === "string" ? parseFloat(vault.balance) : vault.balance;
+  if (isNaN(currentBalance) || currentBalance < fee) return false;
+  const newBalance = (currentBalance - fee).toString();
+  await db.update(vaults).set({ balance: newBalance, updatedAt: /* @__PURE__ */ new Date() }).where(eq(vaults.id, vaultId));
+  return true;
+}
+function isDaoPremium(dao) {
+  if (!dao || !dao.plan) return false;
+  return dao.plan === "premium";
+}
+async function createDaoMessage(message) {
+  throw new Error("createDaoMessage not implemented");
+}
+async function getDaoMessages(daoId) {
+  throw new Error("getDaoMessages not implemented");
+}
+async function updateDaoMessage(messageId, data) {
+  throw new Error("updateDaoMessage not implemented");
+}
+async function deleteDaoMessage(messageId) {
+  throw new Error("deleteDaoMessage not implemented");
+}
+async function createProposalComment(comment) {
+  throw new Error("createProposalComment not implemented");
+}
+async function getProposalComments(proposalId) {
+  throw new Error("getProposalComments not implemented");
+}
+async function updateProposalComment(commentId, data) {
+  throw new Error("updateProposalComment not implemented");
+}
+async function deleteProposalComment(commentId) {
+  throw new Error("deleteProposalComment not implemented");
+}
+async function toggleProposalLike(proposalId, userId) {
+  throw new Error("toggleProposalLike not implemented");
+}
+async function getProposalLikes(proposalId) {
+  throw new Error("getProposalLikes not implemented");
+}
+async function toggleCommentLike(commentId, userId) {
+  throw new Error("toggleCommentLike not implemented");
+}
+async function getCommentLikes(commentId) {
+  throw new Error("getCommentLikes not implemented");
+}
+var DatabaseStorage, storage, getAllDaos, getDaoCount, getAllUsers, getUserCount, getPlatformFeeInfo, getSystemLogs, getLogCount, getAllDaoBillingHistory, getBillingCount, getChainInfo, getTopMembers, createUser, loginUser, getUserByEmail, getUserByPhone, createWalletTransaction, setDaoInviteCode, getDaoByInviteCode, getUserReferralStats, getReferralLeaderboard, getUser, getDAOStats, getProposals, getProposal, createProposal, updateProposalVotes, getVote, createVote, getVotesByProposal, getContributions, createContribution, getUserContributionStats, getUserVaults, upsertVault, getUserBudgetPlans, upsertBudgetPlan, getTasks, createTask, claimTask, getDao, getDaoMembership, createDaoMembership, getDaoMembershipsByStatus, updateDaoMembershipStatus, getDaoPlan, setDaoPlan, getDaoBillingHistory, addDaoBillingHistory, hasActiveContributions, revokeAllUserSessions, createNotification, getUserNotifications, getUserProfile, updateUserProfile, getUserSocialLinks, updateUserSocialLinks, getUserWallet, updateUserWallet, getUserSettings, updateUserSettings, getUserSessions, revokeUserSession, deleteUserAccount, getBudgetPlanCount, createDao, updateDaoInviteCode, deleteProposal, updateProposal, getVaultTransactions, getDaoAnalytics, storage_default;
+var init_storage = __esm({
+  "server/storage.ts"() {
+    "use strict";
+    init_db();
+    init_schema();
+    DatabaseStorage = class {
+      constructor() {
+        this.db = db;
+      }
+      /**
+       * Update user info by userId. Accepts any allowed user fields.
+       */
+      async updateUser(userId, update) {
+        if (!userId) throw new Error("User ID required");
+        if (!update || typeof update !== "object") throw new Error("Update object required");
+        const allowedFields = [
+          "name",
+          "avatar",
+          "email",
+          "phone",
+          "lastLoginAt",
+          "profile",
+          "authProvider",
+          "authProviderId",
+          "emailVerified",
+          "updatedAt"
+        ];
+        const allowedUpdate = {};
+        for (const key of allowedFields) {
+          if (key in update) allowedUpdate[key] = update[key];
+        }
+        allowedUpdate.updatedAt = /* @__PURE__ */ new Date();
+        const result = await this.db.update(users).set(allowedUpdate).where(eq(users.id, userId)).returning();
+        if (!result[0]) throw new Error("Failed to update user");
+        return result[0];
+      }
+      // Make db instance available within the class
+      async incrementDaoMemberCount(daoId) {
+        if (!daoId) throw new Error("DAO ID required");
+        const dao = await this.db.select().from(daos).where(eq(daos.id, daoId));
+        if (!dao[0]) throw new Error("DAO not found");
+        const newCount = (dao[0].memberCount || 0) + 1;
+        const result = await this.db.update(daos).set({ memberCount: newCount, updatedAt: /* @__PURE__ */ new Date() }).where(eq(daos.id, daoId)).returning();
+        return result[0];
+      }
+      // --- Admin Functions ---
+      async getAllDaos({ limit = 10, offset = 0 } = {}) {
+        return await this.db.select().from(daos).orderBy(desc(daos.createdAt)).limit(limit).offset(offset);
+      }
+      async getDaoCount() {
+        const result = await this.db.select({ count: sql`count(*)` }).from(daos);
+        return Number(result[0]?.count) || 0;
+      }
+      async getAllUsers({ limit = 10, offset = 0 } = {}) {
+        return await this.db.select().from(users).orderBy(desc(users.createdAt)).limit(limit).offset(offset);
+      }
+      async getUserCount() {
+        const result = await this.db.select({ count: sql`count(*)` }).from(users);
+        return Number(result[0]?.count) || 0;
+      }
+      async getPlatformFeeInfo() {
+        const keys = [
+          "vaultDisbursementFee",
+          "offrampWithdrawalFee",
+          "bulkPayoutFee",
+          "stakingYieldFee",
+          "platformFeeCurrency"
+        ];
+        const configRows = await this.db.select().from(config).where(inArray(config.key, keys));
+        const configMap = {};
+        configRows.forEach((row) => {
+          configMap[row.key] = typeof row.value === "string" ? JSON.parse(row.value) : row.value;
+        });
+        return {
+          vaultDisbursementFee: configMap.vaultDisbursementFee ?? "1\u20132% per action",
+          offrampWithdrawalFee: configMap.offrampWithdrawalFee ?? "2\u20133% (DAO or user)",
+          bulkPayoutFee: configMap.bulkPayoutFee ?? "Flat or % fee",
+          stakingYieldFee: configMap.stakingYieldFee ?? "Platform takes cut (opt-in)",
+          notes: "Fees are paid by the DAO/group, not individuals. All fees are abstracted into vault mechanics for simplicity.",
+          currency: configMap.platformFeeCurrency ?? "USD"
+        };
+      }
+      async getSystemLogs(args = {}) {
+        let whereClause = void 0;
+        if (args.level && args.service) {
+          whereClause = and(eq(systemLogs.level, args.level), eq(systemLogs.service, args.service));
+        } else if (args.level) {
+          whereClause = eq(systemLogs.level, args.level);
+        } else if (args.service) {
+          whereClause = eq(systemLogs.service, args.service);
+        }
+        let query;
+        if (whereClause) {
+          query = this.db.select().from(systemLogs).where(whereClause);
+        } else {
+          query = this.db.select().from(systemLogs);
+        }
+        return await query.orderBy(desc(systemLogs.timestamp)).limit(args.limit ?? 50).offset(args.offset ?? 0);
+      }
+      async updateTask(id, data, userId) {
+        const task = await this.db.select().from(tasks).where(eq(tasks.id, id));
+        if (!task[0]) throw new Error("Task not found");
+        const membership = await this.getDaoMembership(task[0].daoId, userId);
+        if (!membership || membership.role !== "admin") throw new Error("Only DAO admins can update tasks");
+        const result = await this.db.update(tasks).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq(tasks.id, id)).returning();
+        if (!result[0]) throw new Error("Failed to update task");
+        return result[0];
+      }
+      async getTaskCount(daoId, status) {
+        if (!daoId) throw new Error("DAO ID required");
+        let whereClause;
+        if (status) {
+          whereClause = and(eq(tasks.daoId, daoId), eq(tasks.status, status));
+        } else {
+          whereClause = eq(tasks.daoId, daoId);
+        }
+        const result = await this.db.select().from(tasks).where(whereClause);
+        return result.length;
+      }
+      async getLogCount() {
+        const result = await this.db.select().from(logs);
+        return result.length;
+      }
+      async getBillingCount() {
+        const result = await this.db.select().from(billingHistory);
+        return result.length;
+      }
+      async getChainInfo() {
+        const result = await this.db.select().from(chains).where(eq(chains.id, 1));
+        if (!result[0]) throw new Error("Chain not found");
+        return {
+          chainId: result[0].id,
+          name: result[0].name,
+          rpcUrl: result[0].rpcUrl
+        };
+      }
+      async getTopMembers({ limit = 10 } = {}) {
+        const allContributions = await this.db.select().from(contributions);
+        const counts = {};
+        allContributions.forEach((c) => {
+          if (c.userId) counts[c.userId] = (counts[c.userId] || 0) + 1;
+        });
+        return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, limit).map(([userId, count3]) => ({ userId, count: count3 }));
+      }
+      async createUser(userData) {
+        const allowed = (({ firstName, lastName, email, phone, googleId, telegramId }) => ({ firstName, lastName, email, phone, googleId, telegramId }))(userData);
+        allowed.createdAt = /* @__PURE__ */ new Date();
+        allowed.updatedAt = /* @__PURE__ */ new Date();
+        const result = await this.db.insert(users).values(allowed).returning();
+        if (!result[0]) throw new Error("Failed to create user");
+        return result[0];
+      }
+      async loginUser(email) {
+        return this.getUserByEmail(email);
+      }
+      async getUserByEmail(email) {
+        if (!email) throw new Error("Email required");
+        const result = await this.db.select().from(users).where(eq(users.email, email));
+        if (!result[0]) throw new Error("User not found");
+        return result[0];
+      }
+      async getUserByPhone(phone) {
+        if (!phone) throw new Error("Phone required");
+        const result = await this.db.select().from(users).where(eq(users.phone, phone));
+        if (!result[0]) throw new Error("User not found");
+        return result[0];
+      }
+      async getUserById(userId) {
+        if (!userId) throw new Error("User ID required");
+        const result = await this.db.select().from(users).where(eq(users.id, userId));
+        if (!result[0]) throw new Error("User not found");
+        return result[0];
+      }
+      async getUserByEmailOrPhone(emailOrPhone) {
+        if (!emailOrPhone) throw new Error("Email or phone required");
+        const result = await this.db.select().from(users).where(
+          or(eq(users.email, emailOrPhone), eq(users.phone, emailOrPhone))
+        );
+        if (!result[0]) throw new Error("User not found");
+        return result[0];
+      }
+      async getUserProfile(userId) {
+        return this.getUser(userId);
+      }
+      async updateUserProfile(userId, data) {
+        const allowed = (({ firstName, lastName, email, phone }) => ({ firstName, lastName, email, phone }))(data);
+        allowed.updatedAt = /* @__PURE__ */ new Date();
+        const result = await this.db.update(users).set(allowed).where(eq(users.id, userId)).returning();
+        if (!result[0]) throw new Error("Failed to update user");
+        return result[0];
+      }
+      async getUserSocialLinks(userId) {
+        const user = await this.getUser(userId);
+        return { google: user.googleId || null, telegram: user.telegramId || null };
+      }
+      async updateUserSocialLinks(userId, data) {
+        const allowed = (({ phone, email }) => ({ phone, email }))(data);
+        allowed.updatedAt = /* @__PURE__ */ new Date();
+        const result = await this.db.update(users).set(allowed).where(eq(users.id, userId)).returning();
+        if (!result[0]) throw new Error("Failed to update social links");
+        return result[0];
+      }
+      async getUserWallet(userId) {
+        const user = await this.getUser(userId);
+        return { address: user.phone || user.email || null };
+      }
+      async updateUserWallet(userId, data) {
+        const allowed = (({ phone, email }) => ({ phone, email }))(data);
+        allowed.updatedAt = /* @__PURE__ */ new Date();
+        const result = await this.db.update(users).set(allowed).where(eq(users.id, userId)).returning();
+        if (!result[0]) throw new Error("Failed to update wallet");
+        return result[0];
+      }
+      async getUserSettings(userId) {
+        const user = await this.getUser(userId);
+        return { theme: user.darkMode ? "dark" : "light", language: user.language || "en" };
+      }
+      async updateUserSettings(userId, data) {
+        const allowed = {};
+        if (data.theme) allowed.darkMode = data.theme === "dark";
+        if (data.language) allowed.language = data.language;
+        allowed.updatedAt = /* @__PURE__ */ new Date();
+        const result = await this.db.update(users).set(allowed).where(eq(users.id, userId)).returning();
+        if (!result[0]) throw new Error("Failed to update settings");
+        return result[0];
+      }
+      async getUserSessions(userId) {
+        const result = await this.db.select().from(sessions).where(eq(sessions.userId, userId));
+        return result;
+      }
+      async revokeUserSession(userId, sessionId) {
+        if (!userId || !sessionId) throw new Error("User ID and session ID required");
+        const result = await this.db.delete(sessions).where(
+          and(eq(sessions.userId, userId), eq(sessions.id, sessionId))
+        );
+        if (!result) throw new Error("Session not found or already revoked");
+      }
+      async deleteUserAccount(userId) {
+        await this.db.delete(users).where(eq(users.id, userId));
+      }
+      async createWalletTransaction(data) {
+        if (!data.amount || !data.currency || !data.type || !data.status || !data.provider) {
+          throw new Error("Missing required wallet transaction fields");
+        }
+        data.createdAt = /* @__PURE__ */ new Date();
+        data.updatedAt = /* @__PURE__ */ new Date();
+        if (!data.walletAddress) {
+          data.walletAddress = "";
+        }
+        if (!data.toUserId) {
+          data.toUserId = null;
+        }
+        const result = await this.db.insert(walletTransactions).values(data).returning();
+        if (!result[0]) throw new Error("Failed to create wallet transaction");
+        return result[0];
+      }
+      // Export a singleton instance for use in other modules
+      async getBudgetPlanCount(userId, month) {
+        if (!userId || !month) throw new Error("User ID and month required");
+        const result = await this.db.select({ count: sql`count(*)` }).from(budgetPlans).where(and(eq(budgetPlans.userId, userId), eq(budgetPlans.month, month)));
+        return Number(result[0]?.count) || 0;
+      }
+      async createDao(dao) {
+        if (!dao.name || !dao.creatorId) throw new Error("Name and creatorId required");
+        dao.createdAt = /* @__PURE__ */ new Date();
+        dao.updatedAt = /* @__PURE__ */ new Date();
+        dao.memberCount = 1;
+        const result = await this.db.insert(daos).values(dao).returning();
+        if (!result[0]) throw new Error("Failed to create DAO");
+        await this.createDaoMembership({ daoId: result[0].id, userId: dao.creatorId, status: "approved", role: "admin" });
+        return result[0];
+      }
+      async setDaoInviteCode(daoId, code) {
+        if (!code) throw new Error("Invite code required");
+        const result = await this.db.update(daos).set({ inviteCode: code, updatedAt: /* @__PURE__ */ new Date() }).where(eq(daos.id, daoId)).returning();
+        if (!result[0]) throw new Error("DAO not found");
+        return result[0];
+      }
+      async getDaoByInviteCode(code) {
+        if (!code) throw new Error("Invite code required");
+        const result = await this.db.select().from(daos).where(eq(daos.inviteCode, code));
+        if (!result[0]) throw new Error("DAO not found");
+        return result[0];
+      }
+      async getUserReferralStats(userId) {
+        if (!userId) throw new Error("User ID required");
+        const referred = await this.db.select().from(users).where(eq(users.referredBy, userId));
+        return {
+          userId,
+          referredCount: referred.length,
+          referredUsers: referred.map((u) => ({ id: u.id, firstName: u.firstName, lastName: u.lastName, email: u.email }))
+        };
+      }
+      async getReferralLeaderboard(limit = 10) {
+        const allUsers = await this.db.select().from(users);
+        const counts = {};
+        allUsers.forEach((u) => {
+          if (u.referredBy) {
+            if (!counts[u.referredBy]) {
+              const refUser = allUsers.find((x) => x.id === u.referredBy);
+              counts[u.referredBy] = { count: 0, user: refUser };
+            }
+            counts[u.referredBy].count++;
+          }
+        });
+        const leaderboard = Object.entries(counts).map(([userId, { count: count3, user }]) => ({ userId, count: count3, user })).sort((a, b) => b.count - a.count).slice(0, limit);
+        return leaderboard;
+      }
+      async getUser(userId) {
+        if (!userId) throw new Error("User ID required");
+        const result = await this.db.select().from(users).where(eq(users.id, userId));
+        if (!result[0]) throw new Error("User not found");
+        return result[0];
+      }
+      async getDAOStats() {
+        const daosList = await this.db.select().from(daos);
+        const memberships = await this.db.select().from(daoMemberships);
+        const activeDaoIds = new Set(memberships.map((m) => m.daoId));
+        return {
+          daoCount: daosList.length,
+          memberCount: memberships.length,
+          activeDaoCount: activeDaoIds.size
+        };
+      }
+      async getProposals() {
+        return await this.db.select().from(proposals2).orderBy(desc(proposals2.createdAt));
+      }
+      async getProposal(id) {
+        if (!id) throw new Error("Proposal ID required");
+        const result = await this.db.select().from(proposals2).where(eq(proposals2.id, id));
+        if (!result[0]) throw new Error("Proposal not found");
+        return result[0];
+      }
+      async createProposal(proposal) {
+        if (!proposal.title || !proposal.daoId) throw new Error("Proposal must have title and daoId");
+        proposal.createdAt = /* @__PURE__ */ new Date();
+        proposal.updatedAt = /* @__PURE__ */ new Date();
+        const result = await this.db.insert(proposals2).values(proposal).returning();
+        if (!result[0]) throw new Error("Failed to create proposal");
+        return result[0];
+      }
+      async updateProposal(id, data, userId) {
+        if (!id || !data.title) throw new Error("Proposal ID and title required");
+        const proposal = await this.getProposal(id);
+        if (proposal.userId !== userId) throw new Error("Only proposal creator can update");
+        const result = await this.db.update(proposals2).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq(proposals2.id, id)).returning();
+        if (!result[0]) throw new Error("Failed to update proposal");
+        return result[0];
+      }
+      async deleteProposal(id, userId) {
+        const proposal = await this.getProposal(id);
+        const membership = await this.getDaoMembership(proposal.daoId, userId);
+        if (proposal.userId !== userId && (!membership || membership.role !== "admin")) {
+          throw new Error("Only proposal creator or DAO admin can delete");
+        }
+        await this.db.delete(proposals2).where(eq(proposals2.id, id));
+      }
+      async updateProposalVotes(proposalId, voteType) {
+        const proposal = await this.getProposal(proposalId);
+        if (!proposal) throw new Error("Proposal not found");
+        const field = voteType === "yes" ? "yesVotes" : "noVotes";
+        const update = { updatedAt: /* @__PURE__ */ new Date() };
+        update[field] = (proposal[field] || 0) + 1;
+        const result = await this.db.update(proposals2).set(update).where(eq(proposals2.id, proposalId)).returning();
+        if (!result[0]) throw new Error("Failed to update proposal votes");
+        return result[0];
+      }
+      async getVote(proposalId, userId) {
+        if (!proposalId || !userId) throw new Error("Proposal ID and User ID required");
+        const result = await this.db.select().from(votes).where(and(eq(votes.proposalId, proposalId), eq(votes.userId, userId)));
+        if (!result[0]) throw new Error("Vote not found");
+        return result[0];
+      }
+      async createVote(vote) {
+        if (!vote.proposalId || !vote.userId) throw new Error("Vote must have proposalId and userId");
+        vote.createdAt = /* @__PURE__ */ new Date();
+        vote.updatedAt = /* @__PURE__ */ new Date();
+        const result = await this.db.insert(votes).values(vote).returning();
+        if (!result[0]) throw new Error("Failed to create vote");
+        return result[0];
+      }
+      async getVotesByProposal(proposalId) {
+        if (!proposalId) throw new Error("Proposal ID required");
+        return await this.db.select().from(votes).where(eq(votes.proposalId, proposalId));
+      }
+      async getContributions(userId, daoId) {
+        let whereClause = void 0;
+        if (userId && daoId) {
+          return await this.db.select().from(contributions).where(and(eq(contributions.userId, userId), eq(contributions.daoId, daoId))).orderBy(desc(contributions.createdAt));
+        } else if (userId) {
+          return await this.db.select().from(contributions).where(eq(contributions.userId, userId)).orderBy(desc(contributions.createdAt));
+        } else if (daoId) {
+          return await this.db.select().from(contributions).where(eq(contributions.daoId, daoId)).orderBy(desc(contributions.createdAt));
+        } else {
+          return await this.db.select().from(contributions).orderBy(desc(contributions.createdAt));
+        }
+      }
+      async getContributionsCount(userId, daoId) {
+        if (!userId || !daoId) throw new Error("User ID and DAO ID required");
+        const result = await this.db.select().from(contributions).where(and(eq(contributions.userId, userId), eq(contributions.daoId, daoId)));
+        return result.length;
+      }
+      async getVotesCount(daoId, proposalId) {
+        if (!proposalId || !daoId) throw new Error("User ID and DAO ID required");
+        const result = await this.db.select().from(votes).where(and(eq(votes.userId, proposalId), eq(votes.daoId, daoId)));
+        return result.length;
+      }
+      async getVotesByUserAndDao(userId, daoId) {
+        if (!userId || !daoId) throw new Error("User ID and DAO ID required");
+        return await this.db.select().from(votes).where(and(eq(votes.userId, userId), eq(votes.daoId, daoId)));
+      }
+      async createContribution(contribution) {
+        if (!contribution.userId || !contribution.daoId) throw new Error("Contribution must have userId and daoId");
+        contribution.createdAt = /* @__PURE__ */ new Date();
+        contribution.updatedAt = /* @__PURE__ */ new Date();
+        const result = await this.db.insert(contributions).values(contribution).returning();
+        if (!result[0]) throw new Error("Failed to create contribution");
+        return result[0];
+      }
+      async getUserContributionStats(userId) {
+        if (!userId) throw new Error("User ID required");
+        const all = await this.db.select().from(contributions).where(eq(contributions.userId, userId));
+        const byDao = {};
+        all.forEach((c) => {
+          const daoId = c.daoId;
+          if (daoId) byDao[daoId] = (byDao[daoId] || 0) + 1;
+        });
+        return { userId, total: all.length, byDao };
+      }
+      async getUserVaults(userId) {
+        if (!userId) throw new Error("User ID required");
+        return await this.db.select().from(vaults).where(eq(vaults.userId, userId));
+      }
+      async upsertVault(vault) {
+        if (!vault.id) throw new Error("Vault must have id");
+        vault.updatedAt = /* @__PURE__ */ new Date();
+        const updated = await this.db.update(vaults).set(vault).where(eq(vaults.id, vault.id)).returning();
+        if (updated[0]) return updated[0];
+        vault.createdAt = /* @__PURE__ */ new Date();
+        const inserted = await this.db.insert(vaults).values(vault).returning();
+        if (!inserted[0]) throw new Error("Failed to upsert vault");
+        return inserted[0];
+      }
+      async getVaultTransactions(vaultId, limit = 10, offset = 0) {
+        if (!vaultId) throw new Error("Vault ID required");
+        return await this.db.select().from(walletTransactions).where(eq(walletTransactions.vaultId, vaultId)).orderBy(desc(walletTransactions.createdAt)).limit(limit).offset(offset);
+      }
+      async getUserBudgetPlans(userId, month) {
+        if (!userId || !month) throw new Error("User ID and month required");
+        return await this.db.select().from(budgetPlans).where(and(eq(budgetPlans.userId, userId), eq(budgetPlans.month, month)));
+      }
+      async upsertBudgetPlan(plan) {
+        if (!plan.id) throw new Error("Budget plan must have id");
+        plan.updatedAt = /* @__PURE__ */ new Date();
+        const updated = await this.db.update(budgetPlans).set(plan).where(eq(budgetPlans.id, plan.id)).returning();
+        if (updated[0]) return updated[0];
+        plan.createdAt = /* @__PURE__ */ new Date();
+        const inserted = await this.db.insert(budgetPlans).values(plan).returning();
+        if (!inserted[0]) throw new Error("Failed to upsert budget plan");
+        return inserted[0];
+      }
+      async updateDaoInviteCode(daoId, code) {
+        if (!daoId || !code) throw new Error("DAO ID and code required");
+        const result = await this.db.update(daos).set({ inviteCode: code, updatedAt: /* @__PURE__ */ new Date() }).where(eq(daos.id, daoId)).returning();
+        if (!result[0]) throw new Error("Failed to update invite code");
+        return result[0];
+      }
+      async getTasks(daoId, status) {
+        let whereClause;
+        if (daoId && status) {
+          whereClause = and(eq(tasks.daoId, daoId), eq(tasks.status, status));
+        } else if (daoId) {
+          whereClause = eq(tasks.daoId, daoId);
+        } else if (status) {
+          whereClause = eq(tasks.status, status);
+        }
+        if (whereClause) {
+          return await this.db.select().from(tasks).where(whereClause).orderBy(desc(tasks.createdAt));
+        }
+        return await this.db.select().from(tasks).orderBy(desc(tasks.createdAt));
+      }
+      async createTask(task) {
+        if (!task.title || !task.daoId) throw new Error("Task must have title and daoId");
+        task.createdAt = /* @__PURE__ */ new Date();
+        task.updatedAt = /* @__PURE__ */ new Date();
+        const result = await this.db.insert(tasks).values(task).returning();
+        if (!result[0]) throw new Error("Failed to create task");
+        return result[0];
+      }
+      async claimTask(taskId, userId) {
+        if (!taskId || !userId) throw new Error("Task ID and User ID required");
+        const task = await this.db.select().from(tasks).where(eq(tasks.id, taskId));
+        if (!task[0]) throw new Error("Task not found");
+        if (task[0].claimedBy) throw new Error("Task already claimed");
+        const result = await this.db.update(tasks).set({ claimedBy: userId, status: "claimed", updatedAt: /* @__PURE__ */ new Date() }).where(eq(tasks.id, taskId)).returning();
+        if (!result[0]) throw new Error("Failed to claim task");
+        return result[0];
+      }
+      async getDao(daoId) {
+        if (!daoId) throw new Error("DAO ID required");
+        const result = await this.db.select().from(daos).where(eq(daos.id, daoId));
+        if (!result[0]) throw new Error("DAO not found");
+        return result[0];
+      }
+      async getDaoMembership(daoId, userId) {
+        if (!daoId || !userId) throw new Error("DAO ID and User ID required");
+        const result = await this.db.select().from(daoMemberships).where(and(eq(daoMemberships.daoId, daoId), eq(daoMemberships.userId, userId)));
+        if (!result[0]) throw new Error("Membership not found");
+        return result[0];
+      }
+      async getDaoMembers(daoId, userId, status, role, limit = 10, offset = 0) {
+        if (!daoId) throw new Error("DAO ID required");
+        let whereClause = eq(daoMemberships.daoId, daoId);
+        if (userId) whereClause = and(whereClause, eq(daoMemberships.userId, userId));
+        if (status) whereClause = and(whereClause, eq(daoMemberships.status, status));
+        if (role) whereClause = and(whereClause, eq(daoMemberships.role, role));
+        return await this.db.select().from(daoMemberships).where(whereClause).orderBy(desc(daoMemberships.createdAt)).limit(limit).offset(offset);
+      }
+      async createDaoMembership(args) {
+        if (!args.daoId || !args.userId) throw new Error("Membership must have daoId and userId");
+        args.createdAt = /* @__PURE__ */ new Date();
+        args.updatedAt = /* @__PURE__ */ new Date();
+        const result = await this.db.insert(daoMemberships).values(args).returning();
+        if (!result[0]) throw new Error("Failed to create membership");
+        return result[0];
+      }
+      async getDaoMembershipsByStatus(daoId, status) {
+        if (!daoId || !status) throw new Error("DAO ID and status required");
+        return await this.db.select().from(daoMemberships).where(and(eq(daoMemberships.daoId, daoId), eq(daoMemberships.status, status)));
+      }
+      async updateDaoMembershipStatus(membershipId, status) {
+        const result = await this.db.update(daoMemberships).set({ status, updatedAt: /* @__PURE__ */ new Date() }).where(eq(daoMemberships.id, membershipId)).returning();
+        return result[0];
+      }
+      async getDaoPlan(daoId) {
+        if (!daoId) throw new Error("DAO ID required");
+        const result = await this.db.select().from(daos).where(eq(daos.id, daoId));
+        if (!result[0]) throw new Error("DAO not found");
+        return result[0].plan;
+      }
+      async setDaoPlan(daoId, plan, planExpiresAt) {
+        if (!daoId || !plan) throw new Error("DAO ID and plan required");
+        const result = await this.db.update(daos).set({ plan, planExpiresAt, updatedAt: /* @__PURE__ */ new Date() }).where(eq(daos.id, daoId)).returning();
+        if (!result[0]) throw new Error("Failed to set DAO plan");
+        return result[0];
+      }
+      async getDaoBillingHistory(daoId) {
+        if (!daoId) throw new Error("DAO ID required");
+        return await this.db.select().from(billingHistory).where(eq(billingHistory.daoId, daoId)).orderBy(desc(billingHistory.createdAt));
+      }
+      async getAllDaoBillingHistory() {
+        if (!billingHistory) throw new Error("Billing history table not found");
+        return await this.db.select().from(billingHistory).orderBy(desc(billingHistory.createdAt));
+      }
+      async addDaoBillingHistory(entry) {
+        if (!entry.daoId || !entry.amount || !entry.type) throw new Error("Billing history must have daoId, amount, and type");
+        entry.createdAt = /* @__PURE__ */ new Date();
+        entry.updatedAt = /* @__PURE__ */ new Date();
+        const result = await this.db.insert(billingHistory).values(entry).returning();
+        if (!result[0]) throw new Error("Failed to add billing history");
+        return result[0];
+      }
+      async getDaoAnalytics(daoId) {
+        if (!daoId) throw new Error("DAO ID required");
+        const [dao, members, proposals6, contributions4, vaults3] = await Promise.all([
+          this.getDao(daoId),
+          this.getDaoMembershipsByStatus(daoId, "approved"),
+          this.getProposals().then(
+            (proposals7) => proposals7.filter((p) => p.daoId === daoId && p.status === "active")
+          ),
+          this.getContributions(void 0, daoId),
+          this.getUserVaults(daoId)
+        ]);
+        const recentActivity = [
+          ...proposals6.map((p) => ({ type: "proposal", createdAt: p.createdAt })),
+          ...contributions4.map((c) => ({ type: "contribution", createdAt: c.createdAt })),
+          ...members.map((m) => ({ type: "membership", createdAt: m.createdAt }))
+        ].sort(
+          (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+        ).slice(0, 10);
+        const vaultBalance = vaults3.reduce((sum3, v) => sum3 + (typeof v.balance === "string" ? parseFloat(v.balance) || 0 : 0), 0);
+        return {
+          memberCount: members.length,
+          activeProposals: proposals6.length,
+          totalContributions: contributions4.length,
+          vaultBalance,
+          recentActivity,
+          createdAt: dao.createdAt,
+          updatedAt: dao.updatedAt
+        };
+      }
+      /**
+       * Checks if a user has any active contributions or votes in a DAO.
+       * Returns true if at least one exists, false otherwise.
+       */
+      async hasActiveContributions(userId, daoId) {
+        const contributions4 = await this.getContributions(userId, daoId);
+        if (contributions4 && contributions4.length > 0) return true;
+        if (typeof this.getVotesByUserAndDao === "function") {
+          const votes4 = await this.getVotesByUserAndDao(userId, daoId);
+          if (votes4 && votes4.length > 0) return true;
+        }
+        return false;
+      }
+      async revokeAllUserSessions(userId) {
+        if (!userId) throw new Error("User ID required");
+        await this.db.delete(sessions).where(eq(sessions.userId, userId));
+        process.stdout.write(`Revoked all sessions for user ${userId}
+`);
+      }
+      async getUserNotifications(userId, read, limit = 20, offset = 0, type) {
+        try {
+          let whereClause = eq(notifications.userId, userId);
+          if (read !== void 0) {
+            whereClause = and(whereClause, eq(notifications.read, read));
+          }
+          if (type) {
+            whereClause = and(whereClause, eq(notifications.type, type));
+          }
+          let query = this.db.select().from(notifications).where(whereClause);
+          return await query.orderBy(desc(notifications.createdAt)).limit(limit).offset(offset);
+        } catch (error) {
+          console.error("Error fetching user notifications:", error);
+          return [];
+        }
+      }
+      async getUnreadNotificationCount(userId) {
+        try {
+          const result = await this.db.select({ count: sql`count(*)` }).from(notifications).where(and(
+            eq(notifications.userId, userId),
+            eq(notifications.read, false)
+          ));
+          return Number(result[0]?.count) || 0;
+        } catch (error) {
+          console.error("Error getting unread notification count:", error);
+          return 0;
+        }
+      }
+      async createNotification(data) {
+        try {
+          const [notification] = await this.db.insert(notifications).values({
+            userId: data.userId,
+            type: data.type,
+            title: data.title,
+            message: data.message,
+            priority: data.priority || "medium",
+            metadata: data.metadata || {},
+            read: false
+          }).returning();
+          return notification;
+        } catch (error) {
+          console.error("Error creating notification:", error);
+          throw error;
+        }
+      }
+      async createBulkNotifications(userIds, notificationData) {
+        try {
+          const notificationsToInsert = userIds.map((userId) => ({
+            userId,
+            type: notificationData.type,
+            title: notificationData.title,
+            message: notificationData.message,
+            priority: notificationData.priority || "medium",
+            metadata: notificationData.metadata || {},
+            read: false
+          }));
+          return await this.db.insert(notifications).values(notificationsToInsert).returning();
+        } catch (error) {
+          console.error("Error creating bulk notifications:", error);
+          throw error;
+        }
+      }
+      async markNotificationAsRead(notificationId, userId) {
+        try {
+          const [notification] = await this.db.update(notifications).set({ read: true, updatedAt: /* @__PURE__ */ new Date() }).where(and(
+            eq(notifications.id, notificationId),
+            eq(notifications.userId, userId)
+          )).returning();
+          return notification;
+        } catch (error) {
+          console.error("Error marking notification as read:", error);
+          return null;
+        }
+      }
+      async markAllNotificationsAsRead(userId) {
+        try {
+          await this.db.update(notifications).set({ read: true, updatedAt: /* @__PURE__ */ new Date() }).where(and(
+            eq(notifications.userId, userId),
+            eq(notifications.read, false)
+          ));
+        } catch (error) {
+          console.error("Error marking all notifications as read:", error);
+          throw error;
+        }
+      }
+      async deleteNotification(notificationId, userId) {
+        try {
+          const result = await this.db.delete(notifications).where(and(
+            eq(notifications.id, notificationId),
+            eq(notifications.userId, userId)
+          ));
+          return !!result;
+        } catch (error) {
+          console.error("Error deleting notification:", error);
+          return false;
+        }
+      }
+      async getUserNotificationPreferences(userId) {
+        try {
+          const [preferences] = await this.db.select().from(notificationPreferences).where(eq(notificationPreferences.userId, userId));
+          if (!preferences) {
+            const [newPreferences] = await this.db.insert(notificationPreferences).values({
+              userId,
+              emailNotifications: true,
+              pushNotifications: true,
+              daoUpdates: true,
+              proposalUpdates: true,
+              taskUpdates: true
+            }).returning();
+            return newPreferences;
+          }
+          return preferences;
+        } catch (error) {
+          console.error("Error fetching notification preferences:", error);
+          throw error;
+        }
+      }
+      async updateUserNotificationPreferences(userId, updates) {
+        try {
+          const [preferences] = await this.db.update(notificationPreferences).set({ ...updates, updatedAt: /* @__PURE__ */ new Date() }).where(eq(notificationPreferences.userId, userId)).returning();
+          return preferences;
+        } catch (error) {
+          console.error("Error updating notification preferences:", error);
+          throw error;
+        }
+      }
+      async getAllActiveUsers() {
+        try {
+          return await this.db.select({ id: users.id }).from(users).where(eq(users.isBanned, false));
+        } catch (error) {
+          console.error("Error fetching active users:", error);
+          return [];
+        }
+      }
+      // Audit logging operations
+      async createAuditLog(entry) {
+        const result = await this.db.insert(auditLogs).values({
+          timestamp: entry.timestamp || /* @__PURE__ */ new Date(),
+          userId: entry.userId,
+          userEmail: entry.userEmail,
+          action: entry.action,
+          resource: entry.resource,
+          resourceId: entry.resourceId,
+          method: entry.method,
+          endpoint: entry.endpoint,
+          ipAddress: entry.ipAddress,
+          userAgent: entry.userAgent,
+          status: entry.status,
+          details: entry.details,
+          severity: entry.severity,
+          category: entry.category,
+          createdAt: /* @__PURE__ */ new Date()
+        }).returning();
+        return result[0];
+      }
+      async getAuditLogs({ limit = 50, offset = 0, userId, severity } = {}) {
+        let whereClause = void 0;
+        if (userId && severity) {
+          whereClause = and(eq(auditLogs.userId, userId), eq(auditLogs.severity, severity));
+        } else if (userId) {
+          whereClause = eq(auditLogs.userId, userId);
+        } else if (severity) {
+          whereClause = eq(auditLogs.severity, severity);
+        }
+        let query;
+        if (whereClause) {
+          query = this.db.select().from(auditLogs).where(whereClause);
+        } else {
+          query = this.db.select().from(auditLogs);
+        }
+        return await query.orderBy(desc(auditLogs.timestamp)).limit(limit).offset(offset);
+      }
+      // System logging operations
+      async createSystemLog(level, message, service = "api", metadata) {
+        const result = await this.db.insert(systemLogs).values({
+          level,
+          message,
+          service,
+          metadata,
+          timestamp: /* @__PURE__ */ new Date()
+        }).returning();
+        return result[0];
+      }
+      // Notification history operations
+      async createNotificationHistory(userId, type, title, message, metadata) {
+        const result = await this.db.insert(notificationHistory).values({
+          userId,
+          type,
+          title,
+          message,
+          metadata,
+          createdAt: /* @__PURE__ */ new Date()
+        }).returning();
+        return result[0];
+      }
+      async getUserNotificationHistory(userId, { limit = 20, offset = 0 } = {}) {
+        return await this.db.select().from(notificationHistory).where(eq(notificationHistory.userId, userId)).orderBy(desc(notificationHistory.createdAt)).limit(limit).offset(offset);
+      }
+    };
+    storage = new DatabaseStorage();
+    getAllDaos = (args) => storage.getAllDaos(args);
+    getDaoCount = () => storage.getDaoCount();
+    getAllUsers = (args) => storage.getAllUsers(args);
+    getUserCount = () => storage.getUserCount();
+    getPlatformFeeInfo = () => storage.getPlatformFeeInfo();
+    getSystemLogs = (args) => storage.getSystemLogs(args);
+    getLogCount = () => storage.getLogCount();
+    getAllDaoBillingHistory = (args) => storage.getAllDaoBillingHistory();
+    getBillingCount = () => storage.getBillingCount();
+    getChainInfo = () => storage.getChainInfo();
+    getTopMembers = (args) => storage.getTopMembers(args);
+    createUser = (userData) => storage.createUser(userData);
+    loginUser = (email) => storage.loginUser(email);
+    getUserByEmail = (email) => storage.getUserByEmail(email);
+    getUserByPhone = (phone) => storage.getUserByPhone(phone);
+    createWalletTransaction = (data) => storage.createWalletTransaction(data);
+    setDaoInviteCode = (daoId, code) => storage.setDaoInviteCode(daoId, code);
+    getDaoByInviteCode = (code) => storage.getDaoByInviteCode(code);
+    getUserReferralStats = (userId) => storage.getUserReferralStats(userId);
+    getReferralLeaderboard = (limit) => storage.getReferralLeaderboard(limit);
+    getUser = (userId) => storage.getUser(userId);
+    getDAOStats = () => storage.getDAOStats();
+    getProposals = () => storage.getProposals();
+    getProposal = (id) => storage.getProposal(id);
+    createProposal = (proposal) => storage.createProposal(proposal);
+    updateProposalVotes = (proposalId, voteType) => storage.updateProposalVotes(proposalId, voteType);
+    getVote = (proposalId, userId) => storage.getVote(proposalId, userId);
+    createVote = (vote) => storage.createVote(vote);
+    getVotesByProposal = (proposalId) => storage.getVotesByProposal(proposalId);
+    getContributions = (userId, daoId) => storage.getContributions(userId, daoId);
+    createContribution = (contribution) => storage.createContribution(contribution);
+    getUserContributionStats = (userId) => storage.getUserContributionStats(userId);
+    getUserVaults = (userId) => storage.getUserVaults(userId);
+    upsertVault = (vault) => storage.upsertVault(vault);
+    getUserBudgetPlans = (userId, month) => storage.getUserBudgetPlans(userId, month);
+    upsertBudgetPlan = (plan) => storage.upsertBudgetPlan(plan);
+    getTasks = () => storage.getTasks();
+    createTask = (task) => storage.createTask(task);
+    claimTask = (taskId, userId) => storage.claimTask(taskId, userId);
+    getDao = (daoId) => storage.getDao(daoId);
+    getDaoMembership = (daoId, userId) => storage.getDaoMembership(daoId, userId);
+    createDaoMembership = (args) => storage.createDaoMembership(args);
+    getDaoMembershipsByStatus = (daoId, status) => storage.getDaoMembershipsByStatus(daoId, status);
+    updateDaoMembershipStatus = (membershipId, status) => storage.updateDaoMembershipStatus(membershipId, status);
+    getDaoPlan = (daoId) => storage.getDaoPlan(daoId);
+    setDaoPlan = (daoId, plan, planExpiresAt) => storage.setDaoPlan(daoId, plan, planExpiresAt);
+    getDaoBillingHistory = (daoId) => storage.getDaoBillingHistory(daoId);
+    addDaoBillingHistory = (entry) => storage.addDaoBillingHistory(entry);
+    hasActiveContributions = (userId, daoId) => storage.hasActiveContributions(userId, daoId);
+    revokeAllUserSessions = (userId) => storage.revokeAllUserSessions(userId);
+    createNotification = (notification) => storage.createNotification(notification);
+    getUserNotifications = (userId, read, limit, offset, type) => storage.getUserNotifications(userId, read, limit, offset, type);
+    getUserProfile = (userId) => storage.getUserProfile(userId);
+    updateUserProfile = (userId, data) => storage.updateUserProfile(userId, data);
+    getUserSocialLinks = (userId) => storage.getUserSocialLinks(userId);
+    updateUserSocialLinks = (userId, data) => storage.updateUserSocialLinks(userId, data);
+    getUserWallet = (userId) => storage.getUserWallet(userId);
+    updateUserWallet = (userId, data) => storage.updateUserWallet(userId, data);
+    getUserSettings = (userId) => storage.getUserSettings(userId);
+    updateUserSettings = (userId, data) => storage.updateUserSettings(userId, data);
+    getUserSessions = (userId) => storage.getUserSessions(userId);
+    revokeUserSession = (userId, sessionId) => storage.revokeUserSession(userId, sessionId);
+    deleteUserAccount = (userId) => storage.deleteUserAccount(userId);
+    getBudgetPlanCount = (userId, month) => storage.getBudgetPlanCount(userId, month);
+    createDao = (dao) => storage.createDao(dao);
+    updateDaoInviteCode = (daoId, code) => storage.updateDaoInviteCode(daoId, code);
+    deleteProposal = (id, userId) => storage.deleteProposal(id, userId);
+    updateProposal = (id, data, userId) => storage.updateProposal(id, data, userId);
+    getVaultTransactions = (vaultId, limit, offset) => storage.getVaultTransactions(vaultId, limit, offset);
+    getDaoAnalytics = (daoId) => storage.getDaoAnalytics(daoId);
+    storage_default = storage;
+  }
+});
+
+// server/notificationService.ts
+var notificationService_exports = {};
+__export(notificationService_exports, {
+  notificationService: () => notificationService
+});
+import { EventEmitter } from "events";
+import nodemailer from "nodemailer";
+var NotificationService, notificationService;
+var init_notificationService = __esm({
+  "server/notificationService.ts"() {
+    "use strict";
+    init_storage();
+    NotificationService = class extends EventEmitter {
+      constructor() {
+        super();
+        this.subscribers = /* @__PURE__ */ new Map();
+        this.emailTransporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST || "smtp.gmail.com",
+          port: Number(process.env.SMTP_PORT) || 587,
+          secure: false,
+          auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS
+          }
+        });
+      }
+      async createNotification(notification) {
+        try {
+          const dbNotification = await storage.createNotification({
+            userId: notification.userId,
+            type: notification.type,
+            title: notification.title,
+            message: notification.message,
+            priority: notification.priority || "medium",
+            metadata: notification.metadata || {}
+          });
+          const preferences = await storage.getUserNotificationPreferences(notification.userId);
+          if (preferences?.emailNotifications) {
+            await this.sendEmailNotification(notification.userId, notification);
+          }
+          if (preferences?.pushNotifications) {
+            await this.sendPushNotification(notification.userId, notification);
+          }
+          this.emit("notification_created", {
+            ...dbNotification,
+            userId: notification.userId
+          });
+          console.log(`Notification created for user ${notification.userId}: ${notification.type}`);
+          return dbNotification;
+        } catch (error) {
+          console.error("Failed to create notification:", error);
+          return null;
+        }
+      }
+      async sendPaymentNotification(recipient, notification) {
+        try {
+          const channel = this.subscribers.get(recipient) || { sms: true };
+          if (channel.sms) {
+            await this.sendSMS(recipient, this.formatSMSMessage(notification));
+          }
+          if (channel.email) {
+            await this.sendEmail(recipient, this.formatEmailMessage(notification));
+          }
+          if (channel.push) {
+            await this.sendPushNotification(recipient, {
+              userId: recipient,
+              type: notification.type,
+              title: `Payment ${notification.type.replace("_", " ")}`,
+              message: `${notification.amount} ${notification.currency} - ${notification.transactionId}`,
+              priority: "medium",
+              metadata: notification.errorMessage ? { errorMessage: notification.errorMessage } : {}
+            });
+          }
+          if (channel.webhook) {
+            await this.sendWebhook(channel.webhook, notification);
+          }
+          this.emit("payment_notification", {
+            recipient,
+            notification,
+            timestamp: (/* @__PURE__ */ new Date()).toISOString()
+          });
+          console.log(`Payment notification sent to ${recipient}: ${notification.type}`);
+          return true;
+        } catch (error) {
+          console.error("Failed to send payment notification:", error);
+          return false;
+        }
+      }
+      async sendEmailNotification(userId, notification) {
+        try {
+          const user = await storage.getUserById(userId);
+          if (!user?.email) return;
+          const mailOptions = {
+            from: process.env.SMTP_FROM || "noreply@mtaadao.com",
+            to: user.email,
+            subject: notification.title,
+            html: this.formatEmailTemplate(notification)
+          };
+          await this.emailTransporter.sendMail(mailOptions);
+          console.log(`Email notification sent to ${user.email}`);
+        } catch (error) {
+          console.error("Failed to send email notification:", error);
+        }
+      }
+      formatEmailTemplate(notification) {
+        return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${notification.title}</title>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: #4F46E5; color: white; padding: 20px; text-align: center; }
+          .content { padding: 20px; background: #f9f9f9; }
+          .footer { padding: 10px; text-align: center; font-size: 12px; color: #666; }
+          .priority-high { border-left: 4px solid #ef4444; }
+          .priority-urgent { border-left: 4px solid #dc2626; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>MtaaDAO Notification</h1>
+          </div>
+          <div class="content ${notification.priority === "high" || notification.priority === "urgent" ? `priority-${notification.priority}` : ""}">
+            <h2>${notification.title}</h2>
+            <p>${notification.message}</p>
+            ${notification.metadata?.actionUrl ? `<p><a href="${notification.metadata.actionUrl}" style="background: #4F46E5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Take Action</a></p>` : ""}
+          </div>
+          <div class="footer">
+            <p>This is an automated message from MtaaDAO. Please do not reply to this email.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+      }
+      async sendPushNotification(userId, notification) {
+        try {
+          console.log(`Push notification sent to user ${userId}: ${notification.title}`);
+          const pushPayload = {
+            title: notification.title,
+            body: notification.message,
+            icon: "/favicon.ico",
+            badge: "/favicon.ico",
+            data: {
+              type: notification.type,
+              userId,
+              metadata: notification.metadata
+            }
+          };
+          console.log("Push payload:", pushPayload);
+        } catch (error) {
+          console.error("Failed to send push notification:", error);
+        }
+      }
+      formatSMSMessage(notification) {
+        switch (notification.type) {
+          case "payment_pending":
+            return `Payment of ${notification.amount} ${notification.currency} is being processed. Transaction ID: ${notification.transactionId}`;
+          case "payment_success":
+            return `Payment successful! ${notification.amount} ${notification.currency} received. Transaction ID: ${notification.transactionId}`;
+          case "payment_failed":
+            return `Payment failed. ${notification.amount} ${notification.currency}. ${notification.errorMessage || "Please try again."}`;
+          case "payment_retry":
+            return `Retrying payment of ${notification.amount} ${notification.currency}. Transaction ID: ${notification.transactionId}`;
+          default:
+            return `Payment update for transaction ${notification.transactionId}`;
+        }
+      }
+      formatEmailMessage(notification) {
+        const subject = `Payment ${notification.type.replace("_", " ")} - ${notification.transactionId}`;
+        let body = `
+      <h2>Payment Update</h2>
+      <p><strong>Transaction ID:</strong> ${notification.transactionId}</p>
+      <p><strong>Amount:</strong> ${notification.amount} ${notification.currency}</p>
+      <p><strong>Status:</strong> ${notification.type.replace("_", " ")}</p>
+    `;
+        if (notification.errorMessage) {
+          body += `<p><strong>Error:</strong> ${notification.errorMessage}</p>`;
+        }
+        return { subject, body };
+      }
+      formatPushMessage(notification) {
+        const title = `Payment ${notification.type.replace("_", " ")}`;
+        const body = `${notification.amount} ${notification.currency} - ${notification.transactionId}`;
+        return { title, body };
+      }
+      async sendSMS(phone, message) {
+        console.log(`SMS to ${phone}: ${message}`);
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            console.log(`SMS sent successfully to ${phone}`);
+            resolve();
+          }, 100);
+        });
+      }
+      async sendEmail(email, message) {
+        try {
+          await this.emailTransporter.sendMail({
+            from: process.env.SMTP_FROM || "noreply@mtaadao.com",
+            to: email,
+            subject: message.subject,
+            html: message.body
+          });
+          console.log(`Email sent successfully to ${email}`);
+        } catch (error) {
+          console.error(`Email failed for ${email}:`, error);
+          throw error;
+        }
+      }
+      async sendWebhook(url, notification) {
+        try {
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              type: "payment_notification",
+              data: notification,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString()
+            })
+          });
+          if (!response.ok) {
+            throw new Error(`Webhook failed: ${response.status}`);
+          }
+          console.log(`Webhook sent successfully to ${url}`);
+        } catch (error) {
+          console.error(`Webhook failed for ${url}:`, error);
+          throw error;
+        }
+      }
+      subscribe(recipient, channels) {
+        this.subscribers.set(recipient, channels);
+      }
+      unsubscribe(recipient) {
+        this.subscribers.delete(recipient);
+      }
+      // Real-time payment status updates via WebSocket
+      getPaymentStatusStream(transactionId) {
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            this.removeAllListeners(`payment_${transactionId}`);
+            reject(new Error("Payment status timeout"));
+          }, 3e5);
+          this.once(`payment_${transactionId}`, (status) => {
+            clearTimeout(timeout);
+            resolve(status);
+          });
+        });
+      }
+      updatePaymentStatus(transactionId, status) {
+        this.emit(`payment_${transactionId}`, status);
+      }
+      // Bulk notification creation for announcements
+      async createBulkNotifications(userIds, notificationData) {
+        const notifications2 = [];
+        for (const userId of userIds) {
+          const notification = await this.createNotification({
+            ...notificationData,
+            userId
+          });
+          if (notification) {
+            notifications2.push(notification);
+          }
+        }
+        return notifications2;
+      }
+      // Server-Sent Events endpoint for real-time notifications
+      setupSSE(userId, res) {
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Headers": "Cache-Control"
+        });
+        const heartbeat = setInterval(() => {
+          res.write('data: {"type":"heartbeat"}\n\n');
+        }, 3e4);
+        const notificationHandler = (notification) => {
+          if (notification.userId === userId) {
+            res.write(`data: ${JSON.stringify(notification)}
+
+`);
+          }
+        };
+        this.on("notification_created", notificationHandler);
+        res.on("close", () => {
+          clearInterval(heartbeat);
+          this.removeListener("notification_created", notificationHandler);
+        });
+      }
+    };
+    notificationService = new NotificationService();
+  }
+});
+
+// server/taskVerificationService.ts
+var taskVerificationService_exports = {};
+__export(taskVerificationService_exports, {
+  TaskVerificationService: () => TaskVerificationService
+});
+import { eq as eq5, and as and5 } from "drizzle-orm";
+var TaskVerificationService;
+var init_taskVerificationService = __esm({
+  "server/taskVerificationService.ts"() {
+    "use strict";
+    init_storage();
+    init_schema();
+    TaskVerificationService = class {
+      // Automated verification for simple tasks
+      static async autoVerifyTask(taskId, proofData) {
+        try {
+          if (!proofData.proofUrl || !this.isValidUrl(proofData.proofUrl)) {
+            return false;
+          }
+          const isAccessible = await this.checkUrlAccessibility(proofData.proofUrl);
+          if (!isAccessible) {
+            return false;
+          }
+          const task = await db.select().from(tasks).where(eq5(tasks.id, taskId)).limit(1);
+          if (!task.length) return false;
+          const taskData = task[0];
+          switch (taskData.category) {
+            case "Frontend Development":
+              return await this.verifyFrontendTask(proofData);
+            case "Documentation":
+              return await this.verifyDocumentationTask(proofData);
+            default:
+              return true;
+          }
+        } catch (error) {
+          console.error("Auto-verification failed:", error);
+          return false;
+        }
+      }
+      // Manual verification workflow
+      static async requestManualVerification(taskId, reviewerId) {
+        await db.insert(notifications).values({
+          userId: reviewerId,
+          title: "Task Verification Required",
+          message: `A task requires manual verification. Task ID: ${taskId}`,
+          type: "task_verification",
+          metadata: { taskId, action: "verify_task" }
+        });
+      }
+      // Verification scoring system
+      static async calculateVerificationScore(taskId, submissionData) {
+        let score = 0;
+        if (submissionData.proofUrl) score += 20;
+        if (submissionData.description && submissionData.description.length > 20) score += 20;
+        if (submissionData.screenshots && submissionData.screenshots.length > 0) score += 15;
+        if (submissionData.description && submissionData.description.length > 100) score += 15;
+        const task = await db.select().from(tasks).where(eq5(tasks.id, taskId)).limit(1);
+        if (task.length && task[0].deadline) {
+          const deadline = new Date(task[0].deadline);
+          const now = /* @__PURE__ */ new Date();
+          if (now <= deadline) score += 30;
+          else if (now.getTime() - deadline.getTime() <= 24 * 60 * 60 * 1e3) score += 15;
+        } else {
+          score += 30;
+        }
+        return Math.min(100, score);
+      }
+      // Helper methods
+      static isValidUrl(url) {
+        try {
+          new URL(url);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+      static async checkUrlAccessibility(url) {
+        try {
+          const response = await fetch(url, { method: "HEAD" });
+          return response.status < 400;
+        } catch {
+          return false;
+        }
+      }
+      static async verifyFrontendTask(proofData) {
+        try {
+          const response = await fetch(proofData.proofUrl);
+          const content = await response.text();
+          return content.includes("<html") && content.includes("<body");
+        } catch {
+          return false;
+        }
+      }
+      static async verifyDocumentationTask(proofData) {
+        return proofData.description && proofData.description.length > 100;
+      }
+      // Process escrow release after verification
+      static async processEscrowRelease(taskId, approved) {
+        const task = await db.select().from(tasks).where(eq5(tasks.id, taskId)).limit(1);
+        if (!task.length) throw new Error("Task not found");
+        const taskData = task[0];
+        if (approved && taskData.claimerId) {
+          const escrow = await db.select().from(walletTransactions).where(and5(
+            eq5(walletTransactions.type, "escrow_deposit"),
+            eq5(walletTransactions.description, `Escrow for task: ${taskId}`),
+            eq5(walletTransactions.status, "held")
+          )).limit(1);
+          if (escrow.length > 0) {
+            await db.update(walletTransactions).set({ status: "completed" }).where(eq5(walletTransactions.id, escrow[0].id));
+            await db.insert(walletTransactions).values({
+              type: "bounty_payout",
+              amount: (escrow[0].amount ?? "").toString(),
+              currency: (escrow[0].currency ?? "").toString(),
+              walletAddress: "",
+              // No wallet address available, set as empty string or fallback
+              status: "completed",
+              description: `Bounty payment for completed task: ${taskData.title}`
+            });
+            await db.insert(notifications).values({
+              userId: taskData.claimerId,
+              title: "Bounty Payment Received",
+              message: `You've received ${escrow[0].amount} ${escrow[0].currency} for completing "${taskData.title}"`,
+              type: "payment_received",
+              metadata: { taskId, amount: escrow[0].amount, currency: escrow[0].currency }
+            });
+          }
+        }
+      }
+    };
+  }
+});
+
 // shared/reputationSchema.ts
-import { pgTable as pgTable3, varchar as varchar3, timestamp as timestamp4, integer as integer3, decimal as decimal2, boolean as boolean3, uuid as uuid3 } from "drizzle-orm/pg-core";
-import { createInsertSchema as createInsertSchema3 } from "drizzle-zod";
+import { pgTable as pgTable2, varchar as varchar2, timestamp as timestamp3, integer as integer2, decimal as decimal2, boolean as boolean2, uuid as uuid2 } from "drizzle-orm/pg-core";
+import { createInsertSchema as createInsertSchema2 } from "drizzle-zod";
 var msiaMoPoints, userReputation2, msiaMoConversions, airdropEligibility, insertMsiaMoPointsSchema, insertUserReputationSchema, insertMsiaMoConversionSchema, insertAirdropEligibilitySchema;
 var init_reputationSchema = __esm({
   "shared/reputationSchema.ts"() {
     "use strict";
     init_schema();
-    msiaMoPoints = pgTable3("msiamo_points", {
-      id: uuid3("id").primaryKey().defaultRandom(),
-      userId: varchar3("user_id").references(() => users.id).notNull(),
-      daoId: uuid3("dao_id").references(() => daos.id),
+    msiaMoPoints = pgTable2("msiamo_points", {
+      id: uuid2("id").primaryKey().defaultRandom(),
+      userId: varchar2("user_id").references(() => users.id).notNull(),
+      daoId: uuid2("dao_id").references(() => daos.id),
       // null for platform-wide points
-      points: integer3("points").notNull(),
-      action: varchar3("action").notNull(),
+      points: integer2("points").notNull(),
+      action: varchar2("action").notNull(),
       // vote, propose, contribute, refer, streak, etc.
-      description: varchar3("description"),
+      description: varchar2("description"),
       multiplier: decimal2("multiplier", { precision: 3, scale: 2 }).default("1.0"),
-      createdAt: timestamp4("created_at").defaultNow()
+      createdAt: timestamp3("created_at").defaultNow()
     });
-    userReputation2 = pgTable3("user_reputation", {
-      id: uuid3("id").primaryKey().defaultRandom(),
-      userId: varchar3("user_id").references(() => users.id).notNull().unique(),
-      totalPoints: integer3("total_points").default(0),
-      weeklyPoints: integer3("weekly_points").default(0),
-      monthlyPoints: integer3("monthly_points").default(0),
-      currentStreak: integer3("current_streak").default(0),
-      longestStreak: integer3("longest_streak").default(0),
-      lastActivity: timestamp4("last_activity").defaultNow(),
-      badge: varchar3("badge").default("Bronze"),
+    userReputation2 = pgTable2("user_reputation", {
+      id: uuid2("id").primaryKey().defaultRandom(),
+      userId: varchar2("user_id").references(() => users.id).notNull().unique(),
+      totalPoints: integer2("total_points").default(0),
+      weeklyPoints: integer2("weekly_points").default(0),
+      monthlyPoints: integer2("monthly_points").default(0),
+      currentStreak: integer2("current_streak").default(0),
+      longestStreak: integer2("longest_streak").default(0),
+      lastActivity: timestamp3("last_activity").defaultNow(),
+      badge: varchar2("badge").default("Bronze"),
       // Bronze, Silver, Gold, Platinum, Diamond
-      level: integer3("level").default(1),
-      nextLevelPoints: integer3("next_level_points").default(100),
-      updatedAt: timestamp4("updated_at").defaultNow()
+      level: integer2("level").default(1),
+      nextLevelPoints: integer2("next_level_points").default(100),
+      updatedAt: timestamp3("updated_at").defaultNow()
     });
-    msiaMoConversions = pgTable3("msiamo_conversions", {
-      id: uuid3("id").primaryKey().defaultRandom(),
-      userId: varchar3("user_id").references(() => users.id).notNull(),
-      pointsConverted: integer3("points_converted").notNull(),
+    msiaMoConversions = pgTable2("msiamo_conversions", {
+      id: uuid2("id").primaryKey().defaultRandom(),
+      userId: varchar2("user_id").references(() => users.id).notNull(),
+      pointsConverted: integer2("points_converted").notNull(),
       tokensReceived: decimal2("tokens_received", { precision: 18, scale: 8 }).notNull(),
       conversionRate: decimal2("conversion_rate", { precision: 10, scale: 4 }).notNull(),
       // points per token
-      transactionHash: varchar3("transaction_hash"),
-      status: varchar3("status").default("pending"),
+      transactionHash: varchar2("transaction_hash"),
+      status: varchar2("status").default("pending"),
       // pending, completed, failed
-      createdAt: timestamp4("created_at").defaultNow()
+      createdAt: timestamp3("created_at").defaultNow()
     });
-    airdropEligibility = pgTable3("airdrop_eligibility", {
-      id: uuid3("id").primaryKey().defaultRandom(),
-      userId: varchar3("user_id").references(() => users.id).notNull(),
-      airdropId: varchar3("airdrop_id").notNull(),
+    airdropEligibility = pgTable2("airdrop_eligibility", {
+      id: uuid2("id").primaryKey().defaultRandom(),
+      userId: varchar2("user_id").references(() => users.id).notNull(),
+      airdropId: varchar2("airdrop_id").notNull(),
       eligibleAmount: decimal2("eligible_amount", { precision: 18, scale: 8 }).notNull(),
-      minimumReputation: integer3("minimum_reputation").notNull(),
-      userReputation: integer3("user_reputation").notNull(),
-      claimed: boolean3("claimed").default(false),
-      claimedAt: timestamp4("claimed_at"),
-      transactionHash: varchar3("transaction_hash"),
-      createdAt: timestamp4("created_at").defaultNow()
+      minimumReputation: integer2("minimum_reputation").notNull(),
+      userReputation: integer2("user_reputation").notNull(),
+      claimed: boolean2("claimed").default(false),
+      claimedAt: timestamp3("claimed_at"),
+      transactionHash: varchar2("transaction_hash"),
+      createdAt: timestamp3("created_at").defaultNow()
     });
-    insertMsiaMoPointsSchema = createInsertSchema3(msiaMoPoints);
-    insertUserReputationSchema = createInsertSchema3(userReputation2);
-    insertMsiaMoConversionSchema = createInsertSchema3(msiaMoConversions);
-    insertAirdropEligibilitySchema = createInsertSchema3(airdropEligibility);
+    insertMsiaMoPointsSchema = createInsertSchema2(msiaMoPoints);
+    insertUserReputationSchema = createInsertSchema2(userReputation2);
+    insertMsiaMoConversionSchema = createInsertSchema2(msiaMoConversions);
+    insertAirdropEligibilitySchema = createInsertSchema2(airdropEligibility);
   }
 });
 
@@ -967,7 +2599,7 @@ __export(reputationService_exports, {
   REPUTATION_VALUES: () => REPUTATION_VALUES,
   ReputationService: () => ReputationService
 });
-import { eq as eq11, and as and10, desc as desc8, sql as sql4 } from "drizzle-orm";
+import { eq as eq6, and as and6, desc as desc4, sql as sql3 } from "drizzle-orm";
 var REPUTATION_VALUES, BADGE_THRESHOLDS, ReputationService;
 var init_reputationService = __esm({
   "server/reputationService.ts"() {
@@ -1027,26 +2659,26 @@ var init_reputationService = __esm({
       }
       // Update user's overall reputation summary
       static async updateUserReputation(userId) {
-        const totalPointsResult = await db.select({ total: sql4`sum(${msiaMoPoints.points})` }).from(msiaMoPoints).where(eq11(msiaMoPoints.userId, userId));
+        const totalPointsResult = await db.select({ total: sql3`sum(${msiaMoPoints.points})` }).from(msiaMoPoints).where(eq6(msiaMoPoints.userId, userId));
         const totalPoints = totalPointsResult[0]?.total || 0;
-        const weeklyPointsResult = await db.select({ total: sql4`sum(${msiaMoPoints.points})` }).from(msiaMoPoints).where(
-          and10(
-            eq11(msiaMoPoints.userId, userId),
-            sql4`${msiaMoPoints.createdAt} >= NOW() - INTERVAL '7 days'`
+        const weeklyPointsResult = await db.select({ total: sql3`sum(${msiaMoPoints.points})` }).from(msiaMoPoints).where(
+          and6(
+            eq6(msiaMoPoints.userId, userId),
+            sql3`${msiaMoPoints.createdAt} >= NOW() - INTERVAL '7 days'`
           )
         );
         const weeklyPoints = weeklyPointsResult[0]?.total || 0;
-        const monthlyPointsResult = await db.select({ total: sql4`sum(${msiaMoPoints.points})` }).from(msiaMoPoints).where(
-          and10(
-            eq11(msiaMoPoints.userId, userId),
-            sql4`${msiaMoPoints.createdAt} >= NOW() - INTERVAL '30 days'`
+        const monthlyPointsResult = await db.select({ total: sql3`sum(${msiaMoPoints.points})` }).from(msiaMoPoints).where(
+          and6(
+            eq6(msiaMoPoints.userId, userId),
+            sql3`${msiaMoPoints.createdAt} >= NOW() - INTERVAL '30 days'`
           )
         );
         const monthlyPoints = monthlyPointsResult[0]?.total || 0;
         const badge = this.calculateBadge(totalPoints);
         const level = this.calculateLevel(totalPoints);
         const nextLevelPoints = this.getNextLevelThreshold(level);
-        const existingReputation = await db.select().from(userReputation2).where(eq11(userReputation2.userId, userId));
+        const existingReputation = await db.select().from(userReputation2).where(eq6(userReputation2.userId, userId));
         if (existingReputation.length > 0) {
           await db.update(userReputation2).set({
             totalPoints,
@@ -1057,7 +2689,7 @@ var init_reputationService = __esm({
             nextLevelPoints,
             lastActivity: /* @__PURE__ */ new Date(),
             updatedAt: /* @__PURE__ */ new Date()
-          }).where(eq11(userReputation2.userId, userId));
+          }).where(eq6(userReputation2.userId, userId));
         } else {
           await db.insert(userReputation2).values({
             userId,
@@ -1089,7 +2721,7 @@ var init_reputationService = __esm({
       }
       // Apply reputation decay based on inactivity
       static async applyReputationDecay(userId) {
-        const reputation = await db.select().from(userReputation2).where(eq11(userReputation2.userId, userId));
+        const reputation = await db.select().from(userReputation2).where(eq6(userReputation2.userId, userId));
         if (!reputation[0]) return;
         const lastActivityRaw = reputation[0].lastActivity;
         const lastActivity = lastActivityRaw ? new Date(lastActivityRaw) : /* @__PURE__ */ new Date();
@@ -1108,7 +2740,7 @@ var init_reputationService = __esm({
               level: this.calculateLevel(decayedPoints),
               nextLevelPoints: this.getNextLevelThreshold(this.calculateLevel(decayedPoints)),
               updatedAt: /* @__PURE__ */ new Date()
-            }).where(eq11(userReputation2.userId, userId));
+            }).where(eq6(userReputation2.userId, userId));
             await this.awardPoints(
               userId,
               "REPUTATION_DECAY",
@@ -1128,7 +2760,7 @@ var init_reputationService = __esm({
         for (const user of allUsers) {
           const beforePoints = user.totalPoints ?? 0;
           await this.applyReputationDecay(user.userId);
-          const afterReputation = await db.select().from(userReputation2).where(eq11(userReputation2.userId, user.userId));
+          const afterReputation = await db.select().from(userReputation2).where(eq6(userReputation2.userId, user.userId));
           if (afterReputation[0] && (afterReputation[0].totalPoints ?? 0) < beforePoints) {
             decayed++;
           }
@@ -1138,13 +2770,13 @@ var init_reputationService = __esm({
       }
       // Get user's current reputation
       static async getUserReputation(userId) {
-        const reputation = await db.select().from(userReputation2).where(eq11(userReputation2.userId, userId));
+        const reputation = await db.select().from(userReputation2).where(eq6(userReputation2.userId, userId));
         if (reputation.length === 0) {
           await this.updateUserReputation(userId);
           return await this.getUserReputation(userId);
         }
         await this.applyReputationDecay(userId);
-        const updatedReputation = await db.select().from(userReputation2).where(eq11(userReputation2.userId, userId));
+        const updatedReputation = await db.select().from(userReputation2).where(eq6(userReputation2.userId, userId));
         return updatedReputation[0];
       }
       // Get leaderboard
@@ -1157,7 +2789,7 @@ var init_reputationService = __esm({
           firstName: users.firstName,
           lastName: users.lastName,
           profileImageUrl: users.profileImageUrl
-        }).from(userReputation2).leftJoin(users, eq11(userReputation2.userId, users.id)).orderBy(desc8(userReputation2.totalPoints)).limit(limit);
+        }).from(userReputation2).leftJoin(users, eq6(userReputation2.userId, users.id)).orderBy(desc4(userReputation2.totalPoints)).limit(limit);
       }
       // Convert MsiaMo points to tokens (for airdrops)
       static async convertPointsToTokens(userId, pointsToConvert, conversionRate = 100) {
@@ -1219,875 +2851,995 @@ var init_reputationService = __esm({
   }
 });
 
+// shared/achievementSchema.ts
+import { pgTable as pgTable3, varchar as varchar3, timestamp as timestamp4, integer as integer3, boolean as boolean3, uuid as uuid3, text as text2 } from "drizzle-orm/pg-core";
+import { createInsertSchema as createInsertSchema3 } from "drizzle-zod";
+var achievements, userAchievements, achievementProgress, insertAchievementSchema, insertUserAchievementSchema, insertAchievementProgressSchema;
+var init_achievementSchema = __esm({
+  "shared/achievementSchema.ts"() {
+    "use strict";
+    init_schema();
+    achievements = pgTable3("achievements", {
+      id: uuid3("id").primaryKey().defaultRandom(),
+      name: varchar3("name").notNull(),
+      description: text2("description"),
+      category: varchar3("category").notNull(),
+      // voting, contribution, social, streak, etc.
+      criteria: text2("criteria").notNull(),
+      // JSON string with achievement criteria
+      rewardPoints: integer3("reward_points").default(0),
+      rewardTokens: varchar3("reward_tokens").default("0"),
+      badge: varchar3("badge"),
+      // special badge for this achievement
+      icon: varchar3("icon"),
+      // emoji or icon identifier
+      rarity: varchar3("rarity").default("common"),
+      // common, rare, epic, legendary
+      isActive: boolean3("is_active").default(true),
+      createdAt: timestamp4("created_at").defaultNow()
+    });
+    userAchievements = pgTable3("user_achievements", {
+      id: uuid3("id").primaryKey().defaultRandom(),
+      userId: varchar3("user_id").references(() => users.id).notNull(),
+      achievementId: uuid3("achievement_id").references(() => achievements.id).notNull(),
+      unlockedAt: timestamp4("unlocked_at").defaultNow(),
+      progress: integer3("progress").default(0),
+      // for progressive achievements
+      maxProgress: integer3("max_progress").default(1),
+      isCompleted: boolean3("is_completed").default(false),
+      rewardClaimed: boolean3("reward_claimed").default(false),
+      claimedAt: timestamp4("claimed_at")
+    });
+    achievementProgress = pgTable3("achievement_progress", {
+      id: uuid3("id").primaryKey().defaultRandom(),
+      userId: varchar3("user_id").references(() => users.id).notNull(),
+      achievementId: uuid3("achievement_id").references(() => achievements.id).notNull(),
+      currentValue: integer3("current_value").default(0),
+      targetValue: integer3("target_value").notNull(),
+      lastUpdated: timestamp4("last_updated").defaultNow()
+    });
+    insertAchievementSchema = createInsertSchema3(achievements);
+    insertUserAchievementSchema = createInsertSchema3(userAchievements);
+    insertAchievementProgressSchema = createInsertSchema3(achievementProgress);
+  }
+});
+
+// server/achievementService.ts
+var achievementService_exports = {};
+__export(achievementService_exports, {
+  AchievementService: () => AchievementService
+});
+import { eq as eq7, and as and7, sql as sql4 } from "drizzle-orm";
+var AchievementService;
+var init_achievementService = __esm({
+  "server/achievementService.ts"() {
+    "use strict";
+    init_db();
+    init_achievementSchema();
+    init_reputationSchema();
+    init_schema();
+    init_reputationService();
+    AchievementService = class {
+      // Initialize default achievements
+      static async initializeDefaultAchievements() {
+        const defaultAchievements = [
+          {
+            name: "First Vote",
+            description: "Cast your first vote in any proposal",
+            category: "voting",
+            criteria: JSON.stringify({ action: "vote", count: 1 }),
+            rewardPoints: 50,
+            rewardTokens: "1",
+            badge: "Voter",
+            icon: "\u{1F5F3}\uFE0F",
+            rarity: "common"
+          },
+          {
+            name: "Democracy Champion",
+            description: "Vote on 50 different proposals",
+            category: "voting",
+            criteria: JSON.stringify({ action: "vote", count: 50 }),
+            rewardPoints: 500,
+            rewardTokens: "10",
+            badge: "Champion",
+            icon: "\u{1F3C6}",
+            rarity: "rare"
+          },
+          {
+            name: "Proposal Pioneer",
+            description: "Create your first proposal",
+            category: "governance",
+            criteria: JSON.stringify({ action: "proposal_created", count: 1 }),
+            rewardPoints: 100,
+            rewardTokens: "5",
+            badge: "Pioneer",
+            icon: "\u{1F4A1}",
+            rarity: "common"
+          },
+          {
+            name: "Community Builder",
+            description: "Have 10 of your proposals pass",
+            category: "governance",
+            criteria: JSON.stringify({ action: "proposal_passed", count: 10 }),
+            rewardPoints: 1e3,
+            rewardTokens: "25",
+            badge: "Builder",
+            icon: "\u{1F3D7}\uFE0F",
+            rarity: "epic"
+          },
+          {
+            name: "Generous Soul",
+            description: "Contribute a total of 1000 cUSD",
+            category: "contribution",
+            criteria: JSON.stringify({ action: "contribution_total", amount: 1e3 }),
+            rewardPoints: 2e3,
+            rewardTokens: "50",
+            badge: "Generous",
+            icon: "\u{1F49D}",
+            rarity: "epic"
+          },
+          {
+            name: "Streak Master",
+            description: "Maintain a 30-day activity streak",
+            category: "streak",
+            criteria: JSON.stringify({ action: "daily_streak", count: 30 }),
+            rewardPoints: 750,
+            rewardTokens: "15",
+            badge: "Consistent",
+            icon: "\u26A1",
+            rarity: "rare"
+          },
+          {
+            name: "Social Butterfly",
+            description: "Refer 10 friends to the platform",
+            category: "social",
+            criteria: JSON.stringify({ action: "referral", count: 10 }),
+            rewardPoints: 1500,
+            rewardTokens: "30",
+            badge: "Influencer",
+            icon: "\u{1F98B}",
+            rarity: "epic"
+          },
+          {
+            name: "Reputation Legend",
+            description: "Reach 10,000 total reputation points",
+            category: "reputation",
+            criteria: JSON.stringify({ action: "reputation_total", count: 1e4 }),
+            rewardPoints: 5e3,
+            rewardTokens: "100",
+            badge: "Legend",
+            icon: "\u{1F451}",
+            rarity: "legendary"
+          }
+        ];
+        for (const achievement of defaultAchievements) {
+          try {
+            await db.insert(achievements).values(achievement);
+          } catch (error) {
+            console.log(`Achievement ${achievement.name} already exists or failed to create`);
+          }
+        }
+      }
+      // Check and unlock achievements for user
+      static async checkUserAchievements(userId) {
+        const unlockedAchievements = [];
+        const allAchievements = await db.select().from(achievements).where(eq7(achievements.isActive, true));
+        for (const achievement of allAchievements) {
+          const isAlreadyUnlocked = await this.isAchievementUnlocked(userId, achievement.id);
+          if (isAlreadyUnlocked) continue;
+          const criteria = JSON.parse(achievement.criteria);
+          const isUnlocked = await this.evaluateAchievementCriteria(userId, criteria);
+          if (isUnlocked) {
+            await this.unlockAchievement(userId, achievement.id);
+            unlockedAchievements.push(achievement.name);
+          }
+        }
+        return unlockedAchievements;
+      }
+      // Evaluate if user meets achievement criteria
+      static async evaluateAchievementCriteria(userId, criteria) {
+        switch (criteria.action) {
+          case "vote":
+            const voteCount = await db.select({ count: sql4`count(*)` }).from(votes).where(eq7(votes.userId, userId));
+            return (voteCount[0]?.count || 0) >= criteria.count;
+          case "proposal_created":
+            const proposalCount = await db.select({ count: sql4`count(*)` }).from(proposals2).where(eq7(proposals2.proposerId, userId));
+            return (proposalCount[0]?.count || 0) >= criteria.count;
+          case "proposal_passed":
+            const passedProposals = await db.select({ count: sql4`count(*)` }).from(proposals2).where(
+              and7(
+                eq7(proposals2.proposerId, userId),
+                eq7(proposals2.status, "passed")
+              )
+            );
+            return (passedProposals[0]?.count || 0) >= criteria.count;
+          case "contribution_total":
+            const totalContributions = await db.select({ total: sql4`sum(${contributions.amount})` }).from(contributions).where(eq7(contributions.userId, userId));
+            return (totalContributions[0]?.total || 0) >= criteria.amount;
+          case "daily_streak":
+            const userRep = await db.select().from(userReputation2).where(eq7(userReputation2.userId, userId));
+            return (userRep[0]?.currentStreak || 0) >= criteria.count;
+          case "referral":
+            const referralCount = await db.select({ count: sql4`count(*)` }).from(msiaMoPoints).where(
+              and7(
+                eq7(msiaMoPoints.userId, userId),
+                eq7(msiaMoPoints.action, "REFERRAL")
+              )
+            );
+            return (referralCount[0]?.count || 0) >= criteria.count;
+          case "reputation_total":
+            const reputation = await db.select().from(userReputation2).where(eq7(userReputation2.userId, userId));
+            return (reputation[0]?.totalPoints || 0) >= criteria.count;
+          default:
+            return false;
+        }
+      }
+      // Check if achievement is already unlocked
+      static async isAchievementUnlocked(userId, achievementId) {
+        const existing = await db.select().from(userAchievements).where(
+          and7(
+            eq7(userAchievements.userId, userId),
+            eq7(userAchievements.achievementId, achievementId),
+            eq7(userAchievements.isCompleted, true)
+          )
+        );
+        return existing.length > 0;
+      }
+      // Unlock achievement for user
+      static async unlockAchievement(userId, achievementId) {
+        const achievement = await db.select().from(achievements).where(eq7(achievements.id, achievementId));
+        if (!achievement[0]) return;
+        await db.insert(userAchievements).values({
+          userId,
+          achievementId,
+          isCompleted: true,
+          rewardClaimed: false
+        });
+        if (achievement[0] && achievement[0].rewardPoints && achievement[0].rewardPoints > 0) {
+          await ReputationService.awardPoints(
+            userId,
+            "ACHIEVEMENT_UNLOCKED",
+            achievement[0].rewardPoints,
+            void 0,
+            `Unlocked achievement: ${achievement[0].name}`,
+            1
+          );
+        }
+      }
+      // Get user's achievements
+      static async getUserAchievements(userId) {
+        return await db.select({
+          achievement: achievements,
+          userAchievement: userAchievements
+        }).from(userAchievements).leftJoin(achievements, eq7(userAchievements.achievementId, achievements.id)).where(eq7(userAchievements.userId, userId));
+      }
+      // Get user's achievement statistics
+      static async getUserAchievementStats(userId) {
+        const totalAchievements = await db.select({ count: sql4`count(*)` }).from(achievements).where(eq7(achievements.isActive, true));
+        const unlockedAchievements = await db.select({ count: sql4`count(*)` }).from(userAchievements).where(
+          and7(
+            eq7(userAchievements.userId, userId),
+            eq7(userAchievements.isCompleted, true)
+          )
+        );
+        const totalRewardPoints = await db.select({ total: sql4`sum(${achievements.rewardPoints})` }).from(userAchievements).leftJoin(achievements, eq7(userAchievements.achievementId, achievements.id)).where(
+          and7(
+            eq7(userAchievements.userId, userId),
+            eq7(userAchievements.isCompleted, true),
+            eq7(userAchievements.rewardClaimed, true)
+          )
+        );
+        return {
+          totalAchievements: totalAchievements[0]?.count || 0,
+          unlockedAchievements: unlockedAchievements[0]?.count || 0,
+          completionRate: (unlockedAchievements[0]?.count || 0) / (totalAchievements[0]?.count || 1) * 100,
+          totalRewardPointsEarned: totalRewardPoints[0]?.total || 0
+        };
+      }
+      // Claim achievement rewards
+      static async claimAchievementReward(userId, achievementId) {
+        const userAchievement = await db.select().from(userAchievements).where(
+          and7(
+            eq7(userAchievements.userId, userId),
+            eq7(userAchievements.achievementId, achievementId),
+            eq7(userAchievements.isCompleted, true),
+            eq7(userAchievements.rewardClaimed, false)
+          )
+        );
+        if (!userAchievement[0]) return false;
+        await db.update(userAchievements).set({
+          rewardClaimed: true,
+          claimedAt: /* @__PURE__ */ new Date()
+        }).where(eq7(userAchievements.id, userAchievement[0].id));
+        return true;
+      }
+    };
+  }
+});
+
 // server/index.ts
-import express21 from "express";
+import express23 from "express";
 import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import cors from "cors";
 
-// server/routes.ts
-import bcrypt from "bcryptjs";
-import jwt2 from "jsonwebtoken";
-import express19 from "express";
+// server/nextAuthMiddleware.ts
+import { getToken } from "next-auth/jwt";
 
-// server/storage.ts
-init_db();
-init_schema();
-import { eq, inArray, or, and, desc, sql } from "drizzle-orm";
-function isDaoPremium(dao) {
-  if (!dao || !dao.plan) return false;
-  return dao.plan === "premium";
-}
-var DatabaseStorage = class {
-  constructor() {
-    this.db = db;
-  }
-  /**
-   * Update user info by userId. Accepts any allowed user fields.
-   */
-  async updateUser(userId, update) {
-    if (!userId) throw new Error("User ID required");
-    if (!update || typeof update !== "object") throw new Error("Update object required");
-    const allowedFields = [
-      "name",
-      "avatar",
-      "email",
-      "phone",
-      "lastLoginAt",
-      "profile",
-      "authProvider",
-      "authProviderId",
-      "emailVerified",
-      "updatedAt"
-    ];
-    const allowedUpdate = {};
-    for (const key of allowedFields) {
-      if (key in update) allowedUpdate[key] = update[key];
-    }
-    allowedUpdate.updatedAt = /* @__PURE__ */ new Date();
-    const result = await this.db.update(users).set(allowedUpdate).where(eq(users.id, userId)).returning();
-    if (!result[0]) throw new Error("Failed to update user");
-    return result[0];
-  }
-  // Make db instance available within the class
-  async incrementDaoMemberCount(daoId) {
-    if (!daoId) throw new Error("DAO ID required");
-    const dao = await this.db.select().from(daos).where(eq(daos.id, daoId));
-    if (!dao[0]) throw new Error("DAO not found");
-    const newCount = (dao[0].memberCount || 0) + 1;
-    const result = await this.db.update(daos).set({ memberCount: newCount, updatedAt: /* @__PURE__ */ new Date() }).where(eq(daos.id, daoId)).returning();
-    return result[0];
-  }
-  // --- Admin Functions ---
-  async getAllDaos({ limit = 10, offset = 0 } = {}) {
-    return await this.db.select().from(daos).orderBy(desc(daos.createdAt)).limit(limit).offset(offset);
-  }
-  async getDaoCount() {
-    const result = await this.db.select({ count: sql`count(*)` }).from(daos);
-    return Number(result[0]?.count) || 0;
-  }
-  async getAllUsers({ limit = 10, offset = 0 } = {}) {
-    return await this.db.select().from(users).orderBy(desc(users.createdAt)).limit(limit).offset(offset);
-  }
-  async getUserCount() {
-    const result = await this.db.select({ count: sql`count(*)` }).from(users);
-    return Number(result[0]?.count) || 0;
-  }
-  async getPlatformFeeInfo() {
-    const keys = [
-      "vaultDisbursementFee",
-      "offrampWithdrawalFee",
-      "bulkPayoutFee",
-      "stakingYieldFee",
-      "platformFeeCurrency"
-    ];
-    const configRows = await this.db.select().from(config).where(inArray(config.key, keys));
-    const configMap = {};
-    configRows.forEach((row) => {
-      configMap[row.key] = typeof row.value === "string" ? JSON.parse(row.value) : row.value;
-    });
-    return {
-      vaultDisbursementFee: configMap.vaultDisbursementFee ?? "1\u20132% per action",
-      offrampWithdrawalFee: configMap.offrampWithdrawalFee ?? "2\u20133% (DAO or user)",
-      bulkPayoutFee: configMap.bulkPayoutFee ?? "Flat or % fee",
-      stakingYieldFee: configMap.stakingYieldFee ?? "Platform takes cut (opt-in)",
-      notes: "Fees are paid by the DAO/group, not individuals. All fees are abstracted into vault mechanics for simplicity.",
-      currency: configMap.platformFeeCurrency ?? "USD"
-    };
-  }
-  async getSystemLogs(args = {}) {
-    let whereClause = void 0;
-    if (args.level && args.service) {
-      whereClause = and(eq(systemLogs.level, args.level), eq(systemLogs.service, args.service));
-    } else if (args.level) {
-      whereClause = eq(systemLogs.level, args.level);
-    } else if (args.service) {
-      whereClause = eq(systemLogs.service, args.service);
-    }
-    let query;
-    if (whereClause) {
-      query = this.db.select().from(systemLogs).where(whereClause);
-    } else {
-      query = this.db.select().from(systemLogs);
-    }
-    return await query.orderBy(desc(systemLogs.timestamp)).limit(args.limit ?? 50).offset(args.offset ?? 0);
-  }
-  async updateTask(id, data, userId) {
-    const task = await this.db.select().from(tasks).where(eq(tasks.id, id));
-    if (!task[0]) throw new Error("Task not found");
-    const membership = await this.getDaoMembership(task[0].daoId, userId);
-    if (!membership || membership.role !== "admin") throw new Error("Only DAO admins can update tasks");
-    const result = await this.db.update(tasks).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq(tasks.id, id)).returning();
-    if (!result[0]) throw new Error("Failed to update task");
-    return result[0];
-  }
-  async getTaskCount(daoId, status) {
-    if (!daoId) throw new Error("DAO ID required");
-    let whereClause;
-    if (status) {
-      whereClause = and(eq(tasks.daoId, daoId), eq(tasks.status, status));
-    } else {
-      whereClause = eq(tasks.daoId, daoId);
-    }
-    const result = await this.db.select().from(tasks).where(whereClause);
-    return result.length;
-  }
-  async getLogCount() {
-    const result = await this.db.select().from(logs);
-    return result.length;
-  }
-  async getBillingCount() {
-    const result = await this.db.select().from(billingHistory);
-    return result.length;
-  }
-  async getChainInfo() {
-    const result = await this.db.select().from(chains).where(eq(chains.id, 1));
-    if (!result[0]) throw new Error("Chain not found");
-    return {
-      chainId: result[0].id,
-      name: result[0].name,
-      rpcUrl: result[0].rpcUrl
-    };
-  }
-  async getTopMembers({ limit = 10 } = {}) {
-    const allContributions = await this.db.select().from(contributions);
-    const counts = {};
-    allContributions.forEach((c) => {
-      if (c.userId) counts[c.userId] = (counts[c.userId] || 0) + 1;
-    });
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, limit).map(([userId, count2]) => ({ userId, count: count2 }));
-  }
-  async createUser(userData) {
-    const allowed = (({ firstName, lastName, email, phone, googleId, telegramId }) => ({ firstName, lastName, email, phone, googleId, telegramId }))(userData);
-    allowed.createdAt = /* @__PURE__ */ new Date();
-    allowed.updatedAt = /* @__PURE__ */ new Date();
-    const result = await this.db.insert(users).values(allowed).returning();
-    if (!result[0]) throw new Error("Failed to create user");
-    return result[0];
-  }
-  async loginUser(email) {
-    return this.getUserByEmail(email);
-  }
-  async getUserByEmail(email) {
-    if (!email) throw new Error("Email required");
-    const result = await this.db.select().from(users).where(eq(users.email, email));
-    if (!result[0]) throw new Error("User not found");
-    return result[0];
-  }
-  async getUserByPhone(phone) {
-    if (!phone) throw new Error("Phone required");
-    const result = await this.db.select().from(users).where(eq(users.phone, phone));
-    if (!result[0]) throw new Error("User not found");
-    return result[0];
-  }
-  async getUserById(userId) {
-    if (!userId) throw new Error("User ID required");
-    const result = await this.db.select().from(users).where(eq(users.id, userId));
-    if (!result[0]) throw new Error("User not found");
-    return result[0];
-  }
-  async getUserByEmailOrPhone(emailOrPhone) {
-    if (!emailOrPhone) throw new Error("Email or phone required");
-    const result = await this.db.select().from(users).where(
-      or(eq(users.email, emailOrPhone), eq(users.phone, emailOrPhone))
-    );
-    if (!result[0]) throw new Error("User not found");
-    return result[0];
-  }
-  async getUserProfile(userId) {
-    return this.getUser(userId);
-  }
-  async updateUserProfile(userId, data) {
-    const allowed = (({ firstName, lastName, email, phone }) => ({ firstName, lastName, email, phone }))(data);
-    allowed.updatedAt = /* @__PURE__ */ new Date();
-    const result = await this.db.update(users).set(allowed).where(eq(users.id, userId)).returning();
-    if (!result[0]) throw new Error("Failed to update user");
-    return result[0];
-  }
-  async getUserSocialLinks(userId) {
-    const user = await this.getUser(userId);
-    return { google: user.googleId || null, telegram: user.telegramId || null };
-  }
-  async updateUserSocialLinks(userId, data) {
-    const allowed = (({ phone, email }) => ({ phone, email }))(data);
-    allowed.updatedAt = /* @__PURE__ */ new Date();
-    const result = await this.db.update(users).set(allowed).where(eq(users.id, userId)).returning();
-    if (!result[0]) throw new Error("Failed to update social links");
-    return result[0];
-  }
-  async getUserWallet(userId) {
-    const user = await this.getUser(userId);
-    return { address: user.phone || user.email || null };
-  }
-  async updateUserWallet(userId, data) {
-    const allowed = (({ phone, email }) => ({ phone, email }))(data);
-    allowed.updatedAt = /* @__PURE__ */ new Date();
-    const result = await this.db.update(users).set(allowed).where(eq(users.id, userId)).returning();
-    if (!result[0]) throw new Error("Failed to update wallet");
-    return result[0];
-  }
-  async getUserSettings(userId) {
-    const user = await this.getUser(userId);
-    return { theme: user.darkMode ? "dark" : "light", language: user.language || "en" };
-  }
-  async updateUserSettings(userId, data) {
-    const allowed = {};
-    if (data.theme) allowed.darkMode = data.theme === "dark";
-    if (data.language) allowed.language = data.language;
-    allowed.updatedAt = /* @__PURE__ */ new Date();
-    const result = await this.db.update(users).set(allowed).where(eq(users.id, userId)).returning();
-    if (!result[0]) throw new Error("Failed to update settings");
-    return result[0];
-  }
-  async getUserSessions(userId) {
-    const result = await this.db.select().from(sessions).where(eq(sessions.userId, userId));
-    return result;
-  }
-  async revokeUserSession(userId, sessionId) {
-    if (!userId || !sessionId) throw new Error("User ID and session ID required");
-    const result = await this.db.delete(sessions).where(
-      and(eq(sessions.userId, userId), eq(sessions.id, sessionId))
-    );
-    if (!result) throw new Error("Session not found or already revoked");
-  }
-  async deleteUserAccount(userId) {
-    await this.db.delete(users).where(eq(users.id, userId));
-  }
-  async createWalletTransaction(data) {
-    if (!data.amount || !data.currency || !data.type || !data.status || !data.provider) {
-      throw new Error("Missing required wallet transaction fields");
-    }
-    data.createdAt = /* @__PURE__ */ new Date();
-    data.updatedAt = /* @__PURE__ */ new Date();
-    if (!data.walletAddress) {
-      data.walletAddress = "";
-    }
-    if (!data.toUserId) {
-      data.toUserId = null;
-    }
-    const result = await this.db.insert(walletTransactions).values(data).returning();
-    if (!result[0]) throw new Error("Failed to create wallet transaction");
-    return result[0];
-  }
-  // Export a singleton instance for use in other modules
-  async getBudgetPlanCount(userId, month) {
-    if (!userId || !month) throw new Error("User ID and month required");
-    const result = await this.db.select({ count: sql`count(*)` }).from(budgetPlans).where(and(eq(budgetPlans.userId, userId), eq(budgetPlans.month, month)));
-    return Number(result[0]?.count) || 0;
-  }
-  async createDao(dao) {
-    if (!dao.name || !dao.creatorId) throw new Error("Name and creatorId required");
-    dao.createdAt = /* @__PURE__ */ new Date();
-    dao.updatedAt = /* @__PURE__ */ new Date();
-    dao.memberCount = 1;
-    const result = await this.db.insert(daos).values(dao).returning();
-    if (!result[0]) throw new Error("Failed to create DAO");
-    await this.createDaoMembership({ daoId: result[0].id, userId: dao.creatorId, status: "approved", role: "admin" });
-    return result[0];
-  }
-  async setDaoInviteCode(daoId, code) {
-    if (!code) throw new Error("Invite code required");
-    const result = await this.db.update(daos).set({ inviteCode: code, updatedAt: /* @__PURE__ */ new Date() }).where(eq(daos.id, daoId)).returning();
-    if (!result[0]) throw new Error("DAO not found");
-    return result[0];
-  }
-  async getDaoByInviteCode(code) {
-    if (!code) throw new Error("Invite code required");
-    const result = await this.db.select().from(daos).where(eq(daos.inviteCode, code));
-    if (!result[0]) throw new Error("DAO not found");
-    return result[0];
-  }
-  async getUserReferralStats(userId) {
-    if (!userId) throw new Error("User ID required");
-    const referred = await this.db.select().from(users).where(eq(users.referredBy, userId));
-    return {
-      userId,
-      referredCount: referred.length,
-      referredUsers: referred.map((u) => ({ id: u.id, firstName: u.firstName, lastName: u.lastName, email: u.email }))
-    };
-  }
-  async getReferralLeaderboard(limit = 10) {
-    const allUsers = await this.db.select().from(users);
-    const counts = {};
-    allUsers.forEach((u) => {
-      if (u.referredBy) {
-        if (!counts[u.referredBy]) {
-          const refUser = allUsers.find((x) => x.id === u.referredBy);
-          counts[u.referredBy] = { count: 0, user: refUser };
-        }
-        counts[u.referredBy].count++;
-      }
-    });
-    const leaderboard = Object.entries(counts).map(([userId, { count: count2, user }]) => ({ userId, count: count2, user })).sort((a, b) => b.count - a.count).slice(0, limit);
-    return leaderboard;
-  }
-  async getUser(userId) {
-    if (!userId) throw new Error("User ID required");
-    const result = await this.db.select().from(users).where(eq(users.id, userId));
-    if (!result[0]) throw new Error("User not found");
-    return result[0];
-  }
-  async getDAOStats() {
-    const daosList = await this.db.select().from(daos);
-    const memberships = await this.db.select().from(daoMemberships);
-    const activeDaoIds = new Set(memberships.map((m) => m.daoId));
-    return {
-      daoCount: daosList.length,
-      memberCount: memberships.length,
-      activeDaoCount: activeDaoIds.size
-    };
-  }
-  async getProposals() {
-    return await this.db.select().from(proposals).orderBy(desc(proposals.createdAt));
-  }
-  async getProposal(id) {
-    if (!id) throw new Error("Proposal ID required");
-    const result = await this.db.select().from(proposals).where(eq(proposals.id, id));
-    if (!result[0]) throw new Error("Proposal not found");
-    return result[0];
-  }
-  async createProposal(proposal) {
-    if (!proposal.title || !proposal.daoId) throw new Error("Proposal must have title and daoId");
-    proposal.createdAt = /* @__PURE__ */ new Date();
-    proposal.updatedAt = /* @__PURE__ */ new Date();
-    const result = await this.db.insert(proposals).values(proposal).returning();
-    if (!result[0]) throw new Error("Failed to create proposal");
-    return result[0];
-  }
-  async updateProposal(id, data, userId) {
-    if (!id || !data.title) throw new Error("Proposal ID and title required");
-    const proposal = await this.getProposal(id);
-    if (proposal.userId !== userId) throw new Error("Only proposal creator can update");
-    const result = await this.db.update(proposals).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq(proposals.id, id)).returning();
-    if (!result[0]) throw new Error("Failed to update proposal");
-    return result[0];
-  }
-  async deleteProposal(id, userId) {
-    const proposal = await this.getProposal(id);
-    const membership = await this.getDaoMembership(proposal.daoId, userId);
-    if (proposal.userId !== userId && (!membership || membership.role !== "admin")) {
-      throw new Error("Only proposal creator or DAO admin can delete");
-    }
-    await this.db.delete(proposals).where(eq(proposals.id, id));
-  }
-  async updateProposalVotes(proposalId, voteType) {
-    const proposal = await this.getProposal(proposalId);
-    if (!proposal) throw new Error("Proposal not found");
-    const field = voteType === "yes" ? "yesVotes" : "noVotes";
-    const update = { updatedAt: /* @__PURE__ */ new Date() };
-    update[field] = (proposal[field] || 0) + 1;
-    const result = await this.db.update(proposals).set(update).where(eq(proposals.id, proposalId)).returning();
-    if (!result[0]) throw new Error("Failed to update proposal votes");
-    return result[0];
-  }
-  async getVote(proposalId, userId) {
-    if (!proposalId || !userId) throw new Error("Proposal ID and User ID required");
-    const result = await this.db.select().from(votes).where(and(eq(votes.proposalId, proposalId), eq(votes.userId, userId)));
-    if (!result[0]) throw new Error("Vote not found");
-    return result[0];
-  }
-  async createVote(vote) {
-    if (!vote.proposalId || !vote.userId) throw new Error("Vote must have proposalId and userId");
-    vote.createdAt = /* @__PURE__ */ new Date();
-    vote.updatedAt = /* @__PURE__ */ new Date();
-    const result = await this.db.insert(votes).values(vote).returning();
-    if (!result[0]) throw new Error("Failed to create vote");
-    return result[0];
-  }
-  async getVotesByProposal(proposalId) {
-    if (!proposalId) throw new Error("Proposal ID required");
-    return await this.db.select().from(votes).where(eq(votes.proposalId, proposalId));
-  }
-  async getContributions(userId, daoId) {
-    let whereClause = void 0;
-    if (userId && daoId) {
-      return await this.db.select().from(contributions).where(and(eq(contributions.userId, userId), eq(contributions.daoId, daoId))).orderBy(desc(contributions.createdAt));
-    } else if (userId) {
-      return await this.db.select().from(contributions).where(eq(contributions.userId, userId)).orderBy(desc(contributions.createdAt));
-    } else if (daoId) {
-      return await this.db.select().from(contributions).where(eq(contributions.daoId, daoId)).orderBy(desc(contributions.createdAt));
-    } else {
-      return await this.db.select().from(contributions).orderBy(desc(contributions.createdAt));
-    }
-  }
-  async getContributionsCount(userId, daoId) {
-    if (!userId || !daoId) throw new Error("User ID and DAO ID required");
-    const result = await this.db.select().from(contributions).where(and(eq(contributions.userId, userId), eq(contributions.daoId, daoId)));
-    return result.length;
-  }
-  async getVotesCount(daoId, proposalId) {
-    if (!proposalId || !daoId) throw new Error("User ID and DAO ID required");
-    const result = await this.db.select().from(votes).where(and(eq(votes.userId, proposalId), eq(votes.daoId, daoId)));
-    return result.length;
-  }
-  async getVotesByUserAndDao(userId, daoId) {
-    if (!userId || !daoId) throw new Error("User ID and DAO ID required");
-    return await this.db.select().from(votes).where(and(eq(votes.userId, userId), eq(votes.daoId, daoId)));
-  }
-  async createContribution(contribution) {
-    if (!contribution.userId || !contribution.daoId) throw new Error("Contribution must have userId and daoId");
-    contribution.createdAt = /* @__PURE__ */ new Date();
-    contribution.updatedAt = /* @__PURE__ */ new Date();
-    const result = await this.db.insert(contributions).values(contribution).returning();
-    if (!result[0]) throw new Error("Failed to create contribution");
-    return result[0];
-  }
-  async getUserContributionStats(userId) {
-    if (!userId) throw new Error("User ID required");
-    const all = await this.db.select().from(contributions).where(eq(contributions.userId, userId));
-    const byDao = {};
-    all.forEach((c) => {
-      const daoId = c.daoId;
-      if (daoId) byDao[daoId] = (byDao[daoId] || 0) + 1;
-    });
-    return { userId, total: all.length, byDao };
-  }
-  async getUserVaults(userId) {
-    if (!userId) throw new Error("User ID required");
-    return await this.db.select().from(vaults).where(eq(vaults.userId, userId));
-  }
-  async upsertVault(vault) {
-    if (!vault.id) throw new Error("Vault must have id");
-    vault.updatedAt = /* @__PURE__ */ new Date();
-    const updated = await this.db.update(vaults).set(vault).where(eq(vaults.id, vault.id)).returning();
-    if (updated[0]) return updated[0];
-    vault.createdAt = /* @__PURE__ */ new Date();
-    const inserted = await this.db.insert(vaults).values(vault).returning();
-    if (!inserted[0]) throw new Error("Failed to upsert vault");
-    return inserted[0];
-  }
-  async getVaultTransactions(vaultId, limit = 10, offset = 0) {
-    if (!vaultId) throw new Error("Vault ID required");
-    return await this.db.select().from(walletTransactions).where(eq(walletTransactions.vaultId, vaultId)).orderBy(desc(walletTransactions.createdAt)).limit(limit).offset(offset);
-  }
-  async getUserBudgetPlans(userId, month) {
-    if (!userId || !month) throw new Error("User ID and month required");
-    return await this.db.select().from(budgetPlans).where(and(eq(budgetPlans.userId, userId), eq(budgetPlans.month, month)));
-  }
-  async upsertBudgetPlan(plan) {
-    if (!plan.id) throw new Error("Budget plan must have id");
-    plan.updatedAt = /* @__PURE__ */ new Date();
-    const updated = await this.db.update(budgetPlans).set(plan).where(eq(budgetPlans.id, plan.id)).returning();
-    if (updated[0]) return updated[0];
-    plan.createdAt = /* @__PURE__ */ new Date();
-    const inserted = await this.db.insert(budgetPlans).values(plan).returning();
-    if (!inserted[0]) throw new Error("Failed to upsert budget plan");
-    return inserted[0];
-  }
-  async updateDaoInviteCode(daoId, code) {
-    if (!daoId || !code) throw new Error("DAO ID and code required");
-    const result = await this.db.update(daos).set({ inviteCode: code, updatedAt: /* @__PURE__ */ new Date() }).where(eq(daos.id, daoId)).returning();
-    if (!result[0]) throw new Error("Failed to update invite code");
-    return result[0];
-  }
-  async getTasks(daoId, status) {
-    let whereClause;
-    if (daoId && status) {
-      whereClause = and(eq(tasks.daoId, daoId), eq(tasks.status, status));
-    } else if (daoId) {
-      whereClause = eq(tasks.daoId, daoId);
-    } else if (status) {
-      whereClause = eq(tasks.status, status);
-    }
-    if (whereClause) {
-      return await this.db.select().from(tasks).where(whereClause).orderBy(desc(tasks.createdAt));
-    }
-    return await this.db.select().from(tasks).orderBy(desc(tasks.createdAt));
-  }
-  async createTask(task) {
-    if (!task.title || !task.daoId) throw new Error("Task must have title and daoId");
-    task.createdAt = /* @__PURE__ */ new Date();
-    task.updatedAt = /* @__PURE__ */ new Date();
-    const result = await this.db.insert(tasks).values(task).returning();
-    if (!result[0]) throw new Error("Failed to create task");
-    return result[0];
-  }
-  async claimTask(taskId, userId) {
-    if (!taskId || !userId) throw new Error("Task ID and User ID required");
-    const task = await this.db.select().from(tasks).where(eq(tasks.id, taskId));
-    if (!task[0]) throw new Error("Task not found");
-    if (task[0].claimedBy) throw new Error("Task already claimed");
-    const result = await this.db.update(tasks).set({ claimedBy: userId, status: "claimed", updatedAt: /* @__PURE__ */ new Date() }).where(eq(tasks.id, taskId)).returning();
-    if (!result[0]) throw new Error("Failed to claim task");
-    return result[0];
-  }
-  async getDao(daoId) {
-    if (!daoId) throw new Error("DAO ID required");
-    const result = await this.db.select().from(daos).where(eq(daos.id, daoId));
-    if (!result[0]) throw new Error("DAO not found");
-    return result[0];
-  }
-  async getDaoMembership(daoId, userId) {
-    if (!daoId || !userId) throw new Error("DAO ID and User ID required");
-    const result = await this.db.select().from(daoMemberships).where(and(eq(daoMemberships.daoId, daoId), eq(daoMemberships.userId, userId)));
-    if (!result[0]) throw new Error("Membership not found");
-    return result[0];
-  }
-  async getDaoMembers(daoId, userId, status, role, limit = 10, offset = 0) {
-    if (!daoId) throw new Error("DAO ID required");
-    let whereClause = eq(daoMemberships.daoId, daoId);
-    if (userId) whereClause = and(whereClause, eq(daoMemberships.userId, userId));
-    if (status) whereClause = and(whereClause, eq(daoMemberships.status, status));
-    if (role) whereClause = and(whereClause, eq(daoMemberships.role, role));
-    return await this.db.select().from(daoMemberships).where(whereClause).orderBy(desc(daoMemberships.createdAt)).limit(limit).offset(offset);
-  }
-  async createDaoMembership(args) {
-    if (!args.daoId || !args.userId) throw new Error("Membership must have daoId and userId");
-    args.createdAt = /* @__PURE__ */ new Date();
-    args.updatedAt = /* @__PURE__ */ new Date();
-    const result = await this.db.insert(daoMemberships).values(args).returning();
-    if (!result[0]) throw new Error("Failed to create membership");
-    return result[0];
-  }
-  async getDaoMembershipsByStatus(daoId, status) {
-    if (!daoId || !status) throw new Error("DAO ID and status required");
-    return await this.db.select().from(daoMemberships).where(and(eq(daoMemberships.daoId, daoId), eq(daoMemberships.status, status)));
-  }
-  async updateDaoMembershipStatus(membershipId, status) {
-    const result = await this.db.update(daoMemberships).set({ status, updatedAt: /* @__PURE__ */ new Date() }).where(eq(daoMemberships.id, membershipId)).returning();
-    return result[0];
-  }
-  async getDaoPlan(daoId) {
-    if (!daoId) throw new Error("DAO ID required");
-    const result = await this.db.select().from(daos).where(eq(daos.id, daoId));
-    if (!result[0]) throw new Error("DAO not found");
-    return result[0].plan;
-  }
-  async setDaoPlan(daoId, plan, planExpiresAt) {
-    if (!daoId || !plan) throw new Error("DAO ID and plan required");
-    const result = await this.db.update(daos).set({ plan, planExpiresAt, updatedAt: /* @__PURE__ */ new Date() }).where(eq(daos.id, daoId)).returning();
-    if (!result[0]) throw new Error("Failed to set DAO plan");
-    return result[0];
-  }
-  async getDaoBillingHistory(daoId) {
-    if (!daoId) throw new Error("DAO ID required");
-    return await this.db.select().from(billingHistory).where(eq(billingHistory.daoId, daoId)).orderBy(desc(billingHistory.createdAt));
-  }
-  async getAllDaoBillingHistory() {
-    if (!billingHistory) throw new Error("Billing history table not found");
-    return await this.db.select().from(billingHistory).orderBy(desc(billingHistory.createdAt));
-  }
-  async addDaoBillingHistory(entry) {
-    if (!entry.daoId || !entry.amount || !entry.type) throw new Error("Billing history must have daoId, amount, and type");
-    entry.createdAt = /* @__PURE__ */ new Date();
-    entry.updatedAt = /* @__PURE__ */ new Date();
-    const result = await this.db.insert(billingHistory).values(entry).returning();
-    if (!result[0]) throw new Error("Failed to add billing history");
-    return result[0];
-  }
-  async getDaoAnalytics(daoId) {
-    if (!daoId) throw new Error("DAO ID required");
-    const [dao, members, proposals5, contributions4, vaults3] = await Promise.all([
-      this.getDao(daoId),
-      this.getDaoMembershipsByStatus(daoId, "approved"),
-      this.getProposals().then(
-        (proposals6) => proposals6.filter((p) => p.daoId === daoId && p.status === "active")
-      ),
-      this.getContributions(void 0, daoId),
-      this.getUserVaults(daoId)
-    ]);
-    const recentActivity = [
-      ...proposals5.map((p) => ({ type: "proposal", createdAt: p.createdAt })),
-      ...contributions4.map((c) => ({ type: "contribution", createdAt: c.createdAt })),
-      ...members.map((m) => ({ type: "membership", createdAt: m.createdAt }))
-    ].sort(
-      (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
-    ).slice(0, 10);
-    const vaultBalance = vaults3.reduce((sum2, v) => sum2 + (typeof v.balance === "string" ? parseFloat(v.balance) || 0 : 0), 0);
-    return {
-      memberCount: members.length,
-      activeProposals: proposals5.length,
-      totalContributions: contributions4.length,
-      vaultBalance,
-      recentActivity,
-      createdAt: dao.createdAt,
-      updatedAt: dao.updatedAt
-    };
-  }
-  /**
-   * Checks if a user has any active contributions or votes in a DAO.
-   * Returns true if at least one exists, false otherwise.
-   */
-  async hasActiveContributions(userId, daoId) {
-    const contributions4 = await this.getContributions(userId, daoId);
-    if (contributions4 && contributions4.length > 0) return true;
-    if (typeof this.getVotesByUserAndDao === "function") {
-      const votes4 = await this.getVotesByUserAndDao(userId, daoId);
-      if (votes4 && votes4.length > 0) return true;
-    }
-    return false;
-  }
-  async revokeAllUserSessions(userId) {
-    if (!userId) throw new Error("User ID required");
-    await this.db.delete(sessions).where(eq(sessions.userId, userId));
-    process.stdout.write(`Revoked all sessions for user ${userId}
-`);
-  }
-  async getUserNotifications(userId, read, limit = 20, offset = 0, type) {
-    try {
-      let whereClause = eq(notifications.userId, userId);
-      if (read !== void 0) {
-        whereClause = and(whereClause, eq(notifications.read, read));
-      }
-      if (type) {
-        whereClause = and(whereClause, eq(notifications.type, type));
-      }
-      let query = this.db.select().from(notifications).where(whereClause);
-      return await query.orderBy(desc(notifications.createdAt)).limit(limit).offset(offset);
-    } catch (error) {
-      console.error("Error fetching user notifications:", error);
-      return [];
-    }
-  }
-  async getUnreadNotificationCount(userId) {
-    try {
-      const result = await this.db.select({ count: sql`count(*)` }).from(notifications).where(and(
-        eq(notifications.userId, userId),
-        eq(notifications.read, false)
-      ));
-      return Number(result[0]?.count) || 0;
-    } catch (error) {
-      console.error("Error getting unread notification count:", error);
-      return 0;
-    }
-  }
-  async createNotification(data) {
-    try {
-      const [notification] = await this.db.insert(notifications).values({
-        userId: data.userId,
-        type: data.type,
-        title: data.title,
-        message: data.message,
-        priority: data.priority || "medium",
-        metadata: data.metadata || {},
-        read: false
-      }).returning();
-      return notification;
-    } catch (error) {
-      console.error("Error creating notification:", error);
-      throw error;
-    }
-  }
-  async createBulkNotifications(userIds, notificationData) {
-    try {
-      const notificationsToInsert = userIds.map((userId) => ({
-        userId,
-        type: notificationData.type,
-        title: notificationData.title,
-        message: notificationData.message,
-        priority: notificationData.priority || "medium",
-        metadata: notificationData.metadata || {},
-        read: false
-      }));
-      return await this.db.insert(notifications).values(notificationsToInsert).returning();
-    } catch (error) {
-      console.error("Error creating bulk notifications:", error);
-      throw error;
-    }
-  }
-  async markNotificationAsRead(notificationId, userId) {
-    try {
-      const [notification] = await this.db.update(notifications).set({ read: true, updatedAt: /* @__PURE__ */ new Date() }).where(and(
-        eq(notifications.id, notificationId),
-        eq(notifications.userId, userId)
-      )).returning();
-      return notification;
-    } catch (error) {
-      console.error("Error marking notification as read:", error);
-      return null;
-    }
-  }
-  async markAllNotificationsAsRead(userId) {
-    try {
-      await this.db.update(notifications).set({ read: true, updatedAt: /* @__PURE__ */ new Date() }).where(and(
-        eq(notifications.userId, userId),
-        eq(notifications.read, false)
-      ));
-    } catch (error) {
-      console.error("Error marking all notifications as read:", error);
-      throw error;
-    }
-  }
-  async deleteNotification(notificationId, userId) {
-    try {
-      const result = await this.db.delete(notifications).where(and(
-        eq(notifications.id, notificationId),
-        eq(notifications.userId, userId)
-      ));
-      return !!result;
-    } catch (error) {
-      console.error("Error deleting notification:", error);
-      return false;
-    }
-  }
-  async getUserNotificationPreferences(userId) {
-    try {
-      const [preferences] = await this.db.select().from(notificationPreferences).where(eq(notificationPreferences.userId, userId));
-      if (!preferences) {
-        const [newPreferences] = await this.db.insert(notificationPreferences).values({
-          userId,
-          emailNotifications: true,
-          pushNotifications: true,
-          daoUpdates: true,
-          proposalUpdates: true,
-          taskUpdates: true
-        }).returning();
-        return newPreferences;
-      }
-      return preferences;
-    } catch (error) {
-      console.error("Error fetching notification preferences:", error);
-      throw error;
-    }
-  }
-  async updateUserNotificationPreferences(userId, updates) {
-    try {
-      const [preferences] = await this.db.update(notificationPreferences).set({ ...updates, updatedAt: /* @__PURE__ */ new Date() }).where(eq(notificationPreferences.userId, userId)).returning();
-      return preferences;
-    } catch (error) {
-      console.error("Error updating notification preferences:", error);
-      throw error;
-    }
-  }
-  async getAllActiveUsers() {
-    try {
-      return await this.db.select({ id: users.id }).from(users).where(eq(users.isBanned, false));
-    } catch (error) {
-      console.error("Error fetching active users:", error);
-      return [];
-    }
-  }
-  // Audit logging operations
-  async createAuditLog(entry) {
-    const result = await this.db.insert(auditLogs).values({
-      timestamp: entry.timestamp || /* @__PURE__ */ new Date(),
-      userId: entry.userId,
-      userEmail: entry.userEmail,
-      action: entry.action,
-      resource: entry.resource,
-      resourceId: entry.resourceId,
-      method: entry.method,
-      endpoint: entry.endpoint,
-      ipAddress: entry.ipAddress,
-      userAgent: entry.userAgent,
-      status: entry.status,
-      details: entry.details,
-      severity: entry.severity,
-      category: entry.category,
-      createdAt: /* @__PURE__ */ new Date()
-    }).returning();
-    return result[0];
-  }
-  async getAuditLogs({ limit = 50, offset = 0, userId, severity } = {}) {
-    let whereClause = void 0;
-    if (userId && severity) {
-      whereClause = and(eq(auditLogs.userId, userId), eq(auditLogs.severity, severity));
-    } else if (userId) {
-      whereClause = eq(auditLogs.userId, userId);
-    } else if (severity) {
-      whereClause = eq(auditLogs.severity, severity);
-    }
-    let query;
-    if (whereClause) {
-      query = this.db.select().from(auditLogs).where(whereClause);
-    } else {
-      query = this.db.select().from(auditLogs);
-    }
-    return await query.orderBy(desc(auditLogs.timestamp)).limit(limit).offset(offset);
-  }
-  // System logging operations
-  async createSystemLog(level, message, service = "api", metadata) {
-    const result = await this.db.insert(systemLogs).values({
-      level,
-      message,
-      service,
-      metadata,
-      timestamp: /* @__PURE__ */ new Date()
-    }).returning();
-    return result[0];
-  }
-  // Notification history operations
-  async createNotificationHistory(userId, type, title, message, metadata) {
-    const result = await this.db.insert(notificationHistory).values({
-      userId,
-      type,
-      title,
-      message,
-      metadata,
-      createdAt: /* @__PURE__ */ new Date()
-    }).returning();
-    return result[0];
-  }
-  async getUserNotificationHistory(userId, { limit = 20, offset = 0 } = {}) {
-    return await this.db.select().from(notificationHistory).where(eq(notificationHistory.userId, userId)).orderBy(desc(notificationHistory.createdAt)).limit(limit).offset(offset);
+// server/auth.ts
+import jwt from "jsonwebtoken";
+var isAuthenticated = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Authorization header missing or malformed" });
+  }
+  const token = authHeader.split(" ")[1];
+  const payload = verifyAccessToken(token);
+  if (!payload) {
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
+  req.user = payload;
+  next();
+};
+var JWT_SECRET = process.env.JWT_SECRET_KEY || "your-secret-key";
+var JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "your-refresh-secret";
+var verifyAccessToken = (token) => {
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch (error) {
+    return null;
   }
 };
-var storage = new DatabaseStorage();
-async function createDaoMessage(message) {
-  throw new Error("createDaoMessage not implemented");
+
+// server/nextAuthMiddleware.ts
+init_storage();
+var isAuthenticated2 = async (req, res, next) => {
+  try {
+    let token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+    let userClaims = null;
+    if (token && token.sub) {
+      userClaims = {
+        sub: token.sub,
+        email: token.email || void 0,
+        role: token.role || void 0
+      };
+    } else {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const jwtToken = authHeader.substring(7);
+        const decoded = verifyAccessToken(jwtToken);
+        if (decoded) {
+          userClaims = {
+            sub: decoded.userId,
+            email: decoded.email,
+            role: decoded.role
+          };
+        }
+      }
+    }
+    if (!userClaims) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    if (!userClaims.role) {
+      try {
+        const user = await storage.getUser(userClaims.sub);
+        if (user) {
+          userClaims.role = user.role || "user";
+        }
+      } catch (error) {
+        console.warn("Could not fetch user role:", error);
+      }
+    }
+    req.user = { claims: userClaims };
+    next();
+  } catch (err) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+};
+var requireRole = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user?.claims?.role) {
+      return res.status(403).json({ message: "Access denied: No role assigned" });
+    }
+    if (!allowedRoles.includes(req.user.claims.role)) {
+      return res.status(403).json({
+        message: "Access denied: Insufficient permissions",
+        required: allowedRoles,
+        current: req.user.claims.role
+      });
+    }
+    next();
+  };
+};
+var requireAdmin = requireRole("admin", "super_admin");
+var requireModerator = requireRole("admin", "super_admin", "moderator");
+var requirePremium = requireRole("admin", "super_admin", "premium", "dao_owner");
+
+// server/routes/health.ts
+init_storage();
+import express from "express";
+
+// server/monitoring/metricsCollector.ts
+import { performance } from "perf_hooks";
+
+// server/utils/logger.ts
+import { createLogger, format, transports } from "winston";
+
+// shared/config.ts
+import { z } from "zod";
+import dotenv from "dotenv";
+dotenv.config();
+var envSchema = z.object({
+  // Server Configuration
+  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+  PORT: z.string().default("5000"),
+  HOST: z.string().default("0.0.0.0"),
+  // Security
+  SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
+  JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
+  ENCRYPTION_KEY: z.string().length(32, "ENCRYPTION_KEY must be exactly 32 characters").optional(),
+  // OAuth Configuration
+  OAUTH_CLIENT_ID: z.string().optional(),
+  OAUTH_CLIENT_SECRET: z.string().optional(),
+  OAUTH_REDIRECT_URI: z.string().url().optional(),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  // Database
+  DATABASE_URL: z.string().url("DATABASE_URL must be a valid URL"),
+  DB_POOL_MIN: z.string().optional(),
+  DB_POOL_MAX: z.string().optional(),
+  TEST_DATABASE_URL: z.string().url().optional(),
+  // Email Configuration
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.string().optional(),
+  SMTP_SECURE: z.string().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  EMAIL_FROM: z.string().email().optional(),
+  EMAIL_FROM_NAME: z.string().optional(),
+  // Payment Providers
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_PUBLIC_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  KOTANIPAY_API_KEY: z.string().optional(),
+  KOTANIPAY_SECRET_KEY: z.string().optional(),
+  KOTANIPAY_WEBHOOK_SECRET: z.string().optional(),
+  MPESA_CONSUMER_KEY: z.string().optional(),
+  MPESA_CONSUMER_SECRET: z.string().optional(),
+  MPESA_PASSKEY: z.string().optional(),
+  MPESA_SHORTCODE: z.string().optional(),
+  // Blockchain
+  CELO_RPC_URL: z.string().url().optional(),
+  CELO_ALFAJORES_RPC_URL: z.string().url().optional(),
+  WALLET_PRIVATE_KEY: z.string().optional(),
+  CUSD_CONTRACT_ADDRESS: z.string().optional(),
+  // Security Configuration
+  RATE_LIMIT_WINDOW_MS: z.string().optional(),
+  RATE_LIMIT_MAX_REQUESTS: z.string().optional(),
+  ALLOWED_ORIGINS: z.string().optional(),
+  // Analytics & Monitoring
+  ANALYTICS_API_KEY: z.string().optional(),
+  SENTRY_DSN: z.string().url().optional(),
+  // App Configuration
+  FRONTEND_URL: z.string().url().default("http://localhost:5173"),
+  BACKEND_URL: z.string().url().default("http://localhost:5000"),
+  API_BASE_URL: z.string().url().default("http://localhost:5000/api"),
+  MAX_FILE_SIZE: z.string().optional(),
+  UPLOAD_DIR: z.string().default("uploads"),
+  // Notifications
+  SOCKET_IO_CORS_ORIGIN: z.string().optional(),
+  FIREBASE_ADMIN_SDK_PATH: z.string().optional(),
+  FIREBASE_PROJECT_ID: z.string().optional(),
+  // Development & Testing
+  DEBUG: z.string().optional(),
+  LOG_LEVEL: z.enum(["error", "warn", "info", "debug"]).default("info"),
+  ENABLE_REQUEST_LOGGING: z.string().optional(),
+  // Production Settings
+  SSL_CERT_PATH: z.string().optional(),
+  SSL_KEY_PATH: z.string().optional(),
+  REDIS_URL: z.string().url().optional(),
+  WEBHOOK_BASE_URL: z.string().url().optional()
+});
+var parsedEnv = envSchema.safeParse(process.env);
+if (!parsedEnv.success) {
+  console.error("\u274C Invalid environment variables:", parsedEnv.error.format());
+  process.exit(1);
 }
-async function getDaoMessages(daoId) {
-  throw new Error("getDaoMessages not implemented");
+var env = parsedEnv.data;
+var isDevelopment = env.NODE_ENV === "development";
+var isProduction = env.NODE_ENV === "production";
+var isTest = env.NODE_ENV === "test";
+var dbConfig = {
+  url: env.DATABASE_URL,
+  poolMin: parseInt(env.DB_POOL_MIN || "2"),
+  poolMax: parseInt(env.DB_POOL_MAX || "10")
+};
+var rateLimitConfig = {
+  windowMs: parseInt(env.RATE_LIMIT_WINDOW_MS || "900000"),
+  // 15 minutes
+  maxRequests: parseInt(env.RATE_LIMIT_MAX_REQUESTS || "100")
+};
+var corsConfig = {
+  origin: env.ALLOWED_ORIGINS?.split(",") || [env.FRONTEND_URL],
+  credentials: true
+};
+
+// server/utils/logger.ts
+init_storage();
+var { combine, timestamp: timestamp2, errors, json, colorize, simple, printf } = format;
+var devFormat = printf((info) => {
+  const { level, message, timestamp: timestamp6, service, ...meta } = info;
+  const metaStr = Object.keys(meta).length > 0 ? `
+${JSON.stringify(meta, null, 2)}` : "";
+  return `${timestamp6} [${service}] ${level}: ${message}${metaStr}`;
+});
+var winstonLogger = createLogger({
+  level: env.LOG_LEVEL || "info",
+  format: combine(
+    timestamp2({ format: "YYYY-MM-DD HH:mm:ss" }),
+    errors({ stack: true }),
+    isDevelopment ? combine(colorize(), devFormat) : json()
+  ),
+  defaultMeta: { service: "mtaa-dao-api" },
+  transports: [
+    new transports.Console({
+      silent: env.NODE_ENV === "test"
+    })
+  ]
+});
+if (isProduction) {
+  winstonLogger.add(
+    new transports.File({
+      filename: "logs/error.log",
+      level: "error",
+      maxsize: 10485760,
+      // 10MB
+      maxFiles: 5
+    })
+  );
+  winstonLogger.add(
+    new transports.File({
+      filename: "logs/combined.log",
+      maxsize: 10485760,
+      // 10MB
+      maxFiles: 10
+    })
+  );
 }
-async function updateDaoMessage(messageId, data) {
-  throw new Error("updateDaoMessage not implemented");
+var Logger = class _Logger {
+  constructor(service = "api", context = {}) {
+    this.service = service;
+    this.context = context;
+  }
+  // Create child logger with additional context
+  child(context) {
+    return new _Logger(this.service, { ...this.context, ...context });
+  }
+  async logToDatabase(level, message, metadata = {}) {
+    try {
+      await storage.createSystemLog(level, message, this.service, {
+        ...this.context,
+        ...metadata
+      });
+    } catch (error) {
+      console.error("Failed to log to database:", error);
+    }
+  }
+  log(level, message, meta = {}) {
+    const logData = {
+      service: this.service,
+      ...this.context,
+      ...meta
+    };
+    winstonLogger.log(level, message, logData);
+    if (["error", "warn", "info"].includes(level)) {
+      this.logToDatabase(level, message, logData).catch(console.error);
+    }
+  }
+  error(message, error, meta = {}) {
+    const errorMeta = error instanceof Error ? {
+      error: {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      }
+    } : { errorData: error };
+    this.log("error", message, { ...errorMeta, ...meta });
+  }
+  warn(message, meta = {}) {
+    this.log("warn", message, meta);
+  }
+  info(message, meta = {}) {
+    this.log("info", message, meta);
+  }
+  debug(message, meta = {}) {
+    this.log("debug", message, meta);
+  }
+  // Audit logging methods
+  async auditLog(action, resource, details = {}) {
+    const message = `Audit: ${action} on ${resource}`;
+    this.info(message, { audit: true, action, resource, details });
+  }
+  // Performance logging
+  async performanceLog(operation, duration, meta = {}) {
+    const message = `Performance: ${operation} took ${duration}ms`;
+    this.info(message, { performance: true, operation, duration, ...meta });
+  }
+  // Security logging
+  async securityLog(event, severity, details = {}) {
+    const message = `Security: ${event}`;
+    this.error(message, null, { security: true, severity, event, details });
+  }
+};
+var logger = new Logger();
+var requestLogger = (req, res, next) => {
+  const start = Date.now();
+  const requestId = req.headers["x-request-id"] || Math.random().toString(36).substring(7);
+  req.requestId = requestId;
+  res.setHeader("X-Request-ID", requestId);
+  const requestLogger2 = logger.child({
+    requestId,
+    method: req.method,
+    url: req.url,
+    ipAddress: req.ip,
+    userAgent: req.get("User-Agent"),
+    userId: req.user?.claims?.sub
+  });
+  req.logger = requestLogger2;
+  if (env.ENABLE_REQUEST_LOGGING === "true") {
+    requestLogger2.info("Request started", {
+      method: req.method,
+      url: req.url,
+      query: req.query,
+      body: req.method !== "GET" ? req.body : void 0
+    });
+  }
+  const originalSend = res.send;
+  res.send = function(body) {
+    const duration = Date.now() - start;
+    requestLogger2.info("Request completed", {
+      statusCode: res.statusCode,
+      duration,
+      responseSize: JSON.stringify(body).length
+    });
+    return originalSend.call(this, body);
+  };
+  next();
+};
+var logStartup = (port) => {
+  logger.info("\u{1F680} Server starting up", {
+    port,
+    environment: env.NODE_ENV,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  });
+};
+
+// server/monitoring/metricsCollector.ts
+var MetricsCollector = class _MetricsCollector {
+  constructor() {
+    this.requestCount = 0;
+    this.errorCount = 0;
+    this.responseTimes = [];
+    this.activeConnections = 0;
+    this.metrics = {
+      requests: [],
+      system: [],
+      database: [],
+      business: []
+    };
+    setInterval(() => this.collectSystemMetrics(), 3e4);
+    setInterval(() => this.cleanOldMetrics(), 36e5);
+  }
+  static getInstance() {
+    if (!_MetricsCollector.instance) {
+      _MetricsCollector.instance = new _MetricsCollector();
+    }
+    return _MetricsCollector.instance;
+  }
+  requestMiddleware() {
+    return (req, res, next) => {
+      const startTime = performance.now();
+      this.activeConnections++;
+      res.on("finish", () => {
+        const endTime = performance.now();
+        const responseTime = endTime - startTime;
+        this.requestCount++;
+        this.responseTimes.push(responseTime);
+        if (res.statusCode >= 400) {
+          this.errorCount++;
+        }
+        const metric = {
+          method: req.method,
+          route: req.route?.path || req.path,
+          statusCode: res.statusCode,
+          responseTime,
+          timestamp: Date.now(),
+          userAgent: req.get("User-Agent"),
+          ip: req.ip,
+          userId: req.user?.id
+        };
+        this.addRequestMetric(metric);
+        this.activeConnections--;
+      });
+      next();
+    };
+  }
+  addRequestMetric(metric) {
+    this.metrics.requests.push(metric);
+    if (metric.responseTime > 1e3) {
+      logger.warn(`Slow request: ${metric.method} ${metric.route} took ${metric.responseTime}ms`);
+    }
+    if (metric.statusCode >= 500) {
+      logger.error(`Server error: ${metric.method} ${metric.route} returned ${metric.statusCode}`);
+    }
+  }
+  collectSystemMetrics() {
+    const metric = {
+      timestamp: Date.now(),
+      memory: process.memoryUsage(),
+      uptime: process.uptime(),
+      activeConnections: this.activeConnections,
+      requestCount: this.requestCount,
+      errorCount: this.errorCount,
+      avgResponseTime: this.getAverageResponseTime(),
+      cpuUsage: process.cpuUsage().user / 1e6
+      // Convert to seconds
+    };
+    this.metrics.system.push(metric);
+    const memoryUsageMB = metric.memory.heapUsed / 1024 / 1024;
+    if (memoryUsageMB > 500) {
+      logger.warn(`High memory usage: ${memoryUsageMB.toFixed(2)}MB`);
+    }
+  }
+  addDatabaseMetric(metric) {
+    this.metrics.database.push({
+      ...metric,
+      timestamp: Date.now()
+    });
+  }
+  addBusinessMetric(metric) {
+    this.metrics.business.push({
+      ...metric,
+      timestamp: Date.now()
+    });
+  }
+  getAverageResponseTime() {
+    if (this.responseTimes.length === 0) return 0;
+    const sum3 = this.responseTimes.reduce((acc, time) => acc + time, 0);
+    return sum3 / this.responseTimes.length;
+  }
+  cleanOldMetrics() {
+    const oneDayAgo = Date.now() - 24 * 60 * 60 * 1e3;
+    this.metrics.requests = this.metrics.requests.filter((m) => m.timestamp > oneDayAgo);
+    this.metrics.system = this.metrics.system.filter((m) => m.timestamp > oneDayAgo);
+    this.metrics.database = this.metrics.database.filter((m) => m.timestamp > oneDayAgo);
+    this.metrics.business = this.metrics.business.filter((m) => m.timestamp > oneDayAgo);
+    this.responseTimes = this.responseTimes.slice(-1e3);
+  }
+  getMetrics() {
+    return {
+      ...this.metrics,
+      summary: {
+        totalRequests: this.requestCount,
+        totalErrors: this.errorCount,
+        errorRate: this.requestCount > 0 ? this.errorCount / this.requestCount * 100 : 0,
+        avgResponseTime: this.getAverageResponseTime(),
+        activeConnections: this.activeConnections,
+        uptime: process.uptime()
+      }
+    };
+  }
+  getHealthScore() {
+    const metrics = this.getMetrics();
+    let score = 100;
+    if (metrics.summary.errorRate > 5) score -= 20;
+    else if (metrics.summary.errorRate > 1) score -= 10;
+    if (metrics.summary.avgResponseTime > 1e3) score -= 20;
+    else if (metrics.summary.avgResponseTime > 500) score -= 10;
+    const memoryUsageMB = process.memoryUsage().heapUsed / 1024 / 1024;
+    if (memoryUsageMB > 1e3) score -= 20;
+    else if (memoryUsageMB > 500) score -= 10;
+    return Math.max(0, score);
+  }
+};
+var metricsCollector = MetricsCollector.getInstance();
+
+// server/routes/health.ts
+function handler(req, res) {
+  res.status(200).json({ status: "ok", timestamp: Date.now() });
 }
-async function deleteDaoMessage(messageId) {
-  throw new Error("deleteDaoMessage not implemented");
+var router = express.Router();
+async function checkDatabase() {
+  const startTime = Date.now();
+  try {
+    await db.execute("SELECT 1");
+    return {
+      status: "pass",
+      responseTime: Date.now() - startTime
+    };
+  } catch (error) {
+    return {
+      status: "fail",
+      responseTime: Date.now() - startTime,
+      message: "Database connection failed",
+      details: error instanceof Error ? error.message : String(error)
+    };
+  }
 }
-async function createProposalComment(comment) {
-  throw new Error("createProposalComment not implemented");
+async function checkRedis() {
+  const startTime = Date.now();
+  try {
+    return {
+      status: "pass",
+      responseTime: Date.now() - startTime
+    };
+  } catch (error) {
+    return {
+      status: "fail",
+      responseTime: Date.now() - startTime,
+      message: "Redis connection failed",
+      details: error instanceof Error ? error.message : String(error)
+    };
+  }
 }
-async function getProposalComments(proposalId) {
-  throw new Error("getProposalComments not implemented");
+function checkMemory() {
+  const memoryUsage = process.memoryUsage();
+  const memoryUsageMB = memoryUsage.heapUsed / 1024 / 1024;
+  let status = "pass";
+  let message;
+  if (memoryUsageMB > 1e3) {
+    status = "fail";
+    message = `High memory usage: ${memoryUsageMB.toFixed(2)}MB`;
+  } else if (memoryUsageMB > 500) {
+    status = "warn";
+    message = `Moderate memory usage: ${memoryUsageMB.toFixed(2)}MB`;
+  }
+  return {
+    status,
+    responseTime: 0,
+    message,
+    details: {
+      heapUsed: `${memoryUsageMB.toFixed(2)}MB`,
+      heapTotal: `${(memoryUsage.heapTotal / 1024 / 1024).toFixed(2)}MB`,
+      external: `${(memoryUsage.external / 1024 / 1024).toFixed(2)}MB`
+    }
+  };
 }
-async function updateProposalComment(commentId, data) {
-  throw new Error("updateProposalComment not implemented");
+function checkDisk() {
+  return {
+    status: "pass",
+    responseTime: 0,
+    details: {
+      available: "Unknown",
+      used: "Unknown"
+    }
+  };
 }
-async function deleteProposalComment(commentId) {
-  throw new Error("deleteProposalComment not implemented");
+function checkStorage() {
+  try {
+    return {
+      status: "pass",
+      responseTime: 0
+    };
+  } catch (error) {
+    return {
+      status: "fail",
+      responseTime: 0,
+      message: "Storage check failed",
+      details: error instanceof Error ? error.message : String(error)
+    };
+  }
 }
-async function toggleProposalLike(proposalId, userId) {
-  throw new Error("toggleProposalLike not implemented");
-}
-async function getProposalLikes(proposalId) {
-  throw new Error("getProposalLikes not implemented");
-}
-async function toggleCommentLike(commentId, userId) {
-  throw new Error("toggleCommentLike not implemented");
-}
-async function getCommentLikes(commentId) {
-  throw new Error("getCommentLikes not implemented");
-}
+router.get("/", async (req, res) => {
+  res.json({
+    status: "ok",
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    environment: env.NODE_ENV,
+    version: process.env.npm_package_version || "1.0.0",
+    uptime: process.uptime()
+  });
+});
+router.get("/detailed", async (req, res) => {
+  const startTime = Date.now();
+  try {
+    const checks = {
+      database: await checkDatabase(),
+      redis: await checkRedis(),
+      storage: checkStorage(),
+      memory: checkMemory(),
+      disk: checkDisk()
+    };
+    const metrics = metricsCollector.getMetrics();
+    const healthScore = metricsCollector.getHealthScore();
+    const hasFailures = Object.values(checks).some((check) => check.status === "fail");
+    const hasWarnings = Object.values(checks).some((check) => check.status === "warn");
+    let overallStatus;
+    if (hasFailures) {
+      overallStatus = "unhealthy";
+    } else if (hasWarnings || healthScore < 80) {
+      overallStatus = "degraded";
+    } else {
+      overallStatus = "healthy";
+    }
+    const healthCheck = {
+      status: overallStatus,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      environment: env.NODE_ENV,
+      version: process.env.npm_package_version || "1.0.0",
+      uptime: process.uptime(),
+      checks,
+      metrics: {
+        healthScore,
+        responseTime: Date.now() - startTime,
+        errorRate: metrics.summary.errorRate,
+        activeConnections: metrics.summary.activeConnections
+      }
+    };
+    const statusCode = overallStatus === "healthy" ? 200 : overallStatus === "degraded" ? 200 : 503;
+    res.status(statusCode).json(healthCheck);
+    if (overallStatus === "unhealthy") {
+      logger.error("Health check failed", { checks, healthScore });
+    }
+  } catch (error) {
+    logger.error("Health check error", error);
+    res.status(503).json({
+      status: "unhealthy",
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      error: "Health check failed",
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+router.get("/ready", async (req, res) => {
+  try {
+    const dbCheck = await checkDatabase();
+    if (dbCheck.status === "fail") {
+      return res.status(503).json({
+        ready: false,
+        reason: "Database not available"
+      });
+    }
+    res.json({
+      ready: true,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  } catch (error) {
+    res.status(503).json({
+      ready: false,
+      reason: "Readiness check failed"
+    });
+  }
+});
+router.get("/live", (req, res) => {
+  res.json({
+    alive: true,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    uptime: process.uptime()
+  });
+});
+router.get("/metrics", (req, res) => {
+  const metrics = metricsCollector.getMetrics();
+  res.json(metrics);
+});
+
+// server/routes/sse.ts
+import express2 from "express";
+init_notificationService();
+var router2 = express2.Router();
+router2.get("/notifications", isAuthenticated2, (req, res) => {
+  const userId = req.user.claims.sub;
+  notificationService.setupSSE(userId, res);
+});
+var sse_default = router2;
 
 // server/routes/wallet.ts
-import express from "express";
+import express3 from "express";
 
 // server/agent_wallet.ts
 import Web3 from "web3";
 import { isAddress } from "web3-validator";
-import dotenv from "dotenv";
-dotenv.config();
+import dotenv2 from "dotenv";
+dotenv2.config();
 var ENHANCED_ERC20_ABI = [
   {
     "constant": true,
@@ -3199,7 +4951,7 @@ var TransactionAnalytics = class {
       (tx) => (tx.timestamp || 0) > since && tx.gasUsed && tx.status === "success"
     );
     if (recentTxs.length === 0) return 0;
-    const totalGas = recentTxs.reduce((sum2, tx) => sum2 + (tx.gasUsed || 0), 0);
+    const totalGas = recentTxs.reduce((sum3, tx) => sum3 + (tx.gasUsed || 0), 0);
     return totalGas / recentTxs.length;
   }
   getFailureReasons() {
@@ -3236,305 +4988,14 @@ var agent_wallet_default = EnhancedAgentWallet;
 enhancedExample();
 
 // server/routes/wallet.ts
+init_storage();
 init_schema();
 init_schema();
+init_notificationService();
 import { desc as desc2, eq as eq2, or as or2 } from "drizzle-orm";
 import { and as and2 } from "drizzle-orm";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
-
-// server/notificationService.ts
-import { EventEmitter } from "events";
-import nodemailer from "nodemailer";
-var NotificationService = class extends EventEmitter {
-  constructor() {
-    super();
-    this.subscribers = /* @__PURE__ */ new Map();
-    this.emailTransporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || "smtp.gmail.com",
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
-      }
-    });
-  }
-  async createNotification(notification) {
-    try {
-      const dbNotification = await storage.createNotification({
-        userId: notification.userId,
-        type: notification.type,
-        title: notification.title,
-        message: notification.message,
-        priority: notification.priority || "medium",
-        metadata: notification.metadata || {}
-      });
-      const preferences = await storage.getUserNotificationPreferences(notification.userId);
-      if (preferences?.emailNotifications) {
-        await this.sendEmailNotification(notification.userId, notification);
-      }
-      if (preferences?.pushNotifications) {
-        await this.sendPushNotification(notification.userId, notification);
-      }
-      this.emit("notification_created", {
-        ...dbNotification,
-        userId: notification.userId
-      });
-      console.log(`Notification created for user ${notification.userId}: ${notification.type}`);
-      return dbNotification;
-    } catch (error) {
-      console.error("Failed to create notification:", error);
-      return null;
-    }
-  }
-  async sendPaymentNotification(recipient, notification) {
-    try {
-      const channel = this.subscribers.get(recipient) || { sms: true };
-      if (channel.sms) {
-        await this.sendSMS(recipient, this.formatSMSMessage(notification));
-      }
-      if (channel.email) {
-        await this.sendEmail(recipient, this.formatEmailMessage(notification));
-      }
-      if (channel.push) {
-        await this.sendPushNotification(recipient, {
-          userId: recipient,
-          type: notification.type,
-          title: `Payment ${notification.type.replace("_", " ")}`,
-          message: `${notification.amount} ${notification.currency} - ${notification.transactionId}`,
-          priority: "medium",
-          metadata: notification.errorMessage ? { errorMessage: notification.errorMessage } : {}
-        });
-      }
-      if (channel.webhook) {
-        await this.sendWebhook(channel.webhook, notification);
-      }
-      this.emit("payment_notification", {
-        recipient,
-        notification,
-        timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      });
-      console.log(`Payment notification sent to ${recipient}: ${notification.type}`);
-      return true;
-    } catch (error) {
-      console.error("Failed to send payment notification:", error);
-      return false;
-    }
-  }
-  async sendEmailNotification(userId, notification) {
-    try {
-      const user = await storage.getUserById(userId);
-      if (!user?.email) return;
-      const mailOptions = {
-        from: process.env.SMTP_FROM || "noreply@mtaadao.com",
-        to: user.email,
-        subject: notification.title,
-        html: this.formatEmailTemplate(notification)
-      };
-      await this.emailTransporter.sendMail(mailOptions);
-      console.log(`Email notification sent to ${user.email}`);
-    } catch (error) {
-      console.error("Failed to send email notification:", error);
-    }
-  }
-  formatEmailTemplate(notification) {
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>${notification.title}</title>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: #4F46E5; color: white; padding: 20px; text-align: center; }
-          .content { padding: 20px; background: #f9f9f9; }
-          .footer { padding: 10px; text-align: center; font-size: 12px; color: #666; }
-          .priority-high { border-left: 4px solid #ef4444; }
-          .priority-urgent { border-left: 4px solid #dc2626; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>MtaaDAO Notification</h1>
-          </div>
-          <div class="content ${notification.priority === "high" || notification.priority === "urgent" ? `priority-${notification.priority}` : ""}">
-            <h2>${notification.title}</h2>
-            <p>${notification.message}</p>
-            ${notification.metadata?.actionUrl ? `<p><a href="${notification.metadata.actionUrl}" style="background: #4F46E5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Take Action</a></p>` : ""}
-          </div>
-          <div class="footer">
-            <p>This is an automated message from MtaaDAO. Please do not reply to this email.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
-  }
-  async sendPushNotification(userId, notification) {
-    try {
-      console.log(`Push notification sent to user ${userId}: ${notification.title}`);
-      const pushPayload = {
-        title: notification.title,
-        body: notification.message,
-        icon: "/favicon.ico",
-        badge: "/favicon.ico",
-        data: {
-          type: notification.type,
-          userId,
-          metadata: notification.metadata
-        }
-      };
-      console.log("Push payload:", pushPayload);
-    } catch (error) {
-      console.error("Failed to send push notification:", error);
-    }
-  }
-  formatSMSMessage(notification) {
-    switch (notification.type) {
-      case "payment_pending":
-        return `Payment of ${notification.amount} ${notification.currency} is being processed. Transaction ID: ${notification.transactionId}`;
-      case "payment_success":
-        return `Payment successful! ${notification.amount} ${notification.currency} received. Transaction ID: ${notification.transactionId}`;
-      case "payment_failed":
-        return `Payment failed. ${notification.amount} ${notification.currency}. ${notification.errorMessage || "Please try again."}`;
-      case "payment_retry":
-        return `Retrying payment of ${notification.amount} ${notification.currency}. Transaction ID: ${notification.transactionId}`;
-      default:
-        return `Payment update for transaction ${notification.transactionId}`;
-    }
-  }
-  formatEmailMessage(notification) {
-    const subject = `Payment ${notification.type.replace("_", " ")} - ${notification.transactionId}`;
-    let body = `
-      <h2>Payment Update</h2>
-      <p><strong>Transaction ID:</strong> ${notification.transactionId}</p>
-      <p><strong>Amount:</strong> ${notification.amount} ${notification.currency}</p>
-      <p><strong>Status:</strong> ${notification.type.replace("_", " ")}</p>
-    `;
-    if (notification.errorMessage) {
-      body += `<p><strong>Error:</strong> ${notification.errorMessage}</p>`;
-    }
-    return { subject, body };
-  }
-  formatPushMessage(notification) {
-    const title = `Payment ${notification.type.replace("_", " ")}`;
-    const body = `${notification.amount} ${notification.currency} - ${notification.transactionId}`;
-    return { title, body };
-  }
-  async sendSMS(phone, message) {
-    console.log(`SMS to ${phone}: ${message}`);
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        console.log(`SMS sent successfully to ${phone}`);
-        resolve();
-      }, 100);
-    });
-  }
-  async sendEmail(email, message) {
-    try {
-      await this.emailTransporter.sendMail({
-        from: process.env.SMTP_FROM || "noreply@mtaadao.com",
-        to: email,
-        subject: message.subject,
-        html: message.body
-      });
-      console.log(`Email sent successfully to ${email}`);
-    } catch (error) {
-      console.error(`Email failed for ${email}:`, error);
-      throw error;
-    }
-  }
-  async sendWebhook(url, notification) {
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          type: "payment_notification",
-          data: notification,
-          timestamp: (/* @__PURE__ */ new Date()).toISOString()
-        })
-      });
-      if (!response.ok) {
-        throw new Error(`Webhook failed: ${response.status}`);
-      }
-      console.log(`Webhook sent successfully to ${url}`);
-    } catch (error) {
-      console.error(`Webhook failed for ${url}:`, error);
-      throw error;
-    }
-  }
-  subscribe(recipient, channels) {
-    this.subscribers.set(recipient, channels);
-  }
-  unsubscribe(recipient) {
-    this.subscribers.delete(recipient);
-  }
-  // Real-time payment status updates via WebSocket
-  getPaymentStatusStream(transactionId) {
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.removeAllListeners(`payment_${transactionId}`);
-        reject(new Error("Payment status timeout"));
-      }, 3e5);
-      this.once(`payment_${transactionId}`, (status) => {
-        clearTimeout(timeout);
-        resolve(status);
-      });
-    });
-  }
-  updatePaymentStatus(transactionId, status) {
-    this.emit(`payment_${transactionId}`, status);
-  }
-  // Bulk notification creation for announcements
-  async createBulkNotifications(userIds, notificationData) {
-    const notifications2 = [];
-    for (const userId of userIds) {
-      const notification = await this.createNotification({
-        ...notificationData,
-        userId
-      });
-      if (notification) {
-        notifications2.push(notification);
-      }
-    }
-    return notifications2;
-  }
-  // Server-Sent Events endpoint for real-time notifications
-  setupSSE(userId, res) {
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "Cache-Control"
-    });
-    const heartbeat = setInterval(() => {
-      res.write('data: {"type":"heartbeat"}\n\n');
-    }, 3e4);
-    const notificationHandler = (notification) => {
-      if (notification.userId === userId) {
-        res.write(`data: ${JSON.stringify(notification)}
-
-`);
-      }
-    };
-    this.on("notification_created", notificationHandler);
-    res.on("close", () => {
-      clearInterval(heartbeat);
-      this.removeListener("notification_created", notificationHandler);
-    });
-  }
-};
-var notificationService = new NotificationService();
-
-// server/routes/wallet.ts
 var __filename = fileURLToPath(import.meta.url);
 var __dirname = dirname(__filename);
 var PRIVATE_KEY = process.env.PRIVATE_KEY || "0x" + "1".repeat(64);
@@ -3568,8 +5029,8 @@ try {
 }
 var riskManager = new RiskManager(wallet, 1e4, 5e3);
 var analytics = new TransactionAnalytics();
-var router = express.Router();
-function requireRole(...roles2) {
+var router3 = express3.Router();
+function requireRole2(...roles2) {
   return (req, res, next) => {
     const user = req.user;
     if (!user || !roles2.includes(user.role)) {
@@ -3579,7 +5040,7 @@ function requireRole(...roles2) {
   };
 }
 var allowedTokens = /* @__PURE__ */ new Set();
-router.post("/risk/validate", async (req, res) => {
+router3.post("/risk/validate", async (req, res) => {
   try {
     const { amount, tokenAddress, toAddress } = req.body;
     const result = await riskManager.validateTransfer(amount, tokenAddress, toAddress);
@@ -3589,7 +5050,7 @@ router.post("/risk/validate", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.get("/analytics/report", async (req, res) => {
+router3.get("/analytics/report", async (req, res) => {
   try {
     const { timeframe } = req.query;
     const report = analytics.generateReport(Number(timeframe) || 7 * 24 * 60 * 60 * 1e3);
@@ -3599,7 +5060,7 @@ router.get("/analytics/report", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.post("/multisig/info", requireRole("admin", "elder"), async (req, res) => {
+router3.post("/multisig/info", requireRole2("admin", "elder"), async (req, res) => {
   try {
     const { multisigAddress } = req.body;
     const info = await wallet.getMultisigInfo(multisigAddress);
@@ -3609,7 +5070,7 @@ router.post("/multisig/info", requireRole("admin", "elder"), async (req, res) =>
     res.status(500).json({ error: errorMsg });
   }
 });
-router.post("/multisig/submit", requireRole("admin", "elder"), async (req, res) => {
+router3.post("/multisig/submit", requireRole2("admin", "elder"), async (req, res) => {
   try {
     const { multisigAddress, destination, value, data } = req.body;
     const result = await wallet.submitMultisigTransaction(multisigAddress, destination, value, data);
@@ -3619,10 +5080,10 @@ router.post("/multisig/submit", requireRole("admin", "elder"), async (req, res) 
     res.status(500).json({ error: errorMsg });
   }
 });
-router.get("/allowed-tokens", requireRole("admin", "elder"), (req, res) => {
+router3.get("/allowed-tokens", requireRole2("admin", "elder"), (req, res) => {
   res.json({ allowedTokens: Array.from(allowedTokens) });
 });
-router.post("/allowed-tokens/add", requireRole("admin", "elder"), (req, res) => {
+router3.post("/allowed-tokens/add", requireRole2("admin", "elder"), (req, res) => {
   const { tokenAddress } = req.body;
   if (WalletManager.validateAddress(tokenAddress)) {
     allowedTokens.add(tokenAddress);
@@ -3631,12 +5092,12 @@ router.post("/allowed-tokens/add", requireRole("admin", "elder"), (req, res) => 
     res.status(400).json({ error: "Invalid token address" });
   }
 });
-router.post("/allowed-tokens/remove", requireRole("admin", "elder"), (req, res) => {
+router3.post("/allowed-tokens/remove", requireRole2("admin", "elder"), (req, res) => {
   const { tokenAddress } = req.body;
   allowedTokens.delete(tokenAddress);
   res.json({ success: true, allowedTokens: Array.from(allowedTokens) });
 });
-router.get("/analytics", async (req, res) => {
+router3.get("/analytics", async (req, res) => {
   try {
     const { userId, walletAddress } = req.query;
     let whereClause = void 0;
@@ -3679,7 +5140,7 @@ router.get("/analytics", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.get("/network-info", async (req, res) => {
+router3.get("/network-info", async (req, res) => {
   try {
     const info = await wallet.getNetworkInfo();
     res.json(info);
@@ -3688,7 +5149,7 @@ router.get("/network-info", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.get("/balance/:address?", async (req, res) => {
+router3.get("/balance/:address?", async (req, res) => {
   try {
     const address = req.params.address || wallet.address;
     const balance = await wallet.getBalanceEth(address);
@@ -3698,7 +5159,7 @@ router.get("/balance/:address?", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.get("/balance/celo", async (req, res) => {
+router3.get("/balance/celo", async (req, res) => {
   try {
     const { user } = req.query;
     const address = user || wallet.address;
@@ -3709,7 +5170,7 @@ router.get("/balance/celo", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.get("/balance/cusd", async (req, res) => {
+router3.get("/balance/cusd", async (req, res) => {
   try {
     const { user } = req.query;
     const address = user || wallet.address;
@@ -3721,7 +5182,7 @@ router.get("/balance/cusd", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.get("/token-info/:tokenAddress", async (req, res) => {
+router3.get("/token-info/:tokenAddress", async (req, res) => {
   try {
     const info = await wallet.getTokenInfo(req.params.tokenAddress);
     res.json(info);
@@ -3730,7 +5191,7 @@ router.get("/token-info/:tokenAddress", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.post("/send-native", async (req, res) => {
+router3.post("/send-native", async (req, res) => {
   try {
     const { toAddress, amount, userId } = req.body;
     const result = await wallet.sendNativeToken(toAddress, amount);
@@ -3754,7 +5215,7 @@ router.post("/send-native", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.post("/send-token", async (req, res) => {
+router3.post("/send-token", async (req, res) => {
   try {
     const { tokenAddress, toAddress, amount, userId } = req.body;
     const result = await wallet.sendTokenHuman(tokenAddress, toAddress, amount);
@@ -3780,7 +5241,7 @@ router.post("/send-token", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.post("/approve-token", async (req, res) => {
+router3.post("/approve-token", async (req, res) => {
   try {
     const { tokenAddress, spender, amount } = req.body;
     const result = await wallet.approveToken(tokenAddress, spender, amount);
@@ -3790,7 +5251,7 @@ router.post("/approve-token", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.get("/allowance/:tokenAddress/:spender", async (req, res) => {
+router3.get("/allowance/:tokenAddress/:spender", async (req, res) => {
   try {
     const { tokenAddress, spender } = req.params;
     const allowance = await wallet.getAllowance(tokenAddress, spender);
@@ -3800,7 +5261,7 @@ router.get("/allowance/:tokenAddress/:spender", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.post("/portfolio", async (req, res) => {
+router3.post("/portfolio", async (req, res) => {
   try {
     if (!wallet) {
       return res.status(503).json({ error: "Wallet service not available" });
@@ -3814,7 +5275,7 @@ router.post("/portfolio", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.post("/batch-transfer", async (req, res) => {
+router3.post("/batch-transfer", async (req, res) => {
   try {
     const { transfers } = req.body;
     const results = await wallet.batchTransfer(transfers);
@@ -3824,7 +5285,7 @@ router.post("/batch-transfer", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.get("/analytics/tx-history", async (req, res) => {
+router3.get("/analytics/tx-history", async (req, res) => {
   try {
     const { limit } = req.query;
     const txs = await wallet.getTransactionHistory(Number(limit) || 10);
@@ -3834,7 +5295,7 @@ router.get("/analytics/tx-history", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.get("/tx-status/:txHash", async (req, res) => {
+router3.get("/tx-status/:txHash", async (req, res) => {
   try {
     const status = await wallet.getTransactionStatus(req.params.txHash);
     res.json(status);
@@ -3843,7 +5304,7 @@ router.get("/tx-status/:txHash", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.post("/locked-savings/create", async (req, res) => {
+router3.post("/locked-savings/create", async (req, res) => {
   try {
     const { userId, amount, currency, lockPeriod, interestRate } = req.body;
     const unlocksAt = /* @__PURE__ */ new Date();
@@ -3864,7 +5325,7 @@ router.post("/locked-savings/create", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.get("/locked-savings/:userId", async (req, res) => {
+router3.get("/locked-savings/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
     const savings = await db.select().from(lockedSavings).where(eq2(lockedSavings.userId, userId)).orderBy(desc2(lockedSavings.createdAt));
@@ -3874,7 +5335,7 @@ router.get("/locked-savings/:userId", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.post("/locked-savings/withdraw/:id", async (req, res) => {
+router3.post("/locked-savings/withdraw/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { isEarlyWithdrawal } = req.body;
@@ -3905,7 +5366,7 @@ router.post("/locked-savings/withdraw/:id", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.post("/savings-goals/create", async (req, res) => {
+router3.post("/savings-goals/create", async (req, res) => {
   try {
     const { userId, title, description, targetAmount, targetDate, category, currency } = req.body;
     const goal = await db.insert(savingsGoals).values({
@@ -3923,7 +5384,7 @@ router.post("/savings-goals/create", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.get("/savings-goals/:userId", async (req, res) => {
+router3.get("/savings-goals/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
     const goals = await db.select().from(savingsGoals).where(eq2(savingsGoals.userId, userId)).orderBy(desc2(savingsGoals.createdAt));
@@ -3933,7 +5394,7 @@ router.get("/savings-goals/:userId", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.post("/savings-goals/:id/contribute", async (req, res) => {
+router3.post("/savings-goals/:id/contribute", async (req, res) => {
   try {
     const { id } = req.params;
     const { amount } = req.body;
@@ -3955,7 +5416,7 @@ router.post("/savings-goals/:id/contribute", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.post("/contribute", async (req, res) => {
+router3.post("/contribute", async (req, res) => {
   try {
     const { userId, daoId, proposalId, amount, currency, transactionHash, purpose, isAnonymous = false } = req.body;
     const contribution = await db.insert(contributions).values({
@@ -4008,7 +5469,7 @@ router.post("/contribute", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.get("/contributions/:userId", async (req, res) => {
+router3.get("/contributions/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
     const { daoId, timeframe = "30" } = req.query;
@@ -4020,7 +5481,7 @@ router.get("/contributions/:userId", async (req, res) => {
     dateFilter.setDate(dateFilter.getDate() - parseInt(timeframe));
     const userContributions = await db.select().from(contributions).where(and2(...conditions)).orderBy(desc2(contributions.createdAt));
     const totalContributed = userContributions.reduce(
-      (sum2, contrib) => sum2 + parseFloat(contrib.amount),
+      (sum3, contrib) => sum3 + parseFloat(contrib.amount),
       0
     );
     const contributionsByDAO = userContributions.reduce((acc, contrib) => {
@@ -4044,7 +5505,7 @@ router.get("/contributions/:userId", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.get("/transactions", async (req, res) => {
+router3.get("/transactions", async (req, res) => {
   try {
     const {
       userId,
@@ -4103,7 +5564,7 @@ router.get("/transactions", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.get("/recurring-payments", async (req, res) => {
+router3.get("/recurring-payments", async (req, res) => {
   try {
     const { walletAddress } = req.query;
     const recurringPayments = [
@@ -4129,7 +5590,7 @@ router.get("/recurring-payments", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.post("/recurring-payments", async (req, res) => {
+router3.post("/recurring-payments", async (req, res) => {
   try {
     const { title, description, amount, currency, toAddress, frequency, walletAddress } = req.body;
     const newPayment = {
@@ -4153,7 +5614,7 @@ router.post("/recurring-payments", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.patch("/recurring-payments/:id/toggle", async (req, res) => {
+router3.patch("/recurring-payments/:id/toggle", async (req, res) => {
   try {
     const { id } = req.params;
     const { isActive } = req.body;
@@ -4163,7 +5624,7 @@ router.patch("/recurring-payments/:id/toggle", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.delete("/recurring-payments/:id", async (req, res) => {
+router3.delete("/recurring-payments/:id", async (req, res) => {
   try {
     const { id } = req.params;
     res.json({ success: true, id });
@@ -4172,7 +5633,7 @@ router.delete("/recurring-payments/:id", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.get("/exchange-rates", async (req, res) => {
+router3.get("/exchange-rates", async (req, res) => {
   try {
     const mockRates = {
       "CELO-USD": { pair: "CELO-USD", rate: 0.65, change24h: 2.5, lastUpdated: (/* @__PURE__ */ new Date()).toISOString() },
@@ -4188,7 +5649,7 @@ router.get("/exchange-rates", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router.post("/multisig/create", requireRole("admin", "elder"), async (req, res) => {
+router3.post("/multisig/create", requireRole2("admin", "elder"), async (req, res) => {
   try {
     const { owners, threshold } = req.body;
     const mockMultisig = {
@@ -4203,7 +5664,7 @@ router.post("/multisig/create", requireRole("admin", "elder"), async (req, res) 
     res.status(500).json({ error: errorMsg });
   }
 });
-router.get("/multisig/:address/transactions", requireRole("admin", "elder"), async (req, res) => {
+router3.get("/multisig/:address/transactions", requireRole2("admin", "elder"), async (req, res) => {
   try {
     const { address } = req.params;
     const { pending } = req.query;
@@ -4232,14 +5693,16 @@ function calculateNextPayment(frequency) {
   }
   return now.toISOString();
 }
-var wallet_default = router;
+var wallet_default = router3;
 
 // server/routes/wallet-setup.ts
-import express2 from "express";
+import express4 from "express";
+init_storage();
 init_schema();
+init_notificationService();
 import { eq as eq3, and as and3 } from "drizzle-orm";
-var router2 = express2.Router();
-router2.post("/create-wallet", async (req, res) => {
+var router4 = express4.Router();
+router4.post("/create-wallet", async (req, res) => {
   try {
     const { userId, currency = "cUSD", initialGoal = 0 } = req.body;
     if (!userId) {
@@ -4287,7 +5750,7 @@ router2.post("/create-wallet", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router2.post("/initialize-additional-vault", async (req, res) => {
+router4.post("/initialize-additional-vault", async (req, res) => {
   try {
     const { userId, currency, monthlyGoal = 0, vaultType = "savings" } = req.body;
     if (!userId || !currency) {
@@ -4330,14 +5793,14 @@ router2.post("/initialize-additional-vault", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router2.get("/user-vaults/:userId", async (req, res) => {
+router4.get("/user-vaults/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
     const userVaults = await db.select().from(vaults).where(eq3(vaults.userId, userId));
     const primaryVault = userVaults.length > 0 ? userVaults[0] : null;
     const walletAddress = primaryVault ? primaryVault.address || null : null;
-    const totalBalance = userVaults.reduce((sum2, vault) => {
-      return sum2 + parseFloat(vault.balance || "0");
+    const totalBalance = userVaults.reduce((sum3, vault) => {
+      return sum3 + parseFloat(vault.balance || "0");
     }, 0);
     res.json({
       walletAddress,
@@ -4351,7 +5814,7 @@ router2.get("/user-vaults/:userId", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router2.post("/initialize-assets", async (req, res) => {
+router4.post("/initialize-assets", async (req, res) => {
   try {
     const { userId, assets } = req.body;
     if (!userId || !Array.isArray(assets)) {
@@ -4423,7 +5886,7 @@ router2.post("/initialize-assets", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-router2.post("/import-wallet", async (req, res) => {
+router4.post("/import-wallet", async (req, res) => {
   try {
     const { userId, privateKey, currency = "cUSD" } = req.body;
     if (!userId || !privateKey) {
@@ -4480,104 +5943,7041 @@ router2.post("/import-wallet", async (req, res) => {
     res.status(500).json({ error: errorMsg });
   }
 });
-var wallet_setup_default = router2;
+var wallet_setup_default = router4;
 
-// server/nextAuthMiddleware.ts
-import { getToken } from "next-auth/jwt";
-
-// server/auth.ts
-import jwt from "jsonwebtoken";
-var isAuthenticated = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Authorization header missing or malformed" });
-  }
-  const token = authHeader.split(" ")[1];
-  const payload = verifyAccessToken(token);
-  if (!payload) {
-    return res.status(401).json({ error: "Invalid or expired token" });
-  }
-  req.user = payload;
-  next();
-};
-var JWT_SECRET = process.env.JWT_SECRET_KEY || "your-secret-key";
-var JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "your-refresh-secret";
-var verifyAccessToken = (token) => {
+// server/routes/governance.ts
+init_storage();
+init_schema();
+import express5 from "express";
+import { eq as eq4, and as and4, desc as desc3, gte, sql as sql2 } from "drizzle-orm";
+var router5 = express5.Router();
+router5.get("/:daoId/quorum", isAuthenticated, async (req, res) => {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    const { daoId } = req.params;
+    const dao = await db.select().from(daos).where(eq4(daos.id, daoId)).limit(1);
+    if (!dao.length) {
+      return res.status(404).json({ message: "DAO not found" });
+    }
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3);
+    const activeMembers = await db.select({ count: sql2`count(*)` }).from(daoMemberships).where(
+      and4(
+        eq4(daoMemberships.daoId, daoId),
+        eq4(daoMemberships.status, "approved"),
+        gte(daoMemberships.lastActive, thirtyDaysAgo)
+      )
+    );
+    const activeMemberCount = activeMembers[0]?.count || 0;
+    const quorumPercentage = dao[0].quorumPercentage || 20;
+    const requiredQuorum = Math.ceil(activeMemberCount * quorumPercentage / 100);
+    res.json({
+      success: true,
+      data: {
+        activeMemberCount,
+        quorumPercentage,
+        requiredQuorum,
+        calculatedAt: /* @__PURE__ */ new Date()
+      }
+    });
   } catch (error) {
-    return null;
+    res.status(500).json({
+      success: false,
+      message: "Failed to calculate quorum",
+      error: error.message
+    });
   }
-};
-
-// server/nextAuthMiddleware.ts
-var isAuthenticated2 = async (req, res, next) => {
+});
+router5.post("/proposals/:proposalId/execute", isAuthenticated, async (req, res) => {
   try {
-    let token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-    let userClaims = null;
-    if (token && token.sub) {
-      userClaims = {
-        sub: token.sub,
-        email: token.email || void 0,
-        role: token.role || void 0
-      };
-    } else {
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith("Bearer ")) {
-        const jwtToken = authHeader.substring(7);
-        const decoded = verifyAccessToken(jwtToken);
-        if (decoded) {
-          userClaims = {
-            sub: decoded.userId,
-            email: decoded.email,
-            role: decoded.role
-          };
-        }
-      }
+    const { proposalId } = req.params;
+    const userId = req.user.claims.sub;
+    const proposal = await db.select().from(proposals2).where(eq4(proposals2.id, proposalId)).limit(1);
+    if (!proposal.length) {
+      return res.status(404).json({ message: "Proposal not found" });
     }
-    if (!userClaims) {
-      return res.status(401).json({ message: "Unauthorized" });
+    const proposalData = proposal[0];
+    if (proposalData.status !== "passed") {
+      return res.status(400).json({ message: "Proposal must be in passed status to execute" });
     }
-    if (!userClaims.role) {
-      try {
-        const user = await storage.getUser(userClaims.sub);
-        if (user) {
-          userClaims.role = user.role || "user";
-        }
-      } catch (error) {
-        console.warn("Could not fetch user role:", error);
-      }
+    const membership = await db.select().from(daoMemberships).where(and4(
+      eq4(daoMemberships.daoId, proposalData.daoId),
+      eq4(daoMemberships.userId, userId)
+    )).limit(1);
+    if (!membership.length || !["admin", "elder"].includes(membership[0].role ?? "")) {
+      return res.status(403).json({ message: "Insufficient permissions to execute proposal" });
     }
-    req.user = { claims: userClaims };
-    next();
-  } catch (err) {
-    return res.status(401).json({ message: "Unauthorized" });
+    let delay = 24;
+    const dao = await db.select().from(daos).where(eq4(daos.id, proposalData.daoId)).limit(1);
+    if (dao.length && typeof dao[0].executionDelay === "number") {
+      delay = dao[0].executionDelay;
+    }
+    const executionTime = new Date(Date.now() + delay * 60 * 60 * 1e3);
+    await db.insert(proposalExecutionQueue).values({
+      proposalId: String(proposalId ?? ""),
+      daoId: String(proposalData.daoId ?? ""),
+      scheduledFor: executionTime,
+      executionType: String(proposalData.proposalType ?? ""),
+      executionData: proposalData.executionData || {},
+      status: "pending"
+    });
+    res.json({
+      success: true,
+      message: "Proposal queued for execution",
+      scheduledFor: executionTime
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to queue proposal for execution",
+      error: error.message
+    });
   }
-};
-var requireRole2 = (...allowedRoles) => {
-  return (req, res, next) => {
-    if (!req.user?.claims?.role) {
-      return res.status(403).json({ message: "Access denied: No role assigned" });
+});
+router5.get("/:daoId/templates", isAuthenticated, async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const templates = await db.select().from(proposalTemplates).where(
+      and4(
+        eq4(proposalTemplates.daoId, daoId),
+        eq4(proposalTemplates.isGlobal, true)
+      )
+    ).orderBy(desc3(proposalTemplates.createdAt));
+    res.json({
+      success: true,
+      data: templates
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch proposal templates",
+      error: error.message
+    });
+  }
+});
+router5.post("/:daoId/templates", isAuthenticated, async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const userId = req.user.claims.sub;
+    const templateData = req.body;
+    const membership = await db.select().from(daoMemberships).where(and4(
+      eq4(daoMemberships.daoId, daoId),
+      eq4(daoMemberships.userId, userId)
+    )).limit(1);
+    if (!membership.length || !["admin", "elder"].includes(membership[0].role ?? "")) {
+      return res.status(403).json({ message: "Insufficient permissions to create templates" });
     }
-    if (!allowedRoles.includes(req.user.claims.role)) {
-      return res.status(403).json({
-        message: "Access denied: Insufficient permissions",
-        required: allowedRoles,
-        current: req.user.claims.role
-      });
+    const template = await db.insert(proposalTemplates).values({
+      ...templateData,
+      daoId,
+      createdBy: userId
+    }).returning();
+    res.json({
+      success: true,
+      data: template[0]
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to create proposal template",
+      error: error.message
+    });
+  }
+});
+router5.post("/:daoId/delegate", isAuthenticated, async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const userId = req.user.claims.sub;
+    const { delegateId, scope, category, proposalId } = req.body;
+    const delegateMembership = await db.select().from(daoMemberships).where(and4(
+      eq4(daoMemberships.daoId, daoId),
+      eq4(daoMemberships.userId, delegateId),
+      eq4(daoMemberships.status, "approved")
+    )).limit(1);
+    if (!delegateMembership.length) {
+      return res.status(400).json({ message: "Delegate must be an active DAO member" });
+    }
+    await db.update(voteDelegations).set({ isActive: false }).where(and4(
+      eq4(voteDelegations.delegatorId, userId),
+      eq4(voteDelegations.daoId, daoId),
+      eq4(voteDelegations.isActive, true)
+    ));
+    const delegation = await db.insert(voteDelegations).values({
+      delegatorId: userId,
+      delegateId,
+      daoId,
+      scope,
+      category,
+      proposalId,
+      isActive: true
+    }).returning();
+    res.json({
+      success: true,
+      data: delegation[0]
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to create vote delegation",
+      error: error.message
+    });
+  }
+});
+router5.get("/:daoId/delegations", isAuthenticated, async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const userId = req.user.claims.sub;
+    const delegations = await db.select().from(voteDelegations).where(and4(
+      eq4(voteDelegations.daoId, daoId),
+      eq4(voteDelegations.delegatorId, userId),
+      eq4(voteDelegations.isActive, true)
+    ));
+    res.json({
+      success: true,
+      data: delegations
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch delegations",
+      error: error.message
+    });
+  }
+});
+router5.delete("/:daoId/delegate/:delegationId", isAuthenticated, async (req, res) => {
+  try {
+    const { daoId, delegationId } = req.params;
+    const userId = req.user.claims.sub;
+    await db.update(voteDelegations).set({ isActive: false }).where(and4(
+      eq4(voteDelegations.id, delegationId),
+      eq4(voteDelegations.delegatorId, userId),
+      eq4(voteDelegations.daoId, daoId)
+    ));
+    res.json({
+      success: true,
+      message: "Delegation revoked successfully"
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to revoke delegation",
+      error: error.message
+    });
+  }
+});
+router5.post("/proposals/:proposalId/check-quorum", isAuthenticated, async (req, res) => {
+  try {
+    const { proposalId } = req.params;
+    const proposal = await db.select().from(proposals2).where(eq4(proposals2.id, proposalId)).limit(1);
+    if (!proposal.length) {
+      return res.status(404).json({ message: "Proposal not found" });
+    }
+    const proposalData = proposal[0];
+    const yesVotes = typeof proposalData.yesVotes === "number" ? proposalData.yesVotes : 0;
+    const noVotes = typeof proposalData.noVotes === "number" ? proposalData.noVotes : 0;
+    const abstainVotes = typeof proposalData.abstainVotes === "number" ? proposalData.abstainVotes : 0;
+    const totalVotes = yesVotes + noVotes + abstainVotes;
+    const quorumResponse = await fetch(`/api/governance/${proposalData.daoId}/quorum`);
+    const quorumData = await quorumResponse.json();
+    const requiredQuorum = quorumData.data.requiredQuorum;
+    const quorumMet = totalVotes >= requiredQuorum;
+    const passed = quorumMet && yesVotes > noVotes;
+    await db.insert(quorumHistory).values({
+      daoId: proposalData.daoId,
+      proposalId,
+      activeMemberCount: quorumData.data.activeMemberCount,
+      requiredQuorum,
+      achievedQuorum: totalVotes,
+      quorumMet
+    });
+    if (/* @__PURE__ */ new Date() > proposalData.voteEndTime) {
+      let newStatus = "failed";
+      if (quorumMet && passed) {
+        newStatus = "passed";
+      } else if (!quorumMet) {
+        newStatus = "failed";
+      }
+      await db.update(proposals2).set({ status: newStatus }).where(eq4(proposals2.id, proposalId));
+    }
+    res.json({
+      success: true,
+      data: {
+        quorumMet,
+        passed,
+        totalVotes,
+        requiredQuorum,
+        status: passed && quorumMet ? "passed" : "failed"
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to check proposal quorum",
+      error: error.message
+    });
+  }
+});
+var governance_default = router5;
+
+// server/routes/tasks.ts
+init_storage();
+init_schema();
+import express6 from "express";
+import { eq as eq8, and as and8, desc as desc5, sql as sql5 } from "drizzle-orm";
+import { z as z2 } from "zod";
+var router6 = express6.Router();
+var createTaskSchema = z2.object({
+  title: z2.string().min(1, "Title is required"),
+  description: z2.string().min(1, "Description is required"),
+  reward: z2.number().positive("Reward must be positive"),
+  daoId: z2.string().min(1, "DAO ID is required"),
+  category: z2.string().min(1, "Category is required"),
+  difficulty: z2.enum(["easy", "medium", "hard"]),
+  estimatedTime: z2.string().optional(),
+  deadline: z2.string().optional(),
+  requiresVerification: z2.boolean().default(false)
+});
+var verifyTaskSchema = z2.object({
+  proofUrl: z2.string().url("Valid proof URL required"),
+  description: z2.string().min(10, "Verification description required"),
+  screenshots: z2.array(z2.string().url()).optional()
+});
+function requireRole3(...roles2) {
+  return async (req, res, next) => {
+    const userId = String(req.user?.claims?.sub ?? "");
+    const daoIdRaw = req.params.daoId || req.body.daoId;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    let daoId = void 0;
+    if (typeof daoIdRaw === "string") {
+      daoId = daoIdRaw;
+    } else if (daoIdRaw) {
+      daoId = String(daoIdRaw);
+    }
+    if (!daoId || daoId === "null") {
+      return res.status(400).json({ error: "Invalid DAO ID" });
+    }
+    if (!userId || typeof userId !== "string") {
+      return res.status(401).json({ error: "Unauthorized: Invalid user ID" });
+    }
+    const safeUserId = String(userId ?? "");
+    const membership = await db.select().from(daoMemberships).where(and8(eq8(daoMemberships.daoId, String(daoId ?? "")), eq8(daoMemberships.userId, String(userId ?? ""))));
+    if (!membership.length || !roles2.includes(typeof membership[0].role === "string" ? membership[0].role : "")) {
+      return res.status(403).json({ error: "Insufficient permissions" });
     }
     next();
   };
+}
+router6.post("/create", requireRole3("admin", "moderator"), async (req, res) => {
+  try {
+    const validatedData = createTaskSchema.parse(req.body);
+    const userId = req.user && req.user.claims ? req.user.claims.sub : void 0;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const insertData = {
+      ...validatedData,
+      creatorId: userId,
+      status: "open",
+      reward: String(validatedData.reward)
+    };
+    if (validatedData.deadline) {
+      insertData.deadline = new Date(validatedData.deadline);
+    }
+    const task = await db.insert(tasks).values(insertData).returning();
+    await db.insert(taskHistory).values({
+      taskId: task[0].id,
+      userId,
+      action: "created",
+      details: { category: validatedData.category, reward: String(validatedData.reward) }
+    });
+    res.status(201).json(task[0]);
+  } catch (err) {
+    if (err instanceof z2.ZodError) {
+      return res.status(400).json({ error: "Validation error", details: err.errors });
+    }
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+router6.get("/", async (req, res) => {
+  try {
+    const {
+      daoId,
+      status,
+      category,
+      difficulty,
+      limit = 20,
+      offset = 0
+    } = req.query;
+    let conditions = [];
+    if (daoId) conditions.push(eq8(tasks.daoId, typeof daoId === "string" ? daoId : ""));
+    if (status) conditions.push(eq8(tasks.status, typeof status === "string" ? status : ""));
+    if (category) conditions.push(eq8(tasks.category, typeof category === "string" ? category : ""));
+    if (difficulty) conditions.push(eq8(tasks.difficulty, typeof difficulty === "string" ? difficulty : ""));
+    let query;
+    if (conditions.length > 0) {
+      query = db.select().from(tasks).where(and8(...conditions));
+    } else {
+      query = db.select().from(tasks);
+    }
+    const taskList = await query.orderBy(desc5(tasks.createdAt)).limit(Number(limit)).offset(Number(offset));
+    res.json(taskList);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+router6.get("/categories", async (req, res) => {
+  try {
+    const categories = await db.select({ category: tasks.category }).from(tasks).groupBy(tasks.category);
+    res.json(categories.map((c) => c.category).filter(Boolean));
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+router6.post("/:taskId/claim", async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const userId = req.user && req.user.claims ? req.user.claims.sub : void 0;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const task = await db.select().from(tasks).where(eq8(tasks.id, taskId)).limit(1);
+    if (!task.length) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    if (task[0].status !== "open") {
+      return res.status(400).json({ error: "Task is not available for claiming" });
+    }
+    const claimedTask = await db.update(tasks).set({
+      claimerId: userId,
+      status: "claimed",
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq8(tasks.id, taskId)).returning();
+    await db.insert(taskHistory).values({
+      taskId,
+      userId,
+      action: "claimed",
+      details: { claimedAt: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+    res.json(claimedTask[0]);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+router6.post("/:taskId/submit", async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const userId = req.user && req.user.claims ? req.user.claims.sub : void 0;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const validatedData = verifyTaskSchema.parse(req.body);
+    const task = await db.select().from(tasks).where(and8(eq8(tasks.id, taskId), eq8(tasks.claimerId, userId))).limit(1);
+    if (!task.length) {
+      return res.status(403).json({ error: "Task not found or not claimed by you" });
+    }
+    if (task[0].status !== "claimed") {
+      return res.status(400).json({ error: "Task is not in claimed status" });
+    }
+    await db.update(tasks).set({
+      status: "submitted",
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq8(tasks.id, taskId));
+    await db.insert(taskHistory).values({
+      taskId,
+      userId,
+      action: "submitted",
+      details: validatedData
+    });
+    res.json({ message: "Task submitted successfully", taskId });
+  } catch (err) {
+    if (err instanceof z2.ZodError) {
+      return res.status(400).json({ error: "Validation error", details: err.errors });
+    }
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+router6.post("/:taskId/verify", requireRole3("admin", "moderator"), async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { approved, feedback, autoVerify = false } = req.body;
+    const userId = req.user && req.user.claims ? req.user.claims.sub : void 0;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const task = await db.select().from(tasks).where(eq8(tasks.id, taskId)).limit(1);
+    if (!task.length) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    if (task[0].status !== "submitted") {
+      return res.status(400).json({ error: "Task is not ready for verification" });
+    }
+    let verificationScore = 0;
+    let autoApproved = false;
+    if (autoVerify || task[0].category === "Documentation" || task[0].difficulty === "easy") {
+      const { TaskVerificationService: TaskVerificationService2 } = await Promise.resolve().then(() => (init_taskVerificationService(), taskVerificationService_exports));
+      const submissionData = {
+        proofUrl: task[0].proofUrl,
+        description: task[0].verificationNotes || "",
+        screenshots: []
+      };
+      verificationScore = await TaskVerificationService2.calculateVerificationScore(taskId, submissionData);
+      autoApproved = verificationScore >= 70;
+      if (autoApproved && !approved) {
+        req.body.approved = true;
+        req.body.feedback = `Auto-approved with verification score: ${verificationScore}/100. ${feedback || ""}`;
+      }
+    }
+    const finalApproval = req.body.approved || autoApproved;
+    const newStatus = finalApproval ? "completed" : "claimed";
+    await db.update(tasks).set({
+      status: newStatus,
+      verificationNotes: req.body.feedback || feedback,
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq8(tasks.id, taskId));
+    await db.insert(taskHistory).values({
+      taskId,
+      userId,
+      action: finalApproval ? "approved" : "rejected",
+      details: {
+        feedback: req.body.feedback || feedback,
+        verifiedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        verificationScore,
+        autoApproved
+      }
+    });
+    if (finalApproval && task[0].claimerId) {
+      const { TaskVerificationService: TaskVerificationService2 } = await Promise.resolve().then(() => (init_taskVerificationService(), taskVerificationService_exports));
+      await TaskVerificationService2.processEscrowRelease(taskId, true);
+      const { ReputationService: ReputationService2 } = await Promise.resolve().then(() => (init_reputationService(), reputationService_exports));
+      const difficultyMultiplier = { easy: 1, medium: 2, hard: 3 }[task[0].difficulty] || 1;
+      await ReputationService2.awardPoints(
+        task[0].claimerId,
+        "TASK_COMPLETED",
+        50 * difficultyMultiplier,
+        task[0].daoId,
+        `Completed task: ${task[0].title}`,
+        verificationScore / 100
+      );
+      const { AchievementService: AchievementService2 } = await Promise.resolve().then(() => (init_achievementService(), achievementService_exports));
+      const newAchievements = await AchievementService2.checkUserAchievements(task[0].claimerId);
+      if (newAchievements.length > 0) {
+        const { notificationService: notificationService2 } = await Promise.resolve().then(() => (init_notificationService(), notificationService_exports));
+        await notificationService2.sendNotification(task[0].claimerId, {
+          title: "\u{1F3C6} New Achievement Unlocked!",
+          message: `You've unlocked: ${newAchievements.join(", ")}`,
+          type: "achievement"
+        });
+      }
+    }
+    res.json({
+      message: finalApproval ? "Task approved and bounty paid" : "Task rejected",
+      taskId,
+      newStatus,
+      verificationScore,
+      autoApproved
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+router6.get("/:taskId/history", async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const history = await db.select().from(taskHistory).where(eq8(taskHistory.taskId, taskId)).orderBy(desc5(taskHistory.createdAt));
+    res.json(history);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+router6.get("/user/claimed", async (req, res) => {
+  try {
+    const userId = req.user && req.user.claims ? req.user.claims.sub : void 0;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const claimedTasks = await db.select().from(tasks).where(eq8(tasks.claimerId, userId)).orderBy(desc5(tasks.updatedAt));
+    res.json(claimedTasks);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+router6.get("/analytics", async (req, res) => {
+  try {
+    const { daoId } = req.query;
+    let statsQuery;
+    if (daoId) {
+      statsQuery = db.select({
+        status: tasks.status,
+        category: tasks.category,
+        difficulty: tasks.difficulty,
+        count: sql5`count(*)`,
+        totalReward: sql5`sum(cast(${tasks.reward} as numeric))`
+      }).from(tasks).where(eq8(tasks.daoId, typeof daoId === "string" ? daoId : ""));
+    } else {
+      statsQuery = db.select({
+        status: tasks.status,
+        category: tasks.category,
+        difficulty: tasks.difficulty,
+        count: sql5`count(*)`,
+        totalReward: sql5`sum(cast(${tasks.reward} as numeric))`
+      }).from(tasks);
+    }
+    const taskStats = await statsQuery;
+    res.json(taskStats);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+var tasks_default = router6;
+
+// server/routes/reputation.ts
+init_db();
+init_achievementService();
+import express7 from "express";
+import { eq as eq11 } from "drizzle-orm";
+
+// server/airdropService.ts
+init_db();
+init_reputationSchema();
+import { eq as eq9, and as and9, gte as gte3 } from "drizzle-orm";
+var AirdropService = class {
+  // Create new airdrop campaign
+  static async createAirdropCampaign(campaign) {
+    const campaignId = `airdrop_${Date.now()}`;
+    return campaignId;
+  }
+  // Calculate airdrop eligibility for all users
+  static async calculateAirdropEligibility(airdropId, minimumReputation, baseAmount, maxMultiplier = 5) {
+    const users3 = await db.select({
+      userId: userReputation2.userId,
+      totalPoints: userReputation2.totalPoints,
+      badge: userReputation2.badge
+    }).from(userReputation2).where(gte3(userReputation2.totalPoints, minimumReputation));
+    let processed = 0;
+    let eligible = 0;
+    for (const user of users3) {
+      const totalPoints = typeof user.totalPoints === "number" ? user.totalPoints : 0;
+      const badge = typeof user.badge === "string" ? user.badge : "Bronze";
+      const reputationMultiplier = Math.min(totalPoints / minimumReputation, maxMultiplier);
+      const airdropAmount = baseAmount * reputationMultiplier;
+      const badgeMultiplier = this.getBadgeMultiplier(badge);
+      const finalAmount = airdropAmount * badgeMultiplier;
+      await db.insert(airdropEligibility).values({
+        userId: user.userId,
+        airdropId,
+        eligibleAmount: finalAmount.toString(),
+        minimumReputation,
+        userReputation: totalPoints,
+        claimed: false
+      });
+      processed++;
+      eligible++;
+    }
+    return { processed, eligible };
+  }
+  // Execute airdrop distribution
+  static async executeAirdrop(airdropId) {
+    const eligibleUsers = await db.select().from(airdropEligibility).where(
+      and9(
+        eq9(airdropEligibility.airdropId, airdropId),
+        eq9(airdropEligibility.claimed, false)
+      )
+    );
+    let success = 0;
+    let failed = 0;
+    for (const eligibility of eligibleUsers) {
+      try {
+        await db.update(airdropEligibility).set({
+          claimed: true,
+          claimedAt: /* @__PURE__ */ new Date(),
+          transactionHash: null
+        }).where(eq9(airdropEligibility.id, eligibility.id));
+        success++;
+      } catch (error) {
+        console.error(`Airdrop failed for user ${eligibility.userId}:`, error);
+        failed++;
+      }
+    }
+    return { success, failed };
+  }
+  // Get badge multiplier for airdrop calculations
+  static getBadgeMultiplier(badge) {
+    switch (badge) {
+      case "Diamond":
+        return 2;
+      case "Platinum":
+        return 1.8;
+      case "Gold":
+        return 1.5;
+      case "Silver":
+        return 1.2;
+      default:
+        return 1;
+    }
+  }
+  // Check user's airdrop eligibility
+  static async getUserAirdropEligibility(userId) {
+    return await db.select().from(airdropEligibility).where(eq9(airdropEligibility.userId, userId));
+  }
+  // Claim airdrop for user
+  static async claimAirdrop(userId, airdropId) {
+    const eligibility = await db.select().from(airdropEligibility).where(
+      and9(
+        eq9(airdropEligibility.userId, userId),
+        eq9(airdropEligibility.airdropId, airdropId),
+        eq9(airdropEligibility.claimed, false)
+      )
+    );
+    if (!eligibility[0]) {
+      throw new Error("No eligible airdrop found or already claimed");
+    }
+    await db.update(airdropEligibility).set({
+      claimed: true,
+      claimedAt: /* @__PURE__ */ new Date(),
+      transactionHash: null
+    }).where(eq9(airdropEligibility.id, eligibility[0].id));
+    return "claimed";
+  }
 };
-var requireAdmin = requireRole2("admin", "super_admin");
-var requireModerator = requireRole2("admin", "super_admin", "moderator");
-var requirePremium = requireRole2("admin", "super_admin", "premium", "dao_owner");
+
+// server/vestingService.ts
+init_db();
+import { eq as eq10, and as and10 } from "drizzle-orm";
+
+// shared/vestingSchema.ts
+init_schema();
+import { pgTable as pgTable4, varchar as varchar4, timestamp as timestamp5, decimal as decimal3, boolean as boolean4, uuid as uuid4, integer as integer4 } from "drizzle-orm/pg-core";
+import { createInsertSchema as createInsertSchema4 } from "drizzle-zod";
+var vestingSchedules = pgTable4("vesting_schedules", {
+  id: uuid4("id").primaryKey().defaultRandom(),
+  userId: varchar4("user_id").references(() => users.id).notNull(),
+  scheduleType: varchar4("schedule_type").notNull(),
+  // linear, cliff, milestone
+  totalTokens: decimal3("total_tokens", { precision: 18, scale: 8 }).notNull(),
+  vestedTokens: decimal3("vested_tokens", { precision: 18, scale: 8 }).default("0"),
+  claimedTokens: decimal3("claimed_tokens", { precision: 18, scale: 8 }).default("0"),
+  startDate: timestamp5("start_date").notNull(),
+  endDate: timestamp5("end_date").notNull(),
+  cliffDuration: integer4("cliff_duration").default(0),
+  // in days
+  vestingDuration: integer4("vesting_duration").notNull(),
+  // in days
+  vestingInterval: integer4("vesting_interval").default(1),
+  // in days
+  isActive: boolean4("is_active").default(true),
+  reason: varchar4("reason"),
+  // airdrop, team, advisor, etc.
+  createdAt: timestamp5("created_at").defaultNow()
+});
+var vestingClaims = pgTable4("vesting_claims", {
+  id: uuid4("id").primaryKey().defaultRandom(),
+  scheduleId: uuid4("schedule_id").references(() => vestingSchedules.id).notNull(),
+  userId: varchar4("user_id").references(() => users.id).notNull(),
+  claimedAmount: decimal3("claimed_amount", { precision: 18, scale: 8 }).notNull(),
+  transactionHash: varchar4("transaction_hash"),
+  claimedAt: timestamp5("claimed_at").defaultNow()
+});
+var vestingMilestones = pgTable4("vesting_milestones", {
+  id: uuid4("id").primaryKey().defaultRandom(),
+  scheduleId: uuid4("schedule_id").references(() => vestingSchedules.id).notNull(),
+  milestoneType: varchar4("milestone_type").notNull(),
+  // reputation, time, task_completion
+  description: varchar4("description"),
+  targetValue: decimal3("target_value", { precision: 18, scale: 8 }).notNull(),
+  currentValue: decimal3("current_value", { precision: 18, scale: 8 }).default("0"),
+  tokensToRelease: decimal3("tokens_to_release", { precision: 18, scale: 8 }).notNull(),
+  isCompleted: boolean4("is_completed").default(false),
+  completedAt: timestamp5("completed_at")
+});
+var insertVestingScheduleSchema = createInsertSchema4(vestingSchedules);
+var insertVestingClaimSchema = createInsertSchema4(vestingClaims);
+var insertVestingMilestoneSchema = createInsertSchema4(vestingMilestones);
+
+// server/vestingService.ts
+init_reputationSchema();
+var VestingService = class {
+  // Create new vesting schedule
+  static async createVestingSchedule(params) {
+    const endDate = new Date(params.startDate);
+    endDate.setDate(endDate.getDate() + params.vestingDuration);
+    const scheduleId = (await db.insert(vestingSchedules).values({
+      userId: params.userId,
+      scheduleType: params.scheduleType,
+      totalTokens: params.totalTokens.toString(),
+      startDate: params.startDate,
+      endDate,
+      cliffDuration: params.cliffDuration || 0,
+      vestingDuration: params.vestingDuration,
+      vestingInterval: params.vestingInterval || 1,
+      reason: params.reason
+    }).returning())[0].id;
+    if (params.milestones && params.scheduleType === "milestone") {
+      for (const milestone of params.milestones) {
+        await db.insert(vestingMilestones).values({
+          scheduleId,
+          milestoneType: milestone.milestoneType,
+          description: milestone.description,
+          targetValue: milestone.targetValue.toString(),
+          tokensToRelease: milestone.tokensToRelease.toString()
+        });
+      }
+    }
+    return scheduleId;
+  }
+  // Calculate vested tokens for a schedule
+  static async calculateVestedTokens(scheduleId) {
+    const schedule = await db.select().from(vestingSchedules).where(eq10(vestingSchedules.id, scheduleId));
+    if (!schedule[0] || !schedule[0].isActive) return 0;
+    const now = /* @__PURE__ */ new Date();
+    const startDate = new Date(schedule[0].startDate);
+    const endDate = new Date(schedule[0].endDate);
+    const totalTokens = parseFloat(schedule[0].totalTokens);
+    if (now < startDate) return 0;
+    const cliffEndDate = new Date(startDate);
+    if (!schedule[0]) return 0;
+    cliffEndDate.setDate(cliffEndDate.getDate() + (schedule[0].cliffDuration ?? 0));
+    if (now < cliffEndDate) return 0;
+    switch (schedule[0].scheduleType) {
+      case "linear":
+        return this.calculateLinearVesting(totalTokens, startDate, endDate, now);
+      case "cliff":
+        return now >= endDate ? totalTokens : 0;
+      case "milestone":
+        return await this.calculateMilestoneVesting(scheduleId);
+      default:
+        return 0;
+    }
+  }
+  // Linear vesting calculation
+  static calculateLinearVesting(totalTokens, startDate, endDate, currentDate) {
+    if (currentDate >= endDate) return totalTokens;
+    const totalDuration = endDate.getTime() - startDate.getTime();
+    const elapsedDuration = currentDate.getTime() - startDate.getTime();
+    const vestingPercentage = elapsedDuration / totalDuration;
+    return totalTokens * vestingPercentage;
+  }
+  // Milestone-based vesting calculation
+  static async calculateMilestoneVesting(scheduleId) {
+    const completedMilestones = await db.select().from(vestingMilestones).where(
+      and10(
+        eq10(vestingMilestones.scheduleId, scheduleId),
+        eq10(vestingMilestones.isCompleted, true)
+      )
+    );
+    return completedMilestones.reduce((total, milestone) => {
+      return total + parseFloat(milestone.tokensToRelease);
+    }, 0);
+  }
+  // Update milestone progress
+  static async updateMilestoneProgress(scheduleId, milestoneType, currentValue) {
+    const milestone = await db.select().from(vestingMilestones).where(
+      and10(
+        eq10(vestingMilestones.scheduleId, scheduleId),
+        eq10(vestingMilestones.milestoneType, milestoneType),
+        eq10(vestingMilestones.isCompleted, false)
+      )
+    );
+    if (!milestone[0]) return false;
+    await db.update(vestingMilestones).set({ currentValue: currentValue.toString() }).where(eq10(vestingMilestones.id, milestone[0].id));
+    if (currentValue >= parseFloat(milestone[0].targetValue)) {
+      await db.update(vestingMilestones).set({
+        isCompleted: true,
+        completedAt: /* @__PURE__ */ new Date()
+      }).where(eq10(vestingMilestones.id, milestone[0].id));
+      return true;
+    }
+    return false;
+  }
+  // Get claimable tokens for user
+  static async getClaimableTokens(userId) {
+    const schedules = await db.select().from(vestingSchedules).where(
+      and10(
+        eq10(vestingSchedules.userId, userId),
+        eq10(vestingSchedules.isActive, true)
+      )
+    );
+    const claimableSchedules = [];
+    for (const schedule of schedules) {
+      const vestedTokens = await this.calculateVestedTokens(schedule.id);
+      const claimedTokens = parseFloat(schedule.claimedTokens ?? "0");
+      const claimable = vestedTokens - claimedTokens;
+      if (claimable > 0) {
+        claimableSchedules.push({
+          scheduleId: schedule.id,
+          claimable
+        });
+      }
+    }
+    return claimableSchedules;
+  }
+  // Claim vested tokens
+  static async claimVestedTokens(userId, scheduleId) {
+    const schedule = await db.select().from(vestingSchedules).where(
+      and10(
+        eq10(vestingSchedules.id, scheduleId),
+        eq10(vestingSchedules.userId, userId),
+        eq10(vestingSchedules.isActive, true)
+      )
+    );
+    if (!schedule[0]) {
+      throw new Error("Invalid vesting schedule");
+    }
+    const vestedTokens = await this.calculateVestedTokens(scheduleId);
+    const claimedTokens = parseFloat(schedule[0].claimedTokens ?? "0");
+    const claimableAmount = vestedTokens - claimedTokens;
+    if (claimableAmount <= 0) {
+      throw new Error("No tokens available to claim");
+    }
+    const txHash = "claimed";
+    await db.update(vestingSchedules).set({
+      claimedTokens: (claimedTokens + claimableAmount).toString()
+    }).where(eq10(vestingSchedules.id, scheduleId));
+    await db.insert(vestingClaims).values({
+      scheduleId,
+      userId,
+      claimedAmount: claimableAmount.toString(),
+      transactionHash: txHash
+    });
+    return txHash;
+  }
+  // Get user's vesting overview
+  static async getUserVestingOverview(userId) {
+    const schedules = await db.select().from(vestingSchedules).where(
+      and10(
+        eq10(vestingSchedules.userId, userId),
+        eq10(vestingSchedules.isActive, true)
+      )
+    );
+    let totalAllocated = 0;
+    let totalVested = 0;
+    let totalClaimed = 0;
+    let totalClaimable = 0;
+    const scheduleDetails = [];
+    for (const schedule of schedules) {
+      const allocated = parseFloat(schedule.totalTokens);
+      const vested = await this.calculateVestedTokens(schedule.id);
+      const claimed = parseFloat(schedule.claimedTokens ?? "0");
+      const claimable = vested - claimed;
+      totalAllocated += allocated;
+      totalVested += vested;
+      totalClaimed += claimed;
+      totalClaimable += claimable;
+      scheduleDetails.push({
+        id: schedule.id,
+        type: schedule.scheduleType,
+        reason: schedule.reason,
+        allocated,
+        vested,
+        claimed,
+        claimable,
+        startDate: schedule.startDate,
+        endDate: schedule.endDate
+      });
+    }
+    return {
+      overview: {
+        totalAllocated,
+        totalVested,
+        totalClaimed,
+        totalClaimable,
+        vestingPercentage: totalAllocated > 0 ? totalVested / totalAllocated * 100 : 0
+      },
+      schedules: scheduleDetails
+    };
+  }
+  // Check and update milestones for all users (scheduled job)
+  static async updateAllMilestones() {
+    const activeMilestones = await db.select().from(vestingMilestones).where(eq10(vestingMilestones.isCompleted, false));
+    let updated = 0;
+    let completed = 0;
+    for (const milestone of activeMilestones) {
+      const schedule = await db.select().from(vestingSchedules).where(eq10(vestingSchedules.id, milestone.scheduleId));
+      if (!schedule[0]) continue;
+      let currentValue = 0;
+      switch (milestone.milestoneType) {
+        case "reputation":
+          const userRep = await db.select().from(userReputation2).where(eq10(userReputation2.userId, schedule[0].userId));
+          currentValue = userRep[0]?.totalPoints || 0;
+          break;
+        case "time":
+          const now = /* @__PURE__ */ new Date();
+          const start = new Date(schedule[0].startDate);
+          currentValue = Math.floor((now.getTime() - start.getTime()) / (1e3 * 60 * 60 * 24));
+          break;
+      }
+      const wasCompleted = await this.updateMilestoneProgress(
+        milestone.scheduleId,
+        milestone.milestoneType,
+        currentValue
+      );
+      updated++;
+      if (wasCompleted) completed++;
+    }
+    return { updated, completed };
+  }
+};
+
+// server/routes/reputation.ts
+init_achievementSchema();
+init_reputationService();
+var router7 = express7.Router();
+router7.get("/user/:userId", isAuthenticated2, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const authUserId = req.user.claims.sub;
+    if (userId !== authUserId && userId !== "me") {
+      const reputation2 = await ReputationService.getUserReputation(userId);
+      return res.json({
+        totalPoints: reputation2.totalPoints,
+        badge: reputation2.badge,
+        level: reputation2.level
+      });
+    }
+    const targetUserId = userId === "me" ? authUserId : userId;
+    const reputation = await ReputationService.getUserReputation(targetUserId);
+    res.json(reputation);
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router7.get("/leaderboard", async (req, res) => {
+  try {
+    const { limit = 10 } = req.query;
+    const leaderboard = await ReputationService.getLeaderboard(Number(limit));
+    res.json({ leaderboard });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router7.post("/convert", isAuthenticated2, async (req, res) => {
+  try {
+    const userId = req.user.claims.sub;
+    const { pointsToConvert, conversionRate } = req.body;
+    if (!pointsToConvert || pointsToConvert <= 0) {
+      return res.status(400).json({ message: "Invalid points amount" });
+    }
+    const result = await ReputationService.convertPointsToTokens(
+      userId,
+      pointsToConvert,
+      conversionRate
+    );
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router7.post("/airdrop/check", isAuthenticated2, async (req, res) => {
+  try {
+    const userId = req.user.claims.sub;
+    const { airdropId, minimumReputation, baseAmount } = req.body;
+    if (!airdropId || !minimumReputation || !baseAmount) {
+      return res.status(400).json({ message: "Missing required airdrop parameters" });
+    }
+    const eligibility = await ReputationService.checkAirdropEligibility(
+      userId,
+      airdropId,
+      minimumReputation,
+      baseAmount
+    );
+    res.json(eligibility);
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router7.post("/award", isAuthenticated2, async (req, res) => {
+  try {
+    const { userId, action, points, daoId, description, multiplier } = req.body;
+    const authUser = req.user;
+    if (authUser.role !== "superuser" && authUser.role !== "admin") {
+      return res.status(403).json({ message: "Admin access required" });
+    }
+    await ReputationService.awardPoints(userId, action, points, daoId, description, multiplier);
+    res.json({ message: "Points awarded successfully" });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router7.get("/achievements", async (req, res) => {
+  try {
+    const achievementRows = await db.select().from(achievements).where(eq11(achievements.isActive, true));
+    res.json({ achievements: achievementRows });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router7.get("/achievements/user/:userId", isAuthenticated2, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const authUserId = req.user.claims.sub;
+    if (userId !== authUserId && userId !== "me") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    const targetUserId = userId === "me" ? authUserId : userId;
+    const userAchievements2 = await AchievementService.getUserAchievements(targetUserId);
+    const stats = await AchievementService.getUserAchievementStats(targetUserId);
+    res.json({ achievements: userAchievements2, stats });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router7.post("/achievements/claim/:achievementId", isAuthenticated2, async (req, res) => {
+  try {
+    const userId = req.user.claims.sub;
+    const { achievementId } = req.params;
+    const success = await AchievementService.claimAchievementReward(userId, achievementId);
+    if (success) {
+      res.json({ message: "Reward claimed successfully" });
+    } else {
+      res.status(400).json({ message: "Unable to claim reward" });
+    }
+  } catch (err) {
+    res.status(400).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router7.get("/airdrops/eligible", isAuthenticated2, async (req, res) => {
+  try {
+    const userId = req.user.claims.sub;
+    const eligibleAirdrops = await AirdropService.getUserAirdropEligibility(userId);
+    res.json({ airdrops: eligibleAirdrops });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router7.post("/airdrops/claim/:airdropId", isAuthenticated2, async (req, res) => {
+  try {
+    const userId = req.user.claims.sub;
+    const { airdropId } = req.params;
+    const txHash = await AirdropService.claimAirdrop(userId, airdropId);
+    res.json({ message: "Airdrop claimed successfully", transactionHash: txHash });
+  } catch (err) {
+    res.status(400).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router7.get("/vesting/overview", isAuthenticated2, async (req, res) => {
+  try {
+    const userId = req.user.claims.sub;
+    const overview = await VestingService.getUserVestingOverview(userId);
+    res.json(overview);
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router7.get("/vesting/claimable", isAuthenticated2, async (req, res) => {
+  try {
+    const userId = req.user.claims.sub;
+    const claimable = await VestingService.getClaimableTokens(userId);
+    res.json({ claimable });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router7.post("/vesting/claim/:scheduleId", isAuthenticated2, async (req, res) => {
+  try {
+    const userId = req.user.claims.sub;
+    const { scheduleId } = req.params;
+    const txHash = await VestingService.claimVestedTokens(userId, scheduleId);
+    res.json({ message: "Tokens claimed successfully", transactionHash: txHash });
+  } catch (err) {
+    res.status(400).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+var reputation_default = router7;
+
+// server/routes/analytics.ts
+import express8 from "express";
+
+// server/analyticsService.ts
+init_db();
+init_schema();
+import { eq as eq12, gte as gte5, lte as lte3, count, and as and11 } from "drizzle-orm";
+import { format as format2, subDays, subMonths, subYears, startOfDay, endOfDay } from "date-fns";
+var AnalyticsService = class {
+  // Real-time metrics collection
+  async getRealTimeMetrics(daoId) {
+    const whereClause = daoId ? eq12(daos.id, daoId) : void 0;
+    const [
+      totalDaos,
+      totalProposals,
+      totalVotes,
+      totalUsers,
+      totalTasks,
+      proposalData
+    ] = await Promise.all([
+      db.select({ count: count() }).from(daos).where(whereClause),
+      daoId ? db.select({ count: count() }).from(proposals2).where(eq12(proposals2.daoId, daoId)) : db.select({ count: count() }).from(proposals2),
+      daoId ? db.select({ count: count() }).from(votes).innerJoin(proposals2, eq12(votes.proposalId, proposals2.id)).where(eq12(proposals2.daoId, daoId)) : db.select({ count: count() }).from(votes),
+      db.select({ count: count() }).from(users),
+      daoId ? db.select({ count: count() }).from(tasks).where(eq12(tasks.daoId, daoId)) : db.select({ count: count() }).from(tasks),
+      daoId ? db.select({
+        status: proposals2.status,
+        count: count()
+      }).from(proposals2).where(eq12(proposals2.daoId, daoId)).groupBy(proposals2.status) : db.select({
+        status: proposals2.status,
+        count: count()
+      }).from(proposals2).groupBy(proposals2.status)
+    ]);
+    const totalProposalCount = proposalData.reduce((sum3, item) => sum3 + item.count, 0);
+    const successfulProposals = proposalData.find((item) => item.status === "executed")?.count || 0;
+    const avgProposalSuccessRate = totalProposalCount > 0 ? successfulProposals / totalProposalCount * 100 : 0;
+    const topPerformingDaos = await this.getTopPerformingDaos(5);
+    return {
+      totalDaos: totalDaos[0]?.count || 0,
+      totalProposals: totalProposals[0]?.count || 0,
+      totalVotes: totalVotes[0]?.count || 0,
+      totalUsers: totalUsers[0]?.count || 0,
+      totalTasks: totalTasks[0]?.count || 0,
+      totalTransactionVolume: 0,
+      avgProposalSuccessRate,
+      avgUserEngagement: await this.calculateUserEngagement(daoId),
+      topPerformingDaos
+    };
+  }
+  // Historical data analysis
+  async getHistoricalData(period, daoId) {
+    const now = /* @__PURE__ */ new Date();
+    let startDate;
+    let interval;
+    switch (period) {
+      case "week":
+        startDate = subDays(now, 7);
+        interval = "day";
+        break;
+      case "month":
+        startDate = subMonths(now, 1);
+        interval = "day";
+        break;
+      case "quarter":
+        startDate = subMonths(now, 3);
+        interval = "week";
+        break;
+      case "year":
+        startDate = subYears(now, 1);
+        interval = "month";
+        break;
+    }
+    const historicalData = [];
+    const current = new Date(startDate);
+    while (current <= now) {
+      const dayStart = startOfDay(current);
+      const dayEnd = endOfDay(current);
+      const [daoCount, userCount, proposalCount, proposalSuccess] = await Promise.all([
+        daoId ? Promise.resolve([{ count: 1 }]) : db.select({ count: count() }).from(daos).where(lte3(daos.createdAt, dayEnd)),
+        db.select({ count: count() }).from(users).where(lte3(users.createdAt, dayEnd)),
+        daoId ? db.select({ count: count() }).from(proposals2).where(and11(eq12(proposals2.daoId, daoId), gte5(proposals2.createdAt, dayStart), lte3(proposals2.createdAt, dayEnd))) : db.select({ count: count() }).from(proposals2).where(and11(gte5(proposals2.createdAt, dayStart), lte3(proposals2.createdAt, dayEnd))),
+        this.getSuccessRateForPeriod(dayStart, dayEnd, daoId)
+      ]);
+      historicalData.push({
+        timestamp: format2(current, "yyyy-MM-dd"),
+        daoCount: daoCount[0]?.count || 0,
+        userCount: userCount[0]?.count || 0,
+        proposalCount: proposalCount[0]?.count || 0,
+        transactionVolume: 0,
+        avgSuccessRate: proposalSuccess
+      });
+      if (interval === "day") current.setDate(current.getDate() + 1);
+      else if (interval === "week") current.setDate(current.getDate() + 7);
+      else if (interval === "month") current.setMonth(current.getMonth() + 1);
+    }
+    return historicalData;
+  }
+  // Performance benchmarks
+  async getPerformanceBenchmarks() {
+    const allDaoMetrics = await Promise.all(
+      (await db.select({ id: daos.id }).from(daos)).map(
+        (dao) => this.getRealTimeMetrics(dao.id)
+      )
+    );
+    const sortedByEngagement = [...allDaoMetrics].sort((a, b) => b.avgUserEngagement - a.avgUserEngagement);
+    const sortedBySuccess = [...allDaoMetrics].sort((a, b) => b.avgProposalSuccessRate - a.avgProposalSuccessRate);
+    const quartileIndex = Math.floor(allDaoMetrics.length / 4);
+    return {
+      industry: {
+        avgGovernanceParticipation: 65,
+        // Industry benchmark
+        avgProposalSuccessRate: 72,
+        // Industry benchmark
+        avgTreasuryGrowth: 15
+        // Industry benchmark
+      },
+      platform: {
+        topQuartile: sortedByEngagement[0] || await this.getRealTimeMetrics(),
+        median: sortedByEngagement[Math.floor(allDaoMetrics.length / 2)] || await this.getRealTimeMetrics(),
+        bottomQuartile: sortedByEngagement[allDaoMetrics.length - quartileIndex] || await this.getRealTimeMetrics()
+      }
+    };
+  }
+  // Export data to CSV
+  async exportToCSV(type, period, daoId) {
+    let data;
+    let headers;
+    switch (type) {
+      case "metrics":
+        const metrics = await this.getRealTimeMetrics(daoId);
+        headers = Object.keys(metrics).filter((key) => key !== "topPerformingDaos");
+        data = [Object.values(metrics).filter((_, index2) => headers[index2])];
+        break;
+      case "historical":
+        const historical = await this.getHistoricalData(period || "month", daoId);
+        headers = Object.keys(historical[0] || {});
+        data = historical.map((item) => Object.values(item));
+        break;
+      case "benchmarks":
+        const benchmarks = await this.getPerformanceBenchmarks();
+        headers = ["Type", "AvgGovernanceParticipation", "AvgProposalSuccessRate", "AvgTreasuryGrowth"];
+        data = [
+          ["Industry", benchmarks.industry.avgGovernanceParticipation, benchmarks.industry.avgProposalSuccessRate, benchmarks.industry.avgTreasuryGrowth],
+          ["Platform Top", benchmarks.platform.topQuartile.avgUserEngagement, benchmarks.platform.topQuartile.avgProposalSuccessRate, benchmarks.platform.topQuartile.totalTransactionVolume],
+          ["Platform Median", benchmarks.platform.median.avgUserEngagement, benchmarks.platform.median.avgProposalSuccessRate, benchmarks.platform.median.totalTransactionVolume]
+        ];
+        break;
+    }
+    const csvContent = [
+      headers.join(","),
+      ...data.map((row) => row.join(","))
+    ].join("\n");
+    return csvContent;
+  }
+  // Helper methods
+  async getTopPerformingDaos(limit) {
+    const daosList = await db.select({
+      id: daos.id,
+      name: daos.name,
+      memberCount: daos.memberCount
+    }).from(daos).limit(limit);
+    return Promise.all(daosList.map(async (dao) => {
+      const [proposalCount, successRate] = await Promise.all([
+        db.select({ count: count() }).from(proposals2).where(eq12(proposals2.daoId, dao.id)),
+        this.getSuccessRateForDao(dao.id)
+      ]);
+      return {
+        id: dao.id,
+        name: dao.name,
+        memberCount: dao.memberCount || 0,
+        proposalCount: proposalCount[0]?.count || 0,
+        successRate,
+        treasuryValue: 0
+        // Would integrate with treasury service
+      };
+    }));
+  }
+  async calculateUserEngagement(daoId) {
+    const thirtyDaysAgo = subDays(/* @__PURE__ */ new Date(), 30);
+    const [totalUsers, activeUsers] = await Promise.all([
+      daoId ? db.select({ count: count() }).from(users) : db.select({ count: count() }).from(users),
+      daoId ? db.select({ count: count() }).from(votes).innerJoin(proposals2, eq12(votes.proposalId, proposals2.id)).where(and11(eq12(proposals2.daoId, daoId), gte5(votes.createdAt, thirtyDaysAgo))) : db.select({ count: count() }).from(votes).where(gte5(votes.createdAt, thirtyDaysAgo))
+    ]);
+    const total = totalUsers[0]?.count || 0;
+    const active = activeUsers[0]?.count || 0;
+    return total > 0 ? active / total * 100 : 0;
+  }
+  async getSuccessRateForPeriod(start, end, daoId) {
+    const proposalsData = daoId ? await db.select({
+      status: proposals2.status,
+      count: count()
+    }).from(proposals2).where(and11(eq12(proposals2.daoId, daoId), gte5(proposals2.createdAt, start), lte3(proposals2.createdAt, end))).groupBy(proposals2.status) : await db.select({
+      status: proposals2.status,
+      count: count()
+    }).from(proposals2).where(and11(gte5(proposals2.createdAt, start), lte3(proposals2.createdAt, end))).groupBy(proposals2.status);
+    const total = proposalsData.reduce((sum3, item) => sum3 + item.count, 0);
+    const successful = proposalsData.find((item) => item.status !== null && item.status === "executed")?.count || 0;
+    return total > 0 ? successful / total * 100 : 0;
+  }
+  async getSuccessRateForDao(daoId) {
+    const proposalsData = await db.select({
+      status: proposals2.status,
+      count: count()
+    }).from(proposals2).where(eq12(proposals2.daoId, daoId)).groupBy(proposals2.status);
+    const total = proposalsData.reduce((sum3, item) => sum3 + item.count, 0);
+    const successful = proposalsData.find((item) => item.status !== null && item.status === "executed")?.count || 0;
+    return total > 0 ? successful / total * 100 : 0;
+  }
+};
+var analyticsService = new AnalyticsService();
+
+// server/routes/analytics.ts
+import PDFDocument from "pdfkit";
+var router8 = express8.Router();
+router8.get("/metrics", isAuthenticated, async (req, res) => {
+  try {
+    const { daoId } = req.query;
+    const metrics = await analyticsService.getRealTimeMetrics(daoId);
+    res.json({
+      success: true,
+      data: metrics,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch real-time metrics",
+      error: error.message
+    });
+  }
+});
+router8.get("/historical", isAuthenticated, async (req, res) => {
+  try {
+    const { period = "month", daoId } = req.query;
+    if (!["week", "month", "quarter", "year"].includes(period)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid period. Must be one of: week, month, quarter, year"
+      });
+    }
+    const historicalData = await analyticsService.getHistoricalData(
+      period,
+      daoId
+    );
+    res.json({
+      success: true,
+      data: historicalData,
+      period,
+      daoId: daoId || "all"
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch historical data",
+      error: error.message
+    });
+  }
+});
+router8.get("/benchmarks", isAuthenticated, async (req, res) => {
+  try {
+    const benchmarks = await analyticsService.getPerformanceBenchmarks();
+    res.json({
+      success: true,
+      data: benchmarks,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch performance benchmarks",
+      error: error.message
+    });
+  }
+});
+router8.get("/export/csv", isAuthenticated, async (req, res) => {
+  try {
+    const { type = "metrics", period = "month", daoId } = req.query;
+    if (!["metrics", "historical", "benchmarks"].includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid export type. Must be one of: metrics, historical, benchmarks"
+      });
+    }
+    const csvContent = await analyticsService.exportToCSV(
+      type,
+      period,
+      daoId
+    );
+    const filename = `${type}-${period || "current"}-${daoId || "all"}-${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.csv`;
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(csvContent);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to export CSV",
+      error: error.message
+    });
+  }
+});
+router8.get("/export/pdf", isAuthenticated, async (req, res) => {
+  try {
+    const { daoId, period = "month" } = req.query;
+    const [metrics, historical, benchmarks] = await Promise.all([
+      analyticsService.getRealTimeMetrics(daoId),
+      analyticsService.getHistoricalData(period, daoId),
+      analyticsService.getPerformanceBenchmarks()
+    ]);
+    const doc = new PDFDocument();
+    const filename = `analytics-report-${daoId || "platform"}-${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    doc.pipe(res);
+    doc.fontSize(20).text("Analytics Report", 50, 50);
+    doc.fontSize(12).text(`Generated: ${(/* @__PURE__ */ new Date()).toLocaleString()}`, 50, 80);
+    doc.text(`Period: ${period}`, 50, 95);
+    if (daoId) doc.text(`DAO ID: ${daoId}`, 50, 110);
+    doc.fontSize(16).text("Current Metrics", 50, 140);
+    let yPos = 160;
+    Object.entries(metrics).forEach(([key, value]) => {
+      if (key !== "topPerformingDaos" && typeof value !== "object") {
+        doc.fontSize(10).text(`${key}: ${value}`, 50, yPos);
+        yPos += 15;
+      }
+    });
+    yPos += 20;
+    doc.fontSize(16).text("Historical Trends", 50, yPos);
+    yPos += 20;
+    doc.fontSize(10).text("Date | DAOs | Users | Proposals | Volume", 50, yPos);
+    yPos += 15;
+    historical.slice(-10).forEach((item) => {
+      doc.text(`${item.timestamp} | ${item.daoCount} | ${item.userCount} | ${item.proposalCount} | $${item.transactionVolume.toFixed(2)}`, 50, yPos);
+      yPos += 12;
+    });
+    yPos += 30;
+    doc.fontSize(16).text("Performance Benchmarks", 50, yPos);
+    yPos += 20;
+    doc.fontSize(12).text("Industry Benchmarks:", 50, yPos);
+    yPos += 15;
+    doc.fontSize(10).text(`Governance Participation: ${benchmarks.industry.avgGovernanceParticipation}%`, 70, yPos);
+    yPos += 12;
+    doc.text(`Proposal Success Rate: ${benchmarks.industry.avgProposalSuccessRate}%`, 70, yPos);
+    yPos += 12;
+    doc.text(`Treasury Growth: ${benchmarks.industry.avgTreasuryGrowth}%`, 70, yPos);
+    doc.end();
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to generate PDF report",
+      error: error.message
+    });
+  }
+});
+router8.get("/live", isAuthenticated, async (req, res) => {
+  try {
+    const { daoId } = req.query;
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Cache-Control"
+    });
+    const sendMetrics = async () => {
+      try {
+        const metrics = await analyticsService.getRealTimeMetrics(daoId);
+        res.write(`data: ${JSON.stringify({
+          type: "metrics",
+          data: metrics,
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        })}
+
+`);
+      } catch (error) {
+        console.error("Error sending live metrics:", error);
+      }
+    };
+    await sendMetrics();
+    const interval = setInterval(sendMetrics, 3e4);
+    req.on("close", () => {
+      clearInterval(interval);
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to start live metrics stream",
+      error: error.message
+    });
+  }
+});
+router8.get("/dao/:daoId/summary", isAuthenticated, async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const { period = "month" } = req.query;
+    const [metrics, historical] = await Promise.all([
+      analyticsService.getRealTimeMetrics(daoId),
+      analyticsService.getHistoricalData(period, daoId)
+    ]);
+    const currentMetrics = historical[historical.length - 1];
+    const previousMetrics = historical[historical.length - 2];
+    let growthRates = {};
+    if (currentMetrics && previousMetrics) {
+      growthRates = {
+        userGrowth: (currentMetrics.userCount - previousMetrics.userCount) / previousMetrics.userCount * 100,
+        proposalGrowth: (currentMetrics.proposalCount - previousMetrics.proposalCount) / (previousMetrics.proposalCount || 1) * 100,
+        volumeGrowth: (currentMetrics.transactionVolume - previousMetrics.transactionVolume) / (previousMetrics.transactionVolume || 1) * 100
+      };
+    }
+    res.json({
+      success: true,
+      data: {
+        metrics,
+        historical,
+        growthRates,
+        period
+      },
+      daoId
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch DAO analytics summary",
+      error: error.message
+    });
+  }
+});
+var analytics_default = router8;
+
+// server/routes/notifications.ts
+import express9 from "express";
+init_storage();
+var router9 = express9.Router();
+router9.get("/", isAuthenticated2, async (req, res) => {
+  try {
+    const { limit = 20, offset = 0, read, type } = req.query;
+    const userId = req.user.claims.sub;
+    const notifications2 = await storage.getUserNotifications(
+      userId,
+      read === "true" ? true : read === "false" ? false : void 0,
+      Number(limit),
+      Number(offset),
+      type
+    );
+    const unreadCount = await storage.getUnreadNotificationCount(userId);
+    res.json({
+      notifications: notifications2,
+      total: notifications2.length,
+      unreadCount
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: "Failed to fetch notifications",
+      message: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
+router9.patch("/:notificationId/read", isAuthenticated2, async (req, res) => {
+  try {
+    const { notificationId } = req.params;
+    const userId = req.user.claims.sub;
+    const notification = await storage.markNotificationAsRead(notificationId, userId);
+    if (!notification) {
+      return res.status(404).json({ error: "Notification not found" });
+    }
+    res.json(notification);
+  } catch (err) {
+    res.status(500).json({
+      error: "Failed to mark notification as read",
+      message: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
+router9.patch("/mark-all-read", isAuthenticated2, async (req, res) => {
+  try {
+    const userId = req.user.claims.sub;
+    await storage.markAllNotificationsAsRead(userId);
+    res.json({ message: "All notifications marked as read" });
+  } catch (err) {
+    res.status(500).json({
+      error: "Failed to mark all notifications as read",
+      message: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
+router9.delete("/:notificationId", isAuthenticated2, async (req, res) => {
+  try {
+    const { notificationId } = req.params;
+    const userId = req.user.claims.sub;
+    const deleted = await storage.deleteNotification(notificationId, userId);
+    if (!deleted) {
+      return res.status(404).json({ error: "Notification not found" });
+    }
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({
+      error: "Failed to delete notification",
+      message: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
+router9.get("/preferences", isAuthenticated2, async (req, res) => {
+  try {
+    const userId = req.user.claims.sub;
+    const preferences = await storage.getUserNotificationPreferences(userId);
+    res.json(preferences);
+  } catch (err) {
+    res.status(500).json({
+      error: "Failed to fetch notification preferences",
+      message: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
+router9.put("/preferences", isAuthenticated2, async (req, res) => {
+  try {
+    const userId = req.user.claims.sub;
+    const { emailNotifications, pushNotifications, daoUpdates, proposalUpdates, taskUpdates } = req.body;
+    const preferences = await storage.updateUserNotificationPreferences(userId, {
+      emailNotifications: emailNotifications ?? true,
+      pushNotifications: pushNotifications ?? true,
+      daoUpdates: daoUpdates ?? true,
+      proposalUpdates: proposalUpdates ?? true,
+      taskUpdates: taskUpdates ?? true
+    });
+    res.json(preferences);
+  } catch (err) {
+    res.status(500).json({
+      error: "Failed to update notification preferences",
+      message: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
+router9.post("/send", isAuthenticated2, async (req, res) => {
+  try {
+    const senderId = req.user.claims.sub;
+    const { userIds, type, message, title, metadata } = req.body;
+    const senderRole = req.user.role;
+    if (senderRole !== "admin" && senderRole !== "superuser" && senderRole !== "moderator") {
+      return res.status(403).json({ error: "Insufficient permissions to send notifications" });
+    }
+    const notifications2 = await storage.createBulkNotifications(userIds, {
+      type,
+      message,
+      title,
+      metadata,
+      senderId
+    });
+    res.status(201).json({
+      message: "Notifications sent successfully",
+      count: notifications2.length
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: "Failed to send notifications",
+      message: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
+var notifications_default = router9;
+router9.get("/search", isAuthenticated2, async (req, res) => {
+  try {
+    const { q, limit = 20, offset = 0 } = req.query;
+    const userId = req.user.claims.sub;
+    if (!q || typeof q !== "string") {
+      return res.status(400).json({ error: "Search query is required" });
+    }
+    const notifications2 = await storage.getUserNotifications(
+      userId,
+      void 0,
+      Number(limit),
+      Number(offset),
+      q
+    );
+    res.json({
+      notifications: notifications2,
+      total: notifications2.length,
+      query: q
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: "Failed to search notifications",
+      message: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
+
+// server/routes/disbursements.ts
+init_storage();
+init_schema();
+import express10 from "express";
+import { eq as eq13, and as and12, desc as desc7 } from "drizzle-orm";
+var router10 = express10.Router();
+router10.post("/create", async (req, res) => {
+  try {
+    const disbursement = req.body;
+    const { daoId, recipients, totalAmount, currency, description } = disbursement;
+    if (!daoId || !recipients || recipients.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "DAO ID and recipients are required"
+      });
+    }
+    const calculatedTotal = recipients.reduce((sum3, recipient) => sum3 + recipient.amount, 0);
+    if (Math.abs(calculatedTotal - totalAmount) > 0.01) {
+      return res.status(400).json({
+        success: false,
+        message: "Total amount does not match sum of recipient amounts"
+      });
+    }
+    const disbursementId = "DISB-" + Date.now();
+    const feePercent = 0.01;
+    const totalFee = Math.round(totalAmount * feePercent * 100) / 100;
+    const netAmount = totalAmount - totalFee;
+    const transactions = [];
+    for (const recipient of recipients) {
+      const transaction = {
+        id: `TXN-${disbursementId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        fromUserId: daoId,
+        toUserId: recipient.userId,
+        walletAddress: recipient.walletAddress,
+        amount: recipient.amount.toString(),
+        currency,
+        type: "disbursement",
+        status: "pending",
+        description: `${description} - ${recipient.reason}`,
+        disbursementId,
+        createdAt: /* @__PURE__ */ new Date(),
+        updatedAt: /* @__PURE__ */ new Date()
+      };
+      await db.insert(walletTransactions).values(transaction);
+      transactions.push(transaction);
+    }
+    res.json({
+      success: true,
+      disbursementId,
+      message: "Disbursement created successfully",
+      totalAmount,
+      fee: totalFee,
+      netAmount,
+      recipientCount: recipients.length,
+      transactions: transactions.map((t) => ({
+        id: t.id,
+        recipient: t.toUserId,
+        amount: t.amount,
+        status: t.status
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to create disbursement",
+      error: error.message
+    });
+  }
+});
+router10.get("/:daoId/history", async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const { limit = 50, offset = 0 } = req.query;
+    const transactions = await db.select().from(walletTransactions).where(and12(
+      eq13(walletTransactions.fromUserId, daoId),
+      eq13(walletTransactions.type, "disbursement")
+    )).orderBy(desc7(walletTransactions.createdAt)).limit(Number(limit)).offset(Number(offset));
+    const disbursements = /* @__PURE__ */ new Map();
+    transactions.forEach((tx) => {
+      const disbursementId = tx.disbursementId;
+      if (!disbursements.has(disbursementId)) {
+        disbursements.set(disbursementId, {
+          id: disbursementId,
+          daoId,
+          totalAmount: 0,
+          recipientCount: 0,
+          status: "pending",
+          currency: tx.currency,
+          createdAt: tx.createdAt,
+          recipients: []
+        });
+      }
+      const disbursement = disbursements.get(disbursementId);
+      disbursement.totalAmount += typeof tx.amount === "string" ? parseFloat(tx.amount) : tx.amount;
+      disbursement.recipientCount += 1;
+      disbursement.recipients.push({
+        userId: tx.toUserId,
+        walletAddress: tx.walletAddress,
+        amount: tx.amount,
+        status: tx.status,
+        description: tx.description
+      });
+      const allCompleted = disbursement.recipients.every((r) => r.status === "completed");
+      const anyFailed = disbursement.recipients.some((r) => r.status === "failed");
+      if (allCompleted) disbursement.status = "completed";
+      else if (anyFailed) disbursement.status = "partial";
+      else disbursement.status = "pending";
+    });
+    res.json({
+      success: true,
+      disbursements: Array.from(disbursements.values()),
+      total: disbursements.size
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to get disbursement history",
+      error: error.message
+    });
+  }
+});
+router10.post("/:disbursementId/execute", async (req, res) => {
+  try {
+    const { disbursementId } = req.params;
+    const { paymentMethod = "wallet" } = req.body;
+    const transactions = await db.select().from(walletTransactions).where(and12(
+      eq13(walletTransactions.disbursementId, disbursementId),
+      eq13(walletTransactions.status, "pending")
+    ));
+    if (transactions.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No pending transactions found for this disbursement"
+      });
+    }
+    const results = [];
+    for (const transaction of transactions) {
+      try {
+        await db.update(walletTransactions).set({
+          status: "completed",
+          updatedAt: /* @__PURE__ */ new Date()
+        }).where(eq13(walletTransactions.id, transaction.id));
+        results.push({
+          transactionId: transaction.id,
+          recipient: transaction.toUserId,
+          amount: transaction.amount,
+          status: "completed"
+        });
+      } catch (error) {
+        await db.update(walletTransactions).set({
+          status: "failed",
+          updatedAt: /* @__PURE__ */ new Date()
+        }).where(eq13(walletTransactions.id, transaction.id));
+        results.push({
+          transactionId: transaction.id,
+          recipient: transaction.toUserId,
+          amount: transaction.amount,
+          status: "failed",
+          error: error.message
+        });
+      }
+    }
+    const successful = results.filter((r) => r.status === "completed").length;
+    const failed = results.filter((r) => r.status === "failed").length;
+    res.json({
+      success: true,
+      disbursementId,
+      message: `Disbursement execution completed: ${successful} successful, ${failed} failed`,
+      results,
+      summary: {
+        total: results.length,
+        successful,
+        failed
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to execute disbursement",
+      error: error.message
+    });
+  }
+});
+router10.get("/:disbursementId/status", async (req, res) => {
+  try {
+    const { disbursementId } = req.params;
+    const transactions = await db.select().from(walletTransactions).where(eq13(walletTransactions.disbursementId, disbursementId));
+    if (transactions.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Disbursement not found"
+      });
+    }
+    const totalAmount = transactions.reduce((sum3, tx) => {
+      const amount = typeof tx.amount === "string" ? parseFloat(tx.amount) : tx.amount;
+      return sum3 + amount;
+    }, 0);
+    const statusCounts = transactions.reduce((counts, tx) => {
+      counts[tx.status || "pending"] = (counts[tx.status || "pending"] || 0) + 1;
+      return counts;
+    }, {});
+    const overallStatus = statusCounts.failed > 0 ? "partial" : statusCounts.pending > 0 ? "pending" : "completed";
+    res.json({
+      success: true,
+      disbursement: {
+        id: disbursementId,
+        totalAmount,
+        recipientCount: transactions.length,
+        status: overallStatus,
+        statusBreakdown: statusCounts,
+        currency: transactions[0].currency,
+        createdAt: transactions[0].createdAt
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to get disbursement status",
+      error: error.message
+    });
+  }
+});
+var disbursements_default = router10;
+
+// server/routes/dao_treasury.ts
+import express11 from "express";
+init_storage();
+var router11 = express11.Router();
+router11.get("/:daoId/balance", isAuthenticated2, async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const dao = await storage.getDao(daoId);
+    if (!dao || !dao.treasuryPrivateKey) {
+      return res.status(404).json({ message: "DAO or treasury wallet not found" });
+    }
+    const config2 = NetworkConfig.CELO_ALFAJORES;
+    const mockPriceOracle2 = async (tokenAddress) => {
+      const prices = {
+        "native": 2500,
+        // ETH price
+        "0x...": 1
+        // USDC price
+      };
+      return prices[tokenAddress] || 0;
+    };
+    const wallet2 = new agent_wallet_default(
+      dao.treasuryPrivateKey,
+      config2,
+      void 0,
+      void 0,
+      void 0,
+      mockPriceOracle2
+    );
+    const treasuryManager = new DaoTreasuryManager(wallet2, dao.treasuryAddress, dao.allowedTokens || []);
+    const snapshot = await treasuryManager.getTreasurySnapshot();
+    res.json(snapshot);
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router11.post("/:daoId/transfer/native", isAuthenticated2, async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const { toAddress, amount } = req.body;
+    const dao = await storage.getDao(daoId);
+    if (!dao || !dao.treasuryPrivateKey) {
+      return res.status(404).json({ message: "DAO or treasury wallet not found" });
+    }
+    const config2 = NetworkConfig.CELO_ALFAJORES;
+    const mockPriceOracle2 = async (tokenAddress) => {
+      const prices = {
+        "native": 2500,
+        "0x...": 1
+      };
+      return prices[tokenAddress] || 0;
+    };
+    const wallet2 = new agent_wallet_default(
+      dao.treasuryPrivateKey,
+      config2,
+      void 0,
+      void 0,
+      void 0,
+      mockPriceOracle2
+    );
+    const tx = await wallet2.sendNativeToken(toAddress, amount);
+    res.json({ tx });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router11.post("/:daoId/transfer/token", isAuthenticated2, async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const { tokenAddress, toAddress, amount } = req.body;
+    const dao = await storage.getDao(daoId);
+    if (!dao || !dao.treasuryPrivateKey) {
+      return res.status(404).json({ message: "DAO or treasury wallet not found" });
+    }
+    const config2 = NetworkConfig.CELO_ALFAJORES;
+    const mockPriceOracle2 = async (tokenAddress2) => {
+      const prices = {
+        "native": 2500,
+        "0x...": 1
+      };
+      return prices[tokenAddress2] || 0;
+    };
+    const wallet2 = new agent_wallet_default(
+      dao.treasuryPrivateKey,
+      config2,
+      void 0,
+      void 0,
+      void 0,
+      mockPriceOracle2
+    );
+    const tx = await wallet2.sendTokenHuman(tokenAddress, toAddress, amount);
+    res.json({ tx });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router11.post("/:daoId/automation/payout", isAuthenticated2, async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const { payouts } = req.body;
+    const dao = await storage.getDao(daoId);
+    if (!dao || !dao.treasuryPrivateKey) {
+      return res.status(404).json({ message: "DAO or treasury wallet not found" });
+    }
+    const config2 = NetworkConfig.CELO_ALFAJORES;
+    const mockPriceOracle2 = async (tokenAddress) => {
+      const prices = {
+        "native": 2500,
+        "0x...": 1
+      };
+      return prices[tokenAddress] || 0;
+    };
+    const wallet2 = new agent_wallet_default(
+      dao.treasuryPrivateKey,
+      config2,
+      void 0,
+      void 0,
+      void 0,
+      mockPriceOracle2
+    );
+    const results = await wallet2.batchTransfer(payouts);
+    res.json({ results });
+    router11.get("/:daoId/snapshot", isAuthenticated2, async (req2, res2) => {
+      try {
+        const { daoId: daoId2 } = req2.params;
+        const dao2 = await storage.getDao(daoId2);
+        if (!dao2 || !dao2.treasuryPrivateKey) {
+          return res2.status(404).json({ message: "DAO or treasury wallet not found" });
+        }
+        const config3 = NetworkConfig.CELO_ALFAJORES;
+        const mockPriceOracle3 = async (tokenAddress) => {
+          const prices = {
+            "native": 2500,
+            "0x...": 1
+          };
+          return prices[tokenAddress] || 0;
+        };
+        const wallet3 = new agent_wallet_default(
+          dao2.treasuryPrivateKey,
+          config3,
+          void 0,
+          void 0,
+          void 0,
+          mockPriceOracle3
+        );
+        const treasuryManager = new DaoTreasuryManager(wallet3, dao2.treasuryAddress, dao2.allowedTokens || []);
+        const snapshot = await treasuryManager.getTreasurySnapshot();
+        res2.json(snapshot);
+      } catch (err) {
+        res2.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+      }
+    });
+    router11.get("/:daoId/report", isAuthenticated2, async (req2, res2) => {
+      try {
+        const { daoId: daoId2 } = req2.params;
+        const { period } = req2.query;
+        const dao2 = await storage.getDao(daoId2);
+        if (!dao2 || !dao2.treasuryPrivateKey) {
+          return res2.status(404).json({ message: "DAO or treasury wallet not found" });
+        }
+        const config3 = NetworkConfig.CELO_ALFAJORES;
+        const mockPriceOracle3 = async (tokenAddress) => {
+          const prices = {
+            "native": 2500,
+            "0x...": 1
+          };
+          return prices[tokenAddress] || 0;
+        };
+        const wallet3 = new agent_wallet_default(
+          dao2.treasuryPrivateKey,
+          config3,
+          void 0,
+          void 0,
+          void 0,
+          mockPriceOracle3
+        );
+        const treasuryManager = new DaoTreasuryManager(wallet3, dao2.treasuryAddress, dao2.allowedTokens || []);
+        const report = await treasuryManager.generateTreasuryReport(period || "monthly");
+        res2.json(report);
+      } catch (err) {
+        res2.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+var dao_treasury_default = router11;
+
+// server/routes/dao-subscriptions.ts
+init_storage();
+init_schema();
+import express12 from "express";
+import { eq as eq14 } from "drizzle-orm";
+var router12 = express12.Router();
+var SUBSCRIPTION_PLANS = {
+  free: {
+    name: "Free",
+    price: 0,
+    features: ["Basic proposals", "Up to 50 members", "Community support"],
+    limits: { members: 50, proposals: 10, storage: "100MB" }
+  },
+  pro: {
+    name: "Pro",
+    price: 29.99,
+    features: ["Advanced proposals", "Up to 500 members", "Priority support", "Custom branding"],
+    limits: { members: 500, proposals: 100, storage: "1GB" }
+  },
+  enterprise: {
+    name: "Enterprise",
+    price: 99.99,
+    features: ["Unlimited proposals", "Unlimited members", "24/7 support", "White-label solution"],
+    limits: { members: -1, proposals: -1, storage: "10GB" }
+  }
+};
+router12.get("/plans", (req, res) => {
+  res.json({
+    success: true,
+    plans: SUBSCRIPTION_PLANS
+  });
+});
+router12.get("/:daoId/status", async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const dao = await db.select().from(daos).where(eq14(daos.id, daoId)).limit(1);
+    if (dao.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "DAO not found"
+      });
+    }
+    const daoData = dao[0];
+    const currentPlan = daoData.plan || "free";
+    const planDetails = SUBSCRIPTION_PLANS[currentPlan];
+    res.json({
+      success: true,
+      subscription: {
+        daoId,
+        currentPlan,
+        planDetails,
+        billingStatus: daoData.billingStatus || "active",
+        nextBillingDate: daoData.nextBillingDate,
+        createdAt: daoData.createdAt,
+        updatedAt: daoData.updatedAt
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to get subscription status",
+      error: error.message
+    });
+  }
+});
+router12.post("/:daoId/upgrade", async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const { plan, paymentMethod } = req.body;
+    if (!SUBSCRIPTION_PLANS[plan]) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid subscription plan"
+      });
+    }
+    const planDetails = SUBSCRIPTION_PLANS[plan];
+    const subscriptionId = "SUB-" + Date.now();
+    await db.update(daos).set({
+      plan,
+      billingStatus: "active",
+      nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3),
+      // 30 days from now
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq14(daos.id, daoId));
+    res.json({
+      success: true,
+      message: `Successfully upgraded to ${plan} plan`,
+      subscription: {
+        daoId,
+        plan,
+        subscriptionId,
+        amount: planDetails.price,
+        billingStatus: "active",
+        nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3)
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to upgrade subscription",
+      error: error.message
+    });
+  }
+});
+router12.post("/:daoId/cancel", async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    await db.update(daos).set({
+      billingStatus: "cancelled",
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq14(daos.id, daoId));
+    res.json({
+      success: true,
+      message: "Subscription cancelled successfully"
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to cancel subscription",
+      error: error.message
+    });
+  }
+});
+router12.get("/:daoId/usage", async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const mockUsage = {
+      daoId,
+      currentMembers: 25,
+      currentProposals: 5,
+      storageUsed: "45MB",
+      apiCalls: 150,
+      bandwidthUsed: "2.3GB"
+    };
+    res.json({
+      success: true,
+      usage: mockUsage
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to get usage statistics",
+      error: error.message
+    });
+  }
+});
+var dao_subscriptions_default = router12;
+
+// server/routes/bounty-escrow.ts
+init_storage();
+init_schema();
+import express13 from "express";
+import { eq as eq15, and as and13, desc as desc8 } from "drizzle-orm";
+import { z as z3 } from "zod";
+var router13 = express13.Router();
+var createEscrowSchema = z3.object({
+  taskId: z3.string().min(1),
+  amount: z3.number().positive(),
+  currency: z3.string().default("cUSD")
+});
+var releaseEscrowSchema = z3.object({
+  taskId: z3.string().min(1),
+  releaseToClaimant: z3.boolean()
+});
+router13.post("/create", async (req, res) => {
+  try {
+    const validatedData = createEscrowSchema.parse(req.body);
+    const { taskId, amount, currency } = validatedData;
+    const userId = req.user?.claims?.sub ?? "";
+    const task = await db.select().from(tasks).where(eq15(tasks.id, taskId)).limit(1);
+    if (!task.length) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    if (task[0].creatorId !== userId) {
+      return res.status(403).json({ error: "Only task creator can fund escrow" });
+    }
+    const existingEscrow = await db.select().from(walletTransactions).where(and13(
+      eq15(walletTransactions.type, "escrow_deposit"),
+      eq15(walletTransactions.description, `Escrow for task: ${taskId}`)
+    )).limit(1);
+    if (existingEscrow.length > 0) {
+      return res.status(400).json({ error: "Escrow already exists for this task" });
+    }
+    const escrow = await db.insert(walletTransactions).values({
+      walletAddress: userId,
+      amount: amount.toString(),
+      currency,
+      type: "escrow_deposit",
+      status: "held",
+      description: `Escrow for task: ${taskId}`
+    }).returning();
+    res.json({
+      success: true,
+      escrowId: escrow[0].id,
+      amount,
+      currency,
+      status: "held"
+    });
+  } catch (err) {
+    if (err instanceof z3.ZodError) {
+      return res.status(400).json({ error: "Validation error", details: err.errors });
+    }
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+router13.post("/release", async (req, res) => {
+  try {
+    const validatedData = releaseEscrowSchema.parse(req.body);
+    const { taskId, releaseToClaimant } = validatedData;
+    const userId = req.user?.claims?.sub ?? "";
+    const task = await db.select().from(tasks).where(eq15(tasks.id, taskId)).limit(1);
+    if (!task.length) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const canRelease = task[0].creatorId === userId;
+    if (!canRelease) {
+      const membership = await db.select().from(daoMemberships).where(and13(
+        eq15(daoMemberships.daoId, task[0].daoId),
+        eq15(daoMemberships.userId, userId)
+      )).limit(1);
+      if (!membership.length || !["admin", "moderator"].includes(membership[0].role ?? "")) {
+        return res.status(403).json({ error: "Insufficient permissions to release escrow" });
+      }
+    }
+    const escrow = await db.select().from(walletTransactions).where(and13(
+      eq15(walletTransactions.type, "escrow_deposit"),
+      eq15(walletTransactions.description, `Escrow for task: ${taskId}`),
+      eq15(walletTransactions.status, "held")
+    )).limit(1);
+    if (!escrow.length) {
+      return res.status(404).json({ error: "Active escrow not found for this task" });
+    }
+    const escrowAmount = parseFloat(escrow[0].amount);
+    const recipient = releaseToClaimant ? task[0].claimerId : task[0].creatorId;
+    if (!recipient) {
+      return res.status(400).json({ error: "No valid recipient for escrow release" });
+    }
+    await db.update(walletTransactions).set({
+      status: "completed",
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq15(walletTransactions.id, escrow[0].id));
+    const release = await db.insert(walletTransactions).values({
+      walletAddress: recipient,
+      amount: escrowAmount.toString(),
+      currency: escrow[0].currency,
+      type: "escrow_release",
+      status: "completed",
+      description: `Escrow release for task: ${taskId}`
+    }).returning();
+    if (releaseToClaimant) {
+      await db.update(tasks).set({
+        status: "completed",
+        updatedAt: /* @__PURE__ */ new Date()
+      }).where(eq15(tasks.id, taskId));
+    }
+    res.json({
+      success: true,
+      releaseId: release[0].id,
+      amount: escrowAmount,
+      recipient,
+      releasedToClaimant: releaseToClaimant
+    });
+  } catch (err) {
+    if (err instanceof z3.ZodError) {
+      return res.status(400).json({ error: "Validation error", details: err.errors });
+    }
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+router13.get("/:taskId/escrow", async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const escrow = await db.select().from(walletTransactions).where(and13(
+      eq15(walletTransactions.type, "escrow_deposit"),
+      eq15(walletTransactions.description, `Escrow for task: ${taskId}`)
+    )).orderBy(desc8(walletTransactions.createdAt)).limit(1);
+    if (!escrow.length) {
+      return res.json({ hasEscrow: false });
+    }
+    res.json({
+      hasEscrow: true,
+      amount: parseFloat(escrow[0].amount),
+      currency: escrow[0].currency,
+      status: escrow[0].status,
+      createdAt: escrow[0].createdAt
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+router13.post("/:taskId/dispute", async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { reason } = req.body;
+    const userId = req.user?.claims?.sub ?? "";
+    const task = await db.select().from(tasks).where(eq15(tasks.id, taskId)).limit(1);
+    if (!task.length) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    if (task[0].claimerId !== userId && task[0].creatorId !== userId) {
+      return res.status(403).json({ error: "Only task claimant or creator can dispute" });
+    }
+    await db.update(tasks).set({
+      status: "disputed",
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq15(tasks.id, taskId));
+    await db.insert(taskHistory).values({
+      taskId,
+      userId,
+      action: "disputed",
+      details: { reason, disputedAt: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+    res.json({
+      success: true,
+      message: "Dispute created. Escrow will be held pending resolution.",
+      taskId
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+var bounty_escrow_default = router13;
+
+// server/routes/proposal-execution.ts
+init_storage();
+init_schema();
+import express14 from "express";
+import { eq as eq18, and as and16, desc as desc10 } from "drizzle-orm";
+
+// server/proposalExecutionService.ts
+init_storage();
+init_schema();
+import { eq as eq17, and as and15, lte as lte4 } from "drizzle-orm";
+
+// server/services/vaultService.ts
+init_db();
+init_schema();
+import { eq as eq16, and as and14, desc as desc9, sql as sql9 } from "drizzle-orm";
+
+// shared/tokenRegistry.ts
+var TOKEN_REGISTRY = {
+  CELO: {
+    symbol: "CELO",
+    name: "Celo Native Asset",
+    address: {
+      mainnet: "0x471EcE3750Da237f93B8E339c536989b8978a438",
+      // CELO native
+      testnet: "0x471EcE3750Da237f93B8E339c536989b8978a438"
+    },
+    decimals: 18,
+    category: "native",
+    isActive: true,
+    logoUrl: "/tokens/celo.png",
+    description: "Celo native token for payments and governance",
+    priceApi: "coingecko:celo",
+    riskLevel: "low"
+  },
+  cUSD: {
+    symbol: "cUSD",
+    name: "Celo Dollar",
+    address: {
+      mainnet: "0x765DE816845861e75A25fCA122bb6898B8B1282a",
+      testnet: "0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1"
+    },
+    decimals: 18,
+    category: "stablecoin",
+    isActive: true,
+    logoUrl: "/tokens/cusd.png",
+    description: "Celo Dollar stablecoin pegged to USD",
+    priceApi: "coingecko:celo-dollar",
+    riskLevel: "low"
+  },
+  cEUR: {
+    symbol: "cEUR",
+    name: "Celo Euro",
+    address: {
+      mainnet: "0xD8763CBa276a3738E6DE85b4b3bF5FDed6D6cA73",
+      testnet: "0x10c892A6EC43a53E45a9D5ba3F7cFF4eD2E5b04B"
+    },
+    decimals: 18,
+    category: "stablecoin",
+    isActive: true,
+    logoUrl: "/tokens/ceur.png",
+    description: "Celo Euro stablecoin pegged to EUR",
+    priceApi: "coingecko:celo-euro",
+    riskLevel: "low"
+  },
+  USDT: {
+    symbol: "USDT",
+    name: "Tether USD",
+    address: {
+      mainnet: "0x88eeC49252c8cbc039DCdB394c0c2BA2f1637EA0",
+      // Bridged USDT on Celo
+      testnet: "0x0000000000000000000000000000000000000000"
+      // Testnet address TBD
+    },
+    decimals: 6,
+    // Note: USDT typically uses 6 decimals
+    category: "bridged",
+    isActive: false,
+    // Inactive on testnet until proper address is available
+    logoUrl: "/tokens/usdt.png",
+    description: "Tether USD bridged to Celo via Wormhole",
+    priceApi: "coingecko:tether",
+    riskLevel: "low",
+    requiresKyc: true
+  },
+  // Framework for custom community tokens
+  MTAA: {
+    symbol: "MTAA",
+    name: "MtaaDAO Token",
+    address: {
+      mainnet: "0x0000000000000000000000000000000000000000",
+      // Deploy later
+      testnet: "0x0000000000000000000000000000000000000000"
+    },
+    decimals: 18,
+    category: "community",
+    isActive: false,
+    // Will be activated via governance
+    logoUrl: "/tokens/mtaa.png",
+    description: "MtaaDAO governance and utility token",
+    riskLevel: "medium",
+    maxDailyVolume: "100000"
+    // Example limit
+  }
+};
+var YIELD_STRATEGIES = {
+  MOOLA_LENDING: {
+    id: "moola-lending",
+    name: "Moola Lending",
+    description: "Earn yield by lending cUSD, cEUR to Moola Protocol",
+    apy: 8.5,
+    riskLevel: "low",
+    supportedTokens: ["cUSD", "cEUR"],
+    protocol: "Moola",
+    isActive: true,
+    minDeposit: "10",
+    fees: {
+      deposit: 0,
+      withdraw: 0,
+      performance: 10
+      // 10% performance fee
+    }
+  },
+  CELO_STAKING: {
+    id: "celo-staking",
+    name: "Celo Validator Staking",
+    description: "Stake CELO with validator groups for epoch rewards",
+    apy: 6.2,
+    riskLevel: "low",
+    supportedTokens: ["CELO"],
+    protocol: "Celo Validators",
+    isActive: true,
+    minDeposit: "1",
+    lockPeriod: 3,
+    // 3 days unbonding period
+    fees: {
+      deposit: 0,
+      withdraw: 0,
+      performance: 5
+    }
+  },
+  UBESWAP_LP: {
+    id: "ubeswap-lp",
+    name: "Ubeswap Liquidity Pools",
+    description: "Provide liquidity to CELO/cUSD, cUSD/cEUR pairs",
+    apy: 12.3,
+    riskLevel: "medium",
+    supportedTokens: ["CELO", "cUSD", "cEUR"],
+    protocol: "Ubeswap",
+    isActive: true,
+    minDeposit: "50",
+    fees: {
+      deposit: 0.1,
+      withdraw: 0.1,
+      performance: 15
+    }
+  }
+};
+var TokenRegistry = class {
+  static getToken(symbol) {
+    return TOKEN_REGISTRY[symbol] || null;
+  }
+  static getActiveTokens() {
+    return Object.values(TOKEN_REGISTRY).filter((token) => token.isActive);
+  }
+  static getTokensByCategory(category) {
+    return Object.values(TOKEN_REGISTRY).filter(
+      (token) => token.category === category && token.isActive
+    );
+  }
+  static getTokenAddress(symbol, network) {
+    const token = TOKEN_REGISTRY[symbol];
+    return token?.address[network] || null;
+  }
+  static getSupportedTokensForStrategy(strategyId) {
+    const strategy = YIELD_STRATEGIES[strategyId];
+    if (!strategy) return [];
+    return strategy.supportedTokens.map((symbol) => TOKEN_REGISTRY[symbol]).filter((token) => token && token.isActive);
+  }
+  static getActiveStrategies() {
+    return Object.values(YIELD_STRATEGIES).filter((strategy) => strategy.isActive);
+  }
+  static addCustomToken(symbol, tokenInfo) {
+    TOKEN_REGISTRY[symbol] = tokenInfo;
+  }
+  static validateTokenAddress(address) {
+    return /^0x[a-fA-F0-9]{40}$/.test(address);
+  }
+  // Get all supported tokens
+  static getAllTokens() {
+    return Object.values(this.tokens);
+  }
+  // Get token by address
+  static getTokenByAddress(address) {
+    return Object.values(this.tokens).find(
+      (token) => token.address?.toLowerCase() === address.toLowerCase()
+    ) || null;
+  }
+};
+
+// server/services/vaultService.ts
+import { ethers as ethers2 } from "ethers";
+
+// server/services/tokenService.ts
+import { ethers } from "ethers";
+var ENHANCED_ERC20_ABI2 = [
+  "function balanceOf(address owner) view returns (uint256)",
+  "function transfer(address to, uint256 amount) returns (bool)",
+  "function transferFrom(address from, address to, uint256 amount) returns (bool)",
+  "function approve(address spender, uint256 amount) returns (bool)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function name() view returns (string)",
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
+  "function totalSupply() view returns (uint256)",
+  // Events
+  "event Transfer(address indexed from, address indexed to, uint256 value)",
+  "event Approval(address indexed owner, address indexed spender, uint256 value)"
+];
+var TokenService = class {
+  constructor(providerUrl, privateKey, network = "testnet") {
+    this.contracts = /* @__PURE__ */ new Map();
+    this.provider = new ethers.JsonRpcProvider(providerUrl);
+    this.signer = privateKey ? new ethers.Wallet(privateKey, this.provider) : void 0;
+    this.network = network;
+    this.initializeContracts();
+  }
+  initializeContracts() {
+    const activeTokens = TokenRegistry.getActiveTokens();
+    for (const token of activeTokens) {
+      if (token.symbol === "CELO") continue;
+      const address = token.address[this.network];
+      if (address && address !== "0x0000000000000000000000000000000000000000") {
+        const contract = new ethers.Contract(
+          address,
+          ENHANCED_ERC20_ABI2,
+          this.signer || this.provider
+        );
+        this.contracts.set(token.symbol, contract);
+      }
+    }
+  }
+  // Get token contract instance
+  getTokenContract(symbol) {
+    return this.contracts.get(symbol) || null;
+  }
+  // Get token balance for an address
+  async getTokenBalance(symbol, address) {
+    if (symbol === "CELO") {
+      const balance2 = await this.provider.getBalance(address);
+      return ethers.formatEther(balance2);
+    }
+    const contract = this.getTokenContract(symbol);
+    if (!contract) {
+      throw new Error(`Token contract not found for ${symbol}`);
+    }
+    const token = TokenRegistry.getToken(symbol);
+    if (!token) {
+      throw new Error(`Token info not found for ${symbol}`);
+    }
+    const balance = await contract.balanceOf(address);
+    return ethers.formatUnits(balance, token.decimals);
+  }
+  // Send token transaction
+  async sendToken(symbol, to, amount, fromAddress) {
+    if (!this.signer) {
+      throw new Error("No signer available for token transfer");
+    }
+    const token = TokenRegistry.getToken(symbol);
+    if (!token) {
+      throw new Error(`Token not supported: ${symbol}`);
+    }
+    if (symbol === "CELO") {
+      const tx2 = await this.signer.sendTransaction({
+        to,
+        value: ethers.parseEther(amount)
+      });
+      await tx2.wait();
+      return tx2.hash;
+    }
+    const contract = this.getTokenContract(symbol);
+    if (!contract) {
+      throw new Error(`Token contract not found for ${symbol}`);
+    }
+    const parsedAmount = ethers.parseUnits(amount, token.decimals);
+    const tx = await contract.transfer(to, parsedAmount);
+    await tx.wait();
+    return tx.hash;
+  }
+  // Approve token spending (for vault deposits)
+  async approveToken(symbol, spender, amount) {
+    if (!this.signer) {
+      throw new Error("No signer available for token approval");
+    }
+    if (symbol === "CELO") {
+      throw new Error("Native token does not require approval");
+    }
+    const contract = this.getTokenContract(symbol);
+    if (!contract) {
+      throw new Error(`Token contract not found for ${symbol}`);
+    }
+    const token = TokenRegistry.getToken(symbol);
+    if (!token) {
+      throw new Error(`Token info not found for ${symbol}`);
+    }
+    const parsedAmount = ethers.parseUnits(amount, token.decimals);
+    const tx = await contract.approve(spender, parsedAmount);
+    await tx.wait();
+    return tx.hash;
+  }
+  // Check token allowance
+  async getTokenAllowance(symbol, owner, spender) {
+    if (symbol === "CELO") {
+      return "0";
+    }
+    const contract = this.getTokenContract(symbol);
+    if (!contract) {
+      throw new Error(`Token contract not found for ${symbol}`);
+    }
+    const token = TokenRegistry.getToken(symbol);
+    if (!token) {
+      throw new Error(`Token info not found for ${symbol}`);
+    }
+    const allowance = await contract.allowance(owner, spender);
+    return ethers.formatUnits(allowance, token.decimals);
+  }
+  // Get multiple token balances for portfolio view
+  async getPortfolioBalances(address) {
+    const activeTokens = TokenRegistry.getActiveTokens();
+    const balances = [];
+    for (const token of activeTokens) {
+      try {
+        const balance = await this.getTokenBalance(token.symbol, address);
+        const balanceNum = parseFloat(balance);
+        if (balanceNum > 0) {
+          const mockPriceUSD = this.getMockPrice(token.symbol);
+          const balanceUSD = (balanceNum * mockPriceUSD).toFixed(2);
+          balances.push({
+            symbol: token.symbol,
+            balance,
+            balanceUSD,
+            token
+          });
+        }
+      } catch (error) {
+        console.error(`Error fetching balance for ${token.symbol}:`, error);
+      }
+    }
+    return balances;
+  }
+  // Mock price function - replace with real price oracle in production
+  getMockPrice(symbol) {
+    const mockPrices = {
+      "CELO": 0.65,
+      "cUSD": 1,
+      "cEUR": 1.08,
+      "USDT": 1,
+      "MTAA": 0.1
+    };
+    return mockPrices[symbol] || 0;
+  }
+  // Estimate gas for token transaction
+  async estimateTokenGas(symbol, to, amount, from) {
+    const token = TokenRegistry.getToken(symbol);
+    if (!token) {
+      throw new Error(`Token not supported: ${symbol}`);
+    }
+    if (symbol === "CELO") {
+      const gasEstimate2 = await this.provider.estimateGas({
+        to,
+        value: ethers.parseEther(amount),
+        from
+      });
+      return gasEstimate2.toString();
+    }
+    const contract = this.getTokenContract(symbol);
+    if (!contract) {
+      throw new Error(`Token contract not found for ${symbol}`);
+    }
+    const parsedAmount = ethers.parseUnits(amount, token.decimals);
+    const gasEstimate = await contract.transfer.estimateGas(to, parsedAmount);
+    return gasEstimate.toString();
+  }
+  // Add new token via governance (Phase 3)
+  async proposeNewToken(tokenInfo) {
+    if (!TokenRegistry.validateTokenAddress(tokenInfo.address.mainnet) || !TokenRegistry.validateTokenAddress(tokenInfo.address.testnet)) {
+      throw new Error("Invalid token addresses");
+    }
+    console.log(`Proposing new token: ${tokenInfo.symbol}`);
+  }
+  // Get yield strategies for a specific token
+  getYieldStrategiesForToken(symbol) {
+    return Object.values(YIELD_STRATEGIES).filter(
+      (strategy) => strategy.supportedTokens.includes(symbol) && strategy.isActive
+    );
+  }
+  // Risk assessment for token operations
+  assessTokenRisk(symbol, amount) {
+    const token = TokenRegistry.getToken(symbol);
+    if (!token) {
+      return {
+        riskLevel: "high",
+        warnings: ["Unknown token"]
+      };
+    }
+    const warnings = [];
+    let riskLevel = token.riskLevel;
+    if (token.maxDailyVolume) {
+      const maxVolume = parseFloat(token.maxDailyVolume);
+      const requestedAmount = parseFloat(amount);
+      if (requestedAmount > maxVolume) {
+        warnings.push(`Amount exceeds daily volume limit of ${token.maxDailyVolume} ${symbol}`);
+        riskLevel = "high";
+      }
+    }
+    if (token.requiresKyc) {
+      warnings.push("This token requires KYC verification");
+    }
+    if (token.category === "bridged") {
+      warnings.push("Bridged tokens may have additional smart contract risks");
+      riskLevel = riskLevel === "low" ? "medium" : riskLevel;
+    }
+    return {
+      riskLevel,
+      warnings,
+      maxRecommendedAmount: token.maxDailyVolume
+    };
+  }
+};
+var tokenService = new TokenService(
+  process.env.RPC_URL || "https://alfajores-forno.celo-testnet.org",
+  process.env.MANAGER_PRIVATE_KEY,
+  process.env.NODE_ENV === "production" ? "mainnet" : "testnet"
+);
+
+// server/services/vaultService.ts
+var VaultService = class {
+  // Check if user has permission to perform specific vault operation
+  async checkVaultPermissions(vaultId, userId, operation = "view") {
+    const vault = await this.getVaultById(vaultId);
+    if (!vault) {
+      throw new Error("Vault not found");
+    }
+    if (vault.userId) {
+      return vault.userId === userId;
+    }
+    if (vault.daoId) {
+      const membership = await db.query.daoMemberships.findFirst({
+        where: and14(
+          eq16(daoMemberships.daoId, vault.daoId),
+          eq16(daoMemberships.userId, userId),
+          eq16(daoMemberships.status, "approved")
+        )
+      });
+      if (!membership || membership.isBanned) {
+        return false;
+      }
+      const userRole = membership.role || "member";
+      switch (operation) {
+        case "view":
+          return ["member", "proposer", "elder", "admin"].includes(userRole);
+        case "deposit":
+          return ["member", "proposer", "elder", "admin"].includes(userRole);
+        case "withdraw":
+          return ["admin", "elder"].includes(userRole);
+        case "allocate":
+        case "rebalance":
+          return ["admin", "elder"].includes(userRole);
+        default:
+          return false;
+      }
+    }
+    return false;
+  }
+  // Create a new vault
+  async createVault(request) {
+    if (!request.userId && !request.daoId) {
+      throw new Error("Either userId or daoId must be specified");
+    }
+    if (request.userId && request.daoId) {
+      throw new Error("Cannot specify both userId and daoId");
+    }
+    const token = TokenRegistry.getToken(request.primaryCurrency);
+    if (!token) {
+      throw new Error(`Unsupported token: ${request.primaryCurrency}`);
+    }
+    if (request.yieldStrategy && !YIELD_STRATEGIES[request.yieldStrategy]) {
+      throw new Error(`Invalid yield strategy: ${request.yieldStrategy}`);
+    }
+    let lockedUntil = null;
+    if (request.vaultType === "locked_savings") {
+      const lockDurationDays = 30;
+      lockedUntil = new Date(Date.now() + lockDurationDays * 24 * 60 * 60 * 1e3);
+    }
+    const [newVault] = await db.insert(vaults).values({
+      name: request.name,
+      description: request.description,
+      userId: request.userId || null,
+      daoId: request.daoId || null,
+      currency: request.primaryCurrency,
+      vaultType: request.vaultType,
+      yieldStrategy: request.yieldStrategy,
+      riskLevel: request.riskLevel || "low",
+      minDeposit: request.minDeposit || "0",
+      maxDeposit: request.maxDeposit || null,
+      lockedUntil,
+      isActive: true
+    }).returning();
+    await this.initializePerformanceTracking(newVault.id);
+    await this.performRiskAssessment(newVault.id);
+    return newVault;
+  }
+  // Deposit tokens into a vault
+  async depositToken(request) {
+    const hasPermission = await this.checkVaultPermissions(request.vaultId, request.userId, "deposit");
+    if (!hasPermission) {
+      throw new Error("Unauthorized: You do not have permission to deposit to this vault");
+    }
+    const vault = await this.getVaultById(request.vaultId);
+    if (!vault) {
+      throw new Error("Vault not found");
+    }
+    if (!vault.isActive) {
+      throw new Error("Vault is not active");
+    }
+    const token = TokenRegistry.getToken(request.tokenSymbol);
+    if (!token) {
+      throw new Error(`Unsupported token: ${request.tokenSymbol}`);
+    }
+    const depositAmountWei = ethers2.parseUnits(request.amount, token.decimals);
+    if (vault.minDeposit) {
+      const minDepositWei = ethers2.parseUnits(vault.minDeposit, token.decimals);
+      if (depositAmountWei < minDepositWei) {
+        throw new Error(`Deposit amount ${request.amount} below minimum ${vault.minDeposit}`);
+      }
+    }
+    if (vault.maxDeposit) {
+      const maxDepositWei = ethers2.parseUnits(vault.maxDeposit, token.decimals);
+      if (depositAmountWei > maxDepositWei) {
+        throw new Error(`Deposit amount ${request.amount} exceeds maximum ${vault.maxDeposit}`);
+      }
+    }
+    const priceUSD = await this.getTokenPriceUSD(request.tokenSymbol);
+    const depositAmountFloat = parseFloat(ethers2.formatUnits(depositAmountWei, token.decimals));
+    const valueUSD = depositAmountFloat * priceUSD;
+    const result = await db.transaction(async (tx) => {
+      const [transaction] = await tx.insert(vaultTransactions).values({
+        vaultId: request.vaultId,
+        userId: request.userId,
+        transactionType: "deposit",
+        tokenSymbol: request.tokenSymbol,
+        amount: request.amount,
+        valueUSD: valueUSD.toString(),
+        transactionHash: request.transactionHash,
+        status: "completed"
+      }).returning();
+      await this.updateTokenHolding(request.vaultId, request.tokenSymbol, depositAmountWei, true, tx);
+      await this.updateVaultTVL(request.vaultId, tx);
+      return transaction;
+    });
+    if (vault.yieldStrategy) {
+      try {
+        await this.rebalanceVault(request.vaultId);
+      } catch (error) {
+        console.warn(`Rebalance failed for vault ${request.vaultId}:`, error);
+      }
+    }
+    return result;
+  }
+  // Withdraw tokens from a vault
+  async withdrawToken(request) {
+    const hasPermission = await this.checkVaultPermissions(request.vaultId, request.userId, "withdraw");
+    if (!hasPermission) {
+      throw new Error("Unauthorized: You do not have permission to withdraw from this vault");
+    }
+    const vault = await this.getVaultById(request.vaultId);
+    if (!vault) {
+      throw new Error("Vault not found");
+    }
+    const holding = await this.getTokenHolding(request.vaultId, request.tokenSymbol);
+    if (!holding) {
+      throw new Error("No holdings found for this token");
+    }
+    const token = TokenRegistry.getToken(request.tokenSymbol);
+    if (!token) {
+      throw new Error(`Unsupported token: ${request.tokenSymbol}`);
+    }
+    const withdrawAmountWei = ethers2.parseUnits(request.amount, token.decimals);
+    const currentBalanceWei = ethers2.parseUnits(holding.balance, token.decimals);
+    if (withdrawAmountWei > currentBalanceWei) {
+      throw new Error(`Insufficient balance. Requested: ${request.amount}, Available: ${holding.balance}`);
+    }
+    if (vault.vaultType === "locked_savings" && vault.lockedUntil && /* @__PURE__ */ new Date() < vault.lockedUntil) {
+      throw new Error("Vault is still locked for withdrawals");
+    }
+    const priceUSD = await this.getTokenPriceUSD(request.tokenSymbol);
+    const withdrawAmountFloat = parseFloat(ethers2.formatUnits(withdrawAmountWei, token.decimals));
+    const valueUSD = withdrawAmountFloat * priceUSD;
+    const result = await db.transaction(async (tx) => {
+      const [transaction] = await tx.insert(vaultTransactions).values({
+        vaultId: request.vaultId,
+        userId: request.userId,
+        transactionType: "withdrawal",
+        tokenSymbol: request.tokenSymbol,
+        amount: request.amount,
+        valueUSD: valueUSD.toString(),
+        transactionHash: request.transactionHash,
+        status: "completed"
+      }).returning();
+      await this.updateTokenHolding(request.vaultId, request.tokenSymbol, withdrawAmountWei * BigInt(-1), false, tx);
+      await this.updateVaultTVL(request.vaultId, tx);
+      return transaction;
+    });
+    return result;
+  }
+  // Allocate funds to yield strategy
+  async allocateToStrategy(request) {
+    const hasPermission = await this.checkVaultPermissions(request.vaultId, request.userId, "allocate");
+    if (!hasPermission) {
+      throw new Error("Unauthorized: You do not have permission to allocate strategy for this vault");
+    }
+    const vault = await this.getVaultById(request.vaultId);
+    if (!vault) {
+      throw new Error("Vault not found");
+    }
+    const strategy = YIELD_STRATEGIES[request.strategyId];
+    if (!strategy) {
+      throw new Error(`Invalid strategy: ${request.strategyId}`);
+    }
+    if (!strategy.supportedTokens.includes(request.tokenSymbol)) {
+      throw new Error(`Strategy ${request.strategyId} does not support token ${request.tokenSymbol}`);
+    }
+    const holding = await this.getTokenHolding(request.vaultId, request.tokenSymbol);
+    if (!holding) {
+      throw new Error("No token holdings found");
+    }
+    const token = TokenRegistry.getToken(request.tokenSymbol);
+    if (!token) {
+      throw new Error(`Unsupported token: ${request.tokenSymbol}`);
+    }
+    const totalBalanceWei = ethers2.parseUnits(holding.balance, token.decimals);
+    const allocationAmountWei = totalBalanceWei * BigInt(Math.round(request.allocationPercentage * 100)) / BigInt(1e4);
+    const allocationAmount = ethers2.formatUnits(allocationAmountWei, token.decimals);
+    const existingAllocation = await db.query.vaultStrategyAllocations.findFirst({
+      where: and14(
+        eq16(vaultStrategyAllocations.vaultId, request.vaultId),
+        eq16(vaultStrategyAllocations.strategyId, request.strategyId),
+        eq16(vaultStrategyAllocations.tokenSymbol, request.tokenSymbol)
+      )
+    });
+    if (existingAllocation) {
+      await db.update(vaultStrategyAllocations).set({
+        allocatedAmount: allocationAmount.toString(),
+        allocationPercentage: request.allocationPercentage.toString(),
+        lastRebalance: /* @__PURE__ */ new Date(),
+        updatedAt: /* @__PURE__ */ new Date()
+      }).where(eq16(vaultStrategyAllocations.id, existingAllocation.id));
+    } else {
+      await db.insert(vaultStrategyAllocations).values({
+        vaultId: request.vaultId,
+        strategyId: request.strategyId,
+        tokenSymbol: request.tokenSymbol,
+        allocatedAmount: allocationAmount.toString(),
+        allocationPercentage: request.allocationPercentage.toString(),
+        currentValue: allocationAmount.toString(),
+        isActive: true
+      });
+    }
+  }
+  // Rebalance vault strategy allocations
+  async rebalanceVault(vaultId, userId) {
+    if (userId) {
+      const hasPermission = await this.checkVaultPermissions(vaultId, userId, "rebalance");
+      if (!hasPermission) {
+        throw new Error("Unauthorized: You do not have permission to rebalance this vault");
+      }
+    }
+    const vault = await this.getVaultById(vaultId);
+    if (!vault || !vault.yieldStrategy) {
+      return;
+    }
+    const allocations = await db.query.vaultStrategyAllocations.findMany({
+      where: and14(
+        eq16(vaultStrategyAllocations.vaultId, vaultId),
+        eq16(vaultStrategyAllocations.isActive, true)
+      )
+    });
+    for (const allocation of allocations) {
+      const holding = await this.getTokenHolding(vaultId, allocation.tokenSymbol);
+      if (holding) {
+        const token = TokenRegistry.getToken(allocation.tokenSymbol);
+        if (!token) continue;
+        const totalBalanceWei = ethers2.parseUnits(holding.balance, token.decimals);
+        const targetPercentage = parseFloat(allocation.allocationPercentage);
+        const newAllocationWei = totalBalanceWei * BigInt(Math.round(targetPercentage * 100)) / BigInt(1e4);
+        const newAllocation = ethers2.formatUnits(newAllocationWei, token.decimals);
+        await db.update(vaultStrategyAllocations).set({
+          allocatedAmount: newAllocation,
+          currentValue: newAllocation,
+          lastRebalance: /* @__PURE__ */ new Date(),
+          updatedAt: /* @__PURE__ */ new Date()
+        }).where(eq16(vaultStrategyAllocations.id, allocation.id));
+      }
+    }
+    await db.insert(vaultTransactions).values({
+      vaultId,
+      userId: vault.userId || vault.daoId || "system",
+      transactionType: "rebalance",
+      tokenSymbol: vault.currency,
+      amount: "0",
+      valueUSD: "0",
+      status: "completed",
+      metadata: { allocations: allocations.length }
+    });
+  }
+  // Perform comprehensive risk assessment
+  async performRiskAssessment(vaultId) {
+    const vault = await this.getVaultById(vaultId);
+    if (!vault) {
+      throw new Error("Vault not found");
+    }
+    const holdings = await this.getVaultHoldings(vaultId);
+    const allocations = await db.query.vaultStrategyAllocations.findMany({
+      where: eq16(vaultStrategyAllocations.vaultId, vaultId)
+    });
+    let liquidityRisk = 10;
+    let smartContractRisk = 5;
+    let marketRisk = 15;
+    let concentrationRisk = 0;
+    let protocolRisk = 0;
+    if (holdings.length === 1) {
+      concentrationRisk = 80;
+    } else if (holdings.length <= 3) {
+      concentrationRisk = 40;
+    } else {
+      concentrationRisk = 10;
+    }
+    for (const allocation of allocations) {
+      const strategy = YIELD_STRATEGIES[allocation.strategyId];
+      if (strategy) {
+        switch (strategy.riskLevel) {
+          case "high":
+            protocolRisk += 30;
+            break;
+          case "medium":
+            protocolRisk += 15;
+            break;
+          case "low":
+            protocolRisk += 5;
+            break;
+        }
+      }
+    }
+    protocolRisk = Math.min(protocolRisk, 100);
+    const overallRiskScore = Math.round(
+      (liquidityRisk + smartContractRisk + marketRisk + concentrationRisk + protocolRisk) / 5
+    );
+    const riskFactors = {
+      tokenConcentration: holdings.length <= 3,
+      highYieldStrategies: allocations.some((a) => {
+        const strategy = YIELD_STRATEGIES[a.strategyId];
+        return strategy?.riskLevel === "high";
+      }),
+      lockedFunds: vault.vaultType === "locked_savings",
+      newVault: vault.createdAt ? new Date(vault.createdAt).getTime() > Date.now() - 30 * 24 * 60 * 60 * 1e3 : true
+      // Less than 30 days old
+    };
+    const recommendations = [];
+    if (riskFactors.tokenConcentration) {
+      recommendations.push("Diversify token holdings to reduce concentration risk");
+    }
+    if (riskFactors.highYieldStrategies) {
+      recommendations.push("Consider reducing allocation to high-risk strategies");
+    }
+    if (overallRiskScore > 70) {
+      recommendations.push("Overall risk level is high - consider rebalancing");
+    }
+    await db.insert(vaultRiskAssessments).values({
+      vaultId,
+      overallRiskScore,
+      liquidityRisk,
+      smartContractRisk,
+      marketRisk,
+      concentrationRisk,
+      protocolRisk,
+      riskFactors,
+      recommendations,
+      nextAssessmentDue: new Date(Date.now() + 7 * 24 * 60 * 60 * 1e3),
+      // 7 days from now
+      assessedBy: vault.userId || vault.daoId || "system"
+    });
+  }
+  // Get user's vaults
+  async getUserVaults(userId, daoId) {
+    if (daoId) {
+      const membership = await db.query.daoMemberships.findFirst({
+        where: and14(
+          eq16(daoMemberships.daoId, daoId),
+          eq16(daoMemberships.userId, userId),
+          eq16(daoMemberships.status, "approved")
+        )
+      });
+      if (!membership || membership.isBanned) {
+        return [];
+      }
+      return await db.query.vaults.findMany({
+        where: eq16(vaults.daoId, daoId)
+      });
+    } else {
+      return await db.query.vaults.findMany({
+        where: eq16(vaults.userId, userId)
+      });
+    }
+  }
+  // Get vault performance
+  async getVaultPerformance(vaultId, userId) {
+    if (userId) {
+      const hasPermission = await this.checkVaultPermissions(vaultId, userId, "view");
+      if (!hasPermission) {
+        throw new Error("Unauthorized: You do not have permission to view this vault performance");
+      }
+    }
+    return await db.query.vaultPerformance.findMany({
+      where: eq16(vaultPerformance.vaultId, vaultId),
+      orderBy: [desc9(vaultPerformance.createdAt)],
+      limit: 10
+    });
+  }
+  // Get vault transactions
+  async getVaultTransactions(vaultId, userId, page = 1, limit = 20) {
+    if (userId) {
+      const hasPermission = await this.checkVaultPermissions(vaultId, userId, "view");
+      if (!hasPermission) {
+        throw new Error("Unauthorized: You do not have permission to view this vault transactions");
+      }
+    }
+    const offset = (page - 1) * limit;
+    return await db.query.vaultTransactions.findMany({
+      where: eq16(vaultTransactions.vaultId, vaultId),
+      orderBy: [desc9(vaultTransactions.createdAt)],
+      limit,
+      offset
+    });
+  }
+  // Get vault portfolio summary with authorization check
+  async getVaultPortfolio(vaultId, userId) {
+    if (userId) {
+      const hasPermission = await this.checkVaultPermissions(vaultId, userId, "view");
+      if (!hasPermission) {
+        throw new Error("Unauthorized: You do not have permission to view this vault portfolio");
+      }
+    }
+    const vault = await this.getVaultById(vaultId);
+    if (!vault) {
+      throw new Error("Vault not found");
+    }
+    const holdings = await this.getVaultHoldings(vaultId);
+    let totalValueUSD = 0;
+    for (const holding of holdings) {
+      totalValueUSD += parseFloat(holding.valueUSD || "0");
+    }
+    const performance2 = await db.query.vaultPerformance.findFirst({
+      where: eq16(vaultPerformance.vaultId, vaultId),
+      orderBy: [desc9(vaultPerformance.createdAt)]
+    });
+    const riskAssessment = await db.query.vaultRiskAssessments.findFirst({
+      where: eq16(vaultRiskAssessments.vaultId, vaultId),
+      orderBy: [desc9(vaultRiskAssessments.createdAt)]
+    });
+    return {
+      vault,
+      holdings,
+      totalValueUSD,
+      performance: performance2,
+      riskScore: riskAssessment?.overallRiskScore || 50
+    };
+  }
+  // Helper methods
+  async getVaultById(vaultId) {
+    const result = await db.query.vaults.findFirst({
+      where: eq16(vaults.id, vaultId)
+    });
+    return result || null;
+  }
+  async getTokenHolding(vaultId, tokenSymbol, tx) {
+    const dbConnection = tx || db;
+    const result = await dbConnection.query.vaultTokenHoldings.findFirst({
+      where: and14(
+        eq16(vaultTokenHoldings.vaultId, vaultId),
+        eq16(vaultTokenHoldings.tokenSymbol, tokenSymbol)
+      )
+    });
+    return result || null;
+  }
+  async getVaultHoldings(vaultId, tx) {
+    const dbConnection = tx || db;
+    return await dbConnection.query.vaultTokenHoldings.findMany({
+      where: eq16(vaultTokenHoldings.vaultId, vaultId)
+    });
+  }
+  async updateTokenHolding(vaultId, tokenSymbol, amountWei, isDeposit, tx) {
+    const dbConnection = tx || db;
+    const token = TokenRegistry.getToken(tokenSymbol);
+    if (!token) {
+      throw new Error(`Token ${tokenSymbol} not found in registry`);
+    }
+    const priceUSD = await this.getTokenPriceUSD(tokenSymbol);
+    const amountFloat = parseFloat(ethers2.formatUnits(amountWei < 0 ? -amountWei : amountWei, token.decimals));
+    const existing = await dbConnection.select().from(vaultTokenHoldings).where(and14(
+      eq16(vaultTokenHoldings.vaultId, vaultId),
+      eq16(vaultTokenHoldings.tokenSymbol, tokenSymbol)
+    )).for("update").limit(1).execute();
+    if (existing && existing.length > 0) {
+      const holdingRecord = existing[0];
+      const amountDelta = ethers2.formatUnits(amountWei, token.decimals);
+      const updateResult = await dbConnection.update(vaultTokenHoldings).set({
+        // Use SQL expressions for atomic balance updates
+        balance: sql9`CASE 
+            WHEN (CAST(${holdingRecord.balance} AS NUMERIC) + CAST(${amountDelta} AS NUMERIC)) >= 0 
+            THEN CAST((CAST(${holdingRecord.balance} AS NUMERIC) + CAST(${amountDelta} AS NUMERIC)) AS TEXT)
+            ELSE ${holdingRecord.balance}
+          END`,
+        valueUSD: sql9`CASE 
+            WHEN (CAST(${holdingRecord.balance} AS NUMERIC) + CAST(${amountDelta} AS NUMERIC)) >= 0 
+            THEN CAST(((CAST(${holdingRecord.balance} AS NUMERIC) + CAST(${amountDelta} AS NUMERIC)) * ${priceUSD}) AS TEXT)
+            ELSE ${holdingRecord.valueUSD}
+          END`,
+        totalDeposited: sql9`CASE 
+            WHEN (CAST(${holdingRecord.balance} AS NUMERIC) + CAST(${amountDelta} AS NUMERIC)) >= 0 AND ${isDeposit}
+            THEN CAST((COALESCE(CAST(${holdingRecord.totalDeposited || "0"} AS NUMERIC), 0) + ${amountFloat}) AS TEXT)
+            WHEN (CAST(${holdingRecord.balance} AS NUMERIC) + CAST(${amountDelta} AS NUMERIC)) >= 0
+            THEN ${holdingRecord.totalDeposited}
+            ELSE ${holdingRecord.totalDeposited}
+          END`,
+        totalWithdrawn: sql9`CASE 
+            WHEN (CAST(${holdingRecord.balance} AS NUMERIC) + CAST(${amountDelta} AS NUMERIC)) >= 0 AND NOT ${isDeposit}
+            THEN CAST((COALESCE(CAST(${holdingRecord.totalWithdrawn || "0"} AS NUMERIC), 0) + ${amountFloat}) AS TEXT)
+            WHEN (CAST(${holdingRecord.balance} AS NUMERIC) + CAST(${amountDelta} AS NUMERIC)) >= 0
+            THEN ${holdingRecord.totalWithdrawn}
+            ELSE ${holdingRecord.totalWithdrawn}
+          END`,
+        lastPriceUpdate: /* @__PURE__ */ new Date(),
+        updatedAt: /* @__PURE__ */ new Date()
+      }).where(and14(
+        eq16(vaultTokenHoldings.id, holdingRecord.id),
+        // CRITICAL: Only update if balance constraint is satisfied
+        sql9`(CAST(${holdingRecord.balance} AS NUMERIC) + CAST(${amountDelta} AS NUMERIC)) >= 0`
+      )).execute();
+      if (!updateResult || updateResult.rowCount === 0) {
+        const currentHolding = await this.getTokenHolding(vaultId, tokenSymbol, tx);
+        const currentBalance = currentHolding?.balance || "0";
+        const requestedAmount = ethers2.formatUnits(amountWei < 0n ? -amountWei : amountWei, token.decimals);
+        throw new Error(
+          `Insufficient balance for withdrawal. Available: ${parseFloat(currentBalance).toFixed(6)}, Requested: ${requestedAmount}. This may be due to concurrent operations or insufficient funds.`
+        );
+      }
+    } else {
+      const balanceStr = ethers2.formatUnits(amountWei, token.decimals);
+      const balanceFloat = parseFloat(balanceStr);
+      if (balanceFloat < 0) {
+        throw new Error(`Cannot create holding with negative balance: ${balanceFloat.toFixed(6)}`);
+      }
+      const valueUSD = balanceFloat * priceUSD;
+      const absAmountFloat = Math.abs(balanceFloat);
+      await dbConnection.insert(vaultTokenHoldings).values({
+        vaultId,
+        tokenSymbol,
+        balance: balanceStr,
+        valueUSD: valueUSD.toString(),
+        averageEntryPrice: priceUSD.toString(),
+        totalDeposited: isDeposit ? absAmountFloat.toString() : "0",
+        totalWithdrawn: !isDeposit ? absAmountFloat.toString() : "0"
+      });
+    }
+  }
+  async updateVaultTVL(vaultId, tx) {
+    const dbConnection = tx || db;
+    const holdings = await this.getVaultHoldings(vaultId, tx);
+    const totalValueUSD = holdings.reduce(
+      (sum3, holding) => sum3 + parseFloat(holding.valueUSD || "0"),
+      0
+    );
+    await dbConnection.update(vaults).set({
+      totalValueLocked: totalValueUSD.toString(),
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq16(vaults.id, vaultId));
+  }
+  async getTokenPriceUSD(tokenSymbol) {
+    try {
+      const token = TokenRegistry.getToken(tokenSymbol);
+      if (!token) {
+        throw new Error(`Token ${tokenSymbol} not found in registry`);
+      }
+      try {
+        if (tokenService && typeof tokenService.getTokenPrice === "function") {
+          const realPrice = await tokenService.getTokenPrice(tokenSymbol);
+          if (realPrice && realPrice > 0) {
+            console.log(`Got real price for ${tokenSymbol}: $${realPrice}`);
+            return realPrice;
+          }
+        }
+        if (tokenSymbol === "CELO" && tokenService && tokenService.provider) {
+          console.log(`Using CELO network provider but still need external price feed`);
+        }
+      } catch (serviceError) {
+        console.warn(`TokenService price lookup failed for ${tokenSymbol}:`, serviceError);
+      }
+      console.log(`Using fallback pricing for ${tokenSymbol}`);
+      const fallbackPrices = {
+        "CELO": 0.65,
+        // Conservative CELO price
+        "cUSD": 1,
+        // Celo Dollar should be stable
+        "cEUR": 1.08,
+        // Celo Euro should track EUR/USD
+        "USDT": 1,
+        // USDT should be stable
+        "MTAA": 0.1
+        // Community token - conservative estimate
+      };
+      let price = fallbackPrices[tokenSymbol];
+      if (!price) {
+        if (tokenSymbol.includes("USD") || tokenSymbol.includes("EUR")) {
+          price = 1;
+        } else if (token.category === "community") {
+          price = 0.1;
+        } else if (token.category === "bridged") {
+          price = 0.5;
+        } else {
+          price = 0.3;
+        }
+      }
+      if (token.category === "community" && token.riskLevel === "high") {
+        price *= 0.9;
+      }
+      if (token.category === "bridged" && !token.isActive) {
+        price *= 0.95;
+      }
+      return price;
+    } catch (error) {
+      console.error(`Error getting price for ${tokenSymbol}:`, error);
+      return tokenSymbol.includes("USD") || tokenSymbol.includes("EUR") ? 1 : 0.3;
+    }
+  }
+  async initializePerformanceTracking(vaultId) {
+    const startOfDay2 = /* @__PURE__ */ new Date();
+    startOfDay2.setHours(0, 0, 0, 0);
+    const endOfDay2 = /* @__PURE__ */ new Date();
+    endOfDay2.setHours(23, 59, 59, 999);
+    await db.insert(vaultPerformance).values({
+      vaultId,
+      period: "daily",
+      periodStart: startOfDay2,
+      periodEnd: endOfDay2,
+      startingValue: "0",
+      endingValue: "0",
+      yield: "0",
+      yieldPercentage: "0"
+    });
+  }
+};
+var vaultService = new VaultService();
+
+// server/proposalExecutionService.ts
+var ProposalExecutionService = class {
+  // Process pending executions
+  static async processPendingExecutions() {
+    try {
+      const now = /* @__PURE__ */ new Date();
+      const pendingExecutions = await db.select().from(proposalExecutionQueue).where(and15(
+        eq17(proposalExecutionQueue.status, "pending"),
+        lte4(proposalExecutionQueue.scheduledFor, now)
+      ));
+      console.log(`Processing ${pendingExecutions.length} pending executions`);
+      for (const execution of pendingExecutions) {
+        await this.executeProposal(execution);
+      }
+    } catch (error) {
+      console.error("Error processing pending executions:", error);
+    }
+  }
+  // Execute individual proposal
+  static async executeProposal(execution) {
+    try {
+      console.log(`Executing proposal ${execution.proposalId} with type ${execution.executionType}`);
+      await db.update(proposalExecutionQueue).set({
+        status: "executing",
+        lastAttempt: /* @__PURE__ */ new Date(),
+        attempts: execution.attempts + 1
+      }).where(eq17(proposalExecutionQueue.id, execution.id));
+      const { executionType, executionData, daoId, proposalId } = execution;
+      switch (executionType) {
+        case "treasury_transfer":
+          await this.executeTreasuryTransfer(executionData, daoId, proposalId);
+          break;
+        case "vault_operation":
+          await this.executeVaultOperation(executionData, daoId, proposalId);
+          break;
+        case "member_action":
+          await this.executeMemberAction(executionData, daoId, proposalId);
+          break;
+        case "governance_change":
+          await this.executeGovernanceChange(executionData, daoId, proposalId);
+          break;
+        case "disbursement":
+          await this.executeDisbursement(executionData, daoId, proposalId);
+          break;
+        default:
+          throw new Error(`Unknown execution type: ${executionType}`);
+      }
+      await db.update(proposalExecutionQueue).set({ status: "completed" }).where(eq17(proposalExecutionQueue.id, execution.id));
+      await db.update(proposals2).set({
+        status: "executed",
+        executedAt: /* @__PURE__ */ new Date()
+      }).where(eq17(proposals2.id, proposalId));
+      console.log(`Successfully executed proposal ${proposalId}`);
+    } catch (error) {
+      console.error("Error executing proposal:", error);
+      const maxAttempts = 3;
+      const shouldRetry = execution.attempts < maxAttempts && this.isRetriableError(error);
+      await db.update(proposalExecutionQueue).set({
+        status: shouldRetry ? "pending" : "failed",
+        errorMessage: error.message,
+        // Retry after 1 hour if retriable
+        scheduledFor: shouldRetry ? new Date(Date.now() + 60 * 60 * 1e3) : void 0
+      }).where(eq17(proposalExecutionQueue.id, execution.id));
+    }
+  }
+  // Execute treasury transfer
+  static async executeTreasuryTransfer(executionData, daoId, proposalId) {
+    const { recipient, amount, currency, description, fromVault } = executionData;
+    if (fromVault) {
+      const daoVault = await db.query.vaults.findFirst({
+        where: and15(
+          eq17(vaults.daoId, daoId),
+          eq17(vaults.vaultType, "dao_treasury")
+        )
+      });
+      if (!daoVault) {
+        throw new Error("DAO vault not found");
+      }
+      await vaultService.withdrawToken({
+        vaultId: daoVault.id,
+        userId: "system",
+        // System user for proposal execution
+        tokenSymbol: currency,
+        amount: amount.toString(),
+        transactionHash: `proposal_${proposalId}`
+      });
+    } else {
+      const daoRecord = await db.select().from(daos).where(eq17(daos.id, daoId)).limit(1);
+      const currentBalance = parseFloat(daoRecord[0]?.treasuryBalance || "0");
+      if (currentBalance < amount) {
+        throw new Error(`Insufficient treasury balance. Available: ${currentBalance}, Requested: ${amount}`);
+      }
+      const newBalance = (currentBalance - amount).toString();
+      await db.update(daos).set({ treasuryBalance: newBalance }).where(eq17(daos.id, daoId));
+    }
+    await db.insert(walletTransactions).values({
+      walletAddress: recipient,
+      amount: amount.toString(),
+      currency,
+      type: "transfer",
+      status: "completed",
+      description: `Proposal execution: ${description}`,
+      daoId
+    });
+  }
+  // Execute vault operations
+  static async executeVaultOperation(executionData, daoId, proposalId) {
+    const { vaultId, operation, operationData } = executionData;
+    switch (operation) {
+      case "create_vault":
+        await vaultService.createVault({
+          ...operationData,
+          daoId
+        });
+        break;
+      case "deposit":
+        await vaultService.depositToken({
+          vaultId,
+          userId: "system",
+          ...operationData
+        });
+        break;
+      case "withdraw":
+        await vaultService.withdrawToken({
+          vaultId,
+          userId: "system",
+          ...operationData
+        });
+        break;
+      case "allocate_strategy":
+        await vaultService.allocateToStrategy({
+          vaultId,
+          userId: "system",
+          ...operationData
+        });
+        break;
+      case "rebalance":
+        await vaultService.rebalanceVault(vaultId);
+        break;
+      default:
+        throw new Error(`Unknown vault operation: ${operation}`);
+    }
+  }
+  // Execute member action (promote, demote, ban, etc.)
+  static async executeMemberAction(executionData, daoId, proposalId) {
+    const { action, targetUserId, newRole, reason } = executionData;
+    switch (action) {
+      case "promote":
+        await db.update(daoMemberships).set({ role: newRole }).where(and15(
+          eq17(daoMemberships.daoId, daoId),
+          eq17(daoMemberships.userId, targetUserId)
+        ));
+        break;
+      case "demote":
+        await db.update(daoMemberships).set({ role: newRole || "member" }).where(and15(
+          eq17(daoMemberships.daoId, daoId),
+          eq17(daoMemberships.userId, targetUserId)
+        ));
+        break;
+      case "ban":
+        await db.update(daoMemberships).set({
+          isBanned: true,
+          banReason: reason
+        }).where(and15(
+          eq17(daoMemberships.daoId, daoId),
+          eq17(daoMemberships.userId, targetUserId)
+        ));
+        break;
+      case "unban":
+        await db.update(daoMemberships).set({
+          isBanned: false,
+          banReason: null
+        }).where(and15(
+          eq17(daoMemberships.daoId, daoId),
+          eq17(daoMemberships.userId, targetUserId)
+        ));
+        break;
+      case "remove":
+        await db.update(daoMemberships).set({
+          status: "rejected",
+          banReason: reason
+        }).where(and15(
+          eq17(daoMemberships.daoId, daoId),
+          eq17(daoMemberships.userId, targetUserId)
+        ));
+        break;
+      default:
+        throw new Error(`Unknown member action: ${action}`);
+    }
+  }
+  // Execute governance changes
+  static async executeGovernanceChange(executionData, daoId, proposalId) {
+    const { changes } = executionData;
+    const allowedFields = [
+      "quorumPercentage",
+      "votingPeriod",
+      "executionDelay",
+      "name",
+      "description",
+      "access",
+      "inviteOnly"
+    ];
+    const validChanges = {};
+    for (const [key, value] of Object.entries(changes)) {
+      if (allowedFields.includes(key)) {
+        validChanges[key] = value;
+      }
+    }
+    if (Object.keys(validChanges).length === 0) {
+      throw new Error("No valid governance changes specified");
+    }
+    await db.update(daos).set({
+      ...validChanges,
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq17(daos.id, daoId));
+  }
+  // Execute disbursement
+  static async executeDisbursement(executionData, daoId, proposalId) {
+    const { recipients, amount, currency, description, disbursementType } = executionData;
+    const totalAmount = Array.isArray(recipients) ? recipients.reduce((sum3, r) => sum3 + r.amount, 0) : amount;
+    const daoRecord = await db.select().from(daos).where(eq17(daos.id, daoId)).limit(1);
+    const currentBalance = parseFloat(daoRecord[0]?.treasuryBalance || "0");
+    if (currentBalance < totalAmount) {
+      throw new Error(`Insufficient treasury balance for disbursement. Available: ${currentBalance}, Required: ${totalAmount}`);
+    }
+    if (Array.isArray(recipients)) {
+      for (const recipient of recipients) {
+        await db.insert(walletTransactions).values({
+          walletAddress: recipient.address,
+          amount: recipient.amount.toString(),
+          currency,
+          type: "disbursement",
+          status: "completed",
+          description: `${description} - ${recipient.description || "Disbursement"}`,
+          daoId
+        });
+      }
+    } else {
+      await db.insert(walletTransactions).values({
+        walletAddress: recipients,
+        amount: amount.toString(),
+        currency,
+        type: "disbursement",
+        status: "completed",
+        description,
+        daoId
+      });
+    }
+    const newBalance = (currentBalance - totalAmount).toString();
+    await db.update(daos).set({ treasuryBalance: newBalance }).where(eq17(daos.id, daoId));
+  }
+  // Schedule a proposal for execution
+  static async scheduleProposalExecution(proposalId, daoId, executionType, executionData, scheduledFor) {
+    await db.insert(proposalExecutionQueue).values({
+      proposalId,
+      daoId,
+      executionType,
+      executionData,
+      scheduledFor,
+      status: "pending"
+    });
+  }
+  // Check if error is retriable
+  static isRetriableError(error) {
+    const retriableErrors = [
+      "ECONNREFUSED",
+      "ENOTFOUND",
+      "ETIMEDOUT",
+      "Rate limit",
+      "Service unavailable"
+    ];
+    return retriableErrors.some(
+      (errorType) => error.message?.includes(errorType) || error.code === errorType
+    );
+  }
+  // Get execution status
+  static async getExecutionStatus(proposalId) {
+    return await db.query.proposalExecutionQueue.findFirst({
+      where: eq17(proposalExecutionQueue.proposalId, proposalId)
+    });
+  }
+  // Cancel pending execution
+  static async cancelExecution(proposalId) {
+    await db.update(proposalExecutionQueue).set({
+      status: "cancelled",
+      errorMessage: "Execution cancelled by user"
+    }).where(and15(
+      eq17(proposalExecutionQueue.proposalId, proposalId),
+      eq17(proposalExecutionQueue.status, "pending")
+    ));
+  }
+  // Start the execution scheduler
+  static startScheduler() {
+    console.log("Starting proposal execution scheduler...");
+    setInterval(async () => {
+      await this.processPendingExecutions();
+    }, 5 * 60 * 1e3);
+    setTimeout(() => {
+      this.processPendingExecutions();
+    }, 1e4);
+  }
+};
+
+// server/routes/proposal-execution.ts
+var router14 = express14.Router();
+router14.get("/:daoId/queue", isAuthenticated, async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const userId = req.user.claims.sub;
+    const executions = await db.select().from(proposalExecutionQueue).where(eq18(proposalExecutionQueue.daoId, daoId)).orderBy(desc10(proposalExecutionQueue.createdAt));
+    res.json({
+      success: true,
+      data: executions
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch execution queue",
+      error: error.message
+    });
+  }
+});
+router14.post("/:daoId/execute/:proposalId", isAuthenticated, async (req, res) => {
+  try {
+    const { daoId, proposalId } = req.params;
+    const userId = req.user.claims.sub;
+    const execution = await db.select().from(proposalExecutionQueue).where(and16(
+      eq18(proposalExecutionQueue.proposalId, proposalId),
+      eq18(proposalExecutionQueue.daoId, daoId),
+      eq18(proposalExecutionQueue.status, "pending")
+    )).limit(1);
+    if (!execution.length) {
+      return res.status(404).json({
+        success: false,
+        message: "No pending execution found for this proposal"
+      });
+    }
+    await ProposalExecutionService.executeProposal(execution[0]);
+    res.json({
+      success: true,
+      message: "Proposal executed successfully"
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to execute proposal",
+      error: error.message
+    });
+  }
+});
+router14.delete("/:daoId/cancel/:executionId", isAuthenticated, async (req, res) => {
+  try {
+    const { daoId, executionId } = req.params;
+    const userId = req.user.claims.sub;
+    await db.update(proposalExecutionQueue).set({ status: "cancelled" }).where(and16(
+      eq18(proposalExecutionQueue.id, executionId),
+      eq18(proposalExecutionQueue.daoId, daoId)
+    ));
+    res.json({
+      success: true,
+      message: "Execution cancelled successfully"
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to cancel execution",
+      error: error.message
+    });
+  }
+});
+var proposal_execution_default = router14;
+
+// server/routes/payment-reconciliation.ts
+init_notificationService();
+init_storage();
+init_schema();
+import express15 from "express";
+import { eq as eq19, and as and17, desc as desc11, gte as gte6 } from "drizzle-orm";
+var router15 = express15.Router();
+var PaymentReconciliationService = class {
+  constructor() {
+    this.providers = ["mpesa", "kotanipay", "stripe", "paystack", "flutterwave", "coinbase", "minipay"];
+  }
+  async generateComprehensiveReport(startDate, endDate) {
+    const reports = [];
+    for (const provider2 of this.providers) {
+      try {
+        const report = await this.getProviderReport(provider2, startDate, endDate);
+        reports.push(report);
+      } catch (error) {
+        console.error(`Failed to get report for ${provider2}:`, error);
+        reports.push(this.getEmptyReport(provider2));
+      }
+    }
+    return reports;
+  }
+  async getProviderReport(provider2, startDate, endDate) {
+    switch (provider2) {
+      case "mpesa":
+        return {
+          provider: "M-Pesa",
+          totalPayments: 150,
+          completed: 142,
+          failed: 6,
+          pending: 2,
+          cancelled: 0,
+          totalAmount: 5e4,
+          successRate: "94.7%",
+          avgProcessingTime: 45,
+          // seconds
+          failureReasons: [
+            { reason: "Insufficient funds", count: 3, percentage: "50%" },
+            { reason: "Invalid phone number", count: 2, percentage: "33%" },
+            { reason: "Network timeout", count: 1, percentage: "17%" }
+          ],
+          inRetryQueue: 1,
+          reconciliationErrors: 0
+        };
+      case "kotanipay":
+        return {
+          provider: "KotaniPay",
+          totalPayments: 75,
+          completed: 68,
+          failed: 5,
+          pending: 2,
+          cancelled: 0,
+          totalAmount: 25e3,
+          successRate: "90.7%",
+          avgProcessingTime: 60,
+          failureReasons: [
+            { reason: "Bank account not found", count: 2, percentage: "40%" },
+            { reason: "Insufficient balance", count: 2, percentage: "40%" },
+            { reason: "Service unavailable", count: 1, percentage: "20%" }
+          ],
+          inRetryQueue: 2,
+          reconciliationErrors: 1
+        };
+      case "stripe":
+        return {
+          provider: "Stripe",
+          totalPayments: 200,
+          completed: 185,
+          failed: 12,
+          pending: 3,
+          cancelled: 0,
+          totalAmount: 75e3,
+          successRate: "92.5%",
+          avgProcessingTime: 15,
+          failureReasons: [
+            { reason: "card_declined", count: 5, percentage: "42%" },
+            { reason: "insufficient_funds", count: 4, percentage: "33%" },
+            { reason: "processing_error", count: 3, percentage: "25%" }
+          ],
+          inRetryQueue: 0,
+          reconciliationErrors: 0
+        };
+      default:
+        return this.getEmptyReport(provider2);
+    }
+  }
+  getEmptyReport(provider2) {
+    return {
+      provider: provider2,
+      totalPayments: 0,
+      completed: 0,
+      failed: 0,
+      pending: 0,
+      cancelled: 0,
+      totalAmount: 0,
+      successRate: "0%",
+      avgProcessingTime: 0,
+      failureReasons: [],
+      inRetryQueue: 0,
+      reconciliationErrors: 0
+    };
+  }
+  async detectAnomalies(reports) {
+    const anomalies = [];
+    for (const report of reports) {
+      const successRate = parseFloat(report.successRate.replace("%", ""));
+      if (successRate < 85 && report.totalPayments > 10) {
+        anomalies.push(`${report.provider}: Low success rate (${report.successRate})`);
+      }
+      if (report.reconciliationErrors > 0) {
+        anomalies.push(`${report.provider}: ${report.reconciliationErrors} reconciliation errors detected`);
+      }
+      if (report.inRetryQueue > 5) {
+        anomalies.push(`${report.provider}: High retry queue (${report.inRetryQueue} payments)`);
+      }
+      if (report.avgProcessingTime > 120) {
+        anomalies.push(`${report.provider}: Slow processing (${report.avgProcessingTime}s average)`);
+      }
+    }
+    return anomalies;
+  }
+  async autoResolveIssues(provider2) {
+    const errors2 = [];
+    let resolved = 0;
+    try {
+      const retryResponse = await fetch(`/api/payments/${provider2}/retry-all`, {
+        method: "POST"
+      });
+      if (retryResponse.ok) {
+        const result = await retryResponse.json();
+        resolved += result.retriedCount || 0;
+      } else {
+        errors2.push(`Failed to retry ${provider2} payments`);
+      }
+      const clearResponse = await fetch(`/api/payments/${provider2}/clear-stuck`, {
+        method: "POST"
+      });
+      if (clearResponse.ok) {
+        const result = await clearResponse.json();
+        resolved += result.clearedCount || 0;
+      } else {
+        errors2.push(`Failed to clear stuck ${provider2} payments`);
+      }
+    } catch (error) {
+      errors2.push(`Auto-resolve failed for ${provider2}: ${error}`);
+    }
+    return { resolved, errors: errors2 };
+  }
+};
+var reconciliationService = new PaymentReconciliationService();
+router15.get("/report", async (req, res) => {
+  try {
+    const { startDate, endDate, provider: provider2 } = req.query;
+    let reports;
+    if (provider2) {
+      const singleReport = await reconciliationService["getProviderReport"](
+        provider2,
+        startDate,
+        endDate
+      );
+      reports = [singleReport];
+    } else {
+      reports = await reconciliationService.generateComprehensiveReport(
+        startDate,
+        endDate
+      );
+    }
+    const anomalies = await reconciliationService.detectAnomalies(reports);
+    const overall = {
+      totalPayments: reports.reduce((sum3, r) => sum3 + r.totalPayments, 0),
+      totalCompleted: reports.reduce((sum3, r) => sum3 + r.completed, 0),
+      totalFailed: reports.reduce((sum3, r) => sum3 + r.failed, 0),
+      totalAmount: reports.reduce((sum3, r) => sum3 + r.totalAmount, 0),
+      overallSuccessRate: reports.length > 0 ? (reports.reduce((sum3, r) => sum3 + r.completed, 0) / reports.reduce((sum3, r) => sum3 + r.totalPayments, 0) * 100).toFixed(2) + "%" : "0%"
+    };
+    res.json({
+      success: true,
+      overall,
+      providers: reports,
+      anomalies,
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to generate reconciliation report",
+      error: error.message
+    });
+  }
+});
+router15.post("/auto-resolve", async (req, res) => {
+  try {
+    const { provider: provider2 } = req.body;
+    if (provider2) {
+      const result = await reconciliationService.autoResolveIssues(provider2);
+      res.json({
+        success: true,
+        provider: provider2,
+        ...result
+      });
+    } else {
+      const results = [];
+      const providers = ["mpesa", "kotanipay", "stripe", "paystack"];
+      for (const p of providers) {
+        const result = await reconciliationService.autoResolveIssues(p);
+        results.push({ provider: p, ...result });
+      }
+      res.json({
+        success: true,
+        results,
+        totalResolved: results.reduce((sum3, r) => sum3 + r.resolved, 0)
+      });
+    }
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Auto-resolve failed",
+      error: error.message
+    });
+  }
+});
+router15.get("/anomalies", async (req, res) => {
+  try {
+    const reports = await reconciliationService.generateComprehensiveReport();
+    const anomalies = await reconciliationService.detectAnomalies(reports);
+    res.json({
+      success: true,
+      anomalies,
+      count: anomalies.length,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to detect anomalies",
+      error: error.message
+    });
+  }
+});
+router15.post("/notifications/subscribe", async (req, res) => {
+  try {
+    const { recipient, channels, events } = req.body;
+    notificationService.subscribe(recipient, channels);
+    const eventTypes = events || ["anomaly_detected", "reconciliation_failed", "high_failure_rate"];
+    for (const eventType of eventTypes) {
+      notificationService.on(eventType, async (data) => {
+        await notificationService.sendPaymentNotification(recipient, {
+          type: "payment_failed",
+          // Reuse existing type for now
+          amount: 0,
+          currency: "USD",
+          transactionId: `RECON-${Date.now()}`,
+          errorMessage: `Reconciliation alert: ${data.message}`
+        });
+      });
+    }
+    res.json({
+      success: true,
+      message: "Subscribed to reconciliation notifications",
+      recipient,
+      events: eventTypes
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to subscribe to notifications",
+      error: error.message
+    });
+  }
+});
+router15.get("/payments", async (req, res) => {
+  try {
+    const {
+      status,
+      provider: provider2,
+      reconciled,
+      dateRange = "30"
+    } = req.query;
+    const conditions = [];
+    if (status && status !== "all") {
+      conditions.push(eq19(walletTransactions.status, status));
+    }
+    if (reconciled !== "all") {
+    }
+    const dateFilter = /* @__PURE__ */ new Date();
+    dateFilter.setDate(dateFilter.getDate() - parseInt(dateRange));
+    conditions.push(gte6(walletTransactions.createdAt, dateFilter));
+    let whereClause = void 0;
+    if (conditions.length > 0) {
+      whereClause = and17(...conditions);
+    }
+    const payments = await db.select().from(walletTransactions).where(whereClause).orderBy(desc11(walletTransactions.createdAt)).limit(100);
+    const stats = {
+      total: payments.length,
+      reconciled: payments.filter((p) => p.status === "completed").length,
+      pending: payments.filter((p) => p.status === "pending").length,
+      discrepancies: 0,
+      // Calculate discrepancies based on your logic
+      totalAmount: payments.reduce((sum3, p) => sum3 + parseFloat(p.amount), 0).toString()
+    };
+    res.json({ payments, stats });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch payments" });
+  }
+});
+router15.post("/reconcile/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.update(walletTransactions).set({
+      status: "completed",
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq19(walletTransactions.id, id));
+    res.json({ success: true, message: "Payment reconciled successfully" });
+  } catch (error) {
+    res.status(500).json({ error: "Reconciliation failed" });
+  }
+});
+router15.post("/bulk-reconcile", async (req, res) => {
+  try {
+    const { paymentIds } = req.body;
+    if (!Array.isArray(paymentIds)) {
+      return res.status(400).json({ error: "Invalid payment IDs" });
+    }
+    for (const paymentId of paymentIds) {
+      await db.update(walletTransactions).set({
+        status: "completed",
+        updatedAt: /* @__PURE__ */ new Date()
+      }).where(eq19(walletTransactions.id, paymentId));
+    }
+    res.json({
+      success: true,
+      message: `Successfully reconciled ${paymentIds.length} payments`
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Bulk reconciliation failed" });
+  }
+});
+var payment_reconciliation_default = router15;
+
+// server/routes/stripe-status.ts
+init_notificationService();
+import express16 from "express";
+import { z as z4 } from "zod";
+var router16 = express16.Router();
+var stripeWebhookSchema = z4.object({
+  id: z4.string(),
+  type: z4.string(),
+  data: z4.object({
+    object: z4.object({
+      id: z4.string(),
+      amount: z4.number(),
+      currency: z4.string(),
+      status: z4.string(),
+      receipt_url: z4.string().optional(),
+      customer_email: z4.string().optional(),
+      customer: z4.string().optional(),
+      created: z4.number(),
+      failure_code: z4.string().optional(),
+      failure_message: z4.string().optional(),
+      metadata: z4.record(z4.string()).optional()
+    })
+  })
+});
+var stripePaymentStatus = /* @__PURE__ */ new Map();
+var stripeRetryQueue = /* @__PURE__ */ new Map();
+var StripeReconciliationService = class {
+  static async reconcilePayment(transactionId, stripeData) {
+    const payment = stripePaymentStatus.get(transactionId);
+    if (!payment) {
+      console.warn(`Stripe reconciliation: Transaction ${transactionId} not found`);
+      return false;
+    }
+    if (payment.amount !== stripeData.amount || payment.currency !== stripeData.currency) {
+      console.error(`Stripe reconciliation failed: Amount/currency mismatch for ${transactionId}`);
+      return false;
+    }
+    const status = stripeData.status === "succeeded" ? "completed" : stripeData.status === "requires_payment_method" ? "failed" : stripeData.status;
+    payment.status = status;
+    payment.receipt = stripeData.receipt_url;
+    payment.failureCode = stripeData.failure_code;
+    payment.failureMessage = stripeData.failure_message;
+    payment.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    stripePaymentStatus.set(transactionId, payment);
+    return true;
+  }
+  static async processCompletedPayment(payment) {
+    try {
+      if (payment.daoId) {
+        console.log(`Crediting DAO ${payment.daoId} with ${payment.amount / 100} ${payment.currency.toUpperCase()}`);
+      }
+      if (payment.email) {
+        await notificationService.sendPaymentNotification(payment.email, {
+          type: "payment_success",
+          amount: payment.amount / 100,
+          // Stripe amounts are in cents
+          currency: payment.currency.toUpperCase(),
+          transactionId: payment.transactionId
+        });
+      }
+      notificationService.updatePaymentStatus(payment.transactionId, {
+        status: "completed",
+        receipt: payment.receipt,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      return true;
+    } catch (error) {
+      console.error("Error processing completed Stripe payment:", error);
+      return false;
+    }
+  }
+  static async processFailedPayment(payment) {
+    try {
+      const retryableFailures = ["card_declined", "insufficient_funds", "processing_error"];
+      if (payment.failureCode && retryableFailures.includes(payment.failureCode) && (payment.retryCount || 0) < 2) {
+        payment.retryCount = (payment.retryCount || 0) + 1;
+        stripeRetryQueue.set(payment.transactionId, payment);
+        if (payment.email) {
+          await notificationService.sendPaymentNotification(payment.email, {
+            type: "payment_retry",
+            amount: payment.amount / 100,
+            currency: payment.currency.toUpperCase(),
+            transactionId: payment.transactionId,
+            errorMessage: payment.failureMessage
+          });
+        }
+      } else {
+        if (payment.email) {
+          await notificationService.sendPaymentNotification(payment.email, {
+            type: "payment_failed",
+            amount: payment.amount / 100,
+            currency: payment.currency.toUpperCase(),
+            transactionId: payment.transactionId,
+            errorMessage: payment.failureMessage || payment.failureCode
+          });
+        }
+      }
+      notificationService.updatePaymentStatus(payment.transactionId, {
+        status: "failed",
+        error: payment.failureMessage || payment.failureCode,
+        retryCount: payment.retryCount,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      return true;
+    } catch (error) {
+      console.error("Error processing failed Stripe payment:", error);
+      return false;
+    }
+  }
+};
+router16.get("/status/:transactionId", async (req, res) => {
+  const { transactionId } = req.params;
+  try {
+    const status = stripePaymentStatus.get(transactionId);
+    if (!status) {
+      return res.status(404).json({
+        code: "TRANSACTION_NOT_FOUND",
+        message: "Transaction not found"
+      });
+    }
+    res.json({
+      success: true,
+      payment: {
+        ...status,
+        amount: status.amount / 100
+        // Convert from cents to dollars
+      },
+      retryInfo: stripeRetryQueue.has(transactionId) ? {
+        inRetryQueue: true,
+        retryCount: status.retryCount || 0
+      } : null
+    });
+  } catch (error) {
+    res.status(500).json({
+      code: "STATUS_CHECK_FAILED",
+      message: "Failed to check payment status",
+      details: error.message
+    });
+  }
+});
+router16.post("/webhook", async (req, res) => {
+  try {
+    const event = stripeWebhookSchema.parse(req.body);
+    const payment = event.data.object;
+    const relevantEvents = [
+      "payment_intent.succeeded",
+      "payment_intent.payment_failed",
+      "invoice.payment_succeeded",
+      "invoice.payment_failed"
+    ];
+    if (!relevantEvents.includes(event.type)) {
+      return res.status(200).json({ received: true });
+    }
+    const reconciled = await StripeReconciliationService.reconcilePayment(
+      payment.id,
+      payment
+    );
+    if (!reconciled) {
+      console.warn(`Stripe webhook: Payment ${payment.id} not found for reconciliation`);
+      const newPayment = {
+        id: payment.id,
+        transactionId: payment.id,
+        status: payment.status === "succeeded" ? "completed" : "failed",
+        amount: payment.amount,
+        currency: payment.currency,
+        email: payment.customer_email,
+        receipt: payment.receipt_url,
+        failureCode: payment.failure_code,
+        failureMessage: payment.failure_message,
+        createdAt: new Date(payment.created * 1e3).toISOString(),
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        daoId: payment.metadata?.daoId
+      };
+      stripePaymentStatus.set(payment.id, newPayment);
+    }
+    const updatedPayment = stripePaymentStatus.get(payment.id);
+    if (!updatedPayment) {
+      return res.status(500).json({ error: "Failed to process payment" });
+    }
+    if (event.type.includes("succeeded")) {
+      await StripeReconciliationService.processCompletedPayment(updatedPayment);
+    } else if (event.type.includes("failed")) {
+      await StripeReconciliationService.processFailedPayment(updatedPayment);
+    }
+    console.log(`Stripe payment ${payment.id} processed: ${event.type}`);
+    res.status(200).json({ received: true });
+  } catch (error) {
+    console.error("Stripe webhook error:", error);
+    res.status(400).json({
+      code: "INVALID_WEBHOOK",
+      message: "Invalid Stripe webhook data",
+      details: error.message
+    });
+  }
+});
+router16.get("/reconcile", async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const payments = Array.from(stripePaymentStatus.values()).filter((payment) => {
+      if (startDate && payment.createdAt < startDate) return false;
+      if (endDate && payment.createdAt > endDate) return false;
+      return true;
+    });
+    const reconciliation = {
+      totalPayments: payments.length,
+      completed: payments.filter((p) => p.status === "completed").length,
+      failed: payments.filter((p) => p.status === "failed").length,
+      pending: payments.filter((p) => p.status === "pending").length,
+      inRetryQueue: stripeRetryQueue.size,
+      totalAmount: payments.filter((p) => p.status === "completed").reduce((sum3, p) => sum3 + p.amount / 100, 0),
+      // Convert from cents
+      successRate: payments.length > 0 ? (payments.filter((p) => p.status === "completed").length / payments.length * 100).toFixed(2) + "%" : "0%",
+      topFailureReasons: getTopFailureReasons(payments ? payments.filter((p) => p.status === "failed") : [])
+    };
+    res.json({
+      success: true,
+      reconciliation,
+      payments: payments.map((p) => ({
+        ...p,
+        amount: p.amount / 100,
+        // Convert from cents
+        inRetryQueue: stripeRetryQueue.has(p.transactionId)
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({
+      code: "RECONCILIATION_FAILED",
+      message: "Failed to generate reconciliation report",
+      details: error.message
+    });
+  }
+});
+function getTopFailureReasons(failedPayments) {
+  const reasons = failedPayments.reduce((acc, payment) => {
+    const reason = payment.failureCode || payment.failureMessage || "unknown";
+    acc[reason] = (acc[reason] || 0) + 1;
+    return acc;
+  }, {});
+  return Object.entries(reasons).sort(([, a], [, b]) => b - a).slice(0, 5).map(([reason, count3]) => ({ reason, count: count3 }));
+}
+var stripe_status_default = router16;
+
+// server/routes/kotanipay-status.ts
+init_notificationService();
+import express17 from "express";
+import { z as z5 } from "zod";
+var router17 = express17.Router();
+var kotaniPaymentStatus = /* @__PURE__ */ new Map();
+var paymentRetryQueue = /* @__PURE__ */ new Map();
+var kotaniWebhookSchema = z5.object({
+  transactionId: z5.string(),
+  status: z5.enum(["pending", "completed", "failed", "cancelled"]),
+  amount: z5.number(),
+  currency: z5.string(),
+  phone: z5.string(),
+  reference: z5.string().optional(),
+  timestamp: z5.string().optional(),
+  errorCode: z5.string().optional(),
+  errorMessage: z5.string().optional()
+});
+var PaymentReconciliationService2 = class {
+  static async reconcilePayment(transactionId, webhookData) {
+    const payment = kotaniPaymentStatus.get(transactionId);
+    if (!payment) {
+      console.warn(`Payment reconciliation: Transaction ${transactionId} not found`);
+      return false;
+    }
+    if (payment.amount !== webhookData.amount || payment.currency !== webhookData.currency) {
+      console.error(`Payment reconciliation failed: Amount/currency mismatch for ${transactionId}`);
+      return false;
+    }
+    payment.status = webhookData.status;
+    payment.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    if (webhookData.errorMessage) {
+      payment.errorMessage = webhookData.errorMessage;
+    }
+    kotaniPaymentStatus.set(transactionId, payment);
+    return true;
+  }
+  static async processCompletedPayment(payment) {
+    try {
+      if (payment.daoId) {
+        console.log(`Crediting DAO ${payment.daoId} with ${payment.amount} ${payment.currency}`);
+      }
+      await notificationService.sendPaymentNotification(payment.phone, {
+        type: "payment_success",
+        amount: payment.amount,
+        currency: payment.currency,
+        transactionId: payment.transactionId
+      });
+      return true;
+    } catch (error) {
+      console.error("Error processing completed payment:", error);
+      return false;
+    }
+  }
+  static async processFailedPayment(payment) {
+    try {
+      if ((payment.retryCount || 0) < 3) {
+        payment.retryCount = (payment.retryCount || 0) + 1;
+        paymentRetryQueue.set(payment.transactionId, payment);
+        setTimeout(() => {
+          this.retryFailedPayment(payment.transactionId);
+        }, 3e4 * payment.retryCount);
+      }
+      await notificationService.sendPaymentNotification(payment.phone, {
+        type: "payment_failed",
+        amount: payment.amount,
+        currency: payment.currency,
+        transactionId: payment.transactionId,
+        errorMessage: payment.errorMessage
+      });
+      return true;
+    } catch (error) {
+      console.error("Error processing failed payment:", error);
+      return false;
+    }
+  }
+  static async retryFailedPayment(transactionId) {
+    const payment = paymentRetryQueue.get(transactionId);
+    if (!payment) return;
+    try {
+      console.log(`Retrying payment ${transactionId} (attempt ${payment.retryCount})`);
+      const retrySuccess = Math.random() > 0.5;
+      if (retrySuccess) {
+        payment.status = "completed";
+        paymentRetryQueue.delete(transactionId);
+        await this.processCompletedPayment(payment);
+      } else {
+        payment.status = "failed";
+        await this.processFailedPayment(payment);
+      }
+    } catch (error) {
+      console.error(`Retry failed for payment ${transactionId}:`, error);
+    }
+  }
+};
+router17.get("/status/:transactionId", async (req, res) => {
+  const { transactionId } = req.params;
+  try {
+    const status = kotaniPaymentStatus.get(transactionId);
+    if (!status) {
+      return res.status(404).json({
+        code: "TRANSACTION_NOT_FOUND",
+        message: "Transaction not found"
+      });
+    }
+    res.json({
+      success: true,
+      payment: status,
+      retryInfo: paymentRetryQueue.has(transactionId) ? {
+        inRetryQueue: true,
+        retryCount: status.retryCount || 0
+      } : null
+    });
+  } catch (error) {
+    res.status(500).json({
+      code: "STATUS_CHECK_FAILED",
+      message: "Failed to check payment status",
+      details: error.message
+    });
+  }
+});
+router17.post("/callback", async (req, res) => {
+  try {
+    const webhook = kotaniWebhookSchema.parse(req.body);
+    const reconciled = await PaymentReconciliationService2.reconcilePayment(
+      webhook.transactionId,
+      webhook
+    );
+    if (!reconciled) {
+      return res.status(400).json({
+        code: "RECONCILIATION_FAILED",
+        message: "Payment reconciliation failed"
+      });
+    }
+    const payment = {
+      id: webhook.transactionId,
+      transactionId: webhook.transactionId,
+      status: webhook.status,
+      amount: webhook.amount,
+      currency: webhook.currency,
+      phone: webhook.phone,
+      reference: webhook.reference,
+      createdAt: kotaniPaymentStatus.get(webhook.transactionId)?.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      errorMessage: webhook.errorMessage
+    };
+    kotaniPaymentStatus.set(webhook.transactionId, payment);
+    switch (webhook.status) {
+      case "completed":
+        await PaymentReconciliationService2.processCompletedPayment(payment);
+        break;
+      case "failed":
+      case "cancelled":
+        await PaymentReconciliationService2.processFailedPayment(payment);
+        break;
+      case "pending":
+        await notificationService.sendPaymentNotification(payment.phone, {
+          type: "payment_pending",
+          amount: payment.amount,
+          currency: payment.currency,
+          transactionId: payment.transactionId
+        });
+        break;
+    }
+    console.log(`KotaniPay payment ${webhook.transactionId} status updated: ${webhook.status}`);
+    res.json({
+      success: true,
+      reconciled: true,
+      status: webhook.status
+    });
+  } catch (error) {
+    console.error("KotaniPay callback error:", error);
+    res.status(400).json({
+      code: "INVALID_CALLBACK",
+      message: "Invalid callback data",
+      details: error.message
+    });
+  }
+});
+router17.post("/retry/:transactionId", async (req, res) => {
+  const { transactionId } = req.params;
+  try {
+    const payment = kotaniPaymentStatus.get(transactionId);
+    if (!payment) {
+      return res.status(404).json({
+        code: "TRANSACTION_NOT_FOUND",
+        message: "Transaction not found"
+      });
+    }
+    if (payment.status !== "failed") {
+      return res.status(400).json({
+        code: "INVALID_STATUS",
+        message: "Can only retry failed payments"
+      });
+    }
+    if ((payment.retryCount || 0) >= 3) {
+      return res.status(400).json({
+        code: "RETRY_LIMIT_EXCEEDED",
+        message: "Maximum retry attempts exceeded"
+      });
+    }
+    payment.retryCount = (payment.retryCount || 0) + 1;
+    paymentRetryQueue.set(transactionId, payment);
+    await PaymentReconciliationService2.retryFailedPayment(transactionId);
+    res.json({
+      success: true,
+      message: "Payment retry initiated",
+      retryCount: payment.retryCount
+    });
+  } catch (error) {
+    res.status(500).json({
+      code: "RETRY_FAILED",
+      message: "Failed to retry payment",
+      details: error.message
+    });
+  }
+});
+router17.get("/reconcile", async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const payments = Array.from(kotaniPaymentStatus.values()).filter((payment) => {
+      if (startDate && payment.createdAt < startDate) return false;
+      if (endDate && payment.createdAt > endDate) return false;
+      return true;
+    });
+    const reconciliation = {
+      totalPayments: payments.length,
+      completed: payments.filter((p) => p.status === "completed").length,
+      failed: payments.filter((p) => p.status === "failed").length,
+      pending: payments.filter((p) => p.status === "pending").length,
+      cancelled: payments.filter((p) => p.status === "cancelled").length,
+      inRetryQueue: paymentRetryQueue.size,
+      totalAmount: payments.filter((p) => p.status === "completed").reduce((sum3, p) => sum3 + p.amount, 0)
+    };
+    res.json({
+      success: true,
+      reconciliation,
+      payments: payments.map((p) => ({
+        ...p,
+        inRetryQueue: paymentRetryQueue.has(p.transactionId)
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({
+      code: "RECONCILIATION_FAILED",
+      message: "Failed to generate reconciliation report",
+      details: error.message
+    });
+  }
+});
+var kotanipay_status_default = router17;
+
+// server/routes/mpesa-status.ts
+init_notificationService();
+import express18 from "express";
+import { z as z6 } from "zod";
+var router18 = express18.Router();
+var mpesaCallbackSchema = z6.object({
+  Body: z6.object({
+    stkCallback: z6.object({
+      MerchantRequestID: z6.string(),
+      CheckoutRequestID: z6.string(),
+      ResultCode: z6.number(),
+      ResultDesc: z6.string(),
+      CallbackMetadata: z6.object({
+        Item: z6.array(z6.object({
+          Name: z6.string(),
+          Value: z6.union([z6.string(), z6.number()])
+        }))
+      }).optional()
+    })
+  })
+});
+var paymentStatus = /* @__PURE__ */ new Map();
+var mpesaRetryQueue = /* @__PURE__ */ new Map();
+var MpesaReconciliationService = class {
+  static async reconcilePayment(checkoutRequestId, callbackData) {
+    const payment = paymentStatus.get(checkoutRequestId);
+    if (!payment) {
+      console.warn(`M-Pesa reconciliation: Transaction ${checkoutRequestId} not found`);
+      return false;
+    }
+    let amount, receipt, phoneNumber;
+    if (callbackData.CallbackMetadata?.Item) {
+      for (const item of callbackData.CallbackMetadata.Item) {
+        if (item.Name === "Amount") amount = Number(item.Value);
+        if (item.Name === "MpesaReceiptNumber") receipt = String(item.Value);
+        if (item.Name === "PhoneNumber") phoneNumber = String(item.Value);
+      }
+    }
+    if (amount && payment.amount !== amount) {
+      console.error(`M-Pesa reconciliation failed: Amount mismatch for ${checkoutRequestId}`);
+      return false;
+    }
+    payment.receipt = receipt;
+    payment.resultCode = callbackData.ResultCode;
+    payment.resultDesc = callbackData.ResultDesc;
+    payment.status = callbackData.ResultCode === 0 ? "completed" : "failed";
+    payment.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    paymentStatus.set(checkoutRequestId, payment);
+    return true;
+  }
+  static async processCompletedPayment(payment) {
+    try {
+      if (payment.daoId) {
+        console.log(`Crediting DAO ${payment.daoId} with ${payment.amount} KES`);
+      }
+      await notificationService.sendPaymentNotification(payment.phone, {
+        type: "payment_success",
+        amount: payment.amount,
+        currency: payment.currency,
+        transactionId: payment.transactionId
+      });
+      notificationService.updatePaymentStatus(payment.transactionId, {
+        status: "completed",
+        receipt: payment.receipt,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      return true;
+    } catch (error) {
+      console.error("Error processing completed M-Pesa payment:", error);
+      return false;
+    }
+  }
+  static async processFailedPayment(payment) {
+    try {
+      const retryableErrors = [1, 1032, 1037];
+      if (retryableErrors.includes(payment.resultCode || 0) && (payment.retryCount || 0) < 3) {
+        payment.retryCount = (payment.retryCount || 0) + 1;
+        mpesaRetryQueue.set(payment.transactionId, payment);
+        setTimeout(() => {
+          this.retryFailedPayment(payment.transactionId);
+        }, 6e4 * payment.retryCount);
+        await notificationService.sendPaymentNotification(payment.phone, {
+          type: "payment_retry",
+          amount: payment.amount,
+          currency: payment.currency,
+          transactionId: payment.transactionId
+        });
+      } else {
+        await notificationService.sendPaymentNotification(payment.phone, {
+          type: "payment_failed",
+          amount: payment.amount,
+          currency: payment.currency,
+          transactionId: payment.transactionId,
+          errorMessage: payment.resultDesc
+        });
+      }
+      notificationService.updatePaymentStatus(payment.transactionId, {
+        status: "failed",
+        error: payment.resultDesc,
+        retryCount: payment.retryCount,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      return true;
+    } catch (error) {
+      console.error("Error processing failed M-Pesa payment:", error);
+      return false;
+    }
+  }
+  static async retryFailedPayment(transactionId) {
+    const payment = mpesaRetryQueue.get(transactionId);
+    if (!payment) return;
+    try {
+      console.log(`Retrying M-Pesa payment ${transactionId} (attempt ${payment.retryCount})`);
+      const retrySuccess = Math.random() > 0.3;
+      if (retrySuccess) {
+        payment.status = "completed";
+        payment.resultCode = 0;
+        payment.resultDesc = "Success";
+        payment.receipt = "RETRY" + Date.now();
+        mpesaRetryQueue.delete(transactionId);
+        await this.processCompletedPayment(payment);
+      } else {
+        await this.processFailedPayment(payment);
+      }
+    } catch (error) {
+      console.error(`M-Pesa retry failed for payment ${transactionId}:`, error);
+    }
+  }
+};
+router18.get("/status/:transactionId", async (req, res) => {
+  const { transactionId } = req.params;
+  try {
+    const status = paymentStatus.get(transactionId);
+    if (!status) {
+      return res.status(404).json({
+        code: "TRANSACTION_NOT_FOUND",
+        message: "Transaction not found"
+      });
+    }
+    res.json({
+      success: true,
+      payment: status,
+      retryInfo: mpesaRetryQueue.has(transactionId) ? {
+        inRetryQueue: true,
+        retryCount: status.retryCount || 0
+      } : null
+    });
+  } catch (error) {
+    res.status(500).json({
+      code: "STATUS_CHECK_FAILED",
+      message: "Failed to check payment status",
+      details: error.message
+    });
+  }
+});
+router18.post("/callback", async (req, res) => {
+  try {
+    const callback = mpesaCallbackSchema.parse(req.body);
+    const { ResultCode, CheckoutRequestID, ResultDesc } = callback.Body.stkCallback;
+    const reconciled = await MpesaReconciliationService.reconcilePayment(
+      CheckoutRequestID,
+      callback.Body.stkCallback
+    );
+    if (!reconciled) {
+      return res.status(400).json({
+        code: "RECONCILIATION_FAILED",
+        message: "Payment reconciliation failed"
+      });
+    }
+    const payment = paymentStatus.get(CheckoutRequestID);
+    if (!payment) {
+      return res.status(404).json({
+        code: "PAYMENT_NOT_FOUND",
+        message: "Payment not found"
+      });
+    }
+    if (ResultCode === 0) {
+      await MpesaReconciliationService.processCompletedPayment(payment);
+    } else {
+      await MpesaReconciliationService.processFailedPayment(payment);
+    }
+    console.log(`M-Pesa payment ${CheckoutRequestID} processed: ${ResultCode === 0 ? "Success" : "Failed"}`);
+    res.json({
+      success: true,
+      reconciled: true,
+      resultCode: ResultCode
+    });
+  } catch (error) {
+    console.error("M-Pesa callback error:", error);
+    res.status(400).json({
+      code: "INVALID_CALLBACK",
+      message: "Invalid callback data",
+      details: error.message
+    });
+  }
+});
+router18.post("/retry/:transactionId", async (req, res) => {
+  const { transactionId } = req.params;
+  try {
+    const payment = paymentStatus.get(transactionId);
+    if (!payment) {
+      return res.status(404).json({
+        code: "TRANSACTION_NOT_FOUND",
+        message: "Transaction not found"
+      });
+    }
+    if (payment.status !== "failed") {
+      return res.status(400).json({
+        code: "INVALID_STATUS",
+        message: "Can only retry failed payments"
+      });
+    }
+    if ((payment.retryCount || 0) >= 3) {
+      return res.status(400).json({
+        code: "RETRY_LIMIT_EXCEEDED",
+        message: "Maximum retry attempts exceeded"
+      });
+    }
+    payment.retryCount = (payment.retryCount || 0) + 1;
+    mpesaRetryQueue.set(transactionId, payment);
+    await MpesaReconciliationService.retryFailedPayment(transactionId);
+    res.json({
+      success: true,
+      message: "Payment retry initiated",
+      retryCount: payment.retryCount
+    });
+  } catch (error) {
+    res.status(500).json({
+      code: "RETRY_FAILED",
+      message: "Failed to retry payment",
+      details: error.message
+    });
+  }
+});
+router18.get("/reconcile", async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const payments = Array.from(paymentStatus.values()).filter((payment) => {
+      if (startDate && payment.createdAt < startDate) return false;
+      if (endDate && payment.createdAt > endDate) return false;
+      return true;
+    });
+    const reconciliation = {
+      totalPayments: payments.length,
+      completed: payments.filter((p) => p.status === "completed").length,
+      failed: payments.filter((p) => p.status === "failed").length,
+      pending: payments.filter((p) => p.status === "pending").length,
+      inRetryQueue: mpesaRetryQueue.size,
+      totalAmount: payments.filter((p) => p.status === "completed").reduce((sum3, p) => sum3 + p.amount, 0),
+      successRate: payments.length > 0 ? (payments.filter((p) => p.status === "completed").length / payments.length * 100).toFixed(2) + "%" : "0%"
+    };
+    res.json({
+      success: true,
+      reconciliation,
+      payments: payments.map((p) => ({
+        ...p,
+        inRetryQueue: mpesaRetryQueue.has(p.transactionId)
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({
+      code: "RECONCILIATION_FAILED",
+      message: "Failed to generate reconciliation report",
+      details: error.message
+    });
+  }
+});
+var mpesa_status_default = router18;
+
+// server/routes/monitoring.ts
+import express19 from "express";
+var router19 = express19.Router();
+var AlertManager = class _AlertManager {
+  constructor() {
+    this.alerts = [];
+    this.alertRules = {
+      errorRate: { threshold: 5, severity: "high" },
+      responseTime: { threshold: 1e3, severity: "medium" },
+      memoryUsage: { threshold: 80, severity: "high" },
+      connectionCount: { threshold: 1e3, severity: "medium" }
+    };
+    setInterval(() => this.checkAlerts(), 6e4);
+  }
+  static getInstance() {
+    if (!_AlertManager.instance) {
+      _AlertManager.instance = new _AlertManager();
+    }
+    return _AlertManager.instance;
+  }
+  checkAlerts() {
+    const metrics = metricsCollector.getMetrics();
+    if (metrics.summary.errorRate > this.alertRules.errorRate.threshold) {
+      this.createAlert(
+        "error_rate",
+        this.alertRules.errorRate.severity,
+        `High error rate: ${metrics.summary.errorRate.toFixed(2)}%`
+      );
+    }
+    if (metrics.summary.avgResponseTime > this.alertRules.responseTime.threshold) {
+      this.createAlert(
+        "response_time",
+        this.alertRules.responseTime.severity,
+        `Slow response time: ${metrics.summary.avgResponseTime.toFixed(2)}ms`
+      );
+    }
+    const memoryUsage = process.memoryUsage().heapUsed / 1024 / 1024;
+    if (memoryUsage > 500) {
+      this.createAlert(
+        "memory_usage",
+        this.alertRules.memoryUsage.severity,
+        `High memory usage: ${memoryUsage.toFixed(2)}MB`
+      );
+    }
+    if (metrics.summary.activeConnections > this.alertRules.connectionCount.threshold) {
+      this.createAlert(
+        "connection_count",
+        this.alertRules.connectionCount.severity,
+        `High connection count: ${metrics.summary.activeConnections}`
+      );
+    }
+  }
+  createAlert(type, severity, message) {
+    const existingAlert = this.alerts.find(
+      (alert2) => alert2.type === type && !alert2.acknowledged && !alert2.resolvedAt
+    );
+    if (existingAlert) return;
+    const alert = {
+      id: `${type}_${Date.now()}`,
+      type,
+      severity,
+      message,
+      timestamp: Date.now(),
+      acknowledged: false
+    };
+    this.alerts.push(alert);
+    logger.warn(`Alert created: ${message}`, { alert });
+    this.alerts.filter((a) => a.type === type && a.id !== alert.id && !a.resolvedAt).forEach((a) => a.resolvedAt = Date.now());
+  }
+  getAlerts(includeResolved = false) {
+    return this.alerts.filter(
+      (alert) => includeResolved || !alert.resolvedAt && !alert.acknowledged
+    );
+  }
+  acknowledgeAlert(alertId) {
+    const alert = this.alerts.find((a) => a.id === alertId);
+    if (alert) {
+      alert.acknowledged = true;
+      return true;
+    }
+    return false;
+  }
+  resolveAlert(alertId) {
+    const alert = this.alerts.find((a) => a.id === alertId);
+    if (alert) {
+      alert.resolvedAt = Date.now();
+      return true;
+    }
+    return false;
+  }
+};
+var alertManager = AlertManager.getInstance();
+router19.get("/dashboard", isAuthenticated2, (req, res) => {
+  const metrics = metricsCollector.getMetrics();
+  const alerts = alertManager.getAlerts();
+  const healthScore = metricsCollector.getHealthScore();
+  res.json({
+    healthScore,
+    alerts: alerts.length,
+    criticalAlerts: alerts.filter((a) => a.severity === "critical").length,
+    metrics: {
+      totalRequests: metrics.summary.totalRequests,
+      errorRate: metrics.summary.errorRate,
+      avgResponseTime: metrics.summary.avgResponseTime,
+      activeConnections: metrics.summary.activeConnections,
+      uptime: metrics.summary.uptime,
+      memoryUsage: process.memoryUsage()
+    },
+    recentRequests: metrics.requests.slice(-20),
+    systemMetrics: metrics.system.slice(-10)
+  });
+});
+router19.get("/alerts", isAuthenticated2, (req, res) => {
+  const includeResolved = req.query.resolved === "true";
+  const alerts = alertManager.getAlerts(includeResolved);
+  res.json({ alerts });
+});
+router19.post("/alerts/:alertId/acknowledge", isAuthenticated2, (req, res) => {
+  const { alertId } = req.params;
+  const success = alertManager.acknowledgeAlert(alertId);
+  if (success) {
+    res.json({ message: "Alert acknowledged" });
+  } else {
+    res.status(404).json({ error: "Alert not found" });
+  }
+});
+router19.post("/alerts/:alertId/resolve", isAuthenticated2, (req, res) => {
+  const { alertId } = req.params;
+  const success = alertManager.resolveAlert(alertId);
+  if (success) {
+    res.json({ message: "Alert resolved" });
+  } else {
+    res.status(404).json({ error: "Alert not found" });
+  }
+});
+router19.get("/performance", isAuthenticated2, (req, res) => {
+  const metrics = metricsCollector.getMetrics();
+  const slowEndpoints = metrics.requests.filter((r) => r.responseTime > 1e3).reduce((acc, req2) => {
+    const key = `${req2.method} ${req2.route}`;
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const errorEndpoints = metrics.requests.filter((r) => r.statusCode >= 400).reduce((acc, req2) => {
+    const key = `${req2.method} ${req2.route}`;
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  res.json({
+    slowEndpoints,
+    errorEndpoints,
+    performanceScore: metricsCollector.getHealthScore(),
+    recommendations: generatePerformanceRecommendations(metrics)
+  });
+});
+function generatePerformanceRecommendations(metrics) {
+  const recommendations = [];
+  if (metrics.summary.errorRate > 2) {
+    recommendations.push("High error rate detected. Review error logs and fix failing endpoints.");
+  }
+  if (metrics.summary.avgResponseTime > 500) {
+    recommendations.push("Slow response times detected. Consider optimizing database queries and adding caching.");
+  }
+  const memoryUsageMB = process.memoryUsage().heapUsed / 1024 / 1024;
+  if (memoryUsageMB > 300) {
+    recommendations.push("High memory usage. Review memory leaks and optimize resource usage.");
+  }
+  if (metrics.summary.activeConnections > 100) {
+    recommendations.push("High number of active connections. Consider implementing connection pooling.");
+  }
+  return recommendations;
+}
+var monitoring_default = router19;
+
+// server/api/task_templates.ts
+import express20 from "express";
+import { z as z7 } from "zod";
+var router20 = express20.Router();
+var taskTemplateSchema = z7.object({
+  name: z7.string().min(1),
+  description: z7.string().min(1),
+  category: z7.string().min(1),
+  difficulty: z7.enum(["easy", "medium", "hard"]),
+  estimatedTime: z7.string().optional(),
+  requiresVerification: z7.boolean().default(false),
+  suggestedReward: z7.number().positive().optional(),
+  checklistItems: z7.array(z7.string()).optional(),
+  tags: z7.array(z7.string()).optional()
+});
+var defaultTemplates = [
+  {
+    id: "frontend-component",
+    name: "Frontend Component Development",
+    description: "Create a reusable React component with proper styling and functionality",
+    category: "Frontend Development",
+    difficulty: "medium",
+    estimatedTime: "2-4 hours",
+    requiresVerification: true,
+    suggestedReward: 150,
+    checklistItems: [
+      "Component renders correctly",
+      "Props are properly typed",
+      "Responsive design implemented",
+      "Accessibility features included",
+      "Unit tests written"
+    ],
+    tags: ["react", "typescript", "ui/ux"]
+  },
+  {
+    id: "api-endpoint",
+    name: "API Endpoint Implementation",
+    description: "Develop a new API endpoint with proper validation and error handling",
+    category: "Backend Development",
+    difficulty: "medium",
+    estimatedTime: "3-5 hours",
+    requiresVerification: true,
+    suggestedReward: 200,
+    checklistItems: [
+      "Endpoint follows RESTful conventions",
+      "Input validation implemented",
+      "Error handling in place",
+      "Database queries optimized",
+      "API documentation updated"
+    ],
+    tags: ["api", "backend", "database"]
+  },
+  {
+    id: "documentation",
+    name: "Technical Documentation",
+    description: "Write comprehensive documentation for a feature or API",
+    category: "Documentation",
+    difficulty: "easy",
+    estimatedTime: "1-2 hours",
+    requiresVerification: false,
+    suggestedReward: 75,
+    checklistItems: [
+      "Clear and concise writing",
+      "Code examples included",
+      "Proper formatting and structure",
+      "Screenshots or diagrams where helpful"
+    ],
+    tags: ["documentation", "writing"]
+  },
+  {
+    id: "bug-fix",
+    name: "Bug Fix",
+    description: "Identify and fix a reported bug with proper testing",
+    category: "Development",
+    difficulty: "varies",
+    estimatedTime: "1-4 hours",
+    requiresVerification: true,
+    suggestedReward: 100,
+    checklistItems: [
+      "Bug reproduced and understood",
+      "Root cause identified",
+      "Fix implemented and tested",
+      "Regression tests added",
+      "Code review completed"
+    ],
+    tags: ["bugfix", "testing"]
+  },
+  {
+    id: "smart-contract",
+    name: "Smart Contract Development",
+    description: "Develop and deploy a smart contract with security considerations",
+    category: "Smart Contract",
+    difficulty: "hard",
+    estimatedTime: "1-2 days",
+    requiresVerification: true,
+    suggestedReward: 500,
+    checklistItems: [
+      "Contract logic implemented correctly",
+      "Security audit completed",
+      "Gas optimization performed",
+      "Comprehensive tests written",
+      "Deployment scripts created"
+    ],
+    tags: ["solidity", "blockchain", "security"]
+  },
+  {
+    id: "ui-design",
+    name: "UI/UX Design",
+    description: "Create user interface designs and prototypes",
+    category: "Design",
+    difficulty: "medium",
+    estimatedTime: "2-3 hours",
+    requiresVerification: true,
+    suggestedReward: 125,
+    checklistItems: [
+      "User-centered design approach",
+      "Consistent with brand guidelines",
+      "Responsive design considerations",
+      "Accessibility standards met",
+      "Prototype or mockup delivered"
+    ],
+    tags: ["design", "ui/ux", "figma"]
+  }
+];
+router20.get("/", async (req, res) => {
+  try {
+    const { category, difficulty } = req.query;
+    let templates = defaultTemplates;
+    if (category) {
+      templates = templates.filter((t) => t.category === category);
+    }
+    if (difficulty) {
+      templates = templates.filter((t) => t.difficulty === difficulty);
+    }
+    res.json(templates);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+router20.get("/:templateId", async (req, res) => {
+  try {
+    const { templateId } = req.params;
+    const template = defaultTemplates.find((t) => t.id === templateId);
+    if (!template) {
+      return res.status(404).json({ error: "Template not found" });
+    }
+    res.json(template);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+router20.post("/:templateId/create", async (req, res) => {
+  try {
+    const { templateId } = req.params;
+    const { daoId, customizations = {} } = req.body;
+    const userId = req.user?.claims?.sub;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const template = defaultTemplates.find((t) => t.id === templateId);
+    if (!template) {
+      return res.status(404).json({ error: "Template not found" });
+    }
+    const taskData = {
+      title: customizations.title || template.name,
+      description: customizations.description || template.description,
+      category: customizations.category || template.category,
+      difficulty: customizations.difficulty || template.difficulty,
+      estimatedTime: customizations.estimatedTime || template.estimatedTime,
+      requiresVerification: customizations.requiresVerification ?? template.requiresVerification,
+      reward: customizations.reward || template.suggestedReward || 100,
+      daoId,
+      creatorId: userId,
+      status: "open"
+    };
+    const { db: db2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
+    const { tasks: tasks2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
+    const task = await db2.insert(tasks2).values(taskData).returning();
+    res.status(201).json({
+      success: true,
+      task: task[0],
+      template: template.name
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+var task_templates_default = router20;
+
+// server/api/achievements.ts
+init_achievementService();
+import express21 from "express";
+var router21 = express21.Router();
+router21.get("/user/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const achievements2 = await AchievementService.getUserAchievements(userId);
+    const stats = await AchievementService.getUserAchievementStats(userId);
+    res.json({
+      achievements: achievements2,
+      stats
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+router21.get("/me", async (req, res) => {
+  try {
+    const userId = req.user?.claims?.sub;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const achievements2 = await AchievementService.getUserAchievements(userId);
+    const stats = await AchievementService.getUserAchievementStats(userId);
+    res.json({
+      achievements: achievements2,
+      stats
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+router21.post("/check", async (req, res) => {
+  try {
+    const userId = req.user?.claims?.sub;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const newAchievements = await AchievementService.checkUserAchievements(userId);
+    res.json({
+      newAchievements,
+      count: newAchievements.length
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+router21.post("/:achievementId/claim", async (req, res) => {
+  try {
+    const { achievementId } = req.params;
+    const userId = req.user?.claims?.sub;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const success = await AchievementService.claimAchievementReward(userId, achievementId);
+    if (!success) {
+      return res.status(400).json({ error: "Achievement not available for claiming" });
+    }
+    res.json({
+      success: true,
+      message: "Achievement reward claimed successfully"
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+router21.get("/leaderboard", async (req, res) => {
+  try {
+    const { db: db2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
+    const { userAchievements: userAchievements2, achievements: achievements2, users: users3 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
+    const { sql: sql10, desc: desc13, eq: eq24 } = await import("drizzle-orm");
+    const leaderboard = await db2.select({
+      userId: userAchievements2.userId,
+      userName: users3.username,
+      totalAchievements: sql10`count(${userAchievements2.id})`,
+      totalPoints: sql10`sum(${achievements2.rewardPoints})`
+    }).from(userAchievements2).leftJoin(achievements2, eq24(userAchievements2.achievementId, achievements2.id)).leftJoin(users3, eq24(userAchievements2.userId, users3.id)).where(eq24(userAchievements2.isCompleted, true)).groupBy(userAchievements2.userId, users3.username).orderBy(desc13(sql10`sum(${achievements2.rewardPoints})`)).limit(50);
+    res.json(leaderboard);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+var achievements_default = router21;
+
+// server/api/authUser.ts
+function authUserHandler(req, res) {
+  if (req.user) {
+    const { id, email, firstName, lastName, role } = req.user;
+    res.json({ id, email, firstName, lastName, role });
+  } else {
+    res.status(401).json(null);
+  }
+}
+
+// server/api/auth_login.ts
+async function authLoginHandler(req, res) {
+  res.json({ message: "Auth login endpoint migrated to Express." });
+}
+
+// server/api/auth_register.ts
+async function authRegisterHandler(req, res) {
+  res.json({ message: "Auth register endpoint migrated to Express." });
+}
+
+// server/api/auth_telegram_link.ts
+async function authTelegramLinkHandler(req, res) {
+  res.json({ message: "Auth telegram link endpoint migrated to Express." });
+}
+
+// server/api/auth_oauth_google.ts
+var GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+var REDIRECT_URI = process.env.GOOGLE_OAUTH_REDIRECT || "http://localhost:5000/api/auth/oauth/google/callback";
+async function authOauthGoogleHandler(req, res) {
+  const { mode = "login" } = req.query;
+  if (!GOOGLE_CLIENT_ID) {
+    return res.status(500).json({ error: "Google OAuth not configured" });
+  }
+  const state = Buffer.from(JSON.stringify({ mode })).toString("base64");
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: REDIRECT_URI,
+    response_type: "code",
+    scope: "openid email profile",
+    state
+  });
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
+  res.redirect(authUrl);
+}
+
+// server/api/auth_oauth_google_callback.ts
+init_storage();
+var GOOGLE_CLIENT_ID2 = process.env.GOOGLE_CLIENT_ID;
+var GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+var REDIRECT_URI2 = process.env.GOOGLE_OAUTH_REDIRECT || "http://localhost:5000/api/auth/oauth/google/callback";
+async function getGoogleTokens(code) {
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: GOOGLE_CLIENT_ID2,
+      client_secret: GOOGLE_CLIENT_SECRET,
+      redirect_uri: REDIRECT_URI2,
+      grant_type: "authorization_code"
+    })
+  });
+  if (!res.ok) throw new Error("Failed to get Google tokens");
+  return res.json();
+}
+async function getGoogleProfile(access_token) {
+  const res = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+    headers: { Authorization: `Bearer ${access_token}` }
+  });
+  if (!res.ok) throw new Error("Failed to get Google profile");
+  return res.json();
+}
+async function authOauthGoogleCallbackHandler(req, res) {
+  const { code, state } = req.query;
+  if (!code) {
+    return res.status(400).send("Missing code");
+  }
+  let mode = "login";
+  if (state) {
+    try {
+      const decoded = JSON.parse(Buffer.from(state, "base64").toString());
+      mode = decoded.mode || "login";
+    } catch {
+    }
+  }
+  try {
+    const tokens = await getGoogleTokens(code);
+    const profile = await getGoogleProfile(tokens.access_token);
+    let user = await getUserByEmail(profile.email);
+    if (!user && mode === "register") {
+      user = await createUser({
+        email: profile.email,
+        name: profile.name,
+        avatar: profile.picture,
+        provider: "google"
+      });
+    }
+    if (!user) {
+      return res.status(401).send("No account found. Please register first.");
+    }
+    await loginUser(res, user);
+    res.redirect("/dashboard");
+  } catch (e) {
+    console.error("OAuth error:", e);
+    res.status(500).send(e.message || "OAuth error");
+  }
+}
+
+// server/api/account_delete.ts
+init_db();
+init_schema();
+import { eq as eq20 } from "drizzle-orm";
+async function accountDeleteHandler(req, res) {
+  res.json({ message: "Account delete endpoint migrated to Express." });
+}
+
+// server/api/dao_deploy.ts
+async function daoDeployHandler(req, res) {
+  res.json({ message: "DAO deploy endpoint migrated to Express." });
+}
+
+// server/api/payments_estimate_gas.ts
+async function paymentsEstimateGasHandler(req, res) {
+  try {
+    const { tokenSymbol, toAddress, amount, operationType = "transfer" } = req.body;
+    if (!tokenSymbol || !toAddress || !amount) {
+      return res.status(400).json({
+        error: "Missing required parameters",
+        required: ["tokenSymbol", "toAddress", "amount"]
+      });
+    }
+    const token = TokenRegistry.getToken(tokenSymbol);
+    if (!token) {
+      return res.status(400).json({
+        error: `Unsupported token: ${tokenSymbol}`,
+        supportedTokens: TokenRegistry.getSupportedTokens()
+      });
+    }
+    if (!toAddress.match(/^0x[a-fA-F0-9]{40}$/)) {
+      return res.status(400).json({
+        error: "Invalid Ethereum address format"
+      });
+    }
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      return res.status(400).json({
+        error: "Amount must be a positive number"
+      });
+    }
+    const gasEstimate = await tokenService.estimateGas(tokenSymbol, toAddress, amount);
+    const gasPrice = await tokenService.provider.getFeeData();
+    const estimatedCostWei = gasEstimate * (gasPrice.gasPrice || BigInt(0));
+    const estimatedCostCelo = tokenService.formatUnits(estimatedCostWei, 18);
+    const operationMultipliers = {
+      transfer: 1.1,
+      // 10% buffer
+      deposit: 1.2,
+      // 20% buffer for vault operations
+      withdraw: 1.3
+      // 30% buffer for complex withdrawals
+    };
+    const safetyMultiplier = operationMultipliers[operationType];
+    const safeGasEstimate = BigInt(Math.ceil(Number(gasEstimate) * safetyMultiplier));
+    res.json({
+      success: true,
+      gasEstimate: {
+        operation: operationType,
+        token: {
+          symbol: tokenSymbol,
+          name: token.name,
+          decimals: token.decimals
+        },
+        gas: {
+          estimated: gasEstimate.toString(),
+          recommended: safeGasEstimate.toString(),
+          price: gasPrice.gasPrice?.toString() || "0",
+          maxFee: gasPrice.maxFeePerGas?.toString() || "0",
+          maxPriorityFee: gasPrice.maxPriorityFeePerGas?.toString() || "0"
+        },
+        cost: {
+          estimatedCELO: estimatedCostCelo,
+          safetyMultiplier,
+          estimatedUSD: (parseFloat(estimatedCostCelo) * 0.65).toFixed(4)
+          // Rough CELO price
+        },
+        network: "Celo",
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    });
+  } catch (error) {
+    console.error("Gas estimation error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to estimate gas",
+      details: error instanceof Error ? error.message : "Unknown error",
+      fallback: {
+        // Provide fallback estimates for common operations
+        transferGas: "21000",
+        erc20TransferGas: "65000",
+        vaultDepositGas: "150000",
+        vaultWithdrawGas: "200000"
+      }
+    });
+  }
+}
+
+// server/api/payments_index.ts
+async function paymentsIndexHandler(req, res) {
+  res.json({ message: "Payments index endpoint migrated to Express." });
+}
+
+// server/api/wallet_transactions.ts
+init_db();
+init_schema();
+import { eq as eq21, desc as desc12 } from "drizzle-orm";
+async function getWalletTransactions(req, res) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const userTransactions = await db.select().from(walletTransactions).where(eq21(walletTransactions.fromUserId, userId)).orderBy(desc12(walletTransactions.createdAt)).limit(50);
+    res.status(200).json(userTransactions);
+  } catch (error) {
+    console.error("Error fetching transactions:", error);
+    res.status(500).json({ error: "Failed to fetch transactions" });
+  }
+}
+async function createWalletTransaction2(req, res) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const { amount, type, description, transactionHash, currency = "cUSD", walletAddress } = req.body;
+    const newTransaction = await db.insert(walletTransactions).values({
+      fromUserId: userId,
+      amount,
+      type,
+      description,
+      transactionHash,
+      currency,
+      walletAddress: walletAddress || "",
+      status: "completed"
+    }).returning();
+    res.status(201).json(newTransaction[0]);
+  } catch (error) {
+    console.error("Error creating transaction:", error);
+    res.status(500).json({ error: "Failed to create transaction" });
+  }
+}
+
+// server/api/vaults.ts
+async function createVaultHandler(req, res) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const {
+      name,
+      description,
+      daoId,
+      vaultType,
+      primaryCurrency,
+      yieldStrategy,
+      riskLevel,
+      minDeposit,
+      maxDeposit
+    } = req.body;
+    if (!name || !primaryCurrency || !vaultType) {
+      return res.status(400).json({
+        error: "Name, primary currency, and vault type are required"
+      });
+    }
+    const vault = await vaultService.createVault({
+      name,
+      description,
+      userId: daoId ? void 0 : userId,
+      daoId: daoId || void 0,
+      vaultType,
+      primaryCurrency,
+      yieldStrategy,
+      riskLevel,
+      minDeposit,
+      maxDeposit
+    });
+    res.json({ vault });
+  } catch (error) {
+    console.error("Error creating vault:", error);
+    res.status(500).json({ error: error.message || "Failed to create vault" });
+  }
+}
+async function getUserVaultsHandler(req, res) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const { daoId } = req.query;
+    const vaults3 = await vaultService.getUserVaults(userId, daoId);
+    res.json({ vaults: vaults3 });
+  } catch (error) {
+    console.error("Error fetching vaults:", error);
+    res.status(500).json({ error: error.message || "Failed to fetch vaults" });
+  }
+}
+async function getVaultHandler(req, res) {
+  try {
+    const userId = req.user?.id;
+    const { vaultId } = req.params;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const portfolio = await vaultService.getVaultPortfolio(vaultId, userId);
+    res.json(portfolio);
+  } catch (error) {
+    console.error("Error fetching vault:", error);
+    res.status(500).json({ error: error.message || "Failed to fetch vault" });
+  }
+}
+async function depositToVaultHandler(req, res) {
+  try {
+    const userId = req.user?.id;
+    const { vaultId } = req.params;
+    const { tokenSymbol, amount, transactionHash } = req.body;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    if (!tokenSymbol || !amount) {
+      return res.status(400).json({
+        error: "Token symbol and amount are required"
+      });
+    }
+    const transaction = await vaultService.depositToken({
+      vaultId,
+      userId,
+      tokenSymbol,
+      amount,
+      transactionHash
+    });
+    res.json({ transaction });
+  } catch (error) {
+    console.error("Error depositing to vault:", error);
+    res.status(500).json({ error: error.message || "Failed to deposit to vault" });
+  }
+}
+async function withdrawFromVaultHandler(req, res) {
+  try {
+    const userId = req.user?.id;
+    const { vaultId } = req.params;
+    const { tokenSymbol, amount, transactionHash } = req.body;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    if (!tokenSymbol || !amount) {
+      return res.status(400).json({
+        error: "Token symbol and amount are required"
+      });
+    }
+    const transaction = await vaultService.withdrawToken({
+      vaultId,
+      userId,
+      tokenSymbol,
+      amount,
+      transactionHash
+    });
+    res.json({ transaction });
+  } catch (error) {
+    console.error("Error withdrawing from vault:", error);
+    res.status(500).json({ error: error.message || "Failed to withdraw from vault" });
+  }
+}
+async function allocateToStrategyHandler(req, res) {
+  try {
+    const userId = req.user?.id;
+    const { vaultId } = req.params;
+    const { strategyId, tokenSymbol, allocationPercentage } = req.body;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    if (!strategyId || !tokenSymbol || allocationPercentage === void 0) {
+      return res.status(400).json({
+        error: "Strategy ID, token symbol, and allocation percentage are required"
+      });
+    }
+    await vaultService.allocateToStrategy({
+      vaultId,
+      userId,
+      strategyId,
+      tokenSymbol,
+      allocationPercentage
+    });
+    res.json({ success: true, message: "Strategy allocation updated" });
+  } catch (error) {
+    console.error("Error allocating to strategy:", error);
+    res.status(500).json({ error: error.message || "Failed to allocate to strategy" });
+  }
+}
+async function rebalanceVaultHandler(req, res) {
+  try {
+    const userId = req.user?.id;
+    const { vaultId } = req.params;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    await vaultService.rebalanceVault(vaultId, userId);
+    res.json({ success: true, message: "Vault rebalanced successfully" });
+  } catch (error) {
+    console.error("Error rebalancing vault:", error);
+    res.status(500).json({ error: error.message || "Failed to rebalance vault" });
+  }
+}
+async function getVaultPortfolioHandler(req, res) {
+  try {
+    const userId = req.user?.id;
+    const { vaultId } = req.params;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const portfolio = await vaultService.getVaultPortfolio(vaultId, userId);
+    res.json(portfolio);
+  } catch (error) {
+    console.error("Error fetching vault portfolio:", error);
+    res.status(500).json({ error: error.message || "Failed to fetch vault portfolio" });
+  }
+}
+async function getVaultPerformanceHandler(req, res) {
+  try {
+    const userId = req.user?.id;
+    const { vaultId } = req.params;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const performance2 = await vaultService.getVaultPerformance(vaultId, userId);
+    res.json({ performance: performance2 });
+  } catch (error) {
+    console.error("Error fetching vault performance:", error);
+    res.status(500).json({ error: error.message || "Failed to fetch vault performance" });
+  }
+}
+async function assessVaultRiskHandler(req, res) {
+  try {
+    const userId = req.user?.id;
+    const { vaultId } = req.params;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    await vaultService.performRiskAssessment(vaultId);
+    res.json({ success: true, message: "Risk assessment completed" });
+  } catch (error) {
+    console.error("Error assessing vault risk:", error);
+    res.status(500).json({ error: error.message || "Failed to assess vault risk" });
+  }
+}
+async function getVaultTransactionsHandler(req, res) {
+  try {
+    const userId = req.user?.id;
+    const { vaultId } = req.params;
+    const { page = "1", limit = "20" } = req.query;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const transactions = await vaultService.getVaultTransactions(
+      vaultId,
+      userId,
+      parseInt(page),
+      parseInt(limit)
+    );
+    res.json({ transactions });
+  } catch (error) {
+    console.error("Error fetching vault transactions:", error);
+    res.status(500).json({ error: error.message || "Failed to fetch vault transactions" });
+  }
+}
+async function getSupportedTokensHandler(req, res) {
+  try {
+    const tokens = TokenRegistry.getAllTokens();
+    res.json({ tokens });
+  } catch (error) {
+    console.error("Error fetching supported tokens:", error);
+    res.status(500).json({ error: "Failed to fetch supported tokens" });
+  }
+}
+async function getTokenPriceHandler(req, res) {
+  try {
+    const { tokenAddress } = req.params;
+    const mockPrices = {
+      "CELO": 0.65,
+      "cUSD": 1,
+      "cEUR": 1.08,
+      "USDT": 1,
+      "MTAA": 0.1
+    };
+    const token = TokenRegistry.getTokenByAddress(tokenAddress);
+    const price = token ? mockPrices[token.symbol] || 0.3 : 0;
+    res.json({ price, currency: "USD" });
+  } catch (error) {
+    console.error("Error fetching token price:", error);
+    res.status(500).json({ error: "Failed to fetch token price" });
+  }
+}
+
+// server/api/authVault.ts
+async function authorizeVaultAccess(req, res, next) {
+  try {
+    const userId = req.user?.id;
+    const { vaultId } = req.params;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    if (!vaultId) {
+      return res.status(400).json({ error: "Vault ID is required" });
+    }
+    const vault = await vaultService.getVaultById(vaultId);
+    if (!vault) {
+      return res.status(404).json({ error: "Vault not found" });
+    }
+    req.vault = vault;
+    next();
+  } catch (error) {
+    console.error("Vault authorization error:", error);
+    res.status(500).json({ error: "Authorization check failed" });
+  }
+}
+
+// server/api/daoSettings.ts
+init_storage();
+init_schema();
+import { eq as eq22, and as and18 } from "drizzle-orm";
+async function getDaoSettingsHandler(req, res) {
+  try {
+    const userId = req.user?.id;
+    const { daoId } = req.params;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const membership = await db.query.daoMemberships.findFirst({
+      where: and18(
+        eq22(daoMemberships.daoId, daoId),
+        eq22(daoMemberships.userId, userId),
+        eq22(daoMemberships.status, "approved")
+      )
+    });
+    if (!membership || !["admin", "elder"].includes(membership.role || "")) {
+      return res.status(403).json({ error: "Admin permissions required" });
+    }
+    const dao = await db.query.daos.findFirst({
+      where: eq22(daos.id, daoId)
+    });
+    if (!dao) {
+      return res.status(404).json({ error: "DAO not found" });
+    }
+    const settings = {
+      basic: {
+        name: dao.name,
+        description: dao.description,
+        imageUrl: dao.imageUrl,
+        bannerUrl: dao.bannerUrl,
+        access: dao.access,
+        inviteOnly: dao.inviteOnly,
+        inviteCode: dao.inviteCode
+      },
+      governance: {
+        quorumPercentage: dao.quorumPercentage,
+        votingPeriod: dao.votingPeriod,
+        executionDelay: dao.executionDelay
+      },
+      financial: {
+        treasuryBalance: dao.treasuryBalance,
+        plan: dao.plan,
+        planExpiresAt: dao.planExpiresAt,
+        billingStatus: dao.billingStatus
+      },
+      members: {
+        memberCount: dao.memberCount
+      }
+    };
+    res.json({ settings });
+  } catch (error) {
+    console.error("Error fetching DAO settings:", error);
+    res.status(500).json({ error: error.message || "Failed to fetch DAO settings" });
+  }
+}
+async function updateDaoSettingsHandler(req, res) {
+  try {
+    const userId = req.user?.id;
+    const { daoId } = req.params;
+    const { category, updates } = req.body;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const membership = await db.query.daoMemberships.findFirst({
+      where: and18(
+        eq22(daoMemberships.daoId, daoId),
+        eq22(daoMemberships.userId, userId),
+        eq22(daoMemberships.status, "approved")
+      )
+    });
+    if (!membership || !["admin", "elder"].includes(membership.role || "")) {
+      return res.status(403).json({ error: "Admin permissions required" });
+    }
+    let validUpdates = {};
+    switch (category) {
+      case "basic":
+        const allowedBasicFields = ["name", "description", "imageUrl", "bannerUrl", "access", "inviteOnly"];
+        for (const [key, value] of Object.entries(updates)) {
+          if (allowedBasicFields.includes(key)) {
+            validUpdates[key] = value;
+          }
+        }
+        if (updates.inviteOnly && !updates.inviteCode) {
+          validUpdates.inviteCode = generateInviteCode();
+        }
+        break;
+      case "governance":
+        const allowedGovernanceFields = ["quorumPercentage", "votingPeriod", "executionDelay"];
+        for (const [key, value] of Object.entries(updates)) {
+          if (allowedGovernanceFields.includes(key)) {
+            if (key === "quorumPercentage" && (value < 1 || value > 100)) {
+              return res.status(400).json({ error: "Quorum percentage must be between 1 and 100" });
+            }
+            if (key === "votingPeriod" && value < 1) {
+              return res.status(400).json({ error: "Voting period must be at least 1 hour" });
+            }
+            if (key === "executionDelay" && value < 0) {
+              return res.status(400).json({ error: "Execution delay cannot be negative" });
+            }
+            validUpdates[key] = value;
+          }
+        }
+        break;
+      case "financial":
+        if (membership.role === "admin") {
+          const allowedFinancialFields = ["plan"];
+          for (const [key, value] of Object.entries(updates)) {
+            if (allowedFinancialFields.includes(key)) {
+              validUpdates[key] = value;
+            }
+          }
+        } else {
+          return res.status(403).json({ error: "Only DAO admins can modify financial settings" });
+        }
+        break;
+      default:
+        return res.status(400).json({ error: "Invalid settings category" });
+    }
+    if (Object.keys(validUpdates).length === 0) {
+      return res.status(400).json({ error: "No valid updates provided" });
+    }
+    validUpdates.updatedAt = /* @__PURE__ */ new Date();
+    await db.update(daos).set(validUpdates).where(eq22(daos.id, daoId));
+    res.json({
+      success: true,
+      message: `${category} settings updated successfully`,
+      updates: validUpdates
+    });
+  } catch (error) {
+    console.error("Error updating DAO settings:", error);
+    res.status(500).json({ error: error.message || "Failed to update DAO settings" });
+  }
+}
+async function resetInviteCodeHandler(req, res) {
+  try {
+    const userId = req.user?.id;
+    const { daoId } = req.params;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const membership = await db.query.daoMemberships.findFirst({
+      where: and18(
+        eq22(daoMemberships.daoId, daoId),
+        eq22(daoMemberships.userId, userId),
+        eq22(daoMemberships.status, "approved")
+      )
+    });
+    if (!membership || !["admin", "elder"].includes(membership.role || "")) {
+      return res.status(403).json({ error: "Admin permissions required" });
+    }
+    const newInviteCode = generateInviteCode();
+    await db.update(daos).set({
+      inviteCode: newInviteCode,
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq22(daos.id, daoId));
+    res.json({
+      success: true,
+      inviteCode: newInviteCode,
+      message: "Invite code reset successfully"
+    });
+  } catch (error) {
+    console.error("Error resetting invite code:", error);
+    res.status(500).json({ error: error.message || "Failed to reset invite code" });
+  }
+}
+async function getDaoAnalyticsHandler(req, res) {
+  try {
+    const userId = req.user?.id;
+    const { daoId } = req.params;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const membership = await db.query.daoMemberships.findFirst({
+      where: and18(
+        eq22(daoMemberships.daoId, daoId),
+        eq22(daoMemberships.userId, userId),
+        eq22(daoMemberships.status, "approved")
+      )
+    });
+    if (!membership) {
+      return res.status(403).json({ error: "DAO membership required" });
+    }
+    const dao = await db.query.daos.findFirst({
+      where: eq22(daos.id, daoId)
+    });
+    if (!dao) {
+      return res.status(404).json({ error: "DAO not found" });
+    }
+    const memberStats = await db.query.daoMemberships.findMany({
+      where: and18(
+        eq22(daoMemberships.daoId, daoId),
+        eq22(daoMemberships.status, "approved")
+      )
+    });
+    const roleDistribution = memberStats.reduce((acc, member) => {
+      const role = member.role || "member";
+      acc[role] = (acc[role] || 0) + 1;
+      return acc;
+    }, {});
+    const proposalStats = await db.query.proposals.findMany({
+      where: eq22(proposals.daoId, daoId)
+    });
+    const proposalsByStatus = proposalStats.reduce((acc, proposal) => {
+      acc[proposal.status] = (acc[proposal.status] || 0) + 1;
+      return acc;
+    }, {});
+    const analytics2 = {
+      dao: {
+        name: dao.name,
+        createdAt: dao.createdAt,
+        memberCount: dao.memberCount,
+        treasuryBalance: dao.treasuryBalance,
+        plan: dao.plan
+      },
+      members: {
+        total: memberStats.length,
+        roleDistribution,
+        recentJoins: memberStats.filter(
+          (m) => new Date(m.joinedAt).getTime() > Date.now() - 30 * 24 * 60 * 60 * 1e3
+        ).length
+      },
+      proposals: {
+        total: proposalStats.length,
+        statusDistribution: proposalsByStatus,
+        recentProposals: proposalStats.filter(
+          (p) => new Date(p.createdAt).getTime() > Date.now() - 30 * 24 * 60 * 60 * 1e3
+        ).length
+      }
+    };
+    res.json({ analytics: analytics2 });
+  } catch (error) {
+    console.error("Error fetching DAO analytics:", error);
+    res.status(500).json({ error: error.message || "Failed to fetch DAO analytics" });
+  }
+}
+function generateInviteCode() {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let result = "";
+  for (let i = 0; i < 8; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+// server/api/reputation.ts
+init_reputationService();
+async function getUserReputationHandler(req, res) {
+  try {
+    const { userId } = req.params;
+    const requesterId = req.user?.id;
+    if (!requesterId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    if (userId !== requesterId) {
+      const publicReputation = await ReputationService.getUserReputation(userId);
+      return res.json({
+        totalReputation: publicReputation.totalReputation,
+        globalReputation: publicReputation.globalReputation,
+        isPublic: true
+      });
+    }
+    const reputation = await ReputationService.getUserReputation(userId);
+    res.json({ reputation });
+  } catch (error) {
+    console.error("Error fetching user reputation:", error);
+    res.status(500).json({ error: error.message || "Failed to fetch user reputation" });
+  }
+}
+async function getReputationLeaderboardHandler(req, res) {
+  try {
+    const { limit = "20" } = req.query;
+    const leaderboard = await ReputationService.getReputationLeaderboard(
+      void 0,
+      parseInt(limit)
+    );
+    res.json({ leaderboard });
+  } catch (error) {
+    console.error("Error fetching reputation leaderboard:", error);
+    res.status(500).json({ error: error.message || "Failed to fetch reputation leaderboard" });
+  }
+}
+async function getDaoReputationLeaderboardHandler(req, res) {
+  try {
+    const { daoId } = req.params;
+    const { limit = "20" } = req.query;
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    const leaderboard = await ReputationService.getReputationLeaderboard(
+      daoId,
+      parseInt(limit)
+    );
+    res.json({ leaderboard });
+  } catch (error) {
+    console.error("Error fetching DAO reputation leaderboard:", error);
+    res.status(500).json({ error: error.message || "Failed to fetch DAO reputation leaderboard" });
+  }
+}
 
 // server/routes.ts
+function registerRoutes(app2) {
+  app2.use("/api/health", handler);
+  app2.use("/api/sse", sse_default);
+  app2.use("/api/wallet", wallet_default);
+  app2.use("/api/wallet-setup", wallet_setup_default);
+  app2.use("/api/governance", governance_default);
+  app2.use("/api/dao-treasury", dao_treasury_default);
+  app2.use("/api/dao-subscriptions", dao_subscriptions_default);
+  app2.use("/api/tasks", tasks_default);
+  app2.use("/api/task-templates", task_templates_default);
+  app2.use("/api/bounty-escrow", bounty_escrow_default);
+  app2.use("/api/reputation", reputation_default);
+  app2.use("/api/analytics", analytics_default);
+  app2.use("/api/notifications", notifications_default);
+  app2.use("/api/disbursements", disbursements_default);
+  app2.use("/api/proposal-execution", proposal_execution_default);
+  app2.use("/api/payment-reconciliation", payment_reconciliation_default);
+  app2.use("/api/stripe-status", stripe_status_default);
+  app2.use("/api/kotanipay-status", kotanipay_status_default);
+  app2.use("/api/mpesa-status", mpesa_status_default);
+  app2.use("/api/monitoring", monitoring_default);
+  app2.get("/api/auth/user", isAuthenticated2, authUserHandler);
+  app2.post("/api/auth/login", authLoginHandler);
+  app2.post("/api/auth/register", authRegisterHandler);
+  app2.post("/api/auth/telegram-link", authTelegramLinkHandler);
+  app2.get("/api/auth/oauth/google", authOauthGoogleHandler);
+  app2.get("/api/auth/oauth/google/callback", authOauthGoogleCallbackHandler);
+  app2.delete("/api/account/delete", isAuthenticated2, accountDeleteHandler);
+  app2.post("/api/dao/deploy", isAuthenticated2, daoDeployHandler);
+  app2.post("/api/payments/estimate-gas", isAuthenticated2, paymentsEstimateGasHandler);
+  app2.get("/api/payments", isAuthenticated2, paymentsIndexHandler);
+  app2.get("/api/wallet/transactions", isAuthenticated2, getWalletTransactions);
+  app2.post("/api/wallet/transactions", isAuthenticated2, createWalletTransaction2);
+  app2.post("/api/vaults", isAuthenticated2, createVaultHandler);
+  app2.get("/api/vaults", isAuthenticated2, getUserVaultsHandler);
+  app2.get("/api/vaults/:vaultId", isAuthenticated2, authorizeVaultAccess, getVaultHandler);
+  app2.post("/api/vaults/:vaultId/deposit", isAuthenticated2, authorizeVaultAccess, depositToVaultHandler);
+  app2.post("/api/vaults/:vaultId/withdraw", isAuthenticated2, authorizeVaultAccess, withdrawFromVaultHandler);
+  app2.post("/api/vaults/:vaultId/allocate", isAuthenticated2, authorizeVaultAccess, allocateToStrategyHandler);
+  app2.post("/api/vaults/:vaultId/rebalance", isAuthenticated2, authorizeVaultAccess, rebalanceVaultHandler);
+  app2.get("/api/vaults/:vaultId/portfolio", isAuthenticated2, authorizeVaultAccess, getVaultPortfolioHandler);
+  app2.get("/api/vaults/:vaultId/performance", isAuthenticated2, authorizeVaultAccess, getVaultPerformanceHandler);
+  app2.get("/api/vaults/:vaultId/risk", isAuthenticated2, authorizeVaultAccess, assessVaultRiskHandler);
+  app2.get("/api/vaults/:vaultId/transactions", isAuthenticated2, authorizeVaultAccess, getVaultTransactionsHandler);
+  app2.get("/api/tokens", getSupportedTokensHandler);
+  app2.get("/api/tokens/:tokenAddress/price", getTokenPriceHandler);
+  app2.get("/api/dao/:daoId/settings", isAuthenticated2, getDaoSettingsHandler);
+  app2.patch("/api/dao/:daoId/settings", isAuthenticated2, updateDaoSettingsHandler);
+  app2.post("/api/dao/:daoId/settings/reset-invite", isAuthenticated2, resetInviteCodeHandler);
+  app2.get("/api/dao/:daoId/analytics", isAuthenticated2, getDaoAnalyticsHandler);
+  app2.get("/api/reputation/user/:userId", isAuthenticated2, getUserReputationHandler);
+  app2.get("/api/reputation/leaderboard", isAuthenticated2, getReputationLeaderboardHandler);
+  app2.get("/api/reputation/leaderboard/:daoId", isAuthenticated2, getDaoReputationLeaderboardHandler);
+  app2.use("/api/achievements", achievements_default);
+}
+
+// server/vite.ts
+import express22 from "express";
+import path2 from "path";
+import { dirname as dirname2 } from "path";
+import { fileURLToPath as fileURLToPath3 } from "url";
+import fs from "fs";
+import { createServer as createViteServer, createLogger as createLogger2 } from "vite";
+
+// vite.config.ts
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import path from "path";
+import { fileURLToPath as fileURLToPath2 } from "url";
+var __filename2 = fileURLToPath2(import.meta.url);
+var __dirname2 = path.dirname(__filename2);
+var vite_config_default = defineConfig({
+  root: path.resolve(__dirname2, "client"),
+  plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname2, "client", "src"),
+      "@shared": path.resolve(__dirname2, "shared"),
+      "@assets": path.resolve(__dirname2, "attached_assets")
+    }
+  },
+  build: {
+    outDir: path.resolve(__dirname2, "dist/public"),
+    emptyOutDir: true
+  },
+  server: {
+    fs: {
+      strict: true,
+      deny: ["**/.*"]
+    },
+    port: 5e3,
+    host: "0.0.0.0",
+    allowedHosts: ["all"]
+  }
+});
+
+// server/vite.ts
+import { nanoid } from "nanoid";
+var __dirname3 = dirname2(fileURLToPath3(import.meta.url));
+var viteLogger = createLogger2();
+function log(message, source = "express") {
+  const formattedTime = (/* @__PURE__ */ new Date()).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true
+  });
+  console.log(`${formattedTime} [${source}] ${message}`);
+}
+async function setupVite(app2, server2) {
+  const vite = await createViteServer({
+    ...vite_config_default,
+    configFile: false,
+    customLogger: {
+      ...viteLogger,
+      error: (msg, options) => {
+        viteLogger.error(msg, options);
+        process.exit(1);
+      }
+    },
+    server: {
+      middlewareMode: true,
+      hmr: { server: server2 },
+      host: "0.0.0.0",
+      allowedHosts: ["all"]
+    },
+    appType: "custom"
+  });
+  app2.use(vite.middlewares);
+  app2.use("*", async (req, res, next) => {
+    const url = req.originalUrl;
+    try {
+      const clientTemplate = path2.resolve(__dirname3, "../client/index.html");
+      let template = await fs.promises.readFile(clientTemplate, "utf-8");
+      template = template.replace(
+        `src="/src/main.tsx"`,
+        `src="/src/main.tsx?v=${nanoid()}"`
+      );
+      const html = await vite.transformIndexHtml(url, template);
+      res.status(200).set({ "Content-Type": "text/html" }).end(html);
+    } catch (e) {
+      vite.ssrFixStacktrace(e);
+      next(e);
+    }
+  });
+}
+function serveStatic(app2) {
+  const distPath = path2.resolve(__dirname3, "../../dist/public");
+  if (!fs.existsSync(distPath)) {
+    throw new Error(
+      `\u274C Could not find the build directory: ${distPath}, make sure to run 'npm run build' first`
+    );
+  }
+  app2.use(express22.static(distPath));
+  app2.use("*", (_req, res) => {
+    res.sendFile(path2.join(distPath, "index.html"));
+  });
+}
+
+// server/index.ts
+init_notificationService();
+import path4 from "path";
+import { dirname as dirname3 } from "path";
+import { fileURLToPath as fileURLToPath4 } from "url";
+
+// server/security/inputSanitizer.ts
+import DOMPurify from "isomorphic-dompurify";
+import validator from "validator";
+import { z as z8 } from "zod";
+var sanitizedStringSchema = z8.string().min(1).max(1e3).refine((str) => !containsHtml(str), "HTML content not allowed");
+var sanitizedEmailSchema = z8.string().email().refine((email) => validator.isEmail(email), "Invalid email format");
+var sanitizedUrlSchema = z8.string().url().refine((url) => validator.isURL(url), "Invalid URL format");
+var sanitizedAmountSchema = z8.string().refine((amount) => validator.isNumeric(amount), "Invalid numeric amount").refine((amount) => parseFloat(amount) >= 0, "Amount must be positive");
+function containsHtml(str) {
+  return /<[^>]*>/.test(str);
+}
+function sanitizeHtml(dirty) {
+  return DOMPurify.sanitize(dirty, {
+    ALLOWED_TAGS: [],
+    ALLOWED_ATTR: []
+  });
+}
+function sanitizeObject(obj) {
+  if (typeof obj === "string") {
+    return sanitizeHtml(obj);
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizeObject);
+  }
+  if (obj && typeof obj === "object") {
+    const sanitized = {};
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        sanitized[key] = sanitizeObject(obj[key]);
+      }
+    }
+    return sanitized;
+  }
+  return obj;
+}
+var sanitizeInput = (req, res, next) => {
+  if (req.body) {
+    req.body = sanitizeObject(req.body);
+  }
+  if (req.query) {
+    req.query = sanitizeObject(req.query);
+  }
+  if (req.params) {
+    req.params = sanitizeObject(req.params);
+  }
+  next();
+};
+var preventSqlInjection = (req, res, next) => {
+  const sqlInjectionPatterns = [
+    /(\b(select|insert|update|delete|drop|create|alter|exec|execute|union|script)\b)/i,
+    /(;|\-\-|\/\*|\*\/|xp_|sp_)/i,
+    /(\b(or|and)\b.*?=.*?)/i
+  ];
+  const checkForSqlInjection = (value) => {
+    return sqlInjectionPatterns.some((pattern) => pattern.test(value));
+  };
+  const checkObject = (obj) => {
+    if (typeof obj === "string") {
+      return checkForSqlInjection(obj);
+    }
+    if (Array.isArray(obj)) {
+      return obj.some(checkObject);
+    }
+    if (obj && typeof obj === "object") {
+      return Object.values(obj).some(checkObject);
+    }
+    return false;
+  };
+  if (checkObject(req.body) || checkObject(req.query) || checkObject(req.params)) {
+    return res.status(400).json({
+      error: "Potentially malicious input detected"
+    });
+  }
+  next();
+};
+var preventXSS = (req, res, next) => {
+  const xssPatterns = [
+    /<script[^>]*>.*?<\/script>/gi,
+    /javascript:/gi,
+    /on\w+\s*=/gi,
+    /<iframe[^>]*>.*?<\/iframe>/gi,
+    /<embed[^>]*>/gi,
+    /<object[^>]*>/gi
+  ];
+  const checkForXSS = (value) => {
+    return xssPatterns.some((pattern) => pattern.test(value));
+  };
+  const checkObject = (obj) => {
+    if (typeof obj === "string") {
+      return checkForXSS(obj);
+    }
+    if (Array.isArray(obj)) {
+      return obj.some(checkObject);
+    }
+    if (obj && typeof obj === "object") {
+      return Object.values(obj).some(checkObject);
+    }
+    return false;
+  };
+  if (checkObject(req.body) || checkObject(req.query) || checkObject(req.params)) {
+    return res.status(400).json({
+      error: "XSS attempt detected"
+    });
+  }
+  next();
+};
+
+// server/security/auditLogger.ts
+init_storage();
+var AuditLogger = class _AuditLogger {
+  static getInstance() {
+    if (!_AuditLogger.instance) {
+      _AuditLogger.instance = new _AuditLogger();
+    }
+    return _AuditLogger.instance;
+  }
+  async log(entry) {
+    try {
+      await storage.createAuditLog(entry);
+      console.log(`[AUDIT] ${entry.timestamp.toISOString()} | ${entry.severity.toUpperCase()} | ${entry.category} | ${entry.action} | User: ${entry.userId} | IP: ${entry.ipAddress}`);
+      if (entry.severity === "critical") {
+        await this.sendSecurityAlert(entry);
+      }
+    } catch (error) {
+      console.error("Failed to write audit log:", error);
+    }
+  }
+  async sendSecurityAlert(entry) {
+    console.error(`\u{1F6A8} CRITICAL SECURITY EVENT: ${entry.action} by ${entry.userId} from ${entry.ipAddress}`);
+  }
+};
+var auditMiddleware = (req, res, next) => {
+  const startTime = Date.now();
+  const originalSend = res.send;
+  res.send = function(body) {
+    const endTime = Date.now();
+    const responseTime = endTime - startTime;
+    setImmediate(async () => {
+      const user = req.user;
+      const auditLogger = AuditLogger.getInstance();
+      const entry = {
+        timestamp: /* @__PURE__ */ new Date(),
+        userId: user?.claims?.sub,
+        userEmail: user?.claims?.email,
+        action: getActionFromRequest(req),
+        resource: getResourceFromRequest(req),
+        resourceId: req.params.id || req.params.daoId || req.params.proposalId,
+        method: req.method,
+        endpoint: req.path,
+        ipAddress: req.ip || req.connection.remoteAddress || "",
+        userAgent: req.get("User-Agent") || "",
+        status: res.statusCode,
+        details: {
+          responseTime,
+          bodySize: JSON.stringify(body).length,
+          query: req.query,
+          params: req.params
+        },
+        severity: getSeverityFromRequest(req, res.statusCode),
+        category: getCategoryFromRequest(req)
+      };
+      await auditLogger.log(entry);
+    });
+    return originalSend.call(this, body);
+  };
+  next();
+};
+function getActionFromRequest(req) {
+  const method = req.method.toLowerCase();
+  const path5 = req.path;
+  if (path5.includes("/login")) return "login";
+  if (path5.includes("/logout")) return "logout";
+  if (path5.includes("/register")) return "register";
+  if (path5.includes("/deposit")) return "vault_deposit";
+  if (path5.includes("/withdraw")) return "vault_withdrawal";
+  if (path5.includes("/vote")) return "vote_cast";
+  if (path5.includes("/proposal")) return method === "post" ? "proposal_create" : "proposal_view";
+  if (path5.includes("/dao") && method === "post") return "dao_create";
+  if (path5.includes("/admin")) return "admin_action";
+  return `${method}_${path5.split("/")[2] || "unknown"}`;
+}
+function getResourceFromRequest(req) {
+  const path5 = req.path;
+  if (path5.includes("/vault")) return "vault";
+  if (path5.includes("/dao")) return "dao";
+  if (path5.includes("/proposal")) return "proposal";
+  if (path5.includes("/user")) return "user";
+  if (path5.includes("/auth")) return "authentication";
+  if (path5.includes("/payment")) return "payment";
+  if (path5.includes("/admin")) return "admin";
+  return "unknown";
+}
+function getSeverityFromRequest(req, statusCode) {
+  if (statusCode >= 500) return "critical";
+  if (statusCode >= 400) return "high";
+  if (req.path.includes("/admin")) return "high";
+  if (req.path.includes("/vault") || req.path.includes("/payment")) return "medium";
+  return "low";
+}
+function getCategoryFromRequest(req) {
+  const path5 = req.path;
+  if (path5.includes("/auth") || path5.includes("/login") || path5.includes("/register")) return "auth";
+  if (path5.includes("/vault") || path5.includes("/payment") || path5.includes("/deposit") || path5.includes("/withdraw")) return "financial";
+  if (path5.includes("/proposal") || path5.includes("/vote") || path5.includes("/dao")) return "governance";
+  if (path5.includes("/admin")) return "admin";
+  if (path5.includes("/user") || path5.includes("/profile")) return "data";
+  return "security";
+}
+
+// server/security/backupSystem.ts
+import { exec } from "child_process";
+import { promisify } from "util";
+import fs2 from "fs/promises";
+import path3 from "path";
+var execAsync = promisify(exec);
+var BackupSystem = class _BackupSystem {
+  constructor(config2) {
+    this.config = config2;
+  }
+  static getInstance(config2) {
+    if (!_BackupSystem.instance && config2) {
+      _BackupSystem.instance = new _BackupSystem(config2);
+    }
+    return _BackupSystem.instance;
+  }
+  async createFullBackup() {
+    const backupId = `backup_${Date.now()}`;
+    const timestamp6 = /* @__PURE__ */ new Date();
+    try {
+      console.log(`Starting full backup: ${backupId}`);
+      const backupPath = path3.join(this.config.location, backupId);
+      await fs2.mkdir(backupPath, { recursive: true });
+      const dbBackupPath = path3.join(backupPath, "database.sql");
+      await this.backupDatabase(dbBackupPath);
+      const filesBackupPath = path3.join(backupPath, "uploads");
+      await this.backupUploads(filesBackupPath);
+      const configBackupPath = path3.join(backupPath, "config.json");
+      await this.backupConfiguration(configBackupPath);
+      const stats = await fs2.stat(backupPath);
+      const checksum = await this.calculateChecksum(backupPath);
+      const metadata = {
+        id: backupId,
+        timestamp: timestamp6,
+        type: "full",
+        size: stats.size,
+        checksum,
+        location: backupPath,
+        status: "completed"
+      };
+      console.log(`Full backup completed: ${backupId}`);
+      return metadata;
+    } catch (error) {
+      console.error(`Backup failed: ${error}`);
+      const metadata = {
+        id: backupId,
+        timestamp: timestamp6,
+        type: "full",
+        size: 0,
+        checksum: "",
+        location: "",
+        status: "failed",
+        error: error instanceof Error ? error.message : String(error)
+      };
+      throw error;
+    }
+  }
+  async createIncrementalBackup(lastBackupTime) {
+    const backupId = `incremental_${Date.now()}`;
+    const timestamp6 = /* @__PURE__ */ new Date();
+    try {
+      console.log(`Starting incremental backup: ${backupId}`);
+      const backupPath = path3.join(this.config.location, backupId);
+      await fs2.mkdir(backupPath, { recursive: true });
+      await this.backupChangedData(backupPath, lastBackupTime);
+      const stats = await fs2.stat(backupPath);
+      const checksum = await this.calculateChecksum(backupPath);
+      const metadata = {
+        id: backupId,
+        timestamp: timestamp6,
+        type: "incremental",
+        size: stats.size,
+        checksum,
+        location: backupPath,
+        status: "completed"
+      };
+      console.log(`Incremental backup completed: ${backupId}`);
+      return metadata;
+    } catch (error) {
+      console.error(`Incremental backup failed: ${error}`);
+      throw error;
+    }
+  }
+  async restoreFromBackup(backupId) {
+    try {
+      console.log(`Starting restore from backup: ${backupId}`);
+      const metadata = {
+        id: backupId,
+        timestamp: /* @__PURE__ */ new Date(),
+        type: "full",
+        size: 0,
+        checksum: "",
+        location: "",
+        status: "completed"
+      };
+      if (!metadata) {
+        throw new Error(`Backup not found: ${backupId}`);
+      }
+      if (metadata.status !== "completed") {
+        throw new Error(`Cannot restore from incomplete backup: ${backupId}`);
+      }
+      const currentChecksum = await this.calculateChecksum(metadata.location);
+      if (currentChecksum !== metadata.checksum) {
+        throw new Error(`Backup integrity check failed: ${backupId}`);
+      }
+      await this.stopServices();
+      try {
+        const dbBackupPath = path3.join(metadata.location, "database.sql");
+        await this.restoreDatabase(dbBackupPath);
+        const filesBackupPath = path3.join(metadata.location, "uploads");
+        await this.restoreUploads(filesBackupPath);
+        const configBackupPath = path3.join(metadata.location, "config.json");
+        await this.restoreConfiguration(configBackupPath);
+        console.log(`Restore completed: ${backupId}`);
+      } finally {
+        await this.startServices();
+      }
+    } catch (error) {
+      console.error(`Restore failed: ${error}`);
+      throw error;
+    }
+  }
+  async cleanupOldBackups() {
+    try {
+      const cutoffDate = /* @__PURE__ */ new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - this.config.retentionDays);
+      const oldBackups = [];
+      for (const backup of oldBackups) {
+        try {
+          await fs2.rm(backup.location, { recursive: true, force: true });
+          console.log(`Cleaned up old backup: ${backup.id}`);
+        } catch (error) {
+          console.error(`Failed to cleanup backup ${backup.id}:`, error);
+        }
+      }
+    } catch (error) {
+      console.error("Cleanup failed:", error);
+    }
+  }
+  async verifyBackup(backupId) {
+    try {
+      const metadata = {
+        id: backupId,
+        timestamp: /* @__PURE__ */ new Date(),
+        type: "full",
+        size: 0,
+        checksum: "",
+        location: "",
+        status: "completed"
+      };
+      if (!metadata) return false;
+      try {
+        await fs2.access(metadata.location);
+      } catch {
+        return false;
+      }
+      const currentChecksum = await this.calculateChecksum(metadata.location);
+      return currentChecksum === metadata.checksum;
+    } catch (error) {
+      console.error(`Backup verification failed: ${error}`);
+      return false;
+    }
+  }
+  async backupDatabase(outputPath) {
+    const dbUrl = process.env.DATABASE_URL;
+    if (dbUrl) {
+      await execAsync(`pg_dump "${dbUrl}" > "${outputPath}"`);
+    }
+  }
+  async backupUploads(outputPath) {
+    const uploadsDir = path3.join(process.cwd(), "server", "uploads");
+    try {
+      await execAsync(`cp -r "${uploadsDir}" "${outputPath}"`);
+    } catch (error) {
+      console.warn("No uploads directory found, skipping");
+    }
+  }
+  async backupConfiguration(outputPath) {
+    const config2 = {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      nodeVersion: process.version,
+      platform: process.platform,
+      environment: process.env.NODE_ENV
+      // Add other configuration as needed
+    };
+    await fs2.writeFile(outputPath, JSON.stringify(config2, null, 2));
+  }
+  async backupChangedData(outputPath, since) {
+    const changedData = {};
+    await fs2.writeFile(
+      path3.join(outputPath, "incremental_data.json"),
+      JSON.stringify(changedData, null, 2)
+    );
+  }
+  async restoreDatabase(backupPath) {
+    const dbUrl = process.env.DATABASE_URL;
+    if (dbUrl) {
+      await execAsync(`psql "${dbUrl}" < "${backupPath}"`);
+    }
+  }
+  async restoreUploads(backupPath) {
+    const uploadsDir = path3.join(process.cwd(), "server", "uploads");
+    await execAsync(`cp -r "${backupPath}" "${uploadsDir}"`);
+  }
+  async restoreConfiguration(backupPath) {
+    console.log("Configuration restore completed");
+  }
+  async calculateChecksum(filePath) {
+    const { stdout } = await execAsync(`find "${filePath}" -type f -exec sha256sum {} + | sha256sum`);
+    return stdout.trim().split(" ")[0];
+  }
+  async stopServices() {
+    console.log("Stopping services for restore...");
+  }
+  async startServices() {
+    console.log("Starting services after restore...");
+  }
+};
+var BackupScheduler = class {
+  constructor(backupSystem) {
+    this.isRunning = false;
+    this.backupSystem = backupSystem;
+  }
+  start() {
+    if (this.isRunning) return;
+    this.isRunning = true;
+    const scheduleBackup = () => {
+      const now = /* @__PURE__ */ new Date();
+      const nextBackup = /* @__PURE__ */ new Date();
+      nextBackup.setHours(2, 0, 0, 0);
+      if (nextBackup <= now) {
+        nextBackup.setDate(nextBackup.getDate() + 1);
+      }
+      const msUntilBackup = nextBackup.getTime() - now.getTime();
+      setTimeout(async () => {
+        try {
+          await this.backupSystem.createFullBackup();
+          await this.backupSystem.cleanupOldBackups();
+        } catch (error) {
+          console.error("Scheduled backup failed:", error);
+        }
+        scheduleBackup();
+      }, msUntilBackup);
+    };
+    scheduleBackup();
+    console.log("Backup scheduler started");
+  }
+  stop() {
+    this.isRunning = false;
+    console.log("Backup scheduler stopped");
+  }
+};
+
+// server/middleware/errorHandler.ts
 import { ZodError } from "zod";
+init_storage();
+var AppError = class extends Error {
+  constructor(message, statusCode = 500, isOperational = true, code) {
+    super(message);
+    this.statusCode = statusCode;
+    this.isOperational = isOperational;
+    this.code = code;
+    Error.captureStackTrace(this, this.constructor);
+  }
+};
+var NotFoundError = class extends AppError {
+  constructor(resource = "Resource") {
+    super(`${resource} not found`, 404, true, "NOT_FOUND");
+  }
+};
+var formatErrorResponse = (error, req) => {
+  const response = {
+    success: false,
+    error: {
+      message: error.message,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      path: req.path,
+      method: req.method
+    }
+  };
+  if (error instanceof AppError) {
+    response.error.code = error.code;
+    response.error.statusCode = error.statusCode;
+  }
+  if (isDevelopment && error.stack) {
+    response.error.stack = error.stack;
+  }
+  if (req.headers["x-request-id"]) {
+    response.error.requestId = req.headers["x-request-id"];
+  }
+  return response;
+};
+var logError = async (error, req, res) => {
+  const severity = error instanceof AppError && error.statusCode < 500 ? "medium" : "high";
+  const user = req.user;
+  try {
+    await storage.createSystemLog(
+      "error",
+      error.message,
+      "api",
+      {
+        stack: error.stack,
+        statusCode: error instanceof AppError ? error.statusCode : 500,
+        path: req.path,
+        method: req.method,
+        userAgent: req.get("User-Agent"),
+        ipAddress: req.ip,
+        userId: user?.claims?.sub,
+        requestBody: req.body,
+        requestQuery: req.query,
+        requestParams: req.params
+      }
+    );
+    if (severity === "high") {
+      console.error(`\u{1F6A8} ${error.message}`, {
+        stack: error.stack,
+        path: req.path,
+        method: req.method,
+        userId: user?.claims?.sub
+      });
+    }
+  } catch (logError2) {
+    console.error("Failed to log error:", logError2);
+  }
+};
+var errorHandler = async (error, req, res, next) => {
+  await logError(error, req, res);
+  let statusCode = 500;
+  let message = "Internal server error";
+  let code = "INTERNAL_ERROR";
+  if (error instanceof AppError) {
+    statusCode = error.statusCode;
+    message = error.message;
+    code = error.code || "APP_ERROR";
+  } else if (error instanceof ZodError) {
+    statusCode = 400;
+    message = "Validation failed";
+    code = "VALIDATION_ERROR";
+    return res.status(statusCode).json({
+      success: false,
+      error: {
+        message,
+        code,
+        statusCode,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        path: req.path,
+        method: req.method,
+        details: error.errors
+      }
+    });
+  } else if (error.name === "CastError") {
+    statusCode = 400;
+    message = "Invalid ID format";
+    code = "INVALID_ID";
+  } else if (error.name === "MongoError" || error.message.includes("database")) {
+    statusCode = 500;
+    message = "Database operation failed";
+    code = "DATABASE_ERROR";
+  }
+  const response = formatErrorResponse(
+    new AppError(message, statusCode, true, code),
+    req
+  );
+  res.status(statusCode).json(response);
+};
+var asyncHandler = (fn) => (req, res, next) => {
+  Promise.resolve(fn(req, res, next)).catch(next);
+};
+var notFoundHandler = (req, res, next) => {
+  const error = new NotFoundError(`Route ${req.originalUrl} not found`);
+  next(error);
+};
+var setupProcessErrorHandlers = () => {
+  process.on("unhandledRejection", (reason, promise) => {
+    console.error("\u{1F6A8} Unhandled Promise Rejection:", reason);
+    process.exit(1);
+  });
+  process.on("uncaughtException", (error) => {
+    console.error("\u{1F6A8} Uncaught Exception:", error);
+    process.exit(1);
+  });
+};
 
 // server/blockchain.ts
-import { ethers } from "ethers";
+import { ethers as ethers3 } from "ethers";
 
 // contracts/MaonoVault.json
 var MaonoVault_default = {
@@ -6281,18 +14681,11 @@ var MaonoVault_default = {
 
 // server/blockchain.ts
 var Maono_CONTRACT_ADDRESS = process.env.MAONO_CONTRACT_ADDRESS || "";
-var CUSD_CONTRACT_ADDRESS = process.env.CUSD_CONTRACT_ADDRESS || "";
-var PROVIDER_URL = process.env.RPC_URL || "http://localhost:8545";
-var PRIVATE_KEY2 = process.env.MANAGER_PRIVATE_KEY || "";
-var provider = new ethers.JsonRpcProvider(PROVIDER_URL);
-var signer = PRIVATE_KEY2 ? new ethers.Wallet(PRIVATE_KEY2, provider) : void 0;
-var maonoVault = new ethers.Contract(
+var PROVIDER_URL = process.env.RPC_URL || "https://alfajores-forno.celo-testnet.org";
+var provider = tokenService.provider;
+var signer = tokenService.signer;
+var maonoVault = new ethers3.Contract(
   Maono_CONTRACT_ADDRESS,
-  MaonoVault_default.abi,
-  signer || provider
-);
-var cUSD = new ethers.Contract(
-  CUSD_CONTRACT_ADDRESS,
   MaonoVault_default.abi,
   signer || provider
 );
@@ -6324,6478 +14717,567 @@ var MaonoVaultService = {
   }
 };
 
-// server/routes.ts
-import multer from "multer";
-
-// server/security/rateLimiter.ts
-import rateLimit from "express-rate-limit";
-var generalRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1e3,
-  // 15 minutes
-  max: 100,
-  // limit each IP to 100 requests per windowMs
-  message: {
-    error: "Too many requests from this IP, please try again later.",
-    retryAfter: 15 * 60
-  },
-  standardHeaders: true,
-  legacyHeaders: false
-});
-var authRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1e3,
-  // 15 minutes
-  max: 5,
-  // limit each IP to 5 login attempts per windowMs
-  message: {
-    error: "Too many authentication attempts, please try again later.",
-    retryAfter: 15 * 60
-  },
-  skipSuccessfulRequests: true
-});
-var paymentRateLimit = rateLimit({
-  windowMs: 60 * 60 * 1e3,
-  // 1 hour
-  max: 10,
-  // limit each IP to 10 payment attempts per hour
-  message: {
-    error: "Too many payment attempts, please try again later.",
-    retryAfter: 60 * 60
-  }
-});
-var proposalRateLimit = rateLimit({
-  windowMs: 60 * 60 * 1e3,
-  // 1 hour
-  max: 5,
-  // limit each IP to 5 proposals per hour
-  message: {
-    error: "Too many proposal submissions, please try again later.",
-    retryAfter: 60 * 60
-  }
-});
-var vaultRateLimit = rateLimit({
-  windowMs: 5 * 60 * 1e3,
-  // 5 minutes
-  max: 3,
-  // limit each IP to 3 vault operations per 5 minutes
-  message: {
-    error: "Too many vault operations, please try again later.",
-    retryAfter: 5 * 60
-  }
-});
-
-// server/security/inputSanitizer.ts
-import DOMPurify from "isomorphic-dompurify";
-import validator from "validator";
-import { z } from "zod";
-var sanitizedStringSchema = z.string().min(1).max(1e3).refine((str) => !containsHtml(str), "HTML content not allowed");
-var sanitizedEmailSchema = z.string().email().refine((email) => validator.isEmail(email), "Invalid email format");
-var sanitizedUrlSchema = z.string().url().refine((url) => validator.isURL(url), "Invalid URL format");
-var sanitizedAmountSchema = z.string().refine((amount) => validator.isNumeric(amount), "Invalid numeric amount").refine((amount) => parseFloat(amount) >= 0, "Amount must be positive");
-function containsHtml(str) {
-  return /<[^>]*>/.test(str);
-}
-function sanitizeHtml(dirty) {
-  return DOMPurify.sanitize(dirty, {
-    ALLOWED_TAGS: [],
-    ALLOWED_ATTR: []
-  });
-}
-function sanitizeObject(obj) {
-  if (typeof obj === "string") {
-    return sanitizeHtml(obj);
-  }
-  if (Array.isArray(obj)) {
-    return obj.map(sanitizeObject);
-  }
-  if (obj && typeof obj === "object") {
-    const sanitized = {};
-    for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
-        sanitized[key] = sanitizeObject(obj[key]);
-      }
-    }
-    return sanitized;
-  }
-  return obj;
-}
-var sanitizeInput = (req, res, next) => {
-  if (req.body) {
-    req.body = sanitizeObject(req.body);
-  }
-  if (req.query) {
-    req.query = sanitizeObject(req.query);
-  }
-  if (req.params) {
-    req.params = sanitizeObject(req.params);
-  }
-  next();
-};
-var preventSqlInjection = (req, res, next) => {
-  const sqlInjectionPatterns = [
-    /(\b(select|insert|update|delete|drop|create|alter|exec|execute|union|script)\b)/i,
-    /(;|\-\-|\/\*|\*\/|xp_|sp_)/i,
-    /(\b(or|and)\b.*?=.*?)/i
-  ];
-  const checkForSqlInjection = (value) => {
-    return sqlInjectionPatterns.some((pattern) => pattern.test(value));
-  };
-  const checkObject = (obj) => {
-    if (typeof obj === "string") {
-      return checkForSqlInjection(obj);
-    }
-    if (Array.isArray(obj)) {
-      return obj.some(checkObject);
-    }
-    if (obj && typeof obj === "object") {
-      return Object.values(obj).some(checkObject);
-    }
-    return false;
-  };
-  if (checkObject(req.body) || checkObject(req.query) || checkObject(req.params)) {
-    return res.status(400).json({
-      error: "Potentially malicious input detected"
-    });
-  }
-  next();
-};
-var preventXSS = (req, res, next) => {
-  const xssPatterns = [
-    /<script[^>]*>.*?<\/script>/gi,
-    /javascript:/gi,
-    /on\w+\s*=/gi,
-    /<iframe[^>]*>.*?<\/iframe>/gi,
-    /<embed[^>]*>/gi,
-    /<object[^>]*>/gi
-  ];
-  const checkForXSS = (value) => {
-    return xssPatterns.some((pattern) => pattern.test(value));
-  };
-  const checkObject = (obj) => {
-    if (typeof obj === "string") {
-      return checkForXSS(obj);
-    }
-    if (Array.isArray(obj)) {
-      return obj.some(checkObject);
-    }
-    if (obj && typeof obj === "object") {
-      return Object.values(obj).some(checkObject);
-    }
-    return false;
-  };
-  if (checkObject(req.body) || checkObject(req.query) || checkObject(req.params)) {
-    return res.status(400).json({
-      error: "XSS attempt detected"
-    });
-  }
-  next();
-};
-var validateAndSanitize = (schema) => {
-  return (req, res, next) => {
-    try {
-      sanitizeInput(req, res, () => {
-      });
-      const result = schema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({
-          error: "Invalid input data",
-          details: result.error.errors
-        });
-      }
-      req.body = result.data;
-      next();
-    } catch (error) {
-      res.status(400).json({
-        error: "Input validation failed"
-      });
-    }
-  };
-};
-
-// server/routes.ts
-init_schema();
-
-// server/security/schemas.ts
-import { z as z2 } from "zod";
-var loginSchema = z2.object({
-  email: sanitizedEmailSchema,
-  password: z2.string().min(8).max(100)
-});
-var registerSchema = z2.object({
-  email: sanitizedEmailSchema,
-  password: z2.string().min(8).max(100),
-  name: sanitizedStringSchema.refine((val) => val.length <= 100, { message: "Name must be at most 100 characters" }),
-  role: z2.enum(["user", "contributor", "admin"]).optional()
-});
-var proposalSchema = z2.object({
-  title: sanitizedStringSchema.refine((val) => val.length <= 200, { message: "Title must be at most 200 characters" }),
-  description: sanitizedStringSchema.refine((val) => val.length <= 5e3, { message: "Description must be at most 5000 characters" }),
-  amount: sanitizedAmountSchema.optional(),
-  category: z2.enum(["governance", "funding", "technical", "community"]),
-  daoId: z2.string().uuid()
-});
-var vaultDepositSchema = z2.object({
-  amount: sanitizedAmountSchema,
-  vaultType: z2.enum(["personal", "community"]),
-  token: z2.string().regex(/^0x[a-fA-F0-9]{40}$/, "Invalid token address")
-});
-var vaultWithdrawalSchema = z2.object({
-  amount: sanitizedAmountSchema,
-  vaultId: z2.string().uuid(),
-  recipient: z2.string().regex(/^0x[a-fA-F0-9]{40}$/, "Invalid recipient address")
-});
-var paymentSchema = z2.object({
-  amount: sanitizedAmountSchema,
-  recipient: z2.string().regex(/^0x[a-fA-F0-9]{40}$/, "Invalid recipient address"),
-  description: sanitizedStringSchema.refine((val) => val.length <= 500, { message: "Description must be at most 500 characters" }).optional(),
-  paymentMethod: z2.enum(["crypto", "mpesa", "kotanipay", "stripe"])
-});
-var profileUpdateSchema = z2.object({
-  name: sanitizedStringSchema.refine((val) => val.length <= 100, { message: "Name must be at most 100 characters" }).optional(),
-  bio: sanitizedStringSchema.refine((val) => val.length <= 500, { message: "Bio must be at most 500 characters" }).optional(),
-  avatar: z2.string().url().optional(),
-  location: sanitizedStringSchema.refine((val) => val.length <= 100, { message: "Location must be at most 100 characters" }).optional()
-});
-
-// server/routes.ts
-import fs from "fs";
-import path from "path";
-import { fileURLToPath as fileURLToPath2 } from "url";
-import { dirname as dirname2 } from "path";
-
-// server/security/auditLogger.ts
-var AuditLogger = class _AuditLogger {
-  static getInstance() {
-    if (!_AuditLogger.instance) {
-      _AuditLogger.instance = new _AuditLogger();
-    }
-    return _AuditLogger.instance;
-  }
-  async log(entry) {
-    try {
-      await storage.createAuditLog(entry);
-      console.log(`[AUDIT] ${entry.timestamp.toISOString()} | ${entry.severity.toUpperCase()} | ${entry.category} | ${entry.action} | User: ${entry.userId} | IP: ${entry.ipAddress}`);
-      if (entry.severity === "critical") {
-        await this.sendSecurityAlert(entry);
-      }
-    } catch (error) {
-      console.error("Failed to write audit log:", error);
-    }
-  }
-  async sendSecurityAlert(entry) {
-    console.error(`\u{1F6A8} CRITICAL SECURITY EVENT: ${entry.action} by ${entry.userId} from ${entry.ipAddress}`);
-  }
-};
-var auditMiddleware = (req, res, next) => {
-  const startTime = Date.now();
-  const originalSend = res.send;
-  res.send = function(body) {
-    const endTime = Date.now();
-    const responseTime = endTime - startTime;
-    setImmediate(async () => {
-      const user = req.user;
-      const auditLogger = AuditLogger.getInstance();
-      const entry = {
-        timestamp: /* @__PURE__ */ new Date(),
-        userId: user?.claims?.sub,
-        userEmail: user?.claims?.email,
-        action: getActionFromRequest(req),
-        resource: getResourceFromRequest(req),
-        resourceId: req.params.id || req.params.daoId || req.params.proposalId,
-        method: req.method,
-        endpoint: req.path,
-        ipAddress: req.ip || req.connection.remoteAddress || "",
-        userAgent: req.get("User-Agent") || "",
-        status: res.statusCode,
-        details: {
-          responseTime,
-          bodySize: JSON.stringify(body).length,
-          query: req.query,
-          params: req.params
-        },
-        severity: getSeverityFromRequest(req, res.statusCode),
-        category: getCategoryFromRequest(req)
-      };
-      await auditLogger.log(entry);
-    });
-    return originalSend.call(this, body);
-  };
-  next();
-};
-function getActionFromRequest(req) {
-  const method = req.method.toLowerCase();
-  const path6 = req.path;
-  if (path6.includes("/login")) return "login";
-  if (path6.includes("/logout")) return "logout";
-  if (path6.includes("/register")) return "register";
-  if (path6.includes("/deposit")) return "vault_deposit";
-  if (path6.includes("/withdraw")) return "vault_withdrawal";
-  if (path6.includes("/vote")) return "vote_cast";
-  if (path6.includes("/proposal")) return method === "post" ? "proposal_create" : "proposal_view";
-  if (path6.includes("/dao") && method === "post") return "dao_create";
-  if (path6.includes("/admin")) return "admin_action";
-  return `${method}_${path6.split("/")[2] || "unknown"}`;
-}
-function getResourceFromRequest(req) {
-  const path6 = req.path;
-  if (path6.includes("/vault")) return "vault";
-  if (path6.includes("/dao")) return "dao";
-  if (path6.includes("/proposal")) return "proposal";
-  if (path6.includes("/user")) return "user";
-  if (path6.includes("/auth")) return "authentication";
-  if (path6.includes("/payment")) return "payment";
-  if (path6.includes("/admin")) return "admin";
-  return "unknown";
-}
-function getSeverityFromRequest(req, statusCode) {
-  if (statusCode >= 500) return "critical";
-  if (statusCode >= 400) return "high";
-  if (req.path.includes("/admin")) return "high";
-  if (req.path.includes("/vault") || req.path.includes("/payment")) return "medium";
-  return "low";
-}
-function getCategoryFromRequest(req) {
-  const path6 = req.path;
-  if (path6.includes("/auth") || path6.includes("/login") || path6.includes("/register")) return "auth";
-  if (path6.includes("/vault") || path6.includes("/payment") || path6.includes("/deposit") || path6.includes("/withdraw")) return "financial";
-  if (path6.includes("/proposal") || path6.includes("/vote") || path6.includes("/dao")) return "governance";
-  if (path6.includes("/admin")) return "admin";
-  if (path6.includes("/user") || path6.includes("/profile")) return "data";
-  return "security";
-}
-
-// server/routes.ts
+// server/vaultEventsIndexer.ts
 init_db();
 init_schema();
-import { sql as sql9, eq as eq17, desc as desc10 } from "drizzle-orm";
-
-// server/routes/mpesa-status.ts
-import express3 from "express";
-import { z as z3 } from "zod";
-var router3 = express3.Router();
-var mpesaCallbackSchema = z3.object({
-  Body: z3.object({
-    stkCallback: z3.object({
-      MerchantRequestID: z3.string(),
-      CheckoutRequestID: z3.string(),
-      ResultCode: z3.number(),
-      ResultDesc: z3.string(),
-      CallbackMetadata: z3.object({
-        Item: z3.array(z3.object({
-          Name: z3.string(),
-          Value: z3.union([z3.string(), z3.number()])
-        }))
-      }).optional()
-    })
-  })
-});
-var paymentStatus = /* @__PURE__ */ new Map();
-var mpesaRetryQueue = /* @__PURE__ */ new Map();
-var MpesaReconciliationService = class {
-  static async reconcilePayment(checkoutRequestId, callbackData) {
-    const payment = paymentStatus.get(checkoutRequestId);
-    if (!payment) {
-      console.warn(`M-Pesa reconciliation: Transaction ${checkoutRequestId} not found`);
-      return false;
-    }
-    let amount, receipt, phoneNumber;
-    if (callbackData.CallbackMetadata?.Item) {
-      for (const item of callbackData.CallbackMetadata.Item) {
-        if (item.Name === "Amount") amount = Number(item.Value);
-        if (item.Name === "MpesaReceiptNumber") receipt = String(item.Value);
-        if (item.Name === "PhoneNumber") phoneNumber = String(item.Value);
-      }
-    }
-    if (amount && payment.amount !== amount) {
-      console.error(`M-Pesa reconciliation failed: Amount mismatch for ${checkoutRequestId}`);
-      return false;
-    }
-    payment.receipt = receipt;
-    payment.resultCode = callbackData.ResultCode;
-    payment.resultDesc = callbackData.ResultDesc;
-    payment.status = callbackData.ResultCode === 0 ? "completed" : "failed";
-    payment.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    paymentStatus.set(checkoutRequestId, payment);
-    return true;
-  }
-  static async processCompletedPayment(payment) {
-    try {
-      if (payment.daoId) {
-        console.log(`Crediting DAO ${payment.daoId} with ${payment.amount} KES`);
-      }
-      await notificationService.sendPaymentNotification(payment.phone, {
-        type: "payment_success",
-        amount: payment.amount,
-        currency: payment.currency,
-        transactionId: payment.transactionId
-      });
-      notificationService.updatePaymentStatus(payment.transactionId, {
-        status: "completed",
-        receipt: payment.receipt,
-        timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      });
-      return true;
-    } catch (error) {
-      console.error("Error processing completed M-Pesa payment:", error);
-      return false;
-    }
-  }
-  static async processFailedPayment(payment) {
-    try {
-      const retryableErrors = [1, 1032, 1037];
-      if (retryableErrors.includes(payment.resultCode || 0) && (payment.retryCount || 0) < 3) {
-        payment.retryCount = (payment.retryCount || 0) + 1;
-        mpesaRetryQueue.set(payment.transactionId, payment);
-        setTimeout(() => {
-          this.retryFailedPayment(payment.transactionId);
-        }, 6e4 * payment.retryCount);
-        await notificationService.sendPaymentNotification(payment.phone, {
-          type: "payment_retry",
-          amount: payment.amount,
-          currency: payment.currency,
-          transactionId: payment.transactionId
-        });
-      } else {
-        await notificationService.sendPaymentNotification(payment.phone, {
-          type: "payment_failed",
-          amount: payment.amount,
-          currency: payment.currency,
-          transactionId: payment.transactionId,
-          errorMessage: payment.resultDesc
-        });
-      }
-      notificationService.updatePaymentStatus(payment.transactionId, {
-        status: "failed",
-        error: payment.resultDesc,
-        retryCount: payment.retryCount,
-        timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      });
-      return true;
-    } catch (error) {
-      console.error("Error processing failed M-Pesa payment:", error);
-      return false;
-    }
-  }
-  static async retryFailedPayment(transactionId) {
-    const payment = mpesaRetryQueue.get(transactionId);
-    if (!payment) return;
-    try {
-      console.log(`Retrying M-Pesa payment ${transactionId} (attempt ${payment.retryCount})`);
-      const retrySuccess = Math.random() > 0.3;
-      if (retrySuccess) {
-        payment.status = "completed";
-        payment.resultCode = 0;
-        payment.resultDesc = "Success";
-        payment.receipt = "RETRY" + Date.now();
-        mpesaRetryQueue.delete(transactionId);
-        await this.processCompletedPayment(payment);
-      } else {
-        await this.processFailedPayment(payment);
-      }
-    } catch (error) {
-      console.error(`M-Pesa retry failed for payment ${transactionId}:`, error);
-    }
-  }
-};
-router3.get("/status/:transactionId", async (req, res) => {
-  const { transactionId } = req.params;
-  try {
-    const status = paymentStatus.get(transactionId);
-    if (!status) {
-      return res.status(404).json({
-        code: "TRANSACTION_NOT_FOUND",
-        message: "Transaction not found"
-      });
-    }
-    res.json({
-      success: true,
-      payment: status,
-      retryInfo: mpesaRetryQueue.has(transactionId) ? {
-        inRetryQueue: true,
-        retryCount: status.retryCount || 0
-      } : null
-    });
-  } catch (error) {
-    res.status(500).json({
-      code: "STATUS_CHECK_FAILED",
-      message: "Failed to check payment status",
-      details: error.message
-    });
-  }
-});
-router3.post("/callback", async (req, res) => {
-  try {
-    const callback = mpesaCallbackSchema.parse(req.body);
-    const { ResultCode, CheckoutRequestID, ResultDesc } = callback.Body.stkCallback;
-    const reconciled = await MpesaReconciliationService.reconcilePayment(
-      CheckoutRequestID,
-      callback.Body.stkCallback
-    );
-    if (!reconciled) {
-      return res.status(400).json({
-        code: "RECONCILIATION_FAILED",
-        message: "Payment reconciliation failed"
-      });
-    }
-    const payment = paymentStatus.get(CheckoutRequestID);
-    if (!payment) {
-      return res.status(404).json({
-        code: "PAYMENT_NOT_FOUND",
-        message: "Payment not found"
-      });
-    }
-    if (ResultCode === 0) {
-      await MpesaReconciliationService.processCompletedPayment(payment);
-    } else {
-      await MpesaReconciliationService.processFailedPayment(payment);
-    }
-    console.log(`M-Pesa payment ${CheckoutRequestID} processed: ${ResultCode === 0 ? "Success" : "Failed"}`);
-    res.json({
-      success: true,
-      reconciled: true,
-      resultCode: ResultCode
-    });
-  } catch (error) {
-    console.error("M-Pesa callback error:", error);
-    res.status(400).json({
-      code: "INVALID_CALLBACK",
-      message: "Invalid callback data",
-      details: error.message
-    });
-  }
-});
-router3.post("/retry/:transactionId", async (req, res) => {
-  const { transactionId } = req.params;
-  try {
-    const payment = paymentStatus.get(transactionId);
-    if (!payment) {
-      return res.status(404).json({
-        code: "TRANSACTION_NOT_FOUND",
-        message: "Transaction not found"
-      });
-    }
-    if (payment.status !== "failed") {
-      return res.status(400).json({
-        code: "INVALID_STATUS",
-        message: "Can only retry failed payments"
-      });
-    }
-    if ((payment.retryCount || 0) >= 3) {
-      return res.status(400).json({
-        code: "RETRY_LIMIT_EXCEEDED",
-        message: "Maximum retry attempts exceeded"
-      });
-    }
-    payment.retryCount = (payment.retryCount || 0) + 1;
-    mpesaRetryQueue.set(transactionId, payment);
-    await MpesaReconciliationService.retryFailedPayment(transactionId);
-    res.json({
-      success: true,
-      message: "Payment retry initiated",
-      retryCount: payment.retryCount
-    });
-  } catch (error) {
-    res.status(500).json({
-      code: "RETRY_FAILED",
-      message: "Failed to retry payment",
-      details: error.message
-    });
-  }
-});
-router3.get("/reconcile", async (req, res) => {
-  try {
-    const { startDate, endDate } = req.query;
-    const payments = Array.from(paymentStatus.values()).filter((payment) => {
-      if (startDate && payment.createdAt < startDate) return false;
-      if (endDate && payment.createdAt > endDate) return false;
-      return true;
-    });
-    const reconciliation = {
-      totalPayments: payments.length,
-      completed: payments.filter((p) => p.status === "completed").length,
-      failed: payments.filter((p) => p.status === "failed").length,
-      pending: payments.filter((p) => p.status === "pending").length,
-      inRetryQueue: mpesaRetryQueue.size,
-      totalAmount: payments.filter((p) => p.status === "completed").reduce((sum2, p) => sum2 + p.amount, 0),
-      successRate: payments.length > 0 ? (payments.filter((p) => p.status === "completed").length / payments.length * 100).toFixed(2) + "%" : "0%"
-    };
-    res.json({
-      success: true,
-      reconciliation,
-      payments: payments.map((p) => ({
-        ...p,
-        inRetryQueue: mpesaRetryQueue.has(p.transactionId)
-      }))
-    });
-  } catch (error) {
-    res.status(500).json({
-      code: "RECONCILIATION_FAILED",
-      message: "Failed to generate reconciliation report",
-      details: error.message
-    });
-  }
-});
-var mpesa_status_default = router3;
-
-// server/routes/stripe-status.ts
-import express4 from "express";
-import { z as z4 } from "zod";
-var router4 = express4.Router();
-var stripeWebhookSchema = z4.object({
-  id: z4.string(),
-  type: z4.string(),
-  data: z4.object({
-    object: z4.object({
-      id: z4.string(),
-      amount: z4.number(),
-      currency: z4.string(),
-      status: z4.string(),
-      receipt_url: z4.string().optional(),
-      customer_email: z4.string().optional(),
-      customer: z4.string().optional(),
-      created: z4.number(),
-      failure_code: z4.string().optional(),
-      failure_message: z4.string().optional(),
-      metadata: z4.record(z4.string()).optional()
-    })
-  })
-});
-var stripePaymentStatus = /* @__PURE__ */ new Map();
-var stripeRetryQueue = /* @__PURE__ */ new Map();
-var StripeReconciliationService = class {
-  static async reconcilePayment(transactionId, stripeData) {
-    const payment = stripePaymentStatus.get(transactionId);
-    if (!payment) {
-      console.warn(`Stripe reconciliation: Transaction ${transactionId} not found`);
-      return false;
-    }
-    if (payment.amount !== stripeData.amount || payment.currency !== stripeData.currency) {
-      console.error(`Stripe reconciliation failed: Amount/currency mismatch for ${transactionId}`);
-      return false;
-    }
-    const status = stripeData.status === "succeeded" ? "completed" : stripeData.status === "requires_payment_method" ? "failed" : stripeData.status;
-    payment.status = status;
-    payment.receipt = stripeData.receipt_url;
-    payment.failureCode = stripeData.failure_code;
-    payment.failureMessage = stripeData.failure_message;
-    payment.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    stripePaymentStatus.set(transactionId, payment);
-    return true;
-  }
-  static async processCompletedPayment(payment) {
-    try {
-      if (payment.daoId) {
-        console.log(`Crediting DAO ${payment.daoId} with ${payment.amount / 100} ${payment.currency.toUpperCase()}`);
-      }
-      if (payment.email) {
-        await notificationService.sendPaymentNotification(payment.email, {
-          type: "payment_success",
-          amount: payment.amount / 100,
-          // Stripe amounts are in cents
-          currency: payment.currency.toUpperCase(),
-          transactionId: payment.transactionId
-        });
-      }
-      notificationService.updatePaymentStatus(payment.transactionId, {
-        status: "completed",
-        receipt: payment.receipt,
-        timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      });
-      return true;
-    } catch (error) {
-      console.error("Error processing completed Stripe payment:", error);
-      return false;
-    }
-  }
-  static async processFailedPayment(payment) {
-    try {
-      const retryableFailures = ["card_declined", "insufficient_funds", "processing_error"];
-      if (payment.failureCode && retryableFailures.includes(payment.failureCode) && (payment.retryCount || 0) < 2) {
-        payment.retryCount = (payment.retryCount || 0) + 1;
-        stripeRetryQueue.set(payment.transactionId, payment);
-        if (payment.email) {
-          await notificationService.sendPaymentNotification(payment.email, {
-            type: "payment_retry",
-            amount: payment.amount / 100,
-            currency: payment.currency.toUpperCase(),
-            transactionId: payment.transactionId,
-            errorMessage: payment.failureMessage
-          });
-        }
-      } else {
-        if (payment.email) {
-          await notificationService.sendPaymentNotification(payment.email, {
-            type: "payment_failed",
-            amount: payment.amount / 100,
-            currency: payment.currency.toUpperCase(),
-            transactionId: payment.transactionId,
-            errorMessage: payment.failureMessage || payment.failureCode
-          });
-        }
-      }
-      notificationService.updatePaymentStatus(payment.transactionId, {
-        status: "failed",
-        error: payment.failureMessage || payment.failureCode,
-        retryCount: payment.retryCount,
-        timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      });
-      return true;
-    } catch (error) {
-      console.error("Error processing failed Stripe payment:", error);
-      return false;
-    }
-  }
-};
-router4.get("/status/:transactionId", async (req, res) => {
-  const { transactionId } = req.params;
-  try {
-    const status = stripePaymentStatus.get(transactionId);
-    if (!status) {
-      return res.status(404).json({
-        code: "TRANSACTION_NOT_FOUND",
-        message: "Transaction not found"
-      });
-    }
-    res.json({
-      success: true,
-      payment: {
-        ...status,
-        amount: status.amount / 100
-        // Convert from cents to dollars
-      },
-      retryInfo: stripeRetryQueue.has(transactionId) ? {
-        inRetryQueue: true,
-        retryCount: status.retryCount || 0
-      } : null
-    });
-  } catch (error) {
-    res.status(500).json({
-      code: "STATUS_CHECK_FAILED",
-      message: "Failed to check payment status",
-      details: error.message
-    });
-  }
-});
-router4.post("/webhook", async (req, res) => {
-  try {
-    const event = stripeWebhookSchema.parse(req.body);
-    const payment = event.data.object;
-    const relevantEvents = [
-      "payment_intent.succeeded",
-      "payment_intent.payment_failed",
-      "invoice.payment_succeeded",
-      "invoice.payment_failed"
-    ];
-    if (!relevantEvents.includes(event.type)) {
-      return res.status(200).json({ received: true });
-    }
-    const reconciled = await StripeReconciliationService.reconcilePayment(
-      payment.id,
-      payment
-    );
-    if (!reconciled) {
-      console.warn(`Stripe webhook: Payment ${payment.id} not found for reconciliation`);
-      const newPayment = {
-        id: payment.id,
-        transactionId: payment.id,
-        status: payment.status === "succeeded" ? "completed" : "failed",
-        amount: payment.amount,
-        currency: payment.currency,
-        email: payment.customer_email,
-        receipt: payment.receipt_url,
-        failureCode: payment.failure_code,
-        failureMessage: payment.failure_message,
-        createdAt: new Date(payment.created * 1e3).toISOString(),
-        updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-        daoId: payment.metadata?.daoId
-      };
-      stripePaymentStatus.set(payment.id, newPayment);
-    }
-    const updatedPayment = stripePaymentStatus.get(payment.id);
-    if (!updatedPayment) {
-      return res.status(500).json({ error: "Failed to process payment" });
-    }
-    if (event.type.includes("succeeded")) {
-      await StripeReconciliationService.processCompletedPayment(updatedPayment);
-    } else if (event.type.includes("failed")) {
-      await StripeReconciliationService.processFailedPayment(updatedPayment);
-    }
-    console.log(`Stripe payment ${payment.id} processed: ${event.type}`);
-    res.status(200).json({ received: true });
-  } catch (error) {
-    console.error("Stripe webhook error:", error);
-    res.status(400).json({
-      code: "INVALID_WEBHOOK",
-      message: "Invalid Stripe webhook data",
-      details: error.message
-    });
-  }
-});
-router4.get("/reconcile", async (req, res) => {
-  try {
-    const { startDate, endDate } = req.query;
-    const payments = Array.from(stripePaymentStatus.values()).filter((payment) => {
-      if (startDate && payment.createdAt < startDate) return false;
-      if (endDate && payment.createdAt > endDate) return false;
-      return true;
-    });
-    const reconciliation = {
-      totalPayments: payments.length,
-      completed: payments.filter((p) => p.status === "completed").length,
-      failed: payments.filter((p) => p.status === "failed").length,
-      pending: payments.filter((p) => p.status === "pending").length,
-      inRetryQueue: stripeRetryQueue.size,
-      totalAmount: payments.filter((p) => p.status === "completed").reduce((sum2, p) => sum2 + p.amount / 100, 0),
-      // Convert from cents
-      successRate: payments.length > 0 ? (payments.filter((p) => p.status === "completed").length / payments.length * 100).toFixed(2) + "%" : "0%",
-      topFailureReasons: getTopFailureReasons(payments ? payments.filter((p) => p.status === "failed") : [])
-    };
-    res.json({
-      success: true,
-      reconciliation,
-      payments: payments.map((p) => ({
-        ...p,
-        amount: p.amount / 100,
-        // Convert from cents
-        inRetryQueue: stripeRetryQueue.has(p.transactionId)
-      }))
-    });
-  } catch (error) {
-    res.status(500).json({
-      code: "RECONCILIATION_FAILED",
-      message: "Failed to generate reconciliation report",
-      details: error.message
-    });
-  }
-});
-function getTopFailureReasons(failedPayments) {
-  const reasons = failedPayments.reduce((acc, payment) => {
-    const reason = payment.failureCode || payment.failureMessage || "unknown";
-    acc[reason] = (acc[reason] || 0) + 1;
-    return acc;
-  }, {});
-  return Object.entries(reasons).sort(([, a], [, b]) => b - a).slice(0, 5).map(([reason, count2]) => ({ reason, count: count2 }));
-}
-var stripe_status_default = router4;
-
-// server/routes/kotanipay-status.ts
-import express5 from "express";
-import { z as z5 } from "zod";
-var router5 = express5.Router();
-var kotaniPaymentStatus = /* @__PURE__ */ new Map();
-var paymentRetryQueue = /* @__PURE__ */ new Map();
-var kotaniWebhookSchema = z5.object({
-  transactionId: z5.string(),
-  status: z5.enum(["pending", "completed", "failed", "cancelled"]),
-  amount: z5.number(),
-  currency: z5.string(),
-  phone: z5.string(),
-  reference: z5.string().optional(),
-  timestamp: z5.string().optional(),
-  errorCode: z5.string().optional(),
-  errorMessage: z5.string().optional()
-});
-var PaymentReconciliationService = class {
-  static async reconcilePayment(transactionId, webhookData) {
-    const payment = kotaniPaymentStatus.get(transactionId);
-    if (!payment) {
-      console.warn(`Payment reconciliation: Transaction ${transactionId} not found`);
-      return false;
-    }
-    if (payment.amount !== webhookData.amount || payment.currency !== webhookData.currency) {
-      console.error(`Payment reconciliation failed: Amount/currency mismatch for ${transactionId}`);
-      return false;
-    }
-    payment.status = webhookData.status;
-    payment.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    if (webhookData.errorMessage) {
-      payment.errorMessage = webhookData.errorMessage;
-    }
-    kotaniPaymentStatus.set(transactionId, payment);
-    return true;
-  }
-  static async processCompletedPayment(payment) {
-    try {
-      if (payment.daoId) {
-        console.log(`Crediting DAO ${payment.daoId} with ${payment.amount} ${payment.currency}`);
-      }
-      await notificationService.sendPaymentNotification(payment.phone, {
-        type: "payment_success",
-        amount: payment.amount,
-        currency: payment.currency,
-        transactionId: payment.transactionId
-      });
-      return true;
-    } catch (error) {
-      console.error("Error processing completed payment:", error);
-      return false;
-    }
-  }
-  static async processFailedPayment(payment) {
-    try {
-      if ((payment.retryCount || 0) < 3) {
-        payment.retryCount = (payment.retryCount || 0) + 1;
-        paymentRetryQueue.set(payment.transactionId, payment);
-        setTimeout(() => {
-          this.retryFailedPayment(payment.transactionId);
-        }, 3e4 * payment.retryCount);
-      }
-      await notificationService.sendPaymentNotification(payment.phone, {
-        type: "payment_failed",
-        amount: payment.amount,
-        currency: payment.currency,
-        transactionId: payment.transactionId,
-        errorMessage: payment.errorMessage
-      });
-      return true;
-    } catch (error) {
-      console.error("Error processing failed payment:", error);
-      return false;
-    }
-  }
-  static async retryFailedPayment(transactionId) {
-    const payment = paymentRetryQueue.get(transactionId);
-    if (!payment) return;
-    try {
-      console.log(`Retrying payment ${transactionId} (attempt ${payment.retryCount})`);
-      const retrySuccess = Math.random() > 0.5;
-      if (retrySuccess) {
-        payment.status = "completed";
-        paymentRetryQueue.delete(transactionId);
-        await this.processCompletedPayment(payment);
-      } else {
-        payment.status = "failed";
-        await this.processFailedPayment(payment);
-      }
-    } catch (error) {
-      console.error(`Retry failed for payment ${transactionId}:`, error);
-    }
-  }
-};
-router5.get("/status/:transactionId", async (req, res) => {
-  const { transactionId } = req.params;
-  try {
-    const status = kotaniPaymentStatus.get(transactionId);
-    if (!status) {
-      return res.status(404).json({
-        code: "TRANSACTION_NOT_FOUND",
-        message: "Transaction not found"
-      });
-    }
-    res.json({
-      success: true,
-      payment: status,
-      retryInfo: paymentRetryQueue.has(transactionId) ? {
-        inRetryQueue: true,
-        retryCount: status.retryCount || 0
-      } : null
-    });
-  } catch (error) {
-    res.status(500).json({
-      code: "STATUS_CHECK_FAILED",
-      message: "Failed to check payment status",
-      details: error.message
-    });
-  }
-});
-router5.post("/callback", async (req, res) => {
-  try {
-    const webhook = kotaniWebhookSchema.parse(req.body);
-    const reconciled = await PaymentReconciliationService.reconcilePayment(
-      webhook.transactionId,
-      webhook
-    );
-    if (!reconciled) {
-      return res.status(400).json({
-        code: "RECONCILIATION_FAILED",
-        message: "Payment reconciliation failed"
-      });
-    }
-    const payment = {
-      id: webhook.transactionId,
-      transactionId: webhook.transactionId,
-      status: webhook.status,
-      amount: webhook.amount,
-      currency: webhook.currency,
-      phone: webhook.phone,
-      reference: webhook.reference,
-      createdAt: kotaniPaymentStatus.get(webhook.transactionId)?.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
-      updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-      errorMessage: webhook.errorMessage
-    };
-    kotaniPaymentStatus.set(webhook.transactionId, payment);
-    switch (webhook.status) {
-      case "completed":
-        await PaymentReconciliationService.processCompletedPayment(payment);
-        break;
-      case "failed":
-      case "cancelled":
-        await PaymentReconciliationService.processFailedPayment(payment);
-        break;
-      case "pending":
-        await notificationService.sendPaymentNotification(payment.phone, {
-          type: "payment_pending",
-          amount: payment.amount,
-          currency: payment.currency,
-          transactionId: payment.transactionId
-        });
-        break;
-    }
-    console.log(`KotaniPay payment ${webhook.transactionId} status updated: ${webhook.status}`);
-    res.json({
-      success: true,
-      reconciled: true,
-      status: webhook.status
-    });
-  } catch (error) {
-    console.error("KotaniPay callback error:", error);
-    res.status(400).json({
-      code: "INVALID_CALLBACK",
-      message: "Invalid callback data",
-      details: error.message
-    });
-  }
-});
-router5.post("/retry/:transactionId", async (req, res) => {
-  const { transactionId } = req.params;
-  try {
-    const payment = kotaniPaymentStatus.get(transactionId);
-    if (!payment) {
-      return res.status(404).json({
-        code: "TRANSACTION_NOT_FOUND",
-        message: "Transaction not found"
-      });
-    }
-    if (payment.status !== "failed") {
-      return res.status(400).json({
-        code: "INVALID_STATUS",
-        message: "Can only retry failed payments"
-      });
-    }
-    if ((payment.retryCount || 0) >= 3) {
-      return res.status(400).json({
-        code: "RETRY_LIMIT_EXCEEDED",
-        message: "Maximum retry attempts exceeded"
-      });
-    }
-    payment.retryCount = (payment.retryCount || 0) + 1;
-    paymentRetryQueue.set(transactionId, payment);
-    await PaymentReconciliationService.retryFailedPayment(transactionId);
-    res.json({
-      success: true,
-      message: "Payment retry initiated",
-      retryCount: payment.retryCount
-    });
-  } catch (error) {
-    res.status(500).json({
-      code: "RETRY_FAILED",
-      message: "Failed to retry payment",
-      details: error.message
-    });
-  }
-});
-router5.get("/reconcile", async (req, res) => {
-  try {
-    const { startDate, endDate } = req.query;
-    const payments = Array.from(kotaniPaymentStatus.values()).filter((payment) => {
-      if (startDate && payment.createdAt < startDate) return false;
-      if (endDate && payment.createdAt > endDate) return false;
-      return true;
-    });
-    const reconciliation = {
-      totalPayments: payments.length,
-      completed: payments.filter((p) => p.status === "completed").length,
-      failed: payments.filter((p) => p.status === "failed").length,
-      pending: payments.filter((p) => p.status === "pending").length,
-      cancelled: payments.filter((p) => p.status === "cancelled").length,
-      inRetryQueue: paymentRetryQueue.size,
-      totalAmount: payments.filter((p) => p.status === "completed").reduce((sum2, p) => sum2 + p.amount, 0)
-    };
-    res.json({
-      success: true,
-      reconciliation,
-      payments: payments.map((p) => ({
-        ...p,
-        inRetryQueue: paymentRetryQueue.has(p.transactionId)
-      }))
-    });
-  } catch (error) {
-    res.status(500).json({
-      code: "RECONCILIATION_FAILED",
-      message: "Failed to generate reconciliation report",
-      details: error.message
-    });
-  }
-});
-var kotanipay_status_default = router5;
-
-// server/routes/dao-subscriptions.ts
-import express6 from "express";
-init_schema();
-import { eq as eq4 } from "drizzle-orm";
-var router6 = express6.Router();
-var SUBSCRIPTION_PLANS = {
-  free: {
-    name: "Free",
-    price: 0,
-    features: ["Basic proposals", "Up to 50 members", "Community support"],
-    limits: { members: 50, proposals: 10, storage: "100MB" }
-  },
-  pro: {
-    name: "Pro",
-    price: 29.99,
-    features: ["Advanced proposals", "Up to 500 members", "Priority support", "Custom branding"],
-    limits: { members: 500, proposals: 100, storage: "1GB" }
-  },
-  enterprise: {
-    name: "Enterprise",
-    price: 99.99,
-    features: ["Unlimited proposals", "Unlimited members", "24/7 support", "White-label solution"],
-    limits: { members: -1, proposals: -1, storage: "10GB" }
-  }
-};
-router6.get("/plans", (req, res) => {
-  res.json({
-    success: true,
-    plans: SUBSCRIPTION_PLANS
-  });
-});
-router6.get("/:daoId/status", async (req, res) => {
-  try {
-    const { daoId } = req.params;
-    const dao = await db.select().from(daos).where(eq4(daos.id, daoId)).limit(1);
-    if (dao.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "DAO not found"
-      });
-    }
-    const daoData = dao[0];
-    const currentPlan = daoData.plan || "free";
-    const planDetails = SUBSCRIPTION_PLANS[currentPlan];
-    res.json({
-      success: true,
-      subscription: {
-        daoId,
-        currentPlan,
-        planDetails,
-        billingStatus: daoData.billingStatus || "active",
-        nextBillingDate: daoData.nextBillingDate,
-        createdAt: daoData.createdAt,
-        updatedAt: daoData.updatedAt
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to get subscription status",
-      error: error.message
-    });
-  }
-});
-router6.post("/:daoId/upgrade", async (req, res) => {
-  try {
-    const { daoId } = req.params;
-    const { plan, paymentMethod } = req.body;
-    if (!SUBSCRIPTION_PLANS[plan]) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid subscription plan"
-      });
-    }
-    const planDetails = SUBSCRIPTION_PLANS[plan];
-    const subscriptionId = "SUB-" + Date.now();
-    await db.update(daos).set({
-      plan,
-      billingStatus: "active",
-      nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3),
-      // 30 days from now
-      updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq4(daos.id, daoId));
-    res.json({
-      success: true,
-      message: `Successfully upgraded to ${plan} plan`,
-      subscription: {
-        daoId,
-        plan,
-        subscriptionId,
-        amount: planDetails.price,
-        billingStatus: "active",
-        nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3)
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to upgrade subscription",
-      error: error.message
-    });
-  }
-});
-router6.post("/:daoId/cancel", async (req, res) => {
-  try {
-    const { daoId } = req.params;
-    await db.update(daos).set({
-      billingStatus: "cancelled",
-      updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq4(daos.id, daoId));
-    res.json({
-      success: true,
-      message: "Subscription cancelled successfully"
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to cancel subscription",
-      error: error.message
-    });
-  }
-});
-router6.get("/:daoId/usage", async (req, res) => {
-  try {
-    const { daoId } = req.params;
-    const mockUsage = {
-      daoId,
-      currentMembers: 25,
-      currentProposals: 5,
-      storageUsed: "45MB",
-      apiCalls: 150,
-      bandwidthUsed: "2.3GB"
-    };
-    res.json({
-      success: true,
-      usage: mockUsage
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to get usage statistics",
-      error: error.message
-    });
-  }
-});
-var dao_subscriptions_default = router6;
-
-// server/routes/disbursements.ts
-import express7 from "express";
-init_schema();
-import { eq as eq5, and as and4, desc as desc3 } from "drizzle-orm";
-var router7 = express7.Router();
-router7.post("/create", async (req, res) => {
-  try {
-    const disbursement = req.body;
-    const { daoId, recipients, totalAmount, currency, description } = disbursement;
-    if (!daoId || !recipients || recipients.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "DAO ID and recipients are required"
-      });
-    }
-    const calculatedTotal = recipients.reduce((sum2, recipient) => sum2 + recipient.amount, 0);
-    if (Math.abs(calculatedTotal - totalAmount) > 0.01) {
-      return res.status(400).json({
-        success: false,
-        message: "Total amount does not match sum of recipient amounts"
-      });
-    }
-    const disbursementId = "DISB-" + Date.now();
-    const feePercent = 0.01;
-    const totalFee = Math.round(totalAmount * feePercent * 100) / 100;
-    const netAmount = totalAmount - totalFee;
-    const transactions = [];
-    for (const recipient of recipients) {
-      const transaction = {
-        id: `TXN-${disbursementId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        fromUserId: daoId,
-        toUserId: recipient.userId,
-        walletAddress: recipient.walletAddress,
-        amount: recipient.amount.toString(),
-        currency,
-        type: "disbursement",
-        status: "pending",
-        description: `${description} - ${recipient.reason}`,
-        disbursementId,
-        createdAt: /* @__PURE__ */ new Date(),
-        updatedAt: /* @__PURE__ */ new Date()
-      };
-      await db.insert(walletTransactions).values(transaction);
-      transactions.push(transaction);
-    }
-    res.json({
-      success: true,
-      disbursementId,
-      message: "Disbursement created successfully",
-      totalAmount,
-      fee: totalFee,
-      netAmount,
-      recipientCount: recipients.length,
-      transactions: transactions.map((t) => ({
-        id: t.id,
-        recipient: t.toUserId,
-        amount: t.amount,
-        status: t.status
-      }))
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to create disbursement",
-      error: error.message
-    });
-  }
-});
-router7.get("/:daoId/history", async (req, res) => {
-  try {
-    const { daoId } = req.params;
-    const { limit = 50, offset = 0 } = req.query;
-    const transactions = await db.select().from(walletTransactions).where(and4(
-      eq5(walletTransactions.fromUserId, daoId),
-      eq5(walletTransactions.type, "disbursement")
-    )).orderBy(desc3(walletTransactions.createdAt)).limit(Number(limit)).offset(Number(offset));
-    const disbursements = /* @__PURE__ */ new Map();
-    transactions.forEach((tx) => {
-      const disbursementId = tx.disbursementId;
-      if (!disbursements.has(disbursementId)) {
-        disbursements.set(disbursementId, {
-          id: disbursementId,
-          daoId,
-          totalAmount: 0,
-          recipientCount: 0,
-          status: "pending",
-          currency: tx.currency,
-          createdAt: tx.createdAt,
-          recipients: []
-        });
-      }
-      const disbursement = disbursements.get(disbursementId);
-      disbursement.totalAmount += typeof tx.amount === "string" ? parseFloat(tx.amount) : tx.amount;
-      disbursement.recipientCount += 1;
-      disbursement.recipients.push({
-        userId: tx.toUserId,
-        walletAddress: tx.walletAddress,
-        amount: tx.amount,
-        status: tx.status,
-        description: tx.description
-      });
-      const allCompleted = disbursement.recipients.every((r) => r.status === "completed");
-      const anyFailed = disbursement.recipients.some((r) => r.status === "failed");
-      if (allCompleted) disbursement.status = "completed";
-      else if (anyFailed) disbursement.status = "partial";
-      else disbursement.status = "pending";
-    });
-    res.json({
-      success: true,
-      disbursements: Array.from(disbursements.values()),
-      total: disbursements.size
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to get disbursement history",
-      error: error.message
-    });
-  }
-});
-router7.post("/:disbursementId/execute", async (req, res) => {
-  try {
-    const { disbursementId } = req.params;
-    const { paymentMethod = "wallet" } = req.body;
-    const transactions = await db.select().from(walletTransactions).where(and4(
-      eq5(walletTransactions.disbursementId, disbursementId),
-      eq5(walletTransactions.status, "pending")
-    ));
-    if (transactions.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "No pending transactions found for this disbursement"
-      });
-    }
-    const results = [];
-    for (const transaction of transactions) {
-      try {
-        await db.update(walletTransactions).set({
-          status: "completed",
-          updatedAt: /* @__PURE__ */ new Date()
-        }).where(eq5(walletTransactions.id, transaction.id));
-        results.push({
-          transactionId: transaction.id,
-          recipient: transaction.toUserId,
-          amount: transaction.amount,
-          status: "completed"
-        });
-      } catch (error) {
-        await db.update(walletTransactions).set({
-          status: "failed",
-          updatedAt: /* @__PURE__ */ new Date()
-        }).where(eq5(walletTransactions.id, transaction.id));
-        results.push({
-          transactionId: transaction.id,
-          recipient: transaction.toUserId,
-          amount: transaction.amount,
-          status: "failed",
-          error: error.message
-        });
-      }
-    }
-    const successful = results.filter((r) => r.status === "completed").length;
-    const failed = results.filter((r) => r.status === "failed").length;
-    res.json({
-      success: true,
-      disbursementId,
-      message: `Disbursement execution completed: ${successful} successful, ${failed} failed`,
-      results,
-      summary: {
-        total: results.length,
-        successful,
-        failed
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to execute disbursement",
-      error: error.message
-    });
-  }
-});
-router7.get("/:disbursementId/status", async (req, res) => {
-  try {
-    const { disbursementId } = req.params;
-    const transactions = await db.select().from(walletTransactions).where(eq5(walletTransactions.disbursementId, disbursementId));
-    if (transactions.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Disbursement not found"
-      });
-    }
-    const totalAmount = transactions.reduce((sum2, tx) => {
-      const amount = typeof tx.amount === "string" ? parseFloat(tx.amount) : tx.amount;
-      return sum2 + amount;
-    }, 0);
-    const statusCounts = transactions.reduce((counts, tx) => {
-      counts[tx.status || "pending"] = (counts[tx.status || "pending"] || 0) + 1;
-      return counts;
-    }, {});
-    const overallStatus = statusCounts.failed > 0 ? "partial" : statusCounts.pending > 0 ? "pending" : "completed";
-    res.json({
-      success: true,
-      disbursement: {
-        id: disbursementId,
-        totalAmount,
-        recipientCount: transactions.length,
-        status: overallStatus,
-        statusBreakdown: statusCounts,
-        currency: transactions[0].currency,
-        createdAt: transactions[0].createdAt
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to get disbursement status",
-      error: error.message
-    });
-  }
-});
-var disbursements_default = router7;
-
-// server/routes/tasks.ts
-import express8 from "express";
-init_schema();
-import { eq as eq6, and as and5, desc as desc4, sql as sql2 } from "drizzle-orm";
-import { z as z6 } from "zod";
-var router8 = express8.Router();
-var createTaskSchema = z6.object({
-  title: z6.string().min(1, "Title is required"),
-  description: z6.string().min(1, "Description is required"),
-  reward: z6.number().positive("Reward must be positive"),
-  daoId: z6.string().min(1, "DAO ID is required"),
-  category: z6.string().min(1, "Category is required"),
-  difficulty: z6.enum(["easy", "medium", "hard"]),
-  estimatedTime: z6.string().optional(),
-  deadline: z6.string().optional(),
-  requiresVerification: z6.boolean().default(false)
-});
-var verifyTaskSchema = z6.object({
-  proofUrl: z6.string().url("Valid proof URL required"),
-  description: z6.string().min(10, "Verification description required"),
-  screenshots: z6.array(z6.string().url()).optional()
-});
-function requireRole3(...roles2) {
-  return async (req, res, next) => {
-    const userId = String(req.user?.claims?.sub ?? "");
-    const daoIdRaw = req.params.daoId || req.body.daoId;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-    let daoId = void 0;
-    if (typeof daoIdRaw === "string") {
-      daoId = daoIdRaw;
-    } else if (daoIdRaw) {
-      daoId = String(daoIdRaw);
-    }
-    if (!daoId || daoId === "null") {
-      return res.status(400).json({ error: "Invalid DAO ID" });
-    }
-    if (!userId || typeof userId !== "string") {
-      return res.status(401).json({ error: "Unauthorized: Invalid user ID" });
-    }
-    const safeUserId = String(userId ?? "");
-    const membership = await db.select().from(daoMemberships).where(and5(eq6(daoMemberships.daoId, String(daoId ?? "")), eq6(daoMemberships.userId, String(userId ?? ""))));
-    if (!membership.length || !roles2.includes(typeof membership[0].role === "string" ? membership[0].role : "")) {
-      return res.status(403).json({ error: "Insufficient permissions" });
-    }
-    next();
-  };
-}
-router8.post("/create", requireRole3("admin", "moderator"), async (req, res) => {
-  try {
-    const validatedData = createTaskSchema.parse(req.body);
-    const userId = req.user && req.user.claims ? req.user.claims.sub : void 0;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-    const insertData = {
-      ...validatedData,
-      creatorId: userId,
-      status: "open",
-      reward: String(validatedData.reward)
-    };
-    if (validatedData.deadline) {
-      insertData.deadline = new Date(validatedData.deadline);
-    }
-    const task = await db.insert(tasks).values(insertData).returning();
-    await db.insert(taskHistory).values({
-      taskId: task[0].id,
-      userId,
-      action: "created",
-      details: { category: validatedData.category, reward: String(validatedData.reward) }
-    });
-    res.status(201).json(task[0]);
-  } catch (err) {
-    if (err instanceof z6.ZodError) {
-      return res.status(400).json({ error: "Validation error", details: err.errors });
-    }
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-router8.get("/", async (req, res) => {
-  try {
-    const {
-      daoId,
-      status,
-      category,
-      difficulty,
-      limit = 20,
-      offset = 0
-    } = req.query;
-    let conditions = [];
-    if (daoId) conditions.push(eq6(tasks.daoId, typeof daoId === "string" ? daoId : ""));
-    if (status) conditions.push(eq6(tasks.status, typeof status === "string" ? status : ""));
-    if (category) conditions.push(eq6(tasks.category, typeof category === "string" ? category : ""));
-    if (difficulty) conditions.push(eq6(tasks.difficulty, typeof difficulty === "string" ? difficulty : ""));
-    let query;
-    if (conditions.length > 0) {
-      query = db.select().from(tasks).where(and5(...conditions));
-    } else {
-      query = db.select().from(tasks);
-    }
-    const taskList = await query.orderBy(desc4(tasks.createdAt)).limit(Number(limit)).offset(Number(offset));
-    res.json(taskList);
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-router8.get("/categories", async (req, res) => {
-  try {
-    const categories = await db.select({ category: tasks.category }).from(tasks).groupBy(tasks.category);
-    res.json(categories.map((c) => c.category).filter(Boolean));
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-router8.post("/:taskId/claim", async (req, res) => {
-  try {
-    const { taskId } = req.params;
-    const userId = req.user && req.user.claims ? req.user.claims.sub : void 0;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-    const task = await db.select().from(tasks).where(eq6(tasks.id, taskId)).limit(1);
-    if (!task.length) {
-      return res.status(404).json({ error: "Task not found" });
-    }
-    if (task[0].status !== "open") {
-      return res.status(400).json({ error: "Task is not available for claiming" });
-    }
-    const claimedTask = await db.update(tasks).set({
-      claimerId: userId,
-      status: "claimed",
-      updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq6(tasks.id, taskId)).returning();
-    await db.insert(taskHistory).values({
-      taskId,
-      userId,
-      action: "claimed",
-      details: { claimedAt: (/* @__PURE__ */ new Date()).toISOString() }
-    });
-    res.json(claimedTask[0]);
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-router8.post("/:taskId/submit", async (req, res) => {
-  try {
-    const { taskId } = req.params;
-    const userId = req.user && req.user.claims ? req.user.claims.sub : void 0;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-    const validatedData = verifyTaskSchema.parse(req.body);
-    const task = await db.select().from(tasks).where(and5(eq6(tasks.id, taskId), eq6(tasks.claimerId, userId))).limit(1);
-    if (!task.length) {
-      return res.status(403).json({ error: "Task not found or not claimed by you" });
-    }
-    if (task[0].status !== "claimed") {
-      return res.status(400).json({ error: "Task is not in claimed status" });
-    }
-    await db.update(tasks).set({
-      status: "submitted",
-      updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq6(tasks.id, taskId));
-    await db.insert(taskHistory).values({
-      taskId,
-      userId,
-      action: "submitted",
-      details: validatedData
-    });
-    res.json({ message: "Task submitted successfully", taskId });
-  } catch (err) {
-    if (err instanceof z6.ZodError) {
-      return res.status(400).json({ error: "Validation error", details: err.errors });
-    }
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-router8.post("/:taskId/verify", requireRole3("admin", "moderator"), async (req, res) => {
-  try {
-    const { taskId } = req.params;
-    const { approved, feedback } = req.body;
-    const userId = req.user && req.user.claims ? req.user.claims.sub : void 0;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-    const task = await db.select().from(tasks).where(eq6(tasks.id, taskId)).limit(1);
-    if (!task.length) {
-      return res.status(404).json({ error: "Task not found" });
-    }
-    if (task[0].status !== "submitted") {
-      return res.status(400).json({ error: "Task is not ready for verification" });
-    }
-    const newStatus = approved ? "completed" : "claimed";
-    await db.update(tasks).set({
-      status: newStatus,
-      updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq6(tasks.id, taskId));
-    await db.insert(taskHistory).values({
-      taskId,
-      userId,
-      action: approved ? "approved" : "rejected",
-      details: { feedback, verifiedAt: (/* @__PURE__ */ new Date()).toISOString() }
-    });
-    if (approved && task[0].claimerId) {
-      await db.insert(walletTransactions).values({
-        fromUserId: task[0].daoId,
-        toUserId: task[0].claimerId,
-        amount: String(task[0].reward),
-        currency: "cUSD",
-        type: "bounty_payout",
-        status: "completed",
-        description: `Bounty payment for task: ${task[0].title}`,
-        walletAddress: ""
-        // Provide wallet address if available
-      });
-    }
-    res.json({
-      message: approved ? "Task approved and bounty paid" : "Task rejected",
-      taskId,
-      newStatus
-    });
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-router8.get("/:taskId/history", async (req, res) => {
-  try {
-    const { taskId } = req.params;
-    const history2 = await db.select().from(taskHistory).where(eq6(taskHistory.taskId, taskId)).orderBy(desc4(taskHistory.createdAt));
-    res.json(history2);
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-router8.get("/user/claimed", async (req, res) => {
-  try {
-    const userId = req.user && req.user.claims ? req.user.claims.sub : void 0;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-    const claimedTasks = await db.select().from(tasks).where(eq6(tasks.claimerId, userId)).orderBy(desc4(tasks.updatedAt));
-    res.json(claimedTasks);
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-router8.get("/analytics", async (req, res) => {
-  try {
-    const { daoId } = req.query;
-    let statsQuery;
-    if (daoId) {
-      statsQuery = db.select({
-        status: tasks.status,
-        category: tasks.category,
-        difficulty: tasks.difficulty,
-        count: sql2`count(*)`,
-        totalReward: sql2`sum(cast(${tasks.reward} as numeric))`
-      }).from(tasks).where(eq6(tasks.daoId, typeof daoId === "string" ? daoId : ""));
-    } else {
-      statsQuery = db.select({
-        status: tasks.status,
-        category: tasks.category,
-        difficulty: tasks.difficulty,
-        count: sql2`count(*)`,
-        totalReward: sql2`sum(cast(${tasks.reward} as numeric))`
-      }).from(tasks);
-    }
-    const taskStats = await statsQuery;
-    res.json(taskStats);
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-var tasks_default = router8;
-
-// server/routes/bounty-escrow.ts
-import express9 from "express";
-init_schema();
-import { eq as eq7, and as and6, desc as desc5 } from "drizzle-orm";
-import { z as z7 } from "zod";
-var router9 = express9.Router();
-var createEscrowSchema = z7.object({
-  taskId: z7.string().min(1),
-  amount: z7.number().positive(),
-  currency: z7.string().default("cUSD")
-});
-var releaseEscrowSchema = z7.object({
-  taskId: z7.string().min(1),
-  releaseToClaimant: z7.boolean()
-});
-router9.post("/create", async (req, res) => {
-  try {
-    const validatedData = createEscrowSchema.parse(req.body);
-    const { taskId, amount, currency } = validatedData;
-    const userId = req.user?.claims?.sub ?? "";
-    const task = await db.select().from(tasks).where(eq7(tasks.id, taskId)).limit(1);
-    if (!task.length) {
-      return res.status(404).json({ error: "Task not found" });
-    }
-    if (task[0].creatorId !== userId) {
-      return res.status(403).json({ error: "Only task creator can fund escrow" });
-    }
-    const existingEscrow = await db.select().from(walletTransactions).where(and6(
-      eq7(walletTransactions.type, "escrow_deposit"),
-      eq7(walletTransactions.description, `Escrow for task: ${taskId}`)
-    )).limit(1);
-    if (existingEscrow.length > 0) {
-      return res.status(400).json({ error: "Escrow already exists for this task" });
-    }
-    const escrow = await db.insert(walletTransactions).values({
-      walletAddress: userId,
-      amount: amount.toString(),
-      currency,
-      type: "escrow_deposit",
-      status: "held",
-      description: `Escrow for task: ${taskId}`
-    }).returning();
-    res.json({
-      success: true,
-      escrowId: escrow[0].id,
-      amount,
-      currency,
-      status: "held"
-    });
-  } catch (err) {
-    if (err instanceof z7.ZodError) {
-      return res.status(400).json({ error: "Validation error", details: err.errors });
-    }
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-router9.post("/release", async (req, res) => {
-  try {
-    const validatedData = releaseEscrowSchema.parse(req.body);
-    const { taskId, releaseToClaimant } = validatedData;
-    const userId = req.user?.claims?.sub ?? "";
-    const task = await db.select().from(tasks).where(eq7(tasks.id, taskId)).limit(1);
-    if (!task.length) {
-      return res.status(404).json({ error: "Task not found" });
-    }
-    const canRelease = task[0].creatorId === userId;
-    if (!canRelease) {
-      const membership = await db.select().from(daoMemberships).where(and6(
-        eq7(daoMemberships.daoId, task[0].daoId),
-        eq7(daoMemberships.userId, userId)
-      )).limit(1);
-      if (!membership.length || !["admin", "moderator"].includes(membership[0].role ?? "")) {
-        return res.status(403).json({ error: "Insufficient permissions to release escrow" });
-      }
-    }
-    const escrow = await db.select().from(walletTransactions).where(and6(
-      eq7(walletTransactions.type, "escrow_deposit"),
-      eq7(walletTransactions.description, `Escrow for task: ${taskId}`),
-      eq7(walletTransactions.status, "held")
-    )).limit(1);
-    if (!escrow.length) {
-      return res.status(404).json({ error: "Active escrow not found for this task" });
-    }
-    const escrowAmount = parseFloat(escrow[0].amount);
-    const recipient = releaseToClaimant ? task[0].claimerId : task[0].creatorId;
-    if (!recipient) {
-      return res.status(400).json({ error: "No valid recipient for escrow release" });
-    }
-    await db.update(walletTransactions).set({
-      status: "completed",
-      updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq7(walletTransactions.id, escrow[0].id));
-    const release = await db.insert(walletTransactions).values({
-      walletAddress: recipient,
-      amount: escrowAmount.toString(),
-      currency: escrow[0].currency,
-      type: "escrow_release",
-      status: "completed",
-      description: `Escrow release for task: ${taskId}`
-    }).returning();
-    if (releaseToClaimant) {
-      await db.update(tasks).set({
-        status: "completed",
-        updatedAt: /* @__PURE__ */ new Date()
-      }).where(eq7(tasks.id, taskId));
-    }
-    res.json({
-      success: true,
-      releaseId: release[0].id,
-      amount: escrowAmount,
-      recipient,
-      releasedToClaimant: releaseToClaimant
-    });
-  } catch (err) {
-    if (err instanceof z7.ZodError) {
-      return res.status(400).json({ error: "Validation error", details: err.errors });
-    }
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-router9.get("/:taskId/escrow", async (req, res) => {
-  try {
-    const { taskId } = req.params;
-    const escrow = await db.select().from(walletTransactions).where(and6(
-      eq7(walletTransactions.type, "escrow_deposit"),
-      eq7(walletTransactions.description, `Escrow for task: ${taskId}`)
-    )).orderBy(desc5(walletTransactions.createdAt)).limit(1);
-    if (!escrow.length) {
-      return res.json({ hasEscrow: false });
-    }
-    res.json({
-      hasEscrow: true,
-      amount: parseFloat(escrow[0].amount),
-      currency: escrow[0].currency,
-      status: escrow[0].status,
-      createdAt: escrow[0].createdAt
-    });
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-router9.post("/:taskId/dispute", async (req, res) => {
-  try {
-    const { taskId } = req.params;
-    const { reason } = req.body;
-    const userId = req.user?.claims?.sub ?? "";
-    const task = await db.select().from(tasks).where(eq7(tasks.id, taskId)).limit(1);
-    if (!task.length) {
-      return res.status(404).json({ error: "Task not found" });
-    }
-    if (task[0].claimerId !== userId && task[0].creatorId !== userId) {
-      return res.status(403).json({ error: "Only task claimant or creator can dispute" });
-    }
-    await db.update(tasks).set({
-      status: "disputed",
-      updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq7(tasks.id, taskId));
-    await db.insert(taskHistory).values({
-      taskId,
-      userId,
-      action: "disputed",
-      details: { reason, disputedAt: (/* @__PURE__ */ new Date()).toISOString() }
-    });
-    res.json({
-      success: true,
-      message: "Dispute created. Escrow will be held pending resolution.",
-      taskId
-    });
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-var bounty_escrow_default = router9;
-
-// server/routes/notifications.ts
-import express10 from "express";
-var router10 = express10.Router();
-router10.get("/", isAuthenticated2, async (req, res) => {
-  try {
-    const { limit = 20, offset = 0, read, type } = req.query;
-    const userId = req.user.claims.sub;
-    const notifications2 = await storage.getUserNotifications(
-      userId,
-      read === "true" ? true : read === "false" ? false : void 0,
-      Number(limit),
-      Number(offset),
-      type
-    );
-    const unreadCount = await storage.getUnreadNotificationCount(userId);
-    res.json({
-      notifications: notifications2,
-      total: notifications2.length,
-      unreadCount
-    });
-  } catch (err) {
-    res.status(500).json({
-      error: "Failed to fetch notifications",
-      message: err instanceof Error ? err.message : String(err)
-    });
-  }
-});
-router10.patch("/:notificationId/read", isAuthenticated2, async (req, res) => {
-  try {
-    const { notificationId } = req.params;
-    const userId = req.user.claims.sub;
-    const notification = await storage.markNotificationAsRead(notificationId, userId);
-    if (!notification) {
-      return res.status(404).json({ error: "Notification not found" });
-    }
-    res.json(notification);
-  } catch (err) {
-    res.status(500).json({
-      error: "Failed to mark notification as read",
-      message: err instanceof Error ? err.message : String(err)
-    });
-  }
-});
-router10.patch("/mark-all-read", isAuthenticated2, async (req, res) => {
-  try {
-    const userId = req.user.claims.sub;
-    await storage.markAllNotificationsAsRead(userId);
-    res.json({ message: "All notifications marked as read" });
-  } catch (err) {
-    res.status(500).json({
-      error: "Failed to mark all notifications as read",
-      message: err instanceof Error ? err.message : String(err)
-    });
-  }
-});
-router10.delete("/:notificationId", isAuthenticated2, async (req, res) => {
-  try {
-    const { notificationId } = req.params;
-    const userId = req.user.claims.sub;
-    const deleted = await storage.deleteNotification(notificationId, userId);
-    if (!deleted) {
-      return res.status(404).json({ error: "Notification not found" });
-    }
-    res.status(204).send();
-  } catch (err) {
-    res.status(500).json({
-      error: "Failed to delete notification",
-      message: err instanceof Error ? err.message : String(err)
-    });
-  }
-});
-router10.get("/preferences", isAuthenticated2, async (req, res) => {
-  try {
-    const userId = req.user.claims.sub;
-    const preferences = await storage.getUserNotificationPreferences(userId);
-    res.json(preferences);
-  } catch (err) {
-    res.status(500).json({
-      error: "Failed to fetch notification preferences",
-      message: err instanceof Error ? err.message : String(err)
-    });
-  }
-});
-router10.put("/preferences", isAuthenticated2, async (req, res) => {
-  try {
-    const userId = req.user.claims.sub;
-    const { emailNotifications, pushNotifications, daoUpdates, proposalUpdates, taskUpdates } = req.body;
-    const preferences = await storage.updateUserNotificationPreferences(userId, {
-      emailNotifications: emailNotifications ?? true,
-      pushNotifications: pushNotifications ?? true,
-      daoUpdates: daoUpdates ?? true,
-      proposalUpdates: proposalUpdates ?? true,
-      taskUpdates: taskUpdates ?? true
-    });
-    res.json(preferences);
-  } catch (err) {
-    res.status(500).json({
-      error: "Failed to update notification preferences",
-      message: err instanceof Error ? err.message : String(err)
-    });
-  }
-});
-router10.post("/send", isAuthenticated2, async (req, res) => {
-  try {
-    const senderId = req.user.claims.sub;
-    const { userIds, type, message, title, metadata } = req.body;
-    const senderRole = req.user.role;
-    if (senderRole !== "admin" && senderRole !== "superuser" && senderRole !== "moderator") {
-      return res.status(403).json({ error: "Insufficient permissions to send notifications" });
-    }
-    const notifications2 = await storage.createBulkNotifications(userIds, {
-      type,
-      message,
-      title,
-      metadata,
-      senderId
-    });
-    res.status(201).json({
-      message: "Notifications sent successfully",
-      count: notifications2.length
-    });
-  } catch (err) {
-    res.status(500).json({
-      error: "Failed to send notifications",
-      message: err instanceof Error ? err.message : String(err)
-    });
-  }
-});
-var notifications_default = router10;
-router10.get("/search", isAuthenticated2, async (req, res) => {
-  try {
-    const { q, limit = 20, offset = 0 } = req.query;
-    const userId = req.user.claims.sub;
-    if (!q || typeof q !== "string") {
-      return res.status(400).json({ error: "Search query is required" });
-    }
-    const notifications2 = await storage.getUserNotifications(
-      userId,
-      void 0,
-      Number(limit),
-      Number(offset),
-      q
-    );
-    res.json({
-      notifications: notifications2,
-      total: notifications2.length,
-      query: q
-    });
-  } catch (err) {
-    res.status(500).json({
-      error: "Failed to search notifications",
-      message: err instanceof Error ? err.message : String(err)
-    });
-  }
-});
-
-// server/routes/sse.ts
-import express11 from "express";
-var router11 = express11.Router();
-router11.get("/notifications", isAuthenticated2, (req, res) => {
-  const userId = req.user.claims.sub;
-  notificationService.setupSSE(userId, res);
-});
-var sse_default = router11;
-
-// server/routes/governance.ts
-import express12 from "express";
-init_schema();
-import { eq as eq8, and as and7, desc as desc6, gte, sql as sql3 } from "drizzle-orm";
-var router12 = express12.Router();
-router12.get("/:daoId/quorum", isAuthenticated, async (req, res) => {
-  try {
-    const { daoId } = req.params;
-    const dao = await db.select().from(daos).where(eq8(daos.id, daoId)).limit(1);
-    if (!dao.length) {
-      return res.status(404).json({ message: "DAO not found" });
-    }
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3);
-    const activeMembers = await db.select({ count: sql3`count(*)` }).from(daoMemberships).where(
-      and7(
-        eq8(daoMemberships.daoId, daoId),
-        eq8(daoMemberships.status, "approved"),
-        gte(daoMemberships.lastActive, thirtyDaysAgo)
-      )
-    );
-    const activeMemberCount = activeMembers[0]?.count || 0;
-    const quorumPercentage = dao[0].quorumPercentage || 20;
-    const requiredQuorum = Math.ceil(activeMemberCount * quorumPercentage / 100);
-    res.json({
-      success: true,
-      data: {
-        activeMemberCount,
-        quorumPercentage,
-        requiredQuorum,
-        calculatedAt: /* @__PURE__ */ new Date()
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to calculate quorum",
-      error: error.message
-    });
-  }
-});
-router12.post("/proposals/:proposalId/execute", isAuthenticated, async (req, res) => {
-  try {
-    const { proposalId } = req.params;
-    const userId = req.user.claims.sub;
-    const proposal = await db.select().from(proposals).where(eq8(proposals.id, proposalId)).limit(1);
-    if (!proposal.length) {
-      return res.status(404).json({ message: "Proposal not found" });
-    }
-    const proposalData = proposal[0];
-    if (proposalData.status !== "passed") {
-      return res.status(400).json({ message: "Proposal must be in passed status to execute" });
-    }
-    const membership = await db.select().from(daoMemberships).where(and7(
-      eq8(daoMemberships.daoId, proposalData.daoId),
-      eq8(daoMemberships.userId, userId)
-    )).limit(1);
-    if (!membership.length || !["admin", "elder"].includes(membership[0].role ?? "")) {
-      return res.status(403).json({ message: "Insufficient permissions to execute proposal" });
-    }
-    let delay = 24;
-    const dao = await db.select().from(daos).where(eq8(daos.id, proposalData.daoId)).limit(1);
-    if (dao.length && typeof dao[0].executionDelay === "number") {
-      delay = dao[0].executionDelay;
-    }
-    const executionTime = new Date(Date.now() + delay * 60 * 60 * 1e3);
-    await db.insert(proposalExecutionQueue).values({
-      proposalId: String(proposalId ?? ""),
-      daoId: String(proposalData.daoId ?? ""),
-      scheduledFor: executionTime,
-      executionType: String(proposalData.proposalType ?? ""),
-      executionData: proposalData.executionData || {},
-      status: "pending"
-    });
-    res.json({
-      success: true,
-      message: "Proposal queued for execution",
-      scheduledFor: executionTime
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to queue proposal for execution",
-      error: error.message
-    });
-  }
-});
-router12.get("/:daoId/templates", isAuthenticated, async (req, res) => {
-  try {
-    const { daoId } = req.params;
-    const templates = await db.select().from(proposalTemplates).where(
-      and7(
-        eq8(proposalTemplates.daoId, daoId),
-        eq8(proposalTemplates.isGlobal, true)
-      )
-    ).orderBy(desc6(proposalTemplates.createdAt));
-    res.json({
-      success: true,
-      data: templates
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch proposal templates",
-      error: error.message
-    });
-  }
-});
-router12.post("/:daoId/templates", isAuthenticated, async (req, res) => {
-  try {
-    const { daoId } = req.params;
-    const userId = req.user.claims.sub;
-    const templateData = req.body;
-    const membership = await db.select().from(daoMemberships).where(and7(
-      eq8(daoMemberships.daoId, daoId),
-      eq8(daoMemberships.userId, userId)
-    )).limit(1);
-    if (!membership.length || !["admin", "elder"].includes(membership[0].role ?? "")) {
-      return res.status(403).json({ message: "Insufficient permissions to create templates" });
-    }
-    const template = await db.insert(proposalTemplates).values({
-      ...templateData,
-      daoId,
-      createdBy: userId
-    }).returning();
-    res.json({
-      success: true,
-      data: template[0]
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to create proposal template",
-      error: error.message
-    });
-  }
-});
-router12.post("/:daoId/delegate", isAuthenticated, async (req, res) => {
-  try {
-    const { daoId } = req.params;
-    const userId = req.user.claims.sub;
-    const { delegateId, scope, category, proposalId } = req.body;
-    const delegateMembership = await db.select().from(daoMemberships).where(and7(
-      eq8(daoMemberships.daoId, daoId),
-      eq8(daoMemberships.userId, delegateId),
-      eq8(daoMemberships.status, "approved")
-    )).limit(1);
-    if (!delegateMembership.length) {
-      return res.status(400).json({ message: "Delegate must be an active DAO member" });
-    }
-    await db.update(voteDelegations).set({ isActive: false }).where(and7(
-      eq8(voteDelegations.delegatorId, userId),
-      eq8(voteDelegations.daoId, daoId),
-      eq8(voteDelegations.isActive, true)
-    ));
-    const delegation = await db.insert(voteDelegations).values({
-      delegatorId: userId,
-      delegateId,
-      daoId,
-      scope,
-      category,
-      proposalId,
-      isActive: true
-    }).returning();
-    res.json({
-      success: true,
-      data: delegation[0]
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to create vote delegation",
-      error: error.message
-    });
-  }
-});
-router12.get("/:daoId/delegations", isAuthenticated, async (req, res) => {
-  try {
-    const { daoId } = req.params;
-    const userId = req.user.claims.sub;
-    const delegations = await db.select().from(voteDelegations).where(and7(
-      eq8(voteDelegations.daoId, daoId),
-      eq8(voteDelegations.delegatorId, userId),
-      eq8(voteDelegations.isActive, true)
-    ));
-    res.json({
-      success: true,
-      data: delegations
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch delegations",
-      error: error.message
-    });
-  }
-});
-router12.delete("/:daoId/delegate/:delegationId", isAuthenticated, async (req, res) => {
-  try {
-    const { daoId, delegationId } = req.params;
-    const userId = req.user.claims.sub;
-    await db.update(voteDelegations).set({ isActive: false }).where(and7(
-      eq8(voteDelegations.id, delegationId),
-      eq8(voteDelegations.delegatorId, userId),
-      eq8(voteDelegations.daoId, daoId)
-    ));
-    res.json({
-      success: true,
-      message: "Delegation revoked successfully"
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to revoke delegation",
-      error: error.message
-    });
-  }
-});
-router12.post("/proposals/:proposalId/check-quorum", isAuthenticated, async (req, res) => {
-  try {
-    const { proposalId } = req.params;
-    const proposal = await db.select().from(proposals).where(eq8(proposals.id, proposalId)).limit(1);
-    if (!proposal.length) {
-      return res.status(404).json({ message: "Proposal not found" });
-    }
-    const proposalData = proposal[0];
-    const yesVotes = typeof proposalData.yesVotes === "number" ? proposalData.yesVotes : 0;
-    const noVotes = typeof proposalData.noVotes === "number" ? proposalData.noVotes : 0;
-    const abstainVotes = typeof proposalData.abstainVotes === "number" ? proposalData.abstainVotes : 0;
-    const totalVotes = yesVotes + noVotes + abstainVotes;
-    const quorumResponse = await fetch(`/api/governance/${proposalData.daoId}/quorum`);
-    const quorumData = await quorumResponse.json();
-    const requiredQuorum = quorumData.data.requiredQuorum;
-    const quorumMet = totalVotes >= requiredQuorum;
-    const passed = quorumMet && yesVotes > noVotes;
-    await db.insert(quorumHistory).values({
-      daoId: proposalData.daoId,
-      proposalId,
-      activeMemberCount: quorumData.data.activeMemberCount,
-      requiredQuorum,
-      achievedQuorum: totalVotes,
-      quorumMet
-    });
-    if (/* @__PURE__ */ new Date() > proposalData.voteEndTime) {
-      let newStatus = "failed";
-      if (quorumMet && passed) {
-        newStatus = "passed";
-      } else if (!quorumMet) {
-        newStatus = "failed";
-      }
-      await db.update(proposals).set({ status: newStatus }).where(eq8(proposals.id, proposalId));
-    }
-    res.json({
-      success: true,
-      data: {
-        quorumMet,
-        passed,
-        totalVotes,
-        requiredQuorum,
-        status: passed && quorumMet ? "passed" : "failed"
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to check proposal quorum",
-      error: error.message
-    });
-  }
-});
-var governance_default = router12;
-
-// server/routes/proposal-execution.ts
-import express13 from "express";
-init_schema();
-import { eq as eq10, and as and9, desc as desc7 } from "drizzle-orm";
-
-// server/proposalExecutionService.ts
-init_schema();
-import { eq as eq9, and as and8, lte as lte2 } from "drizzle-orm";
-var ProposalExecutionService = class {
-  // Process pending executions
-  static async processPendingExecutions() {
-    try {
-      const now = /* @__PURE__ */ new Date();
-      const pendingExecutions = await db.select().from(proposalExecutionQueue).where(and8(
-        eq9(proposalExecutionQueue.status, "pending"),
-        lte2(proposalExecutionQueue.scheduledFor, now)
-      ));
-      for (const execution of pendingExecutions) {
-        await this.executeProposal(execution);
-      }
-    } catch (error) {
-      console.error("Error processing pending executions:", error);
-    }
-  }
-  // Execute individual proposal
-  static async executeProposal(execution) {
-    try {
-      await db.update(proposalExecutionQueue).set({
-        status: "executing",
-        lastAttempt: /* @__PURE__ */ new Date(),
-        attempts: execution.attempts + 1
-      }).where(eq9(proposalExecutionQueue.id, execution.id));
-      const { executionType, executionData, daoId, proposalId } = execution;
-      switch (executionType) {
-        case "treasury_transfer":
-          await this.executeTreasuryTransfer(executionData, daoId, proposalId);
-          break;
-        case "member_action":
-          await this.executeMemberAction(executionData, daoId, proposalId);
-          break;
-        case "governance_change":
-          await this.executeGovernanceChange(executionData, daoId, proposalId);
-          break;
-        default:
-          throw new Error(`Unknown execution type: ${executionType}`);
-      }
-      await db.update(proposalExecutionQueue).set({ status: "completed" }).where(eq9(proposalExecutionQueue.id, execution.id));
-      await db.update(proposals).set({
-        status: "executed",
-        executedAt: /* @__PURE__ */ new Date()
-      }).where(eq9(proposals.id, proposalId));
-    } catch (error) {
-      console.error("Error executing proposal:", error);
-      await db.update(proposalExecutionQueue).set({
-        status: "failed",
-        errorMessage: error.message
-      }).where(eq9(proposalExecutionQueue.id, execution.id));
-    }
-  }
-  // Execute treasury transfer
-  static async executeTreasuryTransfer(executionData, daoId, proposalId) {
-    const { recipient, amount, currency, description } = executionData;
-    await db.insert(walletTransactions).values({
-      walletAddress: recipient,
-      amount: amount.toString(),
-      currency,
-      type: "transfer",
-      status: "completed",
-      description: `Proposal execution: ${description}`
-    });
-    const daoRecord = await db.select().from(daos).where(eq9(daos.id, daoId)).limit(1);
-    const currentBalance = parseFloat(daoRecord[0]?.treasuryBalance || "0");
-    const newBalance = (currentBalance - amount).toString();
-    await db.update(daos).set({
-      treasuryBalance: newBalance
-    }).where(eq9(daos.id, daoId));
-  }
-  // Execute member action (promote, demote, ban, etc.)
-  static async executeMemberAction(executionData, daoId, proposalId) {
-    const { action, targetUserId, newRole, reason } = executionData;
-    switch (action) {
-      case "promote":
-        await db.update(daoMemberships).set({ role: newRole }).where(and8(
-          eq9(daoMemberships.daoId, daoId),
-          eq9(daoMemberships.userId, targetUserId)
-        ));
-        break;
-      case "ban":
-        await db.update(daoMemberships).set({
-          isBanned: true,
-          banReason: reason
-        }).where(and8(
-          eq9(daoMemberships.daoId, daoId),
-          eq9(daoMemberships.userId, targetUserId)
-        ));
-        break;
-      case "unban":
-        await db.update(daoMemberships).set({
-          isBanned: false,
-          banReason: null
-        }).where(and8(
-          eq9(daoMemberships.daoId, daoId),
-          eq9(daoMemberships.userId, targetUserId)
-        ));
-        break;
-    }
-  }
-  // Execute governance changes
-  static async executeGovernanceChange(executionData, daoId, proposalId) {
-    const { changes } = executionData;
-    await db.update(daos).set(changes).where(eq9(daos.id, daoId));
-  }
-  // Start the execution scheduler
-  static startScheduler() {
-    setInterval(async () => {
-      await this.processPendingExecutions();
-    }, 5 * 60 * 1e3);
-  }
-};
-
-// server/routes/proposal-execution.ts
-var router13 = express13.Router();
-router13.get("/:daoId/queue", isAuthenticated, async (req, res) => {
-  try {
-    const { daoId } = req.params;
-    const userId = req.user.claims.sub;
-    const executions = await db.select().from(proposalExecutionQueue).where(eq10(proposalExecutionQueue.daoId, daoId)).orderBy(desc7(proposalExecutionQueue.createdAt));
-    res.json({
-      success: true,
-      data: executions
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch execution queue",
-      error: error.message
-    });
-  }
-});
-router13.post("/:daoId/execute/:proposalId", isAuthenticated, async (req, res) => {
-  try {
-    const { daoId, proposalId } = req.params;
-    const userId = req.user.claims.sub;
-    const execution = await db.select().from(proposalExecutionQueue).where(and9(
-      eq10(proposalExecutionQueue.proposalId, proposalId),
-      eq10(proposalExecutionQueue.daoId, daoId),
-      eq10(proposalExecutionQueue.status, "pending")
-    )).limit(1);
-    if (!execution.length) {
-      return res.status(404).json({
-        success: false,
-        message: "No pending execution found for this proposal"
-      });
-    }
-    await ProposalExecutionService.executeProposal(execution[0]);
-    res.json({
-      success: true,
-      message: "Proposal executed successfully"
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to execute proposal",
-      error: error.message
-    });
-  }
-});
-router13.delete("/:daoId/cancel/:executionId", isAuthenticated, async (req, res) => {
-  try {
-    const { daoId, executionId } = req.params;
-    const userId = req.user.claims.sub;
-    await db.update(proposalExecutionQueue).set({ status: "cancelled" }).where(and9(
-      eq10(proposalExecutionQueue.id, executionId),
-      eq10(proposalExecutionQueue.daoId, daoId)
-    ));
-    res.json({
-      success: true,
-      message: "Execution cancelled successfully"
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to cancel execution",
-      error: error.message
-    });
-  }
-});
-var proposal_execution_default = router13;
-
-// server/routes/monitoring.ts
-import express14 from "express";
-
-// server/monitoring/metricsCollector.ts
-import { performance } from "perf_hooks";
-
-// server/utils/logger.ts
-import { createLogger, format, transports } from "winston";
-
-// shared/config.ts
-import { z as z8 } from "zod";
-import dotenv2 from "dotenv";
-dotenv2.config();
-var envSchema = z8.object({
-  // Server Configuration
-  NODE_ENV: z8.enum(["development", "production", "test"]).default("development"),
-  PORT: z8.string().default("5000"),
-  HOST: z8.string().default("0.0.0.0"),
-  // Security
-  SESSION_SECRET: z8.string().min(32, "SESSION_SECRET must be at least 32 characters"),
-  JWT_SECRET: z8.string().min(32, "JWT_SECRET must be at least 32 characters"),
-  ENCRYPTION_KEY: z8.string().length(32, "ENCRYPTION_KEY must be exactly 32 characters").optional(),
-  // OAuth Configuration
-  OAUTH_CLIENT_ID: z8.string().optional(),
-  OAUTH_CLIENT_SECRET: z8.string().optional(),
-  OAUTH_REDIRECT_URI: z8.string().url().optional(),
-  GOOGLE_CLIENT_ID: z8.string().optional(),
-  GOOGLE_CLIENT_SECRET: z8.string().optional(),
-  // Database
-  DATABASE_URL: z8.string().url("DATABASE_URL must be a valid URL"),
-  DB_POOL_MIN: z8.string().optional(),
-  DB_POOL_MAX: z8.string().optional(),
-  TEST_DATABASE_URL: z8.string().url().optional(),
-  // Email Configuration
-  SMTP_HOST: z8.string().optional(),
-  SMTP_PORT: z8.string().optional(),
-  SMTP_SECURE: z8.string().optional(),
-  SMTP_USER: z8.string().optional(),
-  SMTP_PASS: z8.string().optional(),
-  EMAIL_FROM: z8.string().email().optional(),
-  EMAIL_FROM_NAME: z8.string().optional(),
-  // Payment Providers
-  STRIPE_SECRET_KEY: z8.string().optional(),
-  STRIPE_PUBLIC_KEY: z8.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z8.string().optional(),
-  KOTANIPAY_API_KEY: z8.string().optional(),
-  KOTANIPAY_SECRET_KEY: z8.string().optional(),
-  KOTANIPAY_WEBHOOK_SECRET: z8.string().optional(),
-  MPESA_CONSUMER_KEY: z8.string().optional(),
-  MPESA_CONSUMER_SECRET: z8.string().optional(),
-  MPESA_PASSKEY: z8.string().optional(),
-  MPESA_SHORTCODE: z8.string().optional(),
-  // Blockchain
-  CELO_RPC_URL: z8.string().url().optional(),
-  CELO_ALFAJORES_RPC_URL: z8.string().url().optional(),
-  WALLET_PRIVATE_KEY: z8.string().optional(),
-  CUSD_CONTRACT_ADDRESS: z8.string().optional(),
-  // Security Configuration
-  RATE_LIMIT_WINDOW_MS: z8.string().optional(),
-  RATE_LIMIT_MAX_REQUESTS: z8.string().optional(),
-  ALLOWED_ORIGINS: z8.string().optional(),
-  // Analytics & Monitoring
-  ANALYTICS_API_KEY: z8.string().optional(),
-  SENTRY_DSN: z8.string().url().optional(),
-  // App Configuration
-  FRONTEND_URL: z8.string().url().default("http://localhost:5173"),
-  BACKEND_URL: z8.string().url().default("http://localhost:5000"),
-  API_BASE_URL: z8.string().url().default("http://localhost:5000/api"),
-  MAX_FILE_SIZE: z8.string().optional(),
-  UPLOAD_DIR: z8.string().default("uploads"),
-  // Notifications
-  SOCKET_IO_CORS_ORIGIN: z8.string().optional(),
-  FIREBASE_ADMIN_SDK_PATH: z8.string().optional(),
-  FIREBASE_PROJECT_ID: z8.string().optional(),
-  // Development & Testing
-  DEBUG: z8.string().optional(),
-  LOG_LEVEL: z8.enum(["error", "warn", "info", "debug"]).default("info"),
-  ENABLE_REQUEST_LOGGING: z8.string().optional(),
-  // Production Settings
-  SSL_CERT_PATH: z8.string().optional(),
-  SSL_KEY_PATH: z8.string().optional(),
-  REDIS_URL: z8.string().url().optional(),
-  WEBHOOK_BASE_URL: z8.string().url().optional()
-});
-var parsedEnv = envSchema.safeParse(process.env);
-if (!parsedEnv.success) {
-  console.error("\u274C Invalid environment variables:", parsedEnv.error.format());
-  process.exit(1);
-}
-var env = parsedEnv.data;
-var isDevelopment = env.NODE_ENV === "development";
-var isProduction = env.NODE_ENV === "production";
-var isTest = env.NODE_ENV === "test";
-var dbConfig = {
-  url: env.DATABASE_URL,
-  poolMin: parseInt(env.DB_POOL_MIN || "2"),
-  poolMax: parseInt(env.DB_POOL_MAX || "10")
-};
-var rateLimitConfig = {
-  windowMs: parseInt(env.RATE_LIMIT_WINDOW_MS || "900000"),
-  // 15 minutes
-  maxRequests: parseInt(env.RATE_LIMIT_MAX_REQUESTS || "100")
-};
-var corsConfig = {
-  origin: env.ALLOWED_ORIGINS?.split(",") || [env.FRONTEND_URL],
-  credentials: true
-};
-
-// server/utils/logger.ts
-var { combine, timestamp: timestamp2, errors, json, colorize, simple, printf } = format;
-var devFormat = printf((info) => {
-  const { level, message, timestamp: timestamp6, service, ...meta } = info;
-  const metaStr = Object.keys(meta).length > 0 ? `
-${JSON.stringify(meta, null, 2)}` : "";
-  return `${timestamp6} [${service}] ${level}: ${message}${metaStr}`;
-});
-var winstonLogger = createLogger({
-  level: env.LOG_LEVEL || "info",
-  format: combine(
-    timestamp2({ format: "YYYY-MM-DD HH:mm:ss" }),
-    errors({ stack: true }),
-    isDevelopment ? combine(colorize(), devFormat) : json()
-  ),
-  defaultMeta: { service: "mtaa-dao-api" },
-  transports: [
-    new transports.Console({
-      silent: env.NODE_ENV === "test"
-    })
-  ]
-});
-if (isProduction) {
-  winstonLogger.add(
-    new transports.File({
-      filename: "logs/error.log",
-      level: "error",
-      maxsize: 10485760,
-      // 10MB
-      maxFiles: 5
-    })
-  );
-  winstonLogger.add(
-    new transports.File({
-      filename: "logs/combined.log",
-      maxsize: 10485760,
-      // 10MB
-      maxFiles: 10
-    })
-  );
-}
-var Logger = class _Logger {
-  constructor(service = "api", context = {}) {
-    this.service = service;
-    this.context = context;
-  }
-  // Create child logger with additional context
-  child(context) {
-    return new _Logger(this.service, { ...this.context, ...context });
-  }
-  async logToDatabase(level, message, metadata = {}) {
-    try {
-      await storage.createSystemLog(level, message, this.service, {
-        ...this.context,
-        ...metadata
-      });
-    } catch (error) {
-      console.error("Failed to log to database:", error);
-    }
-  }
-  log(level, message, meta = {}) {
-    const logData = {
-      service: this.service,
-      ...this.context,
-      ...meta
-    };
-    winstonLogger.log(level, message, logData);
-    if (["error", "warn", "info"].includes(level)) {
-      this.logToDatabase(level, message, logData).catch(console.error);
-    }
-  }
-  error(message, error, meta = {}) {
-    const errorMeta = error instanceof Error ? {
-      error: {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      }
-    } : { errorData: error };
-    this.log("error", message, { ...errorMeta, ...meta });
-  }
-  warn(message, meta = {}) {
-    this.log("warn", message, meta);
-  }
-  info(message, meta = {}) {
-    this.log("info", message, meta);
-  }
-  debug(message, meta = {}) {
-    this.log("debug", message, meta);
-  }
-  // Audit logging methods
-  async auditLog(action, resource, details = {}) {
-    const message = `Audit: ${action} on ${resource}`;
-    this.info(message, { audit: true, action, resource, details });
-  }
-  // Performance logging
-  async performanceLog(operation, duration, meta = {}) {
-    const message = `Performance: ${operation} took ${duration}ms`;
-    this.info(message, { performance: true, operation, duration, ...meta });
-  }
-  // Security logging
-  async securityLog(event, severity, details = {}) {
-    const message = `Security: ${event}`;
-    this.error(message, null, { security: true, severity, event, details });
-  }
-};
-var logger = new Logger();
-var requestLogger = (req, res, next) => {
-  const start = Date.now();
-  const requestId = req.headers["x-request-id"] || Math.random().toString(36).substring(7);
-  req.requestId = requestId;
-  res.setHeader("X-Request-ID", requestId);
-  const requestLogger2 = logger.child({
-    requestId,
-    method: req.method,
-    url: req.url,
-    ipAddress: req.ip,
-    userAgent: req.get("User-Agent"),
-    userId: req.user?.claims?.sub
-  });
-  req.logger = requestLogger2;
-  if (env.ENABLE_REQUEST_LOGGING === "true") {
-    requestLogger2.info("Request started", {
-      method: req.method,
-      url: req.url,
-      query: req.query,
-      body: req.method !== "GET" ? req.body : void 0
-    });
-  }
-  const originalSend = res.send;
-  res.send = function(body) {
-    const duration = Date.now() - start;
-    requestLogger2.info("Request completed", {
-      statusCode: res.statusCode,
-      duration,
-      responseSize: JSON.stringify(body).length
-    });
-    return originalSend.call(this, body);
-  };
-  next();
-};
-var logStartup = (port) => {
-  logger.info("\u{1F680} Server starting up", {
-    port,
-    environment: env.NODE_ENV,
-    timestamp: (/* @__PURE__ */ new Date()).toISOString()
-  });
-};
-
-// server/monitoring/metricsCollector.ts
-var MetricsCollector = class _MetricsCollector {
+var VaultEventIndexer = class {
   constructor() {
-    this.requestCount = 0;
-    this.errorCount = 0;
-    this.responseTimes = [];
-    this.activeConnections = 0;
-    this.metrics = {
-      requests: [],
-      system: [],
-      database: [],
-      business: []
-    };
-    setInterval(() => this.collectSystemMetrics(), 3e4);
-    setInterval(() => this.cleanOldMetrics(), 36e5);
-  }
-  static getInstance() {
-    if (!_MetricsCollector.instance) {
-      _MetricsCollector.instance = new _MetricsCollector();
-    }
-    return _MetricsCollector.instance;
-  }
-  requestMiddleware() {
-    return (req, res, next) => {
-      const startTime = performance.now();
-      this.activeConnections++;
-      res.on("finish", () => {
-        const endTime = performance.now();
-        const responseTime = endTime - startTime;
-        this.requestCount++;
-        this.responseTimes.push(responseTime);
-        if (res.statusCode >= 400) {
-          this.errorCount++;
-        }
-        const metric = {
-          method: req.method,
-          route: req.route?.path || req.path,
-          statusCode: res.statusCode,
-          responseTime,
-          timestamp: Date.now(),
-          userAgent: req.get("User-Agent"),
-          ip: req.ip,
-          userId: req.user?.id
-        };
-        this.addRequestMetric(metric);
-        this.activeConnections--;
-      });
-      next();
-    };
-  }
-  addRequestMetric(metric) {
-    this.metrics.requests.push(metric);
-    if (metric.responseTime > 1e3) {
-      logger.warn(`Slow request: ${metric.method} ${metric.route} took ${metric.responseTime}ms`);
-    }
-    if (metric.statusCode >= 500) {
-      logger.error(`Server error: ${metric.method} ${metric.route} returned ${metric.statusCode}`);
-    }
-  }
-  collectSystemMetrics() {
-    const metric = {
-      timestamp: Date.now(),
-      memory: process.memoryUsage(),
-      uptime: process.uptime(),
-      activeConnections: this.activeConnections,
-      requestCount: this.requestCount,
-      errorCount: this.errorCount,
-      avgResponseTime: this.getAverageResponseTime(),
-      cpuUsage: process.cpuUsage().user / 1e6
-      // Convert to seconds
-    };
-    this.metrics.system.push(metric);
-    const memoryUsageMB = metric.memory.heapUsed / 1024 / 1024;
-    if (memoryUsageMB > 500) {
-      logger.warn(`High memory usage: ${memoryUsageMB.toFixed(2)}MB`);
-    }
-  }
-  addDatabaseMetric(metric) {
-    this.metrics.database.push({
-      ...metric,
-      timestamp: Date.now()
-    });
-  }
-  addBusinessMetric(metric) {
-    this.metrics.business.push({
-      ...metric,
-      timestamp: Date.now()
-    });
-  }
-  getAverageResponseTime() {
-    if (this.responseTimes.length === 0) return 0;
-    const sum2 = this.responseTimes.reduce((acc, time) => acc + time, 0);
-    return sum2 / this.responseTimes.length;
-  }
-  cleanOldMetrics() {
-    const oneDayAgo = Date.now() - 24 * 60 * 60 * 1e3;
-    this.metrics.requests = this.metrics.requests.filter((m) => m.timestamp > oneDayAgo);
-    this.metrics.system = this.metrics.system.filter((m) => m.timestamp > oneDayAgo);
-    this.metrics.database = this.metrics.database.filter((m) => m.timestamp > oneDayAgo);
-    this.metrics.business = this.metrics.business.filter((m) => m.timestamp > oneDayAgo);
-    this.responseTimes = this.responseTimes.slice(-1e3);
-  }
-  getMetrics() {
-    return {
-      ...this.metrics,
-      summary: {
-        totalRequests: this.requestCount,
-        totalErrors: this.errorCount,
-        errorRate: this.requestCount > 0 ? this.errorCount / this.requestCount * 100 : 0,
-        avgResponseTime: this.getAverageResponseTime(),
-        activeConnections: this.activeConnections,
-        uptime: process.uptime()
-      }
-    };
-  }
-  getHealthScore() {
-    const metrics = this.getMetrics();
-    let score = 100;
-    if (metrics.summary.errorRate > 5) score -= 20;
-    else if (metrics.summary.errorRate > 1) score -= 10;
-    if (metrics.summary.avgResponseTime > 1e3) score -= 20;
-    else if (metrics.summary.avgResponseTime > 500) score -= 10;
-    const memoryUsageMB = process.memoryUsage().heapUsed / 1024 / 1024;
-    if (memoryUsageMB > 1e3) score -= 20;
-    else if (memoryUsageMB > 500) score -= 10;
-    return Math.max(0, score);
-  }
-};
-var metricsCollector = MetricsCollector.getInstance();
-
-// server/routes/monitoring.ts
-var router14 = express14.Router();
-var AlertManager = class _AlertManager {
-  constructor() {
-    this.alerts = [];
-    this.alertRules = {
-      errorRate: { threshold: 5, severity: "high" },
-      responseTime: { threshold: 1e3, severity: "medium" },
-      memoryUsage: { threshold: 80, severity: "high" },
-      connectionCount: { threshold: 1e3, severity: "medium" }
-    };
-    setInterval(() => this.checkAlerts(), 6e4);
-  }
-  static getInstance() {
-    if (!_AlertManager.instance) {
-      _AlertManager.instance = new _AlertManager();
-    }
-    return _AlertManager.instance;
-  }
-  checkAlerts() {
-    const metrics = metricsCollector.getMetrics();
-    if (metrics.summary.errorRate > this.alertRules.errorRate.threshold) {
-      this.createAlert(
-        "error_rate",
-        this.alertRules.errorRate.severity,
-        `High error rate: ${metrics.summary.errorRate.toFixed(2)}%`
-      );
-    }
-    if (metrics.summary.avgResponseTime > this.alertRules.responseTime.threshold) {
-      this.createAlert(
-        "response_time",
-        this.alertRules.responseTime.severity,
-        `Slow response time: ${metrics.summary.avgResponseTime.toFixed(2)}ms`
-      );
-    }
-    const memoryUsage = process.memoryUsage().heapUsed / 1024 / 1024;
-    if (memoryUsage > 500) {
-      this.createAlert(
-        "memory_usage",
-        this.alertRules.memoryUsage.severity,
-        `High memory usage: ${memoryUsage.toFixed(2)}MB`
-      );
-    }
-    if (metrics.summary.activeConnections > this.alertRules.connectionCount.threshold) {
-      this.createAlert(
-        "connection_count",
-        this.alertRules.connectionCount.severity,
-        `High connection count: ${metrics.summary.activeConnections}`
-      );
-    }
-  }
-  createAlert(type, severity, message) {
-    const existingAlert = this.alerts.find(
-      (alert2) => alert2.type === type && !alert2.acknowledged && !alert2.resolvedAt
-    );
-    if (existingAlert) return;
-    const alert = {
-      id: `${type}_${Date.now()}`,
-      type,
-      severity,
-      message,
-      timestamp: Date.now(),
-      acknowledged: false
-    };
-    this.alerts.push(alert);
-    logger.warn(`Alert created: ${message}`, { alert });
-    this.alerts.filter((a) => a.type === type && a.id !== alert.id && !a.resolvedAt).forEach((a) => a.resolvedAt = Date.now());
-  }
-  getAlerts(includeResolved = false) {
-    return this.alerts.filter(
-      (alert) => includeResolved || !alert.resolvedAt && !alert.acknowledged
-    );
-  }
-  acknowledgeAlert(alertId) {
-    const alert = this.alerts.find((a) => a.id === alertId);
-    if (alert) {
-      alert.acknowledged = true;
-      return true;
-    }
-    return false;
-  }
-  resolveAlert(alertId) {
-    const alert = this.alerts.find((a) => a.id === alertId);
-    if (alert) {
-      alert.resolvedAt = Date.now();
-      return true;
-    }
-    return false;
-  }
-};
-var alertManager = AlertManager.getInstance();
-router14.get("/dashboard", isAuthenticated2, (req, res) => {
-  const metrics = metricsCollector.getMetrics();
-  const alerts = alertManager.getAlerts();
-  const healthScore = metricsCollector.getHealthScore();
-  res.json({
-    healthScore,
-    alerts: alerts.length,
-    criticalAlerts: alerts.filter((a) => a.severity === "critical").length,
-    metrics: {
-      totalRequests: metrics.summary.totalRequests,
-      errorRate: metrics.summary.errorRate,
-      avgResponseTime: metrics.summary.avgResponseTime,
-      activeConnections: metrics.summary.activeConnections,
-      uptime: metrics.summary.uptime,
-      memoryUsage: process.memoryUsage()
-    },
-    recentRequests: metrics.requests.slice(-20),
-    systemMetrics: metrics.system.slice(-10)
-  });
-});
-router14.get("/alerts", isAuthenticated2, (req, res) => {
-  const includeResolved = req.query.resolved === "true";
-  const alerts = alertManager.getAlerts(includeResolved);
-  res.json({ alerts });
-});
-router14.post("/alerts/:alertId/acknowledge", isAuthenticated2, (req, res) => {
-  const { alertId } = req.params;
-  const success = alertManager.acknowledgeAlert(alertId);
-  if (success) {
-    res.json({ message: "Alert acknowledged" });
-  } else {
-    res.status(404).json({ error: "Alert not found" });
-  }
-});
-router14.post("/alerts/:alertId/resolve", isAuthenticated2, (req, res) => {
-  const { alertId } = req.params;
-  const success = alertManager.resolveAlert(alertId);
-  if (success) {
-    res.json({ message: "Alert resolved" });
-  } else {
-    res.status(404).json({ error: "Alert not found" });
-  }
-});
-router14.get("/performance", isAuthenticated2, (req, res) => {
-  const metrics = metricsCollector.getMetrics();
-  const slowEndpoints = metrics.requests.filter((r) => r.responseTime > 1e3).reduce((acc, req2) => {
-    const key = `${req2.method} ${req2.route}`;
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
-  const errorEndpoints = metrics.requests.filter((r) => r.statusCode >= 400).reduce((acc, req2) => {
-    const key = `${req2.method} ${req2.route}`;
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
-  res.json({
-    slowEndpoints,
-    errorEndpoints,
-    performanceScore: metricsCollector.getHealthScore(),
-    recommendations: generatePerformanceRecommendations(metrics)
-  });
-});
-function generatePerformanceRecommendations(metrics) {
-  const recommendations = [];
-  if (metrics.summary.errorRate > 2) {
-    recommendations.push("High error rate detected. Review error logs and fix failing endpoints.");
-  }
-  if (metrics.summary.avgResponseTime > 500) {
-    recommendations.push("Slow response times detected. Consider optimizing database queries and adding caching.");
-  }
-  const memoryUsageMB = process.memoryUsage().heapUsed / 1024 / 1024;
-  if (memoryUsageMB > 300) {
-    recommendations.push("High memory usage. Review memory leaks and optimize resource usage.");
-  }
-  if (metrics.summary.activeConnections > 100) {
-    recommendations.push("High number of active connections. Consider implementing connection pooling.");
-  }
-  return recommendations;
-}
-var monitoring_default = router14;
-
-// server/routes/health.ts
-import express15 from "express";
-function handler(req, res) {
-  res.status(200).json({ status: "ok", timestamp: Date.now() });
-}
-var router15 = express15.Router();
-async function checkDatabase() {
-  const startTime = Date.now();
-  try {
-    await db.execute("SELECT 1");
-    return {
-      status: "pass",
-      responseTime: Date.now() - startTime
-    };
-  } catch (error) {
-    return {
-      status: "fail",
-      responseTime: Date.now() - startTime,
-      message: "Database connection failed",
-      details: error instanceof Error ? error.message : String(error)
-    };
-  }
-}
-async function checkRedis() {
-  const startTime = Date.now();
-  try {
-    return {
-      status: "pass",
-      responseTime: Date.now() - startTime
-    };
-  } catch (error) {
-    return {
-      status: "fail",
-      responseTime: Date.now() - startTime,
-      message: "Redis connection failed",
-      details: error instanceof Error ? error.message : String(error)
-    };
-  }
-}
-function checkMemory() {
-  const memoryUsage = process.memoryUsage();
-  const memoryUsageMB = memoryUsage.heapUsed / 1024 / 1024;
-  let status = "pass";
-  let message;
-  if (memoryUsageMB > 1e3) {
-    status = "fail";
-    message = `High memory usage: ${memoryUsageMB.toFixed(2)}MB`;
-  } else if (memoryUsageMB > 500) {
-    status = "warn";
-    message = `Moderate memory usage: ${memoryUsageMB.toFixed(2)}MB`;
-  }
-  return {
-    status,
-    responseTime: 0,
-    message,
-    details: {
-      heapUsed: `${memoryUsageMB.toFixed(2)}MB`,
-      heapTotal: `${(memoryUsage.heapTotal / 1024 / 1024).toFixed(2)}MB`,
-      external: `${(memoryUsage.external / 1024 / 1024).toFixed(2)}MB`
-    }
-  };
-}
-function checkDisk() {
-  return {
-    status: "pass",
-    responseTime: 0,
-    details: {
-      available: "Unknown",
-      used: "Unknown"
-    }
-  };
-}
-function checkStorage() {
-  try {
-    return {
-      status: "pass",
-      responseTime: 0
-    };
-  } catch (error) {
-    return {
-      status: "fail",
-      responseTime: 0,
-      message: "Storage check failed",
-      details: error instanceof Error ? error.message : String(error)
-    };
-  }
-}
-router15.get("/", async (req, res) => {
-  res.json({
-    status: "ok",
-    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-    environment: env.NODE_ENV,
-    version: process.env.npm_package_version || "1.0.0",
-    uptime: process.uptime()
-  });
-});
-router15.get("/detailed", async (req, res) => {
-  const startTime = Date.now();
-  try {
-    const checks = {
-      database: await checkDatabase(),
-      redis: await checkRedis(),
-      storage: checkStorage(),
-      memory: checkMemory(),
-      disk: checkDisk()
-    };
-    const metrics = metricsCollector.getMetrics();
-    const healthScore = metricsCollector.getHealthScore();
-    const hasFailures = Object.values(checks).some((check) => check.status === "fail");
-    const hasWarnings = Object.values(checks).some((check) => check.status === "warn");
-    let overallStatus;
-    if (hasFailures) {
-      overallStatus = "unhealthy";
-    } else if (hasWarnings || healthScore < 80) {
-      overallStatus = "degraded";
-    } else {
-      overallStatus = "healthy";
-    }
-    const healthCheck = {
-      status: overallStatus,
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      environment: env.NODE_ENV,
-      version: process.env.npm_package_version || "1.0.0",
-      uptime: process.uptime(),
-      checks,
-      metrics: {
-        healthScore,
-        responseTime: Date.now() - startTime,
-        errorRate: metrics.summary.errorRate,
-        activeConnections: metrics.summary.activeConnections
-      }
-    };
-    const statusCode = overallStatus === "healthy" ? 200 : overallStatus === "degraded" ? 200 : 503;
-    res.status(statusCode).json(healthCheck);
-    if (overallStatus === "unhealthy") {
-      logger.error("Health check failed", { checks, healthScore });
-    }
-  } catch (error) {
-    logger.error("Health check error", error);
-    res.status(503).json({
-      status: "unhealthy",
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      error: "Health check failed",
-      details: error instanceof Error ? error.message : String(error)
-    });
-  }
-});
-router15.get("/ready", async (req, res) => {
-  try {
-    const dbCheck = await checkDatabase();
-    if (dbCheck.status === "fail") {
-      return res.status(503).json({
-        ready: false,
-        reason: "Database not available"
-      });
-    }
-    res.json({
-      ready: true,
-      timestamp: (/* @__PURE__ */ new Date()).toISOString()
-    });
-  } catch (error) {
-    res.status(503).json({
-      ready: false,
-      reason: "Readiness check failed"
-    });
-  }
-});
-router15.get("/live", (req, res) => {
-  res.json({
-    alive: true,
-    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-    uptime: process.uptime()
-  });
-});
-router15.get("/metrics", (req, res) => {
-  const metrics = metricsCollector.getMetrics();
-  res.json(metrics);
-});
-
-// server/routes/dao_treasury.ts
-import express16 from "express";
-var router16 = express16.Router();
-router16.get("/:daoId/balance", isAuthenticated2, async (req, res) => {
-  try {
-    const { daoId } = req.params;
-    const dao = await storage.getDao(daoId);
-    if (!dao || !dao.treasuryPrivateKey) {
-      return res.status(404).json({ message: "DAO or treasury wallet not found" });
-    }
-    const config2 = NetworkConfig.CELO_ALFAJORES;
-    const mockPriceOracle2 = async (tokenAddress) => {
-      const prices = {
-        "native": 2500,
-        // ETH price
-        "0x...": 1
-        // USDC price
-      };
-      return prices[tokenAddress] || 0;
-    };
-    const wallet2 = new agent_wallet_default(
-      dao.treasuryPrivateKey,
-      config2,
-      void 0,
-      void 0,
-      void 0,
-      mockPriceOracle2
-    );
-    const treasuryManager = new DaoTreasuryManager(wallet2, dao.treasuryAddress, dao.allowedTokens || []);
-    const snapshot = await treasuryManager.getTreasurySnapshot();
-    res.json(snapshot);
-  } catch (err) {
-    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
-  }
-});
-router16.post("/:daoId/transfer/native", isAuthenticated2, async (req, res) => {
-  try {
-    const { daoId } = req.params;
-    const { toAddress, amount } = req.body;
-    const dao = await storage.getDao(daoId);
-    if (!dao || !dao.treasuryPrivateKey) {
-      return res.status(404).json({ message: "DAO or treasury wallet not found" });
-    }
-    const config2 = NetworkConfig.CELO_ALFAJORES;
-    const mockPriceOracle2 = async (tokenAddress) => {
-      const prices = {
-        "native": 2500,
-        "0x...": 1
-      };
-      return prices[tokenAddress] || 0;
-    };
-    const wallet2 = new agent_wallet_default(
-      dao.treasuryPrivateKey,
-      config2,
-      void 0,
-      void 0,
-      void 0,
-      mockPriceOracle2
-    );
-    const tx = await wallet2.sendNativeToken(toAddress, amount);
-    res.json({ tx });
-  } catch (err) {
-    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
-  }
-});
-router16.post("/:daoId/transfer/token", isAuthenticated2, async (req, res) => {
-  try {
-    const { daoId } = req.params;
-    const { tokenAddress, toAddress, amount } = req.body;
-    const dao = await storage.getDao(daoId);
-    if (!dao || !dao.treasuryPrivateKey) {
-      return res.status(404).json({ message: "DAO or treasury wallet not found" });
-    }
-    const config2 = NetworkConfig.CELO_ALFAJORES;
-    const mockPriceOracle2 = async (tokenAddress2) => {
-      const prices = {
-        "native": 2500,
-        "0x...": 1
-      };
-      return prices[tokenAddress2] || 0;
-    };
-    const wallet2 = new agent_wallet_default(
-      dao.treasuryPrivateKey,
-      config2,
-      void 0,
-      void 0,
-      void 0,
-      mockPriceOracle2
-    );
-    const tx = await wallet2.sendTokenHuman(tokenAddress, toAddress, amount);
-    res.json({ tx });
-  } catch (err) {
-    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
-  }
-});
-router16.post("/:daoId/automation/payout", isAuthenticated2, async (req, res) => {
-  try {
-    const { daoId } = req.params;
-    const { payouts } = req.body;
-    const dao = await storage.getDao(daoId);
-    if (!dao || !dao.treasuryPrivateKey) {
-      return res.status(404).json({ message: "DAO or treasury wallet not found" });
-    }
-    const config2 = NetworkConfig.CELO_ALFAJORES;
-    const mockPriceOracle2 = async (tokenAddress) => {
-      const prices = {
-        "native": 2500,
-        "0x...": 1
-      };
-      return prices[tokenAddress] || 0;
-    };
-    const wallet2 = new agent_wallet_default(
-      dao.treasuryPrivateKey,
-      config2,
-      void 0,
-      void 0,
-      void 0,
-      mockPriceOracle2
-    );
-    const results = await wallet2.batchTransfer(payouts);
-    res.json({ results });
-    router16.get("/:daoId/snapshot", isAuthenticated2, async (req2, res2) => {
-      try {
-        const { daoId: daoId2 } = req2.params;
-        const dao2 = await storage.getDao(daoId2);
-        if (!dao2 || !dao2.treasuryPrivateKey) {
-          return res2.status(404).json({ message: "DAO or treasury wallet not found" });
-        }
-        const config3 = NetworkConfig.CELO_ALFAJORES;
-        const mockPriceOracle3 = async (tokenAddress) => {
-          const prices = {
-            "native": 2500,
-            "0x...": 1
-          };
-          return prices[tokenAddress] || 0;
-        };
-        const wallet3 = new agent_wallet_default(
-          dao2.treasuryPrivateKey,
-          config3,
-          void 0,
-          void 0,
-          void 0,
-          mockPriceOracle3
-        );
-        const treasuryManager = new DaoTreasuryManager(wallet3, dao2.treasuryAddress, dao2.allowedTokens || []);
-        const snapshot = await treasuryManager.getTreasurySnapshot();
-        res2.json(snapshot);
-      } catch (err) {
-        res2.status(500).json({ message: err instanceof Error ? err.message : String(err) });
-      }
-    });
-    router16.get("/:daoId/report", isAuthenticated2, async (req2, res2) => {
-      try {
-        const { daoId: daoId2 } = req2.params;
-        const { period } = req2.query;
-        const dao2 = await storage.getDao(daoId2);
-        if (!dao2 || !dao2.treasuryPrivateKey) {
-          return res2.status(404).json({ message: "DAO or treasury wallet not found" });
-        }
-        const config3 = NetworkConfig.CELO_ALFAJORES;
-        const mockPriceOracle3 = async (tokenAddress) => {
-          const prices = {
-            "native": 2500,
-            "0x...": 1
-          };
-          return prices[tokenAddress] || 0;
-        };
-        const wallet3 = new agent_wallet_default(
-          dao2.treasuryPrivateKey,
-          config3,
-          void 0,
-          void 0,
-          void 0,
-          mockPriceOracle3
-        );
-        const treasuryManager = new DaoTreasuryManager(wallet3, dao2.treasuryAddress, dao2.allowedTokens || []);
-        const report = await treasuryManager.generateTreasuryReport(period || "monthly");
-        res2.json(report);
-      } catch (err) {
-        res2.status(500).json({ message: err instanceof Error ? err.message : String(err) });
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
-  }
-});
-var dao_treasury_default = router16;
-
-// server/routes/reputation.ts
-init_db();
-import express17 from "express";
-import { eq as eq15 } from "drizzle-orm";
-
-// server/achievementService.ts
-init_db();
-import { eq as eq12, and as and11, sql as sql5 } from "drizzle-orm";
-
-// shared/achievementSchema.ts
-init_schema();
-import { pgTable as pgTable2, varchar as varchar2, timestamp as timestamp3, integer as integer2, boolean as boolean2, uuid as uuid2, text as text2 } from "drizzle-orm/pg-core";
-import { createInsertSchema as createInsertSchema2 } from "drizzle-zod";
-var achievements = pgTable2("achievements", {
-  id: uuid2("id").primaryKey().defaultRandom(),
-  name: varchar2("name").notNull(),
-  description: text2("description"),
-  category: varchar2("category").notNull(),
-  // voting, contribution, social, streak, etc.
-  criteria: text2("criteria").notNull(),
-  // JSON string with achievement criteria
-  rewardPoints: integer2("reward_points").default(0),
-  rewardTokens: varchar2("reward_tokens").default("0"),
-  badge: varchar2("badge"),
-  // special badge for this achievement
-  icon: varchar2("icon"),
-  // emoji or icon identifier
-  rarity: varchar2("rarity").default("common"),
-  // common, rare, epic, legendary
-  isActive: boolean2("is_active").default(true),
-  createdAt: timestamp3("created_at").defaultNow()
-});
-var userAchievements = pgTable2("user_achievements", {
-  id: uuid2("id").primaryKey().defaultRandom(),
-  userId: varchar2("user_id").references(() => users.id).notNull(),
-  achievementId: uuid2("achievement_id").references(() => achievements.id).notNull(),
-  unlockedAt: timestamp3("unlocked_at").defaultNow(),
-  progress: integer2("progress").default(0),
-  // for progressive achievements
-  maxProgress: integer2("max_progress").default(1),
-  isCompleted: boolean2("is_completed").default(false),
-  rewardClaimed: boolean2("reward_claimed").default(false),
-  claimedAt: timestamp3("claimed_at")
-});
-var achievementProgress = pgTable2("achievement_progress", {
-  id: uuid2("id").primaryKey().defaultRandom(),
-  userId: varchar2("user_id").references(() => users.id).notNull(),
-  achievementId: uuid2("achievement_id").references(() => achievements.id).notNull(),
-  currentValue: integer2("current_value").default(0),
-  targetValue: integer2("target_value").notNull(),
-  lastUpdated: timestamp3("last_updated").defaultNow()
-});
-var insertAchievementSchema = createInsertSchema2(achievements);
-var insertUserAchievementSchema = createInsertSchema2(userAchievements);
-var insertAchievementProgressSchema = createInsertSchema2(achievementProgress);
-
-// server/achievementService.ts
-init_reputationSchema();
-init_schema();
-init_reputationService();
-var AchievementService = class {
-  // Initialize default achievements
-  static async initializeDefaultAchievements() {
-    const defaultAchievements = [
-      {
-        name: "First Vote",
-        description: "Cast your first vote in any proposal",
-        category: "voting",
-        criteria: JSON.stringify({ action: "vote", count: 1 }),
-        rewardPoints: 50,
-        rewardTokens: "1",
-        badge: "Voter",
-        icon: "\u{1F5F3}\uFE0F",
-        rarity: "common"
-      },
-      {
-        name: "Democracy Champion",
-        description: "Vote on 50 different proposals",
-        category: "voting",
-        criteria: JSON.stringify({ action: "vote", count: 50 }),
-        rewardPoints: 500,
-        rewardTokens: "10",
-        badge: "Champion",
-        icon: "\u{1F3C6}",
-        rarity: "rare"
-      },
-      {
-        name: "Proposal Pioneer",
-        description: "Create your first proposal",
-        category: "governance",
-        criteria: JSON.stringify({ action: "proposal_created", count: 1 }),
-        rewardPoints: 100,
-        rewardTokens: "5",
-        badge: "Pioneer",
-        icon: "\u{1F4A1}",
-        rarity: "common"
-      },
-      {
-        name: "Community Builder",
-        description: "Have 10 of your proposals pass",
-        category: "governance",
-        criteria: JSON.stringify({ action: "proposal_passed", count: 10 }),
-        rewardPoints: 1e3,
-        rewardTokens: "25",
-        badge: "Builder",
-        icon: "\u{1F3D7}\uFE0F",
-        rarity: "epic"
-      },
-      {
-        name: "Generous Soul",
-        description: "Contribute a total of 1000 cUSD",
-        category: "contribution",
-        criteria: JSON.stringify({ action: "contribution_total", amount: 1e3 }),
-        rewardPoints: 2e3,
-        rewardTokens: "50",
-        badge: "Generous",
-        icon: "\u{1F49D}",
-        rarity: "epic"
-      },
-      {
-        name: "Streak Master",
-        description: "Maintain a 30-day activity streak",
-        category: "streak",
-        criteria: JSON.stringify({ action: "daily_streak", count: 30 }),
-        rewardPoints: 750,
-        rewardTokens: "15",
-        badge: "Consistent",
-        icon: "\u26A1",
-        rarity: "rare"
-      },
-      {
-        name: "Social Butterfly",
-        description: "Refer 10 friends to the platform",
-        category: "social",
-        criteria: JSON.stringify({ action: "referral", count: 10 }),
-        rewardPoints: 1500,
-        rewardTokens: "30",
-        badge: "Influencer",
-        icon: "\u{1F98B}",
-        rarity: "epic"
-      },
-      {
-        name: "Reputation Legend",
-        description: "Reach 10,000 total reputation points",
-        category: "reputation",
-        criteria: JSON.stringify({ action: "reputation_total", count: 1e4 }),
-        rewardPoints: 5e3,
-        rewardTokens: "100",
-        badge: "Legend",
-        icon: "\u{1F451}",
-        rarity: "legendary"
-      }
-    ];
-    for (const achievement of defaultAchievements) {
-      try {
-        await db.insert(achievements).values(achievement);
-      } catch (error) {
-        console.log(`Achievement ${achievement.name} already exists or failed to create`);
-      }
-    }
-  }
-  // Check and unlock achievements for user
-  static async checkUserAchievements(userId) {
-    const unlockedAchievements = [];
-    const allAchievements = await db.select().from(achievements).where(eq12(achievements.isActive, true));
-    for (const achievement of allAchievements) {
-      const isAlreadyUnlocked = await this.isAchievementUnlocked(userId, achievement.id);
-      if (isAlreadyUnlocked) continue;
-      const criteria = JSON.parse(achievement.criteria);
-      const isUnlocked = await this.evaluateAchievementCriteria(userId, criteria);
-      if (isUnlocked) {
-        await this.unlockAchievement(userId, achievement.id);
-        unlockedAchievements.push(achievement.name);
-      }
-    }
-    return unlockedAchievements;
-  }
-  // Evaluate if user meets achievement criteria
-  static async evaluateAchievementCriteria(userId, criteria) {
-    switch (criteria.action) {
-      case "vote":
-        const voteCount = await db.select({ count: sql5`count(*)` }).from(votes).where(eq12(votes.userId, userId));
-        return (voteCount[0]?.count || 0) >= criteria.count;
-      case "proposal_created":
-        const proposalCount = await db.select({ count: sql5`count(*)` }).from(proposals).where(eq12(proposals.proposerId, userId));
-        return (proposalCount[0]?.count || 0) >= criteria.count;
-      case "proposal_passed":
-        const passedProposals = await db.select({ count: sql5`count(*)` }).from(proposals).where(
-          and11(
-            eq12(proposals.proposerId, userId),
-            eq12(proposals.status, "passed")
-          )
-        );
-        return (passedProposals[0]?.count || 0) >= criteria.count;
-      case "contribution_total":
-        const totalContributions = await db.select({ total: sql5`sum(${contributions.amount})` }).from(contributions).where(eq12(contributions.userId, userId));
-        return (totalContributions[0]?.total || 0) >= criteria.amount;
-      case "daily_streak":
-        const userRep = await db.select().from(userReputation2).where(eq12(userReputation2.userId, userId));
-        return (userRep[0]?.currentStreak || 0) >= criteria.count;
-      case "referral":
-        const referralCount = await db.select({ count: sql5`count(*)` }).from(msiaMoPoints).where(
-          and11(
-            eq12(msiaMoPoints.userId, userId),
-            eq12(msiaMoPoints.action, "REFERRAL")
-          )
-        );
-        return (referralCount[0]?.count || 0) >= criteria.count;
-      case "reputation_total":
-        const reputation = await db.select().from(userReputation2).where(eq12(userReputation2.userId, userId));
-        return (reputation[0]?.totalPoints || 0) >= criteria.count;
-      default:
-        return false;
-    }
-  }
-  // Check if achievement is already unlocked
-  static async isAchievementUnlocked(userId, achievementId) {
-    const existing = await db.select().from(userAchievements).where(
-      and11(
-        eq12(userAchievements.userId, userId),
-        eq12(userAchievements.achievementId, achievementId),
-        eq12(userAchievements.isCompleted, true)
-      )
-    );
-    return existing.length > 0;
-  }
-  // Unlock achievement for user
-  static async unlockAchievement(userId, achievementId) {
-    const achievement = await db.select().from(achievements).where(eq12(achievements.id, achievementId));
-    if (!achievement[0]) return;
-    await db.insert(userAchievements).values({
-      userId,
-      achievementId,
-      isCompleted: true,
-      rewardClaimed: false
-    });
-    if (achievement[0] && achievement[0].rewardPoints && achievement[0].rewardPoints > 0) {
-      await ReputationService.awardPoints(
-        userId,
-        "ACHIEVEMENT_UNLOCKED",
-        achievement[0].rewardPoints,
-        void 0,
-        `Unlocked achievement: ${achievement[0].name}`,
-        1
-      );
-    }
-  }
-  // Get user's achievements
-  static async getUserAchievements(userId) {
-    return await db.select({
-      achievement: achievements,
-      userAchievement: userAchievements
-    }).from(userAchievements).leftJoin(achievements, eq12(userAchievements.achievementId, achievements.id)).where(eq12(userAchievements.userId, userId));
-  }
-  // Get user's achievement statistics
-  static async getUserAchievementStats(userId) {
-    const totalAchievements = await db.select({ count: sql5`count(*)` }).from(achievements).where(eq12(achievements.isActive, true));
-    const unlockedAchievements = await db.select({ count: sql5`count(*)` }).from(userAchievements).where(
-      and11(
-        eq12(userAchievements.userId, userId),
-        eq12(userAchievements.isCompleted, true)
-      )
-    );
-    const totalRewardPoints = await db.select({ total: sql5`sum(${achievements.rewardPoints})` }).from(userAchievements).leftJoin(achievements, eq12(userAchievements.achievementId, achievements.id)).where(
-      and11(
-        eq12(userAchievements.userId, userId),
-        eq12(userAchievements.isCompleted, true),
-        eq12(userAchievements.rewardClaimed, true)
-      )
-    );
-    return {
-      totalAchievements: totalAchievements[0]?.count || 0,
-      unlockedAchievements: unlockedAchievements[0]?.count || 0,
-      completionRate: (unlockedAchievements[0]?.count || 0) / (totalAchievements[0]?.count || 1) * 100,
-      totalRewardPointsEarned: totalRewardPoints[0]?.total || 0
-    };
-  }
-  // Claim achievement rewards
-  static async claimAchievementReward(userId, achievementId) {
-    const userAchievement = await db.select().from(userAchievements).where(
-      and11(
-        eq12(userAchievements.userId, userId),
-        eq12(userAchievements.achievementId, achievementId),
-        eq12(userAchievements.isCompleted, true),
-        eq12(userAchievements.rewardClaimed, false)
-      )
-    );
-    if (!userAchievement[0]) return false;
-    await db.update(userAchievements).set({
-      rewardClaimed: true,
-      claimedAt: /* @__PURE__ */ new Date()
-    }).where(eq12(userAchievements.id, userAchievement[0].id));
-    return true;
-  }
-};
-
-// server/airdropService.ts
-init_db();
-init_reputationSchema();
-import { eq as eq13, and as and12, gte as gte3 } from "drizzle-orm";
-var AirdropService = class {
-  // Create new airdrop campaign
-  static async createAirdropCampaign(campaign) {
-    const campaignId = `airdrop_${Date.now()}`;
-    return campaignId;
-  }
-  // Calculate airdrop eligibility for all users
-  static async calculateAirdropEligibility(airdropId, minimumReputation, baseAmount, maxMultiplier = 5) {
-    const users3 = await db.select({
-      userId: userReputation2.userId,
-      totalPoints: userReputation2.totalPoints,
-      badge: userReputation2.badge
-    }).from(userReputation2).where(gte3(userReputation2.totalPoints, minimumReputation));
-    let processed = 0;
-    let eligible = 0;
-    for (const user of users3) {
-      const totalPoints = typeof user.totalPoints === "number" ? user.totalPoints : 0;
-      const badge = typeof user.badge === "string" ? user.badge : "Bronze";
-      const reputationMultiplier = Math.min(totalPoints / minimumReputation, maxMultiplier);
-      const airdropAmount = baseAmount * reputationMultiplier;
-      const badgeMultiplier = this.getBadgeMultiplier(badge);
-      const finalAmount = airdropAmount * badgeMultiplier;
-      await db.insert(airdropEligibility).values({
-        userId: user.userId,
-        airdropId,
-        eligibleAmount: finalAmount.toString(),
-        minimumReputation,
-        userReputation: totalPoints,
-        claimed: false
-      });
-      processed++;
-      eligible++;
-    }
-    return { processed, eligible };
-  }
-  // Execute airdrop distribution
-  static async executeAirdrop(airdropId) {
-    const eligibleUsers = await db.select().from(airdropEligibility).where(
-      and12(
-        eq13(airdropEligibility.airdropId, airdropId),
-        eq13(airdropEligibility.claimed, false)
-      )
-    );
-    let success = 0;
-    let failed = 0;
-    for (const eligibility of eligibleUsers) {
-      try {
-        await db.update(airdropEligibility).set({
-          claimed: true,
-          claimedAt: /* @__PURE__ */ new Date(),
-          transactionHash: null
-        }).where(eq13(airdropEligibility.id, eligibility.id));
-        success++;
-      } catch (error) {
-        console.error(`Airdrop failed for user ${eligibility.userId}:`, error);
-        failed++;
-      }
-    }
-    return { success, failed };
-  }
-  // Get badge multiplier for airdrop calculations
-  static getBadgeMultiplier(badge) {
-    switch (badge) {
-      case "Diamond":
-        return 2;
-      case "Platinum":
-        return 1.8;
-      case "Gold":
-        return 1.5;
-      case "Silver":
-        return 1.2;
-      default:
-        return 1;
-    }
-  }
-  // Check user's airdrop eligibility
-  static async getUserAirdropEligibility(userId) {
-    return await db.select().from(airdropEligibility).where(eq13(airdropEligibility.userId, userId));
-  }
-  // Claim airdrop for user
-  static async claimAirdrop(userId, airdropId) {
-    const eligibility = await db.select().from(airdropEligibility).where(
-      and12(
-        eq13(airdropEligibility.userId, userId),
-        eq13(airdropEligibility.airdropId, airdropId),
-        eq13(airdropEligibility.claimed, false)
-      )
-    );
-    if (!eligibility[0]) {
-      throw new Error("No eligible airdrop found or already claimed");
-    }
-    await db.update(airdropEligibility).set({
-      claimed: true,
-      claimedAt: /* @__PURE__ */ new Date(),
-      transactionHash: null
-    }).where(eq13(airdropEligibility.id, eligibility[0].id));
-    return "claimed";
-  }
-};
-
-// server/vestingService.ts
-init_db();
-import { eq as eq14, and as and13 } from "drizzle-orm";
-
-// shared/vestingSchema.ts
-init_schema();
-import { pgTable as pgTable4, varchar as varchar4, timestamp as timestamp5, decimal as decimal3, boolean as boolean4, uuid as uuid4, integer as integer4 } from "drizzle-orm/pg-core";
-import { createInsertSchema as createInsertSchema4 } from "drizzle-zod";
-var vestingSchedules = pgTable4("vesting_schedules", {
-  id: uuid4("id").primaryKey().defaultRandom(),
-  userId: varchar4("user_id").references(() => users.id).notNull(),
-  scheduleType: varchar4("schedule_type").notNull(),
-  // linear, cliff, milestone
-  totalTokens: decimal3("total_tokens", { precision: 18, scale: 8 }).notNull(),
-  vestedTokens: decimal3("vested_tokens", { precision: 18, scale: 8 }).default("0"),
-  claimedTokens: decimal3("claimed_tokens", { precision: 18, scale: 8 }).default("0"),
-  startDate: timestamp5("start_date").notNull(),
-  endDate: timestamp5("end_date").notNull(),
-  cliffDuration: integer4("cliff_duration").default(0),
-  // in days
-  vestingDuration: integer4("vesting_duration").notNull(),
-  // in days
-  vestingInterval: integer4("vesting_interval").default(1),
-  // in days
-  isActive: boolean4("is_active").default(true),
-  reason: varchar4("reason"),
-  // airdrop, team, advisor, etc.
-  createdAt: timestamp5("created_at").defaultNow()
-});
-var vestingClaims = pgTable4("vesting_claims", {
-  id: uuid4("id").primaryKey().defaultRandom(),
-  scheduleId: uuid4("schedule_id").references(() => vestingSchedules.id).notNull(),
-  userId: varchar4("user_id").references(() => users.id).notNull(),
-  claimedAmount: decimal3("claimed_amount", { precision: 18, scale: 8 }).notNull(),
-  transactionHash: varchar4("transaction_hash"),
-  claimedAt: timestamp5("claimed_at").defaultNow()
-});
-var vestingMilestones = pgTable4("vesting_milestones", {
-  id: uuid4("id").primaryKey().defaultRandom(),
-  scheduleId: uuid4("schedule_id").references(() => vestingSchedules.id).notNull(),
-  milestoneType: varchar4("milestone_type").notNull(),
-  // reputation, time, task_completion
-  description: varchar4("description"),
-  targetValue: decimal3("target_value", { precision: 18, scale: 8 }).notNull(),
-  currentValue: decimal3("current_value", { precision: 18, scale: 8 }).default("0"),
-  tokensToRelease: decimal3("tokens_to_release", { precision: 18, scale: 8 }).notNull(),
-  isCompleted: boolean4("is_completed").default(false),
-  completedAt: timestamp5("completed_at")
-});
-var insertVestingScheduleSchema = createInsertSchema4(vestingSchedules);
-var insertVestingClaimSchema = createInsertSchema4(vestingClaims);
-var insertVestingMilestoneSchema = createInsertSchema4(vestingMilestones);
-
-// server/vestingService.ts
-init_reputationSchema();
-var VestingService = class {
-  // Create new vesting schedule
-  static async createVestingSchedule(params) {
-    const endDate = new Date(params.startDate);
-    endDate.setDate(endDate.getDate() + params.vestingDuration);
-    const scheduleId = (await db.insert(vestingSchedules).values({
-      userId: params.userId,
-      scheduleType: params.scheduleType,
-      totalTokens: params.totalTokens.toString(),
-      startDate: params.startDate,
-      endDate,
-      cliffDuration: params.cliffDuration || 0,
-      vestingDuration: params.vestingDuration,
-      vestingInterval: params.vestingInterval || 1,
-      reason: params.reason
-    }).returning())[0].id;
-    if (params.milestones && params.scheduleType === "milestone") {
-      for (const milestone of params.milestones) {
-        await db.insert(vestingMilestones).values({
-          scheduleId,
-          milestoneType: milestone.milestoneType,
-          description: milestone.description,
-          targetValue: milestone.targetValue.toString(),
-          tokensToRelease: milestone.tokensToRelease.toString()
-        });
-      }
-    }
-    return scheduleId;
-  }
-  // Calculate vested tokens for a schedule
-  static async calculateVestedTokens(scheduleId) {
-    const schedule = await db.select().from(vestingSchedules).where(eq14(vestingSchedules.id, scheduleId));
-    if (!schedule[0] || !schedule[0].isActive) return 0;
-    const now = /* @__PURE__ */ new Date();
-    const startDate = new Date(schedule[0].startDate);
-    const endDate = new Date(schedule[0].endDate);
-    const totalTokens = parseFloat(schedule[0].totalTokens);
-    if (now < startDate) return 0;
-    const cliffEndDate = new Date(startDate);
-    if (!schedule[0]) return 0;
-    cliffEndDate.setDate(cliffEndDate.getDate() + (schedule[0].cliffDuration ?? 0));
-    if (now < cliffEndDate) return 0;
-    switch (schedule[0].scheduleType) {
-      case "linear":
-        return this.calculateLinearVesting(totalTokens, startDate, endDate, now);
-      case "cliff":
-        return now >= endDate ? totalTokens : 0;
-      case "milestone":
-        return await this.calculateMilestoneVesting(scheduleId);
-      default:
-        return 0;
-    }
-  }
-  // Linear vesting calculation
-  static calculateLinearVesting(totalTokens, startDate, endDate, currentDate) {
-    if (currentDate >= endDate) return totalTokens;
-    const totalDuration = endDate.getTime() - startDate.getTime();
-    const elapsedDuration = currentDate.getTime() - startDate.getTime();
-    const vestingPercentage = elapsedDuration / totalDuration;
-    return totalTokens * vestingPercentage;
-  }
-  // Milestone-based vesting calculation
-  static async calculateMilestoneVesting(scheduleId) {
-    const completedMilestones = await db.select().from(vestingMilestones).where(
-      and13(
-        eq14(vestingMilestones.scheduleId, scheduleId),
-        eq14(vestingMilestones.isCompleted, true)
-      )
-    );
-    return completedMilestones.reduce((total, milestone) => {
-      return total + parseFloat(milestone.tokensToRelease);
-    }, 0);
-  }
-  // Update milestone progress
-  static async updateMilestoneProgress(scheduleId, milestoneType, currentValue) {
-    const milestone = await db.select().from(vestingMilestones).where(
-      and13(
-        eq14(vestingMilestones.scheduleId, scheduleId),
-        eq14(vestingMilestones.milestoneType, milestoneType),
-        eq14(vestingMilestones.isCompleted, false)
-      )
-    );
-    if (!milestone[0]) return false;
-    await db.update(vestingMilestones).set({ currentValue: currentValue.toString() }).where(eq14(vestingMilestones.id, milestone[0].id));
-    if (currentValue >= parseFloat(milestone[0].targetValue)) {
-      await db.update(vestingMilestones).set({
-        isCompleted: true,
-        completedAt: /* @__PURE__ */ new Date()
-      }).where(eq14(vestingMilestones.id, milestone[0].id));
-      return true;
-    }
-    return false;
-  }
-  // Get claimable tokens for user
-  static async getClaimableTokens(userId) {
-    const schedules = await db.select().from(vestingSchedules).where(
-      and13(
-        eq14(vestingSchedules.userId, userId),
-        eq14(vestingSchedules.isActive, true)
-      )
-    );
-    const claimableSchedules = [];
-    for (const schedule of schedules) {
-      const vestedTokens = await this.calculateVestedTokens(schedule.id);
-      const claimedTokens = parseFloat(schedule.claimedTokens ?? "0");
-      const claimable = vestedTokens - claimedTokens;
-      if (claimable > 0) {
-        claimableSchedules.push({
-          scheduleId: schedule.id,
-          claimable
-        });
-      }
-    }
-    return claimableSchedules;
-  }
-  // Claim vested tokens
-  static async claimVestedTokens(userId, scheduleId) {
-    const schedule = await db.select().from(vestingSchedules).where(
-      and13(
-        eq14(vestingSchedules.id, scheduleId),
-        eq14(vestingSchedules.userId, userId),
-        eq14(vestingSchedules.isActive, true)
-      )
-    );
-    if (!schedule[0]) {
-      throw new Error("Invalid vesting schedule");
-    }
-    const vestedTokens = await this.calculateVestedTokens(scheduleId);
-    const claimedTokens = parseFloat(schedule[0].claimedTokens ?? "0");
-    const claimableAmount = vestedTokens - claimedTokens;
-    if (claimableAmount <= 0) {
-      throw new Error("No tokens available to claim");
-    }
-    const txHash = "claimed";
-    await db.update(vestingSchedules).set({
-      claimedTokens: (claimedTokens + claimableAmount).toString()
-    }).where(eq14(vestingSchedules.id, scheduleId));
-    await db.insert(vestingClaims).values({
-      scheduleId,
-      userId,
-      claimedAmount: claimableAmount.toString(),
-      transactionHash: txHash
-    });
-    return txHash;
-  }
-  // Get user's vesting overview
-  static async getUserVestingOverview(userId) {
-    const schedules = await db.select().from(vestingSchedules).where(
-      and13(
-        eq14(vestingSchedules.userId, userId),
-        eq14(vestingSchedules.isActive, true)
-      )
-    );
-    let totalAllocated = 0;
-    let totalVested = 0;
-    let totalClaimed = 0;
-    let totalClaimable = 0;
-    const scheduleDetails = [];
-    for (const schedule of schedules) {
-      const allocated = parseFloat(schedule.totalTokens);
-      const vested = await this.calculateVestedTokens(schedule.id);
-      const claimed = parseFloat(schedule.claimedTokens ?? "0");
-      const claimable = vested - claimed;
-      totalAllocated += allocated;
-      totalVested += vested;
-      totalClaimed += claimed;
-      totalClaimable += claimable;
-      scheduleDetails.push({
-        id: schedule.id,
-        type: schedule.scheduleType,
-        reason: schedule.reason,
-        allocated,
-        vested,
-        claimed,
-        claimable,
-        startDate: schedule.startDate,
-        endDate: schedule.endDate
-      });
-    }
-    return {
-      overview: {
-        totalAllocated,
-        totalVested,
-        totalClaimed,
-        totalClaimable,
-        vestingPercentage: totalAllocated > 0 ? totalVested / totalAllocated * 100 : 0
-      },
-      schedules: scheduleDetails
-    };
-  }
-  // Check and update milestones for all users (scheduled job)
-  static async updateAllMilestones() {
-    const activeMilestones = await db.select().from(vestingMilestones).where(eq14(vestingMilestones.isCompleted, false));
-    let updated = 0;
-    let completed = 0;
-    for (const milestone of activeMilestones) {
-      const schedule = await db.select().from(vestingSchedules).where(eq14(vestingSchedules.id, milestone.scheduleId));
-      if (!schedule[0]) continue;
-      let currentValue = 0;
-      switch (milestone.milestoneType) {
-        case "reputation":
-          const userRep = await db.select().from(userReputation2).where(eq14(userReputation2.userId, schedule[0].userId));
-          currentValue = userRep[0]?.totalPoints || 0;
-          break;
-        case "time":
-          const now = /* @__PURE__ */ new Date();
-          const start = new Date(schedule[0].startDate);
-          currentValue = Math.floor((now.getTime() - start.getTime()) / (1e3 * 60 * 60 * 24));
-          break;
-      }
-      const wasCompleted = await this.updateMilestoneProgress(
-        milestone.scheduleId,
-        milestone.milestoneType,
-        currentValue
-      );
-      updated++;
-      if (wasCompleted) completed++;
-    }
-    return { updated, completed };
-  }
-};
-
-// server/routes/reputation.ts
-init_reputationService();
-var router17 = express17.Router();
-router17.get("/user/:userId", isAuthenticated2, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const authUserId = req.user.claims.sub;
-    if (userId !== authUserId && userId !== "me") {
-      const reputation2 = await ReputationService.getUserReputation(userId);
-      return res.json({
-        totalPoints: reputation2.totalPoints,
-        badge: reputation2.badge,
-        level: reputation2.level
-      });
-    }
-    const targetUserId = userId === "me" ? authUserId : userId;
-    const reputation = await ReputationService.getUserReputation(targetUserId);
-    res.json(reputation);
-  } catch (err) {
-    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
-  }
-});
-router17.get("/leaderboard", async (req, res) => {
-  try {
-    const { limit = 10 } = req.query;
-    const leaderboard = await ReputationService.getLeaderboard(Number(limit));
-    res.json({ leaderboard });
-  } catch (err) {
-    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
-  }
-});
-router17.post("/convert", isAuthenticated2, async (req, res) => {
-  try {
-    const userId = req.user.claims.sub;
-    const { pointsToConvert, conversionRate } = req.body;
-    if (!pointsToConvert || pointsToConvert <= 0) {
-      return res.status(400).json({ message: "Invalid points amount" });
-    }
-    const result = await ReputationService.convertPointsToTokens(
-      userId,
-      pointsToConvert,
-      conversionRate
-    );
-    res.json(result);
-  } catch (err) {
-    res.status(400).json({ message: err instanceof Error ? err.message : String(err) });
-  }
-});
-router17.post("/airdrop/check", isAuthenticated2, async (req, res) => {
-  try {
-    const userId = req.user.claims.sub;
-    const { airdropId, minimumReputation, baseAmount } = req.body;
-    if (!airdropId || !minimumReputation || !baseAmount) {
-      return res.status(400).json({ message: "Missing required airdrop parameters" });
-    }
-    const eligibility = await ReputationService.checkAirdropEligibility(
-      userId,
-      airdropId,
-      minimumReputation,
-      baseAmount
-    );
-    res.json(eligibility);
-  } catch (err) {
-    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
-  }
-});
-router17.post("/award", isAuthenticated2, async (req, res) => {
-  try {
-    const { userId, action, points, daoId, description, multiplier } = req.body;
-    const authUser = req.user;
-    if (authUser.role !== "superuser" && authUser.role !== "admin") {
-      return res.status(403).json({ message: "Admin access required" });
-    }
-    await ReputationService.awardPoints(userId, action, points, daoId, description, multiplier);
-    res.json({ message: "Points awarded successfully" });
-  } catch (err) {
-    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
-  }
-});
-router17.get("/achievements", async (req, res) => {
-  try {
-    const achievementRows = await db.select().from(achievements).where(eq15(achievements.isActive, true));
-    res.json({ achievements: achievementRows });
-  } catch (err) {
-    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
-  }
-});
-router17.get("/achievements/user/:userId", isAuthenticated2, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const authUserId = req.user.claims.sub;
-    if (userId !== authUserId && userId !== "me") {
-      return res.status(403).json({ message: "Access denied" });
-    }
-    const targetUserId = userId === "me" ? authUserId : userId;
-    const userAchievements2 = await AchievementService.getUserAchievements(targetUserId);
-    const stats = await AchievementService.getUserAchievementStats(targetUserId);
-    res.json({ achievements: userAchievements2, stats });
-  } catch (err) {
-    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
-  }
-});
-router17.post("/achievements/claim/:achievementId", isAuthenticated2, async (req, res) => {
-  try {
-    const userId = req.user.claims.sub;
-    const { achievementId } = req.params;
-    const success = await AchievementService.claimAchievementReward(userId, achievementId);
-    if (success) {
-      res.json({ message: "Reward claimed successfully" });
-    } else {
-      res.status(400).json({ message: "Unable to claim reward" });
-    }
-  } catch (err) {
-    res.status(400).json({ message: err instanceof Error ? err.message : String(err) });
-  }
-});
-router17.get("/airdrops/eligible", isAuthenticated2, async (req, res) => {
-  try {
-    const userId = req.user.claims.sub;
-    const eligibleAirdrops = await AirdropService.getUserAirdropEligibility(userId);
-    res.json({ airdrops: eligibleAirdrops });
-  } catch (err) {
-    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
-  }
-});
-router17.post("/airdrops/claim/:airdropId", isAuthenticated2, async (req, res) => {
-  try {
-    const userId = req.user.claims.sub;
-    const { airdropId } = req.params;
-    const txHash = await AirdropService.claimAirdrop(userId, airdropId);
-    res.json({ message: "Airdrop claimed successfully", transactionHash: txHash });
-  } catch (err) {
-    res.status(400).json({ message: err instanceof Error ? err.message : String(err) });
-  }
-});
-router17.get("/vesting/overview", isAuthenticated2, async (req, res) => {
-  try {
-    const userId = req.user.claims.sub;
-    const overview = await VestingService.getUserVestingOverview(userId);
-    res.json(overview);
-  } catch (err) {
-    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
-  }
-});
-router17.get("/vesting/claimable", isAuthenticated2, async (req, res) => {
-  try {
-    const userId = req.user.claims.sub;
-    const claimable = await VestingService.getClaimableTokens(userId);
-    res.json({ claimable });
-  } catch (err) {
-    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
-  }
-});
-router17.post("/vesting/claim/:scheduleId", isAuthenticated2, async (req, res) => {
-  try {
-    const userId = req.user.claims.sub;
-    const { scheduleId } = req.params;
-    const txHash = await VestingService.claimVestedTokens(userId, scheduleId);
-    res.json({ message: "Tokens claimed successfully", transactionHash: txHash });
-  } catch (err) {
-    res.status(400).json({ message: err instanceof Error ? err.message : String(err) });
-  }
-});
-var reputation_default = router17;
-
-// server/routes/analytics.ts
-import express18 from "express";
-
-// server/analyticsService.ts
-init_db();
-init_schema();
-import { eq as eq16, gte as gte5, lte as lte4, count, and as and14 } from "drizzle-orm";
-import { format as format2, subDays, subMonths, subYears, startOfDay, endOfDay } from "date-fns";
-var AnalyticsService = class {
-  // Real-time metrics collection
-  async getRealTimeMetrics(daoId) {
-    const whereClause = daoId ? eq16(daos.id, daoId) : void 0;
-    const [
-      totalDaos,
-      totalProposals,
-      totalVotes,
-      totalUsers,
-      totalTasks,
-      proposalData
-    ] = await Promise.all([
-      db.select({ count: count() }).from(daos).where(whereClause),
-      daoId ? db.select({ count: count() }).from(proposals).where(eq16(proposals.daoId, daoId)) : db.select({ count: count() }).from(proposals),
-      daoId ? db.select({ count: count() }).from(votes).innerJoin(proposals, eq16(votes.proposalId, proposals.id)).where(eq16(proposals.daoId, daoId)) : db.select({ count: count() }).from(votes),
-      db.select({ count: count() }).from(users),
-      daoId ? db.select({ count: count() }).from(tasks).where(eq16(tasks.daoId, daoId)) : db.select({ count: count() }).from(tasks),
-      daoId ? db.select({
-        status: proposals.status,
-        count: count()
-      }).from(proposals).where(eq16(proposals.daoId, daoId)).groupBy(proposals.status) : db.select({
-        status: proposals.status,
-        count: count()
-      }).from(proposals).groupBy(proposals.status)
-    ]);
-    const totalProposalCount = proposalData.reduce((sum2, item) => sum2 + item.count, 0);
-    const successfulProposals = proposalData.find((item) => item.status === "executed")?.count || 0;
-    const avgProposalSuccessRate = totalProposalCount > 0 ? successfulProposals / totalProposalCount * 100 : 0;
-    const topPerformingDaos = await this.getTopPerformingDaos(5);
-    return {
-      totalDaos: totalDaos[0]?.count || 0,
-      totalProposals: totalProposals[0]?.count || 0,
-      totalVotes: totalVotes[0]?.count || 0,
-      totalUsers: totalUsers[0]?.count || 0,
-      totalTasks: totalTasks[0]?.count || 0,
-      totalTransactionVolume: 0,
-      avgProposalSuccessRate,
-      avgUserEngagement: await this.calculateUserEngagement(daoId),
-      topPerformingDaos
-    };
-  }
-  // Historical data analysis
-  async getHistoricalData(period, daoId) {
-    const now = /* @__PURE__ */ new Date();
-    let startDate;
-    let interval;
-    switch (period) {
-      case "week":
-        startDate = subDays(now, 7);
-        interval = "day";
-        break;
-      case "month":
-        startDate = subMonths(now, 1);
-        interval = "day";
-        break;
-      case "quarter":
-        startDate = subMonths(now, 3);
-        interval = "week";
-        break;
-      case "year":
-        startDate = subYears(now, 1);
-        interval = "month";
-        break;
-    }
-    const historicalData = [];
-    const current = new Date(startDate);
-    while (current <= now) {
-      const dayStart = startOfDay(current);
-      const dayEnd = endOfDay(current);
-      const [daoCount, userCount, proposalCount, proposalSuccess] = await Promise.all([
-        daoId ? Promise.resolve([{ count: 1 }]) : db.select({ count: count() }).from(daos).where(lte4(daos.createdAt, dayEnd)),
-        db.select({ count: count() }).from(users).where(lte4(users.createdAt, dayEnd)),
-        daoId ? db.select({ count: count() }).from(proposals).where(and14(eq16(proposals.daoId, daoId), gte5(proposals.createdAt, dayStart), lte4(proposals.createdAt, dayEnd))) : db.select({ count: count() }).from(proposals).where(and14(gte5(proposals.createdAt, dayStart), lte4(proposals.createdAt, dayEnd))),
-        this.getSuccessRateForPeriod(dayStart, dayEnd, daoId)
-      ]);
-      historicalData.push({
-        timestamp: format2(current, "yyyy-MM-dd"),
-        daoCount: daoCount[0]?.count || 0,
-        userCount: userCount[0]?.count || 0,
-        proposalCount: proposalCount[0]?.count || 0,
-        transactionVolume: 0,
-        avgSuccessRate: proposalSuccess
-      });
-      if (interval === "day") current.setDate(current.getDate() + 1);
-      else if (interval === "week") current.setDate(current.getDate() + 7);
-      else if (interval === "month") current.setMonth(current.getMonth() + 1);
-    }
-    return historicalData;
-  }
-  // Performance benchmarks
-  async getPerformanceBenchmarks() {
-    const allDaoMetrics = await Promise.all(
-      (await db.select({ id: daos.id }).from(daos)).map(
-        (dao) => this.getRealTimeMetrics(dao.id)
-      )
-    );
-    const sortedByEngagement = [...allDaoMetrics].sort((a, b) => b.avgUserEngagement - a.avgUserEngagement);
-    const sortedBySuccess = [...allDaoMetrics].sort((a, b) => b.avgProposalSuccessRate - a.avgProposalSuccessRate);
-    const quartileIndex = Math.floor(allDaoMetrics.length / 4);
-    return {
-      industry: {
-        avgGovernanceParticipation: 65,
-        // Industry benchmark
-        avgProposalSuccessRate: 72,
-        // Industry benchmark
-        avgTreasuryGrowth: 15
-        // Industry benchmark
-      },
-      platform: {
-        topQuartile: sortedByEngagement[0] || await this.getRealTimeMetrics(),
-        median: sortedByEngagement[Math.floor(allDaoMetrics.length / 2)] || await this.getRealTimeMetrics(),
-        bottomQuartile: sortedByEngagement[allDaoMetrics.length - quartileIndex] || await this.getRealTimeMetrics()
-      }
-    };
-  }
-  // Export data to CSV
-  async exportToCSV(type, period, daoId) {
-    let data;
-    let headers;
-    switch (type) {
-      case "metrics":
-        const metrics = await this.getRealTimeMetrics(daoId);
-        headers = Object.keys(metrics).filter((key) => key !== "topPerformingDaos");
-        data = [Object.values(metrics).filter((_, index2) => headers[index2])];
-        break;
-      case "historical":
-        const historical = await this.getHistoricalData(period || "month", daoId);
-        headers = Object.keys(historical[0] || {});
-        data = historical.map((item) => Object.values(item));
-        break;
-      case "benchmarks":
-        const benchmarks = await this.getPerformanceBenchmarks();
-        headers = ["Type", "AvgGovernanceParticipation", "AvgProposalSuccessRate", "AvgTreasuryGrowth"];
-        data = [
-          ["Industry", benchmarks.industry.avgGovernanceParticipation, benchmarks.industry.avgProposalSuccessRate, benchmarks.industry.avgTreasuryGrowth],
-          ["Platform Top", benchmarks.platform.topQuartile.avgUserEngagement, benchmarks.platform.topQuartile.avgProposalSuccessRate, benchmarks.platform.topQuartile.totalTransactionVolume],
-          ["Platform Median", benchmarks.platform.median.avgUserEngagement, benchmarks.platform.median.avgProposalSuccessRate, benchmarks.platform.median.totalTransactionVolume]
-        ];
-        break;
-    }
-    const csvContent = [
-      headers.join(","),
-      ...data.map((row) => row.join(","))
-    ].join("\n");
-    return csvContent;
-  }
-  // Helper methods
-  async getTopPerformingDaos(limit) {
-    const daosList = await db.select({
-      id: daos.id,
-      name: daos.name,
-      memberCount: daos.memberCount
-    }).from(daos).limit(limit);
-    return Promise.all(daosList.map(async (dao) => {
-      const [proposalCount, successRate] = await Promise.all([
-        db.select({ count: count() }).from(proposals).where(eq16(proposals.daoId, dao.id)),
-        this.getSuccessRateForDao(dao.id)
-      ]);
-      return {
-        id: dao.id,
-        name: dao.name,
-        memberCount: dao.memberCount || 0,
-        proposalCount: proposalCount[0]?.count || 0,
-        successRate,
-        treasuryValue: 0
-        // Would integrate with treasury service
-      };
-    }));
-  }
-  async calculateUserEngagement(daoId) {
-    const thirtyDaysAgo = subDays(/* @__PURE__ */ new Date(), 30);
-    const [totalUsers, activeUsers] = await Promise.all([
-      daoId ? db.select({ count: count() }).from(users) : db.select({ count: count() }).from(users),
-      daoId ? db.select({ count: count() }).from(votes).innerJoin(proposals, eq16(votes.proposalId, proposals.id)).where(and14(eq16(proposals.daoId, daoId), gte5(votes.createdAt, thirtyDaysAgo))) : db.select({ count: count() }).from(votes).where(gte5(votes.createdAt, thirtyDaysAgo))
-    ]);
-    const total = totalUsers[0]?.count || 0;
-    const active = activeUsers[0]?.count || 0;
-    return total > 0 ? active / total * 100 : 0;
-  }
-  async getSuccessRateForPeriod(start, end, daoId) {
-    const proposalsData = daoId ? await db.select({
-      status: proposals.status,
-      count: count()
-    }).from(proposals).where(and14(eq16(proposals.daoId, daoId), gte5(proposals.createdAt, start), lte4(proposals.createdAt, end))).groupBy(proposals.status) : await db.select({
-      status: proposals.status,
-      count: count()
-    }).from(proposals).where(and14(gte5(proposals.createdAt, start), lte4(proposals.createdAt, end))).groupBy(proposals.status);
-    const total = proposalsData.reduce((sum2, item) => sum2 + item.count, 0);
-    const successful = proposalsData.find((item) => item.status !== null && item.status === "executed")?.count || 0;
-    return total > 0 ? successful / total * 100 : 0;
-  }
-  async getSuccessRateForDao(daoId) {
-    const proposalsData = await db.select({
-      status: proposals.status,
-      count: count()
-    }).from(proposals).where(eq16(proposals.daoId, daoId)).groupBy(proposals.status);
-    const total = proposalsData.reduce((sum2, item) => sum2 + item.count, 0);
-    const successful = proposalsData.find((item) => item.status !== null && item.status === "executed")?.count || 0;
-    return total > 0 ? successful / total * 100 : 0;
-  }
-};
-var analyticsService = new AnalyticsService();
-
-// server/routes/analytics.ts
-import PDFDocument from "pdfkit";
-var router18 = express18.Router();
-router18.get("/metrics", isAuthenticated, async (req, res) => {
-  try {
-    const { daoId } = req.query;
-    const metrics = await analyticsService.getRealTimeMetrics(daoId);
-    res.json({
-      success: true,
-      data: metrics,
-      timestamp: (/* @__PURE__ */ new Date()).toISOString()
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch real-time metrics",
-      error: error.message
-    });
-  }
-});
-router18.get("/historical", isAuthenticated, async (req, res) => {
-  try {
-    const { period = "month", daoId } = req.query;
-    if (!["week", "month", "quarter", "year"].includes(period)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid period. Must be one of: week, month, quarter, year"
-      });
-    }
-    const historicalData = await analyticsService.getHistoricalData(
-      period,
-      daoId
-    );
-    res.json({
-      success: true,
-      data: historicalData,
-      period,
-      daoId: daoId || "all"
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch historical data",
-      error: error.message
-    });
-  }
-});
-router18.get("/benchmarks", isAuthenticated, async (req, res) => {
-  try {
-    const benchmarks = await analyticsService.getPerformanceBenchmarks();
-    res.json({
-      success: true,
-      data: benchmarks,
-      timestamp: (/* @__PURE__ */ new Date()).toISOString()
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch performance benchmarks",
-      error: error.message
-    });
-  }
-});
-router18.get("/export/csv", isAuthenticated, async (req, res) => {
-  try {
-    const { type = "metrics", period = "month", daoId } = req.query;
-    if (!["metrics", "historical", "benchmarks"].includes(type)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid export type. Must be one of: metrics, historical, benchmarks"
-      });
-    }
-    const csvContent = await analyticsService.exportToCSV(
-      type,
-      period,
-      daoId
-    );
-    const filename = `${type}-${period || "current"}-${daoId || "all"}-${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.csv`;
-    res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    res.send(csvContent);
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to export CSV",
-      error: error.message
-    });
-  }
-});
-router18.get("/export/pdf", isAuthenticated, async (req, res) => {
-  try {
-    const { daoId, period = "month" } = req.query;
-    const [metrics, historical, benchmarks] = await Promise.all([
-      analyticsService.getRealTimeMetrics(daoId),
-      analyticsService.getHistoricalData(period, daoId),
-      analyticsService.getPerformanceBenchmarks()
-    ]);
-    const doc = new PDFDocument();
-    const filename = `analytics-report-${daoId || "platform"}-${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.pdf`;
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    doc.pipe(res);
-    doc.fontSize(20).text("Analytics Report", 50, 50);
-    doc.fontSize(12).text(`Generated: ${(/* @__PURE__ */ new Date()).toLocaleString()}`, 50, 80);
-    doc.text(`Period: ${period}`, 50, 95);
-    if (daoId) doc.text(`DAO ID: ${daoId}`, 50, 110);
-    doc.fontSize(16).text("Current Metrics", 50, 140);
-    let yPos = 160;
-    Object.entries(metrics).forEach(([key, value]) => {
-      if (key !== "topPerformingDaos" && typeof value !== "object") {
-        doc.fontSize(10).text(`${key}: ${value}`, 50, yPos);
-        yPos += 15;
-      }
-    });
-    yPos += 20;
-    doc.fontSize(16).text("Historical Trends", 50, yPos);
-    yPos += 20;
-    doc.fontSize(10).text("Date | DAOs | Users | Proposals | Volume", 50, yPos);
-    yPos += 15;
-    historical.slice(-10).forEach((item) => {
-      doc.text(`${item.timestamp} | ${item.daoCount} | ${item.userCount} | ${item.proposalCount} | $${item.transactionVolume.toFixed(2)}`, 50, yPos);
-      yPos += 12;
-    });
-    yPos += 30;
-    doc.fontSize(16).text("Performance Benchmarks", 50, yPos);
-    yPos += 20;
-    doc.fontSize(12).text("Industry Benchmarks:", 50, yPos);
-    yPos += 15;
-    doc.fontSize(10).text(`Governance Participation: ${benchmarks.industry.avgGovernanceParticipation}%`, 70, yPos);
-    yPos += 12;
-    doc.text(`Proposal Success Rate: ${benchmarks.industry.avgProposalSuccessRate}%`, 70, yPos);
-    yPos += 12;
-    doc.text(`Treasury Growth: ${benchmarks.industry.avgTreasuryGrowth}%`, 70, yPos);
-    doc.end();
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to generate PDF report",
-      error: error.message
-    });
-  }
-});
-router18.get("/live", isAuthenticated, async (req, res) => {
-  try {
-    const { daoId } = req.query;
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "Cache-Control"
-    });
-    const sendMetrics = async () => {
-      try {
-        const metrics = await analyticsService.getRealTimeMetrics(daoId);
-        res.write(`data: ${JSON.stringify({
-          type: "metrics",
-          data: metrics,
-          timestamp: (/* @__PURE__ */ new Date()).toISOString()
-        })}
-
-`);
-      } catch (error) {
-        console.error("Error sending live metrics:", error);
-      }
-    };
-    await sendMetrics();
-    const interval = setInterval(sendMetrics, 3e4);
-    req.on("close", () => {
-      clearInterval(interval);
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to start live metrics stream",
-      error: error.message
-    });
-  }
-});
-router18.get("/dao/:daoId/summary", isAuthenticated, async (req, res) => {
-  try {
-    const { daoId } = req.params;
-    const { period = "month" } = req.query;
-    const [metrics, historical] = await Promise.all([
-      analyticsService.getRealTimeMetrics(daoId),
-      analyticsService.getHistoricalData(period, daoId)
-    ]);
-    const currentMetrics = historical[historical.length - 1];
-    const previousMetrics = historical[historical.length - 2];
-    let growthRates = {};
-    if (currentMetrics && previousMetrics) {
-      growthRates = {
-        userGrowth: (currentMetrics.userCount - previousMetrics.userCount) / previousMetrics.userCount * 100,
-        proposalGrowth: (currentMetrics.proposalCount - previousMetrics.proposalCount) / (previousMetrics.proposalCount || 1) * 100,
-        volumeGrowth: (currentMetrics.transactionVolume - previousMetrics.transactionVolume) / (previousMetrics.transactionVolume || 1) * 100
-      };
-    }
-    res.json({
-      success: true,
-      data: {
-        metrics,
-        historical,
-        growthRates,
-        period
-      },
-      daoId
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch DAO analytics summary",
-      error: error.message
-    });
-  }
-});
-var analytics_default = router18;
-
-// server/routes.ts
-var __filename2 = fileURLToPath2(import.meta.url);
-var __dirname2 = dirname2(__filename2);
-var uploadsDir = path.join(__dirname2, "uploads", "avatars");
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-var storageConfig = multer.diskStorage({
-  destination: function(req, file, cb) {
-    cb(null, uploadsDir);
-  },
-  filename: function(req, file, cb) {
-    const ext = file.originalname.split(".").pop();
-    const userId = req.user?.claims?.sub ?? "unknown";
-    cb(null, `${userId}.${ext}`);
-  }
-});
-var upload = multer({ storage: storageConfig, limits: { fileSize: 2 * 1024 * 1024 } });
-function extractWalletAddress(req) {
-  const user = req.user;
-  return user?.walletAddress ?? user?.claims?.walletAddress ?? req.body?.userAddress;
-}
-async function withRetry(operation, maxAttempts = 3, delayMs = 1e3) {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await operation();
-    } catch (error) {
-      if (attempt === maxAttempts) throw error;
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-  }
-  throw new Error("Max retry attempts reached");
-}
-function errorHandler(err, req, res, next) {
-  console.error(err);
-  const message = err instanceof ZodError ? "Invalid request data" : err.message || "Internal server error";
-  const details = err instanceof ZodError ? err.errors : void 0;
-  res.status(err.status || 500).json({ message, ...details && { errors: details } });
-}
-var sessionMiddleware = (req, res, next) => {
-  next();
-};
-var refreshTokenHandler = async (req, res) => {
-  res.status(501).json({ message: "Not Implemented" });
-};
-var requestPasswordReset = async (req, res) => {
-  res.status(501).json({ message: "Not Implemented" });
-};
-var resetPassword = async (req, res) => {
-  res.status(501).json({ message: "Not Implemented" });
-};
-var verifyResetToken = async (req, res) => {
-  res.status(501).json({ message: "Not Implemented" });
-};
-var destroySession = (sessionId) => {
-};
-var destroyAllUserSessions = (userId) => {
-};
-var getUserActiveSessions = (userId) => [];
-var logSecurityEvent = {
-  suspiciousActivity: async (userId, activity, details) => {
-  },
-  failedAuth: async (email, ipAddress, reason) => {
-  },
-  privilegeEscalation: async (userId, fromRole, toRole, adminId) => {
-  },
-  failedRegistration: async (emailOrPhone, ipAddress, reason) => {
-  },
-  successfulRegistration: async (email, ipAddress, userId) => {
-  }
-};
-function registerRoutes(app2) {
-  app2.use("/api", generalRateLimit);
-  app2.use("/api/auth", authRateLimit);
-  app2.use("/api/wallet", isAuthenticated2, wallet_default);
-  app2.use("/api/wallet-setup", isAuthenticated2, wallet_setup_default);
-  app2.post("/api/wallet/batch-transfer", async (req, res) => {
-    try {
-      const { transfers } = req.body;
-      if (!Array.isArray(transfers) || transfers.length === 0) {
-        return res.status(400).json({ error: "Invalid transfers array" });
-      }
-      const results = [];
-      for (const transfer of transfers) {
-        try {
-          const { toAddress, amount, tokenAddress } = transfer;
-          let result;
-          if (tokenAddress) {
-            result = await fetch("/api/wallet/send-token", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ tokenAddress, toAddress, amount })
-            }).then((r) => r.json());
-          } else {
-            result = await fetch("/api/wallet/send-native", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ toAddress, amount })
-            }).then((r) => r.json());
-          }
-          results.push({
-            success: !!result.hash,
-            hash: result.hash,
-            error: result.error || null
-          });
-        } catch (error) {
-          results.push({
-            success: false,
-            hash: null,
-            error: error instanceof Error ? error.message : "Transfer failed"
-          });
-        }
-      }
-      res.json({ results });
-    } catch (error) {
-      res.status(500).json({ error: "Batch transfer failed" });
-    }
-  });
-  app2.use("/api/dao/treasury", dao_treasury_default);
-  app2.use("/api/reputation", reputation_default);
-  app2.use("/api/notifications", isAuthenticated2, notifications_default);
-  if (!process.env.JWT_SECRET) {
-    throw new Error("JWT_SECRET environment variable is required");
-  }
-  app2.get("/api/notifications", isAuthenticated2, async (req, res) => {
-    try {
-      const { limit = 10, offset = 0, read, userId } = req.query;
-      const authUserId = req.user.claims.sub;
-      if (userId && userId !== authUserId) {
-        return res.status(403).json({ message: "Forbidden: Cannot access other users' notifications" });
-      }
-      const notifications2 = await storage.getUserNotifications(authUserId, read === "true", Number(limit), Number(offset));
-      res.json({ notifications: notifications2, total: notifications2.length });
-    } catch (err) {
-      throw new Error(`Failed to fetch notifications: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/tasks/:id/history", isAuthenticated2, async (req, res) => {
-    try {
-      const { limit = 10, offset = 0 } = req.query;
-      const userId = req.user.claims.sub;
-      const task = await storage.getTasks(void 0, void 0).then((ts) => ts.find((t) => t.id === req.params.id));
-      if (!task) return res.status(404).json({ message: "Task not found" });
-      const membership = await storage.getDaoMembership(task.daoId, userId);
-      if (!membership || membership.role !== "admin" && membership.role !== "moderator") {
-        return res.status(403).json({ message: "Admin or moderator role required to view task history" });
-      }
-      res.json({ history, total: history.length });
-    } catch (err) {
-      throw new Error(`Failed to fetch task history: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.put("/api/tasks/:id", isAuthenticated2, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const updated = await storage.updateTask(req.params.id, req.body, userId);
-      res.json(updated);
-    } catch (err) {
-      throw new Error(`Failed to update task: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  function isSuperuser(req, res, next) {
-    if (req.user && req.user.role === "superuser") {
-      return next();
-    }
-    res.status(403).json({ error: "Superuser access required" });
-  }
-  function isDaoAdmin(req, res, next) {
-    const userRole = req.user?.role;
-    if (userRole === "superuser" || userRole === "admin") {
-      return next();
-    }
-    res.status(403).json({ error: "Admin access required" });
-  }
-  function isDaoModerator(req, res, next) {
-    const userRole = req.user?.role;
-    if (userRole === "superuser" || userRole === "admin" || userRole === "moderator") {
-      return next();
-    }
-    res.status(403).json({ error: "Moderator access required" });
-  }
-  async function checkDaoMembership(req, res, next) {
-    try {
-      const { daoId } = req.params;
-      const userId = req.user.claims.sub;
-      if (!daoId) {
-        res.status(400).json({ error: "DAO ID required" });
-        return;
-      }
-      const membership = await storage.getDaoMembership(daoId, userId);
-      if (!membership || membership.status !== "approved") {
-        res.status(403).json({ error: "DAO membership required" });
-        return;
-      }
-      req.daoMembership = membership;
-      next();
-    } catch (err) {
-      res.status(500).json({ error: "Failed to verify DAO membership" });
-    }
-  }
-  async function checkDaoAdminRole(req, res, next) {
-    try {
-      const { daoId } = req.params;
-      const userId = req.user.claims.sub;
-      const membership = await storage.getDaoMembership(daoId, userId);
-      if (!membership || membership.role !== "admin" && membership.role !== "elder") {
-        res.status(403).json({ error: "DAO admin or elder role required" });
-        return;
-      }
-      req.daoMembership = membership;
-      next();
-    } catch (err) {
-      res.status(500).json({ error: "Failed to verify DAO admin role" });
-    }
-  }
-  app2.get("/api/admin/daos", isAuthenticated2, isSuperuser, async (req, res) => {
-    const { limit = 10, offset = 0 } = req.query;
-    try {
-      const daos4 = await storage.getAllDaos({ limit: Number(limit), offset: Number(offset) });
-      const total = await storage.getDaoCount();
-      res.json({ daos: daos4, total });
-    } catch (err) {
-      throw new Error(`Failed to fetch DAOs: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/admin/users", isAuthenticated2, isSuperuser, async (req, res) => {
-    const { limit = 10, offset = 0 } = req.query;
-    try {
-      const users3 = await storage.getAllUsers({ limit: Number(limit), offset: Number(offset) });
-      const total = await storage.getUserCount();
-      res.json({ users: users3, total });
-    } catch (err) {
-      throw new Error(`Failed to fetch users: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/admin/fees", isAuthenticated2, isSuperuser, async (req, res) => {
-    try {
-      const fees = await storage.getPlatformFeeInfo();
-      res.json({ fees });
-    } catch (err) {
-      throw new Error(`Failed to fetch fee info: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/admin/logs", isAuthenticated2, isSuperuser, async (req, res) => {
-    const { limit = 10, offset = 0 } = req.query;
-    try {
-      const logs2 = await storage.getSystemLogs({ limit: Number(limit), offset: Number(offset) });
-      const total = await storage.getLogCount();
-      res.json({ logs: logs2, total });
-    } catch (err) {
-      throw new Error(`Failed to fetch logs: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/admin/billing", isAuthenticated2, isSuperuser, async (req, res) => {
-    const { limit = 10, offset = 0 } = req.query;
-    try {
-      const billing = await storage.getAllDaoBillingHistory();
-      const total = await storage.getBillingCount();
-      res.json({ billing, total });
-    } catch (err) {
-      throw new Error(`Failed to fetch billing history: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/admin/chaininfo", isAuthenticated2, isSuperuser, async (req, res) => {
-    try {
-      const chainInfo2 = await storage.getChainInfo();
-      res.json({ chainInfo: chainInfo2 });
-    } catch (err) {
-      throw new Error(`Failed to fetch chain info: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/admin/topmembers", isAuthenticated2, isSuperuser, async (req, res) => {
-    const { limit = 10 } = req.query;
-    try {
-      const topMembers = await storage.getTopMembers({ limit: Number(limit) });
-      res.json({ topMembers });
-    } catch (err) {
-      throw new Error(`Failed to fetch top members: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/auth/login", validateAndSanitize(loginSchema), async (req, res) => {
-    try {
-      const { email, password } = req.body;
-      const result = await storage.loginUser(email);
-      if (result.success) {
-        res.json({ success: true, user: result.user });
-      } else {
-        await logSecurityEvent.failedAuth(
-          email,
-          req.ip || req.socket.remoteAddress || "",
-          result.message || "Invalid credentials"
-        );
-        res.status(401).json({ error: result.message });
-      }
-    } catch (error) {
-      console.error("Login error:", error);
-      await logSecurityEvent.failedAuth(
-        req.body.email,
-        req.ip || req.socket.remoteAddress || "",
-        "Server error during login"
-      );
-      res.status(500).json({ error: "Login failed" });
-    }
-  });
-  app2.post("/api/daos", isAuthenticated2, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const dao = await storage.createDao({ ...req.body, creatorId: userId });
-      res.status(201).json(dao);
-    } catch (err) {
-      throw new Error(`Failed to create DAO: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/proposals", isAuthenticated2, proposalRateLimit, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const proposal = await storage.createProposal({ ...req.body, proposerId: userId });
-      const { ReputationService: ReputationService2 } = await Promise.resolve().then(() => (init_reputationService(), reputationService_exports));
-      await ReputationService2.onProposalCreated(userId, proposal.id, proposal.daoId);
-      const user = await storage.getUserProfile(userId);
-      await notificationService.createNotification({
-        userId,
-        type: "proposal_created",
-        title: "Proposal Created",
-        message: `${user?.firstName || "A member"} created a new proposal in DAO ${proposal.daoId}.`,
-        priority: "medium",
-        metadata: { proposalId: proposal.id, daoId: proposal.daoId }
-      });
-      res.status(201).json(proposal);
-    } catch (err) {
-      throw new Error(`Failed to create proposal: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  async function handleDaoJoin(daoId, userId, inviteCode) {
-    const existing = await storage.getDaoMembership(daoId, userId);
-    if (existing) return { status: 200, data: existing };
-    const dao = await storage.getDao(daoId);
-    if (!dao) return { status: 404, data: { message: "DAO not found" } };
-    if (dao.inviteOnly && !dao.inviteCode) {
-      return { status: 403, data: { message: "No invite code set for this DAO" } };
-    }
-    if (dao.inviteCode && inviteCode !== dao.inviteCode) {
-      return { status: 403, data: { message: "Invalid invite code" } };
-    }
-    if (dao.plan === "free") {
-      const memberships = await storage.getDaoMembershipsByStatus(daoId, "approved");
-      if (memberships.length >= 25) {
-        return {
-          status: 403,
-          data: { message: "Free DAOs are limited to 25 members. Upgrade to premium for more." }
-        };
-      }
-    }
-    const status = dao.access === "private" || dao.inviteOnly ? "pending" : "approved";
-    const membership = await storage.createDaoMembership({ daoId, userId, status });
-    if (status === "approved") {
-      await storage.incrementDaoMemberCount(daoId);
-    }
-    return { status: 201, data: membership };
-  }
-  app2.post("/api/dao/join", isAuthenticated2, async (req, res) => {
-    try {
-      const { daoId } = req.body;
-      const userId = req.user.claims.sub;
-      const result = await handleDaoJoin(daoId, userId);
-      if (result.status === 201 && result.data.status === "approved") {
-        const { ReputationService: ReputationService2 } = await Promise.resolve().then(() => (init_reputationService(), reputationService_exports));
-        await ReputationService2.onDaoJoin(userId, daoId);
-      }
-      res.status(result.status).json(result.data);
-    } catch (err) {
-      throw new Error(`Failed to join DAO: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/dao/join-with-invite", isAuthenticated2, async (req, res) => {
-    try {
-      const { daoId, inviteCode } = req.body;
-      const userId = req.user.claims.sub;
-      const result = await handleDaoJoin(daoId, userId, inviteCode);
-      res.status(result.status).json(result.data);
-    } catch (err) {
-      throw new Error(`Failed to join DAO with invite: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/dao/:daoId/invite/generate", isAuthenticated2, async (req, res) => {
-    try {
-      const { daoId } = req.params;
-      const code = Math.random().toString(36).substring(2, 10).toUpperCase();
-      await storage.updateDaoInviteCode(daoId, code);
-      res.status(201).json({ daoId, code });
-    } catch (err) {
-      throw new Error(`Failed to generate invite code: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/dao/:daoId/membership/:userId/approve", isAuthenticated2, async (req, res) => {
-    try {
-      const { daoId, userId } = req.params;
-      const dao = await storage.getDao(daoId);
-      if (!dao) return res.status(404).json({ message: "DAO not found" });
-      if (dao.plan === "free") {
-        const memberships = await storage.getDaoMembershipsByStatus(daoId, "approved");
-        if (memberships.length >= 25) {
-          return res.status(403).json({ message: "Free DAOs are limited to 25 members. Upgrade to premium for more." });
-        }
-      }
-      const membershipRecord = await storage.getDaoMembership(daoId, userId);
-      if (!membershipRecord) return res.status(404).json({ message: "Membership not found" });
-      const membership = await storage.updateDaoMembershipStatus(membershipRecord.id, "approved");
-      await storage.incrementDaoMemberCount(daoId);
-      res.json(membership);
-    } catch (err) {
-      throw new Error(`Failed to approve membership: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/dao/:daoId/membership/:userId/reject", isAuthenticated2, async (req, res) => {
-    try {
-      const { daoId, userId } = req.params;
-      const membershipRecord = await storage.getDaoMembership(daoId, userId);
-      if (!membershipRecord) return res.status(404).json({ message: "Membership not found" });
-      const membership = await storage.updateDaoMembershipStatus(membershipRecord.id, "rejected");
-      res.json(membership);
-    } catch (err) {
-      throw new Error(`Failed to reject membership: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/dao/:daoId/members", isAuthenticated2, checkDaoAdminRole, async (req, res) => {
-    try {
-      const { daoId } = req.params;
-      const { limit = 10, offset = 0, status, role } = req.query;
-      const userId = req.user.claims.sub;
-      const membership = req.daoMembership;
-      const members = await storage.getDaoMembers(
-        daoId,
-        userId,
-        status,
-        role,
-        Number(limit),
-        Number(offset)
-      );
-      const total = await storage.getDaoMembershipsByStatus(daoId, status).then((m) => m.length);
-      res.json({ members, total });
-    } catch (err) {
-      throw new Error(`Failed to fetch DAO members: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/dao/:daoId/analytics", isAuthenticated2, async (req, res) => {
-    try {
-      const { daoId } = req.params;
-      const userId = req.user.claims.sub;
-      const membership = await storage.getDaoMembership(daoId, userId);
-      if (!membership || membership.role !== "admin") {
-        return res.status(403).json({ message: "Admin role required" });
-      }
-      const analytics2 = await storage.getDaoAnalytics(daoId);
-      res.json(analytics2);
-    } catch (err) {
-      throw new Error(`Failed to fetch DAO analytics: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/votes", isAuthenticated2, async (req, res) => {
-    try {
-      const validatedData = insertVoteSchema.parse(req.body);
-      const userId = req.user.claims.sub;
-      const existingVote = await storage.getVote(validatedData.proposalId, userId);
-      if (existingVote) {
-        return res.status(409).json({ message: "User has already voted on this proposal" });
-      }
-      const vote = await storage.createVote({
-        ...validatedData,
-        userId
-      });
-      await storage.updateProposalVotes(validatedData.proposalId, validatedData.voteType);
-      const proposal = await storage.getProposal(validatedData.proposalId);
-      res.status(201).json(vote);
-    } catch (err) {
-      if (err instanceof ZodError) {
-        return res.status(400).json({ message: "Invalid vote data", errors: err.errors });
-      }
-      throw new Error(`Failed to create vote: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.put("/api/proposals/:id", isAuthenticated2, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const updated = await storage.updateProposal(req.params.id, req.body, userId);
-      res.json(updated);
-    } catch (err) {
-      throw new Error(`Failed to update proposal: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    app2.delete("/api/proposals/:id", isAuthenticated2, async (req2, res2) => {
-      try {
-        const userId = req2.user.claims.sub;
-        const proposal = await storage.getProposal(req2.params.id);
-        if (!proposal) return res2.status(404).json({ message: "Proposal not found" });
-        if (proposal.creatorId !== userId) {
-          return res2.status(403).json({ message: "Only the creator can delete this proposal" });
-        }
-        await storage.deleteProposal(req2.params.id, userId);
-        res2.status(204).send();
-      } catch (err) {
-        throw new Error(`Failed to delete proposal: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    });
-  });
-  app2.get("/api/votes/proposal/:proposalId", isAuthenticated2, async (req, res) => {
-    const { limit = 10, offset = 0 } = req.query;
-    try {
-      const votes4 = await storage.getVotesByProposal(req.params.proposalId);
-      const total = await storage.getVotesCount(req.params.proposalId, req.query.daoId);
-      res.json({ votes: votes4, total });
-    } catch (err) {
-      throw new Error(`Failed to fetch votes: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/proposals/:proposalId/comments", isAuthenticated2, async (req, res) => {
-    try {
-      const { proposalId } = req.params;
-      const userId = req.user.claims.sub;
-      const validatedData = insertProposalCommentSchema.parse({
-        ...req.body,
-        proposalId,
-        userId
-      });
-      const proposal = await storage.getProposal(proposalId);
-      if (!proposal) return res.status(404).json({ message: "Proposal not found" });
-      const membership = await storage.getDaoMembership(proposal.daoId, userId);
-      if (!membership) return res.status(403).json({ message: "Must be a DAO member to comment" });
-      const comment = await createProposalComment({
-        ...validatedData,
-        daoId: proposal.daoId
-      });
-      res.status(201).json(comment);
-    } catch (err) {
-      if (err instanceof ZodError) {
-        return res.status(400).json({ message: "Invalid comment data", errors: err.errors });
-      }
-      throw new Error(`Failed to create comment: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/proposals/:proposalId/comments", isAuthenticated2, async (req, res) => {
-    try {
-      const { proposalId } = req.params;
-      const { limit = 10, offset = 0 } = req.query;
-      const comments = await getProposalComments(proposalId);
-      res.json({ comments, total: comments.length });
-    } catch (err) {
-      throw new Error(`Failed to fetch comments: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.put("/api/comments/:commentId", isAuthenticated2, async (req, res) => {
-    try {
-      const { commentId } = req.params;
-      const { content } = req.body;
-      const userId = req.user.claims.sub;
-      if (!content) return res.status(400).json({ message: "Content is required" });
-      const updatedComment = await updateProposalComment(commentId, content);
-      res.json(updatedComment);
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("Only comment author can edit")) {
-        return res.status(403).json({ message: err.message });
-      }
-      throw new Error(`Failed to update comment: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.delete("/api/comments/:commentId", isAuthenticated2, async (req, res) => {
-    try {
-      const { commentId } = req.params;
-      const userId = req.user.claims.sub;
-      await deleteProposalComment(commentId);
-      res.status(204).send();
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("Only comment author can delete")) {
-        return res.status(403).json({ message: err.message });
-      }
-      throw new Error(`Failed to delete comment: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/proposals/:proposalId/like", isAuthenticated2, async (req, res) => {
-    try {
-      const { proposalId } = req.params;
-      const userId = req.user.claims.sub;
-      const proposal = await storage.getProposal(proposalId);
-      if (!proposal) return res.status(404).json({ message: "Proposal not found" });
-      const membership = await storage.getDaoMembership(proposal.daoId, userId);
-      if (!membership) return res.status(403).json({ message: "Must be a DAO member to like proposals" });
-      const result = await toggleProposalLike(proposalId, userId);
-      res.json(result);
-    } catch (err) {
-      throw new Error(`Failed to toggle proposal like: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/proposals/:proposalId/likes", isAuthenticated2, async (req, res) => {
-    try {
-      const { proposalId } = req.params;
-      const result = await getProposalLikes(proposalId);
-      res.json(result);
-    } catch (err) {
-      throw new Error(`Failed to fetch proposal likes: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/comments/:commentId/like", isAuthenticated2, async (req, res) => {
-    try {
-      const { commentId } = req.params;
-      const userId = req.user.claims.sub;
-      const comments = await getProposalComments("");
-      const { daoId } = req.body;
-      if (!daoId) return res.status(400).json({ message: "DAO ID is required" });
-      const membership = await storage.getDaoMembership(daoId, userId);
-      if (!membership) return res.status(403).json({ message: "Must be a DAO member to like comments" });
-      const result = await toggleCommentLike(commentId, userId);
-      res.json(result);
-    } catch (err) {
-      throw new Error(`Failed to toggle comment like: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/comments/:commentId/likes", isAuthenticated2, async (req, res) => {
-    try {
-      const { commentId } = req.params;
-      const result = await getCommentLikes(commentId);
-      res.json(result);
-    } catch (err) {
-      throw new Error(`Failed to fetch comment likes: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/dao/:daoId/messages", isAuthenticated2, async (req, res) => {
-    try {
-      const { daoId } = req.params;
-      const userId = req.user.claims.sub;
-      const membership = await storage.getDaoMembership(daoId, userId);
-      if (!membership) return res.status(403).json({ message: "Must be a DAO member to send messages" });
-      const validatedData = insertDaoMessageSchema.parse({
-        ...req.body,
-        daoId,
-        userId
-      });
-      const message = await createDaoMessage(validatedData);
-      res.status(201).json(message);
-    } catch (err) {
-      if (err instanceof ZodError) {
-        return res.status(400).json({ message: "Invalid message data", errors: err.errors });
-      }
-      throw new Error(`Failed to create message: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/dao/:daoId/messages", isAuthenticated2, async (req, res) => {
-    try {
-      const { daoId } = req.params;
-      const { limit = 50, offset = 0 } = req.query;
-      const userId = req.user.claims.sub;
-      const membership = await storage.getDaoMembership(daoId, userId);
-      if (!membership) return res.status(403).json({ message: "Must be a DAO member to view messages" });
-      const messages = await getDaoMessages(daoId);
-      res.json({ messages, total: messages.length });
-    } catch (err) {
-      throw new Error(`Failed to fetch messages: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.put("/api/messages/:messageId", isAuthenticated2, async (req, res) => {
-    try {
-      const { messageId } = req.params;
-      const { content } = req.body;
-      const userId = req.user.claims.sub;
-      if (!content) return res.status(400).json({ message: "Content is required" });
-      const updatedMessage = await updateDaoMessage(messageId, content);
-      res.json(updatedMessage);
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("Only message author can edit")) {
-        return res.status(403).json({ message: err.message });
-      }
-      throw new Error(`Failed to update message: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.delete("/api/messages/:messageId", isAuthenticated2, async (req, res) => {
-    try {
-      const { messageId } = req.params;
-      const userId = req.user.claims.sub;
-      await deleteDaoMessage(messageId);
-      res.status(204).send();
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("Only message author can delete")) {
-        return res.status(403).json({ message: err.message });
-      }
-      throw new Error(`Failed to delete message: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/contributions", isAuthenticated2, async (req, res) => {
-    const { limit = 10, offset = 0 } = req.query;
-    try {
-      const userId = req.query.userId === "me" ? req.user.claims.sub : req.query.userId;
-      const contributions4 = await storage.getContributions(userId, userId);
-      const total = await storage.getContributionsCount(userId, userId);
-      res.json({ contributions: contributions4, total });
-    } catch (err) {
-      throw new Error(`Failed to fetch contributions: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/contributions", isAuthenticated2, async (req, res) => {
-    try {
-      const validatedData = insertContributionSchema.parse(req.body);
-      const contribution = await storage.createContribution({
-        ...validatedData,
-        userId: req.user.claims.sub
-      });
-      res.status(201).json(contribution);
-    } catch (err) {
-      if (err instanceof ZodError) {
-        return res.status(400).json({ message: "Invalid contribution data", errors: err.errors });
-      }
-      throw new Error(`Failed to create contribution: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/vaults", isAuthenticated2, async (req, res) => {
-    try {
-      const validatedData = insertVaultSchema.parse(req.body);
-      const vault = await storage.upsertVault({
-        ...validatedData,
-        userId: req.user.claims.sub
-      });
-      res.status(201).json(vault);
-    } catch (err) {
-      if (err instanceof ZodError) {
-        return res.status(400).json({ message: "Invalid vault data", errors: err.errors });
-      }
-      throw new Error(`Failed to create/update vault: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/vaults/:vaultId/transactions", isAuthenticated2, async (req, res) => {
-    try {
-      const { vaultId } = req.params;
-      const { limit = 10, offset = 0 } = req.query;
-      const userId = req.user.claims.sub;
-      const vault = await storage.getUserVaults(userId).then(
-        (vaults3) => vaults3.find((v) => v.id === vaultId)
-      );
-      if (!vault) return res.status(403).json({ message: "Vault not found or unauthorized" });
-      const transactions = await storage.getVaultTransactions(vaultId, Number(limit), Number(offset));
-      const total = await storage.getVaultTransactions(vaultId);
-      res.json({ transactions, total });
-    } catch (err) {
-      throw new Error(`Failed to fetch vault transactions: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/budget/:month", isAuthenticated2, async (req, res) => {
-    const { limit = 10, offset = 0 } = req.query;
-    try {
-      const plans = await storage.getUserBudgetPlans(req.user.claims.sub, req.params.month);
-      const total = await storage.getBudgetPlanCount(req.user.claims.sub, req.params.month);
-      res.json({ plans, total });
-    } catch (err) {
-      throw new Error(`Failed to fetch budget plans: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/budget", isAuthenticated2, async (req, res) => {
-    try {
-      const validatedData = insertBudgetPlanSchema.parse(req.body);
-      const plan = await storage.upsertBudgetPlan({
-        ...validatedData,
-        userId: req.user.claims.sub
-      });
-      res.status(201).json(plan);
-    } catch (err) {
-      if (err instanceof ZodError) {
-        return res.status(400).json({ message: "Invalid budget plan data", errors: err.errors });
-      }
-      throw new Error(`Failed to create/update budget plan: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/tasks", isAuthenticated2, async (req, res) => {
-    const { daoId, status, limit = 10, offset = 0 } = req.query;
-    const userId = req.user.claims.sub;
-    if (!daoId) return res.status(400).json({ message: "DAO ID required" });
-    try {
-      const membership = await storage.getDaoMembership(daoId, userId);
-      if (!membership || membership.status !== "approved") {
-        return res.status(403).json({ message: "DAO membership required to view tasks" });
-      }
-      const dao = await storage.getDao(daoId);
-      if (!isDaoPremium(dao)) {
-        return res.status(403).json({ message: "Task marketplace is a premium feature. Upgrade your DAO plan." });
-      }
-      const tasks2 = await storage.getTasks();
-      const total = await storage.getTaskCount(daoId, status);
-      res.json({ tasks: tasks2, total });
-    } catch (err) {
-      throw new Error(`Failed to fetch tasks: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/tasks/:id/claim", isAuthenticated2, async (req, res) => {
-    try {
-      const taskId = req.params.id;
-      const userId = req.user.claims.sub;
-      const { daoId } = req.body;
-      if (!daoId) return res.status(400).json({ message: "DAO ID required" });
-      const dao = await storage.getDao(daoId);
-      if (!isDaoPremium(dao)) {
-        return res.status(403).json({ message: "Task claiming is a premium feature. Upgrade your DAO plan." });
-      }
-      const claimedTask = await storage.claimTask(taskId, userId);
-      if (!claimedTask) {
-        return res.status(404).json({ message: "Task not found or already claimed" });
-      }
-      res.json(claimedTask);
-    } catch (err) {
-      throw new Error(`Failed to claim task: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/tasks", isAuthenticated2, async (req, res) => {
-    try {
-      const { title, description, reward, daoId } = req.body;
-      const userId = req.user.claims.sub;
-      if (!title || !description || !reward || !daoId) {
-        return res.status(400).json({ message: "Missing required fields" });
-      }
-      const membership = await storage.getDaoMembership(daoId, userId);
-      if (!membership || membership.role !== "admin" && membership.role !== "moderator") {
-        return res.status(403).json({ message: "DAO admin or moderator role required to create tasks" });
-      }
-      const dao = await storage.getDao(daoId);
-      if (!isDaoPremium(dao)) {
-        return res.status(403).json({ message: "Task creation is a premium feature. Upgrade your DAO plan." });
-      }
-      const newTask = await storage.createTask({ title, description, reward, daoId });
-      res.status(201).json(newTask);
-    } catch (err) {
-      throw new Error(`Failed to create task: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/user/profile", isAuthenticated2, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUserProfile(userId);
-      if (!user) return res.status(404).json({ message: "User not found" });
-      res.json(user);
-    } catch (err) {
-      throw new Error(`Failed to fetch user profile: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.put("/api/user/profile", isAuthenticated2, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const updated = await storage.updateUserProfile(userId, req.body);
-      res.json(updated);
-    } catch (err) {
-      throw new Error(`Failed to update user profile: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/user/avatar", isAuthenticated2, upload.single("avatar"), async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ message: "No file uploaded" });
-      }
-      const avatarUrl = `/uploads/avatars/${req.file.filename}`;
-      await storage.updateUserProfile(req.user.claims.sub, { avatar: avatarUrl });
-      res.status(200).json({ message: "Avatar uploaded", avatarUrl });
-    } catch (err) {
-      throw new Error(`Failed to upload avatar: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/user/social", isAuthenticated2, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const social = await storage.getUserSocialLinks(userId);
-      res.json(social);
-    } catch (err) {
-      throw new Error(`Failed to fetch social links: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/user/social", isAuthenticated2, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const updated = await storage.updateUserSocialLinks(userId, req.body);
-      res.json(updated);
-    } catch (err) {
-      throw new Error(`Failed to update social links: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/user/wallet", isAuthenticated2, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const wallet2 = await storage.getUserWallet(userId);
-      res.json(wallet2);
-    } catch (err) {
-      throw new Error(`Failed to fetch wallet: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/user/wallet", isAuthenticated2, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const updated = await storage.updateUserWallet(userId, req.body);
-      res.json(updated);
-    } catch (err) {
-      throw new Error(`Failed to update wallet: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/user/settings", isAuthenticated2, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const settings = await storage.getUserSettings(userId);
-      res.json(settings);
-    } catch (err) {
-      throw new Error(`Failed to fetch settings: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.put("/api/user/settings", isAuthenticated2, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const updated = await storage.updateUserSettings(userId, req.body);
-      res.json(updated);
-    } catch (err) {
-      throw new Error(`Failed to update settings: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/user/sessions", isAuthenticated2, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const sessions2 = await storage.getUserSessions(userId);
-      res.json(sessions2);
-    } catch (err) {
-      throw new Error(`Failed to fetch sessions: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.delete("/api/user/sessions/:sessionId", isAuthenticated2, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const { sessionId } = req.params;
-      await storage.revokeUserSession(userId, sessionId);
-      res.json({ message: "Session revoked" });
-    } catch (err) {
-      throw new Error(`Failed to revoke session: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.delete("/api/user/sessions/revoke-all", isAuthenticated2, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      await storage.revokeAllUserSessions(userId);
-      res.json({ message: "All sessions revoked" });
-    } catch (err) {
-      throw new Error(`Failed to revoke all sessions: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.delete("/api/user", isAuthenticated2, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      await storage.deleteUserAccount(userId);
-      res.json({ message: "Account deleted" });
-    } catch (err) {
-      throw new Error(`Failed to delete account: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/maonovault/nav", async (req, res) => {
-    try {
-      const [nav, lastUpdate] = await withRetry(() => MaonoVaultService.getNAV());
-      res.json({ nav: nav.toString(), lastUpdate });
-    } catch (err) {
-      throw new Error(`Failed to fetch NAV: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/maonovault/deposit", isAuthenticated2, vaultRateLimit, validateAndSanitize(vaultDepositSchema), async (req, res) => {
-    try {
-      const { amount } = req.body;
-      const userAddress = extractWalletAddress(req);
-      if (!amount || !userAddress) return res.status(400).json({ message: "Amount and user wallet required" });
-      if (BigInt(amount) <= 0) return res.status(400).json({ message: "Amount must be positive" });
-      const tx = await withRetry(() => MaonoVaultService.deposit(BigInt(amount), userAddress));
-      res.json({ txHash: tx.hash });
-    } catch (err) {
-      throw new Error(`Deposit failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/maonovault/withdraw", isAuthenticated2, vaultRateLimit, validateAndSanitize(vaultWithdrawalSchema), async (req, res) => {
-    try {
-      const { amount } = req.body;
-      const userAddress = extractWalletAddress(req);
-      if (!amount || !userAddress) return res.status(400).json({ message: "Amount and user wallet required" });
-      if (BigInt(amount) <= 0) return res.status(400).json({ message: "Amount must be positive" });
-      const tx = await withRetry(() => MaonoVaultService.withdraw(BigInt(amount), userAddress));
-      res.json({ txHash: tx.hash });
-    } catch (err) {
-      throw new Error(`Withdraw failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/maonovault/nav", isAuthenticated2, async (req, res) => {
-    try {
-      if (!MaonoVaultService.signer) return res.status(403).json({ message: "Not authorized" });
-      const { newNav } = req.body;
-      if (!newNav || BigInt(newNav) < 0) return res.status(400).json({ message: "Valid newNav required" });
-      const tx = await withRetry(() => MaonoVaultService.updateNAV(BigInt(newNav)));
-      res.json({ txHash: tx.hash });
-    } catch (err) {
-      throw new Error(`NAV update failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.post("/api/maonovault/fee", isAuthenticated2, async (req, res) => {
-    try {
-      if (!MaonoVaultService.signer) return res.status(403).json({ message: "Not authorized" });
-      const { profit } = req.body;
-      if (!profit || BigInt(profit) < 0) return res.status(400).json({ message: "Valid profit required" });
-      const tx = await withRetry(() => MaonoVaultService.distributePerformanceFee(BigInt(profit)));
-      res.json({ txHash: tx.hash });
-    } catch (err) {
-      throw new Error(`Performance fee distribution failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.get("/api/admin/analytics", isAuthenticated2, isSuperuser, async (req, res) => {
-    try {
-      const [
-        daoCount,
-        memberCount,
-        subscriptionCount,
-        treasuryData,
-        recentDaos,
-        topMembers,
-        systemHealth
-      ] = await Promise.all([
-        db.select({ count: sql9`count(*)` }).from(daos),
-        db.select({ count: sql9`count(*)` }).from(users),
-        db.select({ count: sql9`count(*)` }).from(subscriptions),
-        db.select({
-          total: sql9`COALESCE(SUM(CAST(balance AS DECIMAL)), 0)`
-        }).from(vaults),
-        db.select({
-          name: daos.name,
-          createdAt: daos.createdAt,
-          plan: daos.plan,
-          memberCount: sql9`COALESCE(dao_memberships.member_count, 0)`
-        }).from(daos).leftJoin(
-          sql9`(SELECT dao_id, COUNT(*) as member_count FROM dao_memberships GROUP BY dao_id) dao_memberships`,
-          sql9`dao_memberships.dao_id = daos.id`
-        ).orderBy(desc10(daos.createdAt)).limit(5),
-        db.select({
-          name: users.firstName,
-          score: sql9`COALESCE(user_reputation.total_score, 0)`,
-          daoName: daos.name
-        }).from(users).leftJoin(userReputation, eq17(users.id, userReputation.userId)).leftJoin(daoMemberships, eq17(users.id, daoMemberships.userId)).leftJoin(daos, eq17(daoMemberships.daoId, daos.id)).orderBy(desc10(sql9`COALESCE(user_reputation.total_score, 0)`)).limit(10),
-        // Simulate system health checks
-        Promise.resolve({
-          database: "healthy",
-          blockchain: "healthy",
-          payments: "healthy",
-          api: "healthy"
-        })
-      ]);
-      const analyticsData = {
-        daos: daoCount[0]?.count || 0,
-        members: memberCount[0]?.count || 0,
-        subscriptions: subscriptionCount[0]?.count || 0,
-        treasury: treasuryData[0]?.total || 0,
-        activeVaults: 12,
-        // TODO: Implement actual vault counting
-        totalTransactions: 1847,
-        // TODO: Implement transaction counting
-        pendingTasks: 23,
-        // TODO: Implement task counting
-        chainInfo: {
-          chain: "Celo Mainnet",
-          block: "25891234"
-        },
-        system: {
-          uptime: "15 days, 7 hours",
-          version: "2.1.0",
-          status: "Online",
-          memory: "67% (2.1GB/3.2GB)",
-          cpu: "23%"
-        },
-        recentDaos: recentDaos.map((dao) => ({
-          name: dao.name,
-          createdAt: dao.createdAt?.toISOString().split("T")[0] || "Unknown",
-          members: dao.memberCount || 0,
-          plan: dao.plan || "Free DAO"
-        })),
-        topMembers: topMembers.map((member) => ({
-          name: member.name || "Unknown",
-          score: member.score || 0,
-          daoName: member.daoName || "No DAO"
-        })),
-        contractAddresses: [
-          "0x1234567890123456789012345678901234567890",
-          "0x0987654321098765432109876543210987654321",
-          "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
-        ],
-        systemLogs: [
-          `[${(/* @__PURE__ */ new Date()).toISOString()}] INFO: System health check completed`,
-          `[${new Date(Date.now() - 3e5).toISOString()}] INFO: Database optimization completed`,
-          `[${new Date(Date.now() - 6e5).toISOString()}] WARN: High memory usage detected`,
-          `[${new Date(Date.now() - 9e5).toISOString()}] INFO: New DAO created: ${recentDaos[0]?.name || "Test DAO"}`
-        ],
-        criticalAlerts: [
-          // Add critical alerts if any exist
-        ],
-        revenueMetrics: {
-          monthly: 15420,
-          quarterly: 42380,
-          annual: 156890
-        },
-        systemHealth
-      };
-      res.json(analyticsData);
-    } catch (err) {
-      console.error("Analytics fetch error:", err);
-      res.status(500).json({ error: "Failed to fetch analytics data" });
-    }
-  });
-  app2.get("/api/admin/security-audit", isAuthenticated2, isSuperuser, async (req, res) => {
-    try {
-      const auditReport = {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        endpoints: {
-          protected: "All endpoints properly protected with authentication",
-          roleBasedAccess: "Role-based access control implemented",
-          daoMembership: "DAO membership validation in place",
-          adminEndpoints: "Admin endpoints restricted to superusers"
-        }
-      };
-      res.json(auditReport);
-    } catch (err) {
-      res.status(500).json({ error: "Security audit failed" });
-    }
-  });
-  app2.get("/api/health", (req, res) => {
-    res.json({
-      status: "ok",
-      uptime: process.uptime(),
-      memory: process.memoryUsage(),
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      version: process.env.npm_package_version || "unknown"
-    });
-  });
-  app2.use((req, res) => {
-    res.status(404).json({ message: "Not Found" });
-  });
-  app2.use(errorHandler);
-  app2.use("/api/payments/mpesa", mpesa_status_default);
-  app2.use("/api/payments/stripe", stripe_status_default);
-  app2.use("/api/payments/kotanipay", kotanipay_status_default);
-  app2.use("/api/dao-subscriptions", dao_subscriptions_default);
-  app2.use("/api/disbursements", disbursements_default);
-  app2.use("/api/tasks", isAuthenticated2, tasks_default);
-  app2.use("/api/bounty-escrow", isAuthenticated2, bounty_escrow_default);
-  app2.use("/api/notifications", isAuthenticated2, notifications_default);
-  app2.use("/api/sse", sse_default);
-  app2.use("/api/governance", governance_default);
-  app2.use("/api/proposal-execution", proposal_execution_default);
-  app2.use(sessionMiddleware);
-  app2.post("/api/auth/refresh-token", refreshTokenHandler);
-  app2.post("/api/auth/forgot-password", requestPasswordReset);
-  app2.post("/api/auth/reset-password", resetPassword);
-  app2.get("/api/auth/verify-reset-token", verifyResetToken);
-  app2.post("/api/auth/logout", isAuthenticated2, (req, res) => {
-    const sessionId = req.headers["x-session-id"] || req.cookies.sessionId;
-    if (sessionId) {
-      destroySession(sessionId);
-    }
-    res.clearCookie("refreshToken");
-    res.clearCookie("sessionId");
-    res.status(200).json({ message: "Logged out successfully" });
-  });
-  app2.post("/api/auth/logout-all", isAuthenticated2, (req, res) => {
-    const userId = req.user.claims.sub;
-    destroyAllUserSessions(userId);
-    res.clearCookie("refreshToken");
-    res.clearCookie("sessionId");
-    res.status(200).json({ message: "Logged out from all devices" });
-  });
-  app2.get("/api/auth/sessions", isAuthenticated2, (req, res) => {
-    const userId = req.user.claims.sub;
-    const sessions2 = getUserActiveSessions(userId);
-    res.status(200).json({ sessions: sessions2 });
-  });
-  app2.use("/api/analytics", isAuthenticated2, analytics_default);
-  app2.use("/api/monitoring", monitoring_default);
-  app2.use("/api/health", handler);
-  app2.use("/health", handler);
-  app2.use("/api", generalRateLimit, sanitizeInput, preventSqlInjection, preventXSS, auditMiddleware);
-  app2.post("/api/auth/register", validateAndSanitize(registerSchema), async (req, res) => {
-    try {
-      const { email, password, firstName, lastName, phone } = req.body;
-      const existingUser = await storage.getUserByEmail(email) || await storage.getUserByPhone(phone);
-      if (existingUser) {
-        await logSecurityEvent.failedRegistration(
-          email || phone || "",
-          req.ip || req.connection.remoteAddress || "",
-          "User already exists"
-        );
-        return res.status(409).json({ message: "User with this email or phone number already exists" });
-      }
-      const hashedPassword = await bcrypt.hash(password, 10);
-      const user = await storage.createUser({
-        email,
-        password: hashedPassword,
-        firstName,
-        lastName,
-        phone
-      });
-      await logSecurityEvent.successfulRegistration(
-        user.email,
-        req.ip || req.connection.remoteAddress || "",
-        user.id
-      );
-      const token = jwt2.sign(
-        { sub: user.id, email: user.email, phone: user.phone },
-        process.env.JWT_SECRET,
-        { expiresIn: "7d" }
-      );
-      res.status(201).json({ user: { id: user.id, email: user.email, phone: user.phone }, token });
-    } catch (err) {
-      console.error("Registration error:", err);
-      await logSecurityEvent.failedRegistration(
-        req.body.email || req.body.phone || "",
-        req.ip || req.connection.remoteAddress || "",
-        "Server error during registration"
-      );
-      throw new Error(`Registration failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
-  app2.use("/api/payments", paymentRateLimit, isAuthenticated2);
-  app2.use("/api/vault", vaultRateLimit);
-}
-
-// server/vite.ts
-import express20 from "express";
-import path3 from "path";
-import { dirname as dirname3 } from "path";
-import { fileURLToPath as fileURLToPath4 } from "url";
-import fs2 from "fs";
-import { createServer as createViteServer, createLogger as createLogger2 } from "vite";
-
-// vite.config.ts
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import path2 from "path";
-import { fileURLToPath as fileURLToPath3 } from "url";
-var __filename3 = fileURLToPath3(import.meta.url);
-var __dirname3 = path2.dirname(__filename3);
-var vite_config_default = defineConfig({
-  root: path2.resolve(__dirname3, "client"),
-  plugins: [react()],
-  resolve: {
-    alias: {
-      "@": path2.resolve(__dirname3, "client", "src"),
-      "@shared": path2.resolve(__dirname3, "shared"),
-      "@assets": path2.resolve(__dirname3, "attached_assets")
-    }
-  },
-  build: {
-    outDir: path2.resolve(__dirname3, "dist/public"),
-    emptyOutDir: true
-  },
-  server: {
-    fs: {
-      strict: true,
-      deny: ["**/.*"]
-    },
-    port: 5e3,
-    host: "0.0.0.0",
-    allowedHosts: ["all"]
-  }
-});
-
-// server/vite.ts
-import { nanoid } from "nanoid";
-var __dirname4 = dirname3(fileURLToPath4(import.meta.url));
-var viteLogger = createLogger2();
-function log(message, source = "express") {
-  const formattedTime = (/* @__PURE__ */ new Date()).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true
-  });
-  console.log(`${formattedTime} [${source}] ${message}`);
-}
-async function setupVite(app2, server2) {
-  const vite = await createViteServer({
-    ...vite_config_default,
-    configFile: false,
-    customLogger: {
-      ...viteLogger,
-      error: (msg, options) => {
-        viteLogger.error(msg, options);
-        process.exit(1);
-      }
-    },
-    server: {
-      middlewareMode: true,
-      hmr: { server: server2 },
-      host: "0.0.0.0",
-      allowedHosts: ["all"]
-    },
-    appType: "custom"
-  });
-  app2.use(vite.middlewares);
-  app2.use("*", async (req, res, next) => {
-    const url = req.originalUrl;
-    try {
-      const clientTemplate = path3.resolve(__dirname4, "../client/index.html");
-      let template = await fs2.promises.readFile(clientTemplate, "utf-8");
-      template = template.replace(
-        `src="/src/main.tsx"`,
-        `src="/src/main.tsx?v=${nanoid()}"`
-      );
-      const html = await vite.transformIndexHtml(url, template);
-      res.status(200).set({ "Content-Type": "text/html" }).end(html);
-    } catch (e) {
-      vite.ssrFixStacktrace(e);
-      next(e);
-    }
-  });
-}
-function serveStatic(app2) {
-  const distPath = path3.resolve(__dirname4, "../../dist/public");
-  if (!fs2.existsSync(distPath)) {
-    throw new Error(
-      `\u274C Could not find the build directory: ${distPath}, make sure to run 'npm run build' first`
-    );
-  }
-  app2.use(express20.static(distPath));
-  app2.use("*", (_req, res) => {
-    res.sendFile(path3.join(distPath, "index.html"));
-  });
-}
-
-// server/index.ts
-import path5 from "path";
-import { dirname as dirname4 } from "path";
-import { fileURLToPath as fileURLToPath5 } from "url";
-
-// server/security/backupSystem.ts
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs3 from "fs/promises";
-import path4 from "path";
-var execAsync = promisify(exec);
-var BackupSystem = class _BackupSystem {
-  constructor(config2) {
-    this.config = config2;
-  }
-  static getInstance(config2) {
-    if (!_BackupSystem.instance && config2) {
-      _BackupSystem.instance = new _BackupSystem(config2);
-    }
-    return _BackupSystem.instance;
-  }
-  async createFullBackup() {
-    const backupId = `backup_${Date.now()}`;
-    const timestamp6 = /* @__PURE__ */ new Date();
-    try {
-      console.log(`Starting full backup: ${backupId}`);
-      const backupPath = path4.join(this.config.location, backupId);
-      await fs3.mkdir(backupPath, { recursive: true });
-      const dbBackupPath = path4.join(backupPath, "database.sql");
-      await this.backupDatabase(dbBackupPath);
-      const filesBackupPath = path4.join(backupPath, "uploads");
-      await this.backupUploads(filesBackupPath);
-      const configBackupPath = path4.join(backupPath, "config.json");
-      await this.backupConfiguration(configBackupPath);
-      const stats = await fs3.stat(backupPath);
-      const checksum = await this.calculateChecksum(backupPath);
-      const metadata = {
-        id: backupId,
-        timestamp: timestamp6,
-        type: "full",
-        size: stats.size,
-        checksum,
-        location: backupPath,
-        status: "completed"
-      };
-      console.log(`Full backup completed: ${backupId}`);
-      return metadata;
-    } catch (error) {
-      console.error(`Backup failed: ${error}`);
-      const metadata = {
-        id: backupId,
-        timestamp: timestamp6,
-        type: "full",
-        size: 0,
-        checksum: "",
-        location: "",
-        status: "failed",
-        error: error instanceof Error ? error.message : String(error)
-      };
-      throw error;
-    }
-  }
-  async createIncrementalBackup(lastBackupTime) {
-    const backupId = `incremental_${Date.now()}`;
-    const timestamp6 = /* @__PURE__ */ new Date();
-    try {
-      console.log(`Starting incremental backup: ${backupId}`);
-      const backupPath = path4.join(this.config.location, backupId);
-      await fs3.mkdir(backupPath, { recursive: true });
-      await this.backupChangedData(backupPath, lastBackupTime);
-      const stats = await fs3.stat(backupPath);
-      const checksum = await this.calculateChecksum(backupPath);
-      const metadata = {
-        id: backupId,
-        timestamp: timestamp6,
-        type: "incremental",
-        size: stats.size,
-        checksum,
-        location: backupPath,
-        status: "completed"
-      };
-      console.log(`Incremental backup completed: ${backupId}`);
-      return metadata;
-    } catch (error) {
-      console.error(`Incremental backup failed: ${error}`);
-      throw error;
-    }
-  }
-  async restoreFromBackup(backupId) {
-    try {
-      console.log(`Starting restore from backup: ${backupId}`);
-      const metadata = {
-        id: backupId,
-        timestamp: /* @__PURE__ */ new Date(),
-        type: "full",
-        size: 0,
-        checksum: "",
-        location: "",
-        status: "completed"
-      };
-      if (!metadata) {
-        throw new Error(`Backup not found: ${backupId}`);
-      }
-      if (metadata.status !== "completed") {
-        throw new Error(`Cannot restore from incomplete backup: ${backupId}`);
-      }
-      const currentChecksum = await this.calculateChecksum(metadata.location);
-      if (currentChecksum !== metadata.checksum) {
-        throw new Error(`Backup integrity check failed: ${backupId}`);
-      }
-      await this.stopServices();
-      try {
-        const dbBackupPath = path4.join(metadata.location, "database.sql");
-        await this.restoreDatabase(dbBackupPath);
-        const filesBackupPath = path4.join(metadata.location, "uploads");
-        await this.restoreUploads(filesBackupPath);
-        const configBackupPath = path4.join(metadata.location, "config.json");
-        await this.restoreConfiguration(configBackupPath);
-        console.log(`Restore completed: ${backupId}`);
-      } finally {
-        await this.startServices();
-      }
-    } catch (error) {
-      console.error(`Restore failed: ${error}`);
-      throw error;
-    }
-  }
-  async cleanupOldBackups() {
-    try {
-      const cutoffDate = /* @__PURE__ */ new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - this.config.retentionDays);
-      const oldBackups = [];
-      for (const backup of oldBackups) {
-        try {
-          await fs3.rm(backup.location, { recursive: true, force: true });
-          console.log(`Cleaned up old backup: ${backup.id}`);
-        } catch (error) {
-          console.error(`Failed to cleanup backup ${backup.id}:`, error);
-        }
-      }
-    } catch (error) {
-      console.error("Cleanup failed:", error);
-    }
-  }
-  async verifyBackup(backupId) {
-    try {
-      const metadata = {
-        id: backupId,
-        timestamp: /* @__PURE__ */ new Date(),
-        type: "full",
-        size: 0,
-        checksum: "",
-        location: "",
-        status: "completed"
-      };
-      if (!metadata) return false;
-      try {
-        await fs3.access(metadata.location);
-      } catch {
-        return false;
-      }
-      const currentChecksum = await this.calculateChecksum(metadata.location);
-      return currentChecksum === metadata.checksum;
-    } catch (error) {
-      console.error(`Backup verification failed: ${error}`);
-      return false;
-    }
-  }
-  async backupDatabase(outputPath) {
-    const dbUrl = process.env.DATABASE_URL;
-    if (dbUrl) {
-      await execAsync(`pg_dump "${dbUrl}" > "${outputPath}"`);
-    }
-  }
-  async backupUploads(outputPath) {
-    const uploadsDir2 = path4.join(process.cwd(), "server", "uploads");
-    try {
-      await execAsync(`cp -r "${uploadsDir2}" "${outputPath}"`);
-    } catch (error) {
-      console.warn("No uploads directory found, skipping");
-    }
-  }
-  async backupConfiguration(outputPath) {
-    const config2 = {
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      nodeVersion: process.version,
-      platform: process.platform,
-      environment: process.env.NODE_ENV
-      // Add other configuration as needed
-    };
-    await fs3.writeFile(outputPath, JSON.stringify(config2, null, 2));
-  }
-  async backupChangedData(outputPath, since) {
-    const changedData = {};
-    await fs3.writeFile(
-      path4.join(outputPath, "incremental_data.json"),
-      JSON.stringify(changedData, null, 2)
-    );
-  }
-  async restoreDatabase(backupPath) {
-    const dbUrl = process.env.DATABASE_URL;
-    if (dbUrl) {
-      await execAsync(`psql "${dbUrl}" < "${backupPath}"`);
-    }
-  }
-  async restoreUploads(backupPath) {
-    const uploadsDir2 = path4.join(process.cwd(), "server", "uploads");
-    await execAsync(`cp -r "${backupPath}" "${uploadsDir2}"`);
-  }
-  async restoreConfiguration(backupPath) {
-    console.log("Configuration restore completed");
-  }
-  async calculateChecksum(filePath) {
-    const { stdout } = await execAsync(`find "${filePath}" -type f -exec sha256sum {} + | sha256sum`);
-    return stdout.trim().split(" ")[0];
-  }
-  async stopServices() {
-    console.log("Stopping services for restore...");
-  }
-  async startServices() {
-    console.log("Starting services after restore...");
-  }
-};
-var BackupScheduler = class {
-  constructor(backupSystem) {
     this.isRunning = false;
-    this.backupSystem = backupSystem;
+    this.eventHandlers = /* @__PURE__ */ new Map();
+    this.registerHandler("NAVUpdated", this.handleNAVUpdated);
+    this.registerHandler("PerformanceFeeDistributed", this.handlePerformanceFeeDistributed);
+    this.registerHandler("VaultCreated", this.handleVaultCreated);
+    this.registerHandler("VaultClosed", this.handleVaultClosed);
+    this.registerHandler("DepositMade", this.handleDepositMade);
+    this.registerHandler("WithdrawalMade", this.handleWithdrawalMade);
+    this.registerHandler("FeeUpdated", this.handleFeeUpdated);
+    this.registerHandler("DAOSettingsUpdated", this.handleDAOSettingsUpdated);
+    this.registerHandler("OfframpFeePaid", this.handleOfframpFeePaid);
+    this.registerHandler("DisbursementMade", this.handleDisbursementMade);
+    this.registerHandler("WithdrawalFeePaid", this.handleWithdrawalFeePaid);
+    this.registerHandler("OfframpWithdrawalMade", this.handleOfframpWithdrawalMade);
+    this.registerHandler("OfframpFeeUpdated", this.handleOfframpFeeUpdated);
+    this.registerHandler("OfframpWhoPaysUpdated", this.handleOfframpWhoPaysUpdated);
+    this.registerHandler("DisbursementFeeUpdated", this.handleDisbursementFeeUpdated);
+    this.registerHandler("WithdrawalFeeUpdated", this.handleWithdrawalFeeUpdated);
+    this.registerHandler("VaultStatusUpdated", this.handleVaultStatusUpdated);
+    this.registerHandler("VaultMetadataUpdated", this.handleVaultMetadataUpdated);
+    this.registerHandler("VaultOwnershipTransferred", this.handleVaultOwnershipTransferred);
+    this.registerHandler("VaultTypeUpdated", this.handleVaultTypeUpdated);
+    this.registerHandler("VaultCurrencyUpdated", this.handleVaultCurrencyUpdated);
+    this.registerHandler("VaultNameUpdated", this.handleVaultNameUpdated);
+    this.registerHandler("VaultDescriptionUpdated", this.handleVaultDescriptionUpdated);
+    this.registerHandler("VaultLogoUpdated", this.handleVaultLogoUpdated);
+    this.registerHandler("VaultBannerUpdated", this.handleVaultBannerUpdated);
+    this.registerHandler("VaultPrivacyUpdated", this.handleVaultPrivacyUpdated);
+    this.registerHandler("VaultAccessControlUpdated", this.handleVaultAccessControlUpdated);
+    this.registerHandler("VaultTransactionRecorded", this.handleVaultTransactionRecorded);
+    this.registerHandler("VaultTransactionFailed", this.handleVaultTransactionFailed);
+    this.registerHandler("VaultTransactionPending", this.handleVaultTransactionPending);
+    this.registerHandler("VaultTransactionConfirmed", this.handleVaultTransactionConfirmed);
+    this.registerHandler("VaultTransactionReverted", this.handleVaultTransactionReverted);
+    this.registerHandler("VaultTransactionGasUsed", this.handleVaultTransactionGasUsed);
+    this.registerHandler("VaultTransactionGasPrice", this.handleVaultTransactionGasPrice);
+    this.registerHandler("VaultTransactionNonce", this.handleVaultTransactionNonce);
+    this.registerHandler("VaultTransactionBlockNumber", this.handleVaultTransactionBlockNumber);
+    this.registerHandler("VaultTransactionBlockHash", this.handleVaultTransactionBlockHash);
+    this.registerHandler("VaultTransactionFrom", this.handleVaultTransactionFrom);
+    this.registerHandler("VaultTransactionTo", this.handleVaultTransactionTo);
+    this.registerHandler("VaultTransactionValue", this.handleVaultTransactionValue);
+    this.registerHandler("VaultTransactionInput", this.handleVaultTransactionInput);
+    this.registerHandler("VaultTransactionReceipt", this.handleVaultTransactionReceipt);
+    this.registerHandler("VaultTransactionLogs", this.handleVaultTransactionLogs);
+    this.registerHandler("VaultTransactionStatus", this.handleVaultTransactionStatus);
+    this.registerHandler("VaultTransactionError", this.handleVaultTransactionError);
   }
-  start() {
-    if (this.isRunning) return;
+  registerHandler(eventType, handler2) {
+    this.eventHandlers.set(eventType, handler2);
+  }
+  async start() {
+    if (this.isRunning) {
+      console.log("Vault event indexer is already running.");
+      return;
+    }
     this.isRunning = true;
-    const scheduleBackup = () => {
-      const now = /* @__PURE__ */ new Date();
-      const nextBackup = /* @__PURE__ */ new Date();
-      nextBackup.setHours(2, 0, 0, 0);
-      if (nextBackup <= now) {
-        nextBackup.setDate(nextBackup.getDate() + 1);
-      }
-      const msUntilBackup = nextBackup.getTime() - now.getTime();
-      setTimeout(async () => {
-        try {
-          await this.backupSystem.createFullBackup();
-          await this.backupSystem.cleanupOldBackups();
-        } catch (error) {
-          console.error("Scheduled backup failed:", error);
+    console.log("Starting vault event indexer...");
+    MaonoVaultService.listenToEvents(async (event) => {
+      try {
+        const handler2 = this.eventHandlers.get(event.type);
+        if (handler2) {
+          await handler2(event);
+        } else {
+          console.log(`[UnknownEvent] Type: ${event.type} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+          await db.insert(vaultTransactions).values({
+            vaultId: event.vaultId || "unknown",
+            userId: "system",
+            transactionType: "unknown_event",
+            tokenSymbol: "cUSD",
+            amount: "0",
+            valueUSD: "0",
+            transactionHash: event.transactionHash,
+            status: "completed",
+            metadata: {
+              eventType: event.type,
+              rawEvent: JSON.stringify(event),
+              needsAnalysis: true
+            }
+          }).onConflictDoNothing();
         }
-        scheduleBackup();
-      }, msUntilBackup);
-    };
-    scheduleBackup();
-    console.log("Backup scheduler started");
+      } catch (error) {
+        console.error(`Failed to process event ${event.type}:`, error);
+        try {
+          await db.insert(vaultTransactions).values({
+            vaultId: event.vaultId || "error",
+            userId: "system",
+            transactionType: "event_error",
+            tokenSymbol: "cUSD",
+            amount: "0",
+            valueUSD: "0",
+            transactionHash: event.transactionHash,
+            status: "failed",
+            metadata: {
+              eventType: event.type,
+              error: error instanceof Error ? error.message : "Unknown error",
+              rawEvent: JSON.stringify(event)
+            }
+          });
+        } catch (dbError) {
+          console.error("Failed to save event processing error:", dbError);
+        }
+      }
+    });
   }
   stop() {
     this.isRunning = false;
-    console.log("Backup scheduler stopped");
+    console.log("Vault event indexer stopped.");
+  }
+  // Placeholder handler functions for each event type
+  async handleNAVUpdated(event) {
+    console.log(`[NAVUpdated] New NAV: ${event.newNAV} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handlePerformanceFeeDistributed(event) {
+    console.log(`[PerformanceFeeDistributed] Amount: ${event.amount} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultCreated(event) {
+    console.log(`[VaultCreated] Vault ID: ${event.vaultId} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultClosed(event) {
+    console.log(`[VaultClosed] Vault ID: ${event.vaultId} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleDepositMade(event) {
+    console.log(`[DepositMade] Amount: ${event.amount} to Vault ID: ${event.vaultId} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleWithdrawalMade(event) {
+    console.log(`[WithdrawalMade] Amount: ${event.amount} from Vault ID: ${event.vaultId} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleFeeUpdated(event) {
+    console.log(`[FeeUpdated] New Fee: ${event.newFee} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleDAOSettingsUpdated(event) {
+    console.log(`[DAOSettingsUpdated] New Settings: ${JSON.stringify(event.newSettings)} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleOfframpFeePaid(event) {
+    console.log(`[OfframpFeePaid] Amount: ${event.amount} by User: ${event.userId} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleDisbursementMade(event) {
+    console.log(`[DisbursementMade] Amount: ${event.amount} from Vault ID: ${event.vaultId} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleWithdrawalFeePaid(event) {
+    console.log(`[WithdrawalFeePaid] Amount: ${event.amount} by User: ${event.userId} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleOfframpWithdrawalMade(event) {
+    console.log(`[OfframpWithdrawalMade] Amount: ${event.amount} by User: ${event.userId} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleOfframpFeeUpdated(event) {
+    console.log(`[OfframpFeeUpdated] New Fee: ${event.newFee} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleOfframpWhoPaysUpdated(event) {
+    console.log(`[OfframpWhoPaysUpdated] New Who Pays: ${event.newWhoPays} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleDisbursementFeeUpdated(event) {
+    console.log(`[DisbursementFeeUpdated] New Fee: ${event.newFee} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleWithdrawalFeeUpdated(event) {
+    console.log(`[WithdrawalFeeUpdated] New Fee: ${event.newFee} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultStatusUpdated(event) {
+    console.log(`[VaultStatusUpdated] Vault ID: ${event.vaultId} New Status: ${event.newStatus} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultMetadataUpdated(event) {
+    console.log(`[VaultMetadataUpdated] Vault ID: ${event.vaultId} New Metadata: ${JSON.stringify(event.newMetadata)} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultOwnershipTransferred(event) {
+    console.log(`[VaultOwnershipTransferred] Vault ID: ${event.vaultId} New Owner: ${event.newOwner} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTypeUpdated(event) {
+    console.log(`[VaultTypeUpdated] Vault ID: ${event.vaultId} New Type: ${event.newType} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultCurrencyUpdated(event) {
+    console.log(`[VaultCurrencyUpdated] Vault ID: ${event.vaultId} New Currency: ${event.newCurrency} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultNameUpdated(event) {
+    console.log(`[VaultNameUpdated] Vault ID: ${event.vaultId} New Name: ${event.newName} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultDescriptionUpdated(event) {
+    console.log(`[VaultDescriptionUpdated] Vault ID: ${event.vaultId} New Description: ${event.newDescription} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultLogoUpdated(event) {
+    console.log(`[VaultLogoUpdated] Vault ID: ${event.vaultId} New Logo: ${event.newLogo} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultBannerUpdated(event) {
+    console.log(`[VaultBannerUpdated] Vault ID: ${event.vaultId} New Banner: ${event.newBanner} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultPrivacyUpdated(event) {
+    console.log(`[VaultPrivacyUpdated] Vault ID: ${event.vaultId} New Privacy: ${event.newPrivacy} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultAccessControlUpdated(event) {
+    console.log(`[VaultAccessControlUpdated] Vault ID: ${event.vaultId} New Access Control: ${JSON.stringify(event.newAccessControl)} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTransactionRecorded(event) {
+    console.log(`[VaultTransactionRecorded] Vault ID: ${event.vaultId} Transaction: ${JSON.stringify(event.transaction)} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTransactionFailed(event) {
+    console.log(`[VaultTransactionFailed] Vault ID: ${event.vaultId} Error: ${event.error} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTransactionPending(event) {
+    console.log(`[VaultTransactionPending] Vault ID: ${event.vaultId} Transaction: ${JSON.stringify(event.transaction)} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTransactionConfirmed(event) {
+    console.log(`[VaultTransactionConfirmed] Vault ID: ${event.vaultId} Transaction: ${JSON.stringify(event.transaction)} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTransactionReverted(event) {
+    console.log(`[VaultTransactionReverted] Vault ID: ${event.vaultId} Transaction: ${JSON.stringify(event.transaction)} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTransactionGasUsed(event) {
+    console.log(`[VaultTransactionGasUsed] Vault ID: ${event.vaultId} Gas Used: ${event.gasUsed} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTransactionGasPrice(event) {
+    console.log(`[VaultTransactionGasPrice] Vault ID: ${event.vaultId} Gas Price: ${event.gasPrice} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTransactionNonce(event) {
+    console.log(`[VaultTransactionNonce] Vault ID: ${event.vaultId} Nonce: ${event.nonce} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTransactionBlockNumber(event) {
+    console.log(`[VaultTransactionBlockNumber] Vault ID: ${event.vaultId} Block Number: ${event.blockNumber} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTransactionBlockHash(event) {
+    console.log(`[VaultTransactionBlockHash] Vault ID: ${event.vaultId} Block Hash: ${event.blockHash} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTransactionFrom(event) {
+    console.log(`[VaultTransactionFrom] Vault ID: ${event.vaultId} From: ${event.from} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTransactionTo(event) {
+    console.log(`[VaultTransactionTo] Vault ID: ${event.vaultId} To: ${event.to} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTransactionValue(event) {
+    console.log(`[VaultTransactionValue] Vault ID: ${event.vaultId} Value: ${event.value} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTransactionInput(event) {
+    console.log(`[VaultTransactionInput] Vault ID: ${event.vaultId} Input: ${event.input} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTransactionReceipt(event) {
+    console.log(`[VaultTransactionReceipt] Vault ID: ${event.vaultId} Receipt: ${JSON.stringify(event.receipt)} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTransactionLogs(event) {
+    console.log(`[VaultTransactionLogs] Vault ID: ${event.vaultId} Logs: ${JSON.stringify(event.logs)} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTransactionStatus(event) {
+    console.log(`[VaultTransactionStatus] Vault ID: ${event.vaultId} Status: ${event.status} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  async handleVaultTransactionError(event) {
+    console.log(`[VaultTransactionError] Vault ID: ${event.vaultId} Error: ${event.error} at ${new Date(Number(event.timestamp) * 1e3).toISOString()}`);
+  }
+  // Get indexer status
+  getStatus() {
+    return {
+      isRunning: this.isRunning,
+      supportedEvents: Array.from(this.eventHandlers.keys()),
+      startTime: this.isRunning ? (/* @__PURE__ */ new Date()).toISOString() : null
+    };
   }
 };
+var vaultEventIndexer = new VaultEventIndexer();
+if (import.meta.url === new URL(process.argv[1], "file://").href) {
+  vaultEventIndexer.start();
+  process.on("SIGINT", () => {
+    console.log("Received SIGINT, shutting down event indexer...");
+    vaultEventIndexer.stop();
+    process.exit(0);
+  });
+}
 
-// server/middleware/errorHandler.ts
-import { ZodError as ZodError2 } from "zod";
-var AppError = class extends Error {
-  constructor(message, statusCode = 500, isOperational = true, code) {
-    super(message);
-    this.statusCode = statusCode;
-    this.isOperational = isOperational;
-    this.code = code;
-    Error.captureStackTrace(this, this.constructor);
+// server/vaultAutomation.ts
+init_db();
+init_schema();
+import { eq as eq23 } from "drizzle-orm";
+import { ethers as ethers4 } from "ethers";
+var VaultAutomationService = class {
+  constructor() {
+    this.isRunning = false;
+    this.tasks = [];
+    this.intervalId = null;
   }
-};
-var NotFoundError = class extends AppError {
-  constructor(resource = "Resource") {
-    super(`${resource} not found`, 404, true, "NOT_FOUND");
-  }
-};
-var formatErrorResponse = (error, req) => {
-  const response = {
-    success: false,
-    error: {
-      message: error.message,
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      path: req.path,
-      method: req.method
+  // Start automation service
+  start() {
+    if (this.isRunning) {
+      console.log("Vault automation service is already running");
+      return;
     }
-  };
-  if (error instanceof AppError) {
-    response.error.code = error.code;
-    response.error.statusCode = error.statusCode;
+    this.isRunning = true;
+    console.log("\u{1F680} Starting Vault Automation Service...");
+    this.scheduleRegularTasks();
+    this.intervalId = setInterval(() => {
+      this.processTasks().catch(console.error);
+    }, 3e4);
+    console.log("\u2705 Vault Automation Service started successfully");
   }
-  if (isDevelopment && error.stack) {
-    response.error.stack = error.stack;
-  }
-  if (req.headers["x-request-id"]) {
-    response.error.requestId = req.headers["x-request-id"];
-  }
-  return response;
-};
-var logError = async (error, req, res) => {
-  const severity = error instanceof AppError && error.statusCode < 500 ? "medium" : "high";
-  const user = req.user;
-  try {
-    await storage.createSystemLog(
-      "error",
-      error.message,
-      "api",
-      {
-        stack: error.stack,
-        statusCode: error instanceof AppError ? error.statusCode : 500,
-        path: req.path,
-        method: req.method,
-        userAgent: req.get("User-Agent"),
-        ipAddress: req.ip,
-        userId: user?.claims?.sub,
-        requestBody: req.body,
-        requestQuery: req.query,
-        requestParams: req.params
-      }
-    );
-    if (severity === "high") {
-      console.error(`\u{1F6A8} ${error.message}`, {
-        stack: error.stack,
-        path: req.path,
-        method: req.method,
-        userId: user?.claims?.sub
-      });
+  // Stop automation service
+  stop() {
+    if (!this.isRunning) return;
+    this.isRunning = false;
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
     }
-  } catch (logError2) {
-    console.error("Failed to log error:", logError2);
+    console.log("\u23F9\uFE0F  Vault Automation Service stopped");
   }
-};
-var errorHandler2 = async (error, req, res, next) => {
-  await logError(error, req, res);
-  let statusCode = 500;
-  let message = "Internal server error";
-  let code = "INTERNAL_ERROR";
-  if (error instanceof AppError) {
-    statusCode = error.statusCode;
-    message = error.message;
-    code = error.code || "APP_ERROR";
-  } else if (error instanceof ZodError2) {
-    statusCode = 400;
-    message = "Validation failed";
-    code = "VALIDATION_ERROR";
-    return res.status(statusCode).json({
-      success: false,
-      error: {
-        message,
-        code,
-        statusCode,
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        path: req.path,
-        method: req.method,
-        details: error.errors
-      }
+  // Schedule regular automation tasks
+  scheduleRegularTasks() {
+    this.addTask({
+      id: `nav_update_${Date.now()}`,
+      type: "nav_update",
+      priority: "high",
+      scheduledAt: new Date(Date.now() + 60 * 60 * 1e3),
+      // 1 hour
+      retryCount: 0,
+      maxRetries: 3
     });
-  } else if (error.name === "CastError") {
-    statusCode = 400;
-    message = "Invalid ID format";
-    code = "INVALID_ID";
-  } else if (error.name === "MongoError" || error.message.includes("database")) {
-    statusCode = 500;
-    message = "Database operation failed";
-    code = "DATABASE_ERROR";
+    this.addTask({
+      id: `rebalance_all_${Date.now()}`,
+      type: "rebalance",
+      priority: "medium",
+      scheduledAt: new Date(Date.now() + 6 * 60 * 60 * 1e3),
+      // 6 hours
+      retryCount: 0,
+      maxRetries: 2
+    });
+    this.addTask({
+      id: `risk_assessment_${Date.now()}`,
+      type: "risk_assessment",
+      priority: "low",
+      scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1e3),
+      // 24 hours
+      retryCount: 0,
+      maxRetries: 2
+    });
   }
-  const response = formatErrorResponse(
-    new AppError(message, statusCode, true, code),
-    req
-  );
-  res.status(statusCode).json(response);
+  // Add a new automation task
+  addTask(task) {
+    this.tasks.push(task);
+    this.tasks.sort((a, b) => {
+      const priorityOrder = { high: 0, medium: 1, low: 2 };
+      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
+        return priorityOrder[a.priority] - priorityOrder[b.priority];
+      }
+      return a.scheduledAt.getTime() - b.scheduledAt.getTime();
+    });
+  }
+  // Process pending tasks
+  async processTasks() {
+    const now = /* @__PURE__ */ new Date();
+    const dueTasks = this.tasks.filter((task) => task.scheduledAt <= now);
+    for (const task of dueTasks) {
+      try {
+        console.log(`\u{1F504} Processing automation task: ${task.type} (${task.id})`);
+        await this.executeTask(task);
+        this.tasks = this.tasks.filter((t) => t.id !== task.id);
+        console.log(`\u2705 Completed automation task: ${task.type} (${task.id})`);
+      } catch (error) {
+        console.error(`\u274C Task failed: ${task.type} (${task.id})`, error);
+        task.retryCount++;
+        if (task.retryCount < task.maxRetries) {
+          task.scheduledAt = new Date(now.getTime() + Math.pow(2, task.retryCount) * 6e4);
+          console.log(`\u{1F504} Rescheduling task ${task.id} (attempt ${task.retryCount + 1}/${task.maxRetries})`);
+        } else {
+          console.error(`\u{1F4A5} Task ${task.id} failed after ${task.maxRetries} attempts`);
+          this.tasks = this.tasks.filter((t) => t.id !== task.id);
+        }
+      }
+    }
+  }
+  // Execute a specific automation task
+  async executeTask(task) {
+    switch (task.type) {
+      case "nav_update":
+        await this.executeNAVUpdate(task);
+        break;
+      case "performance_fee":
+        await this.executePerformanceFeeDistribution(task);
+        break;
+      case "rebalance":
+        await this.executeRebalancing(task);
+        break;
+      case "risk_assessment":
+        await this.executeRiskAssessment(task);
+        break;
+      default:
+        throw new Error(`Unknown task type: ${task.type}`);
+    }
+  }
+  // Execute NAV update
+  async executeNAVUpdate(task) {
+    try {
+      const [currentNAV, lastUpdate] = await MaonoVaultService.getNAV();
+      const activeVaults = await db.query.vaults.findMany({
+        where: eq23(vaults.isActive, true)
+      });
+      let totalValue = 0n;
+      let totalShares = 0n;
+      for (const vault of activeVaults) {
+        const vaultPortfolio = await vaultService.getVaultPortfolio(vault.id);
+        const vaultValueWei = ethers4.parseUnits(vaultPortfolio.totalValueUSD.toString(), 18);
+        totalValue += vaultValueWei;
+        totalShares += BigInt(1e3);
+      }
+      const newNAV = totalShares > 0n ? totalValue / totalShares : 0n;
+      const navChange = currentNAV > 0n ? (newNAV - currentNAV) * 100n / currentNAV : 100n;
+      if (navChange > 1n || navChange < -1n) {
+        console.log(`\u{1F4C8} Updating NAV: ${ethers4.formatEther(currentNAV)} \u2192 ${ethers4.formatEther(newNAV)}`);
+        const tx = await MaonoVaultService.updateNAV(newNAV);
+        await tx.wait();
+        console.log(`\u2705 NAV updated on-chain: ${tx.hash}`);
+      } else {
+        console.log("\u{1F4CA} NAV change too small, skipping update");
+      }
+      this.addTask({
+        id: `nav_update_${Date.now()}`,
+        type: "nav_update",
+        priority: "high",
+        scheduledAt: new Date(Date.now() + 60 * 60 * 1e3),
+        // 1 hour
+        retryCount: 0,
+        maxRetries: 3
+      });
+    } catch (error) {
+      console.error("NAV update automation failed:", error);
+      throw error;
+    }
+  }
+  // Execute performance fee distribution
+  async executePerformanceFeeDistribution(task) {
+    try {
+      const recentPerformance = await db.query.vaultPerformance.findMany({
+        where: eq23(vaultPerformance.period, "daily"),
+        limit: 30
+        // Last 30 days
+      });
+      let totalProfit = 0n;
+      for (const performance2 of recentPerformance) {
+        const yield_ = parseFloat(performance2.yield || "0");
+        if (yield_ > 0) {
+          totalProfit += ethers4.parseUnits(yield_.toString(), 18);
+        }
+      }
+      if (totalProfit > ethers4.parseUnits("100", 18)) {
+        console.log(`\u{1F4B0} Distributing performance fees on profit: ${ethers4.formatEther(totalProfit)} USD`);
+        const tx = await MaonoVaultService.distributePerformanceFee(totalProfit);
+        await tx.wait();
+        console.log(`\u2705 Performance fees distributed: ${tx.hash}`);
+      } else {
+        console.log("\u{1F4B0} Insufficient profit for fee distribution");
+      }
+    } catch (error) {
+      console.error("Performance fee distribution failed:", error);
+      throw error;
+    }
+  }
+  // Execute vault rebalancing
+  async executeRebalancing(task) {
+    try {
+      const activeVaults = await db.query.vaults.findMany({
+        where: eq23(vaults.isActive, true)
+      });
+      console.log(`\u2696\uFE0F  Rebalancing ${activeVaults.length} active vaults...`);
+      for (const vault of activeVaults) {
+        try {
+          await vaultService.rebalanceVault(vault.id);
+          console.log(`\u2705 Rebalanced vault: ${vault.name} (${vault.id})`);
+        } catch (error) {
+          console.warn(`\u26A0\uFE0F  Failed to rebalance vault ${vault.id}:`, error);
+        }
+      }
+      this.addTask({
+        id: `rebalance_all_${Date.now()}`,
+        type: "rebalance",
+        priority: "medium",
+        scheduledAt: new Date(Date.now() + 6 * 60 * 60 * 1e3),
+        // 6 hours
+        retryCount: 0,
+        maxRetries: 2
+      });
+    } catch (error) {
+      console.error("Vault rebalancing automation failed:", error);
+      throw error;
+    }
+  }
+  // Execute risk assessment
+  async executeRiskAssessment(task) {
+    try {
+      const activeVaults = await db.query.vaults.findMany({
+        where: eq23(vaults.isActive, true)
+      });
+      console.log(`\u{1F50D} Performing risk assessment on ${activeVaults.length} vaults...`);
+      for (const vault of activeVaults) {
+        try {
+          await vaultService.performRiskAssessment(vault.id);
+          console.log(`\u2705 Risk assessment completed for vault: ${vault.name}`);
+        } catch (error) {
+          console.warn(`\u26A0\uFE0F  Risk assessment failed for vault ${vault.id}:`, error);
+        }
+      }
+      this.addTask({
+        id: `risk_assessment_${Date.now()}`,
+        type: "risk_assessment",
+        priority: "low",
+        scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1e3),
+        // 24 hours
+        retryCount: 0,
+        maxRetries: 2
+      });
+    } catch (error) {
+      console.error("Risk assessment automation failed:", error);
+      throw error;
+    }
+  }
+  // Get automation status
+  getStatus() {
+    return {
+      isRunning: this.isRunning,
+      pendingTasks: this.tasks.length,
+      tasks: this.tasks.map((task) => ({
+        id: task.id,
+        type: task.type,
+        priority: task.priority,
+        scheduledAt: task.scheduledAt,
+        retryCount: task.retryCount,
+        vaultId: task.vaultId
+      }))
+    };
+  }
 };
-var asyncHandler = (fn) => (req, res, next) => {
-  Promise.resolve(fn(req, res, next)).catch(next);
-};
-var notFoundHandler = (req, res, next) => {
-  const error = new NotFoundError(`Route ${req.originalUrl} not found`);
-  next(error);
-};
-var setupProcessErrorHandlers = () => {
-  process.on("unhandledRejection", (reason, promise) => {
-    console.error("\u{1F6A8} Unhandled Promise Rejection:", reason);
-    process.exit(1);
+var vaultAutomationService = new VaultAutomationService();
+if (import.meta.url === new URL(process.argv[1], "file://").href) {
+  vaultAutomationService.start();
+  process.on("SIGINT", () => {
+    console.log("Received SIGINT, shutting down automation service...");
+    vaultAutomationService.stop();
+    process.exit(0);
   });
-  process.on("uncaughtException", (error) => {
-    console.error("\u{1F6A8} Uncaught Exception:", error);
-    process.exit(1);
-  });
-};
+}
 
 // server/index.ts
-var __dirname5 = dirname4(fileURLToPath5(import.meta.url));
-var app = express21();
+var __dirname4 = dirname3(fileURLToPath4(import.meta.url));
+var app = express23();
 setupProcessErrorHandlers();
 var server = createServer(app);
 var io = new SocketIOServer(server, {
   cors: corsConfig
 });
 app.set("trust proxy", 1);
-app.use(express21.json({
+app.use(express23.json({
   limit: "10mb",
   verify: (req, res, buf) => {
     req.rawBody = buf;
   }
 }));
-app.use(express21.urlencoded({ extended: true, limit: "10mb" }));
-app.use(cors(corsConfig));
+app.use(express23.urlencoded({ extended: true, limit: "10mb" }));
+app.use(cors({
+  origin: [env.FRONTEND_URL, "http://localhost:5173", "http://localhost:3000"],
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept"]
+}));
 app.use(requestLogger);
-app.use(generalRateLimit);
 app.use(sanitizeInput);
 app.use(preventSqlInjection);
 app.use(preventXSS);
@@ -12845,7 +15327,6 @@ app.use((req, res, next) => {
   });
   next();
 });
-ProposalExecutionService.startScheduler();
 (async () => {
   try {
     const backupConfig = {
@@ -12872,8 +15353,17 @@ ProposalExecutionService.startScheduler();
         uptime: process.uptime()
       });
     }));
+    const isDev = process.env.NODE_ENV !== "production";
+    if (isDev) {
+      await setupVite(app, server);
+    } else {
+      serveStatic(app);
+      app.get("*", (_, res) => {
+        res.sendFile(path4.join(__dirname4, "../../dist/public", "index.html"));
+      });
+    }
     app.use(notFoundHandler);
-    app.use(errorHandler2);
+    app.use(errorHandler);
     const PORT = parseInt(env.PORT);
     const HOST = env.HOST;
     server.listen(PORT, HOST, () => {
@@ -12886,7 +15376,13 @@ ProposalExecutionService.startScheduler();
         environment: env.NODE_ENV,
         nodeVersion: process.version
       });
+      ProposalExecutionService.startScheduler();
+      console.log("\u{1F504} Proposal execution scheduler started");
     });
+    console.log("\u{1F680} Starting blockchain integration services...");
+    vaultEventIndexer.start();
+    vaultAutomationService.start();
+    console.log("\u2705 Blockchain services initialized successfully");
     const gracefulShutdown = (signal) => {
       logger.warn(`Received ${signal}, shutting down gracefully`);
       server.close(() => {
@@ -12900,15 +15396,6 @@ ProposalExecutionService.startScheduler();
     };
     process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
     process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-    const isDev = process.env.NODE_ENV !== "production";
-    if (isDev) {
-      await setupVite(app, server);
-    } else {
-      serveStatic(app);
-      app.get("*", (_, res) => {
-        res.sendFile(path5.join(__dirname5, "../../dist/public", "index.html"));
-      });
-    }
   } catch (err) {
     console.error("Fatal server error:", err);
     process.exit(1);

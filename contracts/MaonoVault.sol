@@ -3,46 +3,18 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title MaonoVault (Flagship ERC4626 Vault for MtaaDAO)
  * @notice Professionally managed, community-backed crypto vault
  * @dev Enhanced with security improvements and better fee handling
+ * @author MtaaDAO Team
  */
-contract MaonoVault is ERC4626, Ownable {
-    // --- Custom Reentrancy Guard ---
-    uint256 private _status;
-    uint256 private constant _NOT_ENTERED = 1;
-    uint256 private constant _ENTERED = 2;
+contract MaonoVault is ERC4626, Ownable, ReentrancyGuard, Pausable {
+    using SafeERC20 for IERC20;
 
-    modifier nonReentrant() {
-        require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
-        _status = _ENTERED;
-        _;
-        _status = _NOT_ENTERED;
-    }
-
-    // --- Custom Pause Logic ---
-    bool private _paused;
-    event Paused(address account);
-    event Unpaused(address account);
-
-    modifier whenNotPaused() {
-        require(!_paused, "Pausable: paused");
-        _;
-    }
-    modifier whenPaused() {
-        require(_paused, "Pausable: not paused");
-        _;
-    }
-    function pause() external onlyOwner {
-        _paused = true;
-        emit Paused(msg.sender);
-    }
-    function unpause() external onlyOwner {
-        _paused = false;
-        emit Unpaused(msg.sender);
-    }
     // --- Vault Parameters ---
     uint256 public minDeposit = 10 * 1e18; // 10 cUSD (assuming 18 decimals)
     uint256 public vaultCap = 10_000 * 1e18; // 10,000 cUSD
@@ -51,18 +23,26 @@ contract MaonoVault is ERC4626, Ownable {
     uint256 public constant FEE_DENOMINATOR = 10000;
     uint256 public constant SECONDS_PER_YEAR = 365 days;
     
+    // Fee limits for security
+    uint256 public constant MAX_PERFORMANCE_FEE = 2000; // 20%
+    uint256 public constant MAX_MANAGEMENT_FEE = 500; // 5% annual
+
     address public manager;
     address public daoTreasury;
-    
+
     // NAV tracking
     uint256 public lastNAV;
     uint256 public lastNAVUpdate;
     uint256 public lastManagementFeeCollection;
-    
+
     // Fee tracking
     uint256 public totalPerformanceFeesCollected;
     uint256 public totalManagementFeesCollected;
-    
+
+    // Platform fee tracking
+    mapping(string => uint256) public daoFees;
+    mapping(string => bool) public validDAOs;
+
     // Withdrawal queue for large redemptions
     struct WithdrawalRequest {
         address user;
@@ -70,7 +50,7 @@ contract MaonoVault is ERC4626, Ownable {
         uint256 requestTime;
         bool fulfilled;
     }
-    
+
     mapping(uint256 => WithdrawalRequest) public withdrawalRequests;
     uint256 public withdrawalRequestCounter;
     uint256 public withdrawalDelay = 1 days; // 24 hour delay for large withdrawals
@@ -86,19 +66,24 @@ contract MaonoVault is ERC4626, Ownable {
     event ManagementFeeCollected(uint256 amount, uint256 timestamp);
     event WithdrawalRequested(uint256 requestId, address user, uint256 shares);
     event WithdrawalFulfilled(uint256 requestId, address user, uint256 shares, uint256 assets);
+    event PlatformFeeRecorded(string indexed daoId, uint256 feeAmount, uint256 timestamp);
+    event DAOValidated(string indexed daoId, bool isValid);
+    event EmergencyWithdraw(address indexed owner, uint256 amount);
 
     // Custom errors
-    error BelowMinDeposit();
-    error VaultCapExceeded();
+    error BelowMinDeposit(uint256 provided, uint256 minimum);
+    error VaultCapExceeded(uint256 requested, uint256 available);
     error NotManager();
     error ZeroAddress();
-    error InvalidFee();
-    error InsufficientBalance();
+    error InvalidFee(uint256 provided, uint256 maximum);
+    error InsufficientBalance(uint256 requested, uint256 available);
     error NoProfit();
     error InvalidNAV();
-    error CapBelowTVL();
-    error WithdrawalNotReady();
+    error CapBelowTVL(uint256 newCap, uint256 currentTVL);
+    error WithdrawalNotReady(uint256 requestTime, uint256 currentTime);
     error WithdrawalAlreadyFulfilled();
+    error InvalidDAO(string daoId);
+    error InvalidFeeAmount();
 
     modifier onlyManager() {
         if (msg.sender != manager) revert NotManager();
@@ -110,10 +95,16 @@ contract MaonoVault is ERC4626, Ownable {
         _;
     }
 
+    modifier validDAO(string memory daoId) {
+        if (!validDAOs[daoId]) revert InvalidDAO(daoId);
+        _;
+    }
+
     constructor(
         address _asset,
         address _daoTreasury,
-        address _manager
+        address _manager,
+        string[] memory _initialDAOs
     ) 
         ERC20("Maono Vault LP Token", "MVLT") 
         ERC4626(IERC20(_asset)) 
@@ -125,6 +116,12 @@ contract MaonoVault is ERC4626, Ownable {
         daoTreasury = _daoTreasury;
         manager = _manager;
         lastManagementFeeCollection = block.timestamp;
+        
+        // Initialize valid DAOs
+        for (uint256 i = 0; i < _initialDAOs.length; i++) {
+            validDAOs[_initialDAOs[i]] = true;
+            emit DAOValidated(_initialDAOs[i], true);
+        }
     }
 
     // --- Enhanced Deposit/Withdraw ---
@@ -135,12 +132,15 @@ contract MaonoVault is ERC4626, Ownable {
         whenNotPaused 
         returns (uint256 shares) 
     {
-        if (assets < minDeposit) revert BelowMinDeposit();
-        if (totalAssets() + assets > vaultCap) revert VaultCapExceeded();
-        
+        if (assets < minDeposit) revert BelowMinDeposit(assets, minDeposit);
+        uint256 currentAssets = totalAssets();
+        if (currentAssets + assets > vaultCap) {
+            revert VaultCapExceeded(assets, vaultCap - currentAssets);
+        }
+
         // Collect management fees before deposit to ensure accurate share calculation
         _collectManagementFees();
-        
+
         return super.deposit(assets, receiver);
     }
 
@@ -148,6 +148,7 @@ contract MaonoVault is ERC4626, Ownable {
         public 
         override 
         nonReentrant 
+        whenNotPaused
         returns (uint256 shares) 
     {
         // For large withdrawals, use the delayed withdrawal mechanism
@@ -156,7 +157,7 @@ contract MaonoVault is ERC4626, Ownable {
             _requestWithdrawal(owner, shares);
             return shares;
         }
-        
+
         return super.withdraw(assets, receiver, owner);
     }
 
@@ -164,16 +165,17 @@ contract MaonoVault is ERC4626, Ownable {
         public 
         override 
         nonReentrant 
+        whenNotPaused
         returns (uint256 assets) 
     {
         assets = previewRedeem(shares);
-        
+
         // For large redemptions, use the delayed withdrawal mechanism
         if (assets >= largeWithdrawalThreshold) {
             _requestWithdrawal(owner, shares);
             return assets;
         }
-        
+
         return super.redeem(shares, receiver, owner);
     }
 
@@ -186,35 +188,43 @@ contract MaonoVault is ERC4626, Ownable {
             requestTime: block.timestamp,
             fulfilled: false
         });
-        
+
         emit WithdrawalRequested(withdrawalRequestCounter, user, shares);
     }
 
-    function fulfillWithdrawal(uint256 requestId) external nonReentrant {
+    function fulfillWithdrawal(uint256 requestId) external nonReentrant whenNotPaused {
         WithdrawalRequest storage request = withdrawalRequests[requestId];
-        
+
         if (request.user != msg.sender) revert NotManager();
         if (request.fulfilled) revert WithdrawalAlreadyFulfilled();
-        if (block.timestamp < request.requestTime + withdrawalDelay) revert WithdrawalNotReady();
-        
+        if (block.timestamp < request.requestTime + withdrawalDelay) {
+            revert WithdrawalNotReady(request.requestTime, block.timestamp);
+        }
+
         request.fulfilled = true;
         uint256 assets = previewRedeem(request.shares);
-        
+
+        // Check if vault has sufficient assets
+        uint256 vaultBalance = IERC20(asset()).balanceOf(address(this));
+        if (vaultBalance < assets) {
+            revert InsufficientBalance(assets, vaultBalance);
+        }
+
         _burn(request.user, request.shares);
-        IERC20(asset()).transfer(request.user, assets);
-        
+        IERC20(asset()).safeTransfer(request.user, assets);
+
         emit WithdrawalFulfilled(requestId, request.user, request.shares, assets);
     }
 
     // --- NAV Management ---
     function updateNAV(uint256 newNAV) external onlyManager {
         if (newNAV == 0) revert InvalidNAV();
-        
+
         // Calculate and collect performance fees if NAV increased
         if (lastNAV > 0 && newNAV > lastNAV) {
             _collectPerformanceFees(newNAV - lastNAV);
         }
-        
+
         lastNAV = newNAV;
         lastNAVUpdate = block.timestamp;
         emit NAVUpdated(newNAV, block.timestamp, msg.sender);
@@ -226,51 +236,86 @@ contract MaonoVault is ERC4626, Ownable {
 
     // --- Fee Management ---
     function _collectPerformanceFees(uint256 profit) internal {
+        if (profit == 0) return;
+        
         uint256 fee = (profit * performanceFee) / FEE_DENOMINATOR;
-        if (fee > 0 && IERC20(asset()).balanceOf(address(this)) >= fee) {
-            IERC20(asset()).transfer(daoTreasury, fee);
-            totalPerformanceFeesCollected += fee;
-            emit PerformanceFeeCollected(fee, block.timestamp);
+        if (fee > 0) {
+            uint256 vaultBalance = IERC20(asset()).balanceOf(address(this));
+            if (vaultBalance >= fee) {
+                IERC20(asset()).safeTransfer(daoTreasury, fee);
+                totalPerformanceFeesCollected += fee;
+                emit PerformanceFeeCollected(fee, block.timestamp);
+            }
         }
     }
 
     function _collectManagementFees() internal {
         uint256 timeElapsed = block.timestamp - lastManagementFeeCollection;
-        if (timeElapsed > 0) {
-            uint256 totalAssets_ = totalAssets();
-            uint256 annualFee = (totalAssets_ * managementFee) / FEE_DENOMINATOR;
-            uint256 fee = (annualFee * timeElapsed) / SECONDS_PER_YEAR;
-            
-            if (fee > 0 && IERC20(asset()).balanceOf(address(this)) >= fee) {
-                IERC20(asset()).transfer(daoTreasury, fee);
+        if (timeElapsed == 0) return;
+
+        uint256 totalAssets_ = totalAssets();
+        if (totalAssets_ == 0) return;
+
+        uint256 annualFee = (totalAssets_ * managementFee) / FEE_DENOMINATOR;
+        uint256 fee = (annualFee * timeElapsed) / SECONDS_PER_YEAR;
+
+        if (fee > 0) {
+            uint256 vaultBalance = IERC20(asset()).balanceOf(address(this));
+            if (vaultBalance >= fee) {
+                IERC20(asset()).safeTransfer(daoTreasury, fee);
                 totalManagementFeesCollected += fee;
-                lastManagementFeeCollection = block.timestamp;
                 emit ManagementFeeCollected(fee, block.timestamp);
             }
         }
+        
+        lastManagementFeeCollection = block.timestamp;
     }
 
     function collectManagementFees() external onlyManager {
         _collectManagementFees();
     }
 
+    // --- Platform Fee Management ---
+    function recordPlatformFee(string memory daoId, uint256 feeAmount) 
+        external 
+        onlyManager 
+        validDAO(daoId)
+    {
+        if (feeAmount == 0) revert InvalidFeeAmount();
+        
+        daoFees[daoId] += feeAmount;
+        emit PlatformFeeRecorded(daoId, feeAmount, block.timestamp);
+    }
+
+    function addValidDAO(string memory daoId) external onlyOwner {
+        require(bytes(daoId).length > 0, "DAO ID cannot be empty");
+        validDAOs[daoId] = true;
+        emit DAOValidated(daoId, true);
+    }
+
+    function removeValidDAO(string memory daoId) external onlyOwner {
+        validDAOs[daoId] = false;
+        emit DAOValidated(daoId, false);
+    }
+
     // --- Admin Functions ---
     function setPerformanceFee(uint256 newFee) external onlyOwner {
-        if (newFee > 2000) revert InvalidFee(); // Max 20%
+        if (newFee > MAX_PERFORMANCE_FEE) revert InvalidFee(newFee, MAX_PERFORMANCE_FEE);
         uint256 oldFee = performanceFee;
         performanceFee = newFee;
         emit PerformanceFeeChanged(oldFee, newFee);
     }
 
     function setManagementFee(uint256 newFee) external onlyOwner {
-        if (newFee > 500) revert InvalidFee(); // Max 5% annual
+        if (newFee > MAX_MANAGEMENT_FEE) revert InvalidFee(newFee, MAX_MANAGEMENT_FEE);
         uint256 oldFee = managementFee;
         managementFee = newFee;
         emit ManagementFeeChanged(oldFee, newFee);
     }
 
     function setVaultCap(uint256 newCap) external onlyOwner {
-        if (newCap < totalAssets()) revert CapBelowTVL();
+        uint256 currentTVL = totalAssets();
+        if (newCap < currentTVL) revert CapBelowTVL(newCap, currentTVL);
         uint256 oldCap = vaultCap;
         vaultCap = newCap;
         emit VaultCapChanged(oldCap, newCap);
@@ -294,11 +339,25 @@ contract MaonoVault is ERC4626, Ownable {
         largeWithdrawalThreshold = newThreshold;
     }
 
+    function setDAOTreasury(address newTreasury) external onlyOwner validAddress(newTreasury) {
+        daoTreasury = newTreasury;
+    }
+
     // --- Emergency Functions ---
-    // Pause/unpause functions removed
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
 
     function emergencyWithdraw(uint256 amount) external onlyOwner {
-        IERC20(asset()).transfer(owner(), amount);
+        uint256 vaultBalance = IERC20(asset()).balanceOf(address(this));
+        if (amount > vaultBalance) revert InsufficientBalance(amount, vaultBalance);
+        
+        IERC20(asset()).safeTransfer(owner(), amount);
+        emit EmergencyWithdraw(owner(), amount);
     }
 
     // --- View Functions ---
@@ -320,21 +379,30 @@ contract MaonoVault is ERC4626, Ownable {
         return (performanceFee, managementFee, totalPerformanceFeesCollected, totalManagementFeesCollected);
     }
 
-    // --- Internal Functions ---
-    // Custom logic can be added here as needed for future extensions.
-function recordPlatformFee(string memory daoId, uint256 feeAmount) external onlyManager {
-    // Record the fee for the specific DAO
-    // Ensure the DAO ID and fee amount are valid
-    require(bytes(daoId).length > 0, "DAO ID cannot be empty");
-    require(feeAmount > 0, "Fee amount must be greater than zero");
-    // Validate the DAO ID and fee amount
-    // This could include checks against a list of valid DAOs or a minimum fee amount
-    if (bytes(daoId).length == 0 || feeAmount == 0) {
-        revert("Invalid DAO ID or fee amount");
+    function getDAOFee(string memory daoId) external view returns (uint256) {
+        return daoFees[daoId];
     }
-    // Emit an event to log the platform fee
-    emit PlatformFeeRecorded(daoId, feeAmount, block.timestamp);
-}
 
-event PlatformFeeRecorded(string indexed daoId, uint256 feeAmount, uint256 timestamp);
+    function isValidDAO(string memory daoId) external view returns (bool) {
+        return validDAOs[daoId];
+    }
+
+    function getVaultInfo() external view returns (
+        uint256 tvl,
+        uint256 sharePrice,
+        uint256 cap,
+        uint256 minDep,
+        bool isPaused
+    ) {
+        uint256 totalShares = totalSupply();
+        uint256 assets = totalAssets();
+        
+        return (
+            assets,
+            totalShares == 0 ? 1e18 : (assets * 1e18) / totalShares,
+            vaultCap,
+            minDeposit,
+            paused()
+        );
+    }
 }
