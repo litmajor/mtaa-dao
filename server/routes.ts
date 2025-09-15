@@ -24,6 +24,7 @@ import mpesaStatusRoutes from './routes/mpesa-status';
 import monitoringRoutes from './routes/monitoring';
 import taskTemplatesRoutes from './api/task_templates';
 import achievementsRouter from './api/achievements';
+import vaultRoutes from './routes/vault';
 
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
@@ -208,7 +209,7 @@ export function registerRoutes(app: express.Application) {
     // DAO membership subscription endpoint (simplified version for MVP)
     app.post('/api/get-or-create-subscription', isAuthenticated, async (req, res) => {
       const user = req.user as any;
-      
+
       if (!user) {
         return res.sendStatus(401);
       }
@@ -239,7 +240,7 @@ export function registerRoutes(app: express.Application) {
         // Type assertion for the payment_intent
         const invoice = subscription.latest_invoice as any;
         const clientSecret = invoice?.payment_intent?.client_secret;
-    
+
         res.send({
           subscriptionId: subscription.id,
           clientSecret: clientSecret,
