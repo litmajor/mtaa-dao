@@ -67,7 +67,8 @@ export default function Navigation() {
   const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: "📊" },
     { href: "/proposals", label: "Proposals", icon: "📋" },
-    { href: "/vault", label: "Vault", icon: "🏦" },
+    { href: "/vault-dashboard", label: "Vault Dashboard", icon: "🏦" },
+    { href: "/vault", label: "Vault", icon: "⚡" },
     { href: "/daos", label: "DAOs", icon: "🏛️" },
     { href: "/wallet", label: "Wallet", icon: "💳" },
     { href: "/wallet-setup", label: "Setup Wallet", icon: "⚙️" }, // Added wallet setup link
