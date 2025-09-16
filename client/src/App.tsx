@@ -20,6 +20,7 @@ import ResetPassword from './pages/reset-password';
 import Proposals from './pages/proposals';
 import ProposalDetail from './pages/proposal-detail';
 import Vault from './pages/vault';
+import VaultDashboard from './pages/vault-dashboard';
 import Profile from './pages/profile';
 import DAOs from './pages/daos';
 import Wallet from './pages/wallet';

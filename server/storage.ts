@@ -1180,7 +1180,6 @@ const vaultBalance = vaults.reduce((sum: number, v: Vault) => sum + (typeof v.ba
       username: user[0].username || ''
     } : null;
   }
-  }
 
 }
 

@@ -56,9 +56,23 @@ export const tasks = pgTable("tasks", {
 
 export type Task = typeof tasks.$inferSelect;
 export type InsertTask = typeof tasks.$inferInsert;
+// Task Templates table
+export const taskTemplates = pgTable('task_templates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  title: varchar('title').notNull(),
+  description: text('description').notNull(),
+  category: varchar('category').notNull(),
+  difficulty: varchar('difficulty').notNull(),
+  estimatedHours: integer('estimated_hours').default(1),
+  requiredSkills: jsonb('required_skills').default([]),
+  bountyAmount: decimal('bounty_amount', { precision: 10, scale: 2 }).default('0'),
+  deliverables: jsonb('deliverables').default([]),
+  acceptanceCriteria: jsonb('acceptance_criteria').default([]),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
 import { relations } from "drizzle-orm";
 import { IsRestoringProvider } from "@tanstack/react-query";
-
 
 // User storage table (required for Replit Auth)
 export const users = pgTable("users", {
@@ -74,6 +88,38 @@ export const users = pgTable("users", {
   emailVerificationExpiresAt: timestamp("email_verification_expires_at"),
   phoneVerificationExpiresAt: timestamp("phone_verification_expires_at"),
   passwordResetToken: varchar("password_reset_token"),
+  firstName: varchar("first_name"),
+  lastName: varchar("last_name"),
+  profileImageUrl: varchar("profile_image_url"),
+  roles: varchar("roles").default("member"), // member, proposer, elder
+  totalContributions: decimal("total_contributions", { precision: 10, scale: 2 }).default("0"),
+  currentStreak: integer("current_streak").default(0),
+  referralCode: varchar("referral_code").unique(),
+  referredBy: varchar("referred_by"),
+  totalReferrals: integer("total_referrals").default(0),
+  darkMode: boolean("dark_mode").default(false),
+  joinedAt: timestamp("joined_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  otp: varchar("otp", { length: 10 }),
+  otpExpiresAt: timestamp("otp_expires_at"),
+  isEmailVerified: boolean("is_email_verified").default(false),
+  isPhoneVerified: boolean("is_phone_verified").default(false),
+  isBanned: boolean("is_banned").default(false),
+  banReason: text("ban_reason"),
+  isSuperUser: boolean("is_super_user").default(false), // for superuser dashboard access
+  votingPower: decimal("voting_power", { precision: 10, scale: 2 }).default("1.0"), // for weighted voting
+  telegramId: varchar("telegram_id"),
+  telegramChatId: varchar("telegram_chat_id"),
+  telegramUsername: varchar("telegram_username"),
+});
+
+// User Activities table
+export const userActivities = pgTable('user_activities', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: varchar('user_id').references(() => users.id).notNull(),
+  type: varchar('type').notNull(), // e.g., 'proposal', 'vote', 'task', 'comment', etc.
+  description: text('description'),
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
@@ -1029,36 +1075,8 @@ export const userChallenges = pgTable('user_challenges', {
 });
 
 // Add proposals table if not exists
-export const proposals = pgTable('proposals', {
-  id: text('id').primaryKey().default(generateId()),
-  title: text('title').notNull(),
-  description: text('description'),
-  proposerAddress: text('proposer_address').notNull(),
-  daoId: text('dao_id'),
-  status: text('status').default('pending'), // 'pending', 'active', 'executed', 'failed'
-  yesVotes: text('yes_votes').default('0'),
-  noVotes: text('no_votes').default('0'),
-  quorum: text('quorum').default('100'),
-  votingDeadline: timestamp('voting_deadline'),
-  executionDeadline: timestamp('execution_deadline'),
-  metadata: jsonb('metadata'),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow()
-});
 
 // Add users table reference if not exists
-export const users = pgTable('users', {
-  id: text('id').primaryKey().default(generateId()),
-  email: text('email').unique().notNull(),
-  firstName: text('first_name'),
-  lastName: text('last_name'),
-  walletAddress: text('wallet_address'),
-  profileImageUrl: text('profile_image_url'),
-  reputationScore: integer('reputation_score').default(0),
-  roles: text('roles').default('member'),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow()
-});
 
 export const commentLikesRelations = relations(commentLikes, ({ one }) => ({
   comment: one(proposalComments, {
@@ -1109,7 +1127,7 @@ export const insertCommentLikeSchema = createInsertSchema(commentLikes);
 export const insertDaoMessageSchema = createInsertSchema(daoMessages);
 
 // Phase 3: Enhanced Vault Types and Schemas
-export type Vault = typeof vaults.$inferSelect;
+export type EnhancedVault = typeof vaults.$inferSelect;
 export type InsertVault = typeof vaults.$inferInsert;
 export type VaultTokenHolding = typeof vaultTokenHoldings.$inferSelect;
 export type InsertVaultTokenHolding = typeof vaultTokenHoldings.$inferInsert;
@@ -1133,4 +1151,9 @@ export const insertVaultRiskAssessmentSchema = createInsertSchema(vaultRiskAsses
 export const insertVaultStrategyAllocationSchema = createInsertSchema(vaultStrategyAllocations);
 export const insertVaultGovernanceProposalSchema = createInsertSchema(vaultGovernanceProposals);
 
+
+function generateId(): string | import("drizzle-orm").SQL<unknown> {
+
+  throw new Error("Function not implemented.");
+}
 // Export all types

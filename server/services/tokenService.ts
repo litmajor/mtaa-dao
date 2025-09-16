@@ -327,7 +327,11 @@ export class TokenService {
       const shareCount = parseFloat(shares) / 1e18; // Convert from wei
       return shareCount * sharePrice;
     } catch (error) {
-      console.error(`Failed to get vault share value: ${error.message}`, error);
+      if (error instanceof Error) {
+        console.error(`Failed to get vault share value: ${error.message}`, error);
+      } else {
+        console.error('Failed to get vault share value', error);
+      }
       return 0;
     }
   }
@@ -340,15 +344,20 @@ export class TokenService {
       const variation = (Math.random() - 0.5) * 2; // ±1% variation
       return Math.max(baseAPY + variation, 0);
     } catch (error) {
-      console.error(`Failed to get vault APY: ${error.message}`, error);
+      if (error instanceof Error) {
+        console.error(`Failed to get vault APY: ${error.message}`, error);
+      } else {
+        console.error('Failed to get vault APY', error);
+      }
       return 8.5; // Default APY
     }
   }
 
-  // Export singleton instance
-  export const tokenService = new TokenService(
-    process.env.RPC_URL || 'https://alfajores-forno.celo-testnet.org',
-    process.env.MANAGER_PRIVATE_KEY,
-    process.env.NODE_ENV === 'production' ? 'mainnet' : 'testnet'
-  );
 }
+
+// Export singleton instance
+export const tokenService = new TokenService(
+  process.env.RPC_URL || 'https://alfajores-forno.celo-testnet.org',
+  process.env.MANAGER_PRIVATE_KEY,
+  process.env.NODE_ENV === 'production' ? 'mainnet' : 'testnet'
+);

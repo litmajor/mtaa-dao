@@ -6,16 +6,17 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title MTAAToken
  * @notice The native utility token for MtaaDAO ecosystem
  * @dev ERC20 token with vesting, staking, and governance features
  */
-contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, ReentrancyGuard {
-    
+contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, ReentrancyGuard, ERC20Votes {
+    // ...existing code...
+
     // Total supply: 1 billion MTAA
     uint256 public constant MAX_SUPPLY = 1_000_000_000 * 1e18;
     
@@ -81,7 +82,6 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, Reen
     event TokensVested(address indexed beneficiary, uint256 amount);
     event Staked(address indexed user, uint256 amount, uint256 lockPeriod);
     event Unstaked(address indexed user, uint256 amount, uint256 reward);
-    event DelegateChanged(address indexed delegator, address indexed fromDelegate, address indexed toDelegate);
     event DailyChallengeCompleted(address indexed user, string challenge, uint256 reward);
     event ReputationUpdated(address indexed user, uint256 newScore, ReputationTier tier);
     event FeeCollected(address indexed payer, uint256 amount, string feeType);
@@ -97,7 +97,7 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, Reen
     error ChallengeAlreadyCompleted();
     error InsufficientFee();
 
-    constructor(address _owner) 
+    constructor(address _owner)
         ERC20("MtaaDAO Token", "MTAA")
         ERC20Permit("MtaaDAO Token")
         ERC20Votes()
@@ -225,11 +225,6 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, Reen
     }
 
     // === GOVERNANCE SYSTEM ===
-
-    function delegate(address delegatee) external {
-        // Governance delegation is now handled by ERC20Votes
-        _delegate(msg.sender, delegatee);
-    }
 
     function getVotingPower(address account) external view returns (uint256) {
     // Voting power is now handled by ERC20Votes checkpoints
@@ -404,10 +399,33 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, Reen
     }
 
     // Override transfer functions to update delegation
-    function _afterTokenTransfer(address from, address to, uint256 amount) internal override {
-        super._afterTokenTransfer(from, to, amount);
-        // ERC20Votes handles delegation and checkpoints
-    // New error for staking minimum
     error StakeAmountTooLow();
+
+    function _afterTokenTransfer(address from, address to, uint256 amount)
+        internal override(ERC20, ERC20Votes)
+    {
+        super._afterTokenTransfer(from, to, amount);
     }
+
+    function _update(address from, address to, uint256 amount)
+        internal override(ERC20, ERC20Votes)
+    {
+        super._update(from, to, amount);
+    }
+    function _mint(address to, uint256 amount)
+        internal override(ERC20, ERC20Votes)
+    {
+        super._mint(to, amount);
+    }
+    function _burn(address account, uint256 amount)
+        internal override(ERC20, ERC20Votes)
+    {
+        super._burn(account, amount);
+    }
+    function nonces(address owner)
+        public view override(ERC20Permit, Nonces)
+        returns (uint256)
+    {
+        return super.nonces(owner);
+    
 }
