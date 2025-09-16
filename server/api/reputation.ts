@@ -1,72 +1,122 @@
 
 import { Request, Response } from 'express';
-import { ReputationService } from '../reputationService';
+import { db } from '../db';
+import { users, userActivities, proposals, tasks } from '../../shared/schema';
+import { eq, desc, sql, and, gte } from 'drizzle-orm';
+import { Logger } from '../utils/logger';
+import { AppError } from '../middleware/errorHandler';
 
-// Get user reputation
+const logger = new Logger('reputation-api');
+
 export async function getUserReputationHandler(req: Request, res: Response) {
   try {
     const { userId } = req.params;
-    const requesterId = req.user?.id;
 
-    if (!requesterId) {
-      return res.status(401).json({ error: 'Authentication required' });
+    // Get user's reputation score and activities
+    const userResult = await db
+      .select({
+        id: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        profilePicture: users.profilePicture,
+        reputation: users.reputation,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (userResult.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
     }
 
-    // Users can only view their own reputation or public summaries
-    if (userId !== requesterId) {
-      // Return limited public reputation info
-      const publicReputation = await ReputationService.getUserReputation(userId);
-      return res.json({
-        totalReputation: publicReputation.totalReputation,
-        globalReputation: publicReputation.globalReputation,
-        isPublic: true
-      });
-    }
+    const user = userResult[0];
 
-    const reputation = await ReputationService.getUserReputation(userId);
-    res.json({ reputation });
-  } catch (error: any) {
-    console.error('Error fetching user reputation:', error);
-    res.status(500).json({ error: error.message || 'Failed to fetch user reputation' });
+    // Get recent activities for reputation calculation
+    const activities = await db
+      .select()
+      .from(userActivities)
+      .where(eq(userActivities.userId, userId))
+      .orderBy(desc(userActivities.createdAt))
+      .limit(50);
+
+    // Calculate reputation breakdown
+    const proposalActivities = activities.filter(a => a.activityType === 'proposal_created' || a.activityType === 'proposal_voted');
+    const taskActivities = activities.filter(a => a.activityType === 'task_completed' || a.activityType === 'task_claimed');
+    const contributionActivities = activities.filter(a => a.activityType === 'contribution_made');
+
+    res.json({
+      user,
+      reputation: {
+        total: user.reputation || 0,
+        breakdown: {
+          proposals: proposalActivities.length * 10,
+          tasks: taskActivities.length * 15,
+          contributions: contributionActivities.length * 5,
+        },
+      },
+      recentActivities: activities.slice(0, 10),
+    });
+  } catch (error) {
+    logger.error('Failed to get user reputation', error);
+    throw new AppError('Failed to retrieve user reputation', 500);
   }
 }
 
-// Get global reputation leaderboard
 export async function getReputationLeaderboardHandler(req: Request, res: Response) {
   try {
-    const { limit = '20' } = req.query;
-    
-    const leaderboard = await ReputationService.getReputationLeaderboard(
-      undefined, 
-      parseInt(limit as string)
-    );
-    
+    const { limit = 20, timeframe = 'all' } = req.query;
+
+    let query = db
+      .select({
+        id: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        profilePicture: users.profilePicture,
+        reputation: users.reputation,
+        rank: sql<number>`ROW_NUMBER() OVER (ORDER BY ${users.reputation} DESC)`,
+      })
+      .from(users)
+      .where(sql`${users.reputation} > 0`)
+      .orderBy(desc(users.reputation))
+      .limit(parseInt(limit as string));
+
+    const leaderboard = await query;
+
     res.json({ leaderboard });
-  } catch (error: any) {
-    console.error('Error fetching reputation leaderboard:', error);
-    res.status(500).json({ error: error.message || 'Failed to fetch reputation leaderboard' });
+  } catch (error) {
+    logger.error('Failed to get reputation leaderboard', error);
+    throw new AppError('Failed to retrieve reputation leaderboard', 500);
   }
 }
 
-// Get DAO-specific reputation leaderboard
 export async function getDaoReputationLeaderboardHandler(req: Request, res: Response) {
   try {
     const { daoId } = req.params;
-    const { limit = '20' } = req.query;
-    const userId = req.user?.id;
+    const { limit = 20 } = req.query;
 
-    if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
+    // Get users who have activities in this DAO
+    const daoLeaderboard = await db
+      .select({
+        id: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        profilePicture: users.profilePicture,
+        reputation: users.reputation,
+        daoActivityCount: sql<number>`COUNT(${userActivities.id})`,
+      })
+      .from(users)
+      .innerJoin(userActivities, eq(users.id, userActivities.userId))
+      .where(and(
+        eq(userActivities.daoId, daoId),
+        sql`${users.reputation} > 0`
+      ))
+      .groupBy(users.id)
+      .orderBy(desc(users.reputation))
+      .limit(parseInt(limit as string));
 
-    const leaderboard = await ReputationService.getReputationLeaderboard(
-      daoId, 
-      parseInt(limit as string)
-    );
-    
-    res.json({ leaderboard });
-  } catch (error: any) {
-    console.error('Error fetching DAO reputation leaderboard:', error);
-    res.status(500).json({ error: error.message || 'Failed to fetch DAO reputation leaderboard' });
+    res.json({ leaderboard: daoLeaderboard });
+  } catch (error) {
+    logger.error('Failed to get DAO reputation leaderboard', error);
+    throw new AppError('Failed to retrieve DAO reputation leaderboard', 500);
   }
 }

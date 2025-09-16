@@ -1,213 +1,171 @@
 
-import express from 'express';
+import { Router } from 'express';
 import { z } from 'zod';
+import { db } from '../db';
+import { taskTemplates } from '../../shared/schema';
+import { eq, like, desc } from 'drizzle-orm';
+import { isAuthenticated } from '../nextAuthMiddleware';
 
-const router = express.Router();
+const router = Router();
 
-// Task template schema
-const taskTemplateSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().min(1),
+const createTaskTemplateSchema = z.object({
+  title: z.string().min(1).max(200),
+  description: z.string().min(1).max(2000),
   category: z.string().min(1),
-  difficulty: z.enum(['easy', 'medium', 'hard']),
-  estimatedTime: z.string().optional(),
-  requiresVerification: z.boolean().default(false),
-  suggestedReward: z.number().positive().optional(),
-  checklistItems: z.array(z.string()).optional(),
-  tags: z.array(z.string()).optional()
+  difficulty: z.enum(['beginner', 'intermediate', 'advanced', 'expert']),
+  estimatedHours: z.number().min(1).max(1000),
+  requiredSkills: z.array(z.string()).optional(),
+  bountyAmount: z.number().min(0),
+  deliverables: z.array(z.string()),
+  acceptanceCriteria: z.array(z.string()),
 });
-
-// Predefined task templates
-const defaultTemplates = [
-  {
-    id: 'frontend-component',
-    name: 'Frontend Component Development',
-    description: 'Create a reusable React component with proper styling and functionality',
-    category: 'Frontend Development',
-    difficulty: 'medium',
-    estimatedTime: '2-4 hours',
-    requiresVerification: true,
-    suggestedReward: 150,
-    checklistItems: [
-      'Component renders correctly',
-      'Props are properly typed',
-      'Responsive design implemented',
-      'Accessibility features included',
-      'Unit tests written'
-    ],
-    tags: ['react', 'typescript', 'ui/ux']
-  },
-  {
-    id: 'api-endpoint',
-    name: 'API Endpoint Implementation',
-    description: 'Develop a new API endpoint with proper validation and error handling',
-    category: 'Backend Development',
-    difficulty: 'medium',
-    estimatedTime: '3-5 hours',
-    requiresVerification: true,
-    suggestedReward: 200,
-    checklistItems: [
-      'Endpoint follows RESTful conventions',
-      'Input validation implemented',
-      'Error handling in place',
-      'Database queries optimized',
-      'API documentation updated'
-    ],
-    tags: ['api', 'backend', 'database']
-  },
-  {
-    id: 'documentation',
-    name: 'Technical Documentation',
-    description: 'Write comprehensive documentation for a feature or API',
-    category: 'Documentation',
-    difficulty: 'easy',
-    estimatedTime: '1-2 hours',
-    requiresVerification: false,
-    suggestedReward: 75,
-    checklistItems: [
-      'Clear and concise writing',
-      'Code examples included',
-      'Proper formatting and structure',
-      'Screenshots or diagrams where helpful'
-    ],
-    tags: ['documentation', 'writing']
-  },
-  {
-    id: 'bug-fix',
-    name: 'Bug Fix',
-    description: 'Identify and fix a reported bug with proper testing',
-    category: 'Development',
-    difficulty: 'varies',
-    estimatedTime: '1-4 hours',
-    requiresVerification: true,
-    suggestedReward: 100,
-    checklistItems: [
-      'Bug reproduced and understood',
-      'Root cause identified',
-      'Fix implemented and tested',
-      'Regression tests added',
-      'Code review completed'
-    ],
-    tags: ['bugfix', 'testing']
-  },
-  {
-    id: 'smart-contract',
-    name: 'Smart Contract Development',
-    description: 'Develop and deploy a smart contract with security considerations',
-    category: 'Smart Contract',
-    difficulty: 'hard',
-    estimatedTime: '1-2 days',
-    requiresVerification: true,
-    suggestedReward: 500,
-    checklistItems: [
-      'Contract logic implemented correctly',
-      'Security audit completed',
-      'Gas optimization performed',
-      'Comprehensive tests written',
-      'Deployment scripts created'
-    ],
-    tags: ['solidity', 'blockchain', 'security']
-  },
-  {
-    id: 'ui-design',
-    name: 'UI/UX Design',
-    description: 'Create user interface designs and prototypes',
-    category: 'Design',
-    difficulty: 'medium',
-    estimatedTime: '2-3 hours',
-    requiresVerification: true,
-    suggestedReward: 125,
-    checklistItems: [
-      'User-centered design approach',
-      'Consistent with brand guidelines',
-      'Responsive design considerations',
-      'Accessibility standards met',
-      'Prototype or mockup delivered'
-    ],
-    tags: ['design', 'ui/ux', 'figma']
-  }
-];
 
 // Get all task templates
 router.get('/', async (req, res) => {
   try {
-    const { category, difficulty } = req.query;
+    const { category, difficulty, search } = req.query;
     
-    let templates = defaultTemplates;
+    let query = db.select().from(taskTemplates);
     
     if (category) {
-      templates = templates.filter(t => t.category === category);
+      query = query.where(eq(taskTemplates.category, category as string));
     }
     
     if (difficulty) {
-      templates = templates.filter(t => t.difficulty === difficulty);
+      query = query.where(eq(taskTemplates.difficulty, difficulty as string));
     }
     
-    res.json(templates);
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    if (search) {
+      query = query.where(like(taskTemplates.title, `%${search}%`));
+    }
+    
+    const templates = await query.orderBy(desc(taskTemplates.createdAt));
+    
+    res.json({ templates });
+  } catch (error) {
+    console.error('Error fetching task templates:', error);
+    res.status(500).json({ error: 'Failed to fetch task templates' });
   }
 });
 
-// Get specific template
+// Get specific task template
 router.get('/:templateId', async (req, res) => {
   try {
     const { templateId } = req.params;
-    const template = defaultTemplates.find(t => t.id === templateId);
     
-    if (!template) {
-      return res.status(404).json({ error: 'Template not found' });
+    const template = await db
+      .select()
+      .from(taskTemplates)
+      .where(eq(taskTemplates.id, templateId))
+      .limit(1);
+    
+    if (template.length === 0) {
+      return res.status(404).json({ error: 'Task template not found' });
     }
     
-    res.json(template);
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    res.json({ template: template[0] });
+  } catch (error) {
+    console.error('Error fetching task template:', error);
+    res.status(500).json({ error: 'Failed to fetch task template' });
   }
 });
 
-// Create task from template
-router.post('/:templateId/create', async (req, res) => {
+// Create new task template (authenticated users only)
+router.post('/', isAuthenticated, async (req, res) => {
+  try {
+    const validatedData = createTaskTemplateSchema.parse(req.body);
+    const userId = req.user?.id;
+    
+    const newTemplate = await db
+      .insert(taskTemplates)
+      .values({
+        ...validatedData,
+        createdBy: userId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning();
+    
+    res.status(201).json({ template: newTemplate[0] });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Invalid input', details: error.errors });
+    }
+    console.error('Error creating task template:', error);
+    res.status(500).json({ error: 'Failed to create task template' });
+  }
+});
+
+// Update task template (creator only)
+router.put('/:templateId', isAuthenticated, async (req, res) => {
   try {
     const { templateId } = req.params;
-    const { daoId, customizations = {} } = req.body;
-    const userId = req.user?.claims?.sub;
+    const userId = req.user?.id;
+    const validatedData = createTaskTemplateSchema.partial().parse(req.body);
     
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+    // Check if user is the creator
+    const template = await db
+      .select()
+      .from(taskTemplates)
+      .where(eq(taskTemplates.id, templateId))
+      .limit(1);
+    
+    if (template.length === 0) {
+      return res.status(404).json({ error: 'Task template not found' });
     }
     
-    const template = defaultTemplates.find(t => t.id === templateId);
-    if (!template) {
-      return res.status(404).json({ error: 'Template not found' });
+    if (template[0].createdBy !== userId) {
+      return res.status(403).json({ error: 'Not authorized to update this template' });
     }
     
-    // Merge template with customizations
-    const taskData = {
-      title: customizations.title || template.name,
-      description: customizations.description || template.description,
-      category: customizations.category || template.category,
-      difficulty: customizations.difficulty || template.difficulty,
-      estimatedTime: customizations.estimatedTime || template.estimatedTime,
-      requiresVerification: customizations.requiresVerification ?? template.requiresVerification,
-      reward: customizations.reward || template.suggestedReward || 100,
-      daoId,
-      creatorId: userId,
-      status: 'open'
-    };
+    const updatedTemplate = await db
+      .update(taskTemplates)
+      .set({
+        ...validatedData,
+        updatedAt: new Date(),
+      })
+      .where(eq(taskTemplates.id, templateId))
+      .returning();
     
-    // Create the task using existing endpoint logic
-    const { db } = await import('../storage');
-    const { tasks } = await import('../../shared/schema');
+    res.json({ template: updatedTemplate[0] });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Invalid input', details: error.errors });
+    }
+    console.error('Error updating task template:', error);
+    res.status(500).json({ error: 'Failed to update task template' });
+  }
+});
+
+// Delete task template (creator only)
+router.delete('/:templateId', isAuthenticated, async (req, res) => {
+  try {
+    const { templateId } = req.params;
+    const userId = req.user?.id;
     
-    const task = await db.insert(tasks).values(taskData).returning();
+    // Check if user is the creator
+    const template = await db
+      .select()
+      .from(taskTemplates)
+      .where(eq(taskTemplates.id, templateId))
+      .limit(1);
     
-    res.status(201).json({
-      success: true,
-      task: task[0],
-      template: template.name
-    });
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    if (template.length === 0) {
+      return res.status(404).json({ error: 'Task template not found' });
+    }
+    
+    if (template[0].createdBy !== userId) {
+      return res.status(403).json({ error: 'Not authorized to delete this template' });
+    }
+    
+    await db
+      .delete(taskTemplates)
+      .where(eq(taskTemplates.id, templateId));
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting task template:', error);
+    res.status(500).json({ error: 'Failed to delete task template' });
   }
 });
 
