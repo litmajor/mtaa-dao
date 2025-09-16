@@ -324,16 +324,28 @@ export default function MtaaDashboard() {
       </AnimatePresence>
 
       <div className="relative z-10 max-w-7xl mx-auto p-6">
-        {/* Header with streak indicator */}
+        {/* Enhanced Header with Dashboard Navigation */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center space-x-4">
             <div className="w-12 h-12 bg-gradient-to-r from-orange-500 to-red-500 rounded-2xl flex items-center justify-center shadow-lg">
               <Sparkles className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">
-                Mtaa Dashboard
-              </h1>
+              <div className="flex items-center space-x-4 mb-2">
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">
+                  Community Dashboard
+                </h1>
+                <div className="flex items-center space-x-2">
+                  <Button variant="outline" size="sm" onClick={() => window.location.href = '/vault-dashboard'}>
+                    <TrendingUp className="w-4 h-4 mr-1" />
+                    Vault Portfolio
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => window.location.href = '/wallet'}>
+                    <Wallet className="w-4 h-4 mr-1" />
+                    Personal Finance
+                  </Button>
+                </div>
+              </div>
               <div className="flex items-center space-x-4">
                 <p className="text-gray-600">Welcome back, Community Leader 🌟</p>
                 {contributionStats && contributionStats.currentStreak > 0 && (

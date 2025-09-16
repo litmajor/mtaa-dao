@@ -64,43 +64,49 @@ export default function Navigation() {
   const isActive = (path: string) => location === path;
   const isLoggedIn = !!user;
 
-  const navItems = [
-    { href: "/dashboard", label: "Dashboard", icon: "📊" },
+  // Organized navigation with dashboard categories
+  const dashboardItems = [
+    { href: "/dashboard", label: "Community Dashboard", icon: "🏛️", description: "DAO activities & proposals" },
+    { href: "/vault-dashboard", label: "Vault Dashboard", icon: "🏦", description: "DeFi portfolio & governance" },
+    { href: "/wallet", label: "Wallet Dashboard", icon: "💳", description: "Personal finance management" },
+  ];
+
+  const primaryNavItems = [
     { href: "/proposals", label: "Proposals", icon: "📋" },
-    { href: "/vault-dashboard", label: "Vault Dashboard", icon: "🏦" },
-    { href: "/vault", label: "Vault", icon: "⚡" },
-    { href: "/daos", label: "DAOs", icon: "🏛️" },
-    { href: "/wallet", label: "Wallet", icon: "💳" },
-    { href: "/wallet-setup", label: "Setup Wallet", icon: "⚙️" }, // Added wallet setup link
-    { href: "/maonovault", label: "MaonoVault", icon: "⚡" },
     { href: "/tasks", label: "Tasks", icon: "🎯" },
+    { href: "/daos", label: "DAOs", icon: "🏛️" },
     { href: "/rewards", label: "Rewards", icon: "🎁" },
-    { href: "/referrals", label: "Referrals", icon: "🤝" },
     { href: "/analytics", label: "Analytics", icon: "📈" },
-    // Wallet sub-pages
-    { href: "/wallet/dashboard", label: "Wallet Dashboard", icon: "📋", parent: "wallet" },
-    { href: "/wallet/batch-transfer", label: "Batch Transfer", icon: "📦", parent: "wallet" },
-    { href: "/wallet/multisig", label: "Multisig", icon: "🔑", parent: "wallet" },
-    { href: "/wallet/dao-treasury", label: "DAO Treasury", icon: "🏦", parent: "wallet" },
-    // DAO sub-pages
-    { href: "/dao/treasury", label: "Treasury", icon: "💰", parent: "dao" },
-    { href: "/dao/treasury-overview", label: "Treasury Overview", icon: "📊", parent: "dao" },
-    { href: "/dao/contributors", label: "Contributors", icon: "👥", parent: "dao" },
-    { href: "/dao/analytics", label: "DAO Analytics", icon: "📈", parent: "dao" },
-    { href: "/dao/disbursements", label: "Disbursements", icon: "💸", parent: "dao" },
-    { href: "/dao/settings", label: "DAO Settings", icon: "⚙️", parent: "dao" },
-    // Admin routes for authorized users
-    ...(user?.roles === "admin" || user?.roles === "elder"
-      ? [
-          { href: "/superuser", label: "Super User Dashboard", icon: "👑", parent: "admin" },
-          { href: "/admin/billing", label: "Admin Billing", icon: "💳", parent: "admin" },
-          { href: "/admin/payments", label: "Payment Reconciliation", icon: "🔄", parent: "admin" },
-          { href: "/analytics", label: "Analytics", icon: "📊", parent: "admin" },
-        ]
-      : []),
-    // Special pages
-    { href: "/pricing", label: "Pricing", icon: "💰" },
+  ];
+
+  const vaultItems = [
+    { href: "/vault", label: "Personal Vault", icon: "⚡" },
+    { href: "/maonovault", label: "MaonoVault", icon: "💎" },
+  ];
+
+  const walletItems = [
+    { href: "/wallet-setup", label: "Wallet Setup", icon: "⚙️" },
+    { href: "/wallet/batch-transfer", label: "Batch Transfer", icon: "📦" },
+    { href: "/wallet/multisig", label: "Multisig", icon: "🔑" },
+  ];
+
+  const daoItems = [
+    { href: "/dao/treasury", label: "DAO Treasury", icon: "💰" },
+    { href: "/dao/contributors", label: "Contributors", icon: "👥" },
+    { href: "/dao/disbursements", label: "Disbursements", icon: "💸" },
+    { href: "/dao/settings", label: "Settings", icon: "⚙️" },
+  ];
+
+  const adminItems = user?.roles === "admin" || user?.roles === "elder" ? [
+    { href: "/superuser", label: "Super Dashboard", icon: "👑" },
+    { href: "/admin/billing", label: "Billing", icon: "💳" },
+    { href: "/admin/payments", label: "Payments", icon: "🔄" },
+  ] : [];
+
+  const utilityItems = [
+    { href: "/referrals", label: "Referrals", icon: "🤝" },
     { href: "/leaderboard", label: "Leaderboard", icon: "🏆" },
+    { href: "/pricing", label: "Pricing", icon: "💰" },
   ];
 
   return (
@@ -134,7 +140,50 @@ export default function Navigation() {
             {/* Navigation Items */}
             {isLoggedIn && (
               <div className="hidden lg:flex items-center space-x-1">
-                {navItems.map((item) => (
+                {/* Dashboard Dropdown */}
+                <div className="relative group">
+                  <Button
+                    variant="ghost"
+                    className="font-medium px-4 py-2 rounded-lg transition-all duration-300 text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white hover:bg-gray-100/50 dark:hover:bg-gray-800/50"
+                  >
+                    <span className="flex items-center space-x-2">
+                      <span className="text-sm">📊</span>
+                      <span>Dashboards</span>
+                      <ChevronDown className="w-4 h-4" />
+                    </span>
+                  </Button>
+                  
+                  {/* Dashboard Dropdown Menu */}
+                  <div className="absolute top-full left-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200/50 dark:border-gray-700/50 py-4 z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 backdrop-blur-xl">
+                    <div className="px-4 pb-3 border-b border-gray-100 dark:border-gray-700">
+                      <h3 className="font-semibold text-gray-900 dark:text-white">Choose Your Dashboard</h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">Access different aspects of your account</p>
+                    </div>
+                    <div className="p-2">
+                      {dashboardItems.map((item) => (
+                        <Link key={item.href} href={item.href}>
+                          <Button
+                            variant="ghost"
+                            className={`w-full justify-start px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg mb-1 ${
+                              isActive(item.href) ? "bg-mtaa-orange/10 text-mtaa-orange" : ""
+                            }`}
+                          >
+                            <span className="flex items-center space-x-3">
+                              <span className="text-lg">{item.icon}</span>
+                              <div>
+                                <span className="font-medium block">{item.label}</span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">{item.description}</span>
+                              </div>
+                            </span>
+                          </Button>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Primary Navigation */}
+                {primaryNavItems.map((item) => (
                   <Link key={item.href} href={item.href}>
                     <Button
                       variant="ghost"
@@ -148,12 +197,103 @@ export default function Navigation() {
                         <span className="text-sm">{item.icon}</span>
                         <span>{item.label}</span>
                       </span>
-                      {isActive(item.href) && (
-                        <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-1/2 h-0.5 bg-gradient-to-r from-mtaa-orange to-amber-500 rounded-full"></div>
-                      )}
                     </Button>
                   </Link>
                 ))}
+
+                {/* More Dropdown */}
+                <div className="relative group">
+                  <Button
+                    variant="ghost"
+                    className="font-medium px-4 py-2 rounded-lg transition-all duration-300 text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white hover:bg-gray-100/50 dark:hover:bg-gray-800/50"
+                  >
+                    <span className="flex items-center space-x-2">
+                      <span className="text-sm">⚙️</span>
+                      <span>More</span>
+                      <ChevronDown className="w-4 h-4" />
+                    </span>
+                  </Button>
+                  
+                  {/* More Dropdown Menu */}
+                  <div className="absolute top-full right-0 mt-2 w-72 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200/50 dark:border-gray-700/50 py-4 z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 backdrop-blur-xl">
+                    {/* Vault Section */}
+                    <div className="px-4 pb-2">
+                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Vault Management</h4>
+                      <div className="space-y-1">
+                        {vaultItems.map((item) => (
+                          <Link key={item.href} href={item.href}>
+                            <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                              <span className="mr-2">{item.icon}</span>
+                              {item.label}
+                            </Button>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Wallet Section */}
+                    <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-700">
+                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Wallet Tools</h4>
+                      <div className="space-y-1">
+                        {walletItems.map((item) => (
+                          <Link key={item.href} href={item.href}>
+                            <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                              <span className="mr-2">{item.icon}</span>
+                              {item.label}
+                            </Button>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* DAO Section */}
+                    <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-700">
+                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">DAO Management</h4>
+                      <div className="space-y-1">
+                        {daoItems.map((item) => (
+                          <Link key={item.href} href={item.href}>
+                            <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                              <span className="mr-2">{item.icon}</span>
+                              {item.label}
+                            </Button>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Admin Section */}
+                    {adminItems.length > 0 && (
+                      <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-700">
+                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Administration</h4>
+                        <div className="space-y-1">
+                          {adminItems.map((item) => (
+                            <Link key={item.href} href={item.href}>
+                              <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                                <span className="mr-2">{item.icon}</span>
+                                {item.label}
+                              </Button>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Utility Section */}
+                    <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-700">
+                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Community</h4>
+                      <div className="space-y-1">
+                        {utilityItems.map((item) => (
+                          <Link key={item.href} href={item.href}>
+                            <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                              <span className="mr-2">{item.icon}</span>
+                              {item.label}
+                            </Button>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>

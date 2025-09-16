@@ -170,12 +170,24 @@ const VaultDashboard = () => {
       <div className="absolute inset-0 bg-gradient-to-br from-blue-400/5 via-purple-400/5 to-pink-400/5" />
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
-        {/* Header with Notifications */}
+        {/* Enhanced Header with Dashboard Navigation */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-purple-900 bg-clip-text text-transparent mb-2">
-              Vault Dashboard
-            </h1>
+            <div className="flex items-center space-x-4 mb-2">
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">
+                Vault Dashboard
+              </h1>
+              <div className="flex items-center space-x-2">
+                <Button variant="outline" size="sm" onClick={() => window.location.href = '/dashboard'}>
+                  <Users className="w-4 h-4 mr-1" />
+                  Community
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => window.location.href = '/wallet'}>
+                  <Wallet className="w-4 h-4 mr-1" />
+                  Personal Wallet
+                </Button>
+              </div>
+            </div>
             <p className="text-gray-600 text-lg">Manage your DeFi portfolio and governance</p>
           </div>
           <div className="flex items-center space-x-4">

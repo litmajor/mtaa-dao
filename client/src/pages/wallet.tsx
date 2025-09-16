@@ -401,16 +401,28 @@ const EnhancedWalletPage = () => {
       <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-gradient-to-br from-emerald-400/10 to-teal-400/10 rounded-full blur-3xl animate-pulse delay-500" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
-        {/* Premium Header */}
+        {/* Enhanced Header with Dashboard Navigation */}
         <div className="flex items-center justify-between mb-12">
           <div className="flex items-center space-x-4">
             <div className="w-16 h-16 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl flex items-center justify-center shadow-lg">
               <Wallet className="w-8 h-8 text-white" />
             </div>
             <div>
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-purple-900 bg-clip-text text-transparent mb-2">
-                Mtaa Wallet
-              </h1>
+              <div className="flex items-center space-x-4 mb-2">
+                <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">
+                  Personal Wallet
+                </h1>
+                <div className="flex items-center space-x-2">
+                  <Button variant="outline" size="sm" onClick={() => window.location.href = '/dashboard'}>
+                    <Users className="w-4 h-4 mr-1" />
+                    Community
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => window.location.href = '/vault-dashboard'}>
+                    <TrendingUp className="w-4 h-4 mr-1" />
+                    DeFi Portfolio
+                  </Button>
+                </div>
+              </div>
               <p className="text-gray-600 text-lg">Secure digital asset management</p>
             </div>
           </div>
