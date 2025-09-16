@@ -173,7 +173,7 @@ export function registerRoutes(app: express.Application) {
   app.get('/api/reputation/leaderboard/:daoId', isAuthenticated, getDaoReputationLeaderboardHandler);
 
   // === ACHIEVEMENTS API ===
-  app.use('/api/achievements', achievementsRouter);
+  app.use('/api/achievements', isAuthenticated, achievementsRouter);
 
   // === USERPROFILE API ===
   app.get('/api/user/profile', isAuthenticated, getUserProfileHandler);
