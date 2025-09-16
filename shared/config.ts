@@ -11,8 +11,8 @@ const envSchema = z.object({
   HOST: z.string().default("0.0.0.0"),
 
   // Security
-  SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
-  JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
+  SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters").default("abcdefghijklmnopqrstuvwxyz123456789012345678901234567890"),
+  JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters").default("abcdefghijklmnopqrstuvwxyz123456789012345678901234567890"),
   ENCRYPTION_KEY: z.string().length(32, "ENCRYPTION_KEY must be exactly 32 characters").optional(),
 
   // OAuth Configuration
