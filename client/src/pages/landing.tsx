@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowRight, Users, Vote, Wallet, Target, Trophy, Zap, DollarSign, ClipboardList, Star, TrendingUp, Shield, Globe, CheckCircle, Sparkles, Heart, Coins, Award, Lock, BookOpen, Code, HelpCircle } from "lucide-react";
 import { useState, useEffect } from "react";
-import { Link } from 'react-router-dom';
+import { Link } from 'wouter';
 
 export default function MtaaDAOLanding() {
   const [isVisible, setIsVisible] = useState(false);

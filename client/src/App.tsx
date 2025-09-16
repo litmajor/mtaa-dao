@@ -164,12 +164,12 @@ function App() {
                 </Route>
                 <Route path="/vault">
                   <ProtectedRoute>
-                    <VaultDashboard />
+                    <Vault />
                   </ProtectedRoute>
                 </Route>
                 <Route path="/vault-dashboard">
                   <ProtectedRoute>
-                    <VaultDashboard />
+                    <Vault />
                   </ProtectedRoute>
                 </Route>
                 <Route path="/profile">
