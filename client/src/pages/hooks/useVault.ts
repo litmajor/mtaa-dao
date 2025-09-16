@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAccount, useContractRead, useContractWrite, usePrepareContractWrite } from "wagmi";
 import { parseEther, formatEther, Address } from "viem";
 import { toast } from "sonner";
-import MaonoVaultABI from "../../../contracts/MaonoVault.json";
+import MaonoVaultABI from "../../../../contracts/MaonoVault.json";
 
 // Vault contract addresses (update these with deployed addresses)
 const VAULT_ADDRESSES = {

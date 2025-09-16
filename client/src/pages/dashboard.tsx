@@ -4,6 +4,7 @@ import { Plus, Users, DollarSign, TrendingUp, Zap, Award, Bell, Search, Filter, 
 import { apiGet, apiPost } from "@/lib/api";
 import { formatNumber, formatCurrency } from "@/lib/formatters";
 import { motion, AnimatePresence } from "framer-motion";
+import { Button } from "@/components/ui/button";
 
 type DaoStats = { activeProposals: number; treasuryBalance: number; activeMembers: number; totalVotes: number; completedTasks: number; };
 type Proposal = { id: string; title: string; description: string; category: string; author: string; votes: number; timeLeft: string; status: string; urgency?: string; };

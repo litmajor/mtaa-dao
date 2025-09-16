@@ -103,8 +103,7 @@ contract MaonoVaultFactory is Ownable {
             asset,
             daoTreasury,
             manager,
-            vaultNames,
-
+            vaultNames
         ));
 
         // Configure vault parameters if provided

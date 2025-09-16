@@ -155,8 +155,9 @@ export default function DepositModal({
         <div className="space-y-4">
           {/* Currency Selection */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">Currency</label>
+            <label htmlFor="currency-select" className="text-sm font-medium">Currency</label>
             <select
+              id="currency-select"
               value={currency}
               onChange={(e) => setCurrency(e.target.value as "cUSD" | "CELO")}
               className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
