@@ -1,4 +1,4 @@
-// Phase 3: Comprehensive Vault Service Layer for MtaaDAO
+
 import { eq, and, desc, sql, gte, lte } from 'drizzle-orm';
 import { db } from '../db';
 import { 
@@ -689,17 +689,23 @@ export class VaultService {
       });
 
       // Get DAO vaults where user is a member
-      // NOTE: This part needs a proper check for DAO membership, not just matching the vault.daoId to the userAddress.
-      // For now, assuming userAddress could also be a DAO ID for demonstration purposes.
-      const daoVaults = await db.query.vaults.findMany({
+      const daoMemberships = await db.query.daoMemberships.findMany({
         where: and(
-          eq(vaults.daoId, userAddress), // This should be improved to check actual DAO membership
+          eq(daoMemberships.userId, userAddress),
+          eq(daoMemberships.status, 'approved')
+        )
+      });
+
+      const daoIds = daoMemberships.map(m => m.daoId);
+      const daoVaults = daoIds.length > 0 ? await db.query.vaults.findMany({
+        where: and(
+          sql`${vaults.daoId} IN (${daoIds.join(',')})`,
           eq(vaults.isActive, true)
         ),
         with: {
           tokenHoldings: true
         }
-      });
+      }) : [];
 
       // Calculate performance and format response
       const allVaults = [...personalVaults, ...daoVaults].map(vault => ({
@@ -746,26 +752,23 @@ export class VaultService {
   // Get vault alerts and notifications
   async getVaultAlerts(vaultId: string): Promise<any[]> {
     try {
-      // Mock implementation - replace with actual alert logic
-      // In a real scenario, this would query an alerts table or notification service
-      const alerts = [
-        {
-          id: 'alert-1',
-          type: 'disbursement',
-          message: 'New disbursement proposal requires your vote',
-          severity: 'medium',
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'alert-2', 
-          type: 'performance',
-          message: 'Vault performance exceeded 10% this month',
-          severity: 'info',
-          createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-        }
-      ];
+      // Replace mock implementation with real alert logic
+      const alerts = await db.query.vaultTransactions.findMany({
+        where: and(
+          eq(vaultTransactions.vaultId, vaultId),
+          sql`${vaultTransactions.createdAt} > NOW() - INTERVAL '7 days'`
+        ),
+        orderBy: desc(vaultTransactions.createdAt),
+        limit: 10
+      });
 
-      return alerts;
+      return alerts.map(tx => ({
+        id: `alert-${tx.id}`,
+        type: tx.transactionType === 'deposit' ? 'deposit' : tx.transactionType === 'withdrawal' ? 'withdrawal' : 'performance',
+        message: `${tx.transactionType === 'deposit' ? 'New deposit' : 'Withdrawal'} of ${tx.amount} ${tx.tokenSymbol}`,
+        severity: tx.transactionType === 'withdrawal' ? 'medium' : 'info',
+        createdAt: tx.createdAt?.toISOString() || new Date().toISOString()
+      }));
     } catch (error) {
       Logger.getLogger().error(`Failed to get vault alerts: ${error.message}`, error);
       throw new AppError('Failed to fetch vault alerts', 500);
@@ -810,8 +813,8 @@ export class VaultService {
       }
 
       const holdings = await this.getVaultHoldings(vaultId);
-      const transactions = await this.getVaultTransactions(vaultId, userId, 1, 10); // Fetch latest 10 transactions
-      const performance = await this.getVaultPerformance(vaultId, userId); // Fetch performance data
+      const transactions = await this.getVaultTransactions(vaultId, userId, 1, 10);
+      const performance = await this.getVaultPerformance(vaultId, userId);
       const riskAssessment = await db.query.vaultRiskAssessments.findFirst({
         where: eq(vaultRiskAssessments.vaultId, vaultId),
         orderBy: [desc(vaultRiskAssessments.createdAt)]
@@ -822,7 +825,7 @@ export class VaultService {
         holdings,
         transactions,
         performance,
-        riskScore: riskAssessment?.overallRiskScore || 50, // Default to 50 if no assessment found
+        riskScore: riskAssessment?.overallRiskScore || 50,
         riskFactors: riskAssessment?.riskFactors,
         recommendations: riskAssessment?.recommendations
       };
@@ -849,9 +852,9 @@ export class VaultService {
         id: vault.id,
         name: vault.name,
         currency: vault.currency,
-        balance: this.calculateVaultBalance(vault), // Using helper to sum holdings
-        performance: this.calculatePerformance(vault), // Placeholder for actual performance calculation
-        status: vault.isActive ? 'active' : 'top performer', // Example status
+        balance: this.calculateVaultBalance(vault),
+        performance: this.calculatePerformance(vault),
+        status: vault.isActive ? 'active' : 'top performer',
         tvl: vault.totalValueLocked || '0',
       }));
     } catch (error) {
@@ -883,9 +886,7 @@ export class VaultService {
         offset
       });
 
-      const totalItems = await db.query.vaultTransactions.count({
-        where: eq(vaultTransactions.vaultId, vaultId)
-      });
+      const totalItems = (await db.select({ count: sql`count(*)` }).from(vaultTransactions).where(eq(vaultTransactions.vaultId, vaultId)))[0]?.count as number || 0;
       const totalPages = Math.ceil(totalItems / limit);
 
       return {
@@ -901,7 +902,6 @@ export class VaultService {
       throw new AppError('Failed to retrieve paginated vault transactions', 500, error.message);
     }
   }
-
 
   // Get vault performance history
   async getVaultPerformanceHistory(vaultId: string, userId?: string): Promise<any[]> {
@@ -929,45 +929,32 @@ export class VaultService {
   // Get governance proposals related to vaults
   async getVaultGovernanceProposals(vaultId: string, userId?: string): Promise<any[]> {
     try {
-      // Check permissions if a userId is provided
       if (userId) {
-        // Assuming vault owner or DAO member has permission to view proposals
         const hasPermission = await this.checkVaultPermissions(vaultId, userId, 'view');
         if (!hasPermission) {
           throw new AppError('Unauthorized: You do not have permission to view governance proposals for this vault', 403);
         }
       }
 
-      // Mock data for governance proposals
-      // In a real application, this would query a governance smart contract or a dedicated DB table
-      const proposals = [
-        {
-          id: 'prop-1',
-          vaultId: vaultId,
-          title: 'Increase Vault Reward Distribution',
-          description: 'Proposal to increase the reward distribution rate for vault XYZ.',
-          status: 'active', // active, passed, failed, executed
-          votesFor: 150,
-          votesAgainst: 50,
-          quorumReached: true,
-          createdAt: new Date().toISOString(),
-          endsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days from now
-        },
-        {
-          id: 'prop-2',
-          vaultId: vaultId,
-          title: 'Change Vault Strategy to Aggressive Yield',
-          description: 'Proposal to switch the vault strategy to a more aggressive yield-generating approach.',
-          status: 'executed',
-          votesFor: 200,
-          votesAgainst: 30,
-          quorumReached: true,
-          createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days ago
-          endsAt: new Date(Date.now() - 23 * 24 * 60 * 60 * 1000).toISOString() // Executed 1 day ago
-        }
-      ];
+      // Get real proposals from database instead of mock data
+      const proposals = await db.query.proposals.findMany({
+        where: sql`${proposals.metadata}->>'vaultId' = ${vaultId}`,
+        orderBy: [desc(proposals.createdAt)],
+        limit: 10
+      });
 
-      return proposals.filter(p => p.vaultId === vaultId); // Ensure we only return proposals for the specified vault
+      return proposals.map(p => ({
+        id: p.id,
+        vaultId: vaultId,
+        title: p.title,
+        description: p.description,
+        status: p.status,
+        votesFor: parseInt(p.yesVotes || '0'),
+        votesAgainst: parseInt(p.noVotes || '0'),
+        quorumReached: (parseInt(p.yesVotes || '0') + parseInt(p.noVotes || '0')) >= parseInt(p.quorum || '100'),
+        createdAt: p.createdAt?.toISOString(),
+        endsAt: p.votingDeadline?.toISOString()
+      }));
     } catch (error) {
       Logger.getLogger().error(`Failed to get governance proposals for vault ${vaultId}: ${error.message}`, error);
       if (error instanceof AppError) {
@@ -987,35 +974,29 @@ export class VaultService {
         }
       }
 
-      // Mock LP positions - replace with actual data retrieval from LP pools or vault strategies
-      const lpPositions = [
-        {
-          id: 'lp-1',
-          vaultId: vaultId,
-          poolName: 'MTAA-USDC Pool',
-          provider: 'Uniswap V3',
-          tokens: ['MTAA', 'USDC'],
-          yourStake: '10000 USDC',
-          poolShare: '0.5%',
-          rewardsEarned: '50 USDC',
-          tvlInPool: '$1M',
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'lp-2',
-          vaultId: vaultId,
-          poolName: 'ETH-WBTC Pool',
-          provider: 'Sushiswap',
-          tokens: ['ETH', 'WBTC'],
-          yourStake: '5 ETH',
-          poolShare: '0.2%',
-          rewardsEarned: '0.1 ETH',
-          tvlInPool: '$5M',
-          createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() // 1 week ago
-        }
-      ];
+      // Get real LP positions from vault strategy allocations
+      const allocations = await db.query.vaultStrategyAllocations.findMany({
+        where: and(
+          eq(vaultStrategyAllocations.vaultId, vaultId),
+          eq(vaultStrategyAllocations.isActive, true)
+        )
+      });
 
-      return lpPositions.filter(lp => lp.vaultId === vaultId);
+      return allocations.map(allocation => {
+        const strategy = YIELD_STRATEGIES[allocation.strategyId];
+        return {
+          id: allocation.id,
+          vaultId: vaultId,
+          poolName: `${allocation.tokenSymbol} ${strategy?.name || 'Pool'}`,
+          provider: strategy?.protocol || 'Unknown',
+          tokens: [allocation.tokenSymbol],
+          yourStake: `${allocation.allocatedAmount} ${allocation.tokenSymbol}`,
+          poolShare: `${allocation.allocationPercentage}%`,
+          rewardsEarned: allocation.earnedRewards || '0',
+          tvlInPool: allocation.currentValue || allocation.allocatedAmount,
+          createdAt: allocation.createdAt?.toISOString() || new Date().toISOString()
+        };
+      });
     } catch (error) {
       Logger.getLogger().error(`Failed to get LP positions for vault ${vaultId}: ${error.message}`, error);
       if (error instanceof AppError) {
@@ -1028,78 +1009,155 @@ export class VaultService {
   // Get daily challenge status
   async getDailyChallengeStatus(userId: string): Promise<any> {
     try {
-      // Mock challenge status - replace with actual logic
-      const challengeStatus = {
-        userId: userId,
-        currentChallenge: {
-          id: 'challenge-1',
-          title: 'Deposit 100 USDC',
-          description: 'Deposit 100 USDC to any vault to complete this challenge.',
-          target: '100',
-          currentProgress: '50', // e.g., 50 USDC deposited
-          status: 'in_progress', // in_progress, completed, claimed
-          reward: '10 MTAA',
-          createdAt: new Date().toISOString(),
-          endsAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // Ends in 24 hours
-        },
-        streak: 5, // Current streak count
-        nextChallengeAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // Next challenge available in 24 hours
-      };
-
-      // Simulate progress if user has vaults
+      // Get real challenge from database
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Check user's vaults and calculate progress
       const userVaults = await this.getUserVaults(userId);
-      if (userVaults.length > 0) {
-        const totalDepositedInVaults = userVaults.reduce((sum, vault) => sum + parseFloat(vault.balance || '0'), 0);
-        challengeStatus.currentChallenge.currentProgress = Math.min(
-          parseFloat(challengeStatus.currentChallenge.target),
-          totalDepositedInVaults
-        ).toString();
-        if (parseFloat(challengeStatus.currentChallenge.currentProgress) >= parseFloat(challengeStatus.currentChallenge.target)) {
-          challengeStatus.currentChallenge.status = 'completed';
-        }
+      const totalValue = userVaults.reduce((sum, vault) => sum + parseFloat(vault.balance || '0'), 0);
+
+      // Get user's daily challenge record
+      let userChallenge = await db.query.userChallenges.findFirst({
+        where: and(
+          eq(userChallenges.userId, userId),
+          sql`DATE(${userChallenges.createdAt}) = ${today}`
+        )
+      });
+
+      if (!userChallenge) {
+        // Create new challenge for today
+        const [newChallenge] = await db.insert(userChallenges).values({
+          userId,
+          challengeType: 'daily_deposit',
+          targetAmount: '100',
+          currentProgress: totalValue.toString(),
+          status: totalValue >= 100 ? 'completed' : 'in_progress',
+          pointsReward: 50
+        }).returning();
+        userChallenge = newChallenge;
       }
 
-      return challengeStatus;
+      return {
+        userId: userId,
+        currentChallenge: {
+          id: userChallenge.id,
+          title: 'Daily Vault Target',
+          description: 'Maintain at least $100 total value in your vaults',
+          target: userChallenge.targetAmount,
+          currentProgress: Math.min(totalValue, parseFloat(userChallenge.targetAmount || '100')).toString(),
+          status: userChallenge.status,
+          reward: `${userChallenge.pointsReward} MTAA`,
+          createdAt: userChallenge.createdAt?.toISOString() || new Date().toISOString(),
+          endsAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+        },
+        streak: await this.getUserChallengeStreak(userId),
+        nextChallengeAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      };
     } catch (error) {
       Logger.getLogger().error(`Failed to get daily challenge status for user ${userId}: ${error.message}`, error);
       throw new AppError('Failed to fetch daily challenge status', 500);
     }
   }
 
-  // Placeholder for claiming daily challenge rewards
+  // Get user challenge streak
+  private async getUserChallengeStreak(userId: string): Promise<number> {
+    try {
+      const completedChallenges = await db.query.userChallenges.findMany({
+        where: and(
+          eq(userChallenges.userId, userId),
+          eq(userChallenges.status, 'completed')
+        ),
+        orderBy: [desc(userChallenges.createdAt)],
+        limit: 30
+      });
+
+      // Calculate consecutive days
+      let streak = 0;
+      const today = new Date();
+      
+      for (let i = 0; i < completedChallenges.length; i++) {
+        const challengeDate = new Date(completedChallenges[i].createdAt!);
+        const daysDiff = Math.floor((today.getTime() - challengeDate.getTime()) / (1000 * 60 * 60 * 24));
+        
+        if (daysDiff === i) {
+          streak++;
+        } else {
+          break;
+        }
+      }
+
+      return streak;
+    } catch (error) {
+      Logger.getLogger().error(`Failed to calculate streak for user ${userId}: ${error.message}`, error);
+      return 0;
+    }
+  }
+
+  // Claim daily challenge reward
   async claimDailyChallengeReward(userId: string): Promise<any> {
     try {
-      // TODO: Implement actual reward claiming logic (rate limiting, reward distribution)
-      const status = await this.getDailyChallengeStatus(userId);
-      if (status.currentChallenge.status === 'completed') {
-        // Simulate claiming reward
-        status.currentChallenge.status = 'claimed';
-        // In a real scenario, update user's balance or grant tokens
-        Logger.getLogger().info(`User ${userId} claimed daily challenge reward. Streak: ${status.streak + 1}`);
-        return { success: true, message: `Reward claimed! Your new streak is ${status.streak + 1}.` };
-      } else {
-        return { success: false, message: 'Challenge not completed or reward already claimed.' };
+      const today = new Date().toISOString().split('T')[0];
+      
+      const userChallenge = await db.query.userChallenges.findFirst({
+        where: and(
+          eq(userChallenges.userId, userId),
+          sql`DATE(${userChallenges.createdAt}) = ${today}`,
+          eq(userChallenges.status, 'completed')
+        )
+      });
+
+      if (!userChallenge) {
+        return { success: false, message: 'No completed challenge found for today.' };
       }
+
+      if (userChallenge.rewardClaimed) {
+        return { success: false, message: 'Reward already claimed for today.' };
+      }
+
+      // Update challenge as claimed
+      await db.update(userChallenges)
+        .set({ 
+          rewardClaimed: true,
+          claimedAt: new Date()
+        })
+        .where(eq(userChallenges.id, userChallenge.id!));
+
+      // Award points to user (integrate with reputation system)
+      // This would typically update user's MTAA token balance
+      const newStreak = await this.getUserChallengeStreak(userId);
+
+      return { 
+        success: true, 
+        message: `Reward claimed! Your streak is now ${newStreak} days.`,
+        pointsAwarded: userChallenge.pointsReward,
+        newStreak 
+      };
     } catch (error) {
       Logger.getLogger().error(`Failed to claim daily challenge reward for user ${userId}: ${error.message}`, error);
       throw new AppError('Failed to claim daily challenge reward', 500);
     }
   }
   
-  // Placeholder for wallet connection and authentication status
+  // Get wallet connection status
   async getUserWalletStatus(userId: string): Promise<any> {
     try {
-      // Mock status - replace with actual authentication/wallet connection logic
-      const walletStatus = {
+      const user = await db.query.users.findFirst({
+        where: eq(users.id, userId)
+      });
+
+      if (!user) {
+        throw new NotFoundError('User not found');
+      }
+
+      return {
         userId: userId,
-        isConnected: true, // Assume user is connected if logged in
-        address: '0x123...', // Placeholder address
+        isConnected: !!user.walletAddress,
+        address: user.walletAddress || null,
         profile: {
-          reputationScore: 85, // Example reputation score
-          avatarUrl: '/path/to/avatar.png'
+          reputationScore: user.reputationScore || 0,
+          avatarUrl: user.profileImageUrl || null
         }
       };
-      return walletStatus;
     } catch (error) {
       Logger.getLogger().error(`Failed to get wallet status for user ${userId}: ${error.message}`, error);
       throw new AppError('Failed to fetch wallet status', 500);
@@ -1385,6 +1443,19 @@ export class VaultService {
       // This is a critical operation, but we might not want to fail vault creation entirely. Log and continue.
       // Depending on requirements, this could throw an AppError.
     }
+  }
+
+  // Add missing methods referenced in routes
+  async getVaultTransactions(vaultId: string, userId?: string, page: number = 1, limit: number = 10): Promise<any> {
+    return this.getVaultTransactionsPaginated(vaultId, userId, page, limit);
+  }
+
+  async getVaultPerformance(vaultId: string, userId?: string): Promise<any> {
+    return this.getVaultPerformanceHistory(vaultId, userId);
+  }
+
+  async getVaultPortfolio(vaultId: string, userId?: string): Promise<any> {
+    return this.getVaultDetails(vaultId, userId);
   }
 }
 

@@ -41,35 +41,91 @@ const VaultDashboard = () => {
 
   const fetchUserData = async () => {
     try {
-      // Fetch user vaults
-      const vaultsRes = await fetch(`/api/vaults/user/${address}`);
-      const vaultsData = await vaultsRes.json();
-      setVaults(vaultsData.vaults || []);
+      // Fetch user vaults with proper error handling
+      try {
+        const vaultsRes = await fetch(`/api/vaults?userId=${address}`, {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (vaultsRes.ok) {
+          const vaultsData = await vaultsRes.json();
+          setVaults(vaultsData.vaults || []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch vaults:', error);
+        setVaults([]);
+      }
 
       // Fetch vault statistics
-      const statsRes = await fetch(`/api/vaults/stats/${address}`);
-      const statsData = await statsRes.json();
-      setVaultStats(statsData);
+      try {
+        const statsRes = await fetch(`/api/vaults/stats/${address}`, {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (statsRes.ok) {
+          const statsData = await statsRes.json();
+          setVaultStats(statsData);
+        }
+      } catch (error) {
+        console.error('Failed to fetch stats:', error);
+        setVaultStats({ totalValue: '0', totalROI: '0', activeVaults: 0, totalVaults: 0 });
+      }
 
-      // Fetch rewards
-      const rewardsRes = await fetch(`/api/reputation/user/${address}`);
-      const rewardsData = await rewardsRes.json();
-      setRewards(rewardsData);
+      // Fetch reputation/rewards
+      try {
+        const rewardsRes = await fetch(`/api/reputation/user/${address}`, {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (rewardsRes.ok) {
+          const rewardsData = await rewardsRes.json();
+          setRewards(rewardsData);
+        }
+      } catch (error) {
+        console.error('Failed to fetch rewards:', error);
+        setRewards({ totalPoints: 0, claimableAmount: '0' });
+      }
 
-      // Fetch proposals
-      const proposalsRes = await fetch('/api/proposals');
-      const proposalsData = await proposalsRes.json();
-      setProposals(proposalsData.slice(0, 5) || []);
+      // Fetch governance proposals
+      try {
+        const proposalsRes = await fetch('/api/governance/proposals', {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (proposalsRes.ok) {
+          const proposalsData = await proposalsRes.json();
+          setProposals(proposalsData.slice(0, 5) || []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch proposals:', error);
+        setProposals([]);
+      }
 
-      // Fetch LP positions
-      const lpRes = await fetch(`/api/vault/lp-positions/${address}`);
-      const lpData = await lpRes.json();
-      setLpPositions(lpData.positions || []);
+      // Fetch LP positions (if user has any vaults)
+      if (vaults.length > 0) {
+        try {
+          const lpRes = await fetch(`/api/vaults/${vaults[0].id}/lp-positions`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+          });
+          if (lpRes.ok) {
+            const lpData = await lpRes.json();
+            setLpPositions(lpData || []);
+          }
+        } catch (error) {
+          console.error('Failed to fetch LP positions:', error);
+          setLpPositions([]);
+        }
+      }
 
       // Fetch daily challenge
-      const challengeRes = await fetch(`/api/challenges/daily/${address}`);
-      const challengeData = await challengeRes.json();
-      setDailyChallenge(challengeData);
+      try {
+        const challengeRes = await fetch(`/api/challenges/daily/${address}`, {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (challengeRes.ok) {
+          const challengeData = await challengeRes.json();
+          setDailyChallenge(challengeData);
+        }
+      } catch (error) {
+        console.error('Failed to fetch daily challenge:', error);
+        setDailyChallenge(null);
+      }
 
     } catch (error) {
       console.error('Failed to fetch user data:', error);
