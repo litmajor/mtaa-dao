@@ -68,10 +68,11 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "connect-pg-simple": "^10.0.0",
+    "cors": "^2.8.5",
     "date-fns": "^3.6.0",
-    "dotenv": "^17.2.1",
+    "dotenv": "^17.2.2",
     "drizzle-orm": "^0.44.5",
-    "drizzle-zod": "^0.7.0",
+    "drizzle-zod": "^0.7.1",
     "embla-carousel-react": "^8.6.0",
     "ethers": "^6.15.0",
     "express": "^4.21.2",
@@ -120,7 +121,7 @@
     "winston": "^3.17.0",
     "wouter": "^3.3.5",
     "ws": "^8.18.0",
-    "zod": "^3.24.2",
+    "zod": "^3.25.76",
     "zod-validation-error": "^3.4.0"
   },
   "devDependencies": {
@@ -145,7 +146,7 @@
     "@types/validator": "^13.15.3",
     "@types/winston": "^2.4.4",
     "@types/ws": "^8.5.13",
-    "@vitejs/plugin-react": "^4.3.2",
+    "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.20",
     "cross-env": "^7.0.3",
     "drizzle-kit": "^0.30.4",
@@ -159,7 +160,7 @@
     "ts-node": "^10.9.2",
     "tsx": "^4.20.3",
     "typescript": "5.6.3",
-    "vite": "^5.4.19"
+    "vite": "^5.4.20"
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.8"
