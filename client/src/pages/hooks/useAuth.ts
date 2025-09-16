@@ -1,4 +1,3 @@
-
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 
@@ -26,7 +25,7 @@ interface AuthResponse {
 
 export function useAuth() {
   const queryClient = useQueryClient();
-  const [location, setLocation] = useLocation();
+  const [, setLocation] = useLocation();
 
   const { data: authData, isLoading, error } = useQuery({
     queryKey: ["/api/auth/user"],
@@ -34,14 +33,14 @@ export function useAuth() {
       const res = await fetch("/api/auth/user", {
         credentials: 'include',
       });
-      
+
       if (!res.ok) {
         if (res.status === 401) {
           throw new Error("Not authenticated");
         }
         throw new Error("Failed to fetch user");
       }
-      
+
       return res.json();
     },
     retry: false,
@@ -76,11 +75,11 @@ export function useAuth() {
         method: "POST",
         credentials: 'include',
       });
-      
+
       if (!res.ok) {
         throw new Error("Logout failed");
       }
-      
+
       return res.json();
     },
     onSuccess: () => {
@@ -90,11 +89,11 @@ export function useAuth() {
   });
 
   const registerMutation = useMutation({
-    mutationFn: async ({ email, password, name, walletAddress }: { 
-      email: string; 
-      password: string; 
-      name: string; 
-      walletAddress?: string; 
+    mutationFn: async ({ email, password, name, walletAddress }: {
+      email: string;
+      password: string;
+      name: string;
+      walletAddress?: string;
     }) => {
       const res = await fetch("/api/auth/register", {
         method: "POST",

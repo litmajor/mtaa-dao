@@ -24,6 +24,7 @@ import Profile from './pages/profile';
 import DAOs from './pages/daos';
 import Wallet from './pages/wallet';
 import WalletDashboard from './components/WalletDashboard';
+import VaultDashboard from './pages/vault-dashboard';
 import BatchTransfer from './components/batch-transfer';
 import Multisig from './components/multisig';
 import DaoTreasury from './components/dao-treasury';
