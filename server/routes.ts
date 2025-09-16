@@ -175,7 +175,7 @@ export function registerRoutes(app: express.Application) {
   // === ACHIEVEMENTS API ===
   app.use('/api/achievements', achievementsRouter);
 
-  // === USER PROFILE API ===
+  // === USERPROFILE API ===
   app.get('/api/user/profile', isAuthenticated, getUserProfileHandler);
   app.put('/api/user/profile', isAuthenticated, updateUserProfileHandler);
   app.put('/api/user/profile/password', isAuthenticated, changePasswordHandler);
