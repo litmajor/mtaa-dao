@@ -650,7 +650,7 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
             </div>
             <span>{typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...</span>
           </div>
-        )}}
+        )}
         <div ref={messagesEndRef} />
       </CardContent>
 
