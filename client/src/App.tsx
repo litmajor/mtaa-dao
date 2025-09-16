@@ -89,10 +89,21 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 function App() {
   const { isAuthenticated, isLoading } = useAuth();
+  // Import location from wouter for path checking
+  const location = Router.useLocation();
 
   if (isLoading) {
     return <PageLoading message="Loading Mtaa DAO..." />;
   }
+
+  // If there's an auth error but not loading, show landing page
+  if (!isLoading && !isAuthenticated && !location.pathname.startsWith('/login') && !location.pathname.startsWith('/register')) {
+    // Allow access to public routes
+    if (location.pathname === '/' || location.pathname.startsWith('/forgot-password') || location.pathname.startsWith('/reset-password')) {
+      // Continue with normal routing
+    }
+  }
+
 
   return (
     <HelmetProvider>
