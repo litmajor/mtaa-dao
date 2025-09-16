@@ -490,7 +490,7 @@ export default function MtaaDAOLanding() {
 
         <div className="text-center">
           <Link 
-            to="/success-stories" 
+            href="/success-stories" 
             className="inline-flex items-center bg-gradient-to-r from-orange-500 to-red-500 text-white px-8 py-4 rounded-2xl font-bold text-lg hover:shadow-lg transition-all duration-300 transform hover:scale-105"
           >
             View All Success Stories
@@ -568,7 +568,7 @@ export default function MtaaDAOLanding() {
           ].map((feature, index) => (
             <Link
               key={index}
-              to={feature.link}
+              href={feature.link}
               className="group bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105"
             >
               <div className="text-4xl mb-4">{feature.icon}</div>
@@ -599,7 +599,7 @@ export default function MtaaDAOLanding() {
             </div>
             <h3 className="text-xl font-bold text-gray-900 mb-2">Getting Started Guide</h3>
             <p className="text-gray-600 mb-4">Step-by-step tutorials for setting up your first DAO</p>
-            <Link to="/docs/getting-started" className="text-orange-600 hover:text-orange-700 font-medium">
+            <Link href="/docs/getting-started" className="text-orange-600 hover:text-orange-700 font-medium">
               Read Guide →
             </Link>
           </div>
@@ -610,7 +610,7 @@ export default function MtaaDAOLanding() {
             </div>
             <h3 className="text-xl font-bold text-gray-900 mb-2">API Documentation</h3>
             <p className="text-gray-600 mb-4">Complete API reference for developers and integrations</p>
-            <Link to="/docs/api" className="text-orange-600 hover:text-orange-700 font-medium">
+            <Link href="/docs/api" className="text-orange-600 hover:text-orange-700 font-medium">
               View Docs →
             </Link>
           </div>
@@ -621,7 +621,7 @@ export default function MtaaDAOLanding() {
             </div>
             <h3 className="text-xl font-bold text-gray-900 mb-2">Community Support</h3>
             <p className="text-gray-600 mb-4">Get help from our community and support team</p>
-            <Link to="/help" className="text-orange-600 hover:text-orange-700 font-medium">
+            <Link href="/help" className="text-orange-600 hover:text-orange-700 font-medium">
               Get Support →
             </Link>
           </div>
