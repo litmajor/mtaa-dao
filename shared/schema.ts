@@ -997,6 +997,69 @@ export const proposalLikesRelations = relations(proposalLikes, ({ one }) => ({
   }),
 }));
 
+
+// Daily Challenges Tables
+export const dailyChallenges = pgTable('daily_challenges', {
+  id: text('id').primaryKey().default(generateId()),
+  title: text('title').notNull(),
+  description: text('description'),
+  challengeType: text('challenge_type').notNull(), // 'daily_deposit', 'streak_maintain', etc.
+  targetAmount: text('target_amount'),
+  pointsReward: integer('points_reward').default(50),
+  isActive: boolean('is_active').default(true),
+  validFrom: timestamp('valid_from').defaultNow(),
+  validUntil: timestamp('valid_until'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow()
+});
+
+export const userChallenges = pgTable('user_challenges', {
+  id: text('id').primaryKey().default(generateId()),
+  userId: text('user_id').references(() => users.id).notNull(),
+  challengeId: text('challenge_id').references(() => dailyChallenges.id),
+  challengeType: text('challenge_type').notNull(),
+  targetAmount: text('target_amount'),
+  currentProgress: text('current_progress').default('0'),
+  status: text('status').default('in_progress'), // 'in_progress', 'completed', 'failed'
+  pointsReward: integer('points_reward').default(50),
+  rewardClaimed: boolean('reward_claimed').default(false),
+  claimedAt: timestamp('claimed_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow()
+});
+
+// Add proposals table if not exists
+export const proposals = pgTable('proposals', {
+  id: text('id').primaryKey().default(generateId()),
+  title: text('title').notNull(),
+  description: text('description'),
+  proposerAddress: text('proposer_address').notNull(),
+  daoId: text('dao_id'),
+  status: text('status').default('pending'), // 'pending', 'active', 'executed', 'failed'
+  yesVotes: text('yes_votes').default('0'),
+  noVotes: text('no_votes').default('0'),
+  quorum: text('quorum').default('100'),
+  votingDeadline: timestamp('voting_deadline'),
+  executionDeadline: timestamp('execution_deadline'),
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow()
+});
+
+// Add users table reference if not exists
+export const users = pgTable('users', {
+  id: text('id').primaryKey().default(generateId()),
+  email: text('email').unique().notNull(),
+  firstName: text('first_name'),
+  lastName: text('last_name'),
+  walletAddress: text('wallet_address'),
+  profileImageUrl: text('profile_image_url'),
+  reputationScore: integer('reputation_score').default(0),
+  roles: text('roles').default('member'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow()
+});
+
 export const commentLikesRelations = relations(commentLikes, ({ one }) => ({
   comment: one(proposalComments, {
     fields: [commentLikes.commentId],
