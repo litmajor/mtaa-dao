@@ -15,10 +15,10 @@ export function MobileNav() {
   const isActive = (path: string) => location === path;
 
   const primaryNavItems = [
-    { href: "/dashboard", label: "Dashboard", icon: Home },
-    { href: "/proposals", label: "Proposals", icon: FileText },
-    { href: "/vault", label: "Vault", icon: Vault },
+    { href: "/dashboard", label: "Community", icon: Home },
+    { href: "/vault-dashboard", label: "DeFi", icon: TrendingUp },
     { href: "/wallet", label: "Wallet", icon: Wallet },
+    { href: "/proposals", label: "Proposals", icon: FileText },
     { href: "/tasks", label: "Tasks", icon: Target },
   ];
 
