@@ -599,9 +599,9 @@ export default function MtaaDAOLanding() {
             </div>
             <h3 className="text-xl font-bold text-gray-900 mb-2">Getting Started Guide</h3>
             <p className="text-gray-600 mb-4">Step-by-step tutorials for setting up your first DAO</p>
-            <Link href="/docs/getting-started" className="text-orange-600 hover:text-orange-700 font-medium">
+            <a href="/docs/getting-started" className="text-orange-600 hover:text-orange-700 font-medium">
               Read Guide →
-            </Link>
+            </a>
           </div>
 
           <div className="text-center">
@@ -610,9 +610,9 @@ export default function MtaaDAOLanding() {
             </div>
             <h3 className="text-xl font-bold text-gray-900 mb-2">API Documentation</h3>
             <p className="text-gray-600 mb-4">Complete API reference for developers and integrations</p>
-            <Link href="/docs/api" className="text-orange-600 hover:text-orange-700 font-medium">
+            <a href="/docs/api" className="text-orange-600 hover:text-orange-700 font-medium">
               View Docs →
-            </Link>
+            </a>
           </div>
 
           <div className="text-center">
@@ -621,9 +621,9 @@ export default function MtaaDAOLanding() {
             </div>
             <h3 className="text-xl font-bold text-gray-900 mb-2">Community Support</h3>
             <p className="text-gray-600 mb-4">Get help from our community and support team</p>
-            <Link href="/help" className="text-orange-600 hover:text-orange-700 font-medium">
+            <a href="/help" className="text-orange-600 hover:text-orange-700 font-medium">
               Get Support →
-            </Link>
+            </a>
           </div>
         </div>
       </div>
