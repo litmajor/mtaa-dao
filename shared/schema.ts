@@ -233,10 +233,12 @@ export const proposals = pgTable("proposals", {
   id: uuid("id").primaryKey().defaultRandom(),
   title: text("title").notNull(),
   description: text("description").notNull(),
-  proposalType: varchar("proposal_type").default("general"), // general, budget, emergency
+  proposalType: varchar("proposal_type").default("general"), // general, budget, emergency, poll
   templateId: uuid("template_id").references(() => proposalTemplates.id),
   tags: jsonb("tags").default([]), // e.g., ["infrastructure", "education"]
   imageUrl: varchar("image_url"),
+  pollOptions: jsonb("poll_options").default([]), // For poll-type proposals: [{id, label, votes}]
+  allowMultipleChoices: boolean("allow_multiple_choices").default(false),
   proposer: varchar("proposer").references(() => users.id).notNull(),
   proposerId: varchar("proposer_id").references(() => users.id).notNull(),
   daoId: uuid("dao_id").references(() => daos.id).notNull(),

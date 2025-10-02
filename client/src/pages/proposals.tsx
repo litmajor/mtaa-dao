@@ -6,8 +6,9 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Plus, Filter, MessageSquare, Users } from "lucide-react";
 import ProposalCard from "../components/proposal-card";
+import PollProposalCard from "../components/poll-proposal-card";
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useNavigate } from "react-router-dom";
 import VotingModal from "../components/voting-modal";
 import { ProposalLeaderboard } from "../components/proposal_leaderboard";
 import DaoChat from "../components/dao-chat";
@@ -17,7 +18,7 @@ export default function Proposals() {
   const [showVotingModal, setShowVotingModal] = useState(false);
   const [filter, setFilter] = useState("all");
   const [showChat, setShowChat] = useState(false);
-  const [, navigate] = useLocation();
+  const navigate = useNavigate();
 
   // Fetch proposals (live data)
   const { data: proposals, isLoading: proposalsLoading, error: proposalsError } = useQuery({
@@ -124,18 +125,23 @@ export default function Proposals() {
           ) : (
             <div className="grid grid-cols-1 gap-6">
               {filteredProposals?.map((proposal: any) => (
-                <div 
-                  key={proposal.id} 
-                  onClick={() => handleProposalClick(proposal)}
-                  className="cursor-pointer transition-transform hover:scale-[1.02]"
-                >
-                  <ProposalCard
-                    proposal={proposal}
-                    onVote={() => {
-                      handleVoteClick(proposal);
-                    }}
-                    showFullDescription={true}
-                  />
+                <div key={proposal.id}>
+                  {proposal.proposalType === 'poll' ? (
+                    <PollProposalCard proposal={proposal} />
+                  ) : (
+                    <div 
+                      onClick={() => handleProposalClick(proposal)}
+                      className="cursor-pointer transition-transform hover:scale-[1.02]"
+                    >
+                      <ProposalCard
+                        proposal={proposal}
+                        onVote={() => {
+                          handleVoteClick(proposal);
+                        }}
+                        showFullDescription={true}
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
