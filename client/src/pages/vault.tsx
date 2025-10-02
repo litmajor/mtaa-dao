@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, TrendingUp, Target, DollarSign, ArrowUpRight, Sparkles, Crown, Award, Zap, Eye, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Plus, TrendingUp, Target, DollarSign, ArrowUpRight, Sparkles, Crown, Award, Zap, Eye, RefreshCw, AlertTriangle, Rocket } from 'lucide-react';
 import { useAccount } from 'wagmi';
 import { formatEther } from 'viem';
 import { useVaultInfo, useVaultBalance, useVaultPerformance, useVaultTransactions } from './hooks/useVault';
@@ -7,13 +7,22 @@ import { useWallet } from './hooks/useWallet';
 import DepositModal from '../components/vault/DepositModal';
 import WithdrawalModal from '../components/vault/WithdrawalModal';
 import VaultContextIndicator from '../components/vault/VaultContextIndicator';
+import VaultCreationWizard from '../components/vault/VaultCreationWizard';
+import { Dialog, DialogContent } from '../components/ui/dialog';
 
 const DEMO_VAULT_ADDRESS = "0x1234567890123456789012345678901234567890"; // Replace with actual deployed vault
 
 const VaultDashboard = () => {
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [showCreationWizard, setShowCreationWizard] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<"24h" | "7d" | "30d">("7d");
+
+  const handleVaultCreated = (vaultId: string) => {
+    setShowCreationWizard(false);
+    // Optionally redirect to the new vault
+    window.location.href = `/vault/${vaultId}`;
+  };
 
   const { address, isConnected } = useAccount();
   const { connectWallet, isConnecting } = useWallet();
@@ -143,6 +152,14 @@ const VaultDashboard = () => {
               <Sparkles className="w-4 h-4" />
               <span>Premium Vault</span>
             </Badge>
+            <Button 
+              onClick={() => setShowCreationWizard(true)}
+              variant="outline"
+              className="border-2 border-purple-300 hover:bg-purple-50"
+            >
+              <Rocket className="mr-2 h-5 w-5" />
+              Launch App
+            </Button>
             <Button onClick={() => setShowDepositModal(true)}>
               <Plus className="mr-2 h-5 w-5" />
               Deposit
@@ -333,6 +350,16 @@ const VaultDashboard = () => {
         onOpenChange={setShowWithdrawModal}
         vaultAddress={DEMO_VAULT_ADDRESS}
       />
+
+      {/* Vault Creation Wizard */}
+      <Dialog open={showCreationWizard} onOpenChange={setShowCreationWizard}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <VaultCreationWizard
+            onClose={() => setShowCreationWizard(false)}
+            onSuccess={handleVaultCreated}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
