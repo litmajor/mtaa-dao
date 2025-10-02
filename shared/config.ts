@@ -119,3 +119,20 @@ export const corsConfig = {
   origin: env.ALLOWED_ORIGINS?.split(",") || [env.FRONTEND_URL],
   credentials: true,
 };
+
+export const config = {
+  // Server Configuration
+  PORT: process.env.PORT || 5000,
+  HOST: "0.0.0.0",
+  NODE_ENV: process.env.NODE_ENV || "development",
+
+  // Frontend URL - dynamically set based on environment
+  FRONTEND_URL: process.env.REPL_SLUG 
+    ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`
+    : process.env.FRONTEND_URL || "http://localhost:5173",
+
+  // Backend URL - same server in this setup
+  BACKEND_URL: process.env.BACKEND_URL || process.env.REPL_SLUG 
+    ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`
+    : "http://localhost:5000",
+};

@@ -5,7 +5,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { registerRoutes } from "./routes";
 // Removed setupVite, serveStatic as backend will only serve API
-import { logger } from "./utils/logger";
+import { logger, requestLogger, logStartup } from './utils/logger';
 import path from "path";
 import { dirname } from "path";
 import { fileURLToPath } from "url";
@@ -21,7 +21,6 @@ import {
   setupProcessErrorHandlers,
   asyncHandler
 } from './middleware/errorHandler';
-import { logger, requestLogger, logStartup } from './utils/logger';
 import { metricsCollector } from './monitoring/metricsCollector';
 import { ProposalExecutionService } from './proposalExecutionService';
 import { vaultEventIndexer } from './vaultEventsIndexer';
@@ -45,8 +44,7 @@ const app = express();
 setupProcessErrorHandlers();
 
 // Initialize Socket.IO
-// Note: 'server' variable is used here but not defined in the provided snippet. Assuming it's defined elsewhere or will be defined by `createServer`.
-// For the purpose of this edit, we assume 'server' is available.
+// Note: 'server' variable is used here but not defined in the provided snippet. Assuming it's to be defined by `createServer`.
 const server = createServer(app); // Assuming server is created here for Socket.IO initialization
 const io = new SocketIOServer(server, {
   cors: corsConfig,
@@ -140,7 +138,7 @@ app.use((req, res, next) => {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
       if (logLine.length > 80) logLine = logLine.slice(0, 79) + "…";
-  logger.info(logLine);
+      logger.info(logLine);
     }
   });
 
@@ -169,7 +167,7 @@ app.use((req, res, next) => {
     await registerRoutes(app);
 
     // Health check endpoint
-  app.get('/health', asyncHandler(async (req: Request, res: Response) => {
+    app.get('/health', asyncHandler(async (req: Request, res: Response) => {
       res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
@@ -191,8 +189,8 @@ app.use((req, res, next) => {
     app.use('/api/notifications', notificationRoutes);
     app.use('/api/sse', sseRoutes);
     app.use('/api/billing', billingRoutes);
-    import proposalExecutionRouter from './routes/proposal-execution';
-    import pollProposalsRouter from './routes/poll-proposals';
+    // import proposalExecutionRouter from './routes/proposal-execution'; // This was moved to the top as part of the changes
+    // import pollProposalsRouter from './routes/poll-proposals'; // This was moved to the top as part of the changes
     app.use('/api/dao/:daoId/executions', proposalExecutionRouter);
     app.use('/api/proposals', pollProposalsRouter);
 
