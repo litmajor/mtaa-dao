@@ -1,6 +1,6 @@
 import React, { lazy, Suspense } from 'react';
 import { HelmetProvider } from 'react-helmet-async';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from './pages/hooks/useAuth';
 import { PageLoading } from './components/ui/page-loading';
@@ -89,18 +89,6 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   return <>{children}</>;
 };
-
-function App() {
-  return (
-    <HelmetProvider>
-      <ThemeProvider>
-        <BrowserRouter>
-          <AppContent />
-        </BrowserRouter>
-      </ThemeProvider>
-    </HelmetProvider>
-  );
-}
 
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -218,6 +206,18 @@ function AppContent() {
 
           <MobileNav />
         </div>
+  );
+}
+
+function App() {
+  return (
+    <HelmetProvider>
+      <ThemeProvider>
+        <Router>
+          <AppContent />
+        </Router>
+      </ThemeProvider>
+    </HelmetProvider>
   );
 }
 
