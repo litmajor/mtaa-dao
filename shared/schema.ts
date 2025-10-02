@@ -1046,7 +1046,7 @@ export const proposalLikesRelations = relations(proposalLikes, ({ one }) => ({
 
 // Daily Challenges Tables
 export const dailyChallenges = pgTable('daily_challenges', {
-  id: text('id').primaryKey().default(generateId()),
+  id: uuid('id').primaryKey().defaultRandom(),
   title: text('title').notNull(),
   description: text('description'),
   challengeType: text('challenge_type').notNull(), // 'daily_deposit', 'streak_maintain', etc.
@@ -1060,9 +1060,9 @@ export const dailyChallenges = pgTable('daily_challenges', {
 });
 
 export const userChallenges = pgTable('user_challenges', {
-  id: text('id').primaryKey().default(generateId()),
+  id: uuid('id').primaryKey().defaultRandom(),
   userId: text('user_id').references(() => users.id).notNull(),
-  challengeId: text('challenge_id').references(() => dailyChallenges.id),
+  challengeId: uuid('challenge_id').references(() => dailyChallenges.id),
   challengeType: text('challenge_type').notNull(),
   targetAmount: text('target_amount'),
   currentProgress: text('current_progress').default('0'),
@@ -1150,10 +1150,3 @@ export const insertVaultPerformanceSchema = createInsertSchema(vaultPerformance)
 export const insertVaultRiskAssessmentSchema = createInsertSchema(vaultRiskAssessments);
 export const insertVaultStrategyAllocationSchema = createInsertSchema(vaultStrategyAllocations);
 export const insertVaultGovernanceProposalSchema = createInsertSchema(vaultGovernanceProposals);
-
-
-function generateId(): string | import("drizzle-orm").SQL<unknown> {
-
-  throw new Error("Function not implemented.");
-}
-// Export all types

@@ -4,6 +4,7 @@ import { daos, proposals, votes, tasks, vaults, users } from '../shared/schema';
 import { eq, gte, lte, desc, asc, count, sum, avg, sql, and } from 'drizzle-orm';
 // 'and' is now imported for use in query conditions
 import { format, subDays, subMonths, subYears, startOfDay, endOfDay } from 'date-fns';
+import { EventEmitter } from 'events';
 
 export interface AnalyticsMetrics {
   totalDaos: number;
@@ -47,7 +48,7 @@ export interface PerformanceBenchmarks {
 }
 
 export class AnalyticsService {
-  private eventEmitter = new (require('events').EventEmitter)();
+  private eventEmitter = new EventEmitter();
   private realTimeMetrics: Map<string, AnalyticsMetrics> = new Map();
   private userActivityCache: Map<string, { timestamp: Date; action: string }[]> = new Map();
 

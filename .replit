@@ -27,7 +27,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "npm run dev"
+args = "PORT=5000 npx tsx server/index.ts"
 waitForPort = 5000
 
 [[ports]]
@@ -37,6 +37,10 @@ externalPort = 3000
 [[ports]]
 localPort = 5000
 externalPort = 80
+
+[[ports]]
+localPort = 41379
+externalPort = 3001
 
 [deployment]
 deploymentTarget = "autoscale"
