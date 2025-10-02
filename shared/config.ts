@@ -1,4 +1,3 @@
-
 import { z } from "zod";
 import dotenv from "dotenv";
 
@@ -65,8 +64,8 @@ const envSchema = z.object({
   SENTRY_DSN: z.string().url().optional(),
 
   // App Configuration
-  FRONTEND_URL: z.string().url().default("http://localhost:5173"),
-  BACKEND_URL: z.string().url().default("http://localhost:5000"),
+  FRONTEND_URL: z.string().default("http://localhost:5173"),
+  BACKEND_URL: z.string().default("http://localhost:5000"),
   API_BASE_URL: z.string().url().default("http://localhost:5000/api"),
   MAX_FILE_SIZE: z.string().optional(),
   UPLOAD_DIR: z.string().default("uploads"),
