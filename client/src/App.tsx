@@ -1,6 +1,6 @@
 import React, { lazy, Suspense } from 'react';
 import { HelmetProvider } from 'react-helmet-async';
-import { Router, Navigate } from 'react-router-dom'; // Import Navigate from react-router-dom
+import { Router, Navigate, useLocation } from 'react-router-dom'; // Import Navigate and useLocation from react-router-dom
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from './pages/hooks/useAuth';
 import { PageLoading } from './components/ui/page-loading';
@@ -94,7 +94,7 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 // Renamed App to AppContent to avoid conflict with Router
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
-  // No longer need to import useLocation from wouter
+  const location = useLocation(); // Use useLocation from react-router-dom
 
   if (isLoading) {
     return <PageLoading message="Loading Mtaa DAO..." />;

@@ -191,6 +191,11 @@ app.use((req, res, next) => {
     app.use('/api/notifications', notificationRoutes);
     app.use('/api/sse', sseRoutes);
     app.use('/api/billing', billingRoutes);
+    import proposalExecutionRouter from './routes/proposal-execution';
+    import pollProposalsRouter from './routes/poll-proposals';
+    app.use('/api/dao/:daoId/executions', proposalExecutionRouter);
+    app.use('/api/proposals', pollProposalsRouter);
+
 
     // 404 handler (must be after all API routes)
     app.use(notFoundHandler);
