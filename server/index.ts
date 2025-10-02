@@ -32,6 +32,8 @@ import analyticsRoutes from './routes/analytics';
 import notificationRoutes from './routes/notifications';
 import sseRoutes from './routes/sse';
 import billingRoutes from './routes/billing';
+import proposalExecutionRouter from './routes/proposal-execution';
+import pollProposalsRouter from './routes/poll-proposals';
 import './middleware/validation'; // Added for validation middleware
 // Assuming ReputationService is defined and exported from './reputationService'
 import { ReputationService } from './reputationService'; // Added for ReputationService
@@ -189,8 +191,6 @@ app.use((req, res, next) => {
     app.use('/api/notifications', notificationRoutes);
     app.use('/api/sse', sseRoutes);
     app.use('/api/billing', billingRoutes);
-    // import proposalExecutionRouter from './routes/proposal-execution'; // This was moved to the top as part of the changes
-    // import pollProposalsRouter from './routes/poll-proposals'; // This was moved to the top as part of the changes
     app.use('/api/dao/:daoId/executions', proposalExecutionRouter);
     app.use('/api/proposals', pollProposalsRouter);
 
