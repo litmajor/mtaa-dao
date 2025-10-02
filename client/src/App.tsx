@@ -1,6 +1,6 @@
 import React, { lazy, Suspense } from 'react';
 import { HelmetProvider } from 'react-helmet-async';
-import { Router, Route, Switch, Redirect } from 'wouter';
+import { Router, Route, Switch, Redirect, useLocation } from 'wouter';
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from './pages/hooks/useAuth';
 import { PageLoading } from './components/ui/page-loading';
@@ -91,16 +91,16 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 function App() {
   const { isAuthenticated, isLoading } = useAuth();
   // Import location from wouter for path checking
-  const location = Router.useLocation();
+  const [location] = useLocation();
 
   if (isLoading) {
     return <PageLoading message="Loading Mtaa DAO..." />;
   }
 
   // If there's an auth error but not loading, show landing page
-  if (!isLoading && !isAuthenticated && !location.pathname.startsWith('/login') && !location.pathname.startsWith('/register')) {
+  if (!isLoading && !isAuthenticated && !location.startsWith('/login') && !location.startsWith('/register')) {
     // Allow access to public routes
-    if (location.pathname === '/' || location.pathname.startsWith('/forgot-password') || location.pathname.startsWith('/reset-password')) {
+    if (location === '/' || location.startsWith('/forgot-password') || location.startsWith('/reset-password')) {
       // Continue with normal routing
     }
   }

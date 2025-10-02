@@ -17,7 +17,7 @@ import {
   type InsertVaultPerformance,
   type InsertVaultRiskAssessment
 } from '../../shared/schema';
-import { TokenRegistry, YIELD_STRATEGIES, type SupportedToken } from '../../shared/tokenRegistry';
+import { TokenRegistry, YIELD_STRATEGIES, type SupportedToken, SupportedTokenEnum } from '../../shared/tokenRegistry';
 import { ethers } from 'ethers';
 import { tokenService } from './tokenService';
 import { Logger } from "../utils/logger";
@@ -70,7 +70,7 @@ const createVaultSchema = z.object({
   userId: z.string().optional(),
   daoId: z.string().optional(),
   vaultType: z.enum(['regular', 'savings', 'locked_savings', 'yield', 'dao_treasury']),
-  primaryCurrency: z.nativeEnum(SupportedToken),
+  primaryCurrency: z.enum(['CELO', 'cUSD', 'cEUR', 'USDT', 'USDC', 'MTAA'] as const),
   yieldStrategy: z.string().optional(),
   riskLevel: z.enum(['low', 'medium', 'high']).default('low'),
   minDeposit: z.string().optional(),
@@ -80,7 +80,7 @@ const createVaultSchema = z.object({
 const depositSchema = z.object({
   vaultId: z.string().min(1, "Vault ID is required"),
   userId: z.string().min(1, "User ID is required"),
-  tokenSymbol: z.nativeEnum(SupportedToken),
+  tokenSymbol: z.enum(['CELO', 'cUSD', 'cEUR', 'USDT', 'USDC', 'MTAA'] as const),
   amount: z.string().refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) >= 0, {
     message: "Amount must be a non-negative number",
   }),
@@ -90,7 +90,7 @@ const depositSchema = z.object({
 const withdrawSchema = z.object({
   vaultId: z.string().min(1, "Vault ID is required"),
   userId: z.string().min(1, "User ID is required"),
-  tokenSymbol: z.nativeEnum(SupportedToken),
+  tokenSymbol: z.enum(['CELO', 'cUSD', 'cEUR', 'USDT', 'USDC', 'MTAA'] as const),
   amount: z.string().refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) >= 0, {
     message: "Amount must be a non-negative number",
   }),
@@ -101,7 +101,7 @@ const strategyAllocationSchema = z.object({
   vaultId: z.string().min(1, "Vault ID is required"),
   userId: z.string().min(1, "User ID is required"),
   strategyId: z.string().min(1, "Strategy ID is required"),
-  tokenSymbol: z.nativeEnum(SupportedToken),
+  tokenSymbol: z.enum(['CELO', 'cUSD', 'cEUR', 'USDT', 'USDC', 'MTAA'] as const),
   allocationPercentage: z.number().min(0).max(100),
 });
 

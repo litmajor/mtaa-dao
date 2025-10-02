@@ -237,3 +237,13 @@ export class TokenRegistry {
 // Type exports for use in other modules
 export type SupportedToken = keyof typeof TOKEN_REGISTRY;
 export type StrategyId = keyof typeof YIELD_STRATEGIES;
+
+// Create enum for Zod validation
+export const SupportedTokenEnum = {
+  CELO: 'CELO',
+  cUSD: 'cUSD',
+  cEUR: 'cEUR',
+  USDT: 'USDT',
+  USDC: 'USDC',
+  MTAA: 'MTAA'
+} as const;
