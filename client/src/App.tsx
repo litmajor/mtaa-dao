@@ -1,6 +1,6 @@
 import React, { lazy, Suspense } from 'react';
 import { HelmetProvider } from 'react-helmet-async';
-import { Router, Navigate, useLocation } from 'react-router-dom'; // Import Navigate and useLocation from react-router-dom
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from './pages/hooks/useAuth';
 import { PageLoading } from './components/ui/page-loading';
@@ -8,7 +8,6 @@ import { SkipLink } from './components/ui/skip-link';
 import Navigation from './components/navigation';
 import { MobileNav } from './components/mobile-nav';
 import { ThemeProvider } from "./components/theme-provider";
-import { Routes, Route } from 'react-router-dom'; // Import Routes and Route from react-router-dom
 
 // Import all page components
 const CreateDaoLazy = lazy(() => import('./pages/create-dao'));
@@ -91,24 +90,28 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;
 };
 
-// Renamed App to AppContent to avoid conflict with Router
+function App() {
+  return (
+    <HelmetProvider>
+      <ThemeProvider>
+        <BrowserRouter>
+          <AppContent />
+        </BrowserRouter>
+      </ThemeProvider>
+    </HelmetProvider>
+  );
+}
+
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
-  const location = useLocation(); // Use useLocation from react-router-dom
+  const location = useLocation();
 
   if (isLoading) {
     return <PageLoading message="Loading Mtaa DAO..." />;
   }
 
-  // Removed the conditional logic for public routes as it's handled by ProtectedRoute and PublicRoute wrappers
-
-
   return (
-    <HelmetProvider>
-      <ThemeProvider>
-        {/* Use react-router-dom's Router component */}
-        <Router>
-          <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground">
             <Helmet>
               <title>{isAuthenticated ? "Dashboard | Mtaa DAO" : "Welcome | Mtaa DAO"}</title>
               <meta name="description" content="Mtaa DAO — decentralized community finance platform" />
@@ -215,11 +218,7 @@ function AppContent() {
 
           <MobileNav />
         </div>
-      </Router>
-    </HelmetProvider>
-    </ThemeProvider>
   );
 }
 
-// Export AppContent as the main App component
-export default AppContent;
+export default App;

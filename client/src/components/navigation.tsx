@@ -76,7 +76,6 @@ export default function Navigation() {
     { href: "/tasks", label: "Tasks", icon: "🎯" },
     { href: "/daos", label: "DAOs", icon: "🏛️" },
     { href: "/rewards", label: "Rewards", icon: "🎁" },
-    { href: "/analytics", label: "Analytics", icon: "📈" },
   ];
 
   const vaultItems = [
@@ -215,10 +214,23 @@ export default function Navigation() {
                   </Button>
                   
                   {/* More Dropdown Menu */}
-                  <div className="absolute top-full right-0 mt-2 w-72 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200/50 dark:border-gray-700/50 py-4 z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 backdrop-blur-xl">
-                    {/* Vault Section */}
+                  <div className="absolute top-full right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200/50 dark:border-gray-700/50 py-4 z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 backdrop-blur-xl max-h-[80vh] overflow-y-auto">
+                    {/* Analytics Section */}
                     <div className="px-4 pb-2">
-                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Vault Management</h4>
+                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">📊 Analytics & Reports</h4>
+                      <div className="space-y-1">
+                        <Link href="/analytics">
+                          <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                            <span className="mr-2">📈</span>
+                            Analytics Dashboard
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
+
+                    {/* Vault Section */}
+                    <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-700">
+                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">🏦 Vault Management</h4>
                       <div className="space-y-1">
                         {vaultItems.map((item) => (
                           <Link key={item.href} href={item.href}>
@@ -233,7 +245,7 @@ export default function Navigation() {
 
                     {/* Wallet Section */}
                     <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-700">
-                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Wallet Tools</h4>
+                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">💳 Wallet Tools</h4>
                       <div className="space-y-1">
                         {walletItems.map((item) => (
                           <Link key={item.href} href={item.href}>
@@ -243,12 +255,18 @@ export default function Navigation() {
                             </Button>
                           </Link>
                         ))}
+                        <Link href="/minipay">
+                          <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                            <span className="mr-2">📱</span>
+                            MiniPay Demo
+                          </Button>
+                        </Link>
                       </div>
                     </div>
 
                     {/* DAO Section */}
                     <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-700">
-                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">DAO Management</h4>
+                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">🏛️ DAO Management</h4>
                       <div className="space-y-1">
                         {daoItems.map((item) => (
                           <Link key={item.href} href={item.href}>
@@ -264,7 +282,7 @@ export default function Navigation() {
                     {/* Admin Section */}
                     {adminItems.length > 0 && (
                       <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-700">
-                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Administration</h4>
+                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">👑 Administration</h4>
                         <div className="space-y-1">
                           {adminItems.map((item) => (
                             <Link key={item.href} href={item.href}>
@@ -278,9 +296,9 @@ export default function Navigation() {
                       </div>
                     )}
 
-                    {/* Utility Section */}
+                    {/* Community Section */}
                     <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-700">
-                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Community</h4>
+                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">🤝 Community & Growth</h4>
                       <div className="space-y-1">
                         {utilityItems.map((item) => (
                           <Link key={item.href} href={item.href}>
@@ -290,6 +308,43 @@ export default function Navigation() {
                             </Button>
                           </Link>
                         ))}
+                        <Link href="/success-stories">
+                          <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                            <span className="mr-2">⭐</span>
+                            Success Stories
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
+
+                    {/* Resources Section */}
+                    <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-700">
+                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">📚 Resources</h4>
+                      <div className="space-y-1">
+                        <Link href="/about">
+                          <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                            <span className="mr-2">ℹ️</span>
+                            About
+                          </Button>
+                        </Link>
+                        <Link href="/help">
+                          <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                            <span className="mr-2">❓</span>
+                            Help & Support
+                          </Button>
+                        </Link>
+                        <Link href="/faq">
+                          <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                            <span className="mr-2">💡</span>
+                            FAQ
+                          </Button>
+                        </Link>
+                        <Link href="/contact">
+                          <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                            <span className="mr-2">📧</span>
+                            Contact Us
+                          </Button>
+                        </Link>
                       </div>
                     </div>
                   </div>
@@ -425,7 +480,7 @@ export default function Navigation() {
       {/* Mobile Menu Toggle - Hidden for now but can be expanded */}
       <div className="lg:hidden px-4 pb-4">
         <div className="flex flex-wrap gap-2">
-          {isLoggedIn && navItems.map((item) => (
+          {isLoggedIn && [...dashboardItems, ...primaryNavItems].map((item) => (
             <Link key={item.href} href={item.href}>
               <Button
                 variant="ghost"
