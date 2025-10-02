@@ -87,6 +87,9 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
   }
 };
 
+// Alias for compatibility
+export const isAuthenticated = authenticate;
+
 // Refresh token handler
 export const refreshTokenHandler = async (req: Request, res: Response) => {
   try {

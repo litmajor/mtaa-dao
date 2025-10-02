@@ -12,7 +12,7 @@ import {
   proposalTemplates
 } from '../../shared/schema';
 import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
-import { isAuthenticated } from '../auth';
+import { isAuthenticated } from '../nextAuthMiddleware';
 
 const router = express.Router();
 
