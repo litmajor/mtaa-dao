@@ -1,6 +1,6 @@
 import React, { lazy, Suspense } from 'react';
 import { HelmetProvider } from 'react-helmet-async';
-import { Router, Route, Switch, Redirect, useLocation } from 'wouter'; // wouter is still used here for the Router component itself
+import { Router, Navigate } from 'react-router-dom'; // Import Navigate from react-router-dom
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from './pages/hooks/useAuth';
 import { PageLoading } from './components/ui/page-loading';
@@ -8,6 +8,7 @@ import { SkipLink } from './components/ui/skip-link';
 import Navigation from './components/navigation';
 import { MobileNav } from './components/mobile-nav';
 import { ThemeProvider } from "./components/theme-provider";
+import { Routes, Route } from 'react-router-dom'; // Import Routes and Route from react-router-dom
 
 // Import all page components
 const CreateDaoLazy = lazy(() => import('./pages/create-dao'));
@@ -93,26 +94,19 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 // Renamed App to AppContent to avoid conflict with Router
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
-  // Import location from wouter for path checking
-  const location = useLocation(); // Use useLocation from wouter as it's used within the Router context
+  // No longer need to import useLocation from wouter
 
   if (isLoading) {
     return <PageLoading message="Loading Mtaa DAO..." />;
   }
 
-  // If there's an auth error but not loading, show landing page
-  if (!isLoading && !isAuthenticated && !location.startsWith('/login') && !location.startsWith('/register')) {
-    // Allow access to public routes
-    if (location === '/' || location.startsWith('/forgot-password') || location.startsWith('/reset-password')) {
-      // Continue with normal routing
-    }
-  }
+  // Removed the conditional logic for public routes as it's handled by ProtectedRoute and PublicRoute wrappers
 
 
   return (
     <HelmetProvider>
       <ThemeProvider>
-        {/* Use wouter's Router component */}
+        {/* Use react-router-dom's Router component */}
         <Router>
           <div className="min-h-screen bg-background text-foreground">
             <Helmet>
@@ -127,256 +121,103 @@ function AppContent() {
             {isAuthenticated && <Navigation />}
 
             <main id="main-content" className={isAuthenticated ? "pb-16 lg:pb-0" : ""} role="main">
-              <Switch>
+              <Routes>
                 {/* Public routes */}
-                <Route path="/login">
-                  <PublicRoute>
-                    <Login />
-                  </PublicRoute>
-                </Route>
-                <Route path="/register">
-                  <PublicRoute>
-                    <Register />
-                  </PublicRoute>
-                </Route>
-                <Route path="/forgot-password">
-                  <PublicRoute>
-                    <ForgotPassword />
-                  </PublicRoute>
-                </Route>
-                <Route path="/reset-password">
-                  <PublicRoute>
-                    <ResetPassword />
-                  </PublicRoute>
-                </Route>
+                <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+                <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+                <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
+                <Route path="/reset-password" element={<PublicRoute><ResetPassword /></PublicRoute>} />
 
-                {/* Landing page - only shown if not authenticated */}
-                <Route path="/">
-                  {isAuthenticated ? <Navigate to="/dashboard" replace /> : <Landing />}
-                </Route>
-
-                {/* Root redirect for authenticated users */}
-                <Route path="/home">
-                  <Navigate to="/dashboard" replace />
-                </Route>
+                {/* Landing page */}
+                <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Landing />} />
+                <Route path="/home" element={<Navigate to="/dashboard" replace />} />
 
                 {/* Protected routes */}
-                <Route path="/create-dao">
+                <Route path="/create-dao" element={
                   <ProtectedRoute>
                     <Suspense fallback={<PageLoading message="Loading Create DAO..." />}>
                       <CreateDaoLazy />
                     </Suspense>
                   </ProtectedRoute>
-                </Route>
-
-                <Route path="/proposals">
-                  <ProtectedRoute>
-                    <Proposals />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/proposals/:id">
-                  <ProtectedRoute>
-                    <ProposalDetail />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/vault">
-                  <ProtectedRoute>
-                    <Vault />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/vault-dashboard">
-                  <ProtectedRoute>
-                    <Vault />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/profile">
-                  <ProtectedRoute>
-                    <Profile />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/daos">
-                  <ProtectedRoute>
-                    <DAOs />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/wallet">
-                  <ProtectedRoute>
-                    <Wallet />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/wallet/dashboard">
-                  <ProtectedRoute>
-                    <WalletDashboard />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/wallet/batch-transfer">
-                  <ProtectedRoute>
-                    <BatchTransfer />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/wallet/multisig">
-                  <ProtectedRoute>
-                    <Multisig />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/wallet/dao-treasury">
-                  <ProtectedRoute>
-                    <DaoTreasury />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/referrals">
-                  <ProtectedRoute>
-                    <Referrals />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/maonovault">
-                  <ProtectedRoute>
-                    <MaonoVaultWeb3Page />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/settings">
-                  <ProtectedRoute>
-                    <Settings />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/analytics">
-                  <ProtectedRoute>
-                    <AnalyticsPage />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/tasks">
-                  <ProtectedRoute>
-                    <TaskBountyBoardPage />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/rewards">
-                  <ProtectedRoute>
-                    <RewardsHub />
-                  </ProtectedRoute>
-                </Route>
+                } />
+                <Route path="/proposals" element={<ProtectedRoute><Proposals /></ProtectedRoute>} />
+                <Route path="/proposals/:id" element={<ProtectedRoute><ProposalDetail /></ProtectedRoute>} />
+                <Route path="/vault" element={<ProtectedRoute><Vault /></ProtectedRoute>} />
+                <Route path="/vault-dashboard" element={<ProtectedRoute><Vault /></ProtectedRoute>} />
+                <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                <Route path="/daos" element={<ProtectedRoute><DAOs /></ProtectedRoute>} />
+                <Route path="/wallet" element={<ProtectedRoute><Wallet /></ProtectedRoute>} />
+                <Route path="/wallet/dashboard" element={<ProtectedRoute><WalletDashboard /></ProtectedRoute>} />
+                <Route path="/wallet/batch-transfer" element={<ProtectedRoute><BatchTransfer /></ProtectedRoute>} />
+                <Route path="/wallet/multisig" element={<ProtectedRoute><Multisig /></ProtectedRoute>} />
+                <Route path="/wallet/dao-treasury" element={<ProtectedRoute><DaoTreasury /></ProtectedRoute>} />
+                <Route path="/referrals" element={<ProtectedRoute><Referrals /></ProtectedRoute>} />
+                <Route path="/maonovault" element={<ProtectedRoute><MaonoVaultWeb3Page /></ProtectedRoute>} />
+                <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+                <Route path="/analytics" element={<ProtectedRoute><AnalyticsPage /></ProtectedRoute>} />
+                <Route path="/tasks" element={<ProtectedRoute><TaskBountyBoardPage /></ProtectedRoute>} />
+                <Route path="/rewards" element={<ProtectedRoute><RewardsHub /></ProtectedRoute>} />
 
                 {/* DAO routes */}
-                <Route path="/dao/settings">
-                  <ProtectedRoute>
-                    <DaoSettings />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/dao/treasury">
-                  <ProtectedRoute>
-                    <Treasury />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/dao/treasury-overview">
-                  <ProtectedRoute>
-                    <DaoTreasuryOverview />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/dao/contributors">
-                  <ProtectedRoute>
-                    <ContributorList />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/dao/analytics">
-                  <ProtectedRoute>
-                    <CommunityVaultAnalytics />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/dao/disbursements">
-                  <ProtectedRoute>
-                    <Disbursements />
-                  </ProtectedRoute>
-                </Route>
+                <Route path="/dao/settings" element={<ProtectedRoute><DaoSettings /></ProtectedRoute>} />
+                <Route path="/dao/treasury" element={<ProtectedRoute><Treasury /></ProtectedRoute>} />
+                <Route path="/dao/treasury-overview" element={<ProtectedRoute><DaoTreasuryOverview /></ProtectedRoute>} />
+                <Route path="/dao/contributors" element={<ProtectedRoute><ContributorList /></ProtectedRoute>} />
+                <Route path="/dao/analytics" element={<ProtectedRoute><CommunityVaultAnalytics /></ProtectedRoute>} />
+                <Route path="/dao/disbursements" element={<ProtectedRoute><Disbursements /></ProtectedRoute>} />
 
                 {/* Admin routes */}
-                <Route path="/superuser">
-                  <ProtectedRoute>
-                    <SuperUserDashboard />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/admin/billing">
-                  <ProtectedRoute>
-                    <AdminBillingDashboard />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/admin/payments">
-                  <ProtectedRoute>
-                    <PaymentReconciliation />
-                  </ProtectedRoute>
-                </Route>
+                <Route path="/superuser" element={<ProtectedRoute><SuperUserDashboard /></ProtectedRoute>} />
+                <Route path="/admin/billing" element={<ProtectedRoute><AdminBillingDashboard /></ProtectedRoute>} />
+                <Route path="/admin/payments" element={<ProtectedRoute><PaymentReconciliation /></ProtectedRoute>} />
 
                 {/* Special routes */}
-                <Route path="/architect-setup">
-                  <ArchitectSetupPage />
-                </Route>
-                <Route path="/pricing">
-                  <PricingPage />
-                </Route>
-                <Route path="/wallet-setup">
-                  <WalletSetupPage />
-                </Route>
-                <Route path="/success-stories">
-                  <SuccessStories />
-                </Route>
-                <Route path="/leaderboard">
-                  <ReputationLeaderboard />
-                </Route>
-                <Route path="/minipay">
-                  <MiniPayDemo />
-                </Route>
-                <Route path="/dashboard">
-                  <ProtectedRoute>
-                    <Dashboard />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/checkout">
-                  <ProtectedRoute>
-                    <Checkout />
-                  </ProtectedRoute>
-                </Route>
-                <Route path="/subscribe">
-                  <ProtectedRoute>
-                    <Subscribe />
-                  </ProtectedRoute>
-                </Route>
+                <Route path="/architect-setup" element={<ArchitectSetupPage />} />
+                <Route path="/pricing" element={<PricingPage />} />
+                <Route path="/wallet-setup" element={<WalletSetupPage />} />
+                <Route path="/success-stories" element={<SuccessStories />} />
+                <Route path="/leaderboard" element={<ReputationLeaderboard />} />
+                <Route path="/minipay" element={<MiniPayDemo />} />
+                <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
+                <Route path="/subscribe" element={<ProtectedRoute><Subscribe /></ProtectedRoute>} />
 
                 {/* Static pages */}
-                <Route path="/about">
+                <Route path="/about" element={
                   <div className="p-8 max-w-4xl mx-auto">
                     <h1 className="text-3xl font-bold mb-6">About Mtaa DAO</h1>
                     <p className="text-gray-600">Building decentralized community governance and finance solutions.</p>
                   </div>
-                </Route>
-                <Route path="/help">
+                } />
+                <Route path="/help" element={
                   <div className="p-8 max-w-4xl mx-auto">
                     <h1 className="text-3xl font-bold mb-6">Help & Support</h1>
                     <p className="text-gray-600">Get help with using Mtaa DAO platform.</p>
                   </div>
-                </Route>
-                <Route path="/faq">
+                } />
+                <Route path="/faq" element={
                   <div className="p-8 max-w-4xl mx-auto">
                     <h1 className="text-3xl font-bold mb-6">Frequently Asked Questions</h1>
                     <p className="text-gray-600">Common questions about Mtaa DAO.</p>
                   </div>
-                </Route>
-                <Route path="/contact">
+                } />
+                <Route path="/contact" element={
                   <div className="p-8 max-w-4xl mx-auto">
                     <h1 className="text-3xl font-bold mb-6">Contact Us</h1>
                     <p className="text-gray-600">Get in touch with the Mtaa DAO team.</p>
                   </div>
-                </Route>
+                } />
 
                 {/* Catch-all for 404s */}
-                <Route path="/:rest*">
-                  <NotFound />
-                </Route>
-              </Switch>
+                <Route path="*" element={<NotFound />} />
+              </Routes>
           </main>
 
           <MobileNav />
         </div>
       </Router>
-    </ThemeProvider>
     </HelmetProvider>
+    </ThemeProvider>
   );
 }
 
