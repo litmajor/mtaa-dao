@@ -67,6 +67,9 @@ export function useAuth() {
       return res.json();
     },
     onSuccess: (data) => {
+      if (data.success && data.data?.accessToken) {
+        localStorage.setItem('accessToken', data.data.accessToken);
+      }
       queryClient.setQueryData(["/api/auth/user"], data);
       setLocation("/dashboard");
     },
@@ -113,6 +116,9 @@ export function useAuth() {
       return res.json();
     },
     onSuccess: (data) => {
+      if (data.success && data.data?.accessToken) {
+        localStorage.setItem('accessToken', data.data.accessToken);
+      }
       queryClient.setQueryData(["/api/auth/user"], data);
       setLocation("/dashboard");
     },

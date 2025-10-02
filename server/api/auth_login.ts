@@ -1,43 +1,52 @@
+
 import { Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
 import { db } from '../storage';
 import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
-import { generateTokens } from '../auth';
-import { Logger } from '../utils/logger';
-import { ValidationError, AppError } from '../middleware/errorHandler';
-
-const logger = new Logger('auth-login');
+import { generateTokens, verifyPassword } from '../auth';
 
 export async function authLoginHandler(req: Request, res: Response) {
   try {
     const { email, password } = req.body;
 
-    // Find user by email
-    const userResult = await db
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        error: { message: 'Email and password are required' }
+      });
+    }
+
+    // Find user
+    const [user] = await db
       .select()
       .from(users)
       .where(eq(users.email, email))
       .limit(1);
 
-    if (userResult.length === 0) {
-      logger.warn('Login attempt with non-existent email', { email });
-      throw new ValidationError('Invalid email or password');
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: { message: 'Invalid email or password' }
+      });
     }
 
-    const user = userResult[0];
-
-    // Check if user account is active
+    // Check if account is active
     if (!user.isActive) {
-      logger.warn('Login attempt with inactive account', { userId: user.id });
-      throw new ValidationError('Account is deactivated');
+      return res.status(403).json({
+        success: false,
+        error: { message: 'Account is deactivated' }
+      });
     }
 
     // Verify password
-    const isValidPassword = await bcrypt.compare(password, user.password);
+    const isValidPassword = await verifyPassword(password, user.password);
+    
     if (!isValidPassword) {
-      logger.warn('Login attempt with invalid password', { userId: user.id });
-      throw new ValidationError('Invalid email or password');
+      return res.status(401).json({
+        success: false,
+        error: { message: 'Invalid email or password' }
+      });
     }
 
     // Update last login
@@ -56,15 +65,13 @@ export async function authLoginHandler(req: Request, res: Response) {
       role: user.role,
     });
 
-    // Set HTTP-only cookie for refresh token
+    // Set refresh token cookie
     res.cookie('refreshToken', tokens.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
-
-    logger.info('User logged in successfully', { userId: user.id, email });
 
     res.json({
       success: true,
@@ -76,16 +83,17 @@ export async function authLoginHandler(req: Request, res: Response) {
           lastName: user.lastName,
           role: user.role,
           walletAddress: user.walletAddress,
-          lastLoginAt: user.lastLoginAt,
+          isEmailVerified: user.isEmailVerified,
+          profilePicture: user.profileImageUrl,
         },
         accessToken: tokens.accessToken,
       },
     });
   } catch (error) {
-    logger.error('Login failed', error);
-    if (error instanceof ValidationError) {
-      throw error;
-    }
-    throw new AppError('Login failed', 500);
+    console.error('Login error:', error);
+    res.status(500).json({
+      success: false,
+      error: { message: 'Login failed' }
+    });
   }
 }
