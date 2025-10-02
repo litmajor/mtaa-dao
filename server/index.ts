@@ -5,7 +5,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { registerRoutes } from "./routes";
 // Removed setupVite, serveStatic as backend will only serve API
-import { log } from "./utils/logger";
+import { logger } from "./utils/logger";
 import path from "path";
 import { dirname } from "path";
 import { fileURLToPath } from "url";
@@ -163,7 +163,7 @@ app.use((req, res, next) => {
       const backupSystem = BackupSystem.getInstance(backupConfig);
       const scheduler = new BackupScheduler(backupSystem);
       scheduler.start();
-      log('✅ Backup system initialized');
+      logger.info('✅ Backup system initialized');
     }
 
     await registerRoutes(app);
