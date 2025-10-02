@@ -278,6 +278,30 @@ router.get('/lp-positions/:address', asyncHandler(async (req, res) => {
   }
 }));
 
+// Get user's vault overview
+router.get('/user/:userAddress', asyncHandler(async (req, res) => {
+  const { userAddress } = req.params;
+  const userId = req.user?.id;
+  
+  if (!userId) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  try {
+    const vaults = await vaultService.getUserVaults(userAddress);
+    const stats = await vaultService.getUserVaultStats(userAddress);
+
+    res.json({
+      success: true,
+      vaults,
+      stats
+    });
+  } catch (error) {
+    logger.error('Failed to get user vault overview:', error);
+    res.status(500).json({ error: 'Failed to fetch vault overview' });
+  }
+}));
+
 // Create new vault
 router.post('/create', asyncHandler(async (req, res) => {
   const userId = req.user?.id;

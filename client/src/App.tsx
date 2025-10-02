@@ -58,6 +58,11 @@ import Treasury from './pages/dao/treasury';
 import Checkout from './pages/Checkout';
 import Subscribe from './pages/Subscribe';
 
+// Lazy loaded pages
+const VaultPage = lazy(() => import('./pages/vault'));
+const VaultDashboardPage = lazy(() => import('./pages/vault-dashboard'));
+const VaultOverviewPage = lazy(() => import('./pages/vault-overview'));
+
 // Protected Route wrapper
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -133,8 +138,10 @@ function AppContent() {
                 } />
                 <Route path="/proposals" element={<ProtectedRoute><Proposals /></ProtectedRoute>} />
                 <Route path="/proposals/:id" element={<ProtectedRoute><ProposalDetail /></ProtectedRoute>} />
-                <Route path="/vault" element={<ProtectedRoute><Vault /></ProtectedRoute>} />
-                <Route path="/vault-dashboard" element={<ProtectedRoute><Vault /></ProtectedRoute>} />
+                <Route path="/vault" element={<VaultPage />} />
+                <Route path="/vault-dashboard" element={<VaultDashboardPage />} />
+                <Route path="/vault/overview" element={<VaultOverviewPage />} />
+                <Route path="/vault/selector" element={<VaultOverviewPage />} />
                 <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
                 <Route path="/daos" element={<ProtectedRoute><DAOs /></ProtectedRoute>} />
                 <Route path="/wallet" element={<ProtectedRoute><Wallet /></ProtectedRoute>} />
