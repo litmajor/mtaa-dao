@@ -1,74 +1,51 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { db } from '../storage';
 import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
-import { Logger } from '../utils/logger';
-import { AppError } from '../middleware/errorHandler';
+import { AuthRequest } from '../auth';
 
-const logger = new Logger('auth-user');
-
-export async function authUserHandler(req: Request, res: Response) {
+export async function authUserHandler(req: AuthRequest, res: Response) {
   try {
-    const userId = (req as any).user?.userId || (req as any).user?.claims?.sub;
-    
-    if (!userId) {
+    if (!req.user) {
       return res.status(401).json({
         success: false,
-        error: { message: 'User not authenticated' },
+        error: { message: 'Not authenticated' }
       });
     }
 
-    // Get user from database
-    const userResult = await db
-      .select({
-        id: users.id,
-        email: users.email,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        role: users.role,
-        walletAddress: users.walletAddress,
-        isEmailVerified: users.isEmailVerified,
-        isActive: users.isActive,
-        lastLoginAt: users.lastLoginAt,
-        createdAt: users.createdAt,
-        profilePicture: users.profilePicture,
-        bio: users.bio,
-        location: users.location,
-        website: users.website,
-        telegramUsername: users.telegramUsername,
-      })
+    const [user] = await db
+      .select()
       .from(users)
-      .where(eq(users.id, userId))
+      .where(eq(users.id, req.user.userId))
       .limit(1);
 
-    if (userResult.length === 0) {
-      logger.warn('User not found', { userId });
+    if (!user) {
       return res.status(404).json({
         success: false,
-        error: { message: 'User not found' },
+        error: { message: 'User not found' }
       });
     }
-
-    const user = userResult[0];
-
-    // Check if user is still active
-    if (!user.isActive) {
-      return res.status(401).json({
-        success: false,
-        error: { message: 'Account is deactivated' },
-      });
-    }
-
-    logger.debug('User info retrieved', { userId: user.id });
 
     res.json({
       success: true,
       data: {
-        user,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+          walletAddress: user.walletAddress,
+          isEmailVerified: user.isEmailVerified,
+          profilePicture: user.profileImageUrl,
+        },
       },
     });
   } catch (error) {
-    logger.error('Failed to get user info', error);
-    throw new AppError('Failed to retrieve user information', 500);
+    console.error('Get user error:', error);
+    res.status(500).json({
+      success: false,
+      error: { message: 'Failed to get user' }
+    });
   }
 }

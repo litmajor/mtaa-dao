@@ -37,6 +37,7 @@ import pollProposalsRouter from './routes/poll-proposals';
 import './middleware/validation'; // Added for validation middleware
 // Assuming ReputationService is defined and exported from './reputationService'
 import { ReputationService } from './reputationService'; // Added for ReputationService
+import { authenticate, refreshTokenHandler, logoutHandler } from './auth';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -193,6 +194,13 @@ app.use((req, res, next) => {
     app.use('/api/billing', billingRoutes);
     app.use('/api/dao/:daoId/executions', proposalExecutionRouter);
     app.use('/api/proposals', pollProposalsRouter);
+
+    // Auth endpoints
+    app.get('/api/auth/user', authenticate, authUserHandler);
+    app.post('/api/auth/login', authLoginHandler);
+    app.post('/api/auth/register', authRegisterHandler);
+    app.post('/api/auth/refresh-token', refreshTokenHandler);
+    app.post('/api/auth/logout', logoutHandler);
 
 
     // 404 handler (must be after all API routes)

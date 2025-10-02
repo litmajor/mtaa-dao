@@ -1,17 +1,28 @@
+
 import { Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
 import { db } from '../storage';
 import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
-import { generateTokens } from '../auth';
-import { Logger } from '../utils/logger';
-import { ValidationError, AppError } from '../middleware/errorHandler';
-
-const logger = new Logger('auth-register');
+import { generateTokens, hashPassword } from '../auth';
 
 export async function authRegisterHandler(req: Request, res: Response) {
   try {
     const { email, password, name, walletAddress } = req.body;
+
+    // Validate input
+    if (!email || !password || !name) {
+      return res.status(400).json({
+        success: false,
+        error: { message: 'Email, password, and name are required' }
+      });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({
+        success: false,
+        error: { message: 'Password must be at least 8 characters' }
+      });
+    }
 
     // Check if user already exists
     const existingUser = await db
@@ -21,40 +32,45 @@ export async function authRegisterHandler(req: Request, res: Response) {
       .limit(1);
 
     if (existingUser.length > 0) {
-      logger.warn('Registration attempt with existing email', { email });
-      throw new ValidationError('User with this email already exists');
+      return res.status(400).json({
+        success: false,
+        error: { message: 'User with this email already exists' }
+      });
     }
 
     // Hash password
-    const saltRounds = 12;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    const hashedPassword = await hashPassword(password);
+
+    // Split name into first and last
+    const nameParts = name.trim().split(' ');
+    const firstName = nameParts[0];
+    const lastName = nameParts.slice(1).join(' ') || '';
 
     // Create user
-    const newUser = await db
+    const [newUser] = await db
       .insert(users)
       .values({
         email,
         password: hashedPassword,
-        firstName: name.split(' ')[0] || name,
-        lastName: name.split(' ').slice(1).join(' ') || '',
-        walletAddress,
+        firstName,
+        lastName,
+        walletAddress: walletAddress || null,
         role: 'user',
         isEmailVerified: false,
+        isActive: true,
         createdAt: new Date(),
         updatedAt: new Date(),
       })
       .returning();
 
-    const user = newUser[0];
-
     // Generate tokens
     const tokens = generateTokens({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
+      userId: newUser.id,
+      email: newUser.email,
+      role: newUser.role,
     });
 
-    // Set HTTP-only cookie for refresh token
+    // Set refresh token cookie
     res.cookie('refreshToken', tokens.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -62,27 +78,26 @@ export async function authRegisterHandler(req: Request, res: Response) {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
-    logger.info('User registered successfully', { userId: user.id, email });
-
     res.status(201).json({
       success: true,
       data: {
         user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          role: user.role,
-          walletAddress: user.walletAddress,
+          id: newUser.id,
+          email: newUser.email,
+          firstName: newUser.firstName,
+          lastName: newUser.lastName,
+          role: newUser.role,
+          walletAddress: newUser.walletAddress,
+          isEmailVerified: newUser.isEmailVerified,
         },
         accessToken: tokens.accessToken,
       },
     });
   } catch (error) {
-    logger.error('Registration failed', error);
-    if (error instanceof ValidationError) {
-      throw error;
-    }
-    throw new AppError('Registration failed', 500);
+    console.error('Registration error:', error);
+    res.status(500).json({
+      success: false,
+      error: { message: 'Registration failed' }
+    });
   }
 }
