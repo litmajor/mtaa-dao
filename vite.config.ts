@@ -25,13 +25,20 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
-    port: 5000,
+    port: 5173,
     host: "0.0.0.0",
-    allowedHosts: [
-      "all",
-      "976c56e8-f2e2-4cca-98c9-6478c5659b7b-00-28qs2jpxbc5th.picard.replit.dev",
-      ".replit.dev",
-      "localhost"
-    ],
+    allowedHosts: "all",
+    proxy: {
+      '/api': {
+        target: 'http://0.0.0.0:5000',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/socket.io': {
+        target: 'http://0.0.0.0:5000',
+        ws: true,
+        changeOrigin: true,
+      }
+    }
   },
 });

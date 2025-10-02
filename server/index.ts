@@ -4,7 +4,8 @@ import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
 import helmet from 'helmet';
 import { registerRoutes } from "./routes";
-import {setupVite, serveStatic, log } from "./vite";
+// Removed setupVite, serveStatic as backend will only serve API
+import { log } from "./utils/logger";
 import path from "path";
 import { dirname } from "path";
 import { fileURLToPath } from "url";
@@ -178,16 +179,10 @@ app.use((req, res, next) => {
       });
     }));
 
-    // Set up frontend serving (must be before 404 handler)
-    const isDev = process.env.NODE_ENV !== "production";
-    if (isDev) {
-      await setupVite(app, server); // ← dev inject
-    } else {
-      serveStatic(app);
-      app.get("*", (_, res) => {
-        res.sendFile(path.join(__dirname, "../../dist/public", "index.html"));
-      });
-    }
+    // Backend will now only serve API. Frontend will be served separately.
+    // Remove Vite dev server setup and static file serving for production.
+    // If in development, Vite will be handled by a separate frontend process.
+    // If in production, static files are assumed to be served by a separate web server (e.g., Nginx).
 
     // Add API routes
     app.use('/api/payment-reconciliation', paymentReconciliationRoutes);
@@ -197,7 +192,7 @@ app.use((req, res, next) => {
     app.use('/api/sse', sseRoutes);
     app.use('/api/billing', billingRoutes);
 
-    // 404 handler (must be after all routes and frontend serving)
+    // 404 handler (must be after all API routes)
     app.use(notFoundHandler);
 
     // Error handling middleware (must be last)

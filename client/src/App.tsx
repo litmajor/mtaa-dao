@@ -1,6 +1,6 @@
 import React, { lazy, Suspense } from 'react';
 import { HelmetProvider } from 'react-helmet-async';
-import { Router, Route, Switch, Redirect, useLocation } from 'wouter';
+import { Router, Route, Switch, Redirect, useLocation } from 'wouter'; // wouter is still used here for the Router component itself
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from './pages/hooks/useAuth';
 import { PageLoading } from './components/ui/page-loading';
@@ -67,7 +67,8 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   }
 
   if (!isAuthenticated) {
-    return <Redirect to="/login" />;
+    // Use Navigate from react-router-dom for redirection
+    return <Navigate to="/login" replace />;
   }
 
   return <>{children}</>;
@@ -82,16 +83,18 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }
 
   if (isAuthenticated) {
-    return <Redirect to="/dashboard" />;
+    // Use Navigate from react-router-dom for redirection
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;
 };
 
-function App() {
+// Renamed App to AppContent to avoid conflict with Router
+function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
   // Import location from wouter for path checking
-  const [location] = useLocation();
+  const location = useLocation(); // Use useLocation from wouter as it's used within the Router context
 
   if (isLoading) {
     return <PageLoading message="Loading Mtaa DAO..." />;
@@ -109,6 +112,7 @@ function App() {
   return (
     <HelmetProvider>
       <ThemeProvider>
+        {/* Use wouter's Router component */}
         <Router>
           <div className="min-h-screen bg-background text-foreground">
             <Helmet>
@@ -148,12 +152,12 @@ function App() {
 
                 {/* Landing page - only shown if not authenticated */}
                 <Route path="/">
-                  {isAuthenticated ? <Redirect to="/dashboard" /> : <Landing />}
+                  {isAuthenticated ? <Navigate to="/dashboard" replace /> : <Landing />}
                 </Route>
 
                 {/* Root redirect for authenticated users */}
                 <Route path="/home">
-                  <Redirect to="/dashboard" />
+                  <Navigate to="/dashboard" replace />
                 </Route>
 
                 {/* Protected routes */}
@@ -376,4 +380,5 @@ function App() {
   );
 }
 
-export default App;
+// Export AppContent as the main App component
+export default AppContent;
