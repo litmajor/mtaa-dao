@@ -1,0 +1,167 @@
+ -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+[dotenv@17.2.2] injecting env (0) from .env -- tip: 📡 auto-backup env with Radar: https://dotenvx.com/radar
+[DEBUG] WALLET_PRIVATE_KEY: 0x1111111111111111111111111111111111111111111111111111111111111111
+
+=== Enhanced Wallet Demo ===
+Wallet Address: 0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A
+Network: Celo Alfajores Testnet
+
+--- Network Information ---
+🚀 Starting blockchain integration services...
+Starting vault event indexer...
+2025-10-02 20:54:55 [vault-automation] info: 🚀 Starting Vault Automation Service...
+2025-10-02 20:54:55 [vault-automation] info: ✅ Vault Automation Service started successfully
+2025-10-02 20:54:55 [vault-automation] info: Performance: automation_service_startup took 1759438495500ms
+{
+  "performance": true,
+  "operation": "automation_service_startup",
+  "duration": 1759438495500,
+  "scheduledTasks": 3,
+  "intervalMs": 30000
+}
+✅ Blockchain services initialized successfully
+2025-10-02 20:54:55 [api] info: 🚀 Server starting up
+{
+  "port": "5000",
+  "environment": "development"
+}
+2025-10-02 20:54:55 [api] info: Server configuration
+{
+  "port": 5000,
+  "host": "0.0.0.0",
+  "frontendUrl": "http://localhost:5000",
+  "backendUrl": "http://localhost:5000",
+  "environment": "development",
+  "nodeVersion": "v20.19.3"
+}
+Starting proposal execution scheduler...
+✅ Proposal execution scheduler started
+@TODO Error: connect ECONNREFUSED 127.0.0.1:8545
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16) {
+  errno: -111,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 8545
+}
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+Connected: true
+Latest Block: 58483174
+Gas Price: 25.00 Gwei
+
+--- Balance Information ---
+Native Balance: 0.100000 CELO
+Balance (USD): $0.07
+
+--- Enhanced Portfolio ---
+Price for native: $0.65
+Price for 0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1: $1
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+Price for 0xF194afDf50B03e69Bd7D057c1Aa9e10c9954E4C9: $1
+Portfolio Summary:
+- Address: 0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A
+- Native Balance: 0.100000 CELO
+- Native Balance (USD): $0.07
+- Total Value (USD): $0.17
+- cUSD: 0.000000 (Celo Dollar)
+- CELO: 0.100000 (Celo native asset)
+
+--- DAO Treasury Management ---
+Price for 0xF194afDf50B03e69Bd7D057c1Aa9e10c9954E4C9: $1
+Price for native: $0.65
+Treasury Snapshot:
+- Native Balance: 0.100000 CELO
+- Total Value (USD): $0.17
+Price for 0xF194afDf50B03e69Bd7D057c1Aa9e10c9954E4C9: $1
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+Price for native: $0.65
+Price for native: $0.65
+Treasury Report:
+- Period: monthly
+- Top Holdings: 2 positions
+- Recommendations: 0 items
+
+--- Risk Management ---
+Price for native: $0.65
+Small CELO transfer:
+  - Allowed: true
+  - Risk Score: 0.0039000000000000007/100
+Price for native: $0.65
+Large CELO transfer:
+  - Allowed: true
+  - Risk Score: 3.9000000000000004/100
+Price for native: $0.65
+Very large transfer (should be blocked):
+  - Allowed: false
+  - Risk Score: 100/100
+  - Reason: Transfer amount 650.00 exceeds single transfer limit of 500
+
+--- Gas Estimation ---
+Price for native: $0.65
+Gas Cost Estimate:
+- Total Gas Cost: 2150086000000000 wei
+- Gas Cost (CELO): 0.00215009
+- Gas Cost (USD): $0.0014
+- Breakdown: 2 transactions
+
+--- Transaction Utilities ---
+Explorer URL for tx: https://alfajores-blockscout.celo-testnet.org/tx/0x6e1e7e2e2b7e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2
+Transaction Cache: 0 transactions
+
+=== Demo Complete ===
+✓ Network connection tested
+✓ Balance operations demonstrated
+✓ Portfolio management shown
+✓ DAO treasury features previewed
+✓ Risk management validated
+✓ Gas estimation completed
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+Processing 0 pending executions
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
