@@ -1,0 +1,25 @@
+
+[package]
+name = "mtaa-dao-whitepaper"
+version = "1.0.0"
+edition = "2021"
+authors = ["Mtaa DAO Community"]
+description = "MtaaDAO Platform Whitepaper - Decentralized Community Finance for Africa"
+repository = "https://github.com/mtaadao/mtaa-dao"
+homepage = "https://mtaadao.com"
+documentation = "https://docs.mtaadao.com"
+readme = "README.md"
+license = "MIT"
+keywords = ["dao", "defi", "celo", "africa", "governance"]
+categories = ["finance", "blockchain", "web-programming"]
+
+[lib]
+name = "mtaa_dao"
+path = "src/lib.rs"
+
+[dependencies]
+# No runtime dependencies needed for documentation-only crate
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--html-in-header", "katex-header.html"]
