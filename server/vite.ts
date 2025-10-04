@@ -42,7 +42,6 @@ export async function setupVite(app: Express, server: Server) {
       },
       host: "0.0.0.0",
       strictPort: false,
-      allowedHosts: "all",
     },
     appType: "custom",
   });
