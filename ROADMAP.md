@@ -126,8 +126,10 @@
   * ✅ Cross-chain service for transfer management
   * ✅ Multi-chain vault support with cross-chain deposits/withdrawals
   * ✅ Bridge UI with fee estimation and status tracking
-  * 🚧 Cross-chain governance proposals (schema ready, execution pending)
-  * 🚧 Multi-chain vote aggregation
+  * ✅ LayerZero/Axelar integration service for message passing
+  * ✅ Cross-chain governance proposals with vote aggregation
+  * ✅ Bridge relayer service for automated transfer completion
+  * 🚧 Deploy bridge contracts to all supported chains
 * **Advanced Analytics**
   * AI-powered predictive modeling.
   * Automated risk assessment.
