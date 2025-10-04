@@ -32,7 +32,10 @@ class WebSocketService {
   private heartbeatInterval!: NodeJS.Timeout;
 
   constructor(server: HttpServer) {
-    this.wss = new WebSocketServer({ server });
+    this.wss = new WebSocketServer({ 
+      server,
+      path: '/ws/realtime' // Use specific path to avoid conflicts with Vite HMR
+    });
     this.setupWebSocket();
     this.startHeartbeat();
   }
