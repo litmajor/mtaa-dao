@@ -37,9 +37,9 @@ export default function SendTransactionModal({ open, onClose }: Props) {
       let fee = '0';
       try {
         if (currency === 'CELO') {
-          fee = await estimateCeloGasFee(recipient, amount.toString());
+          fee = await estimateCeloGasFee(recipient, amount.toString(), amount.toString());
         } else if (currency === 'cUSD') {
-          fee = await estimateCUSDGasFee(recipient, amount.toString());
+          fee = await estimateCUSDGasFee(recipient, amount.toString(), amount.toString());
         } else {
           fee = '~0.001';
         }

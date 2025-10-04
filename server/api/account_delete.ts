@@ -4,9 +4,9 @@ import { db } from '../db';
 import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 
-export async function deleteAccount(req: AuthRequest, res: Response) {
+export async function accountDeleteHandler(req: AuthRequest, res: Response) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }

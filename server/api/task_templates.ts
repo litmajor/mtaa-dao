@@ -1,4 +1,3 @@
-
 import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db';
@@ -24,23 +23,23 @@ const createTaskTemplateSchema = z.object({
 router.get('/', async (req, res) => {
   try {
     const { category, difficulty, search } = req.query;
-    
+
     let query = db.select().from(taskTemplates);
-    
+
     if (category) {
       query = query.where(eq(taskTemplates.category, category as string));
     }
-    
+
     if (difficulty) {
       query = query.where(eq(taskTemplates.difficulty, difficulty as string));
     }
-    
+
     if (search) {
       query = query.where(like(taskTemplates.title, `%${search}%`));
     }
-    
+
     const templates = await query.orderBy(desc(taskTemplates.createdAt));
-    
+
     res.json({ templates });
   } catch (error) {
     console.error('Error fetching task templates:', error);
@@ -52,17 +51,17 @@ router.get('/', async (req, res) => {
 router.get('/:templateId', async (req, res) => {
   try {
     const { templateId } = req.params;
-    
+
     const template = await db
       .select()
       .from(taskTemplates)
       .where(eq(taskTemplates.id, templateId))
       .limit(1);
-    
+
     if (template.length === 0) {
       return res.status(404).json({ error: 'Task template not found' });
     }
-    
+
     res.json({ template: template[0] });
   } catch (error) {
     console.error('Error fetching task template:', error);
@@ -74,8 +73,8 @@ router.get('/:templateId', async (req, res) => {
 router.post('/', isAuthenticated, async (req, res) => {
   try {
     const validatedData = createTaskTemplateSchema.parse(req.body);
-    const userId = req.user?.id;
-    
+    const userId = req.user?.claims?.id;
+
     const newTemplate = await db
       .insert(taskTemplates)
       .values({
@@ -85,7 +84,7 @@ router.post('/', isAuthenticated, async (req, res) => {
         updatedAt: new Date(),
       })
       .returning();
-    
+
     res.status(201).json({ template: newTemplate[0] });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -100,24 +99,24 @@ router.post('/', isAuthenticated, async (req, res) => {
 router.put('/:templateId', isAuthenticated, async (req, res) => {
   try {
     const { templateId } = req.params;
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const validatedData = createTaskTemplateSchema.partial().parse(req.body);
-    
+
     // Check if user is the creator
     const template = await db
       .select()
       .from(taskTemplates)
       .where(eq(taskTemplates.id, templateId))
       .limit(1);
-    
+
     if (template.length === 0) {
       return res.status(404).json({ error: 'Task template not found' });
     }
-    
+
     if (template[0].createdBy !== userId) {
       return res.status(403).json({ error: 'Not authorized to update this template' });
     }
-    
+
     const updatedTemplate = await db
       .update(taskTemplates)
       .set({
@@ -126,7 +125,7 @@ router.put('/:templateId', isAuthenticated, async (req, res) => {
       })
       .where(eq(taskTemplates.id, templateId))
       .returning();
-    
+
     res.json({ template: updatedTemplate[0] });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -141,27 +140,27 @@ router.put('/:templateId', isAuthenticated, async (req, res) => {
 router.delete('/:templateId', isAuthenticated, async (req, res) => {
   try {
     const { templateId } = req.params;
-    const userId = req.user?.id;
-    
+    const userId = req.user?.claims?.id;
+
     // Check if user is the creator
     const template = await db
       .select()
       .from(taskTemplates)
       .where(eq(taskTemplates.id, templateId))
       .limit(1);
-    
+
     if (template.length === 0) {
       return res.status(404).json({ error: 'Task template not found' });
     }
-    
+
     if (template[0].createdBy !== userId) {
       return res.status(403).json({ error: 'Not authorized to delete this template' });
     }
-    
+
     await db
       .delete(taskTemplates)
       .where(eq(taskTemplates.id, templateId));
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting task template:', error);

@@ -10,7 +10,7 @@ const logger = new Logger('vault-api');
 // Create a new vault
 export async function createVaultHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
@@ -56,7 +56,7 @@ export async function createVaultHandler(req: Request, res: Response) {
 // Get user's vaults
 export async function getUserVaultsHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
@@ -77,7 +77,7 @@ export async function getUserVaultsHandler(req: Request, res: Response) {
 // Get specific vault details
 export async function getVaultHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { vaultId } = req.params;
 
     if (!userId) {
@@ -96,7 +96,7 @@ export async function getVaultHandler(req: Request, res: Response) {
 // Deposit to vault
 export async function depositToVaultHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { vaultId } = req.params;
     const { tokenSymbol, amount, transactionHash } = req.body;
 
@@ -128,7 +128,7 @@ export async function depositToVaultHandler(req: Request, res: Response) {
 // Withdraw from vault
 export async function withdrawFromVaultHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { vaultId } = req.params;
     const { tokenSymbol, amount, transactionHash } = req.body;
 
@@ -160,7 +160,7 @@ export async function withdrawFromVaultHandler(req: Request, res: Response) {
 // Allocate to strategy
 export async function allocateToStrategyHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { vaultId } = req.params;
     const { strategyId, tokenSymbol, allocationPercentage } = req.body;
 
@@ -192,7 +192,7 @@ export async function allocateToStrategyHandler(req: Request, res: Response) {
 // Rebalance vault
 export async function rebalanceVaultHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { vaultId } = req.params;
 
     if (!userId) {
@@ -211,7 +211,7 @@ export async function rebalanceVaultHandler(req: Request, res: Response) {
 // Get vault portfolio
 export async function getVaultPortfolioHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { vaultId } = req.params;
 
     if (!userId) {
@@ -230,7 +230,7 @@ export async function getVaultPortfolioHandler(req: Request, res: Response) {
 // Get vault performance
 export async function getVaultPerformanceHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { vaultId } = req.params;
 
     if (!userId) {
@@ -249,7 +249,7 @@ export async function getVaultPerformanceHandler(req: Request, res: Response) {
 // Assess vault risk
 export async function assessVaultRiskHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { vaultId } = req.params;
 
     if (!userId) {
@@ -271,11 +271,11 @@ export const getVaultTransactionsHandler = [
   asyncHandler(async (req: Request, res: Response) => {
     const requestLogger = logger.child({
       requestId: req.headers['x-request-id'],
-      userId: req.user?.id,
+      userId: req.user?.claims?.id,
       vaultId: req.params.vaultId,
     });
 
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     if (!userId) {
       requestLogger.warn('Unauthorized access attempt');
       return res.status(401).json({ 

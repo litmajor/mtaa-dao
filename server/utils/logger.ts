@@ -1,5 +1,5 @@
 import { createLogger, format, transports } from 'winston';
-import type { Logger } from 'winston';
+import { Logger as WinstonLogger } from 'winston';
 import { env, isDevelopment, isProduction } from '@shared/config';
 import { storage } from '../storage';
 
@@ -62,7 +62,7 @@ export interface LogContext {
   [key: string]: any;
 }
 
-export class Logger {
+export class Logger extends WinstonLogger {
   private service: string;
   private context: LogContext;
 
