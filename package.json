@@ -4,7 +4,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "PORT=5000 tsx watch server/index.ts",
+    "dev": "tsx watch server/index.ts",
     "build:frontend": "vite build",
     "build:backend": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=server/dist",
     "build": "npm run build:frontend && npm run build:backend",

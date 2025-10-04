@@ -1,3 +1,5 @@
+#![doc(html_logo_url = "https://mtaadao.com/logo.png")]
+#![doc(html_favicon_url = "https://mtaadao.com/favicon.ico")]
 
 //! # MtaaDAO — Decentralized Autonomous Organization Platform for African Communities
 //!
@@ -960,9 +962,6 @@ pub mod roadmap {
 /// 💻 [GitHub](https://github.com/mtaadao)
 ///
 /// _"From local chamas to global impact. From tradition to innovation. From Mtaa, For Mtaa."_
-
-#![doc(html_logo_url = "https://mtaadao.com/logo.png")]
-#![doc(html_favicon_url = "https://mtaadao.com/favicon.ico")]
 
 // Re-export modules for documentation
 pub use architecture::*;
