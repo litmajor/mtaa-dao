@@ -1,6 +1,9 @@
 import { EventEmitter } from 'events';
 import nodemailer from 'nodemailer';
 import TelegramBot from 'node-telegram-bot-api';
+import { db } from './db';
+import { notifications } from '../shared/schema';
+import type { InferSelectModel } from 'drizzle-orm';
 import { storage } from './storage';
 
 interface PaymentNotification {
@@ -32,6 +35,9 @@ interface TelegramUser {
   chatId: string;
   userId: string;
 }
+
+// Define the type for a notification record from the database
+type NotificationRecord = InferSelectModel<typeof notifications>;
 
 class NotificationService extends EventEmitter {
   private subscribers = new Map<string, NotificationChannel>();
@@ -65,7 +71,7 @@ class NotificationService extends EventEmitter {
     this.telegramBot.onText(/\/start/, async (msg) => {
       const chatId = msg.chat.id;
       const userId = msg.from.id.toString(); // Use Telegram user ID as a placeholder for internal userId
-      
+
       // In a real app, you'd likely link a Telegram chat ID to your internal user ID
       // For now, we'll store it directly.
       this.userTelegramMap.set(userId, { chatId: chatId.toString(), userId: userId });
@@ -87,7 +93,7 @@ class NotificationService extends EventEmitter {
         }
         return;
       }
-      
+
       // If it's not a command we recognize, and it's not a notification related message,
       // echo it back or handle as needed. For now, we'll just acknowledge.
       if (text && !text.startsWith('/')) {
@@ -128,7 +134,7 @@ class NotificationService extends EventEmitter {
     }
   }
 
-  async createNotification(notification: SystemNotification) {
+  async createNotification(notification: SystemNotification): Promise<NotificationRecord | null> {
     try {
       // Store notification in database
       const dbNotification = await storage.createNotification({
@@ -170,7 +176,7 @@ class NotificationService extends EventEmitter {
     }
   }
 
-  async sendPaymentNotification(recipient: string, notification: PaymentNotification) {
+  async sendPaymentNotification(recipient: string, notification: PaymentNotification): Promise<boolean> {
     try {
       const channel = this.subscribers.get(recipient) || { sms: true };
 
@@ -231,7 +237,7 @@ class NotificationService extends EventEmitter {
     }
   }
 
-  private async sendEmailNotification(userId: string, notification: SystemNotification) {
+  private async sendEmailNotification(userId: string, notification: SystemNotification): Promise<void> {
     try {
       const user = await storage.getUserById(userId);
       if (!user?.email) return;
@@ -287,7 +293,7 @@ class NotificationService extends EventEmitter {
     `;
   }
 
-  private async sendPushNotification(userId: string, notification: SystemNotification) {
+  private async sendPushNotification(userId: string, notification: SystemNotification): Promise<void> {
     try {
       // TODO: Integrate with Firebase Cloud Messaging (FCM) or Apple Push Notification service (APNS)
       console.log(`Push notification sent to user ${userId}: ${notification.title}`);
@@ -404,16 +410,16 @@ class NotificationService extends EventEmitter {
     }
   }
 
-  subscribe(recipient: string, channels: NotificationChannel) {
+  subscribe(recipient: string, channels: NotificationChannel): void {
     this.subscribers.set(recipient, channels);
   }
 
-  unsubscribe(recipient: string) {
+  unsubscribe(recipient: string): void {
     this.subscribers.delete(recipient);
   }
 
   // Real-time payment status updates via WebSocket
-  getPaymentStatusStream(transactionId: string) {
+  getPaymentStatusStream(transactionId: string): Promise<any> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.removeAllListeners(`payment_${transactionId}`);
@@ -427,13 +433,13 @@ class NotificationService extends EventEmitter {
     });
   }
 
-  updatePaymentStatus(transactionId: string, status: any) {
+  updatePaymentStatus(transactionId: string, status: any): void {
     this.emit(`payment_${transactionId}`, status);
   }
 
   // Bulk notification creation for announcements
-  async createBulkNotifications(userIds: string[], notificationData: Omit<SystemNotification, 'userId'>) {
-    const notifications = [];
+  async createBulkNotifications(userIds: string[], notificationData: Omit<SystemNotification, 'userId'>): Promise<NotificationRecord[]> {
+    const notifications: NotificationRecord[] = [];
 
     for (const userId of userIds) {
       const notification = await this.createNotification({
@@ -449,7 +455,7 @@ class NotificationService extends EventEmitter {
   }
 
   // Server-Sent Events endpoint for real-time notifications
-  setupSSE(userId: string, res: any) {
+  setupSSE(userId: string, res: any): void {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',

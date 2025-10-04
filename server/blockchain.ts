@@ -13,7 +13,7 @@ export async function sendToken(
   amount: string | bigint
 ): Promise<string> {
   let amountStr: string;
-  
+
   if (typeof amount === 'bigint') {
     // Treat bigint as base units, need to get correct decimals
     const token = TokenRegistry.getToken(symbol);
@@ -22,7 +22,7 @@ export async function sendToken(
   } else {
     amountStr = amount; // Already in human-readable units
   }
-  
+
   return tokenService.sendToken(symbol, to, amountStr);
 }
 

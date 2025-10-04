@@ -1,5 +1,6 @@
 import Web3 from 'web3';
 import { isAddress } from 'web3-validator';
+import type { TransactionReceipt } from 'web3-types';
 import type { TransactionReceipt, Contract } from 'web3';
 import dotenv from 'dotenv';
 dotenv.config();

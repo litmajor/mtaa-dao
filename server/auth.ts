@@ -1,7 +1,6 @@
-
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 
 const JWT_SECRET = process.env.JWT_SECRET_KEY || 'your-secret-key-change-in-production';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-change-in-production';
@@ -30,7 +29,7 @@ export interface AuthRequest extends Request {
 export const generateTokens = (payload: TokenPayload) => {
   const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
   const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
-  
+
   return { accessToken, refreshToken };
 };
 
@@ -67,7 +66,7 @@ export const verifyPassword = async (password: string, hash: string): Promise<bo
 export const authenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ 
         success: false,
@@ -102,7 +101,7 @@ export const isAuthenticated = authenticate;
 export const refreshTokenHandler = async (req: Request, res: Response) => {
   try {
     const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
-    
+
     if (!refreshToken) {
       return res.status(401).json({ 
         success: false,
@@ -111,7 +110,7 @@ export const refreshTokenHandler = async (req: Request, res: Response) => {
     }
 
     const decoded = verifyRefreshToken(refreshToken);
-    
+
     if (!decoded) {
       return res.status(401).json({ 
         success: false,
