@@ -5,7 +5,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { Label } from './ui/label';
-import { toast } from './ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { CheckCircle, Upload, Link } from 'lucide-react';
 
 interface TaskVerificationModalProps {
@@ -23,6 +23,7 @@ export const TaskVerificationModal: React.FC<TaskVerificationModalProps> = ({
   taskTitle,
   onVerificationSubmitted
 }) => {
+  const { toast } = useToast();
   const [formData, setFormData] = useState({
     proofUrl: '',
     description: '',
