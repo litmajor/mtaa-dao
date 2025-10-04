@@ -27,6 +27,7 @@ import { ProposalExecutionService } from './proposalExecutionService';
 import { vaultEventIndexer } from './vaultEventsIndexer';
 import { vaultAutomationService } from './vaultAutomation';
 import { activityTracker } from './middleware/activityTracker';
+import { bridgeRelayerService } from './services/bridgeRelayerService';
 import paymentReconciliationRoutes from './routes/payment-reconciliation';
 import healthRoutes from './routes/health';
 import analyticsRoutes from './routes/analytics';
@@ -276,6 +277,9 @@ app.use((req, res, next) => {
 
     // Start vault automation service
     vaultAutomationService.start();
+
+    // Start bridge relayer service
+    bridgeRelayerService.start();
 
     console.log('✅ Blockchain services initialized successfully');
 

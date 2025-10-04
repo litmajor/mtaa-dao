@@ -1,6 +1,8 @@
 
 import { Router } from 'express';
 import { crossChainService } from '../services/crossChainService';
+import { crossChainGovernanceService } from '../services/crossChainGovernanceService';
+import { bridgeRelayerService } from '../services/bridgeRelayerService';
 import { asyncHandler } from '../middleware/errorHandler';
 import { isAuthenticated } from '../nextAuthMiddleware';
 import { z } from 'zod';
@@ -75,6 +77,75 @@ router.post('/estimate-fees', asyncHandler(async (req, res) => {
     success: true,
     data: fees
   });
+
+
+// Create cross-chain proposal
+router.post('/governance/proposal', isAuthenticated, asyncHandler(async (req, res) => {
+  const { proposalId, chains, executionChain } = req.body;
+
+  const crossChainProposalId = await crossChainGovernanceService.createCrossChainProposal(
+    proposalId,
+    chains,
+    executionChain
+  );
+
+  res.json({
+    success: true,
+    data: { crossChainProposalId }
+  });
+}));
+
+// Aggregate cross-chain votes
+router.get('/governance/proposal/:proposalId/aggregate', asyncHandler(async (req, res) => {
+  const { proposalId } = req.params;
+
+  const aggregation = await crossChainGovernanceService.aggregateVotes(proposalId);
+
+  res.json({
+    success: true,
+    data: aggregation
+  });
+}));
+
+// Sync vote from chain
+router.post('/governance/vote/sync', asyncHandler(async (req, res) => {
+  const { crossChainProposalId, chain, voteData } = req.body;
+
+  await crossChainGovernanceService.syncVoteFromChain(
+    crossChainProposalId,
+    chain,
+    voteData
+  );
+
+  res.json({
+    success: true,
+    message: 'Vote synced successfully'
+  });
+}));
+
+// Retry failed transfer
+router.post('/transfer/:transferId/retry', isAuthenticated, asyncHandler(async (req, res) => {
+  const { transferId } = req.params;
+
+  await bridgeRelayerService.retryTransfer(transferId);
+
+  res.json({
+    success: true,
+    message: 'Transfer retry initiated'
+  });
+}));
+
+// Get relayer status
+router.get('/relayer/status', asyncHandler(async (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      isRunning: true,
+      pollInterval: 30000
+    }
+  });
+}));
+
 }));
 
 // Create cross-chain vault
