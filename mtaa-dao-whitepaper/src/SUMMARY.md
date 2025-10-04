@@ -21,16 +21,11 @@
 - [Tokenomics](./tokenomics.md)
 - [Roadmap](./roadmap.md)
 
-# User Experience
+# Impact & Future
 
-- [Wallet Integration](./ux/wallet.md)
-- [Community Features](./ux/community.md)
-- [Mobile (MiniPay)](./ux/minipay.md)
-
-# Roadmap
-
-- [Development Phases](./roadmap/phases.md)
-- [Future Vision](./roadmap/future.md)
+- [Social & Economic Impact](./impact.md)
+- [Risks & Mitigation](./risks.md)
+- [Conclusion](./conclusion.md)
 
 # Appendix
 
