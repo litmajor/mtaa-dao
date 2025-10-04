@@ -357,12 +357,12 @@ export class AnalyticsService {
     }
   }
 
-  // Enhanced user engagement calculation
+  // Enhanced user engagement calculation with detailed metrics
   private async calculateUserEngagement(daoId?: string): Promise<number> {
     const thirtyDaysAgo = subDays(new Date(), 30);
     const sevenDaysAgo = subDays(new Date(), 7);
 
-    const [totalUsers, activeUsers, weeklyActive] = await Promise.all([
+    const [totalUsers, activeUsers, weeklyActive, dailyActive] = await Promise.all([
       daoId 
         ? db.select({ count: count() }).from(users) // Would need DAO membership table
         : db.select({ count: count() }).from(users),
@@ -379,19 +379,82 @@ export class AnalyticsService {
             .innerJoin(proposals, eq(votes.proposalId, proposals.id))
             .where(and(eq(proposals.daoId, daoId), gte(votes.createdAt, sevenDaysAgo)))
         : db.select({ count: count() }).from(votes)
-            .where(gte(votes.createdAt, sevenDaysAgo))
+            .where(gte(votes.createdAt, sevenDaysAgo)),
+
+      daoId
+        ? db.select({ count: count() }).from(votes)
+            .innerJoin(proposals, eq(votes.proposalId, proposals.id))
+            .where(and(eq(proposals.daoId, daoId), gte(votes.createdAt, subDays(new Date(), 1))))
+        : db.select({ count: count() }).from(votes)
+            .where(gte(votes.createdAt, subDays(new Date(), 1)))
     ]);
 
     const total = totalUsers[0]?.count || 0;
     const monthly = activeUsers[0]?.count || 0;
     const weekly = weeklyActive[0]?.count || 0;
+    const daily = dailyActive[0]?.count || 0;
 
     // Calculate engagement score based on multiple factors
     const monthlyEngagement = total > 0 ? (monthly / total) * 100 : 0;
     const weeklyEngagement = total > 0 ? (weekly / total) * 100 : 0;
+    const dailyEngagement = total > 0 ? (daily / total) * 100 : 0;
 
-    // Weight weekly engagement more heavily
-    return (monthlyEngagement * 0.4 + weeklyEngagement * 0.6);
+    // Weight recent activity more heavily
+    return (monthlyEngagement * 0.3 + weeklyEngagement * 0.4 + dailyEngagement * 0.3);
+  }
+
+  // Get detailed engagement metrics for a DAO
+  async getDetailedEngagementMetrics(daoId?: string): Promise<{
+    daily: number;
+    weekly: number;
+    monthly: number;
+    averageSessionLength: number;
+    topContributors: any[];
+    engagementTrend: string;
+  }> {
+    const now = new Date();
+    const oneDayAgo = subDays(now, 1);
+    const sevenDaysAgo = subDays(now, 7);
+    const thirtyDaysAgo = subDays(now, 30);
+
+    // Calculate engagement for different periods
+    const [daily, weekly, monthly] = await Promise.all([
+      this.calculateEngagementForPeriod(oneDayAgo, now, daoId),
+      this.calculateEngagementForPeriod(sevenDaysAgo, now, daoId),
+      this.calculateEngagementForPeriod(thirtyDaysAgo, now, daoId)
+    ]);
+
+    // Determine trend
+    let trend = 'stable';
+    if (weekly > monthly * 1.1) trend = 'increasing';
+    if (weekly < monthly * 0.9) trend = 'decreasing';
+
+    return {
+      daily,
+      weekly,
+      monthly,
+      averageSessionLength: 0, // Would need session tracking
+      topContributors: [], // Would integrate with contribution data
+      engagementTrend: trend
+    };
+  }
+
+  private async calculateEngagementForPeriod(start: Date, end: Date, daoId?: string): Promise<number> {
+    const [votes, proposals] = await Promise.all([
+      daoId
+        ? db.select({ count: count() }).from(votes)
+            .innerJoin(proposals, eq(votes.proposalId, proposals.id))
+            .where(and(eq(proposals.daoId, daoId), gte(votes.createdAt, start), lte(votes.createdAt, end)))
+        : db.select({ count: count() }).from(votes)
+            .where(and(gte(votes.createdAt, start), lte(votes.createdAt, end))),
+      daoId
+        ? db.select({ count: count() }).from(proposals)
+            .where(and(eq(proposals.daoId, daoId), gte(proposals.createdAt, start), lte(proposals.createdAt, end)))
+        : db.select({ count: count() }).from(proposals)
+            .where(and(gte(proposals.createdAt, start), lte(proposals.createdAt, end)))
+    ]);
+
+    return (votes[0]?.count || 0) + (proposals[0]?.count || 0);
   }
 
   private async getSuccessRateForPeriod(start: Date, end: Date, daoId?: string): Promise<number> {

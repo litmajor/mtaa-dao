@@ -39,6 +39,7 @@ import './middleware/validation'; // Added for validation middleware
 // Assuming ReputationService is defined and exported from './reputationService'
 import { ReputationService } from './reputationService'; // Added for ReputationService
 import { authenticate, refreshTokenHandler, logoutHandler, authUserHandler, authLoginHandler, authRegisterHandler } from './auth';
+import reputationRoutes from './routes/reputation'; // Added for reputation routes
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -195,6 +196,7 @@ app.use((req, res, next) => {
     app.use('/api/billing', billingRoutes);
     app.use('/api/dao/:daoId/executions', proposalExecutionRouter);
     app.use('/api/proposals', pollProposalsRouter);
+    app.use('/api/reputation', reputationRoutes); // Added reputation routes
 
     // Auth endpoints
     app.get('/api/auth/user', authenticate, authUserHandler);
