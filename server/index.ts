@@ -68,7 +68,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // CORS Configuration
 app.use(cors({
-  origin: [env.FRONTEND_URL, env.BACKEND_URL, 'http://localhost:5000', 'http://localhost:5173', 'http://localhost:3000'],
+  origin: ['http://localhost:5173'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
@@ -216,16 +216,16 @@ app.use((req, res, next) => {
     // Error handling middleware (must be last)
     app.use(errorHandler);
 
-    const PORT = parseInt(env.PORT);
-    const HOST = env.HOST;
+    const PORT = 5000;
+    const HOST = env.HOST || '0.0.0.0';
 
     server.listen(PORT, HOST, () => {
       logStartup(PORT.toString());
       logger.info('Server configuration', {
         port: PORT,
         host: HOST,
-        frontendUrl: env.FRONTEND_URL,
-        backendUrl: env.BACKEND_URL,
+        frontendUrl: 'http://localhost:5173',
+        backendUrl: `http://localhost:${PORT}`,
         environment: env.NODE_ENV,
         nodeVersion: process.version,
       });

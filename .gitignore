@@ -6,3 +6,10 @@ cache
 dist/
 
 .env
+mtaa-dao-whitepaper/target
+mtaa-dao-whitepaper/.env
+
+# Added by cargo
+
+/target
+**/*.rs.bk
