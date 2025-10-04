@@ -1,0 +1,2531 @@
+~/workspace$ npx tsc --noEmit --skipLibCheck
+client/src/components/MiniPayIntegration.tsx:123:11 - error TS2322: Type 'number' is not assignable to type 'bigint'.
+
+123           value: parseFloat(sendAmount) * 1e18, // Convert to wei
+              ~~~~~
+
+  node_modules/viem/_types/types/transaction.d.ts:145:5
+    145     value?: quantity | undefined;
+            ~~~~~
+    The expected type comes from property 'value' which is declared here on type 'SendTransactionParameters<{ rpcUrls: { default: { http: string[]; }; public: { http: string[]; }; }; blockExplorers: { default: { name: string; url: string; }; }; blockTime: 1000; contracts: { readonly multicall3: { readonly address: "0xcA11bde05977b3631167028862bE2a173976CA11"; readonly blockCreated: 14569001; }; ....'
+
+client/src/components/MiniPayIntegration.tsx:152:21 - error TS2554: Expected 3 arguments, but got 2.
+
+152         fee = await estimateCUSDGasFee(sendTo, parseFloat(sendAmount));
+                        ~~~~~~~~~~~~~~~~~~
+
+  client/src/lib/blockchain.ts:244:3
+    244   amount: string // Amount in user-readable units (e.g., "10")
+          ~~~~~~~~~~~~~~
+    An argument for 'amount' was not provided.
+
+client/src/components/MiniPayIntegration.tsx:154:21 - error TS2554: Expected 3 arguments, but got 2.
+
+154         fee = await estimateCeloGasFee(sendTo, parseFloat(sendAmount));
+                        ~~~~~~~~~~~~~~~~~~
+
+  client/src/lib/blockchain.ts:269:3
+    269   amount: string // Amount in user-readable units (e.g., "0.5")
+          ~~~~~~~~~~~~~~
+    An argument for 'amount' was not provided.
+
+client/src/components/TaskManagementDashboard.tsx:192:36 - error TS2367: This comparison appears to be unintentional because the types '"open" | "claimed" | "completed"' and '"submitted"' have no overlap.
+
+192                 {canVerifyTasks && task.status === 'submitted' && (
+                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+client/src/components/TaskVerificationModal.tsx:8:10 - error TS2614: Module '"./ui/use-toast"' has no exported member 'toast'. Did you mean to use 'import toast from "./ui/use-toast"' instead?
+
+8 import { toast } from './ui/use-toast';
+           ~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:3:41 - error TS2304: Cannot find name 'useState'.
+
+3   const [delegations, setDelegations] = useState<VoteDelegation[]>([]);
+                                          ~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:3:50 - error TS2304: Cannot find name 'VoteDelegation'.
+
+3   const [delegations, setDelegations] = useState<VoteDelegation[]>([]);
+                                                   ~~~~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:4:33 - error TS2304: Cannot find name 'useState'.
+
+4   const [members, setMembers] = useState<DaoMember[]>([]);
+                                  ~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:4:42 - error TS2304: Cannot find name 'DaoMember'.
+
+4   const [members, setMembers] = useState<DaoMember[]>([]);
+                                           ~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:5:49 - error TS2304: Cannot find name 'useState'.
+
+5   const [delegationStats, setDelegationStats] = useState<DelegationStats>({
+                                                  ~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:5:58 - error TS2304: Cannot find name 'DelegationStats'.
+
+5   const [delegationStats, setDelegationStats] = useState<DelegationStats>({
+                                                           ~~~~~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:10:51 - error TS2304: Cannot find name 'useState'.
+
+10   const [selectedDelegate, setSelectedDelegate] = useState('');
+                                                     ~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:11:49 - error TS2304: Cannot find name 'useState'.
+
+11   const [delegationScope, setDelegationScope] = useState<'all' | 'category' | 'proposal'>('all');
+                                                   ~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:12:51 - error TS2304: Cannot find name 'useState'.
+
+12   const [selectedCategory, setSelectedCategory] = useState('');
+                                                     ~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:13:51 - error TS2304: Cannot find name 'useState'.
+
+13   const [selectedProposal, setSelectedProposal] = useState('');
+                                                     ~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:14:39 - error TS2304: Cannot find name 'useState'.
+
+14   const [searchTerm, setSearchTerm] = useState('');
+                                         ~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:15:39 - error TS2304: Cannot find name 'useState'.
+
+15   const [isCreating, setIsCreating] = useState(false);
+                                         ~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:16:33 - error TS2304: Cannot find name 'useState'.
+
+16   const [loading, setLoading] = useState(true);
+                                   ~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:18:3 - error TS2304: Cannot find name 'useEffect'.
+
+18   useEffect(() => {
+     ~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:26:30 - error TS2304: Cannot find name 'apiGet'.
+
+26       const response = await apiGet(`/api/governance/${daoId}/delegations`);
+                                ~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:37:30 - error TS2304: Cannot find name 'apiGet'.
+
+37       const response = await apiGet(`/api/daos/${daoId}/members`);
+                                ~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:39:45 - error TS2304: Cannot find name 'DaoMember'.
+
+39         setMembers(response.data.filter((m: DaoMember) => m.userId !== currentUserId));
+                                               ~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:48:30 - error TS2304: Cannot find name 'apiGet'.
+
+48       const response = await apiGet(`/api/governance/${daoId}/delegation-stats`);
+                                ~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:71:30 - error TS2304: Cannot find name 'apiPost'.
+
+71       const response = await apiPost(`/api/governance/${daoId}/delegate`, delegationData);
+                                ~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:89:30 - error TS2304: Cannot find name 'apiDelete'.
+
+89       const response = await apiDelete(`/api/governance/${daoId}/delegate/${delegationId}`);
+                                ~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:99:42 - error TS7006: Parameter 'member' implicitly has an 'any' type.
+
+99   const filteredMembers = members.filter(member =>
+                                            ~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:111:10 - error TS2304: Cannot find name 'Card'.
+
+111         <Card>
+             ~~~~
+
+client/src/components/VoteDelegationPanel.tsx:112:12 - error TS2304: Cannot find name 'CardContent'.
+
+112           <CardContent className="p-4">
+               ~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:114:16 - error TS2304: Cannot find name 'Users'.
+
+114               <Users className="w-5 h-5 text-blue-500" />
+                   ~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:120:13 - error TS2304: Cannot find name 'CardContent'.
+
+120           </CardContent>
+                ~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:121:11 - error TS2304: Cannot find name 'Card'.
+
+121         </Card>
+              ~~~~
+
+client/src/components/VoteDelegationPanel.tsx:123:10 - error TS2304: Cannot find name 'Card'.
+
+123         <Card>
+             ~~~~
+
+client/src/components/VoteDelegationPanel.tsx:124:12 - error TS2304: Cannot find name 'CardContent'.
+
+124           <CardContent className="p-4">
+               ~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:126:16 - error TS2304: Cannot find name 'ArrowRight'.
+
+126               <ArrowRight className="w-5 h-5 text-green-500" />
+                   ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:132:13 - error TS2304: Cannot find name 'CardContent'.
+
+132           </CardContent>
+                ~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:133:11 - error TS2304: Cannot find name 'Card'.
+
+133         </Card>
+              ~~~~
+
+client/src/components/VoteDelegationPanel.tsx:135:10 - error TS2304: Cannot find name 'Card'.
+
+135         <Card>
+             ~~~~
+
+client/src/components/VoteDelegationPanel.tsx:136:12 - error TS2304: Cannot find name 'CardContent'.
+
+136           <CardContent className="p-4">
+               ~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:138:16 - error TS2304: Cannot find name 'Settings'.
+
+138               <Settings className="w-5 h-5 text-purple-500" />
+                   ~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:144:13 - error TS2304: Cannot find name 'CardContent'.
+
+144           </CardContent>
+                ~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:145:11 - error TS2304: Cannot find name 'Card'.
+
+145         </Card>
+              ~~~~
+
+client/src/components/VoteDelegationPanel.tsx:149:8 - error TS2304: Cannot find name 'Card'.
+
+149       <Card>
+           ~~~~
+
+client/src/components/VoteDelegationPanel.tsx:150:10 - error TS2304: Cannot find name 'CardHeader'.
+
+150         <CardHeader>
+             ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:152:11 - error TS2304: Cannot find name 'CardHeader'.
+
+152         </CardHeader>
+              ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:153:10 - error TS2304: Cannot find name 'CardContent'.
+
+153         <CardContent className="space-y-4">
+             ~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:157:16 - error TS2304: Cannot find name 'Search'.
+
+157               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                   ~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:158:16 - error TS2304: Cannot find name 'Input'.
+
+158               <Input
+                   ~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:161:28 - error TS7006: Parameter 'e' implicitly has an 'any' type.
+
+161                 onChange={(e) => setSearchTerm(e.target.value)}
+                               ~
+
+client/src/components/VoteDelegationPanel.tsx:169:14 - error TS2304: Cannot find name 'Select'.
+
+169             <Select value={selectedDelegate} onValueChange={setSelectedDelegate}>
+                 ~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:170:16 - error TS2304: Cannot find name 'SelectTrigger'.
+
+170               <SelectTrigger>
+                   ~~~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:171:18 - error TS2304: Cannot find name 'SelectValue'.
+
+171                 <SelectValue placeholder="Choose a member to delegate to" />
+                     ~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:172:17 - error TS2304: Cannot find name 'SelectTrigger'.
+
+172               </SelectTrigger>
+                    ~~~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:173:16 - error TS2304: Cannot find name 'SelectContent'.
+
+173               <SelectContent>
+                   ~~~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:174:38 - error TS7006: Parameter 'member' implicitly has an 'any' type.
+
+174                 {filteredMembers.map(member => (
+                                         ~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:175:20 - error TS2304: Cannot find name 'SelectItem'.
+
+175                   <SelectItem key={member.userId} value={member.userId}>
+                       ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:177:24 - error TS2304: Cannot find name 'Avatar'.
+
+177                       <Avatar className="w-6 h-6">
+                           ~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:178:26 - error TS2304: Cannot find name 'AvatarImage'.
+
+178                         <AvatarImage src={member.profileImageUrl} />
+                             ~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:179:26 - error TS2304: Cannot find name 'AvatarFallback'.
+
+179                         <AvatarFallback>{member.username[0]?.toUpperCase()}</AvatarFallback>
+                             ~~~~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:179:78 - error TS2304: Cannot find name 'AvatarFallback'.
+
+179                         <AvatarFallback>{member.username[0]?.toUpperCase()}</AvatarFallback>
+                                                                                 ~~~~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:180:25 - error TS2304: Cannot find name 'Avatar'.
+
+180                       </Avatar>
+                            ~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:182:24 - error TS2304: Cannot find name 'Badge'.
+
+182                       <Badge variant="outline" className="text-xs">{member.role}</Badge>
+                           ~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:182:83 - error TS2304: Cannot find name 'Badge'.
+
+182                       <Badge variant="outline" className="text-xs">{member.role}</Badge>
+                                                                                      ~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:184:21 - error TS2304: Cannot find name 'SelectItem'.
+
+184                   </SelectItem>
+                        ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:186:17 - error TS2304: Cannot find name 'SelectContent'.
+
+186               </SelectContent>
+                    ~~~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:187:15 - error TS2304: Cannot find name 'Select'.
+
+187             </Select>
+                  ~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:192:14 - error TS2304: Cannot find name 'Select'.
+
+192             <Select value={delegationScope} onValueChange={(value: any) => setDelegationScope(value)}>
+                 ~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:193:16 - error TS2304: Cannot find name 'SelectTrigger'.
+
+193               <SelectTrigger>
+                   ~~~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:194:18 - error TS2304: Cannot find name 'SelectValue'.
+
+194                 <SelectValue />
+                     ~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:195:17 - error TS2304: Cannot find name 'SelectTrigger'.
+
+195               </SelectTrigger>
+                    ~~~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:196:16 - error TS2304: Cannot find name 'SelectContent'.
+
+196               <SelectContent>
+                   ~~~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:197:18 - error TS2304: Cannot find name 'SelectItem'.
+
+197                 <SelectItem value="all">All Proposals</SelectItem>
+                     ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:197:56 - error TS2304: Cannot find name 'SelectItem'.
+
+197                 <SelectItem value="all">All Proposals</SelectItem>
+                                                           ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:198:18 - error TS2304: Cannot find name 'SelectItem'.
+
+198                 <SelectItem value="category">Specific Category</SelectItem>
+                     ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:198:65 - error TS2304: Cannot find name 'SelectItem'.
+
+198                 <SelectItem value="category">Specific Category</SelectItem>
+                                                                    ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:199:18 - error TS2304: Cannot find name 'SelectItem'.
+
+199                 <SelectItem value="proposal">Single Proposal</SelectItem>
+                     ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:199:63 - error TS2304: Cannot find name 'SelectItem'.
+
+199                 <SelectItem value="proposal">Single Proposal</SelectItem>
+                                                                  ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:200:17 - error TS2304: Cannot find name 'SelectContent'.
+
+200               </SelectContent>
+                    ~~~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:201:15 - error TS2304: Cannot find name 'Select'.
+
+201             </Select>
+                  ~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:207:16 - error TS2304: Cannot find name 'Select'.
+
+207               <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                   ~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:208:18 - error TS2304: Cannot find name 'SelectTrigger'.
+
+208                 <SelectTrigger>
+                     ~~~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:209:20 - error TS2304: Cannot find name 'SelectValue'.
+
+209                   <SelectValue placeholder="Select category" />
+                       ~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:210:19 - error TS2304: Cannot find name 'SelectTrigger'.
+
+210                 </SelectTrigger>
+                      ~~~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:211:18 - error TS2304: Cannot find name 'SelectContent'.
+
+211                 <SelectContent>
+                     ~~~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:212:20 - error TS2304: Cannot find name 'SelectItem'.
+
+212                   <SelectItem value="governance">Governance</SelectItem>
+                       ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:212:62 - error TS2304: Cannot find name 'SelectItem'.
+
+212                   <SelectItem value="governance">Governance</SelectItem>
+                                                                 ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:213:20 - error TS2304: Cannot find name 'SelectItem'.
+
+213                   <SelectItem value="treasury">Treasury</SelectItem>
+                       ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:213:58 - error TS2304: Cannot find name 'SelectItem'.
+
+213                   <SelectItem value="treasury">Treasury</SelectItem>
+                                                             ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:214:20 - error TS2304: Cannot find name 'SelectItem'.
+
+214                   <SelectItem value="membership">Membership</SelectItem>
+                       ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:214:62 - error TS2304: Cannot find name 'SelectItem'.
+
+214                   <SelectItem value="membership">Membership</SelectItem>
+                                                                 ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:215:20 - error TS2304: Cannot find name 'SelectItem'.
+
+215                   <SelectItem value="technical">Technical</SelectItem>
+                       ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:215:60 - error TS2304: Cannot find name 'SelectItem'.
+
+215                   <SelectItem value="technical">Technical</SelectItem>
+                                                               ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:216:19 - error TS2304: Cannot find name 'SelectContent'.
+
+216                 </SelectContent>
+                      ~~~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:217:17 - error TS2304: Cannot find name 'Select'.
+
+217               </Select>
+                    ~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:221:12 - error TS2304: Cannot find name 'Button'.
+
+221           <Button
+               ~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:227:13 - error TS2304: Cannot find name 'Button'.
+
+227           </Button>
+                ~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:228:11 - error TS2304: Cannot find name 'CardContent'.
+
+228         </CardContent>
+              ~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:229:9 - error TS2304: Cannot find name 'Card'.
+
+229       </Card>
+            ~~~~
+
+client/src/components/VoteDelegationPanel.tsx:232:8 - error TS2304: Cannot find name 'Card'.
+
+232       <Card>
+           ~~~~
+
+client/src/components/VoteDelegationPanel.tsx:233:10 - error TS2304: Cannot find name 'CardHeader'.
+
+233         <CardHeader>
+             ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:235:11 - error TS2304: Cannot find name 'CardHeader'.
+
+235         </CardHeader>
+              ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:236:10 - error TS2304: Cannot find name 'CardContent'.
+
+236         <CardContent>
+             ~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:241:32 - error TS7006: Parameter 'delegation' implicitly has an 'any' type.
+
+241               {delegations.map(delegation => (
+                                   ~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:244:22 - error TS2304: Cannot find name 'UserCheck'.
+
+244                     <UserCheck className="w-5 h-5 text-green-500" />
+                         ~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:253:20 - error TS2304: Cannot find name 'Button'.
+
+253                   <Button
+                       ~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:259:22 - error TS2304: Cannot find name 'UserX'.
+
+259                     <UserX className="w-4 h-4 mr-1" />
+                         ~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:261:21 - error TS2304: Cannot find name 'Button'.
+
+261                   </Button>
+                        ~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:266:11 - error TS2304: Cannot find name 'CardContent'.
+
+266         </CardContent>
+              ~~~~~~~~~~~
+
+client/src/components/VoteDelegationPanel.tsx:267:9 - error TS2304: Cannot find name 'Card'.
+
+267       </Card>
+            ~~~~
+
+client/src/components/contributor_list.tsx:74:79 - error TS2339: Property 'length' does not exist on type 'never[] | ContributorsResponse'.
+  Property 'length' does not exist on type 'ContributorsResponse'.
+
+74             <div className="text-2xl font-bold text-purple-300">{contributors.length}</div>
+                                                                                 ~~~~~~
+
+client/src/components/contributor_list.tsx:80:23 - error TS2339: Property 'map' does not exist on type 'never[] | ContributorsResponse'.
+  Property 'map' does not exist on type 'ContributorsResponse'.
+
+80         {contributors.map((contributor: Contributor, index: number) => {
+                         ~~~
+
+client/src/components/contributor_list.tsx:209:31 - error TS2339: Property 'reduce' does not exist on type 'never[] | ContributorsResponse'.
+  Property 'reduce' does not exist on type 'ContributorsResponse'.
+
+209                 {contributors.reduce((sum: number, c: Contributor) => sum + c.proposalCount, 0)}
+                                  ~~~~~~
+
+client/src/components/contributor_list.tsx:215:31 - error TS2339: Property 'reduce' does not exist on type 'never[] | ContributorsResponse'.
+  Property 'reduce' does not exist on type 'ContributorsResponse'.
+
+215                 {contributors.reduce((sum: number, c: Contributor) => sum + c.voteCount, 0)}
+                                  ~~~~~~
+
+client/src/components/contributor_list.tsx:221:31 - error TS2339: Property 'reduce' does not exist on type 'never[] | ContributorsResponse'.
+  Property 'reduce' does not exist on type 'ContributorsResponse'.
+
+221                 {contributors.reduce((sum: number, c: Contributor) => sum + c.totalFunding, 0).toLocaleString()}
+                                  ~~~~~~
+
+client/src/components/dao-chat.tsx:211:9 - error TS2353: Object literal may only specify known properties, and 'messageType' does not exist in type 'MutateOptions<any, Error, string, unknown>'.
+
+211         messageType: data.fileType.startsWith('image/') ? 'image' : 'file',
+            ~~~~~~~~~~~
+
+client/src/components/dao-chat.tsx:236:34 - error TS2345: Argument of type '{ content: string; replyTo: { id: string; content: string; userName: string; } | undefined; }' is not assignable to parameter of type 'string'.
+
+236     createMessageMutation.mutate(messageData);
+                                     ~~~~~~~~~~~
+
+client/src/components/dao-chat.tsx:292:23 - error TS7006: Parameter 'msg' implicitly has an 'any' type.
+
+292     ? messages.filter(msg =>
+                          ~~~
+
+client/src/components/navigation.tsx:27:39 - error TS2339: Property 'count' does not exist on type 'Response'.
+
+27         setNotificationCount(response.count);
+                                         ~~~~~
+
+client/src/components/navigation.tsx:377:21 - error TS2322: Type '{ count: number; onNotificationClick: () => void; }' is not assignable to type 'IntrinsicAttributes & NotificationCenterProps'.
+  Property 'count' does not exist on type 'IntrinsicAttributes & NotificationCenterProps'.
+
+377                     count={notificationCount}
+                        ~~~~~
+
+client/src/components/sendTransactionModal.tsx:40:23 - error TS2554: Expected 3 arguments, but got 2.
+
+40           fee = await estimateCeloGasFee(recipient, amount);
+                         ~~~~~~~~~~~~~~~~~~
+
+  client/src/lib/blockchain.ts:269:3
+    269   amount: string // Amount in user-readable units (e.g., "0.5")
+          ~~~~~~~~~~~~~~
+    An argument for 'amount' was not provided.
+
+client/src/components/sendTransactionModal.tsx:42:23 - error TS2554: Expected 3 arguments, but got 2.
+
+42           fee = await estimateCUSDGasFee(recipient, amount);
+                         ~~~~~~~~~~~~~~~~~~
+
+  client/src/lib/blockchain.ts:244:3
+    244   amount: string // Amount in user-readable units (e.g., "10")
+          ~~~~~~~~~~~~~~
+    An argument for 'amount' was not provided.
+
+client/src/components/sendTransactionModal.tsx:75:28 - error TS2554: Expected 2-3 arguments, but got 1.
+
+75       const txHash = await sendTransaction({ to: recipient, amount, currency });
+                              ~~~~~~~~~~~~~~~
+
+  client/src/pages/hooks/useWallet.ts:224:46
+    224   const sendTransaction = async (to: string, amount: string, tokenAddress?: string) => {
+                                                     ~~~~~~~~~~~~~~
+    An argument for 'amount' was not provided.
+
+client/src/components/ui/focus-trap.tsx:13:17 - error TS2300: Duplicate identifier 'FocusTrap'.
+
+13 export function FocusTrap({
+                   ~~~~~~~~~
+
+client/src/components/ui/focus-trap.tsx:127:14 - error TS2300: Duplicate identifier 'FocusTrap'.
+
+127 export const FocusTrap: React.FC<FocusTrapProps> = ({
+                 ~~~~~~~~~
+
+client/src/components/ui/sidebar.tsx:6:29 - error TS2307: Cannot find module '@/hooks/use-mobile' or its corresponding type declarations.
+
+6 import { useIsMobile } from "@/hooks/use-mobile"
+                              ~~~~~~~~~~~~~~~~~~~~
+
+client/src/components/vault/DepositModal.tsx:48:26 - error TS2339: Property 'refetch' does not exist on type '{ data: bigint; error: ReadContractErrorType; isError: true; isPending: false; isLoading: false; isLoadingError: false; isRefetchError: true; isSuccess: false; isPlaceholderData: false; ... 17 more ...; queryKey: readonly unknown[]; } | ... 4 more ... | { ...; }'.
+
+48   const { data: balance, refetch: refetchBalance } = useTokenBalance(address ?? "", tokenAddress);
+                            ~~~~~~~
+
+client/src/components/voting-modal.tsx:26:86 - error TS2554: Expected 1 arguments, but got 2.
+
+26       toast("Vote cast successfully! Your vote has been recorded on the blockchain", "success");
+                                                                                        ~~~~~~~~~
+
+client/src/components/voting-modal.tsx:31:53 - error TS2554: Expected 1 arguments, but got 2.
+
+31       toast("Error casting vote: " + error.message, "error");
+                                                       ~~~~~~~
+
+client/src/components/wallet/PesonalVaultBalance.tsx:215:42 - error TS2322: Type 'string' is not assignable to type '`0x${string}`'.
+
+215   const { data: balance } = useBalance({ address, token: currency === 'CELO' ? undefined : getTokenAddress(currency) });
+                                             ~~~~~~~
+
+client/src/hooks/use-toast.ts:19:11 - error TS2339: Property 'addToast' does not exist on type 'ToastContextType'.
+
+19   const { addToast, removeToast, toasts } = context;
+             ~~~~~~~~
+
+client/src/hooks/use-toast.ts:19:21 - error TS2339: Property 'removeToast' does not exist on type 'ToastContextType'.
+
+19   const { addToast, removeToast, toasts } = context;
+                       ~~~~~~~~~~~
+
+client/src/hooks/use-toast.ts:19:34 - error TS2339: Property 'toasts' does not exist on type 'ToastContextType'.
+
+19   const { addToast, removeToast, toasts } = context;
+                                    ~~~~~~
+
+client/src/pages/TaskBountyBoardPage.tsx:26:38 - error TS2554: Expected 1 arguments, but got 2.
+
+26     await claimTask(selectedTask.id, mockUserAddress);
+                                        ~~~~~~~~~~~~~~~
+
+client/src/pages/create-dao.tsx:35:35 - error TS2339: Property 'connect' does not exist on type '{ isLoading: boolean; isRefreshingBalances: boolean; error: string | null; connectMetaMask: () => Promise<void>; connectValora: () => Promise<void>; connectMiniPay: () => Promise<...>; ... 8 more ...; provider: string | null; }'.
+
+35   const { address: walletAddress, connect, isConnected } = useWallet();
+                                     ~~~~~~~
+
+client/src/pages/payment.tsx:17:21 - error TS2322: Type '{ open: boolean; onClose: () => void; }' is not assignable to type 'IntrinsicAttributes'.
+  Property 'open' does not exist on type 'IntrinsicAttributes'.
+
+17       <PaymentModal open={modalOpen} onClose={() => setModalOpen(false)} />
+                       ~~~~
+
+client/src/pages/vault.tsx:33:11 - error TS2339: Property 'connectWallet' does not exist on type '{ isLoading: boolean; isRefreshingBalances: boolean; error: string | null; connectMetaMask: () => Promise<void>; connectValora: () => Promise<void>; connectMiniPay: () => Promise<...>; ... 8 more ...; provider: string | null; }'.
+
+33   const { connectWallet, isConnecting } = useWallet();
+             ~~~~~~~~~~~~~
+
+client/src/pages/vault.tsx:33:26 - error TS2339: Property 'isConnecting' does not exist on type '{ isLoading: boolean; isRefreshingBalances: boolean; error: string | null; connectMetaMask: () => Promise<void>; connectValora: () => Promise<void>; connectMiniPay: () => Promise<...>; ... 8 more ...; provider: string | null; }'.
+
+33   const { connectWallet, isConnecting } = useWallet();
+                            ~~~~~~~~~~~~
+
+client/src/pages/wallet.tsx:416:45 - error TS2322: Type '{ children: (string | Element)[]; variant: "outline"; size: string; onClick: () => string; }' is not assignable to type 'IntrinsicAttributes & ButtonProps'.
+  Property 'size' does not exist on type 'IntrinsicAttributes & ButtonProps'.
+
+416                   <Button variant="outline" size="sm" onClick={() => window.location.href = '/dashboard'}>
+                                                ~~~~
+
+client/src/pages/wallet.tsx:417:22 - error TS2552: Cannot find name 'Users'. Did you mean 'user'?
+
+417                     <Users className="w-4 h-4 mr-1" />
+                         ~~~~~
+
+  client/src/pages/wallet.tsx:40:9
+    40   const user = { id: address || 'no-wallet' };
+               ~~~~
+    'user' is declared here.
+
+client/src/pages/wallet.tsx:420:45 - error TS2322: Type '{ children: (string | Element)[]; variant: "outline"; size: string; onClick: () => string; }' is not assignable to type 'IntrinsicAttributes & ButtonProps'.
+  Property 'size' does not exist on type 'IntrinsicAttributes & ButtonProps'.
+
+420                   <Button variant="outline" size="sm" onClick={() => window.location.href = '/vault-dashboard'}>
+                                                ~~~~
+
+client/src/pages/wallet.tsx:585:24 - error TS2741: Property 'onPaymentCreated' is missing in type '{ walletAddress: string; }' but required in type 'RecurringPaymentsProps'.
+
+585           {address && <RecurringPayments walletAddress={address} />}
+                           ~~~~~~~~~~~~~~~~~
+
+  client/src/components/wallet/RecurringPayments.tsx:31:3
+    31   onPaymentCreated: (payment: RecurringPayment) => void;
+         ~~~~~~~~~~~~~~~~
+    'onPaymentCreated' is declared here.
+
+server/agent_wallet.ts:3:15 - error TS2300: Duplicate identifier 'TransactionReceipt'.
+
+3 import type { TransactionReceipt } from 'web3-types';
+                ~~~~~~~~~~~~~~~~~~
+
+server/agent_wallet.ts:4:15 - error TS2300: Duplicate identifier 'TransactionReceipt'.
+
+4 import type { TransactionReceipt, Contract } from 'web3';
+                ~~~~~~~~~~~~~~~~~~
+
+server/analyticsService.ts:74:23 - error TS2345: Argument of type 'SQL<unknown>' is not assignable to parameter of type 'PgTable<TableConfig>'.
+  Type 'SQL<unknown>' is missing the following properties from type 'PgTable<TableConfig>': $inferSelect, $inferInsert
+
+74       await db.insert(sql`
+                         ~~~~
+75         INSERT INTO user_activities (user_id, action, metadata, created_at)
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+76         VALUES (${userId}, ${action}, ${JSON.stringify(metadata || {})}, NOW())
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+77       `);
+   ~~~~~~~
+
+server/api/account_delete.ts:1:10 - error TS2300: Duplicate identifier 'Request'.
+
+1 import { Request, Response } from 'express';
+           ~~~~~~~
+
+server/api/account_delete.ts:1:19 - error TS2300: Duplicate identifier 'Response'.
+
+1 import { Request, Response } from 'express';
+                    ~~~~~~~~
+
+server/api/account_delete.ts:7:10 - error TS2300: Duplicate identifier 'Request'.
+
+7 import { Request, Response } from 'express';
+           ~~~~~~~
+
+server/api/account_delete.ts:7:19 - error TS2300: Duplicate identifier 'Response'.
+
+7 import { Request, Response } from 'express';
+                    ~~~~~~~~
+
+server/api/account_delete.ts:14:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+14     const userId = req.user?.id;
+                                ~~
+
+server/api/achievements.ts:91:13 - error TS2339: Property 'userAchievements' does not exist on type 'typeof import("/home/runner/workspace/shared/schema")'.
+
+91     const { userAchievements, achievements, users } = await import('../../shared/schema');
+               ~~~~~~~~~~~~~~~~
+
+server/api/achievements.ts:91:31 - error TS2339: Property 'achievements' does not exist on type 'typeof import("/home/runner/workspace/shared/schema")'.
+
+91     const { userAchievements, achievements, users } = await import('../../shared/schema');
+                                 ~~~~~~~~~~~~
+
+server/api/admin_users.ts:41:32 - error TS2551: Property 'role' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'. Did you mean 'roles'?
+
+41       conditions.push(eq(users.role, roleFilter));
+                                  ~~~~
+
+server/api/admin_users.ts:45:32 - error TS2339: Property 'isActive' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+45       conditions.push(eq(users.isActive, true));
+                                  ~~~~~~~~
+
+server/api/admin_users.ts:47:32 - error TS2339: Property 'isActive' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+47       conditions.push(eq(users.isActive, false));
+                                  ~~~~~~~~
+
+server/api/admin_users.ts:59:21 - error TS2551: Property 'role' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'. Did you mean 'roles'?
+
+59         role: users.role,
+                       ~~~~
+
+server/api/admin_users.ts:60:25 - error TS2339: Property 'isActive' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+60         isActive: users.isActive,
+                           ~~~~~~~~
+
+server/api/admin_users.ts:62:30 - error TS2339: Property 'walletAddress' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+62         walletAddress: users.walletAddress,
+                                ~~~~~~~~~~~~~
+
+server/api/admin_users.ts:64:28 - error TS2339: Property 'lastLoginAt' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+64         lastLoginAt: users.lastLoginAt,
+                              ~~~~~~~~~~~
+
+server/api/admin_users.ts:117:31 - error TS2551: Property 'role' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'. Did you mean 'roles'?
+
+117         .select({ role: users.role })
+                                  ~~~~
+
+server/api/admin_users.ts:131:9 - error TS2561: Object literal may only specify known properties, but 'role' does not exist in type '{ password?: string | SQL<unknown> | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | undefined; id?: string | SQL<unknown> | PgColumn<...> | undefined; ... 33 more ...; telegramUsername?: string | ... 3 more ... | undefined; }'. Did you mean to write 'roles'?
+
+131         role,
+            ~~~~
+
+server/api/admin_users.ts:140:21 - error TS2551: Property 'role' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'. Did you mean 'roles'?
+
+140         role: users.role,
+                        ~~~~
+
+server/api/authUser.ts:29:21 - error TS2551: Property 'role' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'. Did you mean 'roles'?
+
+29         role: users.role,
+                       ~~~~
+
+server/api/authUser.ts:30:30 - error TS2339: Property 'walletAddress' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+30         walletAddress: users.walletAddress,
+                                ~~~~~~~~~~~~~
+
+server/api/authUser.ts:32:25 - error TS2339: Property 'isActive' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+32         isActive: users.isActive,
+                           ~~~~~~~~
+
+server/api/authUser.ts:33:28 - error TS2339: Property 'lastLoginAt' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+33         lastLoginAt: users.lastLoginAt,
+                              ~~~~~~~~~~~
+
+server/api/authUser.ts:35:31 - error TS2339: Property 'profilePicture' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+35         profilePicture: users.profilePicture,
+                                 ~~~~~~~~~~~~~~
+
+server/api/authUser.ts:36:20 - error TS2339: Property 'bio' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+36         bio: users.bio,
+                      ~~~
+
+server/api/authUser.ts:37:25 - error TS2339: Property 'location' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+37         location: users.location,
+                           ~~~~~~~~
+
+server/api/authUser.ts:38:24 - error TS2339: Property 'website' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+38         website: users.website,
+                          ~~~~~~~
+
+server/api/authVault.ts:10:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+10     const userId = req.user?.id;
+                                ~~
+
+server/api/authVault.ts:28:56 - error TS2339: Property 'hasVaultAccess' does not exist on type 'VaultService'.
+
+28     if (vault.userId !== userId && !await vaultService.hasVaultAccess(userId, vaultId)) {
+                                                          ~~~~~~~~~~~~~~
+
+server/api/auth_login.ts:35:15 - error TS2339: Property 'isActive' does not exist on type '{ id: string; username: string | null; password: string; email: string | null; phone: string | null; emailVerified: boolean | null; phoneVerified: boolean | null; emailVerificationToken: string | null; ... 27 more ...; telegramUsername: string | null; }'.
+
+35     if (!user.isActive) {
+                 ~~~~~~~~
+
+server/api/auth_login.ts:56:9 - error TS2353: Object literal may only specify known properties, and 'lastLoginAt' does not exist in type '{ password?: string | SQL<unknown> | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | undefined; id?: string | SQL<unknown> | PgColumn<...> | undefined; ... 33 more ...; telegramUsername?: string | ... 3 more ... | undefined; }'.
+
+56         lastLoginAt: new Date(),
+           ~~~~~~~~~~~
+
+server/api/auth_login.ts:64:7 - error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.
+  Type 'null' is not assignable to type 'string | undefined'.
+
+64       email: user.email,
+         ~~~~~
+
+  server/auth.ts:12:3
+    12   email?: string;
+         ~~~~~
+    The expected type comes from property 'email' which is declared here on type 'TokenPayload'
+
+server/api/auth_login.ts:65:18 - error TS2551: Property 'role' does not exist on type '{ id: string; username: string | null; password: string; email: string | null; phone: string | null; emailVerified: boolean | null; phoneVerified: boolean | null; emailVerificationToken: string | null; ... 27 more ...; telegramUsername: string | null; }'. Did you mean 'roles'?
+
+65       role: user.role,
+                    ~~~~
+
+server/api/auth_login.ts:84:22 - error TS2551: Property 'role' does not exist on type '{ id: string; username: string | null; password: string; email: string | null; phone: string | null; emailVerified: boolean | null; phoneVerified: boolean | null; emailVerificationToken: string | null; ... 27 more ...; telegramUsername: string | null; }'. Did you mean 'roles'?
+
+84           role: user.role,
+                        ~~~~
+
+server/api/auth_login.ts:85:31 - error TS2339: Property 'walletAddress' does not exist on type '{ id: string; username: string | null; password: string; email: string | null; phone: string | null; emailVerified: boolean | null; phoneVerified: boolean | null; emailVerificationToken: string | null; ... 27 more ...; telegramUsername: string | null; }'.
+
+85           walletAddress: user.walletAddress,
+                                 ~~~~~~~~~~~~~
+
+server/api/auth_register.ts:52:8 - error TS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { password: string | SQL<unknown> | Placeholder<string, any>; id: string | SQL<unknown> | Placeholder<string, any>; email?: string | SQL<unknown> | Placeholder<...> | null | undefined; ... 32 more ...; telegramUsername?: string | ... 3 more ... | undefined; }): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'walletAddress' does not exist in type '{ password: string | SQL<unknown> | Placeholder<string, any>; id: string | SQL<unknown> | Placeholder<string, any>; email?: string | SQL<unknown> | Placeholder<string, any> | null | undefined; ... 32 more ...; telegramUsername?: string | ... 3 more ... | undefined; }'.
+  Overload 2 of 2, '(values: { password: string | SQL<unknown> | Placeholder<string, any>; id: string | SQL<unknown> | Placeholder<string, any>; email?: string | SQL<unknown> | Placeholder<...> | null | undefined; ... 32 more ...; telegramUsername?: string | ... 3 more ... | undefined; }[]): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'email' does not exist in type '{ password: string | SQL<unknown> | Placeholder<string, any>; id: string | SQL<unknown> | Placeholder<string, any>; email?: string | SQL<unknown> | Placeholder<string, any> | null | undefined; ... 32 more ...; telegramUsername?: string | ... 3 more ... | undefined; }[]'.
+
+52       .values({
+          ~~~~~~
+
+
+server/api/auth_register.ts:69:7 - error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.
+  Type 'null' is not assignable to type 'string | undefined'.
+
+69       email: newUser.email,
+         ~~~~~
+
+  server/auth.ts:12:3
+    12   email?: string;
+         ~~~~~
+    The expected type comes from property 'email' which is declared here on type 'TokenPayload'
+
+server/api/auth_register.ts:70:21 - error TS2551: Property 'role' does not exist on type '{ email: string | null; password: string; id: string; createdAt: Date | null; username: string | null; phone: string | null; emailVerified: boolean | null; phoneVerified: boolean | null; ... 27 more ...; telegramUsername: string | null; }'. Did you mean 'roles'?
+
+70       role: newUser.role,
+                       ~~~~
+
+server/api/auth_register.ts:89:25 - error TS2551: Property 'role' does not exist on type '{ email: string | null; password: string; id: string; createdAt: Date | null; username: string | null; phone: string | null; emailVerified: boolean | null; phoneVerified: boolean | null; ... 27 more ...; telegramUsername: string | null; }'. Did you mean 'roles'?
+
+89           role: newUser.role,
+                           ~~~~
+
+server/api/auth_register.ts:90:34 - error TS2339: Property 'walletAddress' does not exist on type '{ email: string | null; password: string; id: string; createdAt: Date | null; username: string | null; phone: string | null; emailVerified: boolean | null; phoneVerified: boolean | null; ... 27 more ...; telegramUsername: string | null; }'.
+
+90           walletAddress: newUser.walletAddress,
+                                    ~~~~~~~~~~~~~
+
+server/api/auth_user.ts:19:36 - error TS2339: Property 'userId' does not exist on type '{ claims: UserClaims; }'.
+
+19       .where(eq(users.id, req.user.userId))
+                                      ~~~~~~
+
+server/api/auth_user.ts:37:22 - error TS2551: Property 'role' does not exist on type '{ id: string; username: string | null; password: string; email: string | null; phone: string | null; emailVerified: boolean | null; phoneVerified: boolean | null; emailVerificationToken: string | null; ... 27 more ...; telegramUsername: string | null; }'. Did you mean 'roles'?
+
+37           role: user.role,
+                        ~~~~
+
+server/api/auth_user.ts:38:31 - error TS2339: Property 'walletAddress' does not exist on type '{ id: string; username: string | null; password: string; email: string | null; phone: string | null; emailVerified: boolean | null; phoneVerified: boolean | null; emailVerificationToken: string | null; ... 27 more ...; telegramUsername: string | null; }'.
+
+38           walletAddress: user.walletAddress,
+                                 ~~~~~~~~~~~~~
+
+server/api/daoSettings.ts:10:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+10     const userId = req.user?.id;
+                                ~~
+
+server/api/daoSettings.ts:75:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+75     const userId = req.user?.id;
+                                ~~
+
+server/api/daoSettings.ts:119:48 - error TS18046: 'value' is of type 'unknown'.
+
+119             if (key === 'quorumPercentage' && (value < 1 || value > 100)) {
+                                                   ~~~~~
+
+server/api/daoSettings.ts:119:61 - error TS18046: 'value' is of type 'unknown'.
+
+119             if (key === 'quorumPercentage' && (value < 1 || value > 100)) {
+                                                                ~~~~~
+
+server/api/daoSettings.ts:122:43 - error TS18046: 'value' is of type 'unknown'.
+
+122             if (key === 'votingPeriod' && value < 1) {
+                                              ~~~~~
+
+server/api/daoSettings.ts:125:45 - error TS18046: 'value' is of type 'unknown'.
+
+125             if (key === 'executionDelay' && value < 0) {
+                                                ~~~~~
+
+server/api/daoSettings.ts:176:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+176     const userId = req.user?.id;
+                                 ~~
+
+server/api/daoSettings.ts:219:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+219     const userId = req.user?.id;
+                                 ~~
+
+server/api/daoSettings.ts:264:17 - error TS2304: Cannot find name 'proposals'.
+
+264       where: eq(proposals.daoId, daoId)
+                    ~~~~~~~~~
+
+server/api/daoSettings.ts:268:11 - error TS2538: Type 'null' cannot be used as an index type.
+
+268       acc[proposal.status] = (acc[proposal.status] || 0) + 1;
+              ~~~~~~~~~~~~~~~
+
+server/api/daoSettings.ts:268:35 - error TS2538: Type 'null' cannot be used as an index type.
+
+268       acc[proposal.status] = (acc[proposal.status] || 0) + 1;
+                                      ~~~~~~~~~~~~~~~
+
+server/api/daoSettings.ts:284:20 - error TS2769: No overload matches this call.
+  Overload 1 of 4, '(value: string | number | Date): Date', gave the following error.
+    Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+      Type 'null' is not assignable to type 'string | number | Date'.
+  Overload 2 of 4, '(value: string | number): Date', gave the following error.
+    Argument of type 'Date | null' is not assignable to parameter of type 'string | number'.
+      Type 'null' is not assignable to type 'string | number'.
+
+284           new Date(m.joinedAt).getTime() > Date.now() - 30 * 24 * 60 * 60 * 1000
+                       ~~~~~~~~~~
+
+
+server/api/daoSettings.ts:291:20 - error TS2769: No overload matches this call.
+  Overload 1 of 4, '(value: string | number | Date): Date', gave the following error.
+    Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+      Type 'null' is not assignable to type 'string | number | Date'.
+  Overload 2 of 4, '(value: string | number): Date', gave the following error.
+    Argument of type 'Date | null' is not assignable to parameter of type 'string | number'.
+      Type 'null' is not assignable to type 'string | number'.
+
+291           new Date(p.createdAt).getTime() > Date.now() - 30 * 24 * 60 * 60 * 1000
+                       ~~~~~~~~~~~
+
+
+server/api/daoSettings.ts:316:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+316     const userId = req.user?.id;
+                                 ~~
+
+server/api/daoSettings.ts:347:44 - error TS18046: 'value' is of type 'unknown'.
+
+347         if (key === 'quorumPercentage' && (value < 1 || value > 100)) {
+                                               ~~~~~
+
+server/api/daoSettings.ts:347:57 - error TS18046: 'value' is of type 'unknown'.
+
+347         if (key === 'quorumPercentage' && (value < 1 || value > 100)) {
+                                                            ~~~~~
+
+server/api/daoSettings.ts:350:39 - error TS18046: 'value' is of type 'unknown'.
+
+350         if (key === 'votingPeriod' && value < 1) {
+                                          ~~~~~
+
+server/api/daoSettings.ts:353:41 - error TS18046: 'value' is of type 'unknown'.
+
+353         if (key === 'executionDelay' && value < 0) {
+                                            ~~~~~
+
+server/api/daoSettings.ts:384:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+384     const userId = req.user?.id;
+                                 ~~
+
+server/api/daoSettings.ts:403:23 - error TS2339: Property 'category' does not exist on type '{ name: string; id: string; createdAt: Date | null; updatedAt: Date | null; description: string | null; access: string | null; inviteOnly: boolean | null; inviteCode: string | null; ... 17 more ...; executionDelay: number | null; }'.
+
+403         category: dao.category,
+                          ~~~~~~~~
+
+server/api/payments_estimate_gas.ts:30:40 - error TS2339: Property 'getSupportedTokens' does not exist on type 'typeof TokenRegistry'.
+
+30         supportedTokens: TokenRegistry.getSupportedTokens()
+                                          ~~~~~~~~~~~~~~~~~~
+
+server/api/payments_estimate_gas.ts:50:44 - error TS2339: Property 'estimateGas' does not exist on type 'TokenService'.
+
+50     const gasEstimate = await tokenService.estimateGas(tokenSymbol, toAddress, amount);
+                                              ~~~~~~~~~~~
+
+server/api/payments_estimate_gas.ts:57:44 - error TS2339: Property 'formatUnits' does not exist on type 'TokenService'.
+
+57     const estimatedCostCelo = tokenService.formatUnits(estimatedCostWei, 18); // CELO has 18 decimals
+                                              ~~~~~~~~~~~
+
+server/api/reputation.ts:21:31 - error TS2339: Property 'profilePicture' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+21         profilePicture: users.profilePicture,
+                                 ~~~~~~~~~~~~~~
+
+server/api/reputation.ts:22:27 - error TS2339: Property 'reputation' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+22         reputation: users.reputation,
+                             ~~~~~~~~~~
+
+server/api/reputation.ts:43:57 - error TS2339: Property 'activityType' does not exist on type '{ id: string; userId: string; type: string; description: string | null; firstName: string | null; lastName: string | null; profileImageUrl: string | null; roles: string | null; totalContributions: string | null; ... 18 more ...; telegramUsername: string | null; }'.
+
+43     const proposalActivities = activities.filter(a => a.activityType === 'proposal_created' || a.activityType === 'proposal_voted');
+                                                           ~~~~~~~~~~~~
+
+server/api/reputation.ts:43:98 - error TS2339: Property 'activityType' does not exist on type '{ id: string; userId: string; type: string; description: string | null; firstName: string | null; lastName: string | null; profileImageUrl: string | null; roles: string | null; totalContributions: string | null; ... 18 more ...; telegramUsername: string | null; }'.
+
+43     const proposalActivities = activities.filter(a => a.activityType === 'proposal_created' || a.activityType === 'proposal_voted');
+                                                                                                    ~~~~~~~~~~~~
+
+server/api/reputation.ts:44:53 - error TS2339: Property 'activityType' does not exist on type '{ id: string; userId: string; type: string; description: string | null; firstName: string | null; lastName: string | null; profileImageUrl: string | null; roles: string | null; totalContributions: string | null; ... 18 more ...; telegramUsername: string | null; }'.
+
+44     const taskActivities = activities.filter(a => a.activityType === 'task_completed' || a.activityType === 'task_claimed');
+                                                       ~~~~~~~~~~~~
+
+server/api/reputation.ts:44:92 - error TS2339: Property 'activityType' does not exist on type '{ id: string; userId: string; type: string; description: string | null; firstName: string | null; lastName: string | null; profileImageUrl: string | null; roles: string | null; totalContributions: string | null; ... 18 more ...; telegramUsername: string | null; }'.
+
+44     const taskActivities = activities.filter(a => a.activityType === 'task_completed' || a.activityType === 'task_claimed');
+                                                                                              ~~~~~~~~~~~~
+
+server/api/reputation.ts:45:61 - error TS2339: Property 'activityType' does not exist on type '{ id: string; userId: string; type: string; description: string | null; firstName: string | null; lastName: string | null; profileImageUrl: string | null; roles: string | null; totalContributions: string | null; ... 18 more ...; telegramUsername: string | null; }'.
+
+45     const contributionActivities = activities.filter(a => a.activityType === 'contribution_made');
+                                                               ~~~~~~~~~~~~
+
+server/api/reputation.ts:74:31 - error TS2339: Property 'profilePicture' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+74         profilePicture: users.profilePicture,
+                                 ~~~~~~~~~~~~~~
+
+server/api/reputation.ts:75:27 - error TS2339: Property 'reputation' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+75         reputation: users.reputation,
+                             ~~~~~~~~~~
+
+server/api/reputation.ts:76:63 - error TS2339: Property 'reputation' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+76         rank: sql<number>`ROW_NUMBER() OVER (ORDER BY ${users.reputation} DESC)`,
+                                                                 ~~~~~~~~~~
+
+server/api/reputation.ts:79:26 - error TS2339: Property 'reputation' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+79       .where(sql`${users.reputation} > 0`)
+                            ~~~~~~~~~~
+
+server/api/reputation.ts:80:27 - error TS2339: Property 'reputation' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+80       .orderBy(desc(users.reputation))
+                             ~~~~~~~~~~
+
+server/api/reputation.ts:103:31 - error TS2339: Property 'profilePicture' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+103         profilePicture: users.profilePicture,
+                                  ~~~~~~~~~~~~~~
+
+server/api/reputation.ts:104:27 - error TS2339: Property 'reputation' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+104         reputation: users.reputation,
+                              ~~~~~~~~~~
+
+server/api/reputation.ts:110:27 - error TS2339: Property 'daoId' does not exist on type 'PgTableWithColumns<{ name: "user_activities"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "user_activities"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 26 more ...; telegramUsername: PgColum...'.
+
+110         eq(userActivities.daoId, daoId),
+                              ~~~~~
+
+server/api/reputation.ts:111:21 - error TS2339: Property 'reputation' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+111         sql`${users.reputation} > 0`
+                        ~~~~~~~~~~
+
+server/api/reputation.ts:114:27 - error TS2339: Property 'reputation' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+114       .orderBy(desc(users.reputation))
+                              ~~~~~~~~~~
+
+server/api/task_templates.ts:31:7 - error TS2740: Type 'Omit<PgSelectBase<"task_templates", { id: PgColumn<{ name: "id"; tableName: "task_templates"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; hasDefault: true; isPrimaryKey: true; ... 5 more ...; generated: undefined; }, {}, {}>; ... 10 more ...; updatedAt: PgColumn<...>; ...' is missing the following properties from type 'PgSelectBase<"task_templates", { id: PgColumn<{ name: "id"; tableName: "task_templates"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; hasDefault: true; isPrimaryKey: true; ... 5 more ...; generated: undefined; }, {}, {}>; ... 10 more ...; updatedAt: PgColumn<...>; }, .....': config, joinsNotNullableMap, tableName, isPartialSelect, and 6 more.
+
+31       query = query.where(eq(taskTemplates.category, category as string));
+         ~~~~~
+
+server/api/task_templates.ts:35:7 - error TS2740: Type 'Omit<PgSelectBase<"task_templates", { id: PgColumn<{ name: "id"; tableName: "task_templates"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; hasDefault: true; isPrimaryKey: true; ... 5 more ...; generated: undefined; }, {}, {}>; ... 10 more ...; updatedAt: PgColumn<...>; ...' is missing the following properties from type 'PgSelectBase<"task_templates", { id: PgColumn<{ name: "id"; tableName: "task_templates"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; hasDefault: true; isPrimaryKey: true; ... 5 more ...; generated: undefined; }, {}, {}>; ... 10 more ...; updatedAt: PgColumn<...>; }, .....': config, joinsNotNullableMap, tableName, isPartialSelect, and 6 more.
+
+35       query = query.where(eq(taskTemplates.difficulty, difficulty as string));
+         ~~~~~
+
+server/api/task_templates.ts:39:7 - error TS2740: Type 'Omit<PgSelectBase<"task_templates", { id: PgColumn<{ name: "id"; tableName: "task_templates"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; hasDefault: true; isPrimaryKey: true; ... 5 more ...; generated: undefined; }, {}, {}>; ... 10 more ...; updatedAt: PgColumn<...>; ...' is missing the following properties from type 'PgSelectBase<"task_templates", { id: PgColumn<{ name: "id"; tableName: "task_templates"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; hasDefault: true; isPrimaryKey: true; ... 5 more ...; generated: undefined; }, {}, {}>; ... 10 more ...; updatedAt: PgColumn<...>; }, .....': config, joinsNotNullableMap, tableName, isPartialSelect, and 6 more.
+
+39       query = query.where(like(taskTemplates.title, `%${search}%`));
+         ~~~~~
+
+server/api/task_templates.ts:77:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+77     const userId = req.user?.id;
+                                ~~
+
+server/api/task_templates.ts:83:9 - error TS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { title: string | SQL<unknown> | Placeholder<string, any>; description: string | SQL<unknown> | Placeholder<string, any>; category: string | SQL<unknown> | Placeholder<...>; ... 8 more ...; acceptanceCriteria?: unknown; }): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'createdBy' does not exist in type '{ title: string | SQL<unknown> | Placeholder<string, any>; description: string | SQL<unknown> | Placeholder<string, any>; category: string | SQL<unknown> | Placeholder<...>; ... 8 more ...; acceptanceCriteria?: unknown; }'.
+  Overload 2 of 2, '(values: { title: string | SQL<unknown> | Placeholder<string, any>; description: string | SQL<unknown> | Placeholder<string, any>; category: string | SQL<unknown> | Placeholder<...>; ... 8 more ...; acceptanceCriteria?: unknown; }[]): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'createdBy' does not exist in type '{ title: string | SQL<unknown> | Placeholder<string, any>; description: string | SQL<unknown> | Placeholder<string, any>; category: string | SQL<unknown> | Placeholder<...>; ... 8 more ...; acceptanceCriteria?: unknown; }[]'.
+
+83         createdBy: userId,
+           ~~~~~~~~~
+
+
+server/api/task_templates.ts:103:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+103     const userId = req.user?.id;
+                                 ~~
+
+server/api/task_templates.ts:117:21 - error TS2339: Property 'createdBy' does not exist on type '{ id: string; title: string; description: string; category: string; difficulty: string; estimatedHours: number | null; requiredSkills: unknown; bountyAmount: string | null; deliverables: unknown; acceptanceCriteria: unknown; createdAt: Date | null; updatedAt: Date | null; }'.
+
+117     if (template[0].createdBy !== userId) {
+                        ~~~~~~~~~
+
+server/api/task_templates.ts:123:12 - error TS2345: Argument of type '{ updatedAt: Date; title?: string | undefined; description?: string | undefined; category?: string | undefined; difficulty?: "beginner" | "intermediate" | "advanced" | "expert" | undefined; ... 4 more ...; acceptanceCriteria?: string[] | undefined; }' is not assignable to parameter of type '{ title?: string | SQL<unknown> | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | undefined; description?: string | SQL<...> | PgColumn<...> | undefined; ... 9 more ...; acceptanceCriteria?: unknown; }'.
+  Types of property 'bountyAmount' are incompatible.
+    Type 'number | undefined' is not assignable to type 'string | SQL<unknown> | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | null | undefined'.
+      Type 'number' is not assignable to type 'string | SQL<unknown> | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | null | undefined'.
+
+123       .set({
+               ~
+124         ...validatedData,
+    ~~~~~~~~~~~~~~~~~~~~~~~~~
+125         updatedAt: new Date(),
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+126       })
+    ~~~~~~~
+
+server/api/task_templates.ts:144:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+144     const userId = req.user?.id;
+                                 ~~
+
+server/api/task_templates.ts:157:21 - error TS2339: Property 'createdBy' does not exist on type '{ id: string; title: string; description: string; category: string; difficulty: string; estimatedHours: number | null; requiredSkills: unknown; bountyAmount: string | null; deliverables: unknown; acceptanceCriteria: unknown; createdAt: Date | null; updatedAt: Date | null; }'.
+
+157     if (template[0].createdBy !== userId) {
+                        ~~~~~~~~~
+
+server/api/user_profile.ts:30:31 - error TS2339: Property 'profilePicture' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+30         profilePicture: users.profilePicture,
+                                 ~~~~~~~~~~~~~~
+
+server/api/user_profile.ts:31:20 - error TS2339: Property 'bio' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+31         bio: users.bio,
+                      ~~~
+
+server/api/user_profile.ts:32:25 - error TS2339: Property 'location' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+32         location: users.location,
+                           ~~~~~~~~
+
+server/api/user_profile.ts:33:24 - error TS2339: Property 'website' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+33         website: users.website,
+                          ~~~~~~~
+
+server/api/user_profile.ts:35:30 - error TS2339: Property 'walletAddress' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+35         walletAddress: users.walletAddress,
+                                ~~~~~~~~~~~~~
+
+server/api/user_profile.ts:36:21 - error TS2551: Property 'role' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'. Did you mean 'roles'?
+
+36         role: users.role,
+                       ~~~~
+
+server/api/user_profile.ts:39:28 - error TS2339: Property 'lastLoginAt' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+39         lastLoginAt: users.lastLoginAt,
+                              ~~~~~~~~~~~
+
+server/api/user_profile.ts:98:9 - error TS2353: Object literal may only specify known properties, and 'bio' does not exist in type '{ password?: string | SQL<unknown> | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | undefined; id?: string | SQL<unknown> | PgColumn<...> | undefined; ... 33 more ...; telegramUsername?: string | ... 3 more ... | undefined; }'.
+
+98         bio: bio?.trim(),
+           ~~~
+
+server/api/user_profile.ts:111:31 - error TS2339: Property 'profilePicture' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+111         profilePicture: users.profilePicture,
+                                  ~~~~~~~~~~~~~~
+
+server/api/user_profile.ts:112:20 - error TS2339: Property 'bio' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+112         bio: users.bio,
+                       ~~~
+
+server/api/user_profile.ts:113:25 - error TS2339: Property 'location' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+113         location: users.location,
+                            ~~~~~~~~
+
+server/api/user_profile.ts:114:24 - error TS2339: Property 'website' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+114         website: users.website,
+                           ~~~~~~~
+
+server/api/user_profile.ts:240:23 - error TS2339: Property 'walletAddress' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+240       .where(eq(users.walletAddress, walletAddress.trim()))
+                          ~~~~~~~~~~~~~
+
+server/api/user_profile.ts:251:9 - error TS2353: Object literal may only specify known properties, and 'walletAddress' does not exist in type '{ password?: string | SQL<unknown> | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | undefined; id?: string | SQL<unknown> | PgColumn<...> | undefined; ... 33 more ...; telegramUsername?: string | ... 3 more ... | undefined; }'.
+
+251         walletAddress: walletAddress.trim(),
+            ~~~~~~~~~~~~~
+
+server/api/user_profile.ts:257:30 - error TS2339: Property 'walletAddress' does not exist on type 'PgTableWithColumns<{ name: "users"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: false; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 34 more ...; telegramUsername:...'.
+
+257         walletAddress: users.walletAddress,
+                                 ~~~~~~~~~~~~~
+
+server/api/vaults.ts:13:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+13     const userId = req.user?.id;
+                                ~~
+
+server/api/vaults.ts:59:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+59     const userId = req.user?.id;
+                                ~~
+
+server/api/vaults.ts:68:61 - error TS2554: Expected 1 arguments, but got 2.
+
+68     const vaults = await vaultService.getUserVaults(userId, daoId as string);
+                                                               ~~~~~~~~~~~~~~~
+
+server/api/vaults.ts:80:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+80     const userId = req.user?.id;
+                                ~~
+
+server/api/vaults.ts:99:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+99     const userId = req.user?.id;
+                                ~~
+
+server/api/vaults.ts:131:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+131     const userId = req.user?.id;
+                                 ~~
+
+server/api/vaults.ts:163:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+163     const userId = req.user?.id;
+                                 ~~
+
+server/api/vaults.ts:195:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+195     const userId = req.user?.id;
+                                 ~~
+
+server/api/vaults.ts:214:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+214     const userId = req.user?.id;
+                                 ~~
+
+server/api/vaults.ts:233:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+233     const userId = req.user?.id;
+                                 ~~
+
+server/api/vaults.ts:252:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+252     const userId = req.user?.id;
+                                 ~~
+
+server/api/vaults.ts:273:7 - error TS2322: Type 'string | string[] | undefined' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
+
+273       requestId: req.headers['x-request-id'],
+          ~~~~~~~~~
+
+  server/utils/logger.ts:54:3
+    54   requestId?: string;
+         ~~~~~~~~~
+    The expected type comes from property 'requestId' which is declared here on type 'LogContext'
+
+server/api/vaults.ts:274:25 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+274       userId: req.user?.id,
+                            ~~
+
+server/api/vaults.ts:278:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+278     const userId = req.user?.id;
+                                 ~~
+
+server/api/wallet_transactions.ts:8:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+8     const userId = req.user?.id;
+                               ~~
+
+server/api/wallet_transactions.ts:29:30 - error TS2339: Property 'id' does not exist on type '{ claims: UserClaims; }'.
+
+29     const userId = req.user?.id;
+                                ~~
+
+server/db.ts:17:29 - error TS2345: Argument of type '[{ client: Pool; schema: typeof import("/home/runner/workspace/shared/schema"); }]' is not assignable to parameter of type '[string | NeonQueryFunction<any, any>] | [string | NeonQueryFunction<any, any>, DrizzleConfig<typeof import("/home/runner/workspace/shared/schema")>] | [...]'.
+  Type '[{ client: Pool; schema: typeof import("/home/runner/workspace/shared/schema"); }]' is not assignable to type '[string | NeonQueryFunction<any, any>] | [DrizzleConfig<typeof import("/home/runner/workspace/shared/schema")> & ({ connection: string | ({ ...; } & HTTPTransactionOptions<...>); } | { ...; })]'.
+    Type '[{ client: Pool; schema: typeof import("/home/runner/workspace/shared/schema"); }]' is not assignable to type '[string | NeonQueryFunction<any, any>]'.
+      Object literal may only specify known properties, and 'client' does not exist in type 'NeonQueryFunction<any, any>'.
+
+17 export const db = drizzle({ client: pool, schema });
+                               ~~~~~~
+
+server/login.ts:4:32 - error TS2307: Cannot find module '../client/src/server/storage' or its corresponding type declarations.
+
+4 import { getUserByEmail } from '../client/src/server/storage';
+                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+server/login.ts:27:7 - error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'TokenPayload'.
+
+27       userId: user.id,
+         ~~~~~~
+
+server/monitoring/metricsCollector.ts:281:58 - error TS7006: Parameter 'm' implicitly has an 'any' type.
+
+281     this.metrics.requests = this.metrics.requests.filter(m => m.timestamp > oneDayAgo);
+                                                             ~
+
+server/monitoring/metricsCollector.ts:282:54 - error TS7006: Parameter 'm' implicitly has an 'any' type.
+
+282     this.metrics.system = this.metrics.system.filter(m => m.timestamp > oneDayAgo);
+                                                         ~
+
+server/monitoring/metricsCollector.ts:283:58 - error TS7006: Parameter 'm' implicitly has an 'any' type.
+
+283     this.metrics.database = this.metrics.database.filter(m => (m as any).timestamp > oneDayAgo);
+                                                             ~
+
+server/monitoring/metricsCollector.ts:284:58 - error TS7006: Parameter 'm' implicitly has an 'any' type.
+
+284     this.metrics.business = this.metrics.business.filter(m => (m as any).timestamp > oneDayAgo);
+                                                             ~
+
+server/nextAuthMiddleware.ts:40:26 - error TS2339: Property 'userId' does not exist on type 'TokenPayload'.
+
+40             sub: decoded.userId,
+                            ~~~~~~
+
+server/notificationService.ts:73:22 - error TS18048: 'msg.from' is possibly 'undefined'.
+
+73       const userId = msg.from.id.toString(); // Use Telegram user ID as a placeholder for internal userId
+                        ~~~~~~~~
+
+server/notificationService.ts:106:54 - error TS2339: Property 'code' does not exist on type 'Error'.
+
+106       console.error('Telegram polling error:', error.code, error.message);
+                                                         ~~~~
+
+server/oauth-google-callback.ts:3:55 - error TS2307: Cannot find module '@/server/storage' or its corresponding type declarations.
+
+3 import { getUserByEmail, createUser, loginUser } from '@/server/storage';
+                                                        ~~~~~~~~~~~~~~~~~~
+
+server/proposalExecutionService.ts:449:14 - error TS2304: Cannot find name 'sql'.
+
+449       count: sql<number>`count(*)`
+                 ~~~
+
+server/proposalExecutionService.ts:456:11 - error TS2538: Type 'null' cannot be used as an index type.
+
+456       acc[stat.status] = stat.count;
+              ~~~~~~~~~~~
+
+server/routes/analytics.ts:5:25 - error TS7016: Could not find a declaration file for module 'pdfkit'. '/home/runner/workspace/node_modules/pdfkit/js/pdfkit.js' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/pdfkit` if it exists or add a new declaration (.d.ts) file containing `declare module 'pdfkit';`
+
+5 import PDFDocument from 'pdfkit';
+                          ~~~~~~~~
+
+server/routes/analytics.ts:279:30 - error TS2304: Cannot find name 'db'.
+
+279     const activities = await db.execute(sql.raw(query, params));
+                                 ~~
+
+server/routes/analytics.ts:279:41 - error TS2304: Cannot find name 'sql'.
+
+279     const activities = await db.execute(sql.raw(query, params));
+                                            ~~~
+
+server/routes/analytics.ts:301:21 - error TS2304: Cannot find name 'metricsCollector'.
+
+301     const metrics = metricsCollector.getMetrics();
+                        ~~~~~~~~~~~~~~~~
+
+server/routes/analytics.ts:302:25 - error TS2304: Cannot find name 'metricsCollector'.
+
+302     const healthScore = metricsCollector.getHealthScore();
+                            ~~~~~~~~~~~~~~~~
+
+server/routes/billing.ts:71:24 - error TS18047: 'usage.members' is possibly 'null'.
+
+71       recommendedPlan: usage.members > 25 ? 'premium' : 'free'
+                          ~~~~~~~~~~~~~
+
+server/routes/challenges.ts:12:50 - error TS7006: Parameter 'req' implicitly has an 'any' type.
+
+12 router.get('/daily/:userId', asyncHandler(async (req, res) => {
+                                                    ~~~
+
+server/routes/challenges.ts:12:55 - error TS7006: Parameter 'res' implicitly has an 'any' type.
+
+12 router.get('/daily/:userId', asyncHandler(async (req, res) => {
+                                                         ~~~
+
+server/routes/challenges.ts:38:43 - error TS7006: Parameter 'req' implicitly has an 'any' type.
+
+38 router.post('/claim', asyncHandler(async (req, res) => {
+                                             ~~~
+
+server/routes/challenges.ts:38:48 - error TS7006: Parameter 'res' implicitly has an 'any' type.
+
+38 router.post('/claim', asyncHandler(async (req, res) => {
+                                                  ~~~
+
+server/routes/challenges.ts:63:52 - error TS7006: Parameter 'req' implicitly has an 'any' type.
+
+63 router.get('/history/:userId', asyncHandler(async (req, res) => {
+                                                      ~~~
+
+server/routes/challenges.ts:63:57 - error TS7006: Parameter 'res' implicitly has an 'any' type.
+
+63 router.get('/history/:userId', asyncHandler(async (req, res) => {
+                                                           ~~~
+
+server/routes/dao_treasury.ts:220:40 - error TS2339: Property 'getTransactionHistory' does not exist on type 'DatabaseStorage'.
+
+220     const transactions = await storage.getTransactionHistory(daoId, startDate);
+                                           ~~~~~~~~~~~~~~~~~~~~~
+
+server/routes/dao_treasury.ts:278:19 - error TS2339: Property 'updateDao' does not exist on type 'DatabaseStorage'.
+
+278     await storage.updateDao(daoId, {
+                      ~~~~~~~~~
+
+server/routes/disbursements.ts:415:13 - error TS2353: Object literal may only specify known properties, and 'approvedBy' does not exist in type '{ walletAddress?: string | SQL<unknown> | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | undefined; type?: string | SQL<...> | PgColumn<...> | undefined; ... 12 more ...; disbursementId?: string | ... 3 more ... | undefined; }'.
+
+415             approvedBy: approverUserId,
+                ~~~~~~~~~~
+
+server/routes/monitoring.ts:153:29 - error TS2339: Property 'requests' does not exist on type '{ summary: { totalRequests: number; totalErrors: number; errorRate: number; avgResponseTime: number; activeConnections: number; uptime: number; }; }'.
+
+153     recentRequests: metrics.requests.slice(-20),
+                                ~~~~~~~~
+
+server/routes/monitoring.ts:154:28 - error TS2339: Property 'system' does not exist on type '{ summary: { totalRequests: number; totalErrors: number; errorRate: number; avgResponseTime: number; activeConnections: number; uptime: number; }; }'.
+
+154     systemMetrics: metrics.system.slice(-10)
+                               ~~~~~~
+
+server/routes/monitoring.ts:192:33 - error TS2339: Property 'requests' does not exist on type '{ summary: { totalRequests: number; totalErrors: number; errorRate: number; avgResponseTime: number; activeConnections: number; uptime: number; }; }'.
+
+192   const slowEndpoints = metrics.requests
+                                    ~~~~~~~~
+
+server/routes/monitoring.ts:193:13 - error TS7006: Parameter 'r' implicitly has an 'any' type.
+
+193     .filter(r => r.responseTime > 1000)
+                ~
+
+server/routes/monitoring.ts:194:14 - error TS7006: Parameter 'acc' implicitly has an 'any' type.
+
+194     .reduce((acc, req) => {
+                 ~~~
+
+server/routes/monitoring.ts:194:19 - error TS7006: Parameter 'req' implicitly has an 'any' type.
+
+194     .reduce((acc, req) => {
+                      ~~~
+
+server/routes/monitoring.ts:200:34 - error TS2339: Property 'requests' does not exist on type '{ summary: { totalRequests: number; totalErrors: number; errorRate: number; avgResponseTime: number; activeConnections: number; uptime: number; }; }'.
+
+200   const errorEndpoints = metrics.requests
+                                     ~~~~~~~~
+
+server/routes/monitoring.ts:201:13 - error TS7006: Parameter 'r' implicitly has an 'any' type.
+
+201     .filter(r => r.statusCode >= 400)
+                ~
+
+server/routes/monitoring.ts:202:14 - error TS7006: Parameter 'acc' implicitly has an 'any' type.
+
+202     .reduce((acc, req) => {
+                 ~~~
+
+server/routes/monitoring.ts:202:19 - error TS7006: Parameter 'req' implicitly has an 'any' type.
+
+202     .reduce((acc, req) => {
+                      ~~~
+
+server/routes/poll-proposals.ts:42:8 - error TS2339: Property 'where' does not exist on type 'Omit<PgSelectBase<"votes", { id: PgColumn<{ name: "id"; tableName: "votes"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; hasDefault: true; isPrimaryKey: true; isAutoincrement: false; ... 4 more ...; generated: undefined; }, {}, {}>; ... 9 more ...; updatedAt: PgColumn<....'.
+
+42       .where(eq(votes.userId, userId))
+          ~~~~~
+
+server/routes/poll-proposals.ts:63:28 - error TS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { userId: string | SQL<unknown> | Placeholder<string, any>; daoId: string | SQL<unknown> | Placeholder<string, any>; proposalId: string | SQL<unknown> | Placeholder<...>; ... 7 more ...; delegatedBy?: string | ... 3 more ... | undefined; }): PgInsertBase<...>', gave the following error.
+    Type 'number' is not assignable to type 'string | SQL<unknown> | Placeholder<string, any> | null | undefined'.
+  Overload 2 of 2, '(values: { userId: string | SQL<unknown> | Placeholder<string, any>; daoId: string | SQL<unknown> | Placeholder<string, any>; proposalId: string | SQL<unknown> | Placeholder<...>; ... 7 more ...; delegatedBy?: string | ... 3 more ... | undefined; }[]): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'proposalId' does not exist in type '{ userId: string | SQL<unknown> | Placeholder<string, any>; daoId: string | SQL<unknown> | Placeholder<string, any>; proposalId: string | SQL<unknown> | Placeholder<...>; ... 7 more ...; delegatedBy?: string | ... 3 more ... | undefined; }[]'.
+
+63     await db.insert(votes).values({
+                              ~~~~~~
+
+  node_modules/drizzle-orm/pg-core/query-builders/insert.d.ts:29:101
+     29 export type PgInsertValue<TTable extends PgTable<TableConfig>, OverrideT extends boolean = false> = {
+                                                                                                            ~
+     30     [Key in keyof InferInsertModel<TTable, {
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    ... 
+     36     }>[Key] | SQL | Placeholder;
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     37 } & {};
+        ~
+    The expected type comes from property 'votingPower' which is declared here on type '{ userId: string | SQL<unknown> | Placeholder<string, any>; daoId: string | SQL<unknown> | Placeholder<string, any>; proposalId: string | SQL<unknown> | Placeholder<...>; ... 7 more ...; delegatedBy?: string | ... 3 more ... | undefined; }'
+
+server/routes/tasks.ts:341:35 - error TS2339: Property 'sendNotification' does not exist on type 'NotificationService'.
+
+341         await notificationService.sendNotification(task[0].claimerId, {
+                                      ~~~~~~~~~~~~~~~~
+
+server/routes/vault.ts:31:48 - error TS7006: Parameter 'req' implicitly has an 'any' type.
+
+31 router.get('/balance-usd', asyncHandler(async (req, res) => {
+                                                  ~~~
+
+server/routes/vault.ts:31:53 - error TS7006: Parameter 'res' implicitly has an 'any' type.
+
+31 router.get('/balance-usd', asyncHandler(async (req, res) => {
+                                                       ~~~
+
+server/routes/vault.ts:50:45 - error TS7006: Parameter 'req' implicitly has an 'any' type.
+
+50 router.post('/deposit', asyncHandler(async (req, res) => {
+                                               ~~~
+
+server/routes/vault.ts:50:50 - error TS7006: Parameter 'res' implicitly has an 'any' type.
+
+50 router.post('/deposit', asyncHandler(async (req, res) => {
+                                                    ~~~
+
+server/routes/vault.ts:86:46 - error TS7006: Parameter 'req' implicitly has an 'any' type.
+
+86 router.post('/withdraw', asyncHandler(async (req, res) => {
+                                                ~~~
+
+server/routes/vault.ts:86:51 - error TS7006: Parameter 'res' implicitly has an 'any' type.
+
+86 router.post('/withdraw', asyncHandler(async (req, res) => {
+                                                     ~~~
+
+server/routes/vault.ts:122:45 - error TS7006: Parameter 'req' implicitly has an 'any' type.
+
+122 router.post('/approve', asyncHandler(async (req, res) => {
+                                                ~~~
+
+server/routes/vault.ts:122:50 - error TS7006: Parameter 'res' implicitly has an 'any' type.
+
+122 router.post('/approve', asyncHandler(async (req, res) => {
+                                                     ~~~
+
+server/routes/vault.ts:147:48 - error TS7006: Parameter 'req' implicitly has an 'any' type.
+
+147 router.get('/performance', asyncHandler(async (req, res) => {
+                                                   ~~~
+
+server/routes/vault.ts:147:53 - error TS7006: Parameter 'res' implicitly has an 'any' type.
+
+147 router.get('/performance', asyncHandler(async (req, res) => {
+                                                        ~~~
+
+server/routes/vault.ts:171:49 - error TS7006: Parameter 'req' implicitly has an 'any' type.
+
+171 router.get('/transactions', asyncHandler(async (req, res) => {
+                                                    ~~~
+
+server/routes/vault.ts:171:54 - error TS7006: Parameter 'res' implicitly has an 'any' type.
+
+171 router.get('/transactions', asyncHandler(async (req, res) => {
+                                                         ~~~
+
+server/routes/vault.ts:198:55 - error TS7006: Parameter 'req' implicitly has an 'any' type.
+
+198 router.get('/info/:vaultAddress', asyncHandler(async (req, res) => {
+                                                          ~~~
+
+server/routes/vault.ts:198:60 - error TS7006: Parameter 'res' implicitly has an 'any' type.
+
+198 router.get('/info/:vaultAddress', asyncHandler(async (req, res) => {
+                                                               ~~~
+
+server/routes/vault.ts:216:50 - error TS7006: Parameter 'req' implicitly has an 'any' type.
+
+216 router.get('/user/:address', asyncHandler(async (req, res) => {
+                                                     ~~~
+
+server/routes/vault.ts:216:55 - error TS7006: Parameter 'res' implicitly has an 'any' type.
+
+216 router.get('/user/:address', asyncHandler(async (req, res) => {
+                                                          ~~~
+
+server/routes/vault.ts:234:51 - error TS7006: Parameter 'req' implicitly has an 'any' type.
+
+234 router.get('/stats/:address', asyncHandler(async (req, res) => {
+                                                      ~~~
+
+server/routes/vault.ts:234:56 - error TS7006: Parameter 'res' implicitly has an 'any' type.
+
+234 router.get('/stats/:address', asyncHandler(async (req, res) => {
+                                                           ~~~
+
+server/routes/vault.ts:251:58 - error TS7006: Parameter 'req' implicitly has an 'any' type.
+
+251 router.get('/lp-positions/:address', asyncHandler(async (req, res) => {
+                                                             ~~~
+
+server/routes/vault.ts:251:63 - error TS7006: Parameter 'res' implicitly has an 'any' type.
+
+251 router.get('/lp-positions/:address', asyncHandler(async (req, res) => {
+                                                                  ~~~
+
+server/routes/vault.ts:282:54 - error TS7006: Parameter 'req' implicitly has an 'any' type.
+
+282 router.get('/user/:userAddress', asyncHandler(async (req, res) => {
+                                                         ~~~
+
+server/routes/vault.ts:282:59 - error TS7006: Parameter 'res' implicitly has an 'any' type.
+
+282 router.get('/user/:userAddress', asyncHandler(async (req, res) => {
+                                                              ~~~
+
+server/routes/vault.ts:306:44 - error TS7006: Parameter 'req' implicitly has an 'any' type.
+
+306 router.post('/create', asyncHandler(async (req, res) => {
+                                               ~~~
+
+server/routes/vault.ts:306:49 - error TS7006: Parameter 'res' implicitly has an 'any' type.
+
+306 router.post('/create', asyncHandler(async (req, res) => {
+                                                    ~~~
+
+server/routes/vault.ts:334:52 - error TS7006: Parameter 'req' implicitly has an 'any' type.
+
+334 router.get('/alerts/:vaultId', asyncHandler(async (req, res) => {
+                                                       ~~~
+
+server/routes/vault.ts:334:57 - error TS7006: Parameter 'res' implicitly has an 'any' type.
+
+334 router.get('/alerts/:vaultId', asyncHandler(async (req, res) => {
+                                                            ~~~
+
+server/services/financialAnalyticsService.ts:170:33 - error TS2345: Argument of type 'string | null' is not assignable to parameter of type 'string'.
+  Type 'null' is not assignable to type 'string'.
+
+170         return sum + parseFloat(vault.balance);
+                                    ~~~~~~~~~~~~~
+
+server/services/vaultService.ts:138:16 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+138         Logger.getLogger().warn(`User ${userId} attempted unauthorized access to DAO vault ${vaultId}`);
+                   ~~~~~~~~~
+
+server/services/vaultService.ts:164:18 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+164           Logger.getLogger().error(`Invalid operation type '${operation}' for permission check.`);
+                     ~~~~~~~~~
+
+server/services/vaultService.ts:169:12 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+169     Logger.getLogger().warn(`Vault ${vaultId} has neither userId nor daoId.`);
+               ~~~~~~~~~
+
+server/services/vaultService.ts:239:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+239       Logger.getLogger().error(`Failed to create vault: ${error.message}`, error);
+                 ~~~~~~~~~
+
+server/services/vaultService.ts:239:59 - error TS18046: 'error' is of type 'unknown'.
+
+239       Logger.getLogger().error(`Failed to create vault: ${error.message}`, error);
+                                                              ~~~~~
+
+server/services/vaultService.ts:246:57 - error TS18046: 'error' is of type 'unknown'.
+
+246       throw new AppError('Failed to create vault', 500, error.message);
+                                                            ~~~~~
+
+server/services/vaultService.ts:331:18 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+331           Logger.getLogger().warn(`Rebalance failed for vault ${validatedRequest.vaultId} after deposit: ${error.message}`, error);
+                     ~~~~~~~~~
+
+server/services/vaultService.ts:331:108 - error TS18046: 'error' is of type 'unknown'.
+
+331           Logger.getLogger().warn(`Rebalance failed for vault ${validatedRequest.vaultId} after deposit: ${error.message}`, error);
+                                                                                                               ~~~~~
+
+server/services/vaultService.ts:337:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+337       Logger.getLogger().error(`Failed to deposit token: ${error.message}`, error);
+                 ~~~~~~~~~
+
+server/services/vaultService.ts:337:60 - error TS18046: 'error' is of type 'unknown'.
+
+337       Logger.getLogger().error(`Failed to deposit token: ${error.message}`, error);
+                                                               ~~~~~
+
+server/services/vaultService.ts:344:58 - error TS18046: 'error' is of type 'unknown'.
+
+344       throw new AppError('Failed to deposit token', 500, error.message);
+                                                             ~~~~~
+
+server/services/vaultService.ts:419:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+419       Logger.getLogger().error(`Failed to withdraw token: ${error.message}`, error);
+                 ~~~~~~~~~
+
+server/services/vaultService.ts:419:61 - error TS18046: 'error' is of type 'unknown'.
+
+419       Logger.getLogger().error(`Failed to withdraw token: ${error.message}`, error);
+                                                                ~~~~~
+
+server/services/vaultService.ts:426:59 - error TS18046: 'error' is of type 'unknown'.
+
+426       throw new AppError('Failed to withdraw token', 500, error.message);
+                                                              ~~~~~
+
+server/services/vaultService.ts:502:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+502       Logger.getLogger().error(`Failed to allocate to strategy: ${error.message}`, error);
+                 ~~~~~~~~~
+
+server/services/vaultService.ts:502:67 - error TS18046: 'error' is of type 'unknown'.
+
+502       Logger.getLogger().error(`Failed to allocate to strategy: ${error.message}`, error);
+                                                                      ~~~~~
+
+server/services/vaultService.ts:509:65 - error TS18046: 'error' is of type 'unknown'.
+
+509       throw new AppError('Failed to allocate to strategy', 500, error.message);
+                                                                    ~~~~~
+
+server/services/vaultService.ts:526:16 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+526         Logger.getLogger().info(`Vault ${vaultId} has no yield strategy, skipping rebalance.`);
+                   ~~~~~~~~~
+
+server/services/vaultService.ts:543:20 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+543             Logger.getLogger().warn(`Token ${allocation.tokenSymbol} not found in registry during rebalance.`);
+                       ~~~~~~~~~
+
+server/services/vaultService.ts:575:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+575       Logger.getLogger().error(`Failed to rebalance vault ${vaultId}: ${error.message}`, error);
+                 ~~~~~~~~~
+
+server/services/vaultService.ts:575:73 - error TS18046: 'error' is of type 'unknown'.
+
+575       Logger.getLogger().error(`Failed to rebalance vault ${vaultId}: ${error.message}`, error);
+                                                                            ~~~~~
+
+server/services/vaultService.ts:576:71 - error TS18046: 'error' is of type 'unknown'.
+
+576       throw new AppError(`Failed to rebalance vault ${vaultId}`, 500, error.message);
+                                                                          ~~~~~
+
+server/services/vaultService.ts:671:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+671       Logger.getLogger().error(`Failed to perform risk assessment for vault ${vaultId}: ${error.message}`, error);
+                 ~~~~~~~~~
+
+server/services/vaultService.ts:671:91 - error TS18046: 'error' is of type 'unknown'.
+
+671       Logger.getLogger().error(`Failed to perform risk assessment for vault ${vaultId}: ${error.message}`, error);
+                                                                                              ~~~~~
+
+server/services/vaultService.ts:672:89 - error TS18046: 'error' is of type 'unknown'.
+
+672       throw new AppError(`Failed to perform risk assessment for vault ${vaultId}`, 500, error.message);
+                                                                                            ~~~~~
+
+server/services/vaultService.ts:683:11 - error TS2353: Object literal may only specify known properties, and 'tokenHoldings' does not exist in type '{ user?: true | { columns?: { id?: boolean | undefined; username?: boolean | undefined; password?: boolean | undefined; email?: boolean | undefined; phone?: boolean | undefined; emailVerified?: boolean | undefined; ... 29 more ...; telegramUsername?: boolean | undefined; } | undefined; with?: { ...; } | undefined; e...'.
+
+683           tokenHoldings: true,
+              ~~~~~~~~~~~~~
+
+server/services/vaultService.ts:692:13 - error TS7022: 'daoMemberships' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
+
+692       const daoMemberships = await db.query.daoMemberships.findMany({
+                ~~~~~~~~~~~~~~
+
+server/services/vaultService.ts:694:14 - error TS2448: Block-scoped variable 'daoMemberships' used before its declaration.
+
+694           eq(daoMemberships.userId, userAddress),
+                 ~~~~~~~~~~~~~~
+
+  server/services/vaultService.ts:692:13
+    692       const daoMemberships = await db.query.daoMemberships.findMany({
+                    ~~~~~~~~~~~~~~
+    'daoMemberships' is declared here.
+
+server/services/vaultService.ts:695:14 - error TS2448: Block-scoped variable 'daoMemberships' used before its declaration.
+
+695           eq(daoMemberships.status, 'approved')
+                 ~~~~~~~~~~~~~~
+
+  server/services/vaultService.ts:692:13
+    692       const daoMemberships = await db.query.daoMemberships.findMany({
+                    ~~~~~~~~~~~~~~
+    'daoMemberships' is declared here.
+
+server/services/vaultService.ts:699:41 - error TS7006: Parameter 'm' implicitly has an 'any' type.
+
+699       const daoIds = daoMemberships.map(m => m.daoId);
+                                            ~
+
+server/services/vaultService.ts:706:11 - error TS2353: Object literal may only specify known properties, and 'tokenHoldings' does not exist in type '{ user?: true | { columns?: { id?: boolean | undefined; username?: boolean | undefined; password?: boolean | undefined; email?: boolean | undefined; phone?: boolean | undefined; emailVerified?: boolean | undefined; ... 29 more ...; telegramUsername?: boolean | undefined; } | undefined; with?: { ...; } | undefined; e...'.
+
+706           tokenHoldings: true
+              ~~~~~~~~~~~~~
+
+server/services/vaultService.ts:723:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+723       Logger.getLogger().error(`Failed to get user vaults: ${error.message}`, error);
+                 ~~~~~~~~~
+
+server/services/vaultService.ts:723:62 - error TS18046: 'error' is of type 'unknown'.
+
+723       Logger.getLogger().error(`Failed to get user vaults: ${error.message}`, error);
+                                                                 ~~~~~
+
+server/services/vaultService.ts:747:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+747       Logger.getLogger().error(`Failed to get user vault stats: ${error.message}`, error);
+                 ~~~~~~~~~
+
+server/services/vaultService.ts:747:67 - error TS18046: 'error' is of type 'unknown'.
+
+747       Logger.getLogger().error(`Failed to get user vault stats: ${error.message}`, error);
+                                                                      ~~~~~
+
+server/services/vaultService.ts:773:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+773       Logger.getLogger().error(`Failed to get vault alerts: ${error.message}`, error);
+                 ~~~~~~~~~
+
+server/services/vaultService.ts:773:63 - error TS18046: 'error' is of type 'unknown'.
+
+773       Logger.getLogger().error(`Failed to get vault alerts: ${error.message}`, error);
+                                                                  ~~~~~
+
+server/services/vaultService.ts:833:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+833       Logger.getLogger().error(`Failed to get details for vault ${vaultId}: ${error.message}`, error);
+                 ~~~~~~~~~
+
+server/services/vaultService.ts:833:79 - error TS18046: 'error' is of type 'unknown'.
+
+833       Logger.getLogger().error(`Failed to get details for vault ${vaultId}: ${error.message}`, error);
+                                                                                  ~~~~~
+
+server/services/vaultService.ts:837:67 - error TS18046: 'error' is of type 'unknown'.
+
+837       throw new AppError('Failed to retrieve vault details', 500, error.message);
+                                                                      ~~~~~
+
+server/services/vaultService.ts:847:11 - error TS2353: Object literal may only specify known properties, and 'tokenHoldings' does not exist in type '{ user?: true | { columns?: { id?: boolean | undefined; username?: boolean | undefined; password?: boolean | undefined; email?: boolean | undefined; phone?: boolean | undefined; emailVerified?: boolean | undefined; ... 29 more ...; telegramUsername?: boolean | undefined; } | undefined; with?: { ...; } | undefined; e...'.
+
+847           tokenHoldings: true
+              ~~~~~~~~~~~~~
+
+server/services/vaultService.ts:861:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+861       Logger.getLogger().error(`Failed to get all vaults dashboard info: ${error.message}`, error);
+                 ~~~~~~~~~
+
+server/services/vaultService.ts:861:76 - error TS18046: 'error' is of type 'unknown'.
+
+861       Logger.getLogger().error(`Failed to get all vaults dashboard info: ${error.message}`, error);
+                                                                               ~~~~~
+
+server/services/vaultService.ts:898:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+898       Logger.getLogger().error(`Failed to get paginated transactions for vault ${vaultId}: ${error.message}`, error);
+                 ~~~~~~~~~
+
+server/services/vaultService.ts:898:94 - error TS18046: 'error' is of type 'unknown'.
+
+898       Logger.getLogger().error(`Failed to get paginated transactions for vault ${vaultId}: ${error.message}`, error);
+                                                                                                 ~~~~~
+
+server/services/vaultService.ts:902:82 - error TS18046: 'error' is of type 'unknown'.
+
+902       throw new AppError('Failed to retrieve paginated vault transactions', 500, error.message);
+                                                                                     ~~~~~
+
+server/services/vaultService.ts:921:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+921       Logger.getLogger().error(`Failed to get performance history for vault ${vaultId}: ${error.message}`, error);
+                 ~~~~~~~~~
+
+server/services/vaultService.ts:921:91 - error TS18046: 'error' is of type 'unknown'.
+
+921       Logger.getLogger().error(`Failed to get performance history for vault ${vaultId}: ${error.message}`, error);
+                                                                                              ~~~~~
+
+server/services/vaultService.ts:925:79 - error TS18046: 'error' is of type 'unknown'.
+
+925       throw new AppError('Failed to retrieve vault performance history', 500, error.message);
+                                                                                  ~~~~~
+
+server/services/vaultService.ts:940:13 - error TS7022: 'proposals' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
+
+940       const proposals = await db.query.proposals.findMany({
+                ~~~~~~~~~
+
+server/services/vaultService.ts:941:22 - error TS2448: Block-scoped variable 'proposals' used before its declaration.
+
+941         where: sql`${proposals.metadata}->>'vaultId' = ${vaultId}`,
+                         ~~~~~~~~~
+
+  server/services/vaultService.ts:940:13
+    940       const proposals = await db.query.proposals.findMany({
+                    ~~~~~~~~~
+    'proposals' is declared here.
+
+server/services/vaultService.ts:942:24 - error TS2448: Block-scoped variable 'proposals' used before its declaration.
+
+942         orderBy: [desc(proposals.createdAt)],
+                           ~~~~~~~~~
+
+  server/services/vaultService.ts:940:13
+    940       const proposals = await db.query.proposals.findMany({
+                    ~~~~~~~~~
+    'proposals' is declared here.
+
+server/services/vaultService.ts:946:28 - error TS7006: Parameter 'p' implicitly has an 'any' type.
+
+946       return proposals.map(p => ({
+                               ~
+
+server/services/vaultService.ts:959:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+959       Logger.getLogger().error(`Failed to get governance proposals for vault ${vaultId}: ${error.message}`, error);
+                 ~~~~~~~~~
+
+server/services/vaultService.ts:959:92 - error TS18046: 'error' is of type 'unknown'.
+
+959       Logger.getLogger().error(`Failed to get governance proposals for vault ${vaultId}: ${error.message}`, error);
+                                                                                               ~~~~~
+
+server/services/vaultService.ts:963:80 - error TS18046: 'error' is of type 'unknown'.
+
+963       throw new AppError('Failed to retrieve vault governance proposals', 500, error.message);
+                                                                                   ~~~~~
+
+server/services/vaultService.ts:995:37 - error TS2339: Property 'earnedRewards' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; isActive: boolean | null; vaultId: string; allocatedAmount: string; tokenSymbol: string; strategyId: string; allocationPercentage: string; currentValue: string | null; yieldEarned: string | null; lastRebalance: Date | null; }'.
+
+995           rewardsEarned: allocation.earnedRewards || '0',
+                                        ~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1001:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+1001       Logger.getLogger().error(`Failed to get LP positions for vault ${vaultId}: ${error.message}`, error);
+                  ~~~~~~~~~
+
+server/services/vaultService.ts:1001:84 - error TS18046: 'error' is of type 'unknown'.
+
+1001       Logger.getLogger().error(`Failed to get LP positions for vault ${vaultId}: ${error.message}`, error);
+                                                                                        ~~~~~
+
+server/services/vaultService.ts:1005:72 - error TS18046: 'error' is of type 'unknown'.
+
+1005       throw new AppError('Failed to retrieve vault LP positions', 500, error.message);
+                                                                            ~~~~~
+
+server/services/vaultService.ts:1022:14 - error TS2304: Cannot find name 'userChallenges'.
+
+1022           eq(userChallenges.userId, userId),
+                  ~~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1023:22 - error TS2304: Cannot find name 'userChallenges'.
+
+1023           sql`DATE(${userChallenges.createdAt}) = ${today}`
+                          ~~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1029:48 - error TS2304: Cannot find name 'userChallenges'.
+
+1029         const [newChallenge] = await db.insert(userChallenges).values({
+                                                    ~~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1043:15 - error TS18048: 'userChallenge' is possibly 'undefined'.
+
+1043           id: userChallenge.id,
+                   ~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1046:19 - error TS18048: 'userChallenge' is possibly 'undefined'.
+
+1046           target: userChallenge.targetAmount,
+                       ~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1047:60 - error TS18048: 'userChallenge' is possibly 'undefined'.
+
+1047           currentProgress: Math.min(totalValue, parseFloat(userChallenge.targetAmount || '100')).toString(),
+                                                                ~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1048:19 - error TS18048: 'userChallenge' is possibly 'undefined'.
+
+1048           status: userChallenge.status,
+                       ~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1049:22 - error TS18048: 'userChallenge' is possibly 'undefined'.
+
+1049           reward: `${userChallenge.pointsReward} MTAA`,
+                          ~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1050:22 - error TS18048: 'userChallenge' is possibly 'undefined'.
+
+1050           createdAt: userChallenge.createdAt?.toISOString() || new Date().toISOString(),
+                          ~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1057:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+1057       Logger.getLogger().error(`Failed to get daily challenge status for user ${userId}: ${error.message}`, error);
+                  ~~~~~~~~~
+
+server/services/vaultService.ts:1057:92 - error TS18046: 'error' is of type 'unknown'.
+
+1057       Logger.getLogger().error(`Failed to get daily challenge status for user ${userId}: ${error.message}`, error);
+                                                                                                ~~~~~
+
+server/services/vaultService.ts:1067:14 - error TS2304: Cannot find name 'userChallenges'.
+
+1067           eq(userChallenges.userId, userId),
+                  ~~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1068:14 - error TS2304: Cannot find name 'userChallenges'.
+
+1068           eq(userChallenges.status, 'completed')
+                  ~~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1070:24 - error TS2304: Cannot find name 'userChallenges'.
+
+1070         orderBy: [desc(userChallenges.createdAt)],
+                            ~~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1091:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+1091       Logger.getLogger().error(`Failed to calculate streak for user ${userId}: ${error.message}`, error);
+                  ~~~~~~~~~
+
+server/services/vaultService.ts:1091:82 - error TS18046: 'error' is of type 'unknown'.
+
+1091       Logger.getLogger().error(`Failed to calculate streak for user ${userId}: ${error.message}`, error);
+                                                                                      ~~~~~
+
+server/services/vaultService.ts:1103:14 - error TS2304: Cannot find name 'userChallenges'.
+
+1103           eq(userChallenges.userId, userId),
+                  ~~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1104:22 - error TS2304: Cannot find name 'userChallenges'.
+
+1104           sql`DATE(${userChallenges.createdAt}) = ${today}`,
+                          ~~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1105:14 - error TS2304: Cannot find name 'userChallenges'.
+
+1105           eq(userChallenges.status, 'completed')
+                  ~~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1118:23 - error TS2304: Cannot find name 'userChallenges'.
+
+1118       await db.update(userChallenges)
+                           ~~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1123:19 - error TS2304: Cannot find name 'userChallenges'.
+
+1123         .where(eq(userChallenges.id, userChallenge.id!));
+                       ~~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1136:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+1136       Logger.getLogger().error(`Failed to claim daily challenge reward for user ${userId}: ${error.message}`, error);
+                  ~~~~~~~~~
+
+server/services/vaultService.ts:1136:94 - error TS18046: 'error' is of type 'unknown'.
+
+1136       Logger.getLogger().error(`Failed to claim daily challenge reward for user ${userId}: ${error.message}`, error);
+                                                                                                  ~~~~~
+
+server/services/vaultService.ts:1145:19 - error TS2304: Cannot find name 'users'.
+
+1145         where: eq(users.id, userId)
+                       ~~~~~
+
+server/services/vaultService.ts:1154:29 - error TS2339: Property 'walletAddress' does not exist on type '{ email: string | null; password: string; id: string; createdAt: Date | null; username: string | null; phone: string | null; emailVerified: boolean | null; phoneVerified: boolean | null; ... 27 more ...; telegramUsername: string | null; }'.
+
+1154         isConnected: !!user.walletAddress,
+                                 ~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1155:23 - error TS2339: Property 'walletAddress' does not exist on type '{ email: string | null; password: string; id: string; createdAt: Date | null; username: string | null; phone: string | null; emailVerified: boolean | null; phoneVerified: boolean | null; ... 27 more ...; telegramUsername: string | null; }'.
+
+1155         address: user.walletAddress || null,
+                           ~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1157:33 - error TS2339: Property 'reputationScore' does not exist on type '{ email: string | null; password: string; id: string; createdAt: Date | null; username: string | null; phone: string | null; emailVerified: boolean | null; phoneVerified: boolean | null; ... 27 more ...; telegramUsername: string | null; }'.
+
+1157           reputationScore: user.reputationScore || 0,
+                                     ~~~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1162:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+1162       Logger.getLogger().error(`Failed to get wallet status for user ${userId}: ${error.message}`, error);
+                  ~~~~~~~~~
+
+server/services/vaultService.ts:1162:83 - error TS18046: 'error' is of type 'unknown'.
+
+1162       Logger.getLogger().error(`Failed to get wallet status for user ${userId}: ${error.message}`, error);
+                                                                                       ~~~~~
+
+server/services/vaultService.ts:1175:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+1175       Logger.getLogger().error(`Error fetching vault by ID ${vaultId}: ${error.message}`, error);
+                  ~~~~~~~~~
+
+server/services/vaultService.ts:1175:74 - error TS18046: 'error' is of type 'unknown'.
+
+1175       Logger.getLogger().error(`Error fetching vault by ID ${vaultId}: ${error.message}`, error);
+                                                                              ~~~~~
+
+server/services/vaultService.ts:1176:77 - error TS18046: 'error' is of type 'unknown'.
+
+1176       throw new AppError(`Database error retrieving vault ${vaultId}`, 500, error.message);
+                                                                                 ~~~~~
+
+server/services/vaultService.ts:1195:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+1195       Logger.getLogger().error(`Error fetching token holding for vault ${vaultId}, token ${tokenSymbol}: ${error.message}`, error);
+                  ~~~~~~~~~
+
+server/services/vaultService.ts:1195:108 - error TS18046: 'error' is of type 'unknown'.
+
+1195       Logger.getLogger().error(`Error fetching token holding for vault ${vaultId}, token ${tokenSymbol}: ${error.message}`, error);
+                                                                                                                ~~~~~
+
+server/services/vaultService.ts:1196:87 - error TS18046: 'error' is of type 'unknown'.
+
+1196       throw new AppError(`Database error retrieving holding for ${tokenSymbol}`, 500, error.message);
+                                                                                           ~~~~~
+
+server/services/vaultService.ts:1207:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+1207       Logger.getLogger().error(`Error fetching all holdings for vault ${vaultId}: ${error.message}`, error);
+                  ~~~~~~~~~
+
+server/services/vaultService.ts:1207:85 - error TS18046: 'error' is of type 'unknown'.
+
+1207       Logger.getLogger().error(`Error fetching all holdings for vault ${vaultId}: ${error.message}`, error);
+                                                                                         ~~~~~
+
+server/services/vaultService.ts:1208:90 - error TS18046: 'error' is of type 'unknown'.
+
+1208       throw new AppError(`Database error retrieving holdings for vault ${vaultId}`, 500, error.message);
+                                                                                              ~~~~~
+
+server/services/vaultService.ts:1336:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+1336       Logger.getLogger().error(`Error updating TVL for vault ${vaultId}: ${error.message}`, error);
+                  ~~~~~~~~~
+
+server/services/vaultService.ts:1336:76 - error TS18046: 'error' is of type 'unknown'.
+
+1336       Logger.getLogger().error(`Error updating TVL for vault ${vaultId}: ${error.message}`, error);
+                                                                                ~~~~~
+
+server/services/vaultService.ts:1337:83 - error TS18046: 'error' is of type 'unknown'.
+
+1337       throw new AppError(`Database error updating TVL for vault ${vaultId}`, 500, error.message);
+                                                                                       ~~~~~
+
+server/services/vaultService.ts:1353:49 - error TS2339: Property 'getTokenPrice' does not exist on type 'TokenService'.
+
+1353         if (tokenService && typeof tokenService.getTokenPrice === 'function') {
+                                                     ~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1354:48 - error TS2339: Property 'getTokenPrice' does not exist on type 'TokenService'.
+
+1354           const realPrice = await tokenService.getTokenPrice(tokenSymbol);
+                                                    ~~~~~~~~~~~~~
+
+server/services/vaultService.ts:1356:20 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+1356             Logger.getLogger().debug(`Got real price for ${tokenSymbol}: $${realPrice}`);
+                        ~~~~~~~~~
+
+server/services/vaultService.ts:1364:18 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+1364           Logger.getLogger().debug(`Using CELO network provider but still need external price feed`);
+                      ~~~~~~~~~
+
+server/services/vaultService.ts:1367:16 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+1367         Logger.getLogger().warn(`TokenService price lookup failed for ${tokenSymbol}: ${serviceError.message}`, serviceError);
+                    ~~~~~~~~~
+
+server/services/vaultService.ts:1367:89 - error TS18046: 'serviceError' is of type 'unknown'.
+
+1367         Logger.getLogger().warn(`TokenService price lookup failed for ${tokenSymbol}: ${serviceError.message}`, serviceError);
+                                                                                             ~~~~~~~~~~~~
+
+server/services/vaultService.ts:1372:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+1372       Logger.getLogger().debug(`Using fallback pricing for ${tokenSymbol}`);
+                  ~~~~~~~~~
+
+server/services/vaultService.ts:1407:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+1407       Logger.getLogger().error(`Error getting price for ${tokenSymbol}: ${error.message}`, error);
+                  ~~~~~~~~~
+
+server/services/vaultService.ts:1407:75 - error TS18046: 'error' is of type 'unknown'.
+
+1407       Logger.getLogger().error(`Error getting price for ${tokenSymbol}: ${error.message}`, error);
+                                                                               ~~~~~
+
+server/services/vaultService.ts:1442:14 - error TS2339: Property 'getLogger' does not exist on type 'typeof Logger'.
+
+1442       Logger.getLogger().error(`Failed to initialize performance tracking for vault ${vaultId}: ${error.message}`, error);
+                  ~~~~~~~~~
+
+server/services/vaultService.ts:1442:99 - error TS18046: 'error' is of type 'unknown'.
+
+1442       Logger.getLogger().error(`Failed to initialize performance tracking for vault ${vaultId}: ${error.message}`, error);
+                                                                                                       ~~~~~
+
+server/test_transfer.ts:40:43 - error TS2339: Property 'getSupportedTokens' does not exist on type 'typeof TokenRegistry'.
+
+40     const supportedTokens = TokenRegistry.getSupportedTokens();
+                                             ~~~~~~~~~~~~~~~~~~
+
+server/test_transfer.ts:46:48 - error TS2339: Property 'estimateGas' does not exist on type 'TokenService'.
+
+46         const gasEstimate = await tokenService.estimateGas(
+                                                  ~~~~~~~~~~~
+
+server/test_transfer.ts:71:43 - error TS2339: Property 'getSupportedTokens' does not exist on type 'typeof TokenRegistry'.
+
+71     const supportedTokens = TokenRegistry.getSupportedTokens();
+                                             ~~~~~~~~~~~~~~~~~~
+
+server/test_transfer.ts:75:44 - error TS2339: Property 'getBalance' does not exist on type 'TokenService'.
+
+75         const balance = await tokenService.getBalance(tokenSymbol, testAddress);
+                                              ~~~~~~~~~~
+
+server/utils/logger.ts:2:15 - error TS2395: Individual declarations in merged declaration 'Logger' must be all exported or all local.
+
+2 import type { Logger } from 'winston';
+                ~~~~~~
+
+server/utils/logger.ts:2:15 - error TS2440: Import declaration conflicts with local declaration of 'Logger'.
+
+2 import type { Logger } from 'winston';
+                ~~~~~~
+
+server/utils/logger.ts:65:14 - error TS2395: Individual declarations in merged declaration 'Logger' must be all exported or all local.
+
+65 export class Logger {
+                ~~~~~~
+
+server/utils/logger.ts:76:5 - error TS2740: Type 'Logger' is missing the following properties from type 'Logger': silent, format, levels, level, and 108 more.
+
+76     return new Logger(this.service, { ...this.context, ...context });
+       ~~~~~~
+
+server/utils/logger.ts:76:16 - error TS1361: 'Logger' cannot be used as a value because it was imported using 'import type'.
+
+76     return new Logger(this.service, { ...this.context, ...context });
+                  ~~~~~~
+
+  server/utils/logger.ts:2:15
+    2 import type { Logger } from 'winston';
+                    ~~~~~~
+    'Logger' was imported here.
+
+server/utils/logger.ts:149:27 - error TS1361: 'Logger' cannot be used as a value because it was imported using 'import type'.
+
+149 export const logger = new Logger();
+                              ~~~~~~
+
+  server/utils/logger.ts:2:15
+    2 import type { Logger } from 'winston';
+                    ~~~~~~
+    'Logger' was imported here.
+
+shared/main.tsx:3:17 - error TS2307: Cannot find module './App' or its corresponding type declarations.
+
+3 import App from "./App";
+                  ~~~~~~~
+
+shared/main.tsx:5:31 - error TS2307: Cannot find module './components/ui/ToastProvider' or its corresponding type declarations.
+
+5 import { ToastProvider } from "./components/ui/ToastProvider";
+                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+shared/tokenRegistry.ts:225:26 - error TS2304: Cannot find name 'SupportedTokenData'.
+
+225   static getAllTokens(): SupportedTokenData[] {
+                             ~~~~~~~~~~~~~~~~~~
+
+shared/tokenRegistry.ts:226:31 - error TS2339: Property 'tokens' does not exist on type 'typeof TokenRegistry'.
+
+226     return Object.values(this.tokens);
+                                  ~~~~~~
+
+shared/tokenRegistry.ts:230:46 - error TS2304: Cannot find name 'SupportedTokenData'.
+
+230   static getTokenByAddress(address: string): SupportedTokenData | null {
+                                                 ~~~~~~~~~~~~~~~~~~
+
+shared/tokenRegistry.ts:231:31 - error TS2339: Property 'tokens' does not exist on type 'typeof TokenRegistry'.
+
+231     return Object.values(this.tokens).find(token =>
+                                  ~~~~~~
+
+shared/tokenRegistry.ts:232:7 - error TS18046: 'token' is of type 'unknown'.
+
+232       token.address?.toLowerCase() === address.toLowerCase()
+          ~~~~~
+
+
+Found 462 errors in 58 files.
+
+Errors  Files
+     3  client/src/components/MiniPayIntegration.tsx:123
+     1  client/src/components/TaskManagementDashboard.tsx:192
+     1  client/src/components/TaskVerificationModal.tsx:8
+   103  client/src/components/VoteDelegationPanel.tsx:3
+     5  client/src/components/contributor_list.tsx:74
+     3  client/src/components/dao-chat.tsx:211
+     2  client/src/components/navigation.tsx:27
+     3  client/src/components/sendTransactionModal.tsx:40
+     2  client/src/components/ui/focus-trap.tsx:13
+     1  client/src/components/ui/sidebar.tsx:6
+     1  client/src/components/vault/DepositModal.tsx:48
+     2  client/src/components/voting-modal.tsx:26
+     1  client/src/components/wallet/PesonalVaultBalance.tsx:215
+     3  client/src/hooks/use-toast.ts:19
+     1  client/src/pages/TaskBountyBoardPage.tsx:26
+     1  client/src/pages/create-dao.tsx:35
+     1  client/src/pages/payment.tsx:17
+     2  client/src/pages/vault.tsx:33
+     4  client/src/pages/wallet.tsx:416
+     2  server/agent_wallet.ts:3
+     1  server/analyticsService.ts:74
+     5  server/api/account_delete.ts:1
+     2  server/api/achievements.ts:91
+    10  server/api/admin_users.ts:41
+     8  server/api/authUser.ts:29
+     2  server/api/authVault.ts:10
+     6  server/api/auth_login.ts:35
+     5  server/api/auth_register.ts:52
+     3  server/api/auth_user.ts:19
+    20  server/api/daoSettings.ts:10
+     3  server/api/payments_estimate_gas.ts:30
+    17  server/api/reputation.ts:21
+    10  server/api/task_templates.ts:31
+    15  server/api/user_profile.ts:30
+    14  server/api/vaults.ts:13
+     2  server/api/wallet_transactions.ts:8
+     1  server/db.ts:17
+     2  server/login.ts:4
+     4  server/monitoring/metricsCollector.ts:281
+     1  server/nextAuthMiddleware.ts:40
+     2  server/notificationService.ts:73
+     1  server/oauth-google-callback.ts:3
+     2  server/proposalExecutionService.ts:449
+     5  server/routes/analytics.ts:5
+     1  server/routes/billing.ts:71
+     6  server/routes/challenges.ts:12
+     2  server/routes/dao_treasury.ts:220
+     1  server/routes/disbursements.ts:415
+    10  server/routes/monitoring.ts:153
+     2  server/routes/poll-proposals.ts:42
+     1  server/routes/tasks.ts:341
+    26  server/routes/vault.ts:31
+     1  server/services/financialAnalyticsService.ts:170
+   112  server/services/vaultService.ts:138
+     4  server/test_transfer.ts:40
+     6  server/utils/logger.ts:2
+     2  shared/main.tsx:3
+     5  shared/tokenRegistry.ts:225
