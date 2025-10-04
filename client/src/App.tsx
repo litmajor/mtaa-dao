@@ -63,7 +63,8 @@ import Checkout from './pages/Checkout';
 import Subscribe from './pages/Subscribe';
 
 // Cross-chain integration
-import CrossChainBridge from '@/pages/CrossChainBridge';
+import CrossChainBridge from './pages/CrossChainBridge';
+import NFTMarketplace from './pages/NFTMarketplace';
 
 // Protected/Public wrappers (unchanged)
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -157,6 +158,7 @@ function App() {
                 <Route path="/analytics" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><AnalyticsPageLazy /></Suspense></ProtectedRoute>} />
                 <Route path="/tasks" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><TaskBountyBoardPageLazy /></Suspense></ProtectedRoute>} />
                 <Route path="/rewards" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><RewardsHubLazy /></Suspense></ProtectedRoute>} />
+                <Route path="/nft-marketplace" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><NFTMarketplace /></Suspense></ProtectedRoute>} />
 
                 {/* Nested DAO routes */}
                 <Route path="/dao" element={<ProtectedRoute><DaoLayout /></ProtectedRoute>}>
