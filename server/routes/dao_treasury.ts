@@ -217,7 +217,17 @@ router.get('/:daoId/analytics', isAuthenticated, async (req: Request, res: Respo
     const startDate = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000);
 
     // Get transaction history
-    const transactions = await storage.getTransactionHistory(daoId, startDate);
+    // Query walletTransactions for this DAO
+    const { db } = require('../storage');
+    const { walletTransactions } = require('../../shared/schema');
+    const { eq, desc, and } = require('drizzle-orm');
+    const transactions = await db.select().from(walletTransactions)
+      .where(eq(walletTransactions.daoId, daoId))
+      .where(desc(walletTransactions.createdAt))
+      .where(and(
+        eq(walletTransactions.daoId, daoId),
+        walletTransactions.createdAt >= startDate
+      ));
     
     // Calculate metrics
     const totalInflow = transactions
@@ -275,13 +285,20 @@ router.post('/:daoId/limits', isAuthenticated, async (req: Request, res: Respons
     }
 
     // Update DAO with treasury limits
-    await storage.updateDao(daoId, {
-      treasuryLimits: {
-        dailyLimit: dailyLimit || 1000,
-        transactionLimit: transactionLimit || 500,
-        approvalThreshold: approvalThreshold || 1000
-      }
-    });
+    // Directly update the DAO record
+    const { db } = require('../storage');
+    const { daos } = require('../../shared/schema');
+    const { eq } = require('drizzle-orm');
+    await db.update(daos)
+      .set({
+        treasuryLimits: {
+          dailyLimit: dailyLimit || 1000,
+          transactionLimit: transactionLimit || 500,
+          approvalThreshold: approvalThreshold || 1000
+        },
+        updatedAt: new Date()
+      })
+      .where(eq(daos.id, daoId));
 
     res.json({
       success: true,

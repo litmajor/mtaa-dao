@@ -1,5 +1,8 @@
 
 import express from 'express';
+import { db } from '../db';
+import { sql } from 'drizzle-orm';
+import { metricsCollector } from '../monitoring/metricsCollector';
 import { analyticsService } from '../analyticsService';
 import { isAuthenticated } from '../auth';
 import PDFDocument from 'pdfkit';
@@ -276,7 +279,8 @@ router.get('/user-activity', isAuthenticated, async (req, res) => {
     
     params.push(startDate);
     
-    const activities = await db.execute(sql.raw(query, params));
+  // Use template string interpolation for params
+  const activities = await db.execute(sql.raw(query));
     
     res.json({
       success: true,

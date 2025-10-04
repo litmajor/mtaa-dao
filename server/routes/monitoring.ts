@@ -3,6 +3,21 @@ import express, { Request, Response } from 'express';
 import { metricsCollector } from '../monitoring/metricsCollector';
 import { logger } from '../utils/logger';
 import { isAuthenticated } from '../nextAuthMiddleware';
+// Type for metricsCollector.getMetrics() result
+type Metrics = {
+  requests: import('../monitoring/metricsCollector').RequestMetrics[];
+  system: import('../monitoring/metricsCollector').SystemMetrics[];
+  database: any[];
+  business: any[];
+  summary: {
+    totalRequests: number;
+    totalErrors: number;
+    errorRate: number;
+    avgResponseTime: number;
+    activeConnections: number;
+    uptime: number;
+  };
+};
 
 const router = express.Router();
 
@@ -134,9 +149,12 @@ const alertManager = AlertManager.getInstance();
 
 // Dashboard endpoint
 router.get('/dashboard', isAuthenticated, (req: Request, res: Response) => {
-  const metrics = metricsCollector.getMetrics();
+  const metrics = metricsCollector.getMetrics() as Metrics;
   const alerts = alertManager.getAlerts();
   const healthScore = metricsCollector.getHealthScore();
+
+  const recentRequests = metrics.requests.slice(-20);
+  const systemMetrics = metrics.system.slice(-10);
 
   res.json({
     healthScore,
@@ -150,8 +168,8 @@ router.get('/dashboard', isAuthenticated, (req: Request, res: Response) => {
       uptime: metrics.summary.uptime,
       memoryUsage: process.memoryUsage()
     },
-    recentRequests: metrics.requests.slice(-20),
-    systemMetrics: metrics.system.slice(-10)
+    recentRequests,
+    systemMetrics
   });
 });
 
@@ -186,20 +204,21 @@ router.post('/alerts/:alertId/resolve', isAuthenticated, (req: Request, res: Res
 
 // Performance metrics endpoint
 router.get('/performance', isAuthenticated, (req: Request, res: Response) => {
-  const metrics = metricsCollector.getMetrics();
-  
+  const metrics = metricsCollector.getMetrics() as Metrics;
+  const requests = metrics.requests;
+
   // Calculate performance insights
-  const slowEndpoints = metrics.requests
-    .filter(r => r.responseTime > 1000)
-    .reduce((acc, req) => {
+  const slowEndpoints = requests
+    .filter((r: import('../monitoring/metricsCollector').RequestMetrics) => r.responseTime > 1000)
+    .reduce((acc: Record<string, number>, req: import('../monitoring/metricsCollector').RequestMetrics) => {
       const key = `${req.method} ${req.route}`;
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
 
-  const errorEndpoints = metrics.requests
-    .filter(r => r.statusCode >= 400)
-    .reduce((acc, req) => {
+  const errorEndpoints = requests
+    .filter((r: import('../monitoring/metricsCollector').RequestMetrics) => r.statusCode >= 400)
+    .reduce((acc: Record<string, number>, req: import('../monitoring/metricsCollector').RequestMetrics) => {
       const key = `${req.method} ${req.route}`;
       acc[key] = (acc[key] || 0) + 1;
       return acc;

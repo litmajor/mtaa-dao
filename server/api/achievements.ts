@@ -87,8 +87,9 @@ router.post('/:achievementId/claim', async (req, res) => {
 // Get achievement leaderboard
 router.get('/leaderboard', async (req, res) => {
   try {
-    const { db } = await import('../storage');
-    const { userAchievements, achievements, users } = await import('../../shared/schema');
+  const { db } = await import('../storage');
+  const { achievements, userAchievements } = await import('../../shared/achievementSchema');
+  const { users } = await import('../../shared/schema');
     const { sql, desc, eq } = await import('drizzle-orm');
     
     const leaderboard = await db

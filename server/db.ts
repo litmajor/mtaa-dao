@@ -14,4 +14,6 @@ if (!process.env.DATABASE_URL) {
 }
 
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-export const db = drizzle({ client: pool, schema });
+// Use the neon-http drizzle overload that accepts the Pool as the query function
+// and provide the schema as the second config argument so types line up.
+export const db = drizzle(pool as any, { schema });

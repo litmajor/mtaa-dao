@@ -26,10 +26,9 @@ export async function authUserHandler(req: Request, res: Response) {
         email: users.email,
         firstName: users.firstName,
         lastName: users.lastName,
-        role: users.role,
+        roles: users.roles,
         walletAddress: users.walletAddress,
-        isEmailVerified: users.isEmailVerified,
-        isActive: users.isActive,
+        emailVerified: users.emailVerified,
         lastLoginAt: users.lastLoginAt,
         createdAt: users.createdAt,
         profilePicture: users.profilePicture,
@@ -37,6 +36,7 @@ export async function authUserHandler(req: Request, res: Response) {
         location: users.location,
         website: users.website,
         telegramUsername: users.telegramUsername,
+        isBanned: users.isBanned,
       })
       .from(users)
       .where(eq(users.id, userId))
@@ -51,14 +51,6 @@ export async function authUserHandler(req: Request, res: Response) {
     }
 
     const user = userResult[0];
-
-    // Check if user is still active
-    if (!user.isActive) {
-      return res.status(401).json({
-        success: false,
-        error: { message: 'Account is deactivated' },
-      });
-    }
 
     logger.debug('User info retrieved', { userId: user.id });
 

@@ -48,18 +48,11 @@ export default function PollProposalCard({ proposal }: PollProposalCardProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/proposals/${proposal.id}`] });
       queryClient.invalidateQueries({ queryKey: ['/api/proposals'] });
-      toast({
-        title: "Vote recorded",
-        description: "Your vote has been successfully recorded",
-      });
+      toast("Your vote has been successfully recorded", "success");
       setSelectedOptions([]);
     },
     onError: () => {
-      toast({
-        title: "Vote failed",
-        description: "Could not record your vote",
-        variant: "destructive",
-      });
+      toast("Could not record your vote", "error");
     },
   });
 
@@ -77,11 +70,7 @@ export default function PollProposalCard({ proposal }: PollProposalCardProps) {
 
   const handleVote = () => {
     if (selectedOptions.length === 0) {
-      toast({
-        title: "No option selected",
-        description: "Please select at least one option",
-        variant: "destructive",
-      });
+      toast("Please select at least one option", "error");
       return;
     }
     voteMutation.mutate(selectedOptions);

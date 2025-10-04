@@ -212,6 +212,11 @@ export class TokenRegistry {
     return Object.values(YIELD_STRATEGIES).filter(strategy => strategy.isActive);
   }
 
+  // Backwards-compatible convenience method used across the codebase
+  static getSupportedTokens(): TokenInfo[] {
+    return TokenRegistry.getAllTokens();
+  }
+
   static addCustomToken(symbol: string, tokenInfo: TokenInfo): void {
     // This will be controlled by DAO governance
     TOKEN_REGISTRY[symbol] = tokenInfo;
@@ -222,14 +227,14 @@ export class TokenRegistry {
   }
 
   // Get all supported tokens
-  static getAllTokens(): SupportedTokenData[] {
-    return Object.values(this.tokens);
+  static getAllTokens(): TokenInfo[] {
+    return Object.values(TOKEN_REGISTRY);
   }
 
   // Get token by address
-  static getTokenByAddress(address: string): SupportedTokenData | null {
-    return Object.values(this.tokens).find(token => 
-      token.address?.toLowerCase() === address.toLowerCase()
+  static getTokenByAddress(address: string): TokenInfo | null {
+    return Object.values(TOKEN_REGISTRY).find((token) =>
+      token.address?.mainnet?.toLowerCase() === address.toLowerCase() || token.address?.testnet?.toLowerCase() === address.toLowerCase()
     ) || null;
   }
 }

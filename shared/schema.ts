@@ -19,6 +19,7 @@ import {
   boolean,
   uuid
 } from "drizzle-orm/pg-core";
+import { sql } from 'drizzle-orm';
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -70,15 +71,20 @@ export const taskTemplates = pgTable('task_templates', {
   bountyAmount: decimal('bounty_amount', { precision: 10, scale: 2 }).default('0'),
   deliverables: jsonb('deliverables').default([]),
   acceptanceCriteria: jsonb('acceptance_criteria').default([]),
+  createdBy: varchar('created_by').references(() => users.id).notNull(),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });
+
+export const taskTemplatesCreatedBy = taskTemplates.createdBy;
 import { relations } from "drizzle-orm";
 import { IsRestoringProvider } from "@tanstack/react-query";
 
-// User storage table (required for Replit Auth)
+// User storage table
 export const users = pgTable("users", {
   id: varchar("id").primaryKey(),
+  // convenience full name for some callsites
+  name: varchar("name"),
   username: varchar("username").unique(),
   password: varchar("password").notNull(),
   email: varchar("email").unique(),
@@ -93,6 +99,14 @@ export const users = pgTable("users", {
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
+  profilePicture: varchar("profile_picture"),
+  // wallet address used in multiple server callsites
+  walletAddress: varchar("wallet_address"),
+  bio: text("bio"),
+  location: varchar("location"),
+  website: varchar("website"),
+  lastLoginAt: timestamp("last_login_at"),
+  reputationScore: decimal("reputation_score", { precision: 10, scale: 2 }).default("0"),
   roles: varchar("roles").default("member"), // member, proposer, elder
   totalContributions: decimal("total_contributions", { precision: 10, scale: 2 }).default("0"),
   currentStreak: integer("current_streak").default(0),
@@ -120,6 +134,7 @@ export const users = pgTable("users", {
 export const userActivities = pgTable('user_activities', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: varchar('user_id').references(() => users.id).notNull(),
+  dao_id: uuid('dao_id').references(() => daos.id),
   type: varchar('type').notNull(), // e.g., 'proposal', 'vote', 'task', 'comment', etc.
   description: text('description'),
   firstName: varchar("first_name"),
@@ -147,6 +162,8 @@ export const userActivities = pgTable('user_activities', {
   telegramChatId: varchar("telegram_chat_id"),
   telegramUsername: varchar("telegram_username"),
 });
+
+export const userActivitiesDaoId = userActivities.dao_id;
 
 // DAOs table
 export const daos = pgTable("daos", {
@@ -176,6 +193,7 @@ export const daos = pgTable("daos", {
   quorumPercentage: integer("quorum_percentage").default(20), // percentage of active members for quorum
   votingPeriod: integer("voting_period").default(72), // voting period in hours
   executionDelay: integer("execution_delay").default(24), // execution delay in hours
+  tokenHoldings : boolean("token_holdings").default(false) // whether DAO requires token holdings for membership
 });
 
 export const roles = ["member", "proposer", "elder", "admin", "superUser", "moderator"] as const;
@@ -251,6 +269,11 @@ export const proposals = pgTable("proposals", {
   yesVotes: integer("yes_votes").default(0),
   noVotes: integer("no_votes").default(0),
   abstainVotes: integer("abstain_votes").default(0),
+  // legacy/alias fields referenced in other services
+  forVotes: integer("for_votes").default(0),
+  againstVotes: integer("against_votes").default(0),
+  // optional free-form metadata used by some cross-service queries
+  metadata: jsonb("metadata"),
   totalVotingPower: decimal("total_voting_power", { precision: 10, scale: 2 }).default("0"),
   executionData: jsonb("execution_data"), // data needed for automatic execution
   executedAt: timestamp("executed_at"),
@@ -391,6 +414,8 @@ export const vaults = pgTable("vaults", {
   minDeposit: decimal("min_deposit", { precision: 18, scale: 8 }).default("0"),
   maxDeposit: decimal("max_deposit", { precision: 18, scale: 8 }),
   totalValueLocked: decimal("total_value_locked", { precision: 18, scale: 8 }).default("0"), // TVL in USD equivalent
+  // accumulated yield numeric captured by some analytics services
+  yieldGenerated: decimal("yield_generated", { precision: 18, scale: 8 }).default("0"),
   yieldStrategy: varchar("yield_strategy"), // references YIELD_STRATEGIES
   performanceFee: decimal("performance_fee", { precision: 5, scale: 4 }).default("0.1"), // 10% default
   managementFee: decimal("management_fee", { precision: 5, scale: 4 }).default("0.02"), // 2% annual default
@@ -893,6 +918,20 @@ export const vaultsRelations = relations(vaults, ({ one }) => ({
     fields: [vaults.userId],
     references: [users.id],
   }),
+}));
+
+// Add richer vault relations used by service code (tokenHoldings, transactions, performance)
+export const vaultsFullRelations = relations(vaults, ({ one, many }) => ({
+  user: one(users, {
+    fields: [vaults.userId],
+    references: [users.id],
+  }),
+  tokenHoldings: many(vaultTokenHoldings),
+  transactions: many(vaultTransactions),
+  performance: many(vaultPerformance),
+  strategyAllocations: many(vaultStrategyAllocations),
+  riskAssessments: many(vaultRiskAssessments),
+  governanceProposals: many(vaultGovernanceProposals),
 }));
 
 export const budgetPlansRelations = relations(budgetPlans, ({ one }) => ({

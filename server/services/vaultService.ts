@@ -8,6 +8,9 @@ import {
   vaultPerformance, 
   vaultStrategyAllocations,
   vaultRiskAssessments,
+  proposals,
+  userChallenges,
+  users,
   daoMemberships,
   type Vault,
   type VaultTransaction,
@@ -21,6 +24,7 @@ import { TokenRegistry, YIELD_STRATEGIES, type SupportedToken, SupportedTokenEnu
 import { ethers } from 'ethers';
 import { tokenService } from './tokenService';
 import { Logger } from "../utils/logger";
+import { getErrorMessage } from '../utils/errorUtils';
 import { AppError, ValidationError, NotFoundError } from "../middleware/errorHandler";
 import { z } from "zod";
 
@@ -236,14 +240,15 @@ export class VaultService {
 
       return newVault;
     } catch (error) {
-      Logger.getLogger().error(`Failed to create vault: ${error.message}`, error);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Failed to create vault: ${msg}`, error);
       if (error instanceof z.ZodError) {
         throw new ValidationError(`Invalid input for creating vault: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError('Failed to create vault', 500, error.message);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -328,20 +333,22 @@ export class VaultService {
           await this.rebalanceVault(validatedRequest.vaultId);
         } catch (error) {
           // Log but don't fail deposit - rebalance is an optimization, not critical
-          Logger.getLogger().warn(`Rebalance failed for vault ${validatedRequest.vaultId} after deposit: ${error.message}`, error);
+          const msg = getErrorMessage(error);
+          Logger.getLogger().warn(`Rebalance failed for vault ${validatedRequest.vaultId} after deposit: ${msg}`, error);
         }
       }
 
       return result;
     } catch (error) {
-      Logger.getLogger().error(`Failed to deposit token: ${error.message}`, error);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Failed to deposit token: ${msg}`, error);
       if (error instanceof z.ZodError) {
         throw new ValidationError(`Invalid input for deposit: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError('Failed to deposit token', 500, error.message);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -416,14 +423,15 @@ export class VaultService {
 
       return result;
     } catch (error) {
-      Logger.getLogger().error(`Failed to withdraw token: ${error.message}`, error);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Failed to withdraw token: ${msg}`, error);
       if (error instanceof z.ZodError) {
         throw new ValidationError(`Invalid input for withdrawal: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError('Failed to withdraw token', 500, error.message);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -499,14 +507,15 @@ export class VaultService {
         });
       }
     } catch (error) {
-      Logger.getLogger().error(`Failed to allocate to strategy: ${error.message}`, error);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Failed to allocate to strategy: ${msg}`, error);
       if (error instanceof z.ZodError) {
         throw new ValidationError(`Invalid input for strategy allocation: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError('Failed to allocate to strategy', 500, error.message);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -572,8 +581,9 @@ export class VaultService {
         metadata: { allocationsUpdated: allocations.length }
       });
     } catch (error) {
-      Logger.getLogger().error(`Failed to rebalance vault ${vaultId}: ${error.message}`, error);
-      throw new AppError(`Failed to rebalance vault ${vaultId}`, 500, error.message);
+  const msg = getErrorMessage(error);
+  Logger.getLogger().error(`Failed to rebalance vault ${vaultId}: ${msg}`, error);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -668,8 +678,9 @@ export class VaultService {
         assessedBy: vault.userId || vault.daoId || 'system'
       });
     } catch (error) {
-      Logger.getLogger().error(`Failed to perform risk assessment for vault ${vaultId}: ${error.message}`, error);
-      throw new AppError(`Failed to perform risk assessment for vault ${vaultId}`, 500, error.message);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Failed to perform risk assessment for vault ${vaultId}: ${msg}`, error);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -677,38 +688,38 @@ export class VaultService {
   async getUserVaults(userAddress: string): Promise<any[]> {
     try {
       // Get user's personal vaults
-      const personalVaults = await db.query.vaults.findMany({
-        where: eq(vaults.userId, userAddress),
-        with: {
-          tokenHoldings: true,
-          transactions: {
-            limit: 5,
-            orderBy: desc(vaultTransactions.createdAt)
-          }
-        }
+      const personalVaultsRaw = await db.query.vaults.findMany({
+        where: eq(vaults.userId, userAddress)
       });
+      // Fetch token holdings for each personal vault
+      const personalVaults = await Promise.all(personalVaultsRaw.map(async (vault: any) => {
+        const tokenHoldings = await this.getVaultHoldings(vault.id);
+        return { ...vault, tokenHoldings };
+      }));
 
       // Get DAO vaults where user is a member
-      const daoMemberships = await db.query.daoMemberships.findMany({
+      const userDaoMemberships = await db.query.daoMemberships.findMany({
         where: and(
           eq(daoMemberships.userId, userAddress),
           eq(daoMemberships.status, 'approved')
         )
       });
 
-      const daoIds = daoMemberships.map(m => m.daoId);
-      const daoVaults = daoIds.length > 0 ? await db.query.vaults.findMany({
+      const daoIds = userDaoMemberships.map((m: any) => m.daoId);
+      const daoVaultsRaw = daoIds.length > 0 ? await db.query.vaults.findMany({
         where: and(
           sql`${vaults.daoId} IN (${daoIds.join(',')})`,
           eq(vaults.isActive, true)
-        ),
-        with: {
-          tokenHoldings: true
-        }
+        )
       }) : [];
+      // Fetch token holdings for each DAO vault
+      const daoVaults = await Promise.all(daoVaultsRaw.map(async (vault: any) => {
+        const tokenHoldings = await this.getVaultHoldings(vault.id);
+        return { ...vault, tokenHoldings };
+      }));
 
       // Calculate performance and format response
-      const allVaults = [...personalVaults, ...daoVaults].map(vault => ({
+      const allVaults = [...personalVaults, ...daoVaults].map((vault: any) => ({
         id: vault.id,
         name: vault.name,
         currency: vault.currency,
@@ -720,8 +731,9 @@ export class VaultService {
 
       return allVaults;
     } catch (error) {
-      Logger.getLogger().error(`Failed to get user vaults: ${error.message}`, error);
-      throw new AppError('Failed to fetch user vaults', 500);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Failed to get user vaults: ${msg}`, error);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -744,8 +756,9 @@ export class VaultService {
         totalVaults: userVaults.length
       };
     } catch (error) {
-      Logger.getLogger().error(`Failed to get user vault stats: ${error.message}`, error);
-      throw new AppError('Failed to fetch vault statistics', 500);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Failed to get user vault stats: ${msg}`, error);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -770,8 +783,9 @@ export class VaultService {
         createdAt: tx.createdAt?.toISOString() || new Date().toISOString()
       }));
     } catch (error) {
-      Logger.getLogger().error(`Failed to get vault alerts: ${error.message}`, error);
-      throw new AppError('Failed to fetch vault alerts', 500);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Failed to get vault alerts: ${msg}`, error);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -830,25 +844,28 @@ export class VaultService {
         recommendations: riskAssessment?.recommendations
       };
     } catch (error) {
-      Logger.getLogger().error(`Failed to get details for vault ${vaultId}: ${error.message}`, error);
-      if (error instanceof AppError) {
-        throw error;
-      }
-      throw new AppError('Failed to retrieve vault details', 500, error.message);
+        const msg = getErrorMessage(error);
+        Logger.getLogger().error(`Failed to get details for vault ${vaultId}: ${msg}`, error);
+        if (error instanceof AppError) {
+          throw error;
+        }
+  throw new AppError(msg, 500);
     }
   }
   
   // Get list of all vaults and their balances for dashboard
   async getAllVaultsDashboardInfo(): Promise<any[]> {
     try {
-      const allVaults = await db.query.vaults.findMany({
-        where: eq(vaults.isActive, true),
-        with: {
-          tokenHoldings: true
-        }
+      const allVaultsRaw = await db.query.vaults.findMany({
+        where: eq(vaults.isActive, true)
       });
+      // Fetch token holdings for each vault
+      const allVaults = await Promise.all(allVaultsRaw.map(async (vault: any) => {
+        const tokenHoldings = await this.getVaultHoldings(vault.id);
+        return { ...vault, tokenHoldings };
+      }));
 
-      return allVaults.map(vault => ({
+      return allVaults.map((vault: any) => ({
         id: vault.id,
         name: vault.name,
         currency: vault.currency,
@@ -858,8 +875,9 @@ export class VaultService {
         tvl: vault.totalValueLocked || '0',
       }));
     } catch (error) {
-      Logger.getLogger().error(`Failed to get all vaults dashboard info: ${error.message}`, error);
-      throw new AppError('Failed to fetch vault dashboard information', 500);
+        const msg = getErrorMessage(error);
+        Logger.getLogger().error(`Failed to get all vaults dashboard info: ${msg}`, error);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -895,11 +913,12 @@ export class VaultService {
         totalPages
       };
     } catch (error) {
-      Logger.getLogger().error(`Failed to get paginated transactions for vault ${vaultId}: ${error.message}`, error);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Failed to get paginated transactions for vault ${vaultId}: ${msg}`, error);
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError('Failed to retrieve paginated vault transactions', 500, error.message);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -918,11 +937,12 @@ export class VaultService {
         orderBy: [desc(vaultPerformance.createdAt)],
       });
     } catch (error) {
-      Logger.getLogger().error(`Failed to get performance history for vault ${vaultId}: ${error.message}`, error);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Failed to get performance history for vault ${vaultId}: ${msg}`, error);
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError('Failed to retrieve vault performance history', 500, error.message);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -937,30 +957,31 @@ export class VaultService {
       }
 
       // Get real proposals from database instead of mock data
-      const proposals = await db.query.proposals.findMany({
+      const proposalRows = await db.query.proposals.findMany({
         where: sql`${proposals.metadata}->>'vaultId' = ${vaultId}`,
         orderBy: [desc(proposals.createdAt)],
         limit: 10
       });
 
-      return proposals.map(p => ({
+      return proposalRows.map(p => ({
         id: p.id,
         vaultId: vaultId,
         title: p.title,
         description: p.description,
         status: p.status,
-        votesFor: parseInt(p.yesVotes || '0'),
-        votesAgainst: parseInt(p.noVotes || '0'),
-        quorumReached: (parseInt(p.yesVotes || '0') + parseInt(p.noVotes || '0')) >= parseInt(p.quorum || '100'),
+  votesFor: parseInt(String(p.yesVotes || '0')),
+  votesAgainst: parseInt(String(p.noVotes || '0')),
+  quorumReached: (parseInt(String(p.yesVotes || '0')) + parseInt(String(p.noVotes || '0'))) >= parseInt(String((p as any).quorum || '100')),
         createdAt: p.createdAt?.toISOString(),
-        endsAt: p.votingDeadline?.toISOString()
+        endsAt: (p as any).votingDeadline?.toISOString()
       }));
     } catch (error) {
-      Logger.getLogger().error(`Failed to get governance proposals for vault ${vaultId}: ${error.message}`, error);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Failed to get governance proposals for vault ${vaultId}: ${msg}`, error);
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError('Failed to retrieve vault governance proposals', 500, error.message);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -992,17 +1013,18 @@ export class VaultService {
           tokens: [allocation.tokenSymbol],
           yourStake: `${allocation.allocatedAmount} ${allocation.tokenSymbol}`,
           poolShare: `${allocation.allocationPercentage}%`,
-          rewardsEarned: allocation.earnedRewards || '0',
+          rewardsEarned: (allocation as any).yieldEarned || (allocation as any).earnedRewards || '0',
           tvlInPool: allocation.currentValue || allocation.allocatedAmount,
           createdAt: allocation.createdAt?.toISOString() || new Date().toISOString()
         };
       });
     } catch (error) {
-      Logger.getLogger().error(`Failed to get LP positions for vault ${vaultId}: ${error.message}`, error);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Failed to get LP positions for vault ${vaultId}: ${msg}`, error);
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError('Failed to retrieve vault LP positions', 500, error.message);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -1017,14 +1039,14 @@ export class VaultService {
       const totalValue = userVaults.reduce((sum, vault) => sum + parseFloat(vault.balance || '0'), 0);
 
       // Get user's daily challenge record
-      let userChallenge = await db.query.userChallenges.findFirst({
+      let todayChallenge = await db.query.userChallenges.findFirst({
         where: and(
           eq(userChallenges.userId, userId),
           sql`DATE(${userChallenges.createdAt}) = ${today}`
         )
       });
 
-      if (!userChallenge) {
+      if (!todayChallenge) {
         // Create new challenge for today
         const [newChallenge] = await db.insert(userChallenges).values({
           userId,
@@ -1034,28 +1056,29 @@ export class VaultService {
           status: totalValue >= 100 ? 'completed' : 'in_progress',
           pointsReward: 50
         }).returning();
-        userChallenge = newChallenge;
+        todayChallenge = newChallenge;
       }
 
       return {
         userId: userId,
         currentChallenge: {
-          id: userChallenge.id,
+    id: todayChallenge!.id,
           title: 'Daily Vault Target',
           description: 'Maintain at least $100 total value in your vaults',
-          target: userChallenge.targetAmount,
-          currentProgress: Math.min(totalValue, parseFloat(userChallenge.targetAmount || '100')).toString(),
-          status: userChallenge.status,
-          reward: `${userChallenge.pointsReward} MTAA`,
-          createdAt: userChallenge.createdAt?.toISOString() || new Date().toISOString(),
+          target: todayChallenge!.targetAmount,
+          currentProgress: Math.min(totalValue, parseFloat(todayChallenge!.targetAmount || '100')).toString(),
+          status: todayChallenge!.status,
+          reward: `${todayChallenge!.pointsReward} MTAA`,
+          createdAt: todayChallenge!.createdAt?.toISOString() || new Date().toISOString(),
           endsAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
         },
         streak: await this.getUserChallengeStreak(userId),
         nextChallengeAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
       };
     } catch (error) {
-      Logger.getLogger().error(`Failed to get daily challenge status for user ${userId}: ${error.message}`, error);
-      throw new AppError('Failed to fetch daily challenge status', 500);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Failed to get daily challenge status for user ${userId}: ${msg}`, error);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -1088,7 +1111,8 @@ export class VaultService {
 
       return streak;
     } catch (error) {
-      Logger.getLogger().error(`Failed to calculate streak for user ${userId}: ${error.message}`, error);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Failed to calculate streak for user ${userId}: ${msg}`, error);
       return 0;
     }
   }
@@ -1133,8 +1157,9 @@ export class VaultService {
         newStreak 
       };
     } catch (error) {
-      Logger.getLogger().error(`Failed to claim daily challenge reward for user ${userId}: ${error.message}`, error);
-      throw new AppError('Failed to claim daily challenge reward', 500);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Failed to claim daily challenge reward for user ${userId}: ${msg}`, error);
+  throw new AppError(msg, 500);
     }
   }
   
@@ -1159,8 +1184,9 @@ export class VaultService {
         }
       };
     } catch (error) {
-      Logger.getLogger().error(`Failed to get wallet status for user ${userId}: ${error.message}`, error);
-      throw new AppError('Failed to fetch wallet status', 500);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Failed to get wallet status for user ${userId}: ${msg}`, error);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -1172,8 +1198,9 @@ export class VaultService {
       });
       return result || null;
     } catch (error) {
-      Logger.getLogger().error(`Error fetching vault by ID ${vaultId}: ${error.message}`, error);
-      throw new AppError(`Database error retrieving vault ${vaultId}`, 500, error.message);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Error fetching vault by ID ${vaultId}: ${msg}`, error);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -1192,8 +1219,9 @@ export class VaultService {
       });
       return result || null;
     } catch (error) {
-      Logger.getLogger().error(`Error fetching token holding for vault ${vaultId}, token ${tokenSymbol}: ${error.message}`, error);
-      throw new AppError(`Database error retrieving holding for ${tokenSymbol}`, 500, error.message);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Error fetching token holding for vault ${vaultId}, token ${tokenSymbol}: ${msg}`, error);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -1204,8 +1232,9 @@ export class VaultService {
         where: eq(vaultTokenHoldings.vaultId, vaultId)
       });
     } catch (error) {
-      Logger.getLogger().error(`Error fetching all holdings for vault ${vaultId}: ${error.message}`, error);
-      throw new AppError(`Database error retrieving holdings for vault ${vaultId}`, 500, error.message);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Error fetching all holdings for vault ${vaultId}: ${msg}`, error);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -1333,8 +1362,9 @@ export class VaultService {
         })
         .where(eq(vaults.id, vaultId));
     } catch (error) {
-      Logger.getLogger().error(`Error updating TVL for vault ${vaultId}: ${error.message}`, error);
-      throw new AppError(`Database error updating TVL for vault ${vaultId}`, 500, error.message);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Error updating TVL for vault ${vaultId}: ${msg}`, error);
+  throw new AppError(msg, 500);
     }
   }
 
@@ -1364,7 +1394,8 @@ export class VaultService {
           Logger.getLogger().debug(`Using CELO network provider but still need external price feed`);
         }
       } catch (serviceError) {
-        Logger.getLogger().warn(`TokenService price lookup failed for ${tokenSymbol}: ${serviceError.message}`, serviceError);
+        const seMsg = getErrorMessage(serviceError);
+        Logger.getLogger().warn(`TokenService price lookup failed for ${tokenSymbol}: ${seMsg}`, serviceError);
         // Continue to fallback pricing
       }
 
@@ -1404,7 +1435,8 @@ export class VaultService {
 
       return price;
     } catch (error) {
-      Logger.getLogger().error(`Error getting price for ${tokenSymbol}: ${error.message}`, error);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Error getting price for ${tokenSymbol}: ${msg}`, error);
       // Ultra-conservative fallback pricing
       return tokenSymbol.includes('USD') || tokenSymbol.includes('EUR') ? 1.00 : 0.30;
     }
@@ -1439,7 +1471,8 @@ export class VaultService {
         });
       }
     } catch (error) {
-      Logger.getLogger().error(`Failed to initialize performance tracking for vault ${vaultId}: ${error.message}`, error);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Failed to initialize performance tracking for vault ${vaultId}: ${msg}`, error);
       // This is a critical operation, but we might not want to fail vault creation entirely. Log and continue.
       // Depending on requirements, this could throw an AppError.
     }

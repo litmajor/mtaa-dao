@@ -45,7 +45,7 @@ export default function DepositModal({
   // Get token address for current network
   const tokenAddress = TOKEN_ADDRESSES[currentNetwork.id as keyof typeof TOKEN_ADDRESSES]?.[currency];
   
-  const { data: balance, refetch: refetchBalance } = useTokenBalance(address ?? "", tokenAddress);
+  const { data: balance } = useTokenBalance(address ?? "", tokenAddress);
   const { data: needsApproval, refetch: refetchApproval } = useTokenApproval(
     address ?? "", 
     amount, 
@@ -98,40 +98,38 @@ export default function DepositModal({
     setIsDepositing(true);
 
     try {
+      if (!amount || isNaN(Number(amount))) {
+        setError("Please enter a valid amount");
+        setIsDepositing(false);
+        return;
+      }
       const value = parseEther(amount);
-      
       // Check if user has enough balance
       if (balance && value > balance) {
         setError("Insufficient balance");
         setIsDepositing(false);
         return;
       }
-
       // Check minimum deposit (10 for demo)
       if (parseFloat(amount) < 10) {
         setError("Minimum deposit is 10 tokens");
         setIsDepositing(false);
         return;
       }
-
       // Execute deposit using mutation
       const result = await depositMutation.mutateAsync({
         amount,
         currency,
         vaultAddress: DEMO_VAULT_ADDRESS,
       });
-
       setTxHash(result.txHash);
       setSuccess(true);
-      await refetchBalance();
-      
       setTimeout(() => {
         onOpenChange(false);
         setSuccess(false);
         setAmount("10");
         setTxHash("");
       }, 3000);
-
     } catch (err: any) {
       setError(err.message || "Transaction failed");
     } finally {
@@ -140,7 +138,7 @@ export default function DepositModal({
   };
 
   const isValidAmount = amount && parseFloat(amount) >= 10;
-  const hasEnoughBalance = balance && parseEther(amount || "0") <= balance;
+  const hasEnoughBalance = balance !== undefined && parseFloat(amount || "0") <= parseFloat(formatEther(balance ?? 0n));
   const canDeposit = isValidAmount && hasEnoughBalance && !needsApproval;
 
   const explorerUrl = `${currentNetwork.blockExplorers?.default.url}/tx/${txHash}`;

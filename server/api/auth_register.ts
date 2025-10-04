@@ -50,14 +50,15 @@ export async function authRegisterHandler(req: Request, res: Response) {
     const [newUser] = await db
       .insert(users)
       .values({
-        email,
+        id: crypto.randomUUID(),
+        email: email,
         password: hashedPassword,
         firstName,
         lastName,
         walletAddress: walletAddress || null,
-        role: 'user',
+        roles: 'user',
         isEmailVerified: false,
-        isActive: true,
+        isBanned: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       })
@@ -65,9 +66,9 @@ export async function authRegisterHandler(req: Request, res: Response) {
 
     // Generate tokens
     const tokens = generateTokens({
-      userId: newUser.id,
-      email: newUser.email,
-      role: newUser.role,
+  sub: newUser.id,
+  email: newUser.email || '',
+  role: typeof newUser.roles === 'string' ? newUser.roles : 'user',
     });
 
     // Set refresh token cookie
@@ -83,10 +84,10 @@ export async function authRegisterHandler(req: Request, res: Response) {
       data: {
         user: {
           id: newUser.id,
-          email: newUser.email,
+          email: newUser.email || '',
           firstName: newUser.firstName,
           lastName: newUser.lastName,
-          role: newUser.role,
+          role: typeof newUser.roles === 'string' ? newUser.roles : 'user',
           walletAddress: newUser.walletAddress,
           isEmailVerified: newUser.isEmailVerified,
         },

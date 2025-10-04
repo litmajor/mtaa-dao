@@ -1,3 +1,13 @@
+// Generic API request function
+export async function apiRequest(path: string, options?: RequestInit) {
+  const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
+  const res = await fetch(url, {
+    credentials: 'include',
+    ...(options || {})
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
 // Simple API client for server endpoints
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 
   (import.meta.env.PROD ? window.location.origin : 'http://localhost:5000');

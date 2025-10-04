@@ -3,6 +3,8 @@ import express from 'express';
 import { isAuthenticated } from '../auth';
 import { db } from '../storage';
 import { daos, billingHistory, subscriptions, users } from '../../shared/schema';
+import { sql } from 'drizzle-orm';
+import { proposals, vaults } from '../../shared/schema';
 import { eq, desc, and, gte } from 'drizzle-orm';
 import { financialAnalyticsService } from '../services/financialAnalyticsService';
 
@@ -65,16 +67,16 @@ router.get('/dashboard/:daoId', isAuthenticated, async (req, res) => {
     };
 
     const usage = {
-      members: dao[0].memberCount,
-      proposals: proposalCount[0]?.count || 0,
-      vaults: vaultCount[0]?.count || 0,
-      limits: planLimits[currentPlan as keyof typeof planLimits]
+  members: dao[0].memberCount ?? 0,
+  proposals: proposalCount[0]?.count || 0,
+  vaults: vaultCount[0]?.count || 0,
+  limits: planLimits[currentPlan as keyof typeof planLimits]
     };
 
     // Calculate upgrade ROI
-    const memberOverage = Math.max(0, usage.members - 25);
-    const proposalOverage = Math.max(0, usage.proposals - 10);
-    const vaultOverage = Math.max(0, usage.vaults - 1);
+  const memberOverage = Math.max(0, (usage.members ?? 0) - 25);
+  const proposalOverage = Math.max(0, Number(usage.proposals ?? 0) - 10);
+  const vaultOverage = Math.max(0, Number(usage.vaults ?? 0) - 1);
     const upgradeRecommended = memberOverage > 0 || proposalOverage > 0 || vaultOverage > 0;
 
     res.json({

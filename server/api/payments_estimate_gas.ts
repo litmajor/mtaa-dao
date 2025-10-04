@@ -47,14 +47,17 @@ export async function paymentsEstimateGasHandler(req: Request, res: Response) {
     }
 
     // Estimate gas for the operation
-    const gasEstimate = await tokenService.estimateGas(tokenSymbol, toAddress, amount);
+  // Use a default sender address for estimation (could be from config or environment)
+  const defaultSender = process.env.DEFAULT_SENDER_ADDRESS || '0x000000000000000000000000000000000000dead';
+  const gasEstimateStr = await tokenService.estimateTokenGas(tokenSymbol, toAddress, amount, defaultSender);
+  const gasEstimate = BigInt(gasEstimateStr);
     
     // Get current gas price
     const gasPrice = await tokenService.provider.getFeeData();
     
     // Calculate estimated cost
     const estimatedCostWei = gasEstimate * (gasPrice.gasPrice || BigInt(0));
-    const estimatedCostCelo = tokenService.formatUnits(estimatedCostWei, 18); // CELO has 18 decimals
+  const estimatedCostCelo = require('ethers').formatUnits(estimatedCostWei, 18); // CELO has 18 decimals
 
     // Apply operation-specific multipliers for safety
     const operationMultipliers = {

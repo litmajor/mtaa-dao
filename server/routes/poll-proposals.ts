@@ -2,7 +2,7 @@
 import express from 'express';
 import { db } from '../storage';
 import { proposals, votes } from '../../shared/schema';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, and } from 'drizzle-orm';
 import { isAuthenticated } from '../auth';
 
 const router = express.Router();
@@ -38,8 +38,7 @@ router.post('/:proposalId/poll-vote', isAuthenticated, async (req, res) => {
 
     // Check if already voted
     const existingVote = await db.select().from(votes)
-      .where(eq(votes.proposalId, proposalId))
-      .where(eq(votes.userId, userId))
+      .where(and(eq(votes.proposalId, proposalId), eq(votes.userId, userId)))
       .limit(1);
 
     if (existingVote.length) {
@@ -61,11 +60,11 @@ router.post('/:proposalId/poll-vote', isAuthenticated, async (req, res) => {
 
     // Record the vote
     await db.insert(votes).values({
-      proposalId,
+      proposalId: String(proposalId),
       userId,
+      daoId: proposalData.daoId,
       voteType: 'poll',
-      votingPower: 1,
-      metadata: { selectedOptions: optionIds }
+      votingPower: '1'
     });
 
     res.json({

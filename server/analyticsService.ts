@@ -51,6 +51,17 @@ export class AnalyticsService {
   private realTimeMetrics: Map<string, AnalyticsMetrics> = new Map();
   private userActivityCache: Map<string, { timestamp: Date; action: string }[]> = new Map();
 
+  // Generic helper to run a count query against a table with an optional where clause.
+  // Returns a number (0 when no rows).
+  private async countFrom(table: any, where?: any): Promise<number> {
+    if (where) {
+      const res = await db.select({ c: count() }).from(table).where(where);
+      return Number(res[0]?.c || 0);
+    }
+    const res = await db.select({ c: count() }).from(table);
+    return Number(res[0]?.c || 0);
+  }
+
   constructor() {
     // Update real-time metrics every 30 seconds
     setInterval(() => this.updateRealTimeMetrics(), 30000);
@@ -83,56 +94,38 @@ export class AnalyticsService {
 
   // Real-time metrics collection
   async getRealTimeMetrics(daoId?: string): Promise<AnalyticsMetrics> {
-    const whereClause = daoId ? eq(daos.id, daoId) : undefined;
-
-    const [
-      totalDaos,
-      totalProposals,
-      totalVotes,
-      totalUsers,
-      totalTasks,
-      proposalData
-    ] = await Promise.all([
-      db.select({ count: count() }).from(daos).where(whereClause),
-      daoId 
-        ? db.select({ count: count() }).from(proposals).where(eq(proposals.daoId, daoId))
-        : db.select({ count: count() }).from(proposals),
+    // Use the countFrom helper to normalize count queries and avoid passing undefined to .where
+    const [totalDaos, totalProposals, totalVotes, totalUsers, totalTasks] = await Promise.all([
+      this.countFrom(daos, daoId ? eq(daos.id, daoId) : undefined),
+      this.countFrom(proposals, daoId ? eq(proposals.daoId, daoId) : undefined),
+      // votes may need to be scoped by dao via join
       daoId
-        ? db.select({ count: count() }).from(votes)
-            .innerJoin(proposals, eq(votes.proposalId, proposals.id))
-            .where(eq(proposals.daoId, daoId))
-        : db.select({ count: count() }).from(votes),
-      db.select({ count: count() }).from(users),
-      daoId
-        ? db.select({ count: count() }).from(tasks).where(eq(tasks.daoId, daoId))
-        : db.select({ count: count() }).from(tasks),
-      daoId
-        ? db.select({ 
-            status: proposals.status,
-            count: count()
-          }).from(proposals)
-            .where(eq(proposals.daoId, daoId))
-            .groupBy(proposals.status)
-        : db.select({ 
-            status: proposals.status,
-            count: count()
-          }).from(proposals)
-            .groupBy(proposals.status)
+        ? (async () => {
+            const res = await db.select({ c: count() }).from(votes).innerJoin(proposals, eq(votes.proposalId, proposals.id)).where(eq(proposals.daoId, daoId));
+            return Number(res[0]?.c || 0);
+          })()
+        : this.countFrom(votes),
+      this.countFrom(users),
+      this.countFrom(tasks, daoId ? eq(tasks.daoId, daoId) : undefined)
     ]);
 
-  const totalProposalCount = proposalData.reduce((sum: number, item: { status: string | null; count: number }) => sum + item.count, 0);
-  const successfulProposals = proposalData.find((item: { status: string | null; count: number }) => item.status === 'executed')?.count || 0;
+    const proposalData = daoId
+      ? await db.select({ status: proposals.status, count: count() }).from(proposals).where(eq(proposals.daoId, daoId)).groupBy(proposals.status)
+      : await db.select({ status: proposals.status, count: count() }).from(proposals).groupBy(proposals.status);
+
+    const totalProposalCount = proposalData.reduce((sum: number, item: { status: string | null; count: number }) => sum + item.count, 0);
+    const successfulProposals = proposalData.find((item: { status: string | null; count: number }) => item.status === 'executed')?.count || 0;
     const avgProposalSuccessRate = totalProposalCount > 0 ? (successfulProposals / totalProposalCount) * 100 : 0;
 
     // Get top performing DAOs
     const topPerformingDaos = await this.getTopPerformingDaos(5);
 
     return {
-      totalDaos: totalDaos[0]?.count || 0,
-      totalProposals: totalProposals[0]?.count || 0,
-      totalVotes: totalVotes[0]?.count || 0,
-      totalUsers: totalUsers[0]?.count || 0,
-      totalTasks: totalTasks[0]?.count || 0,
+      totalDaos,
+      totalProposals,
+      totalVotes,
+      totalUsers,
+      totalTasks,
       totalTransactionVolume: 0,
       avgProposalSuccessRate,
       avgUserEngagement: await this.calculateUserEngagement(daoId),
@@ -175,31 +168,23 @@ export class AnalyticsService {
       const dayStart = startOfDay(current);
       const dayEnd = endOfDay(current);
 
-          const [daoCount, userCount, proposalCount, proposalSuccess] = await Promise.all([
-        daoId 
-          ? Promise.resolve([{ count: 1 }])
-          : db.select({ count: count() }).from(daos)
-              .where(lte(daos.createdAt, dayEnd)),
-
-        db.select({ count: count() }).from(users)
-          .where(lte(users.createdAt, dayEnd)),
-
-    daoId
-      ? db.select({ count: count() }).from(proposals)
-        .where(and(eq(proposals.daoId, daoId), gte(proposals.createdAt, dayStart), lte(proposals.createdAt, dayEnd)))
-      : db.select({ count: count() }).from(proposals)
-        .where(and(gte(proposals.createdAt, dayStart), lte(proposals.createdAt, dayEnd))),
-
-
+      const [daoCount, userCount, proposalCount, proposalSuccess] = await Promise.all([
+        daoId
+          ? this.countFrom(daos, and(eq(daos.id, daoId), lte(daos.createdAt, dayEnd)))
+          : this.countFrom(daos, lte(daos.createdAt, dayEnd)),
+        this.countFrom(users, lte(users.createdAt, dayEnd)),
+        daoId
+          ? this.countFrom(proposals, and(eq(proposals.daoId, daoId), gte(proposals.createdAt, dayStart), lte(proposals.createdAt, dayEnd)))
+          : this.countFrom(proposals, and(gte(proposals.createdAt, dayStart), lte(proposals.createdAt, dayEnd))),
         this.getSuccessRateForPeriod(dayStart, dayEnd, daoId)
       ]);
 
       historicalData.push({
         timestamp: format(current, 'yyyy-MM-dd'),
-        daoCount: daoCount[0]?.count || 0,
-        userCount: userCount[0]?.count || 0,
-        proposalCount: proposalCount[0]?.count || 0,
-            transactionVolume: 0,
+        daoCount: daoCount || 0,
+        userCount: userCount || 0,
+        proposalCount: proposalCount || 0,
+        transactionVolume: 0,
         avgSuccessRate: proposalSuccess
       });
 
@@ -440,7 +425,7 @@ export class AnalyticsService {
   }
 
   private async calculateEngagementForPeriod(start: Date, end: Date, daoId?: string): Promise<number> {
-    const [votes, proposals] = await Promise.all([
+    const [votesResult, proposalsCount] = await Promise.all([
       daoId
         ? db.select({ count: count() }).from(votes)
             .innerJoin(proposals, eq(votes.proposalId, proposals.id))
@@ -454,7 +439,7 @@ export class AnalyticsService {
             .where(and(gte(proposals.createdAt, start), lte(proposals.createdAt, end)))
     ]);
 
-    return (votes[0]?.count || 0) + (proposals[0]?.count || 0);
+    return (votesResult[0]?.count || 0) + (proposalsCount[0]?.count || 0);
   }
 
   private async getSuccessRateForPeriod(start: Date, end: Date, daoId?: string): Promise<number> {

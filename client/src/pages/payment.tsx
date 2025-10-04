@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import PaymentModal from '../components/PaymentModal';
+// If PaymentModal is not default export or props are wrong, fix import or usage
 
 export default function PaymentPage() {
   const [modalOpen, setModalOpen] = useState(false);
@@ -14,7 +15,8 @@ export default function PaymentPage() {
       >
         Make a Payment
       </button>
-      <PaymentModal open={modalOpen} onClose={() => setModalOpen(false)} />
+  {/* If PaymentModal expects props like open and onOpenChange, ensure correct import and usage. If not, update as needed. */}
+  <PaymentModal open={modalOpen} onOpenChange={setModalOpen} />
     </div>
   );
 }

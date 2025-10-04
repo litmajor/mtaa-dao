@@ -13,20 +13,30 @@ import {
   TrendingUp
 } from 'lucide-react';
 
+import { useContributors } from '@/pages/hooks/useContributors';
+
+// Define Contributor type locally
 type Contributor = {
   address: string;
-  proposalCount: number;
-  voteCount: number;
-  totalFunding: number;
   reputation: number;
+  voteCount: number;
+  proposalCount: number;
+  totalFunding: number;
   referredBy?: string;
 };
 
-import { useContributors } from '@/pages/hooks/useContributors';
-
 export function ContributorList() {
   const { data, isLoading } = useContributors();
-  const contributors = data?.contributors || [];
+  const contributors: Contributor[] = Array.isArray(data?.contributors)
+    ? data.contributors.map((c: any) => ({
+        address: c.address,
+        reputation: c.reputation,
+        voteCount: c.voteCount,
+        proposalCount: c.proposalCount,
+        totalFunding: c.totalFunding,
+        referredBy: c.referredBy,
+      }))
+    : [];
 
   if (isLoading) {
     return (
@@ -78,7 +88,7 @@ export function ContributorList() {
       </CardHeader>
 
       <CardContent className="p-0">
-        {contributors.map((contributor: Contributor, index: number) => {
+        {contributors.map((contributor, index) => {
           const rank = index + 1;
           const isTop3 = rank <= 3;
           const rankIcon = rank === 1 ? '🏆' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
@@ -207,19 +217,19 @@ export function ContributorList() {
           <div className="grid grid-cols-3 gap-4 text-center text-sm">
             <div>
               <div className="text-lg font-bold text-purple-300">
-                {contributors.reduce((sum: number, c: Contributor) => sum + c.proposalCount, 0)}
+                {contributors.reduce((sum, c) => sum + c.proposalCount, 0)}
               </div>
               <div className="text-xs text-gray-400">Total Proposals</div>
             </div>
             <div>
               <div className="text-lg font-bold text-blue-300">
-                {contributors.reduce((sum: number, c: Contributor) => sum + c.voteCount, 0)}
+                {contributors.reduce((sum, c) => sum + c.voteCount, 0)}
               </div>
               <div className="text-xs text-gray-400">Total Votes</div>
             </div>
             <div>
               <div className="text-lg font-bold text-yellow-300">
-                {contributors.reduce((sum: number, c: Contributor) => sum + c.totalFunding, 0).toLocaleString()}
+                {contributors.reduce((sum, c) => sum + c.totalFunding, 0).toLocaleString()}
               </div>
               <div className="text-xs text-gray-400">Total Funding</div>
             </div>

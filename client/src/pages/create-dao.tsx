@@ -70,7 +70,7 @@ const CreateDAOFlow = () => {
     }
   }, [walletAddress]);
 
-  const [newMember, setNewMember] = useState({ address: '', role: 'Member', name: '' });
+  const [newMember, setNewMember] = useState({ address: '', role: 'member', name: '' });
 
   const steps = [
     { id: 1, title: 'Basic Info', icon: Settings },
@@ -148,9 +148,9 @@ const CreateDAOFlow = () => {
     if (newMember.address.trim()) {
       setDaoData(prev => ({
         ...prev,
-        members: [...prev.members, { ...newMember, id: Date.now() }]
+        members: [...prev.members, { ...newMember, role: newMember.role.toLowerCase(), id: Date.now() }]
       }));
-      setNewMember({ address: '', role: 'Member', name: '' });
+      setNewMember({ address: '', role: 'member', name: '' });
     }
   };
 
@@ -165,8 +165,9 @@ const CreateDAOFlow = () => {
   const deployDAO = async () => {
     setIsDeploying(true);
     try {
-      if (!walletAddress) {
-        await connect();
+      if (!walletAddress || !isConnected) {
+        alert('Please connect your wallet before deploying.');
+        setIsDeploying(false);
         return;
       }
       const response = await fetch('/api/dao-deploy', {
@@ -480,8 +481,8 @@ const CreateDAOFlow = () => {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant={member.role === 'Governor' ? 'default' : 'secondary'}>
-                      {member.role}
+                    <Badge variant={member.role === 'governor' ? 'default' : 'secondary'}>
+                      {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
                     </Badge>
                     {index > 0 && (
                       <Button
@@ -621,8 +622,8 @@ const CreateDAOFlow = () => {
               {daoData.members.slice(0, 3).map((member, index) => (
                 <div key={index} className="flex items-center justify-between text-sm">
                   <span className="font-mono">{member.address}</span>
-                  <Badge variant={member.role === 'Governor' ? 'default' : 'secondary'} className="text-xs">
-                    {member.role}
+                  <Badge variant={member.role === 'governor' ? 'default' : 'secondary'} className="text-xs">
+                    {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
                   </Badge>
                 </div>
               ))}

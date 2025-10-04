@@ -70,8 +70,11 @@ class NotificationService extends EventEmitter {
 
     this.telegramBot.onText(/\/start/, async (msg) => {
       const chatId = msg.chat.id;
-      const userId = msg.from.id.toString(); // Use Telegram user ID as a placeholder for internal userId
-
+      const userId = msg.from?.id ? msg.from.id.toString() : undefined;
+      if (!userId) {
+        this.telegramBot?.sendMessage(chatId, 'Could not determine your Telegram user ID.');
+        return;
+      }
       // In a real app, you'd likely link a Telegram chat ID to your internal user ID
       // For now, we'll store it directly.
       this.userTelegramMap.set(userId, { chatId: chatId.toString(), userId: userId });
@@ -102,8 +105,8 @@ class NotificationService extends EventEmitter {
       }
     });
 
-    this.telegramBot.on('polling_error', (error) => {
-      console.error('Telegram polling error:', error.code, error.message);
+    this.telegramBot.on('polling_error', (error: any) => {
+      console.error('Telegram polling error:', error.code ?? '', error.message);
     });
   }
 

@@ -1,7 +1,7 @@
+import { getUserByEmail } from './storage';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
-import { getUserByEmail } from '../client/src/server/storage';
 import { generateTokens } from './auth';
 import { createSession } from './sessionService';
 
@@ -24,7 +24,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Generate JWT tokens
     const tokens = generateTokens({
-      userId: user.id,
+      sub: user.id,
       email: user.email || undefined,
       role: user.role || 'user'
     });

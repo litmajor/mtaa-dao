@@ -60,10 +60,10 @@ export default function EventsPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['events'] });
-      setIsCreateOpen(false);
-      setFormData({ title: '', description: '', startDate: '', endDate: '', location: '', type: 'meeting', maxAttendees: '' });
-      toast({ title: 'Success', description: 'Event created successfully' });
+  queryClient.invalidateQueries({ queryKey: ['events'] });
+  setIsCreateOpen(false);
+  setFormData({ title: '', description: '', startDate: '', endDate: '', location: '', type: 'meeting', maxAttendees: '' });
+  toast('Event created successfully');
     }
   });
 
@@ -74,8 +74,8 @@ export default function EventsPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['events'] });
-      toast({ title: 'Success', description: 'RSVP confirmed!' });
+  queryClient.invalidateQueries({ queryKey: ['events'] });
+  toast('RSVP confirmed!');
     }
   });
 

@@ -50,11 +50,11 @@ const ForgotPassword = () => {
         throw new Error(data.message || "Failed to send reset code");
       }
 
-      setSent(true);
-      toast({ description: `Reset code sent! Check your ${type} for the reset instructions.` });
+  setSent(true);
+  toast(`Reset code sent! Check your ${type} for the reset instructions.`);
     } catch (err: any) {
-      setError(err.message || "Something went wrong");
-      toast({ description: `Error: ${err.message || "Failed to send reset code"}` });
+  setError(err.message || "Something went wrong");
+  toast(`Error: ${err.message || "Failed to send reset code"}`);
     }
   };
 
