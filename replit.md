@@ -25,6 +25,7 @@
 - **TanStack Query:** Server state management
 - **Tailwind CSS + Shadcn/ui + Radix UI:** Modern, accessible UI components
 - **Custom Dashboard:** DAO analytics, proposal leaderboard, vault disbursement alerts
+- **Branding:** Orange theme (#FF7F3F) with dark/light mode support. Mtaa DAO logos in `attached_assets/mtaa_dao_logos/` used consistently across navigation and favicon
 
 ### User & Community Features
 - **Authentication:** OAuth, session storage in PostgreSQL
