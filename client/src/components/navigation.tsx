@@ -24,7 +24,7 @@ export default function Navigation() {
       try {
         // Assuming you have an endpoint to fetch unread notification count
         const response = await apiRequest("GET", "/api/notifications/count");
-        setNotificationCount(response.data?.count || 0);
+        setNotificationCount(response?.count || 0);
       } catch (error) {
         console.error("Failed to fetch notification count:", error);
         // Optionally handle error state, e.g., set a default value or show an error message
@@ -373,10 +373,7 @@ export default function Navigation() {
               <>
                 {/* Notifications */}
                 <div className="relative">
-                  <NotificationCenter
-                    
-                    onNotificationClick={() => setNotificationCount(0)} // Reset count on click for simplicity, ideally mark as read
-                  />
+                  <NotificationCenter />
                 </div>
 
                 {/* Profile Dropdown */}

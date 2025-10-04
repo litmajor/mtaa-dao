@@ -25,7 +25,8 @@ type Contributor = {
 import { useContributors } from '@/pages/hooks/useContributors';
 
 export function ContributorList() {
-  const { data: contributors = [], isLoading } = useContributors();
+  const { data, isLoading } = useContributors();
+  const contributors = data?.contributors || [];
 
   if (isLoading) {
     return (

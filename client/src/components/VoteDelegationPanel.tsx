@@ -54,10 +54,8 @@ export default function VoteDelegationPanel({ daoId, currentUserId }: { daoId: s
 
   const fetchDelegations = async () => {
     try {
-      const response = await apiGet<{ data: VoteDelegation[] }>(`/api/governance/${daoId}/delegations`); // Added response type
-      if (response.success) {
-        setDelegations(response.data);
-      }
+      const data = await apiGet<VoteDelegation[]>(`/api/governance/${daoId}/delegations`);
+      setDelegations(data || []);
     } catch (error) {
       console.error('Failed to fetch delegations:', error);
     }
@@ -65,10 +63,8 @@ export default function VoteDelegationPanel({ daoId, currentUserId }: { daoId: s
 
   const fetchMembers = async () => {
     try {
-      const response = await apiGet<{ data: DaoMember[] }>(`/api/daos/${daoId}/members`); // Added response type
-      if (response.success) {
-        setMembers(response.data.filter((m: DaoMember) => m.userId !== currentUserId));
-      }
+      const data = await apiGet<DaoMember[]>(`/api/daos/${daoId}/members`);
+      setMembers((data || []).filter((m: DaoMember) => m.userId !== currentUserId));
     } catch (error) {
       console.error('Failed to fetch members:', error);
     }
@@ -76,10 +72,8 @@ export default function VoteDelegationPanel({ daoId, currentUserId }: { daoId: s
 
   const fetchDelegationStats = async () => {
     try {
-      const response = await apiGet<{ data: DelegationStats }>(`/api/governance/${daoId}/delegation-stats`); // Added response type
-      if (response.success) {
-        setDelegationStats(response.data);
-      }
+      const data = await apiGet<DelegationStats>(`/api/governance/${daoId}/delegation-stats`);
+      setDelegationStats(data || { totalDelegations: 0, activeDelegations: 0, votingPowerDelegated: 0 });
     } catch (error) {
       console.error('Failed to fetch delegation stats:', error);
     } finally {
@@ -99,15 +93,13 @@ export default function VoteDelegationPanel({ daoId, currentUserId }: { daoId: s
         ...(delegationScope === 'proposal' && { proposalId: selectedProposal })
       };
 
-      const response = await apiPost<{ success: boolean }>(`/api/governance/${daoId}/delegate`, delegationData); // Added response type
-      if (response.success) {
-        await fetchDelegations();
-        await fetchDelegationStats();
-        setSelectedDelegate('');
-        setDelegationScope('all');
-        setSelectedCategory('');
-        setSelectedProposal('');
-      }
+      await apiPost(`/api/governance/${daoId}/delegate`, delegationData);
+      await fetchDelegations();
+      await fetchDelegationStats();
+      setSelectedDelegate('');
+      setDelegationScope('all');
+      setSelectedCategory('');
+      setSelectedProposal('');
     } catch (error) {
       console.error('Failed to create delegation:', error);
     } finally {
@@ -117,11 +109,9 @@ export default function VoteDelegationPanel({ daoId, currentUserId }: { daoId: s
 
   const handleRevokeDelegation = async (delegationId: string) => {
     try {
-      const response = await apiDelete<{ success: boolean }>(`/api/governance/${daoId}/delegate/${delegationId}`); // Added response type
-      if (response.success) {
-        await fetchDelegations();
-        await fetchDelegationStats();
-      }
+      await apiDelete(`/api/governance/${daoId}/delegate/${delegationId}`);
+      await fetchDelegations();
+      await fetchDelegationStats();
     } catch (error) {
       console.error('Failed to revoke delegation:', error);
     }

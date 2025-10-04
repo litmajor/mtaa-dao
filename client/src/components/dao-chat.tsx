@@ -126,11 +126,12 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
 
   // Create message mutation
   const createMessageMutation = useMutation({
-    mutationFn: async (content: string) => {
+    mutationFn: async (messageData: string | { content: string; replyTo?: any; messageType?: string; attachment?: any }) => {
+      const payload = typeof messageData === 'string' ? { content: messageData } : messageData;
       const res = await fetch(`/api/dao/${daoId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error("Failed to send message");
       return res.json();
@@ -207,8 +208,9 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
       return res.json();
     },
     onSuccess: (data) => {
-      createMessageMutation.mutate(selectedFile?.name || 'File uploaded', {
-        messageType: data.fileType.startsWith('image/') ? 'image' : 'file',
+      createMessageMutation.mutate({
+        content: selectedFile?.name || 'File uploaded',
+        messageType: data.fileType?.startsWith('image/') ? 'image' : 'file',
         attachment: data
       });
       setSelectedFile(null);
@@ -289,7 +291,7 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
   };
 
   const filteredMessages = searchQuery 
-    ? messages.filter(msg => 
+    ? messages.filter((msg: Message) => 
         msg.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
         msg.userName?.toLowerCase().includes(searchQuery.toLowerCase())
       )
