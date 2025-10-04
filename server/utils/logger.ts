@@ -62,7 +62,7 @@ export interface LogContext {
   [key: string]: any;
 }
 
-export class Logger extends WinstonLogger {
+export class Logger {
   private service: string;
   private context: LogContext;
 

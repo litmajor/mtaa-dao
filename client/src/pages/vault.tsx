@@ -30,7 +30,7 @@ const VaultDashboard = () => {
   };
 
   const { address, isConnected } = useAccount();
-  const { connectWallet, isConnecting } = useWallet();
+  const { connectMetaMask, isLoading: isConnecting } = useWallet();
 
   const { data: vaultInfo, isLoading: vaultInfoLoading, error: vaultInfoError } = useVaultInfo(DEMO_VAULT_ADDRESS);
   const { data: vaultBalance, isLoading: balanceLoading, refetch: refetchBalance } = useVaultBalance(address || '', DEMO_VAULT_ADDRESS);

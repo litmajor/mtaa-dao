@@ -22,5 +22,12 @@ export function toast(message: string, type?: 'success' | 'error' | 'info'): voi
 export function toast(options: ToastOptions): void;
 export function toast(messageOrOptions: string | ToastOptions, type?: 'success' | 'error' | 'info'): void {
   // Implementation handled by ToastProvider
-  console.log('Toast:', messageOrOptions, type);
+  if (typeof messageOrOptions === 'string') {
+    console.log('Toast:', messageOrOptions, type);
+  } else {
+    console.log('Toast:', messageOrOptions);
+  }
 }
+
+// Default export for compatibility
+export default toast;

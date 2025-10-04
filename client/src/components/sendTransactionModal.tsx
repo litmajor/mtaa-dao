@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { estimateCeloGasFee, estimateCUSDGasFee } from '../lib/blockchain';
+import { estimateCeloGasFee, estimateCUSDGasFee, CUSD_TOKEN_ADDRESS } from '../lib/blockchain';
 import { useWallet } from '../pages/hooks/useWallet';
-import useToast from '../components/ui/use-toast';
+import { useToast } from '../hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -72,7 +72,7 @@ export default function SendTransactionModal({ open, onClose }: Props) {
 
     setSubmitting(true);
     try {
-      const txHash = await sendTransaction(recipient, amount, currency === 'cUSD' ? getTokenAddress('cUSD') : undefined);
+      const txHash = await sendTransaction(recipient, amount, currency === 'cUSD' ? CUSD_TOKEN_ADDRESS : undefined);
       toast({
         title: 'Success',
         description: `${currency} sent! Hash: ${txHash.slice(0, 10)}...`,

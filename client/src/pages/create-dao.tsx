@@ -32,7 +32,7 @@ import {
 const CreateDAOFlow = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [isDeploying, setIsDeploying] = useState(false);
-  const { address: walletAddress, connect, isConnected } = useWallet();
+  const { address: walletAddress, isConnected } = useWallet();
   const [daoData, setDaoData] = useState<DaoData>({
     // Step 1 - Basic Info
     name: '',

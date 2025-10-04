@@ -118,8 +118,9 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
       } else {
         // Send CELO (native token)
         const walletClient = getWalletClientInstance();
+        const [account] = await walletClient.getAddresses();
         const hash = await walletClient.sendTransaction({
-          account: address as `0x${string}`,
+          account,
           to: sendTo as `0x${string}`,
           value: BigInt(Math.floor(parseFloat(sendAmount) * 1e18)), // Convert to wei
         });
