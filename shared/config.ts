@@ -7,11 +7,11 @@ const envSchema = z.object({
   // Server Configuration
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: z.string().default("5000"),
-  HOST: z.string().default("0.0.0.0"),
+  HOST: z.string().default("localhost"),
 
   // Security
-  SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters").default("abcdefghijklmnopqrstuvwxyz123456789012345678901234567890"),
-  JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters").default("abcdefghijklmnopqrstuvwxyz123456789012345678901234567890"),
+  SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters").default("dev-session-secret-change-in-production-min32chars"),
+  JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters").default("dev-jwt-secret-change-in-production-min-32-characters"),
   ENCRYPTION_KEY: z.string().length(32, "ENCRYPTION_KEY must be exactly 32 characters").optional(),
 
   // OAuth Configuration
@@ -64,7 +64,7 @@ const envSchema = z.object({
   SENTRY_DSN: z.string().url().optional(),
 
   // App Configuration
-  FRONTEND_URL: z.string().default("http://localhost:5173"),
+  FRONTEND_URL: z.string().default("http://localhost:5000"),
   BACKEND_URL: z.string().default("http://localhost:5000"),
   API_BASE_URL: z.string().url().default("http://localhost:5000/api"),
   MAX_FILE_SIZE: z.string().optional(),
@@ -123,13 +123,13 @@ export const corsConfig = {
 export const config = {
   // Server Configuration
   PORT: process.env.PORT || 5000,
-  HOST: "0.0.0.0",
+  HOST: "localhost",
   NODE_ENV: process.env.NODE_ENV || "development",
 
   // Frontend URL - dynamically set based on environment
   FRONTEND_URL: process.env.REPL_SLUG 
     ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`
-    : process.env.FRONTEND_URL || "http://localhost:5173",
+    : process.env.FRONTEND_URL || "http://localhost:5000",
 
   // Backend URL - same server in this setup
   BACKEND_URL: process.env.BACKEND_URL || process.env.REPL_SLUG 
