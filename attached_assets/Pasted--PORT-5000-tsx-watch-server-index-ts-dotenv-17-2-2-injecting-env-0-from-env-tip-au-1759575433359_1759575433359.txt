@@ -1,0 +1,142 @@
+
+> PORT=5000 tsx watch server/index.ts
+
+[dotenv@17.2.2] injecting env (0) from .env -- tip: 📡 auto-backup env with Radar: https://dotenvx.com/radar
+[dotenv@17.2.2] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+[DEBUG] WALLET_PRIVATE_KEY: 0x1111111111111111111111111111111111111111111111111111111111111111
+
+=== Enhanced Wallet Demo ===
+Wallet Address: 0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A
+Network: Celo Alfajores Testnet
+
+--- Network Information ---
+🚀 Starting blockchain integration services...
+Starting vault event indexer...
+2025-10-04 10:55:57 [vault-automation] info: 🚀 Starting Vault Automation Service...
+2025-10-04 10:55:57 [vault-automation] info: ✅ Vault Automation Service started successfully
+2025-10-04 10:55:57 [vault-automation] info: Performance: automation_service_startup took 1759575357719ms
+{
+  "performance": true,
+  "operation": "automation_service_startup",
+  "duration": 1759575357719,
+  "scheduledTasks": 3,
+  "intervalMs": 30000
+}
+✅ Blockchain services initialized successfully
+2025-10-04 10:55:57 [api] info: 🚀 Server starting up
+{
+  "port": "5000",
+  "environment": "development"
+}
+2025-10-04 10:55:57 [api] info: Server configuration
+{
+  "port": 5000,
+  "host": "localhost",
+  "frontendUrl": "http://localhost:5000",
+  "backendUrl": "http://localhost:5000",
+  "environment": "development",
+  "nodeVersion": "v20.19.3"
+}
+Starting proposal execution scheduler...
+✅ Proposal execution scheduler started
+Connected: true
+Latest Block: 58620036
+Gas Price: 25.00 Gwei
+
+--- Balance Information ---
+@TODO Error: connect ECONNREFUSED 127.0.0.1:8545
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16) {
+  errno: -111,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 8545
+}
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+Native Balance: 0.000105 CELO
+Balance (USD): $0.00
+
+--- Enhanced Portfolio ---
+Price for native: $0.65
+Price for 0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1: $1
+Price for 0xF194afDf50B03e69Bd7D057c1Aa9e10c9954E4C9: $1
+Portfolio Summary:
+- Address: 0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A
+- Native Balance: 0.000105 CELO
+- Native Balance (USD): $0.00
+- Total Value (USD): $0.00
+- cUSD: 0.000000 (Celo Dollar)
+- CELO: 0.000105 (Celo native asset)
+
+--- DAO Treasury Management ---
+Price for 0xF194afDf50B03e69Bd7D057c1Aa9e10c9954E4C9: $1
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+Price for native: $0.65
+Treasury Snapshot:
+- Native Balance: 0.000105 CELO
+- Total Value (USD): $0.00
+Price for 0xF194afDf50B03e69Bd7D057c1Aa9e10c9954E4C9: $1
+Price for native: $0.65
+Price for native: $0.65
+Treasury Report:
+- Period: monthly
+- Top Holdings: 2 positions
+- Recommendations: 1 items
+  1. Treasury has low native token balance, consider maintaining more for gas fees
+
+--- Risk Management ---
+Price for native: $0.65
+Small CELO transfer:
+  - Allowed: true
+  - Risk Score: 0.0039000000000000007/100
+Price for native: $0.65
+Large CELO transfer:
+  - Allowed: true
+  - Risk Score: 3.9000000000000004/100
+Price for native: $0.65
+Very large transfer (should be blocked):
+  - Allowed: false
+  - Risk Score: 100/100
+  - Reason: Transfer amount 650.00 exceeds single transfer limit of 500
+
+--- Gas Estimation ---
+Price for native: $0.65
+Gas Cost Estimate:
+- Total Gas Cost: 2150086000000000 wei
+- Gas Cost (CELO): 0.00215009
+- Gas Cost (USD): $0.0014
+- Breakdown: 2 transactions
+
+--- Transaction Utilities ---
+Explorer URL for tx: https://alfajores-blockscout.celo-testnet.org/tx/0x6e1e7e2e2b7e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2
+Transaction Cache: 0 transactions
+
+=== Demo Complete ===
+✓ Network connection tested
+✓ Balance operations demonstrated
+✓ Portfolio management shown
+✓ DAO treasury features previewed
+✓ Risk management validated
+✓ Gas estimation completed
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)
+2025-10-04 10:56:06 [api] info: WebSocket client connected
+10:56:06 AM [vite] ws error:
+Error: Invalid WebSocket frame: invalid UTF-8 sequence
+    at Receiver.controlMessage (/home/runner/workspace/node_modules/vite/dist/node/chunks/dep-D_zLpgQd.js:56084:30)
+    at Receiver.getData (/home/runner/workspace/node_modules/vite/dist/node/chunks/dep-D_zLpgQd.js:55916:12)
+    at Receiver.startLoop (/home/runner/workspace/node_modules/vite/dist/node/chunks/dep-D_zLpgQd.js:55606:16)
+    at Receiver._write (/home/runner/workspace/node_modules/vite/dist/node/chunks/dep-D_zLpgQd.js:55533:10)
+    at writeOrBuffer (node:internal/streams/writable:572:12)
+    at _write (node:internal/streams/writable:501:10)
+    at Writable.write (node:internal/streams/writable:510:10)
+    at Socket.socketOnData (/home/runner/workspace/node_modules/vite/dist/node/chunks/dep-D_zLpgQd.js:58590:37)
+    at Socket.emit (node:events:536:35)
+    at addChunk (node:internal/streams/readable:561:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+    at Readable.push (node:internal/streams/readable:392:5)
+    at TCP.onStreamRead (node:internal/stream_base_commons:191:23)
