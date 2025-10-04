@@ -38,15 +38,15 @@ export default function MtaaDAOLanding() {
     {
       icon: Vote,
       title: "Democratic Governance",
-      description: "Transparent, weighted voting on proposals with real-time consensus tracking",
+      description: "Transparent, weighted voting on proposals with real-time consensus tracking and automated execution",
       color: "emerald",
       gradient: "from-emerald-400 via-teal-500 to-cyan-600",
       bgGradient: "from-emerald-50 to-teal-50"
     },
     {
       icon: Wallet,
-      title: "Smart Vaults",
-      description: "AI-powered personal & community treasury management with predictive analytics",
+      title: "Smart Vaults (ERC-4626)",
+      description: "Personal & community vaults with yield generation, automated disbursements, and multi-strategy support",
       color: "amber",
       gradient: "from-amber-400 via-orange-500 to-red-600",
       bgGradient: "from-amber-50 to-orange-50"
@@ -54,50 +54,114 @@ export default function MtaaDAOLanding() {
     {
       icon: Users,
       title: "Community Network",
-      description: "Build meaningful connections and grow your influence within the ecosystem",
+      description: "Build connections with DAO chat, message reactions, and real-time collaboration tools",
       color: "purple",
       gradient: "from-purple-400 via-violet-500 to-indigo-600",
       bgGradient: "from-purple-50 to-indigo-50"
     },
     {
       icon: Target,
-      title: "Collective Impact",
-      description: "Coordinate resources and achieve ambitious community goals together",
+      title: "Vote Delegation",
+      description: "Delegate voting power to trusted members and participate in governance efficiently",
       color: "rose",
       gradient: "from-rose-400 via-pink-500 to-fuchsia-600",
       bgGradient: "from-rose-50 to-pink-50"
     },
     {
       icon: DollarSign,
-      title: "Treasury Analytics",
-      description: "Advanced financial insights with ML-powered growth predictions",
+      title: "Multi-Currency Wallet",
+      description: "CELO, cUSD support with MiniPay integration, batch transfers, and exchange rate tracking",
       color: "blue",
       gradient: "from-blue-400 via-cyan-500 to-teal-600",
       bgGradient: "from-blue-50 to-cyan-50"
     },
     {
       icon: Trophy,
-      title: "Achievement System",
-      description: "Dynamic leaderboards and recognition for community contributors",
+      title: "Reputation System",
+      description: "Earn reputation points, climb leaderboards, and unlock achievement NFT badges",
       color: "yellow",
       gradient: "from-yellow-400 via-amber-500 to-orange-600",
       bgGradient: "from-yellow-50 to-amber-50"
     },
     {
       icon: Zap,
-      title: "Gamified Growth",
-      description: "Streak tracking, NFT badges, and rewards that fuel engagement",
+      title: "Real-Time Analytics",
+      description: "Treasury performance, member engagement metrics, and ML-powered growth predictions",
       color: "green",
       gradient: "from-green-400 via-emerald-500 to-teal-600",
       bgGradient: "from-green-50 to-emerald-50"
     },
     {
       icon: ClipboardList,
-      title: "Task Marketplace",
-      description: "Decentralized bounty system connecting skills with community needs",
+      title: "Task Bounty System",
+      description: "Create, claim, and verify tasks with escrow-protected bounty payments and templates",
       color: "violet",
       gradient: "from-violet-400 via-purple-500 to-indigo-600",
       bgGradient: "from-violet-50 to-purple-50"
+    },
+    {
+      icon: Star,
+      title: "Proposal Templates",
+      description: "Pre-built templates for treasury, governance, and community actions with one-click creation",
+      color: "pink",
+      gradient: "from-pink-400 via-rose-500 to-red-600",
+      bgGradient: "from-pink-50 to-rose-50"
+    },
+    {
+      icon: Lock,
+      title: "Multi-Sig Security",
+      description: "Multi-signature wallets and proposal execution for enhanced security and trust",
+      color: "indigo",
+      gradient: "from-indigo-400 via-purple-500 to-violet-600",
+      bgGradient: "from-indigo-50 to-purple-50"
+    },
+    {
+      icon: TrendingUp,
+      title: "Automated Disbursements",
+      description: "Link vault withdrawals to approved proposals with automated fund distribution",
+      color: "cyan",
+      gradient: "from-cyan-400 via-blue-500 to-indigo-600",
+      bgGradient: "from-cyan-50 to-blue-50"
+    },
+    {
+      icon: Coins,
+      title: "Subscription Plans",
+      description: "Free and Premium tiers with Stripe, M-Pesa, and KotaniPay payment options",
+      color: "orange",
+      gradient: "from-orange-400 via-red-500 to-pink-600",
+      bgGradient: "from-orange-50 to-red-50"
+    },
+    {
+      icon: Heart,
+      title: "Referral Rewards",
+      description: "Grow your community and earn rewards through automated referral tracking",
+      color: "red",
+      gradient: "from-red-400 via-pink-500 to-rose-600",
+      bgGradient: "from-red-50 to-pink-50"
+    },
+    {
+      icon: Globe,
+      title: "Telegram Integration",
+      description: "Receive notifications and updates directly in Telegram with bot commands",
+      color: "teal",
+      gradient: "from-teal-400 via-cyan-500 to-blue-600",
+      bgGradient: "from-teal-50 to-cyan-50"
+    },
+    {
+      icon: CheckCircle,
+      title: "Poll Proposals",
+      description: "Quick community polls for non-binding decisions with instant results",
+      color: "lime",
+      gradient: "from-lime-400 via-green-500 to-emerald-600",
+      bgGradient: "from-lime-50 to-green-50"
+    },
+    {
+      icon: Award,
+      title: "Recurring Payments",
+      description: "Automate regular payments for subscriptions, salaries, and recurring expenses",
+      color: "fuchsia",
+      gradient: "from-fuchsia-400 via-purple-500 to-pink-600",
+      bgGradient: "from-fuchsia-50 to-purple-50"
     }
   ];
 
