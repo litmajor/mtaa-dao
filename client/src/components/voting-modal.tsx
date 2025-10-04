@@ -23,12 +23,12 @@ export default function VotingModal({ isOpen, onClose, proposal }: VotingModalPr
       });
     },
     onSuccess: () => {
-      toast("Vote cast successfully! Your vote has been recorded on the blockchain", "success");
+      toast({ title: "Success", description: "Vote cast successfully! Your vote has been recorded on the blockchain" });
       queryClient.invalidateQueries({ queryKey: ["/api/proposals"] });
       onClose();
     },
     onError: (error: any) => {
-      toast("Error casting vote: " + error.message, "error");
+      toast({ title: "Error", description: "Error casting vote: " + error.message, variant: "destructive" });
     },
   });
 

@@ -120,7 +120,7 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
         const walletClient = getWalletClientInstance();
         const hash = await walletClient.sendTransaction({
           to: sendTo as `0x${string}`,
-          value: parseFloat(sendAmount) * 1e18, // Convert to wei
+          value: BigInt(Math.floor(parseFloat(sendAmount) * 1e18)), // Convert to wei
         });
         txHash = hash;
       }
@@ -149,9 +149,9 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
 
       let fee: string;
       if (selectedCurrency === 'cUSD') {
-        fee = await estimateCUSDGasFee(sendTo, parseFloat(sendAmount));
+        fee = await estimateCUSDGasFee(sendTo, sendAmount);
       } else {
-        fee = await estimateCeloGasFee(sendTo, parseFloat(sendAmount));
+        fee = await estimateCeloGasFee(sendTo, sendAmount);
       }
 
       setEstimatedFee(fee);

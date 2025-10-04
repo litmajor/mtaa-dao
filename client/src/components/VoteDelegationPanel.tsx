@@ -1,11 +1,42 @@
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader } from './ui/card';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Avatar, AvatarImage, AvatarFallback } from './ui/avatar';
+import { Badge } from './ui/badge';
+import { Users, ArrowRight, Settings, Search, UserCheck, UserX } from 'lucide-react';
+import { apiGet, apiPost, apiDelete } from '@/lib/api';
+
+interface VoteDelegation {
+  id: string;
+  delegateId: string; // Changed from delegateAddress to delegateId
+  delegateName?: string; // Added delegateName, optional
+  scope: 'all' | 'category' | 'proposal'; // More specific type for scope
+  category?: string;
+  proposalId?: string;
+}
+
+interface DaoMember {
+  userId: string;
+  username: string;
+  profileImageUrl?: string;
+  role: string;
+}
+
+interface DelegationStats {
+  totalDelegations: number; // Renamed from totalDelegated to be consistent with fetched data
+  activeDelegations: number;
+  votingPowerDelegated: number; // Renamed from totalDelegated to be more specific
+}
 
 export default function VoteDelegationPanel({ daoId, currentUserId }: { daoId: string; currentUserId: string }) {
   const [delegations, setDelegations] = useState<VoteDelegation[]>([]);
   const [members, setMembers] = useState<DaoMember[]>([]);
   const [delegationStats, setDelegationStats] = useState<DelegationStats>({
-    totalDelegated: 0,
+    totalDelegations: 0,
     activeDelegations: 0,
-    receivedDelegations: 0
+    votingPowerDelegated: 0
   });
   const [selectedDelegate, setSelectedDelegate] = useState('');
   const [delegationScope, setDelegationScope] = useState<'all' | 'category' | 'proposal'>('all');
@@ -23,7 +54,7 @@ export default function VoteDelegationPanel({ daoId, currentUserId }: { daoId: s
 
   const fetchDelegations = async () => {
     try {
-      const response = await apiGet(`/api/governance/${daoId}/delegations`);
+      const response = await apiGet<{ data: VoteDelegation[] }>(`/api/governance/${daoId}/delegations`); // Added response type
       if (response.success) {
         setDelegations(response.data);
       }
@@ -34,7 +65,7 @@ export default function VoteDelegationPanel({ daoId, currentUserId }: { daoId: s
 
   const fetchMembers = async () => {
     try {
-      const response = await apiGet(`/api/daos/${daoId}/members`);
+      const response = await apiGet<{ data: DaoMember[] }>(`/api/daos/${daoId}/members`); // Added response type
       if (response.success) {
         setMembers(response.data.filter((m: DaoMember) => m.userId !== currentUserId));
       }
@@ -45,7 +76,7 @@ export default function VoteDelegationPanel({ daoId, currentUserId }: { daoId: s
 
   const fetchDelegationStats = async () => {
     try {
-      const response = await apiGet(`/api/governance/${daoId}/delegation-stats`);
+      const response = await apiGet<{ data: DelegationStats }>(`/api/governance/${daoId}/delegation-stats`); // Added response type
       if (response.success) {
         setDelegationStats(response.data);
       }
@@ -68,7 +99,7 @@ export default function VoteDelegationPanel({ daoId, currentUserId }: { daoId: s
         ...(delegationScope === 'proposal' && { proposalId: selectedProposal })
       };
 
-      const response = await apiPost(`/api/governance/${daoId}/delegate`, delegationData);
+      const response = await apiPost<{ success: boolean }>(`/api/governance/${daoId}/delegate`, delegationData); // Added response type
       if (response.success) {
         await fetchDelegations();
         await fetchDelegationStats();
@@ -86,7 +117,7 @@ export default function VoteDelegationPanel({ daoId, currentUserId }: { daoId: s
 
   const handleRevokeDelegation = async (delegationId: string) => {
     try {
-      const response = await apiDelete(`/api/governance/${daoId}/delegate/${delegationId}`);
+      const response = await apiDelete<{ success: boolean }>(`/api/governance/${daoId}/delegate/${delegationId}`); // Added response type
       if (response.success) {
         await fetchDelegations();
         await fetchDelegationStats();
@@ -119,26 +150,26 @@ export default function VoteDelegationPanel({ daoId, currentUserId }: { daoId: s
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
               <ArrowRight className="w-5 h-5 text-green-500" />
               <div>
                 <p className="text-sm text-gray-600">Received Delegations</p>
-                <p className="text-2xl font-bold">{delegationStats.receivedDelegations}</p>
+                <p className="text-2xl font-bold">{delegationStats.votingPowerDelegated}</p> {/* Corrected to votingPowerDelegated */}
               </div>
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
               <Settings className="w-5 h-5 text-purple-500" />
               <div>
-                <p className="text-sm text-gray-600">Total Delegated</p>
-                <p className="text-2xl font-bold">{delegationStats.totalDelegated}</p>
+                <p className="text-sm text-gray-600">Total Delegations</p> {/* Corrected label */}
+                <p className="text-2xl font-bold">{delegationStats.totalDelegations}</p> {/* Corrected to totalDelegations */}
               </div>
             </div>
           </CardContent>
@@ -175,7 +206,7 @@ export default function VoteDelegationPanel({ daoId, currentUserId }: { daoId: s
                   <SelectItem key={member.userId} value={member.userId}>
                     <div className="flex items-center gap-2">
                       <Avatar className="w-6 h-6">
-                        <AvatarImage src={member.profileImageUrl} />
+                        <AvatarImage src={member.profileImageUrl} alt={member.username} /> {/* Added alt text */}
                         <AvatarFallback>{member.username[0]?.toUpperCase()}</AvatarFallback>
                       </Avatar>
                       <span>{member.username}</span>
@@ -189,7 +220,7 @@ export default function VoteDelegationPanel({ daoId, currentUserId }: { daoId: s
 
           <div>
             <label className="block text-sm font-medium mb-2">Delegation Scope</label>
-            <Select value={delegationScope} onValueChange={(value: any) => setDelegationScope(value)}>
+            <Select value={delegationScope} onValueChange={(value: 'all' | 'category' | 'proposal') => setDelegationScope(value)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -218,8 +249,19 @@ export default function VoteDelegationPanel({ daoId, currentUserId }: { daoId: s
             </div>
           )}
 
-          <Button 
-            onClick={handleCreateDelegation} 
+          {delegationScope === 'proposal' && (
+            <div>
+              <label className="block text-sm font-medium mb-2">Proposal</label>
+              <Input
+                placeholder="Enter proposal ID"
+                value={selectedProposal}
+                onChange={(e) => setSelectedProposal(e.target.value)}
+              />
+            </div>
+          )}
+
+          <Button
+            onClick={handleCreateDelegation}
             disabled={!selectedDelegate || isCreating}
             className="w-full"
           >
@@ -243,10 +285,11 @@ export default function VoteDelegationPanel({ daoId, currentUserId }: { daoId: s
                   <div className="flex items-center gap-3">
                     <UserCheck className="w-5 h-5 text-green-500" />
                     <div>
-                      <p className="font-medium">Delegated to: {delegation.delegateId}</p>
+                      <p className="font-medium">Delegated to: {delegation.delegateName || delegation.delegateId}</p> {/* Display name if available, otherwise delegateId */}
                       <p className="text-sm text-gray-600">
                         Scope: {delegation.scope}
-                        {delegation.category && ` (${delegation.category})`}
+                        {delegation.scope === 'category' && delegation.category && ` (${delegation.category})`}
+                        {delegation.scope === 'proposal' && delegation.proposalId && ` (Proposal #${delegation.proposalId})`}
                       </p>
                     </div>
                   </div>

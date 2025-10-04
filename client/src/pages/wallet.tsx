@@ -413,11 +413,11 @@ const EnhancedWalletPage = () => {
                   Personal Wallet
                 </h1>
                 <div className="flex items-center space-x-2">
-                  <Button variant="outline" size="sm" onClick={() => window.location.href = '/dashboard'}>
-                    <Users className="w-4 h-4 mr-1" />
+                  <Button variant="outline" className="h-8 px-3 text-sm" onClick={() => window.location.href = '/dashboard'}>
+                    <span className="w-4 h-4 mr-1">👥</span>
                     Community
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => window.location.href = '/vault-dashboard'}>
+                  <Button variant="outline" className="h-8 px-3 text-sm" onClick={() => window.location.href = '/vault-dashboard'}>
                     <TrendingUp className="w-4 h-4 mr-1" />
                     DeFi Portfolio
                   </Button>

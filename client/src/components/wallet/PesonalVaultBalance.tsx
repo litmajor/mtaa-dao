@@ -212,7 +212,7 @@ function VaultSendCard() {
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState<"cUSD" | "CELO" | "cEUR" | "cREAL" | "USDC">("cUSD"); // Added 2025 currencies
-  const { data: balance } = useBalance({ address, token: currency === 'CELO' ? undefined : getTokenAddress(currency) });
+  const { data: balance } = useBalance({ address: address as `0x${string}`, token: currency === 'CELO' ? undefined : getTokenAddress(currency) as `0x${string}` });
   const { data: gasEstimate } = useEstimateGas({ to: to as `0x${string}`, value: parseEther(amount || '0') }); // Basic estimate
 
   const handleSend = async () => {
