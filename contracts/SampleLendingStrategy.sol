@@ -9,6 +9,11 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
  * @notice A sample lending strategy for MaonoVault that supplies cUSD to Moola on Celo
  * @dev Implements the IStrategy interface for depositing into and withdrawing from Moola lending pool
  */
+interface ILendingPool {
+    function deposit(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external;
+    function withdraw(address asset, uint256 amount, address to) external returns (uint256);
+}
+
 contract SampleMoolaLendingStrategy {
     using SafeERC20 for IERC20;
 
@@ -16,12 +21,6 @@ contract SampleMoolaLendingStrategy {
     address public immutable mToken; // mCUSD address
     address public immutable lendingPool; // Moola Lending Pool address
     address public immutable vault; // MaonoVault address
-
-    // Moola LendingPool interface (Aave V2 compatible)
-    interface ILendingPool {
-        function deposit(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external;
-        function withdraw(address asset, uint256 amount, address to) external returns (uint256);
-    }
 
     /**
      * @notice Constructor to initialize the strategy
@@ -76,7 +75,7 @@ contract SampleMoolaLendingStrategy {
         if (assets == 0) revert("Zero deposit amount");
 
         // Approve the lending pool to spend the assets
-        IERC20(assetAddress).safeApprove(lendingPool, assets);
+        IERC20(assetAddress).approve(lendingPool, assets);
 
         // Deposit into Moola (receives mCUSD)
         ILendingPool(lendingPool).deposit(assetAddress, assets, address(this), 0);
