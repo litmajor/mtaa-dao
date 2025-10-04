@@ -4,7 +4,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
 import helmet from 'helmet';
 import { registerRoutes } from "./routes";
-// Removed setupVite, serveStatic as backend will only serve API
+import { setupVite, serveStatic } from './vite';
 import { logger, requestLogger, logStartup } from './utils/logger';
 import path from "path";
 import { dirname } from "path";
@@ -67,7 +67,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // CORS Configuration
 app.use(cors({
-  origin: [env.FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3000'],
+  origin: [env.FRONTEND_URL, env.BACKEND_URL, 'http://localhost:5000', 'http://localhost:5173', 'http://localhost:3000'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
@@ -185,11 +185,6 @@ app.use((req, res, next) => {
       });
     }));
 
-    // Backend will now only serve API. Frontend will be served separately.
-    // Remove Vite dev server setup and static file serving for production.
-    // If in development, Vite will be handled by a separate frontend process.
-    // If in production, static files are assumed to be served by a separate web server (e.g., Nginx).
-
     // Add API routes
     app.use('/api/payment-reconciliation', paymentReconciliationRoutes);
     app.use('/api/health', healthRoutes);
@@ -207,8 +202,14 @@ app.use((req, res, next) => {
     app.post('/api/auth/refresh-token', refreshTokenHandler);
     app.post('/api/auth/logout', logoutHandler);
 
+    // Setup Vite dev server or serve static files
+    if (env.NODE_ENV === "development") {
+      await setupVite(app, server);
+    } else {
+      serveStatic(app);
+    }
 
-    // 404 handler (must be after all API routes)
+    // 404 handler (must be after all routes including Vite/static)
     app.use(notFoundHandler);
 
     // Error handling middleware (must be last)
