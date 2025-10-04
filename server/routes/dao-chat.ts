@@ -2,8 +2,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db';
+import { logger } from '../utils/logger';
 import { daoMessages, users, daos } from '../../shared/schema';
-import { eq, desc, and, like } from 'drizzle-orm';
+import { eq, desc, and, like, inArray } from 'drizzle-orm';
 import multer from 'multer';
 import path from 'path';
 
@@ -40,13 +41,24 @@ router.get('/dao/:daoId/messages', async (req, res) => {
     const { daoId } = req.params;
     const { limit = 50, search } = req.query;
     
-    let query = db
+    // Build where condition
+    let whereCondition: any = eq(daoMessages.daoId, daoId);
+    let searchStr: string | undefined = undefined;
+    if (typeof search === 'string' && search.trim().length > 0) {
+      searchStr = search;
+      whereCondition = and(whereCondition, like(daoMessages.content, `%${searchStr}%`));
+    } else if (Array.isArray(search) && typeof search[0] === 'string' && search[0].trim().length > 0) {
+      searchStr = search[0];
+      whereCondition = and(whereCondition, like(daoMessages.content, `%${searchStr}%`));
+    }
+
+    const messages = await db
       .select({
         id: daoMessages.id,
         content: daoMessages.content,
         userId: daoMessages.userId,
         userName: users.username,
-        userAvatar: users.avatar,
+        // userAvatar: users.avatar, // Removed, not in schema
         createdAt: daoMessages.createdAt,
         updatedAt: daoMessages.updatedAt,
         messageType: daoMessages.messageType,
@@ -54,20 +66,9 @@ router.get('/dao/:daoId/messages', async (req, res) => {
       })
       .from(daoMessages)
       .leftJoin(users, eq(daoMessages.userId, users.id))
-      .where(eq(daoMessages.daoId, daoId))
+      .where(whereCondition)
       .orderBy(desc(daoMessages.createdAt))
       .limit(parseInt(limit as string));
-    
-    if (search) {
-      query = query.where(
-        and(
-          eq(daoMessages.daoId, daoId),
-          like(daoMessages.content, `%${search}%`)
-        )
-      );
-    }
-    
-    const messages = await query;
     
     // Simulate reactions and attachments (replace with real data when implemented)
     const enhancedMessages = messages.map(msg => ({
@@ -90,7 +91,7 @@ router.post('/dao/:daoId/messages', async (req, res) => {
   try {
     const { daoId } = req.params;
     const { content, messageType = 'text', replyTo } = req.body;
-    const userId = req.user?.id;
+  const userId = req.user?.claims?.sub;
     
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
@@ -137,7 +138,7 @@ router.post('/messages/:messageId/reactions', async (req, res) => {
   try {
     const { messageId } = req.params;
     const { emoji } = req.body;
-    const userId = req.user?.id;
+  const userId = req.user?.claims?.sub;
     
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
@@ -157,16 +158,35 @@ router.post('/dao/:daoId/typing', async (req, res) => {
   try {
     const { daoId } = req.params;
     const { isTyping } = req.body;
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.sub;
+    let userName = 'Anonymous';
+    if (userId) {
+      const [user] = await db.select({
+        username: users.username,
+        firstName: users.firstName,
+        lastName: users.lastName
+      }).from(users).where(eq(users.id, userId));
+      if (user) {
+        userName = user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Anonymous';
+      }
+    }
     
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
+
+    // Update typing status via WebSocket
+    const webSocketService = req.app.locals.webSocketService;
+    webSocketService.handleTyping({
+      daoId,
+      userId,
+      userName,
+      isTyping
+    });
     
-    // TODO: Implement real-time typing indicators with WebSockets or SSE
     res.json({ success: true });
   } catch (error) {
-    console.error('Error updating typing status:', error);
+    logger.error('Error updating typing status:', error);
     res.status(500).json({ error: 'Failed to update typing status' });
   }
 });
@@ -174,14 +194,42 @@ router.post('/dao/:daoId/typing', async (req, res) => {
 // Get presence info (online users, typing indicators)
 router.get('/dao/:daoId/presence', async (req, res) => {
   try {
-    // TODO: Implement real presence tracking
-    // For now, return mock data
+    const { daoId } = req.params;
+    const webSocketService = req.app.locals.webSocketService;
+
+    // Get real-time presence data
+    // Use inArray for Drizzle ORM
+    const onlineUserIds = webSocketService.getOnlineUsers(daoId);
+    const typingUserIds = webSocketService.getTypingUsers(daoId);
+
+    const onlineUsers = await db
+      .select({
+        userId: users.id,
+        userName: users.username,
+      })
+      .from(users)
+      .where(inArray(users.id, onlineUserIds));
+
+    const typingUsers = await db
+      .select({
+        userId: users.id,
+        userName: users.username,
+      })
+      .from(users)
+      .where(inArray(users.id, typingUserIds));
+
     res.json({
-      onlineUsers: ['Alice', 'Bob', 'Charlie'],
-      typingUsers: []
+      onlineUsers: onlineUsers.map(u => ({
+        id: u.userId,
+        name: u.userName
+      })),
+      typingUsers: typingUsers.map(u => ({
+        id: u.userId,
+        name: u.userName
+      }))
     });
   } catch (error) {
-    console.error('Error fetching presence:', error);
+    logger.error('Error fetching presence:', error);
     res.status(500).json({ error: 'Failed to fetch presence' });
   }
 });

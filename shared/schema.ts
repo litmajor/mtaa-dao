@@ -1,3 +1,5 @@
+import { messageReactions } from './messageReactionsSchema';
+
 // Unique constraints for proposal_likes and comment_likes are enforced at the database level.
 // Add these to your migration or run manually:
 // ALTER TABLE proposal_likes ADD CONSTRAINT proposal_likes_unique UNIQUE (proposal_id, user_id);

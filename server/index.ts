@@ -37,7 +37,7 @@ import pollProposalsRouter from './routes/poll-proposals';
 import './middleware/validation'; // Added for validation middleware
 // Assuming ReputationService is defined and exported from './reputationService'
 import { ReputationService } from './reputationService'; // Added for ReputationService
-import { authenticate, refreshTokenHandler, logoutHandler } from './auth';
+import { authenticate, refreshTokenHandler, logoutHandler, authUserHandler, authLoginHandler, authRegisterHandler } from './auth';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -88,16 +88,21 @@ app.use(metricsCollector.requestMiddleware());
 // User activity tracking middleware
 app.use(activityTracker());
 
-// Store user socket connections
-const userSockets = new Map<string, string>();
+// Initialize WebSocket service
+import WebSocketService from './services/WebSocketService';
+const webSocketService = new WebSocketService(server);
+app.locals.webSocketService = webSocketService;
 
+// Store user socket connections
+const userSockets = new Map();
+// Handle Socket.IO connections for notifications and other real-time events
 io.on('connection', (socket: any) => {
-  console.log('User connected:', socket.id);
+  logger.info('Socket.IO client connected:', { socketId: socket.id });
 
   socket.on('authenticate', (userId: string) => {
+    logger.info('Socket.IO client authenticated', { userId, socketId: socket.id });
     userSockets.set(userId, socket.id);
     socket.join(`user_${userId}`);
-    console.log(`User ${userId} authenticated with socket ${socket.id}`);
   });
 
   socket.on('disconnect', () => {

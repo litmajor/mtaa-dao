@@ -18,6 +18,9 @@ export interface UserPermissions {
 }
 
 // Role hierarchy and permissions
+/**
+ * Global role permissions. If a role is missing, fallback to 'user'.
+ */
 const ROLE_PERMISSIONS: Record<string, UserPermissions> = {
   super_admin: {
     canCreateDAO: true,
@@ -54,6 +57,9 @@ const ROLE_PERMISSIONS: Record<string, UserPermissions> = {
 };
 
 // DAO-specific role permissions
+/**
+ * DAO-specific role permissions. If a role is missing, fallback to 'member'.
+ */
 const DAO_ROLE_PERMISSIONS: Record<string, UserPermissions> = {
   owner: {
     canCreateDAO: false,
@@ -97,7 +103,6 @@ export const requireRole = (...allowedRoles: string[]) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = (req as any).user?.userId || (req as any).user?.claims?.sub;
-      
       if (!userId) {
         return res.status(401).json({
           success: false,
@@ -107,7 +112,7 @@ export const requireRole = (...allowedRoles: string[]) => {
 
       // Get user role
       const userResult = await db
-        .select({ role: users.role })
+        .select({ role: users.roles })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
@@ -119,7 +124,8 @@ export const requireRole = (...allowedRoles: string[]) => {
         });
       }
 
-      const userRole = userResult[0].role;
+      const userRoleRaw = userResult[0].role;
+      const userRole: string = userRoleRaw === null ? 'user' : userRoleRaw;
       req.userRole = userRole;
 
       if (!allowedRoles.includes(userRole)) {
@@ -134,7 +140,10 @@ export const requireRole = (...allowedRoles: string[]) => {
         });
       }
 
-      // Add user permissions to request
+      // Add user permissions to request, with explicit fallback and logging
+      if (!ROLE_PERMISSIONS[userRole]) {
+        logger.warn('Undefined global role, falling back to user', { userId, userRole });
+      }
       req.userPermissions = ROLE_PERMISSIONS[userRole] || ROLE_PERMISSIONS.user;
 
       next();
@@ -146,6 +155,13 @@ export const requireRole = (...allowedRoles: string[]) => {
 };
 
 // Middleware to check DAO-specific permissions
+function mergePermissions(global: UserPermissions = ROLE_PERMISSIONS.user, dao: UserPermissions = DAO_ROLE_PERMISSIONS.member): UserPermissions {
+  return {
+    ...global,
+    ...dao,
+  };
+}
+
 export const requireDAORole = (...allowedRoles: string[]) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -170,13 +186,15 @@ export const requireDAORole = (...allowedRoles: string[]) => {
         .limit(1);
 
       if (membershipResult.length === 0) {
+        logger.warn('Missing DAO membership, falling back to global permissions', { userId, daoId });
         return res.status(403).json({
           success: false,
           error: { message: 'Not a member of this DAO' },
         });
       }
 
-      const daoRole = membershipResult[0].role;
+      const daoRoleRaw = membershipResult[0].role;
+      const daoRole: string = daoRoleRaw === null ? 'member' : daoRoleRaw;
       req.daoRole = daoRole;
 
       if (!allowedRoles.includes(daoRole)) {
@@ -192,12 +210,12 @@ export const requireDAORole = (...allowedRoles: string[]) => {
         });
       }
 
-      // Add DAO permissions to request
+      // Add DAO permissions to request, with explicit fallback and logging
+      if (!DAO_ROLE_PERMISSIONS[daoRole]) {
+        logger.warn('Undefined DAO role, falling back to member', { userId, daoId, daoRole });
+      }
       const daoPermissions = DAO_ROLE_PERMISSIONS[daoRole] || DAO_ROLE_PERMISSIONS.member;
-      req.userPermissions = {
-        ...req.userPermissions,
-        ...daoPermissions,
-      };
+      req.userPermissions = mergePermissions(req.userPermissions, daoPermissions);
 
       next();
     } catch (error) {
@@ -205,7 +223,7 @@ export const requireDAORole = (...allowedRoles: string[]) => {
       next(new AppError('DAO authorization check failed', 500));
     }
   };
-};
+}
 
 // Middleware to check specific permissions
 export const requirePermission = (permission: keyof UserPermissions) => {
@@ -231,12 +249,15 @@ export const getUserPermissions = async (userId: string, daoId?: string): Promis
   try {
     // Get global role
     const userResult = await db
-      .select({ role: users.role })
+      .select({ role: users.roles })
       .from(users)
       .where(eq(users.id, userId))
       .limit(1);
 
     const globalRole = userResult[0]?.role || 'user';
+    if (!ROLE_PERMISSIONS[globalRole]) {
+      logger.warn('Undefined global role in getUserPermissions, falling back to user', { userId, globalRole });
+    }
     let permissions = ROLE_PERMISSIONS[globalRole] || ROLE_PERMISSIONS.user;
 
     // If DAO context, merge DAO permissions
@@ -251,14 +272,16 @@ export const getUserPermissions = async (userId: string, daoId?: string): Promis
         .limit(1);
 
       if (membershipResult.length > 0) {
-        const daoRole = membershipResult[0].role;
+        const daoRoleRaw = membershipResult[0].role;
+        const daoRole: string = daoRoleRaw === null ? 'member' : daoRoleRaw;
+        if (!DAO_ROLE_PERMISSIONS[daoRole]) {
+          logger.warn('Undefined DAO role in getUserPermissions, falling back to member', { userId, daoId, daoRole });
+        }
         const daoPermissions = DAO_ROLE_PERMISSIONS[daoRole] || DAO_ROLE_PERMISSIONS.member;
-        
         // Merge permissions (DAO permissions override global for DAO context)
-        permissions = {
-          ...permissions,
-          ...daoPermissions,
-        };
+        permissions = mergePermissions(permissions, daoPermissions);
+      } else {
+        logger.warn('Missing DAO membership in getUserPermissions, using global permissions', { userId, daoId });
       }
     }
 
@@ -268,3 +291,11 @@ export const getUserPermissions = async (userId: string, daoId?: string): Promis
     return ROLE_PERMISSIONS.user;
   }
 };
+
+/**
+ * Permission Merging Documentation:
+ * - If a user is not a member of the DAO, requireDAORole fails with a 403, but getUserPermissions falls back to global permissions.
+ * - If a role is not defined in ROLE_PERMISSIONS or DAO_ROLE_PERMISSIONS, the code logs a warning and falls back to 'user' or 'member' permissions, respectively.
+ * - In a DAO context, DAO permissions override global permissions for overlapping keys. This is intentional and ensures DAO-level control, but may result in a user losing some global privileges while acting within a DAO.
+ * - To change this precedence, modify the mergePermissions() helper.
+ */

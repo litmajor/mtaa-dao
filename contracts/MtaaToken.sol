@@ -14,9 +14,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * @notice The native utility token for MtaaDAO ecosystem
  * @dev ERC20 token with vesting, staking, and governance features
  */
-contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, ReentrancyGuard, ERC20Votes {
-    // ...existing code...
-
+contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, ReentrancyGuard {
     // Total supply: 1 billion MTAA
     uint256 public constant MAX_SUPPLY = 1_000_000_000 * 1e18;
     
@@ -82,6 +80,7 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, Reen
     event TokensVested(address indexed beneficiary, uint256 amount);
     event Staked(address indexed user, uint256 amount, uint256 lockPeriod);
     event Unstaked(address indexed user, uint256 amount, uint256 reward);
+    event StakeRewardsClaimed(address indexed user, uint256 reward);
     event DailyChallengeCompleted(address indexed user, string challenge, uint256 reward);
     event ReputationUpdated(address indexed user, uint256 newScore, ReputationTier tier);
     event FeeCollected(address indexed payer, uint256 amount, string feeType);
@@ -96,18 +95,25 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, Reen
     error InvalidLockPeriod();
     error ChallengeAlreadyCompleted();
     error InsufficientFee();
+    error StakeAmountTooLow();
+    error AlreadyStaked();
+    error NoRewardsToClaim();
 
     constructor(address _owner)
         ERC20("MtaaDAO Token", "MTAA")
+        ERC20Burnable()
         ERC20Permit("MtaaDAO Token")
-        ERC20Votes()
+        Ownable()
+        Pausable()
+        ReentrancyGuard()
     {
         transferOwnership(_owner);
-        // Initialize lock period multipliers (basis points)
-        lockPeriodMultipliers[30] = 8000;   // 8% APY for 30 days
-        lockPeriodMultipliers[90] = 10000;  // 10% APY for 90 days
-        lockPeriodMultipliers[180] = 12000; // 12% APY for 180 days
-        lockPeriodMultipliers[365] = 15000; // 15% APY for 365 days
+        // Initialize lock period multipliers (basis points: 100 = 1%)
+        // Fixed values to match APY comments (e.g., 800 = 8%)
+        lockPeriodMultipliers[30] = 800;   // 8% APY for 30 days
+        lockPeriodMultipliers[90] = 1000;  // 10% APY for 90 days
+        lockPeriodMultipliers[180] = 1200; // 12% APY for 180 days
+        lockPeriodMultipliers[365] = 1500; // 15% APY for 365 days
         // Mint initial liquidity (7.5% of total supply)
         _mint(_owner, 75_000_000 * 1e18);
         // Mint public sale tokens (5% of total supply)
@@ -116,6 +122,15 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, Reen
 
     // === VESTING SYSTEM ===
 
+    /**
+     * @notice Creates a new vesting schedule for a beneficiary
+     * @param beneficiary Address to receive vested tokens
+     * @param amount Total amount to vest
+     * @param startTime Vesting start timestamp (0 for now)
+     * @param duration Total vesting duration in seconds
+     * @param cliffPeriod Cliff period in seconds
+     * @param vestingType Type of vesting
+     */
     function createVestingSchedule(
         address beneficiary,
         uint256 amount,
@@ -140,15 +155,23 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, Reen
         emit VestingScheduleCreated(beneficiary, amount, vestingType);
     }
 
+    /**
+     * @notice Claims all vestable tokens for the caller
+     */
     function vestTokens() external nonReentrant {
-    uint256 totalVestable = getVestableAmount(msg.sender);
-    if (totalVestable == 0) revert NothingToVest();
-    if (totalSupply() + totalVestable > MAX_SUPPLY) revert MaxSupplyExceeded();
-    totalClaimed[msg.sender] += totalVestable;
-    _mint(msg.sender, totalVestable);
-    emit TokensVested(msg.sender, totalVestable);
+        uint256 totalVestable = getVestableAmount(msg.sender);
+        if (totalVestable == 0) revert NothingToVest();
+        if (totalSupply() + totalVestable > MAX_SUPPLY) revert MaxSupplyExceeded();
+        totalClaimed[msg.sender] += totalVestable;
+        _mint(msg.sender, totalVestable);
+        emit TokensVested(msg.sender, totalVestable);
     }
 
+    /**
+     * @notice Calculates the current vestable amount for a beneficiary
+     * @param beneficiary Address to check
+     * @return uint256 Vestable amount
+     */
     function getVestableAmount(address beneficiary) public view returns (uint256) {
         VestingSchedule[] memory schedules = vestingSchedules[beneficiary];
         uint256 totalVestable = 0;
@@ -173,22 +196,48 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, Reen
 
     // === STAKING SYSTEM ===
 
+    /**
+     * @notice Stakes tokens for rewards (burns tokens to reduce supply)
+     * @param amount Amount to stake (min 1000 MTAA)
+     * @param lockPeriodDays Lock period in days (30,90,180,365)
+     */
     function stake(uint256 amount, uint256 lockPeriodDays) external nonReentrant whenNotPaused {
-    if (amount < 1000 * 1e18) revert StakeAmountTooLow(); // Minimum 1000 MTAA
+        if (amount < 1000 * 1e18) revert StakeAmountTooLow();
         if (lockPeriodMultipliers[lockPeriodDays] == 0) revert InvalidLockPeriod();
+        if (stakes[msg.sender].isActive) revert AlreadyStaked();
         
         _burn(msg.sender, amount);
         
-        StakeInfo storage stakeInfo = stakes[msg.sender];
-        stakeInfo.amount += amount;
-        stakeInfo.lockPeriod = lockPeriodDays;
-        stakeInfo.stakeTime = block.timestamp;
-        stakeInfo.lastRewardClaim = block.timestamp;
-        stakeInfo.isActive = true;
+        stakes[msg.sender] = StakeInfo({
+            amount: amount,
+            lockPeriod: lockPeriodDays,
+            stakeTime: block.timestamp,
+            lastRewardClaim: block.timestamp,
+            isActive: true
+        });
         
         emit Staked(msg.sender, amount, lockPeriodDays);
     }
 
+    /**
+     * @notice Claims pending stake rewards without unstaking
+     */
+    function claimStakeRewards() external nonReentrant {
+        StakeInfo storage stakeInfo = stakes[msg.sender];
+        if (!stakeInfo.isActive) revert StakeNotFound();
+        
+        uint256 rewards = calculateStakeRewards(msg.sender);
+        if (rewards == 0) revert NoRewardsToClaim();
+        
+        stakeInfo.lastRewardClaim = block.timestamp;
+        _mint(msg.sender, rewards);
+        
+        emit StakeRewardsClaimed(msg.sender, rewards);
+    }
+
+    /**
+     * @notice Unstakes and claims all rewards
+     */
     function unstake() external nonReentrant {
         StakeInfo storage stakeInfo = stakes[msg.sender];
         if (!stakeInfo.isActive) revert StakeNotFound();
@@ -207,6 +256,11 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, Reen
         emit Unstaked(msg.sender, stakedAmount, rewards);
     }
 
+    /**
+     * @notice Calculates pending stake rewards
+     * @param staker Address to check
+     * @return uint256 Pending rewards
+     */
     function calculateStakeRewards(address staker) public view returns (uint256) {
         StakeInfo memory stakeInfo = stakes[staker];
         if (!stakeInfo.isActive) return 0;
@@ -226,13 +280,23 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, Reen
 
     // === GOVERNANCE SYSTEM ===
 
+    /**
+     * @notice Gets current voting power (delegated votes)
+     * @param account Address to check
+     * @return uint256 Voting power
+     */
     function getVotingPower(address account) external view returns (uint256) {
-    // Voting power is now handled by ERC20Votes checkpoints
-    return getVotes(account);
+        return getVotes(account);
     }
 
     // === DAILY CHALLENGES & REWARDS ===
 
+    /**
+     * @notice Completes a daily challenge and rewards the user (called by owner/oracle)
+     * @param user User address
+     * @param challengeType Challenge identifier
+     * @param rewardAmount Base reward amount
+     */
     function completeDailyChallenge(address user, string calldata challengeType, uint256 rewardAmount) 
         external 
         onlyOwner 
@@ -269,14 +333,23 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, Reen
 
     // === REPUTATION SYSTEM ===
 
+    /**
+     * @notice Updates user's reputation score (called by owner/oracle)
+     * @param user User address
+     * @param newScore New reputation score
+     */
     function updateReputation(address user, uint256 newScore) external onlyOwner {
-        uint256 oldScore = reputationScores[user];
         reputationScores[user] = newScore;
         
         ReputationTier newTier = getReputationTier(user);
         emit ReputationUpdated(user, newScore, newTier);
     }
 
+    /**
+     * @notice Gets reputation tier for a user
+     * @param user User address
+     * @return ReputationTier Current tier
+     */
     function getReputationTier(address user) public view returns (ReputationTier) {
         uint256 score = reputationScores[user];
         if (score >= 10000) return ReputationTier.ARCHITECT;
@@ -287,6 +360,9 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, Reen
 
     // === FEE SYSTEM ===
 
+    /**
+     * @notice Pays DAO creation fee (50% burn, 50% to treasury)
+     */
     function payDAOCreationFee() external {
         if (balanceOf(msg.sender) < DAO_CREATION_FEE) revert InsufficientFee();
         
@@ -301,6 +377,9 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, Reen
         emit FeeCollected(msg.sender, DAO_CREATION_FEE, "DAO_CREATION");
     }
 
+    /**
+     * @notice Pays vault deployment fee (50% burn, 50% to treasury)
+     */
     function payVaultDeploymentFee() external {
         if (balanceOf(msg.sender) < VAULT_DEPLOYMENT_FEE) revert InsufficientFee();
         
@@ -317,6 +396,9 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, Reen
 
     // === BURN SYSTEM ===
 
+    /**
+     * @notice Performs quarterly burn from treasury (max 2.5% of supply)
+     */
     function quarterlyBurn() external onlyOwner {
         uint256 burnAmount = (totalSupply() * 250) / 10000; // 2.5% quarterly
         if (burnAmount > balanceOf(owner())) {
@@ -328,17 +410,6 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, Reen
     }
 
     // === UTILITY FUNCTIONS ===
-
-    function _sqrt(uint256 x) internal pure returns (uint256) {
-        if (x == 0) return 0;
-        uint256 z = (x + 1) / 2;
-        uint256 y = x;
-        while (z < y) {
-            y = z;
-            z = (x / z + z) / 2;
-        }
-        return y;
-    }
 
     function _toString(uint256 value) internal pure returns (string memory) {
         if (value == 0) return "0";
@@ -396,36 +467,17 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, Pausable, Reen
 
     function getBurnProgress() external view returns (uint256 burned, uint256 target, uint256 percentage) {
         return (totalBurned, burnTarget, (totalBurned * 100) / burnTarget);
-    }
-
-    // Override transfer functions to update delegation
-    error StakeAmountTooLow();
-
-    function _afterTokenTransfer(address from, address to, uint256 amount)
-        internal override(ERC20, ERC20Votes)
-    {
-        super._afterTokenTransfer(from, to, amount);
-    }
-
-    function _update(address from, address to, uint256 amount)
-        internal override(ERC20, ERC20Votes)
-    {
-        super._update(from, to, amount);
-    }
+    // Remove ERC20Votes overrides since ERC20Votes is not inherited
+    // Remove ERC20Votes overrides since ERC20Votes is not inherited
     function _mint(address to, uint256 amount)
-        internal override(ERC20, ERC20Votes)
+        internal override(ERC20)
     {
         super._mint(to, amount);
     }
+
     function _burn(address account, uint256 amount)
-        internal override(ERC20, ERC20Votes)
+        internal override(ERC20)
     {
         super._burn(account, amount);
     }
-    function nonces(address owner)
-        public view override(ERC20Permit, Nonces)
-        returns (uint256)
-    {
-        return super.nonces(owner);
-    
 }

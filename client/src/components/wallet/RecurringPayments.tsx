@@ -28,9 +28,10 @@ interface RecurringPayment {
 
 interface RecurringPaymentsProps {
   walletAddress: string;
+  onPaymentCreated: (payment: RecurringPayment) => void;
 }
 
-export default function RecurringPayments({ walletAddress }: RecurringPaymentsProps) {
+export default function RecurringPayments({ walletAddress, onPaymentCreated }: RecurringPaymentsProps) {
   const [recurringPayments, setRecurringPayments] = useState<RecurringPayment[]>([]);
   const [loading, setLoading] = useState(true);
   const [createModalOpen, setCreateModalOpen] = useState(false);

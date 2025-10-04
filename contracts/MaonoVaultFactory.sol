@@ -97,13 +97,11 @@ contract MaonoVaultFactory is Ownable {
         require(manager != address(0) && daoTreasury != address(0), "Zero address");
 
         // Deploy new vault
-        string[] memory vaultNames = new string[](1);
-        vaultNames[0] = vaultName;
         vault = address(new MaonoVault(
             asset,
             daoTreasury,
             manager,
-            vaultNames
+            initialDAOs
         ));
 
         // Configure vault parameters if provided

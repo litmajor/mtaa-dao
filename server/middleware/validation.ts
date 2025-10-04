@@ -29,8 +29,10 @@ export const validate = (schema: {
   params?: ZodSchema;
 }) => {
   return async (req: Request, res: Response, next: NextFunction) => {
+    const requestIdHeader = req.headers['x-request-id'];
+    const requestId = Array.isArray(requestIdHeader) ? requestIdHeader[0] : requestIdHeader;
     const requestLogger = logger.child({
-      requestId: req.headers['x-request-id'],
+      requestId,
       method: req.method,
       url: req.url,
     });
@@ -161,8 +163,10 @@ export const validateResponse = (schema: ZodSchema) => {
     const originalSend = res.send;
     
     res.send = function(body: any) {
+      const requestIdHeader = req.headers['x-request-id'];
+      const requestId = Array.isArray(requestIdHeader) ? requestIdHeader[0] : requestIdHeader;
       const requestLogger = logger.child({
-        requestId: req.headers['x-request-id'],
+        requestId,
         method: req.method,
         url: req.url,
       });

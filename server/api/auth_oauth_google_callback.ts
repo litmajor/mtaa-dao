@@ -129,9 +129,9 @@ export async function authOauthGoogleCallbackHandler(req: Request, res: Response
 
     // Generate tokens
     const tokens = generateTokens({
-      userId: user.id,
-      email: user.email ?? undefined,
-      role: user.roles ?? undefined,
+      sub: user.id,
+      email: user.email ?? '',
+      role: user.roles ?? 'member',
     });
 
     // Set HTTP-only cookie for refresh token
