@@ -47,6 +47,8 @@ import stripeStatusRoutes from './routes/stripe-status';
 import referralsRoutes from './routes/referrals';
 import eventsRoutes from './routes/events';
 import crossChainRoutes from './routes/cross-chain';
+// Import NFT Marketplace routes
+import nftMarketplaceRouter from './routes/nft-marketplace';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -208,6 +210,23 @@ app.use((req, res, next) => {
     app.use('/api/proposals', pollProposalsRouter);
     app.use('/api/reputation', reputationRoutes); // Added reputation routes
     app.use('/api/cross-chain', crossChainRoutes);
+
+    // NFT Marketplace routes
+    app.use('/api/nft-marketplace', nftMarketplaceRouter);
+
+    // AI Analytics endpoints
+    // Assuming isAuthenticated middleware is defined and imported
+    import { isAuthenticated } from './middleware/authentication'; // Assuming this is the correct path
+    app.get('/api/ai-analytics/:daoId', isAuthenticated, async (req: Request, res: Response) => {
+      try {
+        const { aiAnalyticsService } = await import('./services/aiAnalyticsService');
+        const analytics = await aiAnalyticsService.getComprehensiveAnalytics(req.params.daoId);
+        res.json({ success: true, data: analytics });
+      } catch (error: any) {
+        logger.error(`Error fetching AI analytics for DAO ${req.params.daoId}: ${error.message}`);
+        res.status(500).json({ success: false, error: 'Failed to fetch AI analytics' });
+      }
+    });
 
     // Auth endpoints
     app.get('/api/auth/user', authenticate, authUserHandler);
