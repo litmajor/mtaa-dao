@@ -39,6 +39,7 @@ class VaultAutomationService {
 
     try {
       this.isRunning = true;
+      const startTime = Date.now(); // Record start time
 
       // Schedule regular tasks
       this.scheduleRegularTasks();
@@ -59,10 +60,12 @@ class VaultAutomationService {
         }
       }, 30000);
 
+      const startupDuration = Date.now() - startTime;
       this.logger.info('✅ Vault Automation Service started successfully');
-
-      // Log startup metrics
-      this.logger.performanceLog('automation_service_startup', Date.now(), {
+      this.logger.info(`Performance: automation_service_startup took ${startupDuration}ms`, {
+        performance: true,
+        operation: 'automation_service_startup',
+        duration: startupDuration,
         scheduledTasks: this.tasks.length,
         intervalMs: 30000
       });

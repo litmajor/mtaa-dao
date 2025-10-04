@@ -45,7 +45,7 @@ export const currentNetwork = alfajores; // Or celoMainnet;
 // Public client for reading blockchain data (e.g., balances, contract calls)
 export const publicClient = createPublicClient({
   chain: currentNetwork,
-  transport: http()
+  transport: http('https://alfajores-forno.celo-testnet.org')
 });
 
 // --- Wallet Availability Checks ---
