@@ -22,65 +22,37 @@ export default function Referrals() {
     window.location.href = `/api/auth/telegram/init?mode=${mode}`;
   };
 
-  // Mock data for referral system
-  const referralCode = "MTAA-" + (user?.id?.substring(0, 6) || "123456").toUpperCase();
+  // Fetch real referral data
+  const { data: referralStats } = useQuery({
+    queryKey: ['referral-stats'],
+    queryFn: async () => {
+      const res = await fetch('/api/referrals/stats');
+      if (!res.ok) throw new Error('Failed to fetch referral stats');
+      return res.json();
+    }
+  });
+
+  const { data: leaderboardData = [] } = useQuery({
+    queryKey: ['referral-leaderboard'],
+    queryFn: async () => {
+      const res = await fetch('/api/referrals/leaderboard');
+      if (!res.ok) throw new Error('Failed to fetch leaderboard');
+      return res.json();
+    }
+  });
+
+  const referralCode = referralStats?.referralCode || "MTAA-" + (user?.id?.substring(0, 6) || "123456").toUpperCase();
   const referralLink = `https://mtaa-dao.org/join?ref=${referralCode}`;
 
-  const mockReferralStats = {
-    totalReferrals: 12,
-    activeReferrals: 8,
-    totalEarned: 240.50,
-    pendingRewards: 45.00,
-    thisMonthReferrals: 3,
+  const mockReferralStats = referralStats || {
+    totalReferrals: 0,
+    activeReferrals: 0,
+    totalEarned: 0,
+    pendingRewards: 0,
+    thisMonthReferrals: 0,
   };
 
-  const mockLeaderboard = [
-    {
-      id: 1,
-      name: "Sarah Muthoni",
-      avatar: null,
-      referrals: 156,
-      earnings: 3120.00,
-      rank: 1,
-      badge: "Diamond"
-    },
-    {
-      id: 2,
-      name: "John Mwangi",
-      avatar: null,
-      referrals: 134,
-      earnings: 2680.00,
-      rank: 2,
-      badge: "Platinum"
-    },
-    {
-      id: 3,
-      name: "Faith Kiprotich",
-      avatar: null,
-      referrals: 98,
-      earnings: 1960.00,
-      rank: 3,
-      badge: "Gold"
-    },
-    {
-      id: 4,
-      name: "David Ochieng",
-      avatar: null,
-      referrals: 76,
-      earnings: 1520.00,
-      rank: 4,
-      badge: "Gold"
-    },
-    {
-      id: 5,
-      name: "Grace Wanjiku",
-      avatar: null,
-      referrals: 54,
-      earnings: 1080.00,
-      rank: 5,
-      badge: "Silver"
-    },
-  ];
+  const mockLeaderboard = leaderboardData.length > 0 ? leaderboardData : [];
 
   const copyReferralLink = () => {
     navigator.clipboard.writeText(referralLink);

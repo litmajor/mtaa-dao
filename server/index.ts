@@ -40,6 +40,11 @@ import './middleware/validation'; // Added for validation middleware
 import { ReputationService } from './reputationService'; // Added for ReputationService
 import { authenticate, refreshTokenHandler, logoutHandler, authUserHandler, authLoginHandler, authRegisterHandler } from './auth';
 import reputationRoutes from './routes/reputation'; // Added for reputation routes
+import kotaniPayStatusRoutes from './routes/kotanipay-status';
+import mpesaStatusRoutes from './routes/mpesa-status';
+import stripeStatusRoutes from './routes/stripe-status';
+import referralsRoutes from './routes/referrals';
+import eventsRoutes from './routes/events';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -188,9 +193,12 @@ app.use((req, res, next) => {
     }));
 
     // Add API routes
-    app.use('/api/payment-reconciliation', paymentReconciliationRoutes);
-    app.use('/api/health', healthRoutes);
-    app.use('/api/analytics', analyticsRoutes);
+    app.use('/api/payments/kotanipay', kotaniPayStatusRoutes);
+    app.use('/api/payments/mpesa', mpesaStatusRoutes);
+    app.use('/api/payments/stripe', stripeStatusRoutes);
+    app.use('/api/payments/reconciliation', paymentReconciliationRoutes);
+    app.use('/api/referrals', referralsRoutes);
+    app.use('/api/events', eventsRoutes);
     app.use('/api/notifications', notificationRoutes);
     app.use('/api/sse', sseRoutes);
     app.use('/api/billing', billingRoutes);

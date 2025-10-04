@@ -1,0 +1,49 @@
+
+{
+  "name": "Mtaa DAO",
+  "short_name": "Mtaa DAO",
+  "description": "Community-driven DAO platform for financial inclusion",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#10b981",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/MtaaDAO_Full_BrandAssets/mtaa_dao_logo_128x128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/MtaaDAO_Full_BrandAssets/mtaa_dao_logo_256x256.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/MtaaDAO_Full_BrandAssets/mtaa_dao_logo_512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["finance", "social", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "url": "/dashboard",
+      "description": "View DAO dashboard"
+    },
+    {
+      "name": "Wallet",
+      "url": "/wallet",
+      "description": "Access your wallet"
+    },
+    {
+      "name": "Proposals",
+      "url": "/proposals",
+      "description": "View proposals"
+    }
+  ]
+}
