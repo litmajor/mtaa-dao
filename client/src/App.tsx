@@ -106,14 +106,38 @@ function App() {
 
             <main id="main-content" className={isAuthenticated ? "pb-16 lg:pb-0" : ""} role="main">
               <Routes>
-                {/* Public routes */}
+                {/* Public routes - Authentication & Info Pages */}
+                <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" /> : <Landing />} />
                 <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
                 <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
                 <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
                 <Route path="/reset-password" element={<PublicRoute><ResetPassword /></PublicRoute>} />
-
-                {/* Landing page */}
-                <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" /> : <Landing />} />
+                <Route path="/pricing" element={<PricingPage />} />
+                <Route path="/success-stories" element={<SuccessStories />} />
+                <Route path="/about" element={
+                  <div className="p-8 max-w-4xl mx-auto">
+                    <h1 className="text-3xl font-bold mb-6">About Mtaa DAO</h1>
+                    <p className="text-gray-600">Building decentralized community governance and finance solutions.</p>
+                  </div>
+                } />
+                <Route path="/help" element={
+                  <div className="p-8 max-w-4xl mx-auto">
+                    <h1 className="text-3xl font-bold mb-6">Help & Support</h1>
+                    <p className="text-gray-600">Get help with using Mtaa DAO platform.</p>
+                  </div>
+                } />
+                <Route path="/faq" element={
+                  <div className="p-8 max-w-4xl mx-auto">
+                    <h1 className="text-3xl font-bold mb-6">Frequently Asked Questions</h1>
+                    <p className="text-gray-600">Common questions about Mtaa DAO.</p>
+                  </div>
+                } />
+                <Route path="/contact" element={
+                  <div className="p-8 max-w-4xl mx-auto">
+                    <h1 className="text-3xl font-bold mb-6">Contact Us</h1>
+                    <p className="text-gray-600">Get in touch with the Mtaa DAO team.</p>
+                  </div>
+                } />
 
                 {/* Protected routes */}
                 <Route path="/dashboard" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><DashboardLazy /></Suspense></ProtectedRoute>} />
@@ -155,41 +179,13 @@ function App() {
                 <Route path="/admin/billing" element={<ProtectedRoute><AdminBillingDashboard /></ProtectedRoute>} />
                 <Route path="/admin/payments" element={<ProtectedRoute><PaymentReconciliation /></ProtectedRoute>} />
 
-                {/* Public/Special routes (unprotected for now) */}
-                <Route path="/architect-setup" element={<ArchitectSetupPage />} />
-                <Route path="/pricing" element={<PricingPage />} />
-                <Route path="/wallet-setup" element={<WalletSetupPage />} />
-                <Route path="/success-stories" element={<SuccessStories />} />
-                <Route path="/leaderboard" element={<ReputationLeaderboard />} />
-                <Route path="/minipay" element={<MiniPayDemo />} />
+                {/* Protected special routes */}
+                <Route path="/architect-setup" element={<ProtectedRoute><ArchitectSetupPage /></ProtectedRoute>} />
+                <Route path="/wallet-setup" element={<ProtectedRoute><WalletSetupPage /></ProtectedRoute>} />
+                <Route path="/leaderboard" element={<ProtectedRoute><ReputationLeaderboard /></ProtectedRoute>} />
+                <Route path="/minipay" element={<ProtectedRoute><MiniPayDemo /></ProtectedRoute>} />
                 <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
                 <Route path="/subscribe" element={<ProtectedRoute><Subscribe /></ProtectedRoute>} />
-
-                {/* Static pages */}
-                <Route path="/about" element={
-                  <div className="p-8 max-w-4xl mx-auto">
-                    <h1 className="text-3xl font-bold mb-6">About Mtaa DAO</h1>
-                    <p className="text-gray-600">Building decentralized community governance and finance solutions.</p>
-                  </div>
-                } />
-                <Route path="/help" element={
-                  <div className="p-8 max-w-4xl mx-auto">
-                    <h1 className="text-3xl font-bold mb-6">Help & Support</h1>
-                    <p className="text-gray-600">Get help with using Mtaa DAO platform.</p>
-                  </div>
-                } />
-                <Route path="/faq" element={
-                  <div className="p-8 max-w-4xl mx-auto">
-                    <h1 className="text-3xl font-bold mb-6">Frequently Asked Questions</h1>
-                    <p className="text-gray-600">Common questions about Mtaa DAO.</p>
-                  </div>
-                } />
-                <Route path="/contact" element={
-                  <div className="p-8 max-w-4xl mx-auto">
-                    <h1 className="text-3xl font-bold mb-6">Contact Us</h1>
-                    <p className="text-gray-600">Get in touch with the Mtaa DAO team.</p>
-                  </div>
-                } />
 
                 {/* Catch-all 404 */}
                 <Route path="*" element={<NotFound />} />
