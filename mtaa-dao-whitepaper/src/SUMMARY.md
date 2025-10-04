@@ -1,4 +1,3 @@
-
 # Summary
 
 [Introduction](./introduction.md)
@@ -16,19 +15,11 @@
 - [Vault System](./architecture/vaults.md)
 - [Blockchain Integration](./architecture/blockchain.md)
 
-# Governance
+# Governance & Economics
 
-- [DAO Governance Model](./governance/model.md)
-- [Voting Mechanisms](./governance/voting.md)
-- [Proposal Lifecycle](./governance/proposals.md)
-- [Role-Based Access](./governance/rbac.md)
-
-# Economics
-
-- [MTAA Tokenomics](./economics/tokenomics.md)
-- [Fee Structure](./economics/fees.md)
-- [Incentive Mechanisms](./economics/incentives.md)
-- [Treasury Management](./economics/treasury.md)
+- [Governance](./governance.md)
+- [Tokenomics](./tokenomics.md)
+- [Roadmap](./roadmap.md)
 
 # User Experience
 
