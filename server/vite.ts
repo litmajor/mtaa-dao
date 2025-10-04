@@ -38,7 +38,8 @@ export async function setupVite(app: Express, server: Server) {
       hmr: { 
         server,
         protocol: 'ws',
-        host: '0.0.0.0'
+        host: '0.0.0.0',
+        clientPort: 443,
       },
       host: "0.0.0.0",
       strictPort: false,
