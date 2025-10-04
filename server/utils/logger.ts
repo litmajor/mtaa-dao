@@ -1,5 +1,5 @@
-
 import { createLogger, format, transports } from 'winston';
+import type { Logger } from 'winston';
 import { env, isDevelopment, isProduction } from '@shared/config';
 import { storage } from '../storage';
 
@@ -13,7 +13,7 @@ const devFormat = printf((info) => {
 });
 
 // Create Winston logger
-const winstonLogger = createLogger({
+const winstonLogger: Logger = createLogger({
   level: env.LOG_LEVEL || 'info',
   format: combine(
     timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
@@ -38,7 +38,7 @@ if (isProduction) {
       maxFiles: 5,
     })
   );
-  
+
   winstonLogger.add(
     new transports.File({
       filename: 'logs/combined.log',
@@ -152,7 +152,7 @@ export const logger = new Logger();
 export const requestLogger = (req: any, res: any, next: any) => {
   const start = Date.now();
   const requestId = req.headers['x-request-id'] || Math.random().toString(36).substring(7);
-  
+
   // Add request ID to headers
   req.requestId = requestId;
   res.setHeader('X-Request-ID', requestId);
@@ -182,7 +182,7 @@ export const requestLogger = (req: any, res: any, next: any) => {
   const originalSend = res.send;
   res.send = function(body: any) {
     const duration = Date.now() - start;
-    
+
     requestLogger.info('Request completed', {
       statusCode: res.statusCode,
       duration,

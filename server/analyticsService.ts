@@ -1,4 +1,3 @@
-
 import { db } from './db';
 import { daos, proposals, votes, tasks, vaults, users } from '../shared/schema';
 import { eq, gte, lte, desc, asc, count, sum, avg, sql, and } from 'drizzle-orm';
@@ -55,7 +54,7 @@ export class AnalyticsService {
   constructor() {
     // Update real-time metrics every 30 seconds
     setInterval(() => this.updateRealTimeMetrics(), 30000);
-    
+
     // Clean up old activity data every hour
     setInterval(() => this.cleanupUserActivity(), 3600000);
   }
@@ -63,13 +62,13 @@ export class AnalyticsService {
   // Track user activity for analytics
   async trackUserActivity(userId: string, action: string, metadata?: any) {
     const activity = { timestamp: new Date(), action, ...metadata };
-    
+
     if (!this.userActivityCache.has(userId)) {
       this.userActivityCache.set(userId, []);
     }
-    
+
     this.userActivityCache.get(userId)!.push(activity);
-    
+
     // Store in database for persistence
     try {
       await db.insert(sql`
@@ -87,7 +86,7 @@ export class AnalyticsService {
   // Real-time metrics collection
   async getRealTimeMetrics(daoId?: string): Promise<AnalyticsMetrics> {
     const whereClause = daoId ? eq(daos.id, daoId) : undefined;
-    
+
     const [
       totalDaos,
       totalProposals,
@@ -183,17 +182,17 @@ export class AnalyticsService {
           ? Promise.resolve([{ count: 1 }])
           : db.select({ count: count() }).from(daos)
               .where(lte(daos.createdAt, dayEnd)),
-        
+
         db.select({ count: count() }).from(users)
           .where(lte(users.createdAt, dayEnd)),
-        
+
     daoId
       ? db.select({ count: count() }).from(proposals)
         .where(and(eq(proposals.daoId, daoId), gte(proposals.createdAt, dayStart), lte(proposals.createdAt, dayEnd)))
       : db.select({ count: count() }).from(proposals)
         .where(and(gte(proposals.createdAt, dayStart), lte(proposals.createdAt, dayEnd))),
-        
-        
+
+
         this.getSuccessRateForPeriod(dayStart, dayEnd, daoId)
       ]);
 
@@ -349,7 +348,7 @@ export class AnalyticsService {
 
   private cleanupUserActivity() {
     const oneDayAgo = subDays(new Date(), 1);
-    
+
     for (const [userId, activities] of this.userActivityCache.entries()) {
       const filtered = activities.filter(a => a.timestamp > oneDayAgo);
       if (filtered.length === 0) {
@@ -364,12 +363,12 @@ export class AnalyticsService {
   private async calculateUserEngagement(daoId?: string): Promise<number> {
     const thirtyDaysAgo = subDays(new Date(), 30);
     const sevenDaysAgo = subDays(new Date(), 7);
-    
+
     const [totalUsers, activeUsers, weeklyActive] = await Promise.all([
       daoId 
         ? db.select({ count: count() }).from(users) // Would need DAO membership table
         : db.select({ count: count() }).from(users),
-      
+
       daoId
         ? db.select({ count: count() }).from(votes)
             .innerJoin(proposals, eq(votes.proposalId, proposals.id))
@@ -392,7 +391,7 @@ export class AnalyticsService {
     // Calculate engagement score based on multiple factors
     const monthlyEngagement = total > 0 ? (monthly / total) * 100 : 0;
     const weeklyEngagement = total > 0 ? (weekly / total) * 100 : 0;
-    
+
     // Weight weekly engagement more heavily
     return (monthlyEngagement * 0.4 + weeklyEngagement * 0.6);
   }

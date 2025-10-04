@@ -1,5 +1,5 @@
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import DOMPurify from 'isomorphic-dompurify';
 import validator from 'validator';
 import { z } from 'zod';

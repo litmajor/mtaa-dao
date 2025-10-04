@@ -1,5 +1,5 @@
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction, ErrorRequestHandler } from 'express';
 import { ZodError } from 'zod';
 import { env, isDevelopment } from '@shared/config';
 import { storage } from '../storage';
