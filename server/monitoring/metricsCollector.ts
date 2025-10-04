@@ -278,10 +278,10 @@ class MetricsCollector {
   private cleanOldMetrics() {
     const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
 
-    this.metrics.requests = this.metrics.requests.filter(m => m.timestamp > oneDayAgo);
-    this.metrics.system = this.metrics.system.filter(m => m.timestamp > oneDayAgo);
-    this.metrics.database = this.metrics.database.filter(m => (m as any).timestamp > oneDayAgo);
-    this.metrics.business = this.metrics.business.filter(m => (m as any).timestamp > oneDayAgo);
+  this.metrics.requests = this.metrics.requests.filter((m: RequestMetrics) => m.timestamp > oneDayAgo);
+  this.metrics.system = this.metrics.system.filter((m: SystemMetrics) => m.timestamp > oneDayAgo);
+  this.metrics.database = this.metrics.database.filter((m: DatabaseMetrics & { timestamp: number }) => m.timestamp > oneDayAgo);
+  this.metrics.business = this.metrics.business.filter((m: BusinessMetrics & { timestamp: number }) => m.timestamp > oneDayAgo);
 
     // Reset counters periodically
     this.responseTimes = this.responseTimes.slice(-1000); // Keep last 1000 response times

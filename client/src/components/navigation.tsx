@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Bell, Moon, Sun, Settings, LogOut, ChevronDown, Sparkles } from "lucide-react";
 import { useAuth } from "@/pages/hooks/useAuth";
 import { useEffect, useState } from "react";
-import { useLocation as useWouterLocation } from "wouter";
+import { useLocation as useWouterLocation } from "wouter"; // Remove this duplicate import
 import { apiRequest } from "@/lib/queryClient";
 import { useTheme } from "@/components/theme-provider";
 import type { User } from "../../../shared/schema";
@@ -13,7 +13,7 @@ import NotificationCenter from "./NotificationCenter";
 
 export default function Navigation() {
   const { user } = useAuth() as { user?: User };
-  const [, setLocation] = useWouterLocation();
+  const [, setLocation] = useLocation();
   const [isScrolled, setIsScrolled] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0); // Changed from 'notifications' to 'notificationCount' for clarity
@@ -24,7 +24,8 @@ export default function Navigation() {
       try {
         // Assuming you have an endpoint to fetch unread notification count
         const response = await apiRequest("GET", "/api/notifications/count");
-        setNotificationCount(response?.count || 0);
+        const data = typeof response.json === "function" ? await response.json() : response;
+        setNotificationCount(data?.count || 0);
       } catch (error) {
         console.error("Failed to fetch notification count:", error);
         // Optionally handle error state, e.g., set a default value or show an error message

@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { db } from '../storage';
-import { daos, daoMemberships } from '../../shared/schema';
+import { daos, daoMemberships, proposals } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
 
 // Get DAO settings
@@ -115,16 +115,27 @@ export async function updateDaoSettingsHandler(req: Request, res: Response) {
         for (const [key, value] of Object.entries(updates)) {
           if (allowedGovernanceFields.includes(key)) {
             // Validate governance values
-            if (key === 'quorumPercentage' && (value < 1 || value > 100)) {
-              return res.status(400).json({ error: 'Quorum percentage must be between 1 and 100' });
+            if (key === 'quorumPercentage') {
+              const numValue = Number(value);
+              if (isNaN(numValue) || numValue < 1 || numValue > 100) {
+                return res.status(400).json({ error: 'Quorum percentage must be between 1 and 100' });
+              }
+              validUpdates[key] = numValue;
+            } else if (key === 'votingPeriod') {
+              const numValue = Number(value);
+              if (isNaN(numValue) || numValue < 1) {
+                return res.status(400).json({ error: 'Voting period must be at least 1 hour' });
+              }
+              validUpdates[key] = numValue;
+            } else if (key === 'executionDelay') {
+              const numValue = Number(value);
+              if (isNaN(numValue) || numValue < 0) {
+                return res.status(400).json({ error: 'Execution delay cannot be negative' });
+              }
+              validUpdates[key] = numValue;
+            } else {
+              validUpdates[key] = value;
             }
-            if (key === 'votingPeriod' && value < 1) {
-              return res.status(400).json({ error: 'Voting period must be at least 1 hour' });
-            }
-            if (key === 'executionDelay' && value < 0) {
-              return res.status(400).json({ error: 'Execution delay cannot be negative' });
-            }
-            validUpdates[key] = value;
           }
         }
         break;
@@ -264,7 +275,9 @@ export async function getDaoAnalyticsHandler(req: Request, res: Response) {
     });
 
     const proposalsByStatus = proposalStats.reduce((acc: any, proposal) => {
-      acc[proposal.status] = (acc[proposal.status] || 0) + 1;
+  const status = typeof proposal.status === 'string' ? proposal.status : 'unknown';
+  acc[status] = (acc[status] || 0) + 1;
+  return acc;
       return acc;
     }, {});
 
@@ -280,15 +293,16 @@ export async function getDaoAnalyticsHandler(req: Request, res: Response) {
         total: memberStats.length,
         roleDistribution,
         recentJoins: memberStats.filter(m => 
-          new Date(m.joinedAt).getTime() > Date.now() - 30 * 24 * 60 * 60 * 1000
+          m.joinedAt && new Date(m.joinedAt).getTime() > Date.now() - 30 * 24 * 60 * 60 * 1000
         ).length
       },
       proposals: {
         total: proposalStats.length,
         statusDistribution: proposalsByStatus,
-        recentProposals: proposalStats.filter(p => 
-          new Date(p.createdAt).getTime() > Date.now() - 30 * 24 * 60 * 60 * 1000
-        ).length
+        recentProposals: proposalStats.filter(p => {
+          if (!p.createdAt || !(typeof p.createdAt === 'string' || typeof p.createdAt === 'number' || p.createdAt instanceof Date)) return false;
+          return new Date(p.createdAt).getTime() > Date.now() - 30 * 24 * 60 * 60 * 1000;
+        }).length
       }
     };
 
@@ -341,18 +355,30 @@ export async function bulkUpdateDaoSettingsHandler(req: Request, res: Response) 
 
     // Validate all updates
     for (const [key, value] of Object.entries(updates)) {
+      const v: any = value;
       if (allowedFields.includes(key)) {
         // Apply specific validations
-        if (key === 'quorumPercentage' && (value < 1 || value > 100)) {
-          return res.status(400).json({ error: 'Quorum percentage must be between 1 and 100' });
+        if (key === 'quorumPercentage') {
+          const numValue = Number(v);
+          if (isNaN(numValue) || numValue < 1 || numValue > 100) {
+            return res.status(400).json({ error: 'Quorum percentage must be between 1 and 100' });
+          }
+          validUpdates[key] = numValue;
+        } else if (key === 'votingPeriod') {
+          const numValue = Number(v);
+          if (isNaN(numValue) || numValue < 1) {
+            return res.status(400).json({ error: 'Voting period must be at least 1 hour' });
+          }
+          validUpdates[key] = numValue;
+        } else if (key === 'executionDelay') {
+          const numValue = Number(v);
+          if (isNaN(numValue) || numValue < 0) {
+            return res.status(400).json({ error: 'Execution delay cannot be negative' });
+          }
+          validUpdates[key] = numValue;
+        } else {
+          validUpdates[key] = v;
         }
-        if (key === 'votingPeriod' && value < 1) {
-          return res.status(400).json({ error: 'Voting period must be at least 1 hour' });
-        }
-        if (key === 'executionDelay' && value < 0) {
-          return res.status(400).json({ error: 'Execution delay cannot be negative' });
-        }
-        validUpdates[key] = value;
       }
     }
 
@@ -399,7 +425,7 @@ export async function exportDaoConfigHandler(req: Request, res: Response) {
       basic: {
         name: dao.name,
         description: dao.description,
-        category: dao.category,
+        category: (typeof (dao as any).category === 'string' ? (dao as any).category : null),
         access: dao.access
       },
       governance: {

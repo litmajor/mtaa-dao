@@ -13,7 +13,7 @@ const devFormat = printf((info) => {
 });
 
 // Create Winston logger
-const winstonLogger: Logger = createLogger({
+const winstonLogger: WinstonLogger = createLogger({
   level: env.LOG_LEVEL || 'info',
   format: combine(
     timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
@@ -147,6 +147,14 @@ export class Logger {
 
 // Export default logger instance
 export const logger = new Logger();
+
+// Static accessor for legacy usage: Logger.getLogger()
+// Returns the module-level logger instance
+export namespace Logger {
+  export function getLogger(): Logger {
+    return logger;
+  }
+}
 
 // Express middleware for request logging
 export const requestLogger = (req: any, res: any, next: any) => {

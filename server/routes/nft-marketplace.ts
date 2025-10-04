@@ -1,7 +1,8 @@
 
 import express from 'express';
 import { db } from '../db';
-import { achievements, users } from '../../shared/schema';
+import { achievements } from '../../shared/achievementSchema';
+import { users } from '../../shared/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import { isAuthenticated } from '../auth';
 import { ethers } from 'ethers';
@@ -46,12 +47,28 @@ router.get('/user/:address', async (req, res) => {
   try {
     const { address } = req.params;
     
-    const userAchievements = await db
-      .select()
-      .from(achievements)
-      .where(eq(achievements.userId, address));
+    // Find achievements unlocked by user
+    const { userAchievements, achievements } = await import('../../shared/achievementSchema');
+    const unlockedAchievements = await db
+      .select({
+        achievement: achievements,
+        userAchievement: userAchievements
+      })
+      .from(userAchievements)
+      .leftJoin(achievements, eq(userAchievements.achievementId, achievements.id))
+      .where(eq(userAchievements.userId, address));
 
-    res.json({ achievements: userAchievements });
+    // Return only achievement details (flattened)
+    const achievementList = unlockedAchievements
+      .map(row => ({
+        ...row.achievement,
+        unlockedAt: row.userAchievement.unlockedAt,
+        isCompleted: row.userAchievement.isCompleted,
+        rewardClaimed: row.userAchievement.rewardClaimed,
+        claimedAt: row.userAchievement.claimedAt
+      }));
+
+    res.json({ achievements: achievementList });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

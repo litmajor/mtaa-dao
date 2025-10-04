@@ -1,8 +1,8 @@
+import App from "../client/src/App";
+import { ToastProvider } from "../client/src/components/ui/ToastProvider";
 
 import { createRoot } from "react-dom/client";
-import App from "./App";
 import "./index.css";
-import { ToastProvider } from "./components/ui/ToastProvider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HelmetProvider } from "react-helmet-async";
 import { BrowserRouter } from "react-router-dom";

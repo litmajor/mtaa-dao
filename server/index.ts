@@ -214,10 +214,10 @@ app.use((req, res, next) => {
     // NFT Marketplace routes
     app.use('/api/nft-marketplace', nftMarketplaceRouter);
 
-    // AI Analytics endpoints
-    // Assuming isAuthenticated middleware is defined and imported
-    import { isAuthenticated } from './middleware/authentication'; // Assuming this is the correct path
-    app.get('/api/ai-analytics/:daoId', isAuthenticated, async (req: Request, res: Response) => {
+  // AI Analytics endpoints
+  // Load authentication middleware dynamically (avoid top-level static import inside function scope)
+  const { isAuthenticated } = await import('./auth'); // Dynamically imported
+  app.get('/api/ai-analytics/:daoId', isAuthenticated, async (req: Request, res: Response) => {
       try {
         const { aiAnalyticsService } = await import('./services/aiAnalyticsService');
         const analytics = await aiAnalyticsService.getComprehensiveAnalytics(req.params.daoId);

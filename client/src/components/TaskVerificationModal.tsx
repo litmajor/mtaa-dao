@@ -74,10 +74,7 @@ export const TaskVerificationModal: React.FC<TaskVerificationModalProps> = ({
         throw new Error(error.error || 'Failed to submit verification');
       }
 
-      toast({
-        title: "Success",
-        description: "Task verification submitted! Awaiting review.",
-      });
+      toast("Task verification submitted! Awaiting review.");
 
       onVerificationSubmitted();
       onClose();
@@ -87,11 +84,7 @@ export const TaskVerificationModal: React.FC<TaskVerificationModalProps> = ({
         screenshots: ['']
       });
     } catch (error) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : 'Failed to submit verification',
-        variant: "destructive"
-      });
+      toast(error instanceof Error ? error.message : 'Failed to submit verification');
     } finally {
       setLoading(false);
     }

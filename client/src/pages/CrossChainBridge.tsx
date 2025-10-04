@@ -6,8 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowRight, Loader2 } from 'lucide-react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/api';
-import { useToast } from '@/hooks/use-toast';
+import { apiGet, apiPost } from '@/lib/api';
+import { useToast } from '@/components/ui/use-toast';
 
 const CHAIN_NAMES = {
   'celo': 'Celo',
@@ -29,7 +29,7 @@ export default function CrossChainBridge() {
   const { data: chains } = useQuery({
     queryKey: ['cross-chain-chains'],
     queryFn: async () => {
-      const res = await apiRequest('/api/cross-chain/chains');
+      const res = await apiGet('/api/cross-chain/chains');
       return res.data;
     }
   });
@@ -39,10 +39,7 @@ export default function CrossChainBridge() {
     queryKey: ['bridge-fees', sourceChain, destinationChain, amount],
     queryFn: async () => {
       if (!amount || parseFloat(amount) <= 0) return null;
-      const res = await apiRequest('/api/cross-chain/estimate-fees', {
-        method: 'POST',
-        body: JSON.stringify({ sourceChain, destinationChain, amount })
-      });
+      const res = await apiPost('/api/cross-chain/estimate-fees', { sourceChain, destinationChain, amount });
       return res.data;
     },
     enabled: !!amount && parseFloat(amount) > 0
@@ -51,15 +48,12 @@ export default function CrossChainBridge() {
   // Transfer mutation
   const transferMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest('/api/cross-chain/transfer', {
-        method: 'POST',
-        body: JSON.stringify({
-          sourceChain,
-          destinationChain,
-          tokenAddress,
-          amount,
-          destinationAddress
-        })
+      const res = await apiPost('/api/cross-chain/transfer', {
+        sourceChain,
+        destinationChain,
+        tokenAddress,
+        amount,
+        destinationAddress,
       });
       return res.data;
     },

@@ -38,13 +38,13 @@ export async function getUsersHandler(req: Request, res: Response) {
     }
 
     if (roleFilter) {
-      conditions.push(eq(users.role, roleFilter));
+  conditions.push(eq(users.roles, roleFilter));
     }
 
     if (statusFilter === 'active') {
-      conditions.push(eq(users.isActive, true));
+  conditions.push(eq(users.isBanned, false));
     } else if (statusFilter === 'inactive') {
-      conditions.push(eq(users.isActive, false));
+  conditions.push(eq(users.isBanned, true));
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -56,8 +56,8 @@ export async function getUsersHandler(req: Request, res: Response) {
         email: users.email,
         firstName: users.firstName,
         lastName: users.lastName,
-        role: users.role,
-        isActive: users.isActive,
+        roles: users.roles,
+        isBanned: users.isBanned,
         isEmailVerified: users.isEmailVerified,
         walletAddress: users.walletAddress,
         createdAt: users.createdAt,
@@ -71,7 +71,7 @@ export async function getUsersHandler(req: Request, res: Response) {
 
     // Get total count
     const totalResult = await db
-      .select({ count: users.id })
+  .select({ count: users.id })
       .from(users)
       .where(whereClause);
 
@@ -114,12 +114,12 @@ export async function updateUserRoleHandler(req: Request, res: Response) {
     // Prevent self-demotion from super_admin
     if (userId === adminUserId && role !== 'super_admin') {
       const currentUser = await db
-        .select({ role: users.role })
+        .select({ roles: users.roles })
         .from(users)
         .where(eq(users.id, adminUserId))
         .limit(1);
 
-      if (currentUser.length > 0 && currentUser[0].role === 'super_admin') {
+  if (currentUser.length > 0 && currentUser[0].roles === 'super_admin') {
         throw new ValidationError('Cannot demote yourself from super_admin role');
       }
     }
@@ -128,7 +128,7 @@ export async function updateUserRoleHandler(req: Request, res: Response) {
     const updatedUser = await db
       .update(users)
       .set({
-        role,
+        roles: role,
         updatedAt: new Date(),
       })
       .where(eq(users.id, userId))
@@ -137,7 +137,7 @@ export async function updateUserRoleHandler(req: Request, res: Response) {
         email: users.email,
         firstName: users.firstName,
         lastName: users.lastName,
-        role: users.role,
+        roles: users.roles,
       });
 
     if (updatedUser.length === 0) {

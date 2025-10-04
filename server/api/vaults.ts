@@ -65,7 +65,7 @@ export async function getUserVaultsHandler(req: Request, res: Response) {
 
     // For now, we'll implement a simple query to get vaults
     // This should be enhanced with proper filtering in the VaultService
-    const vaults = await vaultService.getUserVaults(userId, daoId as string);
+  const vaults = await vaultService.getUserVaults(userId);
 
     res.json({ vaults });
   } catch (error: any) {
@@ -270,7 +270,7 @@ export const getVaultTransactionsHandler = [
   vaultValidation.getVaultTransactions,
   asyncHandler(async (req: Request, res: Response) => {
     const requestLogger = logger.child({
-      requestId: req.headers['x-request-id'],
+  requestId: Array.isArray(req.headers['x-request-id']) ? req.headers['x-request-id'][0] : req.headers['x-request-id'],
       userId: req.user?.claims?.id,
       vaultId: req.params.vaultId,
     });

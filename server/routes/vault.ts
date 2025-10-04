@@ -48,7 +48,7 @@ router.get('/balance-usd', asyncHandler(async (req, res) => {
 
 // Deposit to vault
 router.post('/deposit', asyncHandler(async (req, res) => {
-  const userId = req.user?.id; // Assuming auth middleware sets req.user
+  const userId = (req.user as any)?.claims?.id;
   
   if (!userId) {
     return res.status(401).json({ error: 'Authentication required' });
@@ -84,7 +84,7 @@ router.post('/deposit', asyncHandler(async (req, res) => {
 
 // Withdraw from vault
 router.post('/withdraw', asyncHandler(async (req, res) => {
-  const userId = req.user?.id;
+  const userId = (req.user as any)?.claims?.id;
   
   if (!userId) {
     return res.status(401).json({ error: 'Authentication required' });
@@ -170,7 +170,7 @@ router.get('/performance', asyncHandler(async (req, res) => {
 // Get vault transactions
 router.get('/transactions', asyncHandler(async (req, res) => {
   const { vault, page = '1' } = req.query;
-  const userId = req.user?.id;
+  const userId = (req.user as any)?.claims?.id;
   
   if (!vault) {
     return res.status(400).json({ error: 'Vault address required' });
@@ -197,7 +197,7 @@ router.get('/transactions', asyncHandler(async (req, res) => {
 // Get vault info
 router.get('/info/:vaultAddress', asyncHandler(async (req, res) => {
   const { vaultAddress } = req.params;
-  const userId = req.user?.id;
+  const userId = (req.user as any)?.claims?.id;
   
   try {
     const portfolio = await vaultService.getVaultPortfolio(vaultAddress, userId);
@@ -281,7 +281,7 @@ router.get('/lp-positions/:address', asyncHandler(async (req, res) => {
 // Get user's vault overview
 router.get('/user/:userAddress', asyncHandler(async (req, res) => {
   const { userAddress } = req.params;
-  const userId = req.user?.id;
+  const userId = (req.user as any)?.claims?.id;
   
   if (!userId) {
     return res.status(401).json({ error: 'Authentication required' });
@@ -304,7 +304,7 @@ router.get('/user/:userAddress', asyncHandler(async (req, res) => {
 
 // Create new vault
 router.post('/create', asyncHandler(async (req, res) => {
-  const userId = req.user?.id;
+  const userId = (req.user as any)?.claims?.id;
   
   if (!userId) {
     return res.status(401).json({ error: 'Authentication required' });

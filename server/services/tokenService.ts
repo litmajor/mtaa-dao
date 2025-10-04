@@ -353,6 +353,14 @@ export class TokenService {
     }
   }
 
+    // Backwards-compatible wrapper used elsewhere
+    async getTokenPrice(symbol: string): Promise<number> {
+      // For now reuse mock pricing logic
+      const token = TokenRegistry.getToken(symbol);
+      if (!token) return 0.3;
+      return this.getMockPrice(symbol);
+    }
+
 }
 
 // Export singleton instance

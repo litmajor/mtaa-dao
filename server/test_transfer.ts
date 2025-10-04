@@ -39,18 +39,18 @@ async function testGasEstimation() {
     // Get supported tokens
     const supportedTokens = TokenRegistry.getSupportedTokens();
     
-    for (const tokenSymbol of supportedTokens.slice(0, 3)) { // Test first 3 tokens
-      console.log(`Testing gas estimation for ${tokenSymbol}...`);
-      
+    for (const tokenInfo of supportedTokens.slice(0, 3)) { // Test first 3 tokens
+      console.log(`Testing gas estimation for ${tokenInfo.symbol}...`);
       try {
-        const gasEstimate = await tokenService.estimateGas(
-          tokenSymbol,
+        const gasEstimate = await tokenService.estimateTokenGas(
+          tokenInfo.symbol,
           '0x742d35Cc6635C0532925a3b8D9C9d6aF8b9e8267',
-          '1.0'
+          '1.0',
+          tokenService.signer?.address || ''
         );
-        console.log(`   ⛽ Estimated gas for ${tokenSymbol}: ${gasEstimate.toString()}`);
+        console.log(`   ⛽ Estimated gas for ${tokenInfo.symbol}: ${gasEstimate.toString()}`);
       } catch (error) {
-        console.warn(`   ⚠️  Gas estimation failed for ${tokenSymbol}:`, error);
+        console.warn(`   ⚠️  Gas estimation failed for ${tokenInfo.symbol}:`, error);
       }
     }
 
@@ -70,12 +70,12 @@ async function testTokenBalances() {
     const testAddress = '0x742d35Cc6635C0532925a3b8D9C9d6aF8b9e8267';
     const supportedTokens = TokenRegistry.getSupportedTokens();
     
-    for (const tokenSymbol of supportedTokens.slice(0, 5)) { // Test first 5 tokens
+    for (const tokenInfo of supportedTokens.slice(0, 5)) { // Test first 5 tokens
       try {
-        const balance = await tokenService.getBalance(tokenSymbol, testAddress);
-        console.log(`   💰 ${tokenSymbol} balance: ${balance}`);
+        const balance = await tokenService.getTokenBalance(tokenInfo.symbol, testAddress);
+        console.log(`   💰 ${tokenInfo.symbol} balance: ${balance}`);
       } catch (error) {
-        console.warn(`   ⚠️  Balance fetch failed for ${tokenSymbol}:`, error);
+        console.warn(`   ⚠️  Balance fetch failed for ${tokenInfo.symbol}:`, error);
       }
     }
 

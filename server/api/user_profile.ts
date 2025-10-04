@@ -33,7 +33,7 @@ export async function getUserProfileHandler(req: Request, res: Response) {
         website: users.website,
         telegramUsername: users.telegramUsername,
         walletAddress: users.walletAddress,
-        role: users.role,
+        roles: users.roles,
         isEmailVerified: users.isEmailVerified,
         createdAt: users.createdAt,
         lastLoginAt: users.lastLoginAt,

@@ -10,6 +10,7 @@ import {
   vaultTransactions
 } from '../shared/schema';
 import { eq, and, lte } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { vaultService } from './services/vaultService';
 
 export class ProposalExecutionService {
@@ -446,15 +447,16 @@ export class ProposalExecutionService {
   static async getExecutionStats(daoId: string): Promise<any> {
     const stats = await db.select({
       status: proposalExecutionQueue.status,
-      count: sql<number>`count(*)`
+      count: sql<string>`COUNT(*)`.as('count')
     })
     .from(proposalExecutionQueue)
     .where(eq(proposalExecutionQueue.daoId, daoId))
     .groupBy(proposalExecutionQueue.status);
 
-    return stats.reduce((acc, stat) => {
-      acc[stat.status] = stat.count;
+    return stats.reduce((acc: Record<string, number>, stat) => {
+      const key = stat.status ?? 'unknown';
+      acc[key] = parseInt(stat.count as string, 10);
       return acc;
-    }, {} as Record<string, number>);
+    }, {});
   }
 }

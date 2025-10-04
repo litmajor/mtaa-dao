@@ -192,7 +192,9 @@ export const errorHandler = async (
 };
 
 // Async error handler wrapper
-export const asyncHandler = (fn: Function) => (req: Request, res: Response, next: NextFunction) => {
+import type { RequestHandler } from 'express';
+
+export const asyncHandler = (fn: RequestHandler) => (req: Request, res: Response, next: NextFunction) => {
   Promise.resolve(fn(req, res, next)).catch(next);
 };
 

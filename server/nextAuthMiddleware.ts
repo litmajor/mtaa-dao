@@ -4,7 +4,7 @@ import { verifyAccessToken } from "./auth";
 import { storage } from "./storage";
 
 export interface UserClaims {
-  sub: string;
+  sub: string; // JWT subject, always present
   role?: string;
   email?: string;
 }
@@ -37,7 +37,7 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
         const decoded = verifyAccessToken(jwtToken);
         if (decoded) {
           userClaims = {
-            sub: decoded.userId,
+            sub: decoded.sub,
             email: decoded.email,
             role: decoded.role
           };

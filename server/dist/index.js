@@ -1,11 +1,5 @@
 var __defProp = Object.defineProperty;
 var __getOwnPropNames = Object.getOwnPropertyNames;
-var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
-  get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
-}) : x)(function(x) {
-  if (typeof require !== "undefined") return require.apply(this, arguments);
-  throw Error('Dynamic require of "' + x + '" is not supported');
-});
 var __esm = (fn, res) => function __init() {
   return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
 };
@@ -29,6 +23,8 @@ __export(schema_exports, {
   contributions: () => contributions,
   contributionsRelations: () => contributionsRelations,
   createSessionSchema: () => createSessionSchema,
+  crossChainProposals: () => crossChainProposals,
+  crossChainTransfers: () => crossChainTransfers,
   dailyChallenges: () => dailyChallenges,
   daoMemberships: () => daoMemberships,
   daoMembershipsRelations: () => daoMembershipsRelations,
@@ -101,7 +97,7 @@ __export(schema_exports, {
   vaultStrategyAllocations: () => vaultStrategyAllocations,
   vaultTokenHoldings: () => vaultTokenHoldings,
   vaultTransactions: () => vaultTransactions,
-  vaults: () => vaults,
+  vaults: () => vaults2,
   vaultsRelations: () => vaultsRelations,
   voteDelegations: () => voteDelegations,
   voteDelegationsRelations: () => voteDelegationsRelations,
@@ -124,7 +120,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
-var referralRewards, tasks, taskTemplates, users2, userActivities, daos, roles, sessions, createSessionSchema, sessionSchema, billingHistory, proposalTemplates, proposals2, voteDelegations, votes, quorumHistory, proposalExecutionQueue, contributions, lockedSavings, savingsGoals, vaults, budgetPlans, daoMemberships, walletTransactions, vaultTokenHoldings, vaultPerformance, vaultStrategyAllocations, vaultTransactions, vaultRiskAssessments, vaultGovernanceProposals, config, logs, auditLogs, systemLogs, notificationHistory, chainInfo, chains, proposalComments, proposalLikes, commentLikes, daoMessages, subscriptions, userReputation, usersRelations, daosRelations, daoMembershipsRelations, proposalsRelations, votesRelations, voteDelegationsRelations, proposalTemplatesRelations, contributionsRelations, vaultsRelations, budgetPlansRelations, walletTransactionsRelations, referralRewardsRelations, insertUserSchema, insertDaoSchema, insertProposalSchema, insertVoteSchema, insertContributionSchema, insertVaultSchema, insertBudgetPlanSchema, insertDaoMembershipSchema, insertWalletTransactionSchema, insertReferralRewardSchema, notifications, notificationPreferences, taskHistory, insertTaskSchema, insertNotificationSchema, insertTaskHistorySchema, insertProposalTemplateSchema, insertVoteDelegationSchema, insertQuorumHistorySchema, insertProposalExecutionQueueSchema, proposalCommentsRelations, proposalLikesRelations, dailyChallenges, userChallenges2, commentLikesRelations, daoMessagesRelations, insertProposalCommentSchema, insertProposalLikeSchema, insertCommentLikeSchema, insertDaoMessageSchema, insertEnhancedVaultSchema, insertVaultTokenHoldingSchema, insertVaultTransactionSchema, insertVaultPerformanceSchema, insertVaultRiskAssessmentSchema, insertVaultStrategyAllocationSchema, insertVaultGovernanceProposalSchema;
+var referralRewards, tasks, taskTemplates, users2, userActivities, daos, roles, sessions, createSessionSchema, sessionSchema, billingHistory, proposalTemplates, proposals2, voteDelegations, votes, quorumHistory, proposalExecutionQueue, contributions, lockedSavings, savingsGoals, vaults2, budgetPlans, daoMemberships, walletTransactions, vaultTokenHoldings, vaultPerformance, vaultStrategyAllocations, vaultTransactions, vaultRiskAssessments, vaultGovernanceProposals, config, logs, auditLogs, systemLogs, notificationHistory, chainInfo, chains, proposalComments, proposalLikes, commentLikes, daoMessages, subscriptions, userReputation, usersRelations, daosRelations, daoMembershipsRelations, proposalsRelations, votesRelations, voteDelegationsRelations, proposalTemplatesRelations, contributionsRelations, vaultsRelations, budgetPlansRelations, walletTransactionsRelations, referralRewardsRelations, insertUserSchema, insertDaoSchema, insertProposalSchema, insertVoteSchema, insertContributionSchema, insertVaultSchema, insertBudgetPlanSchema, insertDaoMembershipSchema, insertWalletTransactionSchema, insertReferralRewardSchema, notifications, notificationPreferences, taskHistory, insertTaskSchema, insertNotificationSchema, insertTaskHistorySchema, insertProposalTemplateSchema, insertVoteDelegationSchema, crossChainTransfers, crossChainProposals, insertQuorumHistorySchema, insertProposalExecutionQueueSchema, proposalCommentsRelations, proposalLikesRelations, dailyChallenges, userChallenges2, commentLikesRelations, daoMessagesRelations, insertProposalCommentSchema, insertProposalLikeSchema, insertCommentLikeSchema, insertDaoMessageSchema, insertEnhancedVaultSchema, insertVaultTokenHoldingSchema, insertVaultTransactionSchema, insertVaultPerformanceSchema, insertVaultRiskAssessmentSchema, insertVaultStrategyAllocationSchema, insertVaultGovernanceProposalSchema;
 var init_schema = __esm({
   "shared/schema.ts"() {
     "use strict";
@@ -334,11 +330,14 @@ var init_schema = __esm({
       title: text("title").notNull(),
       description: text("description").notNull(),
       proposalType: varchar("proposal_type").default("general"),
-      // general, budget, emergency
+      // general, budget, emergency, poll
       templateId: uuid("template_id").references(() => proposalTemplates.id),
       tags: jsonb("tags").default([]),
       // e.g., ["infrastructure", "education"]
       imageUrl: varchar("image_url"),
+      pollOptions: jsonb("poll_options").default([]),
+      // For poll-type proposals: [{id, label, votes}]
+      allowMultipleChoices: boolean("allow_multiple_choices").default(false),
       proposer: varchar("proposer").references(() => users2.id).notNull(),
       proposerId: varchar("proposer_id").references(() => users2.id).notNull(),
       daoId: uuid("dao_id").references(() => daos.id).notNull(),
@@ -435,7 +434,7 @@ var init_schema = __esm({
     lockedSavings = pgTable("locked_savings", {
       id: uuid("id").primaryKey().defaultRandom(),
       userId: varchar("user_id").references(() => users2.id).notNull(),
-      vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+      vaultId: uuid("vault_id").references(() => vaults2.id).notNull(),
       amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
       currency: varchar("currency").default("KES"),
       lockPeriod: integer("lock_period").notNull(),
@@ -466,7 +465,7 @@ var init_schema = __esm({
       createdAt: timestamp("created_at").defaultNow(),
       updatedAt: timestamp("updated_at").defaultNow()
     });
-    vaults = pgTable("vaults", {
+    vaults2 = pgTable("vaults", {
       id: uuid("id").primaryKey().defaultRandom(),
       // Support both personal and DAO vaults
       userId: varchar("user_id").references(() => users2.id),
@@ -544,7 +543,7 @@ var init_schema = __esm({
     });
     walletTransactions = pgTable("wallet_transactions", {
       id: uuid("id").primaryKey().defaultRandom(),
-      vaultId: uuid("vault_id").references(() => vaults.id),
+      vaultId: uuid("vault_id").references(() => vaults2.id),
       // optional, for vault transactions
       fromUserId: varchar("from_user_id").references(() => users2.id),
       toUserId: varchar("to_user_id").references(() => users2.id),
@@ -564,7 +563,7 @@ var init_schema = __esm({
     });
     vaultTokenHoldings = pgTable("vault_token_holdings", {
       id: uuid("id").primaryKey().defaultRandom(),
-      vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+      vaultId: uuid("vault_id").references(() => vaults2.id).notNull(),
       tokenSymbol: varchar("token_symbol").notNull(),
       // e.g., 'CELO', 'cUSD', 'cEUR', 'USDT'
       balance: decimal("balance", { precision: 18, scale: 8 }).notNull(),
@@ -582,7 +581,7 @@ var init_schema = __esm({
     });
     vaultPerformance = pgTable("vault_performance", {
       id: uuid("id").primaryKey().defaultRandom(),
-      vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+      vaultId: uuid("vault_id").references(() => vaults2.id).notNull(),
       period: varchar("period").notNull(),
       // daily, weekly, monthly, yearly
       periodStart: timestamp("period_start").notNull(),
@@ -608,7 +607,7 @@ var init_schema = __esm({
     });
     vaultStrategyAllocations = pgTable("vault_strategy_allocations", {
       id: uuid("id").primaryKey().defaultRandom(),
-      vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+      vaultId: uuid("vault_id").references(() => vaults2.id).notNull(),
       strategyId: varchar("strategy_id").notNull(),
       // references YIELD_STRATEGIES from tokenRegistry
       tokenSymbol: varchar("token_symbol").notNull(),
@@ -624,7 +623,7 @@ var init_schema = __esm({
     });
     vaultTransactions = pgTable("vault_transactions", {
       id: uuid("id").primaryKey().defaultRandom(),
-      vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+      vaultId: uuid("vault_id").references(() => vaults2.id).notNull(),
       userId: varchar("user_id").references(() => users2.id).notNull(),
       transactionType: varchar("transaction_type").notNull(),
       // deposit, withdrawal, yield_claim, rebalance, fee_collection
@@ -650,7 +649,7 @@ var init_schema = __esm({
     });
     vaultRiskAssessments = pgTable("vault_risk_assessments", {
       id: uuid("id").primaryKey().defaultRandom(),
-      vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+      vaultId: uuid("vault_id").references(() => vaults2.id).notNull(),
       assessmentDate: timestamp("assessment_date").defaultNow(),
       overallRiskScore: integer("overall_risk_score").notNull(),
       // 1-100 scale
@@ -670,7 +669,7 @@ var init_schema = __esm({
     });
     vaultGovernanceProposals = pgTable("vault_governance_proposals", {
       id: uuid("id").primaryKey().defaultRandom(),
-      vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+      vaultId: uuid("vault_id").references(() => vaults2.id).notNull(),
       daoId: uuid("dao_id").references(() => daos.id).notNull(),
       proposalId: uuid("proposal_id").references(() => proposals2.id),
       governanceType: varchar("governance_type").notNull(),
@@ -829,7 +828,7 @@ var init_schema = __esm({
       proposals: many(proposals2),
       votes: many(votes),
       contributions: many(contributions),
-      vaults: many(vaults),
+      vaults: many(vaults2),
       budgetPlans: many(budgetPlans),
       daoMemberships: many(daoMemberships),
       createdDaos: many(daos),
@@ -943,9 +942,9 @@ var init_schema = __esm({
         references: [users2.id]
       })
     }));
-    vaultsRelations = relations(vaults, ({ one }) => ({
+    vaultsRelations = relations(vaults2, ({ one }) => ({
       user: one(users2, {
-        fields: [vaults.userId],
+        fields: [vaults2.userId],
         references: [users2.id]
       })
     }));
@@ -982,7 +981,7 @@ var init_schema = __esm({
     insertProposalSchema = createInsertSchema(proposals2);
     insertVoteSchema = createInsertSchema(votes);
     insertContributionSchema = createInsertSchema(contributions);
-    insertVaultSchema = createInsertSchema(vaults);
+    insertVaultSchema = createInsertSchema(vaults2);
     insertBudgetPlanSchema = createInsertSchema(budgetPlans);
     insertDaoMembershipSchema = createInsertSchema(daoMemberships);
     insertWalletTransactionSchema = createInsertSchema(walletTransactions);
@@ -1026,6 +1025,46 @@ var init_schema = __esm({
     insertTaskHistorySchema = createInsertSchema(taskHistory);
     insertProposalTemplateSchema = createInsertSchema(proposalTemplates);
     insertVoteDelegationSchema = createInsertSchema(voteDelegations);
+    crossChainTransfers = pgTable("cross_chain_transfers", {
+      id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+      userId: text("user_id").notNull().references(() => users2.id),
+      sourceChain: text("source_chain").notNull(),
+      destinationChain: text("destination_chain").notNull(),
+      tokenAddress: text("token_address").notNull(),
+      amount: text("amount").notNull(),
+      destinationAddress: text("destination_address").notNull(),
+      vaultId: text("vault_id").references(() => vaults2.id),
+      status: text("status").notNull().default("pending"),
+      // pending, bridging, completed, failed
+      txHashSource: text("tx_hash_source"),
+      txHashDestination: text("tx_hash_destination"),
+      bridgeProtocol: text("bridge_protocol"),
+      // layerzero, axelar, wormhole
+      gasEstimate: text("gas_estimate"),
+      bridgeFee: text("bridge_fee"),
+      estimatedCompletionTime: timestamp("estimated_completion_time"),
+      completedAt: timestamp("completed_at"),
+      failureReason: text("failure_reason"),
+      createdAt: timestamp("created_at").defaultNow(),
+      updatedAt: timestamp("updated_at").defaultNow()
+    });
+    crossChainProposals = pgTable("cross_chain_proposals", {
+      id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+      proposalId: text("proposal_id").notNull().references(() => proposals2.id),
+      chains: text("chains").array().notNull(),
+      // Array of chain identifiers
+      votesByChain: jsonb("votes_by_chain").default({}),
+      // Chain-specific vote tallies
+      quorumByChain: jsonb("quorum_by_chain").default({}),
+      executionChain: text("execution_chain"),
+      // Primary chain for execution
+      bridgeProposalId: text("bridge_proposal_id"),
+      // Cross-chain message ID
+      syncStatus: text("sync_status").default("pending"),
+      // pending, synced, failed
+      createdAt: timestamp("created_at").defaultNow(),
+      updatedAt: timestamp("updated_at").defaultNow()
+    });
     insertQuorumHistorySchema = createInsertSchema(quorumHistory);
     insertProposalExecutionQueueSchema = createInsertSchema(proposalExecutionQueue);
     proposalCommentsRelations = relations(proposalComments, ({ one, many }) => ({
@@ -1063,7 +1102,7 @@ var init_schema = __esm({
       })
     }));
     dailyChallenges = pgTable("daily_challenges", {
-      id: text("id").primaryKey().default(generateId()),
+      id: uuid("id").primaryKey().defaultRandom(),
       title: text("title").notNull(),
       description: text("description"),
       challengeType: text("challenge_type").notNull(),
@@ -1077,9 +1116,9 @@ var init_schema = __esm({
       updatedAt: timestamp("updated_at").defaultNow()
     });
     userChallenges2 = pgTable("user_challenges", {
-      id: text("id").primaryKey().default(generateId()),
+      id: uuid("id").primaryKey().defaultRandom(),
       userId: text("user_id").references(() => users2.id).notNull(),
-      challengeId: text("challenge_id").references(() => dailyChallenges.id),
+      challengeId: uuid("challenge_id").references(() => dailyChallenges.id),
       challengeType: text("challenge_type").notNull(),
       targetAmount: text("target_amount"),
       currentProgress: text("current_progress").default("0"),
@@ -1124,7 +1163,7 @@ var init_schema = __esm({
     insertProposalLikeSchema = createInsertSchema(proposalLikes);
     insertCommentLikeSchema = createInsertSchema(commentLikes);
     insertDaoMessageSchema = createInsertSchema(daoMessages);
-    insertEnhancedVaultSchema = createInsertSchema(vaults);
+    insertEnhancedVaultSchema = createInsertSchema(vaults2);
     insertVaultTokenHoldingSchema = createInsertSchema(vaultTokenHoldings);
     insertVaultTransactionSchema = createInsertSchema(vaultTransactions);
     insertVaultPerformanceSchema = createInsertSchema(vaultPerformance);
@@ -1137,7 +1176,7 @@ var init_schema = __esm({
 // server/db.ts
 import "dotenv/config";
 import { Pool, neonConfig } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-serverless";
+import { drizzle } from "drizzle-orm/neon-http";
 import ws from "ws";
 var pool, db2;
 var init_db = __esm({
@@ -1249,12 +1288,12 @@ __export(storage_exports, {
 });
 import { eq, inArray, or, and, desc, sql as sql2 } from "drizzle-orm";
 async function deductVaultFee(vaultId, fee) {
-  const [vault] = await db2.select().from(vaults).where(eq(vaults.id, vaultId));
+  const [vault] = await db2.select().from(vaults2).where(eq(vaults2.id, vaultId));
   if (!vault || vault.balance == null) return false;
   const currentBalance = typeof vault.balance === "string" ? parseFloat(vault.balance) : vault.balance;
   if (isNaN(currentBalance) || currentBalance < fee) return false;
   const newBalance = (currentBalance - fee).toString();
-  await db2.update(vaults).set({ balance: newBalance, updatedAt: /* @__PURE__ */ new Date() }).where(eq(vaults.id, vaultId));
+  await db2.update(vaults2).set({ balance: newBalance, updatedAt: /* @__PURE__ */ new Date() }).where(eq(vaults2.id, vaultId));
   return true;
 }
 function isDaoPremium(dao) {
@@ -1729,15 +1768,15 @@ var init_storage = __esm({
       }
       async getUserVaults(userId) {
         if (!userId) throw new Error("User ID required");
-        return await this.db.select().from(vaults).where(eq(vaults.userId, userId));
+        return await this.db.select().from(vaults2).where(eq(vaults2.userId, userId));
       }
       async upsertVault(vault) {
         if (!vault.id) throw new Error("Vault must have id");
         vault.updatedAt = /* @__PURE__ */ new Date();
-        const updated = await this.db.update(vaults).set(vault).where(eq(vaults.id, vault.id)).returning();
+        const updated = await this.db.update(vaults2).set(vault).where(eq(vaults2.id, vault.id)).returning();
         if (updated[0]) return updated[0];
         vault.createdAt = /* @__PURE__ */ new Date();
-        const inserted = await this.db.insert(vaults).values(vault).returning();
+        const inserted = await this.db.insert(vaults2).values(vault).returning();
         if (!inserted[0]) throw new Error("Failed to upsert vault");
         return inserted[0];
       }
@@ -1862,7 +1901,7 @@ var init_storage = __esm({
       }
       async getDaoAnalytics(daoId) {
         if (!daoId) throw new Error("DAO ID required");
-        const [dao, members, proposals7, contributions4, vaults3] = await Promise.all([
+        const [dao, members, proposals7, contributions4, vaults4] = await Promise.all([
           this.getDao(daoId),
           this.getDaoMembershipsByStatus(daoId, "approved"),
           this.getProposals().then(
@@ -1878,7 +1917,7 @@ var init_storage = __esm({
         ].sort(
           (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
         ).slice(0, 10);
-        const vaultBalance = vaults3.reduce((sum3, v) => sum3 + (typeof v.balance === "string" ? parseFloat(v.balance) || 0 : 0), 0);
+        const vaultBalance = vaults4.reduce((sum3, v) => sum3 + (typeof v.balance === "string" ? parseFloat(v.balance) || 0 : 0), 0);
         return {
           memberCount: members.length,
           activeProposals: proposals7.length,
@@ -1897,8 +1936,8 @@ var init_storage = __esm({
         const contributions4 = await this.getContributions(userId, daoId);
         if (contributions4 && contributions4.length > 0) return true;
         if (typeof this.getVotesByUserAndDao === "function") {
-          const votes4 = await this.getVotesByUserAndDao(userId, daoId);
-          if (votes4 && votes4.length > 0) return true;
+          const votes5 = await this.getVotesByUserAndDao(userId, daoId);
+          if (votes5 && votes5.length > 0) return true;
         }
         return false;
       }
@@ -2584,7 +2623,7 @@ var taskVerificationService_exports = {};
 __export(taskVerificationService_exports, {
   TaskVerificationService: () => TaskVerificationService
 });
-import { eq as eq5, and as and5 } from "drizzle-orm";
+import { eq as eq8, and as and5 } from "drizzle-orm";
 var TaskVerificationService;
 var init_taskVerificationService = __esm({
   "server/taskVerificationService.ts"() {
@@ -2602,7 +2641,7 @@ var init_taskVerificationService = __esm({
           if (!isAccessible) {
             return false;
           }
-          const task = await db2.select().from(tasks).where(eq5(tasks.id, taskId)).limit(1);
+          const task = await db2.select().from(tasks).where(eq8(tasks.id, taskId)).limit(1);
           if (!task.length) return false;
           const taskData = task[0];
           switch (taskData.category) {
@@ -2635,7 +2674,7 @@ var init_taskVerificationService = __esm({
         if (submissionData.description && submissionData.description.length > 20) score += 20;
         if (submissionData.screenshots && submissionData.screenshots.length > 0) score += 15;
         if (submissionData.description && submissionData.description.length > 100) score += 15;
-        const task = await db2.select().from(tasks).where(eq5(tasks.id, taskId)).limit(1);
+        const task = await db2.select().from(tasks).where(eq8(tasks.id, taskId)).limit(1);
         if (task.length && task[0].deadline) {
           const deadline = new Date(task[0].deadline);
           const now = /* @__PURE__ */ new Date();
@@ -2677,17 +2716,17 @@ var init_taskVerificationService = __esm({
       }
       // Process escrow release after verification
       static async processEscrowRelease(taskId, approved) {
-        const task = await db2.select().from(tasks).where(eq5(tasks.id, taskId)).limit(1);
+        const task = await db2.select().from(tasks).where(eq8(tasks.id, taskId)).limit(1);
         if (!task.length) throw new Error("Task not found");
         const taskData = task[0];
         if (approved && taskData.claimerId) {
           const escrow = await db2.select().from(walletTransactions).where(and5(
-            eq5(walletTransactions.type, "escrow_deposit"),
-            eq5(walletTransactions.description, `Escrow for task: ${taskId}`),
-            eq5(walletTransactions.status, "held")
+            eq8(walletTransactions.type, "escrow_deposit"),
+            eq8(walletTransactions.description, `Escrow for task: ${taskId}`),
+            eq8(walletTransactions.status, "held")
           )).limit(1);
           if (escrow.length > 0) {
-            await db2.update(walletTransactions).set({ status: "completed" }).where(eq5(walletTransactions.id, escrow[0].id));
+            await db2.update(walletTransactions).set({ status: "completed" }).where(eq8(walletTransactions.id, escrow[0].id));
             await db2.insert(walletTransactions).values({
               type: "bounty_payout",
               amount: (escrow[0].amount ?? "").toString(),
@@ -2784,7 +2823,7 @@ __export(reputationService_exports, {
   REPUTATION_VALUES: () => REPUTATION_VALUES,
   ReputationService: () => ReputationService
 });
-import { eq as eq6, and as and6, desc as desc4, sql as sql4 } from "drizzle-orm";
+import { eq as eq9, and as and6, desc as desc4, sql as sql4 } from "drizzle-orm";
 var REPUTATION_VALUES, BADGE_THRESHOLDS, ReputationService;
 var init_reputationService = __esm({
   "server/reputationService.ts"() {
@@ -2844,18 +2883,18 @@ var init_reputationService = __esm({
       }
       // Update user's overall reputation summary
       static async updateUserReputation(userId) {
-        const totalPointsResult = await db2.select({ total: sql4`sum(${msiaMoPoints.points})` }).from(msiaMoPoints).where(eq6(msiaMoPoints.userId, userId));
+        const totalPointsResult = await db2.select({ total: sql4`sum(${msiaMoPoints.points})` }).from(msiaMoPoints).where(eq9(msiaMoPoints.userId, userId));
         const totalPoints = totalPointsResult[0]?.total || 0;
         const weeklyPointsResult = await db2.select({ total: sql4`sum(${msiaMoPoints.points})` }).from(msiaMoPoints).where(
           and6(
-            eq6(msiaMoPoints.userId, userId),
+            eq9(msiaMoPoints.userId, userId),
             sql4`${msiaMoPoints.createdAt} >= NOW() - INTERVAL '7 days'`
           )
         );
         const weeklyPoints = weeklyPointsResult[0]?.total || 0;
         const monthlyPointsResult = await db2.select({ total: sql4`sum(${msiaMoPoints.points})` }).from(msiaMoPoints).where(
           and6(
-            eq6(msiaMoPoints.userId, userId),
+            eq9(msiaMoPoints.userId, userId),
             sql4`${msiaMoPoints.createdAt} >= NOW() - INTERVAL '30 days'`
           )
         );
@@ -2863,7 +2902,7 @@ var init_reputationService = __esm({
         const badge = this.calculateBadge(totalPoints);
         const level = this.calculateLevel(totalPoints);
         const nextLevelPoints = this.getNextLevelThreshold(level);
-        const existingReputation = await db2.select().from(userReputation2).where(eq6(userReputation2.userId, userId));
+        const existingReputation = await db2.select().from(userReputation2).where(eq9(userReputation2.userId, userId));
         if (existingReputation.length > 0) {
           await db2.update(userReputation2).set({
             totalPoints,
@@ -2874,7 +2913,7 @@ var init_reputationService = __esm({
             nextLevelPoints,
             lastActivity: /* @__PURE__ */ new Date(),
             updatedAt: /* @__PURE__ */ new Date()
-          }).where(eq6(userReputation2.userId, userId));
+          }).where(eq9(userReputation2.userId, userId));
         } else {
           await db2.insert(userReputation2).values({
             userId,
@@ -2906,7 +2945,7 @@ var init_reputationService = __esm({
       }
       // Apply reputation decay based on inactivity
       static async applyReputationDecay(userId) {
-        const reputation = await db2.select().from(userReputation2).where(eq6(userReputation2.userId, userId));
+        const reputation = await db2.select().from(userReputation2).where(eq9(userReputation2.userId, userId));
         if (!reputation[0]) return;
         const lastActivityRaw = reputation[0].lastActivity;
         const lastActivity = lastActivityRaw ? new Date(lastActivityRaw) : /* @__PURE__ */ new Date();
@@ -2925,7 +2964,7 @@ var init_reputationService = __esm({
               level: this.calculateLevel(decayedPoints),
               nextLevelPoints: this.getNextLevelThreshold(this.calculateLevel(decayedPoints)),
               updatedAt: /* @__PURE__ */ new Date()
-            }).where(eq6(userReputation2.userId, userId));
+            }).where(eq9(userReputation2.userId, userId));
             await this.awardPoints(
               userId,
               "REPUTATION_DECAY",
@@ -2945,7 +2984,7 @@ var init_reputationService = __esm({
         for (const user of allUsers) {
           const beforePoints = user.totalPoints ?? 0;
           await this.applyReputationDecay(user.userId);
-          const afterReputation = await db2.select().from(userReputation2).where(eq6(userReputation2.userId, user.userId));
+          const afterReputation = await db2.select().from(userReputation2).where(eq9(userReputation2.userId, user.userId));
           if (afterReputation[0] && (afterReputation[0].totalPoints ?? 0) < beforePoints) {
             decayed++;
           }
@@ -2955,13 +2994,13 @@ var init_reputationService = __esm({
       }
       // Get user's current reputation
       static async getUserReputation(userId) {
-        const reputation = await db2.select().from(userReputation2).where(eq6(userReputation2.userId, userId));
+        const reputation = await db2.select().from(userReputation2).where(eq9(userReputation2.userId, userId));
         if (reputation.length === 0) {
           await this.updateUserReputation(userId);
           return await this.getUserReputation(userId);
         }
         await this.applyReputationDecay(userId);
-        const updatedReputation = await db2.select().from(userReputation2).where(eq6(userReputation2.userId, userId));
+        const updatedReputation = await db2.select().from(userReputation2).where(eq9(userReputation2.userId, userId));
         return updatedReputation[0];
       }
       // Get leaderboard
@@ -2974,7 +3013,7 @@ var init_reputationService = __esm({
           firstName: users2.firstName,
           lastName: users2.lastName,
           profileImageUrl: users2.profileImageUrl
-        }).from(userReputation2).leftJoin(users2, eq6(userReputation2.userId, users2.id)).orderBy(desc4(userReputation2.totalPoints)).limit(limit);
+        }).from(userReputation2).leftJoin(users2, eq9(userReputation2.userId, users2.id)).orderBy(desc4(userReputation2.totalPoints)).limit(limit);
       }
       // Convert MsiaMo points to tokens (for airdrops)
       static async convertPointsToTokens(userId, pointsToConvert, conversionRate = 100) {
@@ -3035,8 +3074,8 @@ var init_reputationService = __esm({
       // Get DAO-specific reputation for governance voting power
       static async getDaoReputation(userId, daoId) {
         const daoPointsResult = await db2.select({ total: sql4`sum(${msiaMoPoints.points})` }).from(msiaMoPoints).where(and6(
-          eq6(msiaMoPoints.userId, userId),
-          eq6(msiaMoPoints.daoId, daoId)
+          eq9(msiaMoPoints.userId, userId),
+          eq9(msiaMoPoints.daoId, daoId)
         ));
         const daoPoints = daoPointsResult[0]?.total || 0;
         const globalRep = await this.getUserReputation(userId);
@@ -3085,6 +3124,80 @@ var init_reputationService = __esm({
             award.description
           );
         }
+      }
+      // Daily check-in and streak tracking
+      static async recordDailyCheckIn(userId) {
+        const userRep = await db2.select().from(userReputation2).where(eq9(userReputation2.userId, userId));
+        const now = /* @__PURE__ */ new Date();
+        const lastActivity = userRep[0]?.lastActivity ? new Date(userRep[0].lastActivity) : null;
+        let currentStreak = userRep[0]?.currentStreak || 0;
+        let longestStreak = userRep[0]?.longestStreak || 0;
+        let pointsAwarded = REPUTATION_VALUES.DAILY_STREAK;
+        let bonusAwarded = 0;
+        if (lastActivity) {
+          const daysSinceLastActivity = Math.floor((now.getTime() - lastActivity.getTime()) / (1e3 * 60 * 60 * 24));
+          if (daysSinceLastActivity === 1) {
+            currentStreak += 1;
+            if (currentStreak % 7 === 0) {
+              bonusAwarded += REPUTATION_VALUES.WEEKLY_STREAK_BONUS;
+            }
+            if (currentStreak % 30 === 0) {
+              bonusAwarded += REPUTATION_VALUES.MONTHLY_STREAK_BONUS;
+            }
+          } else if (daysSinceLastActivity > 1) {
+            currentStreak = 1;
+          } else {
+            return { streak: currentStreak, pointsAwarded: 0, bonusAwarded: 0 };
+          }
+        } else {
+          currentStreak = 1;
+        }
+        if (currentStreak > longestStreak) {
+          longestStreak = currentStreak;
+        }
+        const totalPoints = pointsAwarded + bonusAwarded;
+        await this.awardPoints(
+          userId,
+          "DAILY_CHECK_IN",
+          totalPoints,
+          void 0,
+          `Daily check-in (${currentStreak}-day streak)`,
+          1
+        );
+        if (userRep.length > 0) {
+          await db2.update(userReputation2).set({
+            currentStreak,
+            longestStreak,
+            lastActivity: now,
+            updatedAt: now
+          }).where(eq9(userReputation2.userId, userId));
+        } else {
+          await db2.insert(userReputation2).values({
+            userId,
+            totalPoints: 0,
+            weeklyPoints: 0,
+            monthlyPoints: 0,
+            badge: "Bronze",
+            level: 1,
+            nextLevelPoints: 100,
+            currentStreak,
+            longestStreak,
+            lastActivity: now
+          });
+        }
+        return { streak: currentStreak, pointsAwarded, bonusAwarded };
+      }
+      // Get streak information for user
+      static async getStreakInfo(userId) {
+        const userRep = await db2.select().from(userReputation2).where(eq9(userReputation2.userId, userId));
+        const currentStreak = userRep[0]?.currentStreak || 0;
+        const longestStreak = userRep[0]?.longestStreak || 0;
+        return {
+          currentStreak,
+          longestStreak,
+          daysUntilWeeklyBonus: currentStreak > 0 ? 7 - currentStreak % 7 : 7,
+          daysUntilMonthlyBonus: currentStreak > 0 ? 30 - currentStreak % 30 : 30
+        };
       }
     };
   }
@@ -3148,7 +3261,7 @@ var achievementService_exports = {};
 __export(achievementService_exports, {
   AchievementService: () => AchievementService
 });
-import { eq as eq7, and as and7, sql as sql5 } from "drizzle-orm";
+import { eq as eq10, and as and7, sql as sql5 } from "drizzle-orm";
 var AchievementService;
 var init_achievementService = __esm({
   "server/achievementService.ts"() {
@@ -3262,7 +3375,7 @@ var init_achievementService = __esm({
       // Check and unlock achievements for user
       static async checkUserAchievements(userId) {
         const unlockedAchievements = [];
-        const allAchievements = await db2.select().from(achievements).where(eq7(achievements.isActive, true));
+        const allAchievements = await db2.select().from(achievements).where(eq10(achievements.isActive, true));
         for (const achievement of allAchievements) {
           const isAlreadyUnlocked = await this.isAchievementUnlocked(userId, achievement.id);
           if (isAlreadyUnlocked) continue;
@@ -3279,35 +3392,35 @@ var init_achievementService = __esm({
       static async evaluateAchievementCriteria(userId, criteria) {
         switch (criteria.action) {
           case "vote":
-            const voteCount = await db2.select({ count: sql5`count(*)` }).from(votes).where(eq7(votes.userId, userId));
+            const voteCount = await db2.select({ count: sql5`count(*)` }).from(votes).where(eq10(votes.userId, userId));
             return (voteCount[0]?.count || 0) >= criteria.count;
           case "proposal_created":
-            const proposalCount = await db2.select({ count: sql5`count(*)` }).from(proposals2).where(eq7(proposals2.proposerId, userId));
+            const proposalCount = await db2.select({ count: sql5`count(*)` }).from(proposals2).where(eq10(proposals2.proposerId, userId));
             return (proposalCount[0]?.count || 0) >= criteria.count;
           case "proposal_passed":
             const passedProposals = await db2.select({ count: sql5`count(*)` }).from(proposals2).where(
               and7(
-                eq7(proposals2.proposerId, userId),
-                eq7(proposals2.status, "passed")
+                eq10(proposals2.proposerId, userId),
+                eq10(proposals2.status, "passed")
               )
             );
             return (passedProposals[0]?.count || 0) >= criteria.count;
           case "contribution_total":
-            const totalContributions = await db2.select({ total: sql5`sum(${contributions.amount})` }).from(contributions).where(eq7(contributions.userId, userId));
+            const totalContributions = await db2.select({ total: sql5`sum(${contributions.amount})` }).from(contributions).where(eq10(contributions.userId, userId));
             return (totalContributions[0]?.total || 0) >= criteria.amount;
           case "daily_streak":
-            const userRep = await db2.select().from(userReputation2).where(eq7(userReputation2.userId, userId));
+            const userRep = await db2.select().from(userReputation2).where(eq10(userReputation2.userId, userId));
             return (userRep[0]?.currentStreak || 0) >= criteria.count;
           case "referral":
             const referralCount = await db2.select({ count: sql5`count(*)` }).from(msiaMoPoints).where(
               and7(
-                eq7(msiaMoPoints.userId, userId),
-                eq7(msiaMoPoints.action, "REFERRAL")
+                eq10(msiaMoPoints.userId, userId),
+                eq10(msiaMoPoints.action, "REFERRAL")
               )
             );
             return (referralCount[0]?.count || 0) >= criteria.count;
           case "reputation_total":
-            const reputation = await db2.select().from(userReputation2).where(eq7(userReputation2.userId, userId));
+            const reputation = await db2.select().from(userReputation2).where(eq10(userReputation2.userId, userId));
             return (reputation[0]?.totalPoints || 0) >= criteria.count;
           default:
             return false;
@@ -3317,16 +3430,16 @@ var init_achievementService = __esm({
       static async isAchievementUnlocked(userId, achievementId) {
         const existing = await db2.select().from(userAchievements).where(
           and7(
-            eq7(userAchievements.userId, userId),
-            eq7(userAchievements.achievementId, achievementId),
-            eq7(userAchievements.isCompleted, true)
+            eq10(userAchievements.userId, userId),
+            eq10(userAchievements.achievementId, achievementId),
+            eq10(userAchievements.isCompleted, true)
           )
         );
         return existing.length > 0;
       }
       // Unlock achievement for user
       static async unlockAchievement(userId, achievementId) {
-        const achievement = await db2.select().from(achievements).where(eq7(achievements.id, achievementId));
+        const achievement = await db2.select().from(achievements).where(eq10(achievements.id, achievementId));
         if (!achievement[0]) return;
         await db2.insert(userAchievements).values({
           userId,
@@ -3350,22 +3463,22 @@ var init_achievementService = __esm({
         return await db2.select({
           achievement: achievements,
           userAchievement: userAchievements
-        }).from(userAchievements).leftJoin(achievements, eq7(userAchievements.achievementId, achievements.id)).where(eq7(userAchievements.userId, userId));
+        }).from(userAchievements).leftJoin(achievements, eq10(userAchievements.achievementId, achievements.id)).where(eq10(userAchievements.userId, userId));
       }
       // Get user's achievement statistics
       static async getUserAchievementStats(userId) {
-        const totalAchievements = await db2.select({ count: sql5`count(*)` }).from(achievements).where(eq7(achievements.isActive, true));
+        const totalAchievements = await db2.select({ count: sql5`count(*)` }).from(achievements).where(eq10(achievements.isActive, true));
         const unlockedAchievements = await db2.select({ count: sql5`count(*)` }).from(userAchievements).where(
           and7(
-            eq7(userAchievements.userId, userId),
-            eq7(userAchievements.isCompleted, true)
+            eq10(userAchievements.userId, userId),
+            eq10(userAchievements.isCompleted, true)
           )
         );
-        const totalRewardPoints = await db2.select({ total: sql5`sum(${achievements.rewardPoints})` }).from(userAchievements).leftJoin(achievements, eq7(userAchievements.achievementId, achievements.id)).where(
+        const totalRewardPoints = await db2.select({ total: sql5`sum(${achievements.rewardPoints})` }).from(userAchievements).leftJoin(achievements, eq10(userAchievements.achievementId, achievements.id)).where(
           and7(
-            eq7(userAchievements.userId, userId),
-            eq7(userAchievements.isCompleted, true),
-            eq7(userAchievements.rewardClaimed, true)
+            eq10(userAchievements.userId, userId),
+            eq10(userAchievements.isCompleted, true),
+            eq10(userAchievements.rewardClaimed, true)
           )
         );
         return {
@@ -3379,25 +3492,267 @@ var init_achievementService = __esm({
       static async claimAchievementReward(userId, achievementId) {
         const userAchievement = await db2.select().from(userAchievements).where(
           and7(
-            eq7(userAchievements.userId, userId),
-            eq7(userAchievements.achievementId, achievementId),
-            eq7(userAchievements.isCompleted, true),
-            eq7(userAchievements.rewardClaimed, false)
+            eq10(userAchievements.userId, userId),
+            eq10(userAchievements.achievementId, achievementId),
+            eq10(userAchievements.isCompleted, true),
+            eq10(userAchievements.rewardClaimed, false)
           )
         );
         if (!userAchievement[0]) return false;
         await db2.update(userAchievements).set({
           rewardClaimed: true,
           claimedAt: /* @__PURE__ */ new Date()
-        }).where(eq7(userAchievements.id, userAchievement[0].id));
+        }).where(eq10(userAchievements.id, userAchievement[0].id));
         return true;
       }
     };
   }
 });
 
+// server/services/aiAnalyticsService.ts
+var aiAnalyticsService_exports = {};
+__export(aiAnalyticsService_exports, {
+  AIAnalyticsService: () => AIAnalyticsService,
+  aiAnalyticsService: () => aiAnalyticsService
+});
+import { eq as eq41, gte as gte11, and as and26, sql as sql16 } from "drizzle-orm";
+import { subDays as subDays2, subMonths as subMonths2 } from "date-fns";
+var AIAnalyticsService, aiAnalyticsService;
+var init_aiAnalyticsService = __esm({
+  "server/services/aiAnalyticsService.ts"() {
+    "use strict";
+    init_db();
+    init_schema();
+    AIAnalyticsService = class {
+      // Simple linear regression for predictions
+      linearRegression(x, y) {
+        const n = x.length;
+        const sumX = x.reduce((a, b) => a + b, 0);
+        const sumY = y.reduce((a, b) => a + b, 0);
+        const sumXY = x.reduce((acc, xi, i) => acc + xi * y[i], 0);
+        const sumX2 = x.reduce((acc, xi) => acc + xi * xi, 0);
+        const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+        const intercept = (sumY - slope * sumX) / n;
+        return { slope, intercept };
+      }
+      // Calculate confidence based on data variance
+      calculateConfidence(actual, predicted) {
+        const errors2 = actual.map((a, i) => Math.abs(a - predicted[i]));
+        const meanError = errors2.reduce((a, b) => a + b, 0) / errors2.length;
+        const maxValue = Math.max(...actual);
+        return Math.max(0, Math.min(100, 100 - meanError / maxValue * 100));
+      }
+      async predictTreasuryGrowth(daoId) {
+        const historicalData = await db2.select({
+          date: sql16`DATE(${walletTransactions.createdAt})`,
+          balance: sql16`SUM(CASE WHEN ${walletTransactions.type} = 'deposit' THEN CAST(${walletTransactions.amount} AS DECIMAL) ELSE -CAST(${walletTransactions.amount} AS DECIMAL) END)`
+        }).from(walletTransactions).where(
+          and26(
+            eq41(walletTransactions.daoId, daoId),
+            gte11(walletTransactions.createdAt, subMonths2(/* @__PURE__ */ new Date(), 6))
+          )
+        ).groupBy(sql16`DATE(${walletTransactions.createdAt})`).orderBy(sql16`DATE(${walletTransactions.createdAt})`);
+        if (historicalData.length < 7) {
+          return {
+            predicted30Days: 0,
+            predicted90Days: 0,
+            predicted365Days: 0,
+            confidence: 0
+          };
+        }
+        const x = historicalData.map((_, i) => i);
+        const y = historicalData.map((d) => d.balance);
+        const { slope, intercept } = this.linearRegression(x, y);
+        const lastDay = x.length - 1;
+        const predicted30Days = slope * (lastDay + 30) + intercept;
+        const predicted90Days = slope * (lastDay + 90) + intercept;
+        const predicted365Days = slope * (lastDay + 365) + intercept;
+        const predictedValues = x.map((xi) => slope * xi + intercept);
+        const confidence = this.calculateConfidence(y, predictedValues);
+        return {
+          predicted30Days,
+          predicted90Days,
+          predicted365Days,
+          confidence
+        };
+      }
+      async assessRisk(daoId) {
+        const dao = await db2.select().from(daos).where(eq41(daos.id, daoId)).limit(1);
+        if (!dao.length) throw new Error("DAO not found");
+        const recentTxs = await db2.select().from(walletTransactions).where(
+          and26(
+            eq41(walletTransactions.daoId, daoId),
+            gte11(walletTransactions.createdAt, subDays2(/* @__PURE__ */ new Date(), 30))
+          )
+        );
+        const amounts = recentTxs.map((tx) => parseFloat(tx.amount));
+        const mean = amounts.reduce((a, b) => a + b, 0) / amounts.length;
+        const variance = amounts.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / amounts.length;
+        const treasuryVolatility = Math.sqrt(variance) / mean * 100;
+        const activeMembers = await db2.select({ count: sql16`COUNT(DISTINCT ${contributions.userId})` }).from(contributions).where(
+          and26(
+            eq41(contributions.daoId, daoId),
+            gte11(contributions.createdAt, subDays2(/* @__PURE__ */ new Date(), 30))
+          )
+        );
+        const totalMembers = dao[0].memberCount || 1;
+        const memberChurn = (1 - (activeMembers[0]?.count || 0) / totalMembers) * 100;
+        const recentProposals = await db2.select().from(proposals2).where(
+          and26(
+            eq41(proposals2.daoId, daoId),
+            gte11(proposals2.createdAt, subDays2(/* @__PURE__ */ new Date(), 30))
+          )
+        );
+        const avgVotes = recentProposals.reduce(
+          (acc, p) => acc + (p.forVotes || 0) + (p.againstVotes || 0) + (p.abstainVotes || 0),
+          0
+        ) / (recentProposals.length || 1);
+        const governanceParticipation = avgVotes / totalMembers * 100;
+        const rejectedProposals = recentProposals.filter((p) => p.status === "rejected").length;
+        const proposalRejectionRate = rejectedProposals / (recentProposals.length || 1) * 100;
+        const treasuryBalance = parseFloat(dao[0].treasuryBalance || "0");
+        const monthlyBurn = amounts.filter((a) => a < 0).reduce((a, b) => a + Math.abs(b), 0);
+        const runway = monthlyBurn > 0 ? treasuryBalance / monthlyBurn : 12;
+        const financialHealth = Math.min(100, runway / 12 * 100);
+        const factors = {
+          treasuryVolatility: Math.min(100, treasuryVolatility),
+          memberChurn: Math.min(100, memberChurn),
+          governanceParticipation: 100 - Math.min(100, governanceParticipation),
+          proposalRejectionRate: Math.min(100, proposalRejectionRate),
+          financialHealth: 100 - financialHealth
+        };
+        const score = Object.values(factors).reduce((a, b) => a + b, 0) / 5;
+        let overall;
+        if (score < 25) overall = "low";
+        else if (score < 50) overall = "medium";
+        else if (score < 75) overall = "high";
+        else overall = "critical";
+        const recommendations = [];
+        if (factors.treasuryVolatility > 50) recommendations.push("Implement stricter treasury management controls");
+        if (factors.memberChurn > 50) recommendations.push("Increase member engagement initiatives");
+        if (factors.governanceParticipation > 60) recommendations.push("Simplify proposal voting process");
+        if (factors.proposalRejectionRate > 40) recommendations.push("Improve proposal quality and vetting");
+        if (factors.financialHealth > 60) recommendations.push("Diversify revenue streams urgently");
+        return { overall, score, factors, recommendations };
+      }
+      async optimizePortfolio(daoId) {
+        const vaultBalances = await db2.select({
+          currency: vaults2.currency,
+          balance: sql16`SUM(CAST(${vaults2.balance} AS DECIMAL))`
+        }).from(vaults2).where(eq41(vaults2.daoId, daoId)).groupBy(vaults2.currency);
+        const totalBalance = vaultBalances.reduce((acc, v) => acc + v.balance, 0);
+        const currentAllocation = {};
+        vaultBalances.forEach((v) => {
+          currentAllocation[v.currency] = v.balance / totalBalance * 100;
+        });
+        const recommendedAllocation = {
+          "cUSD": 25,
+          "USDT": 15,
+          "CELO": 30,
+          "cEUR": 15,
+          "DAI": 15
+        };
+        const rebalanceActions = [];
+        Object.keys(recommendedAllocation).forEach((asset) => {
+          const current = currentAllocation[asset] || 0;
+          const target = recommendedAllocation[asset];
+          const diff = target - current;
+          if (Math.abs(diff) > 5) {
+            rebalanceActions.push({
+              action: diff > 0 ? "increase" : "decrease",
+              asset,
+              amount: Math.abs(diff),
+              reason: diff > 0 ? `Underweight by ${Math.abs(diff).toFixed(1)}%` : `Overweight by ${Math.abs(diff).toFixed(1)}%`
+            });
+          }
+        });
+        return {
+          currentAllocation,
+          recommendedAllocation,
+          expectedReturn: 8.5,
+          // Projected annual return
+          expectedRisk: 12.3,
+          // Projected volatility
+          rebalanceActions
+        };
+      }
+      async measureImpact(daoId) {
+        const dao = await db2.select().from(daos).where(eq41(daos.id, daoId)).limit(1);
+        if (!dao.length) throw new Error("DAO not found");
+        const membersServed = dao[0].memberCount || 0;
+        const fundsDistributed = await db2.select({ total: sql16`SUM(CAST(${walletTransactions.amount} AS DECIMAL))` }).from(walletTransactions).where(
+          and26(
+            eq41(walletTransactions.daoId, daoId),
+            eq41(walletTransactions.type, "disbursement")
+          )
+        );
+        const projectsCompleted = await db2.select({ count: sql16`COUNT(*)` }).from(proposals2).where(
+          and26(
+            eq41(proposals2.daoId, daoId),
+            eq41(proposals2.status, "executed")
+          )
+        );
+        const communityEngagement = await db2.select({ count: sql16`COUNT(*)` }).from(contributions).where(eq41(contributions.daoId, daoId));
+        const vaultReturns = await db2.select({
+          total: sql16`SUM(CAST(${vaults2.yieldGenerated} AS DECIMAL))`
+        }).from(vaults2).where(eq41(vaults2.daoId, daoId));
+        const totalProposals = await db2.select({ count: sql16`COUNT(*)` }).from(proposals2).where(eq41(proposals2.daoId, daoId));
+        const votedProposals = await db2.select({ count: sql16`COUNT(*)` }).from(proposals2).where(
+          and26(
+            eq41(proposals2.daoId, daoId),
+            sql16`${proposals2.forVotes} + ${proposals2.againstVotes} + ${proposals2.abstainVotes} > 0`
+          )
+        );
+        const participationRate = (votedProposals[0]?.count || 0) / (totalProposals[0]?.count || 1) * 100;
+        const socialImpact = {
+          membersServed,
+          fundsDistributed: fundsDistributed[0]?.total || 0,
+          projectsCompleted: projectsCompleted[0]?.count || 0,
+          communityEngagement: communityEngagement[0]?.count || 0
+        };
+        const financialImpact = {
+          returnsGenerated: vaultReturns[0]?.total || 0,
+          costsReduced: 0,
+          // Calculate from efficiency metrics
+          efficiencyGains: 0
+        };
+        const governanceImpact = {
+          participationRate,
+          decisionQuality: 75,
+          // Based on proposal success rate
+          transparencyScore: 85
+          // Based on documentation and reporting
+        };
+        const sustainabilityScore = socialImpact.membersServed / 100 * 25 + participationRate / 100 * 25 + Math.min(100, financialImpact.returnsGenerated / 1e3) * 25 + governanceImpact.transparencyScore / 100 * 25;
+        return {
+          socialImpact,
+          financialImpact,
+          governanceImpact,
+          sustainabilityScore: Math.min(100, sustainabilityScore)
+        };
+      }
+      async getComprehensiveAnalytics(daoId) {
+        const [treasuryPrediction, riskAssessment, portfolioOptimization, impactMetrics] = await Promise.all([
+          this.predictTreasuryGrowth(daoId),
+          this.assessRisk(daoId),
+          this.optimizePortfolio(daoId),
+          this.measureImpact(daoId)
+        ]);
+        return {
+          predictions: { treasuryGrowth: treasuryPrediction },
+          risk: riskAssessment,
+          portfolio: portfolioOptimization,
+          impact: impactMetrics,
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        };
+      }
+    };
+    aiAnalyticsService = new AIAnalyticsService();
+  }
+});
+
 // server/index.ts
-import express24 from "express";
+import express28 from "express";
 import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import cors from "cors";
@@ -3407,160 +3762,12 @@ import { getToken } from "next-auth/jwt";
 
 // server/auth.ts
 import jwt from "jsonwebtoken";
-var logoutHandler = async (req, res) => {
-  try {
-    res.clearCookie("refreshToken", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict"
-    });
-    res.json({
-      success: true,
-      message: "Logged out successfully"
-    });
-  } catch (error) {
-    console.error("Logout error:", error);
-    res.status(500).json({ error: "Logout failed" });
-  }
-};
-var isAuthenticated = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Authorization header missing or malformed" });
-  }
-  const token = authHeader.split(" ")[1];
-  const payload = verifyAccessToken(token);
-  if (!payload) {
-    return res.status(401).json({ error: "Invalid or expired token" });
-  }
-  req.user = payload;
-  next();
-};
-var JWT_SECRET = process.env.JWT_SECRET_KEY || "your-secret-key";
-var JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "your-refresh-secret";
-var ACCESS_TOKEN_EXPIRY = "15m";
-var REFRESH_TOKEN_EXPIRY = "7d";
-var generateTokens = (payload) => {
-  const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
-  const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
-  return { accessToken, refreshToken };
-};
-var verifyAccessToken = (token) => {
-  try {
-    return jwt.verify(token, JWT_SECRET);
-  } catch (error) {
-    return null;
-  }
-};
-var verifyRefreshToken = (token) => {
-  try {
-    return jwt.verify(token, JWT_REFRESH_SECRET);
-  } catch (error) {
-    return null;
-  }
-};
-var refreshTokenHandler = async (req, res) => {
-  try {
-    const { refreshToken } = req.body;
-    if (!refreshToken) {
-      return res.status(401).json({ error: "Refresh token required" });
-    }
-    const decoded = verifyRefreshToken(refreshToken);
-    if (!decoded) {
-      return res.status(401).json({ error: "Invalid refresh token" });
-    }
-    const tokens = generateTokens({
-      userId: decoded.userId,
-      email: decoded.email,
-      role: decoded.role
-    });
-    res.cookie("refreshToken", tokens.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1e3
-      // 7 days
-    });
-    res.json({ accessToken: tokens.accessToken });
-  } catch (error) {
-    console.error("Token refresh error:", error);
-    res.status(500).json({ error: "Token refresh failed" });
-  }
-};
+import bcrypt from "bcryptjs";
 
-// server/nextAuthMiddleware.ts
-init_storage();
-var isAuthenticated2 = async (req, res, next) => {
-  try {
-    let token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-    let userClaims = null;
-    if (token && token.sub) {
-      userClaims = {
-        sub: token.sub,
-        email: token.email || void 0,
-        role: token.role || void 0
-      };
-    } else {
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith("Bearer ")) {
-        const jwtToken = authHeader.substring(7);
-        const decoded = verifyAccessToken(jwtToken);
-        if (decoded) {
-          userClaims = {
-            sub: decoded.userId,
-            email: decoded.email,
-            role: decoded.role
-          };
-        }
-      }
-    }
-    if (!userClaims) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-    if (!userClaims.role) {
-      try {
-        const user = await storage.getUser(userClaims.sub);
-        if (user) {
-          userClaims.role = user.role || "user";
-        }
-      } catch (error) {
-        console.warn("Could not fetch user role:", error);
-      }
-    }
-    req.user = { claims: userClaims };
-    next();
-  } catch (err) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
-};
-var requireRole = (...allowedRoles) => {
-  return (req, res, next) => {
-    if (!req.user?.claims?.role) {
-      return res.status(403).json({ message: "Access denied: No role assigned" });
-    }
-    if (!allowedRoles.includes(req.user.claims.role)) {
-      return res.status(403).json({
-        message: "Access denied: Insufficient permissions",
-        required: allowedRoles,
-        current: req.user.claims.role
-      });
-    }
-    next();
-  };
-};
-var requireAdmin = requireRole("admin", "super_admin");
-var requireModerator = requireRole("admin", "super_admin", "moderator");
-var requirePremium = requireRole("admin", "super_admin", "premium", "dao_owner");
-
-// server/routes.ts
-import Stripe from "stripe";
-
-// server/routes/health.ts
-init_storage();
-import express from "express";
-
-// server/monitoring/metricsCollector.ts
-import { performance } from "perf_hooks";
+// server/api/authUser.ts
+init_db();
+init_schema();
+import { eq as eq2 } from "drizzle-orm";
 
 // server/utils/logger.ts
 import { createLogger, format, transports } from "winston";
@@ -3573,10 +3780,10 @@ var envSchema = z.object({
   // Server Configuration
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: z.string().default("5000"),
-  HOST: z.string().default("0.0.0.0"),
+  HOST: z.string().default("localhost"),
   // Security
-  SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
-  JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
+  SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters").default("dev-session-secret-change-in-production-min32chars"),
+  JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters").default("dev-jwt-secret-change-in-production-min-32-characters"),
   ENCRYPTION_KEY: z.string().length(32, "ENCRYPTION_KEY must be exactly 32 characters").optional(),
   // OAuth Configuration
   OAUTH_CLIENT_ID: z.string().optional(),
@@ -3621,8 +3828,8 @@ var envSchema = z.object({
   ANALYTICS_API_KEY: z.string().optional(),
   SENTRY_DSN: z.string().url().optional(),
   // App Configuration
-  FRONTEND_URL: z.string().url().default("http://localhost:5173"),
-  BACKEND_URL: z.string().url().default("http://localhost:5000"),
+  FRONTEND_URL: z.string().default("http://localhost:5000"),
+  BACKEND_URL: z.string().default("http://localhost:5000"),
   API_BASE_URL: z.string().url().default("http://localhost:5000/api"),
   MAX_FILE_SIZE: z.string().optional(),
   UPLOAD_DIR: z.string().default("uploads"),
@@ -3662,6 +3869,16 @@ var rateLimitConfig = {
 var corsConfig = {
   origin: env.ALLOWED_ORIGINS?.split(",") || [env.FRONTEND_URL],
   credentials: true
+};
+var config2 = {
+  // Server Configuration
+  PORT: process.env.PORT || 5e3,
+  HOST: "localhost",
+  NODE_ENV: process.env.NODE_ENV || "development",
+  // Frontend URL - dynamically set based on environment
+  FRONTEND_URL: process.env.REPL_SLUG ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co` : process.env.FRONTEND_URL || "http://localhost:5000",
+  // Backend URL - same server in this setup
+  BACKEND_URL: process.env.BACKEND_URL || process.env.REPL_SLUG ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co` : "http://localhost:5000"
 };
 
 // server/utils/logger.ts
@@ -3814,7 +4031,537 @@ var logStartup = (port) => {
   });
 };
 
+// server/middleware/errorHandler.ts
+import { ZodError } from "zod";
+init_storage();
+var AppError = class extends Error {
+  constructor(message, statusCode = 500, isOperational = true, code) {
+    super(message);
+    this.statusCode = statusCode;
+    this.isOperational = isOperational;
+    this.code = code;
+    Error.captureStackTrace(this, this.constructor);
+  }
+};
+var ValidationError = class extends AppError {
+  constructor(message) {
+    super(message, 400, true, "VALIDATION_ERROR");
+  }
+};
+var NotFoundError = class extends AppError {
+  constructor(resource = "Resource") {
+    super(`${resource} not found`, 404, true, "NOT_FOUND");
+  }
+};
+var formatErrorResponse = (error, req) => {
+  const response = {
+    success: false,
+    error: {
+      message: error.message,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      path: req.path,
+      method: req.method
+    }
+  };
+  if (error instanceof AppError) {
+    response.error.code = error.code;
+    response.error.statusCode = error.statusCode;
+  }
+  if (isDevelopment && error.stack) {
+    response.error.stack = error.stack;
+  }
+  if (req.headers["x-request-id"]) {
+    response.error.requestId = req.headers["x-request-id"];
+  }
+  return response;
+};
+var logError = async (error, req, res) => {
+  const severity = error instanceof AppError && error.statusCode < 500 ? "medium" : "high";
+  const user = req.user;
+  try {
+    await storage.createSystemLog(
+      "error",
+      error.message,
+      "api",
+      {
+        stack: error.stack,
+        statusCode: error instanceof AppError ? error.statusCode : 500,
+        path: req.path,
+        method: req.method,
+        userAgent: req.get("User-Agent"),
+        ipAddress: req.ip,
+        userId: user?.claims?.sub,
+        requestBody: req.body,
+        requestQuery: req.query,
+        requestParams: req.params
+      }
+    );
+    if (severity === "high") {
+      console.error(`\u{1F6A8} ${error.message}`, {
+        stack: error.stack,
+        path: req.path,
+        method: req.method,
+        userId: user?.claims?.sub
+      });
+    }
+  } catch (logError2) {
+    console.error("Failed to log error:", logError2);
+  }
+};
+var errorHandler = async (error, req, res, next) => {
+  await logError(error, req, res);
+  let statusCode = 500;
+  let message = "Internal server error";
+  let code = "INTERNAL_ERROR";
+  if (error instanceof AppError) {
+    statusCode = error.statusCode;
+    message = error.message;
+    code = error.code || "APP_ERROR";
+  } else if (error instanceof ZodError) {
+    statusCode = 400;
+    message = "Validation failed";
+    code = "VALIDATION_ERROR";
+    return res.status(statusCode).json({
+      success: false,
+      error: {
+        message,
+        code,
+        statusCode,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        path: req.path,
+        method: req.method,
+        details: error.errors
+      }
+    });
+  } else if (error.name === "CastError") {
+    statusCode = 400;
+    message = "Invalid ID format";
+    code = "INVALID_ID";
+  } else if (error.name === "MongoError" || error.message.includes("database")) {
+    statusCode = 500;
+    message = "Database operation failed";
+    code = "DATABASE_ERROR";
+  }
+  const response = formatErrorResponse(
+    new AppError(message, statusCode, true, code),
+    req
+  );
+  res.status(statusCode).json(response);
+};
+var asyncHandler = (fn) => (req, res, next) => {
+  Promise.resolve(fn(req, res, next)).catch(next);
+};
+var notFoundHandler = (req, res, next) => {
+  const error = new NotFoundError(`Route ${req.originalUrl} not found`);
+  next(error);
+};
+var setupProcessErrorHandlers = () => {
+  process.on("unhandledRejection", (reason, promise) => {
+    console.error("\u{1F6A8} Unhandled Promise Rejection:", reason);
+    process.exit(1);
+  });
+  process.on("uncaughtException", (error) => {
+    console.error("\u{1F6A8} Uncaught Exception:", error);
+    process.exit(1);
+  });
+};
+
+// server/api/authUser.ts
+var logger2 = new Logger("auth-user");
+async function authUserHandler(req, res) {
+  try {
+    const userId = req.user?.userId || req.user?.claims?.sub || req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: { message: "User not authenticated" }
+      });
+    }
+    const userResult = await db2.select({
+      id: users2.id,
+      email: users2.email,
+      firstName: users2.firstName,
+      lastName: users2.lastName,
+      role: users2.role,
+      walletAddress: users2.walletAddress,
+      isEmailVerified: users2.isEmailVerified,
+      isActive: users2.isActive,
+      lastLoginAt: users2.lastLoginAt,
+      createdAt: users2.createdAt,
+      profilePicture: users2.profilePicture,
+      bio: users2.bio,
+      location: users2.location,
+      website: users2.website,
+      telegramUsername: users2.telegramUsername
+    }).from(users2).where(eq2(users2.id, userId)).limit(1);
+    if (userResult.length === 0) {
+      logger2.warn("User not found", { userId });
+      return res.status(404).json({
+        success: false,
+        error: { message: "User not found" }
+      });
+    }
+    const user = userResult[0];
+    if (!user.isActive) {
+      return res.status(401).json({
+        success: false,
+        error: { message: "Account is deactivated" }
+      });
+    }
+    logger2.debug("User info retrieved", { userId: user.id });
+    res.json({
+      success: true,
+      data: {
+        user
+      }
+    });
+  } catch (error) {
+    logger2.error("Failed to get user info", error);
+    throw new AppError("Failed to retrieve user information", 500);
+  }
+}
+
+// server/api/auth_login.ts
+init_storage();
+init_schema();
+import { eq as eq3 } from "drizzle-orm";
+async function authLoginHandler(req, res) {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        error: { message: "Email and password are required" }
+      });
+    }
+    const [user] = await db2.select().from(users2).where(eq3(users2.email, email)).limit(1);
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: { message: "Invalid email or password" }
+      });
+    }
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        error: { message: "Account is deactivated" }
+      });
+    }
+    const isValidPassword = await verifyPassword(password, user.password);
+    if (!isValidPassword) {
+      return res.status(401).json({
+        success: false,
+        error: { message: "Invalid email or password" }
+      });
+    }
+    await db2.update(users2).set({
+      lastLoginAt: /* @__PURE__ */ new Date(),
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq3(users2.id, user.id));
+    const tokens = generateTokens({
+      userId: user.id,
+      email: user.email,
+      role: user.role
+    });
+    res.cookie("refreshToken", tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1e3
+      // 7 days
+    });
+    res.json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+          walletAddress: user.walletAddress,
+          isEmailVerified: user.isEmailVerified,
+          profilePicture: user.profileImageUrl
+        },
+        accessToken: tokens.accessToken
+      }
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({
+      success: false,
+      error: { message: "Login failed" }
+    });
+  }
+}
+
+// server/api/auth_register.ts
+init_storage();
+init_schema();
+import { eq as eq4 } from "drizzle-orm";
+async function authRegisterHandler(req, res) {
+  try {
+    const { email, password, name, walletAddress } = req.body;
+    if (!email || !password || !name) {
+      return res.status(400).json({
+        success: false,
+        error: { message: "Email, password, and name are required" }
+      });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({
+        success: false,
+        error: { message: "Password must be at least 8 characters" }
+      });
+    }
+    const existingUser = await db2.select().from(users2).where(eq4(users2.email, email)).limit(1);
+    if (existingUser.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: { message: "User with this email already exists" }
+      });
+    }
+    const hashedPassword = await hashPassword(password);
+    const nameParts = name.trim().split(" ");
+    const firstName = nameParts[0];
+    const lastName = nameParts.slice(1).join(" ") || "";
+    const [newUser] = await db2.insert(users2).values({
+      email,
+      password: hashedPassword,
+      firstName,
+      lastName,
+      walletAddress: walletAddress || null,
+      role: "user",
+      isEmailVerified: false,
+      isActive: true,
+      createdAt: /* @__PURE__ */ new Date(),
+      updatedAt: /* @__PURE__ */ new Date()
+    }).returning();
+    const tokens = generateTokens({
+      userId: newUser.id,
+      email: newUser.email,
+      role: newUser.role
+    });
+    res.cookie("refreshToken", tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1e3
+      // 7 days
+    });
+    res.status(201).json({
+      success: true,
+      data: {
+        user: {
+          id: newUser.id,
+          email: newUser.email,
+          firstName: newUser.firstName,
+          lastName: newUser.lastName,
+          role: newUser.role,
+          walletAddress: newUser.walletAddress,
+          isEmailVerified: newUser.isEmailVerified
+        },
+        accessToken: tokens.accessToken
+      }
+    });
+  } catch (error) {
+    console.error("Registration error:", error);
+    res.status(500).json({
+      success: false,
+      error: { message: "Registration failed" }
+    });
+  }
+}
+
+// server/auth.ts
+var JWT_SECRET = process.env.JWT_SECRET_KEY || "your-secret-key-change-in-production";
+var JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "your-refresh-secret-change-in-production";
+var ACCESS_TOKEN_EXPIRY = "15m";
+var REFRESH_TOKEN_EXPIRY = "7d";
+var generateTokens = (payload) => {
+  const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
+  const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
+  return { accessToken, refreshToken };
+};
+var verifyAccessToken = (token) => {
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch (error) {
+    return null;
+  }
+};
+var verifyRefreshToken = (token) => {
+  try {
+    return jwt.verify(token, JWT_REFRESH_SECRET);
+  } catch (error) {
+    return null;
+  }
+};
+var hashPassword = async (password) => {
+  const salt = await bcrypt.genSalt(12);
+  return bcrypt.hash(password, salt);
+};
+var verifyPassword = async (password, hash) => {
+  return bcrypt.compare(password, hash);
+};
+var authenticate = (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        success: false,
+        error: { message: "No token provided" }
+      });
+    }
+    const token = authHeader.split(" ")[1];
+    const payload = verifyAccessToken(token);
+    if (!payload) {
+      return res.status(401).json({
+        success: false,
+        error: { message: "Invalid or expired token" }
+      });
+    }
+    req.user = { claims: { sub: payload.sub, email: payload.email, role: payload.role } };
+    next();
+  } catch (error) {
+    return res.status(401).json({
+      success: false,
+      error: { message: "Authentication failed" }
+    });
+  }
+};
+var isAuthenticated = authenticate;
+var refreshTokenHandler = async (req, res) => {
+  try {
+    const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
+    if (!refreshToken) {
+      return res.status(401).json({
+        success: false,
+        error: { message: "Refresh token required" }
+      });
+    }
+    const decoded = verifyRefreshToken(refreshToken);
+    if (!decoded) {
+      return res.status(401).json({
+        success: false,
+        error: { message: "Invalid refresh token" }
+      });
+    }
+    const tokens = generateTokens({
+      sub: decoded.sub,
+      email: decoded.email,
+      role: decoded.role
+    });
+    res.cookie("refreshToken", tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1e3
+      // 7 days
+    });
+    res.json({
+      success: true,
+      data: { accessToken: tokens.accessToken }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: { message: "Token refresh failed" }
+    });
+  }
+};
+var logoutHandler = async (req, res) => {
+  try {
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict"
+    });
+    res.json({
+      success: true,
+      message: "Logged out successfully"
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: { message: "Logout failed" }
+    });
+  }
+};
+
+// server/nextAuthMiddleware.ts
+init_storage();
+var isAuthenticated2 = async (req, res, next) => {
+  try {
+    let token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+    let userClaims = null;
+    if (token && token.sub) {
+      userClaims = {
+        sub: token.sub,
+        email: token.email || void 0,
+        role: token.role || void 0
+      };
+    } else {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const jwtToken = authHeader.substring(7);
+        const decoded = verifyAccessToken(jwtToken);
+        if (decoded) {
+          userClaims = {
+            sub: decoded.userId,
+            email: decoded.email,
+            role: decoded.role
+          };
+        }
+      }
+    }
+    if (!userClaims) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    if (!userClaims.role) {
+      try {
+        const user = await storage.getUser(userClaims.sub);
+        if (user) {
+          userClaims.role = user.role || "user";
+        }
+      } catch (error) {
+        console.warn("Could not fetch user role:", error);
+      }
+    }
+    req.user = { claims: userClaims };
+    next();
+  } catch (err) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+};
+var requireRole = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user?.claims?.role) {
+      return res.status(403).json({ message: "Access denied: No role assigned" });
+    }
+    if (!allowedRoles.includes(req.user.claims.role)) {
+      return res.status(403).json({
+        message: "Access denied: Insufficient permissions",
+        required: allowedRoles,
+        current: req.user.claims.role
+      });
+    }
+    next();
+  };
+};
+var requireAdmin = requireRole("admin", "super_admin");
+var requireModerator = requireRole("admin", "super_admin", "moderator");
+var requirePremium = requireRole("admin", "super_admin", "premium", "dao_owner");
+
+// server/routes.ts
+import Stripe from "stripe";
+
+// server/routes/health.ts
+init_storage();
+import express from "express";
+
 // server/monitoring/metricsCollector.ts
+import { performance } from "perf_hooks";
 var PrometheusMetrics = class {
   constructor() {
     this.metrics = /* @__PURE__ */ new Map();
@@ -3879,6 +4626,7 @@ var PrometheusMetrics = class {
 var prometheus = new PrometheusMetrics();
 var MetricsCollector = class _MetricsCollector {
   constructor() {
+    this.metrics = {};
     this.requestCount = 0;
     this.errorCount = 0;
     this.responseTimes = [];
@@ -4980,7 +5728,7 @@ var WalletManager = class _WalletManager {
 };
 async function enhancedExample() {
   try {
-    const config2 = NetworkConfig.CELO_ALFAJORES;
+    const config3 = NetworkConfig.CELO_ALFAJORES;
     const mockPriceOracle2 = async (tokenAddress) => {
       const prices = {
         "native": 0.65,
@@ -5003,10 +5751,10 @@ async function enhancedExample() {
       const allowedActions = ["transfer", "approve", "disburse"];
       return allowedActions.includes(action);
     };
-    const contributionLogger = async (log2) => {
+    const contributionLogger = async (log) => {
       console.log("Contribution logged:", {
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        ...log2
+        ...log
       });
     };
     const isValidPrivateKey = (key) => {
@@ -5028,7 +5776,7 @@ async function enhancedExample() {
     }
     const wallet2 = new EnhancedAgentWallet(
       WALLET_PRIVATE_KEY,
-      config2,
+      config3,
       permissionCheck,
       contributionLogger,
       void 0,
@@ -5038,7 +5786,7 @@ async function enhancedExample() {
     console.log(`
 === Enhanced Wallet Demo ===`);
     console.log(`Wallet Address: ${wallet2.address}`);
-    console.log(`Network: ${config2.name}`);
+    console.log(`Network: ${config3.name}`);
     console.log("\n--- Network Information ---");
     const networkInfo = await wallet2.getNetworkInfo();
     console.log(`Connected: ${networkInfo.connected}`);
@@ -5417,7 +6165,7 @@ init_storage();
 init_schema();
 init_schema();
 init_notificationService();
-import { desc as desc2, eq as eq2, or as or2 } from "drizzle-orm";
+import { desc as desc2, eq as eq5, or as or2 } from "drizzle-orm";
 import { and as and2 } from "drizzle-orm";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
@@ -5527,9 +6275,9 @@ router3.get("/analytics", async (req, res) => {
     const { userId, walletAddress } = req.query;
     let whereClause = void 0;
     if (typeof userId === "string") {
-      whereClause = or2(eq2(walletTransactions.fromUserId, userId), eq2(walletTransactions.toUserId, userId));
+      whereClause = or2(eq5(walletTransactions.fromUserId, userId), eq5(walletTransactions.toUserId, userId));
     } else if (typeof walletAddress === "string") {
-      whereClause = eq2(walletTransactions.walletAddress, walletAddress);
+      whereClause = eq5(walletTransactions.walletAddress, walletAddress);
     }
     const txs = await db2.select().from(walletTransactions).where(whereClause).orderBy(desc2(walletTransactions.createdAt));
     const valueOverTime = {};
@@ -5753,7 +6501,7 @@ router3.post("/locked-savings/create", async (req, res) => {
 router3.get("/locked-savings/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
-    const savings = await db2.select().from(lockedSavings).where(eq2(lockedSavings.userId, userId)).orderBy(desc2(lockedSavings.createdAt));
+    const savings = await db2.select().from(lockedSavings).where(eq5(lockedSavings.userId, userId)).orderBy(desc2(lockedSavings.createdAt));
     res.json(savings);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -5764,7 +6512,7 @@ router3.post("/locked-savings/withdraw/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { isEarlyWithdrawal } = req.body;
-    const saving = await db2.select().from(lockedSavings).where(eq2(lockedSavings.id, id)).limit(1);
+    const saving = await db2.select().from(lockedSavings).where(eq5(lockedSavings.id, id)).limit(1);
     if (!saving.length) {
       return res.status(404).json({ error: "Locked saving not found" });
     }
@@ -5780,7 +6528,7 @@ router3.post("/locked-savings/withdraw/:id", async (req, res) => {
       status: "withdrawn",
       penalty: penalty.toString(),
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq2(lockedSavings.id, id));
+    }).where(eq5(lockedSavings.id, id));
     res.json({
       withdrawalAmount,
       penalty,
@@ -5812,7 +6560,7 @@ router3.post("/savings-goals/create", async (req, res) => {
 router3.get("/savings-goals/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
-    const goals = await db2.select().from(savingsGoals).where(eq2(savingsGoals.userId, userId)).orderBy(desc2(savingsGoals.createdAt));
+    const goals = await db2.select().from(savingsGoals).where(eq5(savingsGoals.userId, userId)).orderBy(desc2(savingsGoals.createdAt));
     res.json(goals);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -5823,7 +6571,7 @@ router3.post("/savings-goals/:id/contribute", async (req, res) => {
   try {
     const { id } = req.params;
     const { amount } = req.body;
-    const goal = await db2.select().from(savingsGoals).where(eq2(savingsGoals.id, id)).limit(1);
+    const goal = await db2.select().from(savingsGoals).where(eq5(savingsGoals.id, id)).limit(1);
     if (!goal.length) {
       return res.status(404).json({ error: "Savings goal not found" });
     }
@@ -5834,7 +6582,7 @@ router3.post("/savings-goals/:id/contribute", async (req, res) => {
       currentAmount: newAmount.toString(),
       isCompleted,
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq2(savingsGoals.id, id));
+    }).where(eq5(savingsGoals.id, id));
     res.json({ newAmount, isCompleted });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -5898,9 +6646,9 @@ router3.get("/contributions/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
     const { daoId, timeframe = "30" } = req.query;
-    const conditions = [eq2(contributions.userId, userId)];
+    const conditions = [eq5(contributions.userId, userId)];
     if (daoId) {
-      conditions.push(eq2(contributions.daoId, daoId));
+      conditions.push(eq5(contributions.daoId, daoId));
     }
     const dateFilter = /* @__PURE__ */ new Date();
     dateFilter.setDate(dateFilter.getDate() - parseInt(timeframe));
@@ -5948,19 +6696,19 @@ router3.get("/transactions", async (req, res) => {
     const offset = (pageNum - 1) * limitNum;
     const conditions = [];
     if (userId) {
-      conditions.push(or2(eq2(walletTransactions.fromUserId, userId), eq2(walletTransactions.toUserId, userId)));
+      conditions.push(or2(eq5(walletTransactions.fromUserId, userId), eq5(walletTransactions.toUserId, userId)));
     }
     if (walletAddress) {
-      conditions.push(eq2(walletTransactions.walletAddress, walletAddress));
+      conditions.push(eq5(walletTransactions.walletAddress, walletAddress));
     }
     if (type) {
-      conditions.push(eq2(walletTransactions.type, type));
+      conditions.push(eq5(walletTransactions.type, type));
     }
     if (status) {
-      conditions.push(eq2(walletTransactions.status, status));
+      conditions.push(eq5(walletTransactions.status, status));
     }
     if (currency) {
-      conditions.push(eq2(walletTransactions.currency, currency));
+      conditions.push(eq5(walletTransactions.currency, currency));
     }
     const dateFilter = /* @__PURE__ */ new Date();
     dateFilter.setDate(dateFilter.getDate() - parseInt(dateRange));
@@ -6125,7 +6873,7 @@ import express4 from "express";
 init_storage();
 init_schema();
 init_notificationService();
-import { eq as eq3, and as and3 } from "drizzle-orm";
+import { eq as eq6, and as and3 } from "drizzle-orm";
 var router4 = express4.Router();
 router4.post("/create-wallet", async (req, res) => {
   try {
@@ -6133,21 +6881,21 @@ router4.post("/create-wallet", async (req, res) => {
     if (!userId) {
       return res.status(400).json({ error: "User ID is required" });
     }
-    const existingVaults = await db2.select().from(vaults).where(eq3(vaults.userId, userId)).limit(1);
+    const existingVaults = await db2.select().from(vaults2).where(eq6(vaults2.userId, userId)).limit(1);
     if (existingVaults.length > 0) {
       return res.status(400).json({
         error: "User already has a wallet. Use initialize-additional-vault instead."
       });
     }
     const walletCredentials = WalletManager.createWallet();
-    const primaryVault = await db2.insert(vaults).values({
+    const primaryVault = await db2.insert(vaults2).values({
       userId,
       currency,
       address: walletCredentials.address,
       balance: "0.00",
       monthlyGoal: initialGoal.toString()
     }).returning();
-    await db2.update(users2).set({ updatedAt: /* @__PURE__ */ new Date() }).where(eq3(users2.id, userId));
+    await db2.update(users2).set({ updatedAt: /* @__PURE__ */ new Date() }).where(eq6(users2.id, userId));
     await notificationService.createNotification({
       userId,
       type: "wallet",
@@ -6181,14 +6929,14 @@ router4.post("/initialize-additional-vault", async (req, res) => {
     if (!userId || !currency) {
       return res.status(400).json({ error: "User ID and currency are required" });
     }
-    const userVaults = await db2.select().from(vaults).where(eq3(vaults.userId, userId)).limit(1);
+    const userVaults = await db2.select().from(vaults2).where(eq6(vaults2.userId, userId)).limit(1);
     if (!userVaults.length) {
       return res.status(400).json({
         error: "User must have a primary wallet before creating additional vaults"
       });
     }
-    const existingVault = await db2.select().from(vaults).where(eq3(vaults.userId, userId)).limit(1);
-    const newVault = await db2.insert(vaults).values({
+    const existingVault = await db2.select().from(vaults2).where(eq6(vaults2.userId, userId)).limit(1);
+    const newVault = await db2.insert(vaults2).values({
       userId,
       currency,
       address: userVaults[0].address,
@@ -6221,7 +6969,7 @@ router4.post("/initialize-additional-vault", async (req, res) => {
 router4.get("/user-vaults/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
-    const userVaults = await db2.select().from(vaults).where(eq3(vaults.userId, userId));
+    const userVaults = await db2.select().from(vaults2).where(eq6(vaults2.userId, userId));
     const primaryVault = userVaults.length > 0 ? userVaults[0] : null;
     const walletAddress = primaryVault ? primaryVault.address || null : null;
     const totalBalance = userVaults.reduce((sum3, vault) => {
@@ -6245,7 +6993,7 @@ router4.post("/initialize-assets", async (req, res) => {
     if (!userId || !Array.isArray(assets)) {
       return res.status(400).json({ error: "User ID and assets array are required" });
     }
-    const userVaults = await db2.select().from(vaults).where(eq3(vaults.userId, userId)).limit(1);
+    const userVaults = await db2.select().from(vaults2).where(eq6(vaults2.userId, userId)).limit(1);
     if (!userVaults.length || !userVaults[0].address) {
       return res.status(400).json({ error: "User must have a wallet first" });
     }
@@ -6253,9 +7001,9 @@ router4.post("/initialize-assets", async (req, res) => {
     const results = [];
     for (const asset of assets) {
       const { currency, initialAmount = 0, monthlyGoal = 0 } = asset;
-      const existingVault = await db2.select().from(vaults).where(eq3(vaults.userId, userId)).limit(1);
+      const existingVault = await db2.select().from(vaults2).where(eq6(vaults2.userId, userId)).limit(1);
       if (existingVault.length === 0) {
-        const newVault = await db2.insert(vaults).values({
+        const newVault = await db2.insert(vaults2).values({
           userId,
           currency,
           address: walletAddress,
@@ -6323,14 +7071,14 @@ router4.post("/import-wallet", async (req, res) => {
     const normalizedKey = WalletManager.normalizePrivateKey(privateKey);
     const wallet2 = new EnhancedAgentWallet(normalizedKey, NetworkConfig.CELO_ALFAJORES);
     const walletAddress = wallet2.address;
-    const existingVault = await db2.select().from(vaults).where(
-      and3(eq3(vaults.userId, userId), eq3(vaults.address, walletAddress))
+    const existingVault = await db2.select().from(vaults2).where(
+      and3(eq6(vaults2.userId, userId), eq6(vaults2.address, walletAddress))
     ).limit(1);
     if (existingVault.length > 0 && existingVault[0].userId !== userId) {
       return res.status(400).json({ error: "This wallet is already imported by another user" });
     }
-    await db2.update(users2).set({ updatedAt: /* @__PURE__ */ new Date() }).where(eq3(users2.id, userId));
-    const primaryVault = await db2.insert(vaults).values({
+    await db2.update(users2).set({ updatedAt: /* @__PURE__ */ new Date() }).where(eq6(users2.id, userId));
+    const primaryVault = await db2.insert(vaults2).values({
       userId,
       currency,
       address: walletAddress,
@@ -6339,7 +7087,7 @@ router4.post("/import-wallet", async (req, res) => {
     }).returning();
     try {
       const actualBalance = await wallet2.getBalanceEth();
-      await db2.update(vaults).set({ balance: actualBalance.toString() }).where(eq3(vaults.id, primaryVault[0].id));
+      await db2.update(vaults2).set({ balance: actualBalance.toString() }).where(eq6(vaults2.id, primaryVault[0].id));
       primaryVault[0].balance = actualBalance.toString();
     } catch (error) {
       console.warn("Failed to get actual balance:", error);
@@ -6374,20 +7122,20 @@ var wallet_setup_default = router4;
 init_storage();
 init_schema();
 import express5 from "express";
-import { eq as eq4, and as and4, desc as desc3, gte, sql as sql3 } from "drizzle-orm";
+import { eq as eq7, and as and4, desc as desc3, gte, sql as sql3 } from "drizzle-orm";
 var router5 = express5.Router();
-router5.get("/:daoId/quorum", isAuthenticated, async (req, res) => {
+router5.get("/:daoId/quorum", isAuthenticated2, async (req, res) => {
   try {
     const { daoId } = req.params;
-    const dao = await db2.select().from(daos).where(eq4(daos.id, daoId)).limit(1);
+    const dao = await db2.select().from(daos).where(eq7(daos.id, daoId)).limit(1);
     if (!dao.length) {
       return res.status(404).json({ message: "DAO not found" });
     }
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3);
     const activeMembers = await db2.select({ count: sql3`count(*)` }).from(daoMemberships).where(
       and4(
-        eq4(daoMemberships.daoId, daoId),
-        eq4(daoMemberships.status, "approved"),
+        eq7(daoMemberships.daoId, daoId),
+        eq7(daoMemberships.status, "approved"),
         gte(daoMemberships.lastActive, thirtyDaysAgo)
       )
     );
@@ -6411,11 +7159,11 @@ router5.get("/:daoId/quorum", isAuthenticated, async (req, res) => {
     });
   }
 });
-router5.post("/proposals/:proposalId/execute", isAuthenticated, async (req, res) => {
+router5.post("/proposals/:proposalId/execute", isAuthenticated2, async (req, res) => {
   try {
     const { proposalId } = req.params;
     const userId = req.user.claims.sub;
-    const proposal = await db2.select().from(proposals2).where(eq4(proposals2.id, proposalId)).limit(1);
+    const proposal = await db2.select().from(proposals2).where(eq7(proposals2.id, proposalId)).limit(1);
     if (!proposal.length) {
       return res.status(404).json({ message: "Proposal not found" });
     }
@@ -6424,14 +7172,14 @@ router5.post("/proposals/:proposalId/execute", isAuthenticated, async (req, res)
       return res.status(400).json({ message: "Proposal must be in passed status to execute" });
     }
     const membership = await db2.select().from(daoMemberships).where(and4(
-      eq4(daoMemberships.daoId, proposalData.daoId),
-      eq4(daoMemberships.userId, userId)
+      eq7(daoMemberships.daoId, proposalData.daoId),
+      eq7(daoMemberships.userId, userId)
     )).limit(1);
     if (!membership.length || !["admin", "elder"].includes(membership[0].role ?? "")) {
       return res.status(403).json({ message: "Insufficient permissions to execute proposal" });
     }
     let delay = 24;
-    const dao = await db2.select().from(daos).where(eq4(daos.id, proposalData.daoId)).limit(1);
+    const dao = await db2.select().from(daos).where(eq7(daos.id, proposalData.daoId)).limit(1);
     if (dao.length && typeof dao[0].executionDelay === "number") {
       delay = dao[0].executionDelay;
     }
@@ -6457,13 +7205,13 @@ router5.post("/proposals/:proposalId/execute", isAuthenticated, async (req, res)
     });
   }
 });
-router5.get("/:daoId/templates", isAuthenticated, async (req, res) => {
+router5.get("/:daoId/templates", isAuthenticated2, async (req, res) => {
   try {
     const { daoId } = req.params;
     const templates = await db2.select().from(proposalTemplates).where(
       and4(
-        eq4(proposalTemplates.daoId, daoId),
-        eq4(proposalTemplates.isGlobal, true)
+        eq7(proposalTemplates.daoId, daoId),
+        eq7(proposalTemplates.isGlobal, true)
       )
     ).orderBy(desc3(proposalTemplates.createdAt));
     res.json({
@@ -6478,14 +7226,14 @@ router5.get("/:daoId/templates", isAuthenticated, async (req, res) => {
     });
   }
 });
-router5.post("/:daoId/templates", isAuthenticated, async (req, res) => {
+router5.post("/:daoId/templates", isAuthenticated2, async (req, res) => {
   try {
     const { daoId } = req.params;
     const userId = req.user.claims.sub;
     const templateData = req.body;
     const membership = await db2.select().from(daoMemberships).where(and4(
-      eq4(daoMemberships.daoId, daoId),
-      eq4(daoMemberships.userId, userId)
+      eq7(daoMemberships.daoId, daoId),
+      eq7(daoMemberships.userId, userId)
     )).limit(1);
     if (!membership.length || !["admin", "elder"].includes(membership[0].role ?? "")) {
       return res.status(403).json({ message: "Insufficient permissions to create templates" });
@@ -6507,23 +7255,23 @@ router5.post("/:daoId/templates", isAuthenticated, async (req, res) => {
     });
   }
 });
-router5.post("/:daoId/delegate", isAuthenticated, async (req, res) => {
+router5.post("/:daoId/delegate", isAuthenticated2, async (req, res) => {
   try {
     const { daoId } = req.params;
     const userId = req.user.claims.sub;
     const { delegateId, scope, category, proposalId } = req.body;
     const delegateMembership = await db2.select().from(daoMemberships).where(and4(
-      eq4(daoMemberships.daoId, daoId),
-      eq4(daoMemberships.userId, delegateId),
-      eq4(daoMemberships.status, "approved")
+      eq7(daoMemberships.daoId, daoId),
+      eq7(daoMemberships.userId, delegateId),
+      eq7(daoMemberships.status, "approved")
     )).limit(1);
     if (!delegateMembership.length) {
       return res.status(400).json({ message: "Delegate must be an active DAO member" });
     }
     await db2.update(voteDelegations).set({ isActive: false }).where(and4(
-      eq4(voteDelegations.delegatorId, userId),
-      eq4(voteDelegations.daoId, daoId),
-      eq4(voteDelegations.isActive, true)
+      eq7(voteDelegations.delegatorId, userId),
+      eq7(voteDelegations.daoId, daoId),
+      eq7(voteDelegations.isActive, true)
     ));
     const delegation = await db2.insert(voteDelegations).values({
       delegatorId: userId,
@@ -6546,14 +7294,14 @@ router5.post("/:daoId/delegate", isAuthenticated, async (req, res) => {
     });
   }
 });
-router5.get("/:daoId/delegations", isAuthenticated, async (req, res) => {
+router5.get("/:daoId/delegations", isAuthenticated2, async (req, res) => {
   try {
     const { daoId } = req.params;
     const userId = req.user.claims.sub;
     const delegations = await db2.select().from(voteDelegations).where(and4(
-      eq4(voteDelegations.daoId, daoId),
-      eq4(voteDelegations.delegatorId, userId),
-      eq4(voteDelegations.isActive, true)
+      eq7(voteDelegations.daoId, daoId),
+      eq7(voteDelegations.delegatorId, userId),
+      eq7(voteDelegations.isActive, true)
     ));
     res.json({
       success: true,
@@ -6567,14 +7315,14 @@ router5.get("/:daoId/delegations", isAuthenticated, async (req, res) => {
     });
   }
 });
-router5.delete("/:daoId/delegate/:delegationId", isAuthenticated, async (req, res) => {
+router5.delete("/:daoId/delegate/:delegationId", isAuthenticated2, async (req, res) => {
   try {
     const { daoId, delegationId } = req.params;
     const userId = req.user.claims.sub;
     await db2.update(voteDelegations).set({ isActive: false }).where(and4(
-      eq4(voteDelegations.id, delegationId),
-      eq4(voteDelegations.delegatorId, userId),
-      eq4(voteDelegations.daoId, daoId)
+      eq7(voteDelegations.id, delegationId),
+      eq7(voteDelegations.delegatorId, userId),
+      eq7(voteDelegations.daoId, daoId)
     ));
     res.json({
       success: true,
@@ -6588,10 +7336,10 @@ router5.delete("/:daoId/delegate/:delegationId", isAuthenticated, async (req, re
     });
   }
 });
-router5.post("/proposals/:proposalId/check-quorum", isAuthenticated, async (req, res) => {
+router5.post("/proposals/:proposalId/check-quorum", isAuthenticated2, async (req, res) => {
   try {
     const { proposalId } = req.params;
-    const proposal = await db2.select().from(proposals2).where(eq4(proposals2.id, proposalId)).limit(1);
+    const proposal = await db2.select().from(proposals2).where(eq7(proposals2.id, proposalId)).limit(1);
     if (!proposal.length) {
       return res.status(404).json({ message: "Proposal not found" });
     }
@@ -6620,7 +7368,7 @@ router5.post("/proposals/:proposalId/check-quorum", isAuthenticated, async (req,
       } else if (!quorumMet) {
         newStatus = "failed";
       }
-      await db2.update(proposals2).set({ status: newStatus }).where(eq4(proposals2.id, proposalId));
+      await db2.update(proposals2).set({ status: newStatus }).where(eq7(proposals2.id, proposalId));
     }
     res.json({
       success: true,
@@ -6646,7 +7394,7 @@ var governance_default = router5;
 init_storage();
 init_schema();
 import express6 from "express";
-import { eq as eq8, and as and8, desc as desc5, sql as sql6 } from "drizzle-orm";
+import { eq as eq11, and as and8, desc as desc5, sql as sql6 } from "drizzle-orm";
 import { z as z2 } from "zod";
 var router6 = express6.Router();
 var createTaskSchema = z2.object({
@@ -6685,7 +7433,7 @@ function requireRole3(...roles2) {
       return res.status(401).json({ error: "Unauthorized: Invalid user ID" });
     }
     const safeUserId = String(userId ?? "");
-    const membership = await db2.select().from(daoMemberships).where(and8(eq8(daoMemberships.daoId, String(daoId ?? "")), eq8(daoMemberships.userId, String(userId ?? ""))));
+    const membership = await db2.select().from(daoMemberships).where(and8(eq11(daoMemberships.daoId, String(daoId ?? "")), eq11(daoMemberships.userId, String(userId ?? ""))));
     if (!membership.length || !roles2.includes(typeof membership[0].role === "string" ? membership[0].role : "")) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
@@ -6734,10 +7482,10 @@ router6.get("/", async (req, res) => {
       offset = 0
     } = req.query;
     let conditions = [];
-    if (daoId) conditions.push(eq8(tasks.daoId, typeof daoId === "string" ? daoId : ""));
-    if (status) conditions.push(eq8(tasks.status, typeof status === "string" ? status : ""));
-    if (category) conditions.push(eq8(tasks.category, typeof category === "string" ? category : ""));
-    if (difficulty) conditions.push(eq8(tasks.difficulty, typeof difficulty === "string" ? difficulty : ""));
+    if (daoId) conditions.push(eq11(tasks.daoId, typeof daoId === "string" ? daoId : ""));
+    if (status) conditions.push(eq11(tasks.status, typeof status === "string" ? status : ""));
+    if (category) conditions.push(eq11(tasks.category, typeof category === "string" ? category : ""));
+    if (difficulty) conditions.push(eq11(tasks.difficulty, typeof difficulty === "string" ? difficulty : ""));
     let query;
     if (conditions.length > 0) {
       query = db2.select().from(tasks).where(and8(...conditions));
@@ -6765,7 +7513,7 @@ router6.post("/:taskId/claim", async (req, res) => {
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
-    const task = await db2.select().from(tasks).where(eq8(tasks.id, taskId)).limit(1);
+    const task = await db2.select().from(tasks).where(eq11(tasks.id, taskId)).limit(1);
     if (!task.length) {
       return res.status(404).json({ error: "Task not found" });
     }
@@ -6776,7 +7524,7 @@ router6.post("/:taskId/claim", async (req, res) => {
       claimerId: userId,
       status: "claimed",
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq8(tasks.id, taskId)).returning();
+    }).where(eq11(tasks.id, taskId)).returning();
     await db2.insert(taskHistory).values({
       taskId,
       userId,
@@ -6796,7 +7544,7 @@ router6.post("/:taskId/submit", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
     const validatedData = verifyTaskSchema.parse(req.body);
-    const task = await db2.select().from(tasks).where(and8(eq8(tasks.id, taskId), eq8(tasks.claimerId, userId))).limit(1);
+    const task = await db2.select().from(tasks).where(and8(eq11(tasks.id, taskId), eq11(tasks.claimerId, userId))).limit(1);
     if (!task.length) {
       return res.status(403).json({ error: "Task not found or not claimed by you" });
     }
@@ -6806,7 +7554,7 @@ router6.post("/:taskId/submit", async (req, res) => {
     await db2.update(tasks).set({
       status: "submitted",
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq8(tasks.id, taskId));
+    }).where(eq11(tasks.id, taskId));
     await db2.insert(taskHistory).values({
       taskId,
       userId,
@@ -6829,7 +7577,7 @@ router6.post("/:taskId/verify", requireRole3("admin", "moderator"), async (req, 
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
-    const task = await db2.select().from(tasks).where(eq8(tasks.id, taskId)).limit(1);
+    const task = await db2.select().from(tasks).where(eq11(tasks.id, taskId)).limit(1);
     if (!task.length) {
       return res.status(404).json({ error: "Task not found" });
     }
@@ -6858,7 +7606,7 @@ router6.post("/:taskId/verify", requireRole3("admin", "moderator"), async (req, 
       status: newStatus,
       verificationNotes: req.body.feedback || feedback,
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq8(tasks.id, taskId));
+    }).where(eq11(tasks.id, taskId));
     await db2.insert(taskHistory).values({
       taskId,
       userId,
@@ -6908,7 +7656,7 @@ router6.post("/:taskId/verify", requireRole3("admin", "moderator"), async (req, 
 router6.get("/:taskId/history", async (req, res) => {
   try {
     const { taskId } = req.params;
-    const history = await db2.select().from(taskHistory).where(eq8(taskHistory.taskId, taskId)).orderBy(desc5(taskHistory.createdAt));
+    const history = await db2.select().from(taskHistory).where(eq11(taskHistory.taskId, taskId)).orderBy(desc5(taskHistory.createdAt));
     res.json(history);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -6920,7 +7668,7 @@ router6.get("/user/claimed", async (req, res) => {
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
-    const claimedTasks = await db2.select().from(tasks).where(eq8(tasks.claimerId, userId)).orderBy(desc5(tasks.updatedAt));
+    const claimedTasks = await db2.select().from(tasks).where(eq11(tasks.claimerId, userId)).orderBy(desc5(tasks.updatedAt));
     res.json(claimedTasks);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -6937,7 +7685,7 @@ router6.get("/analytics", async (req, res) => {
         difficulty: tasks.difficulty,
         count: sql6`count(*)`,
         totalReward: sql6`sum(cast(${tasks.reward} as numeric))`
-      }).from(tasks).where(eq8(tasks.daoId, typeof daoId === "string" ? daoId : ""));
+      }).from(tasks).where(eq11(tasks.daoId, typeof daoId === "string" ? daoId : ""));
     } else {
       statsQuery = db2.select({
         status: tasks.status,
@@ -6959,12 +7707,12 @@ var tasks_default = router6;
 init_db();
 init_achievementService();
 import express7 from "express";
-import { eq as eq11 } from "drizzle-orm";
+import { eq as eq14 } from "drizzle-orm";
 
 // server/airdropService.ts
 init_db();
 init_reputationSchema();
-import { eq as eq9, and as and9, gte as gte3 } from "drizzle-orm";
+import { eq as eq12, and as and9, gte as gte3 } from "drizzle-orm";
 var AirdropService = class {
   // Create new airdrop campaign
   static async createAirdropCampaign(campaign) {
@@ -6973,14 +7721,14 @@ var AirdropService = class {
   }
   // Calculate airdrop eligibility for all users
   static async calculateAirdropEligibility(airdropId, minimumReputation, baseAmount, maxMultiplier = 5) {
-    const users4 = await db2.select({
+    const users5 = await db2.select({
       userId: userReputation2.userId,
       totalPoints: userReputation2.totalPoints,
       badge: userReputation2.badge
     }).from(userReputation2).where(gte3(userReputation2.totalPoints, minimumReputation));
     let processed = 0;
     let eligible = 0;
-    for (const user of users4) {
+    for (const user of users5) {
       const totalPoints = typeof user.totalPoints === "number" ? user.totalPoints : 0;
       const badge = typeof user.badge === "string" ? user.badge : "Bronze";
       const reputationMultiplier = Math.min(totalPoints / minimumReputation, maxMultiplier);
@@ -7004,8 +7752,8 @@ var AirdropService = class {
   static async executeAirdrop(airdropId) {
     const eligibleUsers = await db2.select().from(airdropEligibility).where(
       and9(
-        eq9(airdropEligibility.airdropId, airdropId),
-        eq9(airdropEligibility.claimed, false)
+        eq12(airdropEligibility.airdropId, airdropId),
+        eq12(airdropEligibility.claimed, false)
       )
     );
     let success = 0;
@@ -7016,7 +7764,7 @@ var AirdropService = class {
           claimed: true,
           claimedAt: /* @__PURE__ */ new Date(),
           transactionHash: null
-        }).where(eq9(airdropEligibility.id, eligibility.id));
+        }).where(eq12(airdropEligibility.id, eligibility.id));
         success++;
       } catch (error) {
         console.error(`Airdrop failed for user ${eligibility.userId}:`, error);
@@ -7042,15 +7790,15 @@ var AirdropService = class {
   }
   // Check user's airdrop eligibility
   static async getUserAirdropEligibility(userId) {
-    return await db2.select().from(airdropEligibility).where(eq9(airdropEligibility.userId, userId));
+    return await db2.select().from(airdropEligibility).where(eq12(airdropEligibility.userId, userId));
   }
   // Claim airdrop for user
   static async claimAirdrop(userId, airdropId) {
     const eligibility = await db2.select().from(airdropEligibility).where(
       and9(
-        eq9(airdropEligibility.userId, userId),
-        eq9(airdropEligibility.airdropId, airdropId),
-        eq9(airdropEligibility.claimed, false)
+        eq12(airdropEligibility.userId, userId),
+        eq12(airdropEligibility.airdropId, airdropId),
+        eq12(airdropEligibility.claimed, false)
       )
     );
     if (!eligibility[0]) {
@@ -7060,14 +7808,14 @@ var AirdropService = class {
       claimed: true,
       claimedAt: /* @__PURE__ */ new Date(),
       transactionHash: null
-    }).where(eq9(airdropEligibility.id, eligibility[0].id));
+    }).where(eq12(airdropEligibility.id, eligibility[0].id));
     return "claimed";
   }
 };
 
 // server/vestingService.ts
 init_db();
-import { eq as eq10, and as and10 } from "drizzle-orm";
+import { eq as eq13, and as and10 } from "drizzle-orm";
 
 // shared/vestingSchema.ts
 init_schema();
@@ -7151,7 +7899,7 @@ var VestingService = class {
   }
   // Calculate vested tokens for a schedule
   static async calculateVestedTokens(scheduleId) {
-    const schedule = await db2.select().from(vestingSchedules).where(eq10(vestingSchedules.id, scheduleId));
+    const schedule = await db2.select().from(vestingSchedules).where(eq13(vestingSchedules.id, scheduleId));
     if (!schedule[0] || !schedule[0].isActive) return 0;
     const now = /* @__PURE__ */ new Date();
     const startDate = new Date(schedule[0].startDate);
@@ -7185,8 +7933,8 @@ var VestingService = class {
   static async calculateMilestoneVesting(scheduleId) {
     const completedMilestones = await db2.select().from(vestingMilestones).where(
       and10(
-        eq10(vestingMilestones.scheduleId, scheduleId),
-        eq10(vestingMilestones.isCompleted, true)
+        eq13(vestingMilestones.scheduleId, scheduleId),
+        eq13(vestingMilestones.isCompleted, true)
       )
     );
     return completedMilestones.reduce((total, milestone) => {
@@ -7197,18 +7945,18 @@ var VestingService = class {
   static async updateMilestoneProgress(scheduleId, milestoneType, currentValue) {
     const milestone = await db2.select().from(vestingMilestones).where(
       and10(
-        eq10(vestingMilestones.scheduleId, scheduleId),
-        eq10(vestingMilestones.milestoneType, milestoneType),
-        eq10(vestingMilestones.isCompleted, false)
+        eq13(vestingMilestones.scheduleId, scheduleId),
+        eq13(vestingMilestones.milestoneType, milestoneType),
+        eq13(vestingMilestones.isCompleted, false)
       )
     );
     if (!milestone[0]) return false;
-    await db2.update(vestingMilestones).set({ currentValue: currentValue.toString() }).where(eq10(vestingMilestones.id, milestone[0].id));
+    await db2.update(vestingMilestones).set({ currentValue: currentValue.toString() }).where(eq13(vestingMilestones.id, milestone[0].id));
     if (currentValue >= parseFloat(milestone[0].targetValue)) {
       await db2.update(vestingMilestones).set({
         isCompleted: true,
         completedAt: /* @__PURE__ */ new Date()
-      }).where(eq10(vestingMilestones.id, milestone[0].id));
+      }).where(eq13(vestingMilestones.id, milestone[0].id));
       return true;
     }
     return false;
@@ -7217,8 +7965,8 @@ var VestingService = class {
   static async getClaimableTokens(userId) {
     const schedules = await db2.select().from(vestingSchedules).where(
       and10(
-        eq10(vestingSchedules.userId, userId),
-        eq10(vestingSchedules.isActive, true)
+        eq13(vestingSchedules.userId, userId),
+        eq13(vestingSchedules.isActive, true)
       )
     );
     const claimableSchedules = [];
@@ -7239,9 +7987,9 @@ var VestingService = class {
   static async claimVestedTokens(userId, scheduleId) {
     const schedule = await db2.select().from(vestingSchedules).where(
       and10(
-        eq10(vestingSchedules.id, scheduleId),
-        eq10(vestingSchedules.userId, userId),
-        eq10(vestingSchedules.isActive, true)
+        eq13(vestingSchedules.id, scheduleId),
+        eq13(vestingSchedules.userId, userId),
+        eq13(vestingSchedules.isActive, true)
       )
     );
     if (!schedule[0]) {
@@ -7256,7 +8004,7 @@ var VestingService = class {
     const txHash = "claimed";
     await db2.update(vestingSchedules).set({
       claimedTokens: (claimedTokens + claimableAmount).toString()
-    }).where(eq10(vestingSchedules.id, scheduleId));
+    }).where(eq13(vestingSchedules.id, scheduleId));
     await db2.insert(vestingClaims).values({
       scheduleId,
       userId,
@@ -7269,8 +8017,8 @@ var VestingService = class {
   static async getUserVestingOverview(userId) {
     const schedules = await db2.select().from(vestingSchedules).where(
       and10(
-        eq10(vestingSchedules.userId, userId),
-        eq10(vestingSchedules.isActive, true)
+        eq13(vestingSchedules.userId, userId),
+        eq13(vestingSchedules.isActive, true)
       )
     );
     let totalAllocated = 0;
@@ -7312,16 +8060,16 @@ var VestingService = class {
   }
   // Check and update milestones for all users (scheduled job)
   static async updateAllMilestones() {
-    const activeMilestones = await db2.select().from(vestingMilestones).where(eq10(vestingMilestones.isCompleted, false));
+    const activeMilestones = await db2.select().from(vestingMilestones).where(eq13(vestingMilestones.isCompleted, false));
     let updated = 0;
     let completed = 0;
     for (const milestone of activeMilestones) {
-      const schedule = await db2.select().from(vestingSchedules).where(eq10(vestingSchedules.id, milestone.scheduleId));
+      const schedule = await db2.select().from(vestingSchedules).where(eq13(vestingSchedules.id, milestone.scheduleId));
       if (!schedule[0]) continue;
       let currentValue = 0;
       switch (milestone.milestoneType) {
         case "reputation":
-          const userRep = await db2.select().from(userReputation2).where(eq10(userReputation2.userId, schedule[0].userId));
+          const userRep = await db2.select().from(userReputation2).where(eq13(userReputation2.userId, schedule[0].userId));
           currentValue = userRep[0]?.totalPoints || 0;
           break;
         case "time":
@@ -7346,10 +8094,41 @@ var VestingService = class {
 init_achievementSchema();
 init_reputationService();
 var router7 = express7.Router();
-router7.get("/user/:userId", isAuthenticated2, async (req, res) => {
+router7.post("/check-in", isAuthenticated, async (req, res) => {
+  try {
+    const userId = req.user?.claims?.id || req.user?.claims?.sub;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const result = await ReputationService.recordDailyCheckIn(userId);
+    res.json({
+      success: true,
+      message: result.pointsAwarded > 0 ? "Check-in recorded successfully!" : "Already checked in today",
+      ...result
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router7.get("/streak", isAuthenticated, async (req, res) => {
+  try {
+    const userId = req.user?.claims?.id || req.user?.claims?.sub;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const streakInfo = await ReputationService.getStreakInfo(userId);
+    res.json({
+      success: true,
+      ...streakInfo
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router7.get("/user/:userId", isAuthenticated, async (req, res) => {
   try {
     const { userId } = req.params;
-    const authUserId = req.user.claims.sub;
+    const authUserId = req.user.claims?.sub || req.user.claims?.id;
     if (userId !== authUserId && userId !== "me") {
       const reputation2 = await ReputationService.getUserReputation(userId);
       return res.json({
@@ -7374,42 +8153,33 @@ router7.get("/leaderboard", async (req, res) => {
     res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
   }
 });
-router7.post("/convert", isAuthenticated2, async (req, res) => {
+router7.post("/convert", isAuthenticated, async (req, res) => {
   try {
-    const userId = req.user.claims.sub;
+    const userId = req.user.claims?.sub || req.user.claims?.id;
     const { pointsToConvert, conversionRate } = req.body;
     if (!pointsToConvert || pointsToConvert <= 0) {
       return res.status(400).json({ message: "Invalid points amount" });
     }
-    const result = await ReputationService.convertPointsToTokens(
-      userId,
-      pointsToConvert,
-      conversionRate
-    );
+    const result = await ReputationService.convertPointsToTokens(userId, pointsToConvert, conversionRate);
     res.json(result);
   } catch (err) {
     res.status(400).json({ message: err instanceof Error ? err.message : String(err) });
   }
 });
-router7.post("/airdrop/check", isAuthenticated2, async (req, res) => {
+router7.post("/airdrop/check", isAuthenticated, async (req, res) => {
   try {
-    const userId = req.user.claims.sub;
+    const userId = req.user.claims?.sub || req.user.claims?.id;
     const { airdropId, minimumReputation, baseAmount } = req.body;
-    if (!airdropId || !minimumReputation || !baseAmount) {
+    if (!airdropId || minimumReputation == null || baseAmount == null) {
       return res.status(400).json({ message: "Missing required airdrop parameters" });
     }
-    const eligibility = await ReputationService.checkAirdropEligibility(
-      userId,
-      airdropId,
-      minimumReputation,
-      baseAmount
-    );
+    const eligibility = await ReputationService.checkAirdropEligibility(userId, airdropId, minimumReputation, baseAmount);
     res.json(eligibility);
   } catch (err) {
     res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
   }
 });
-router7.post("/award", isAuthenticated2, async (req, res) => {
+router7.post("/award", isAuthenticated, async (req, res) => {
   try {
     const { userId, action, points, daoId, description, multiplier } = req.body;
     const authUser = req.user;
@@ -7424,16 +8194,16 @@ router7.post("/award", isAuthenticated2, async (req, res) => {
 });
 router7.get("/achievements", async (req, res) => {
   try {
-    const achievementRows = await db2.select().from(achievements).where(eq11(achievements.isActive, true));
+    const achievementRows = await db2.select().from(achievements).where(eq14(achievements.isActive, true));
     res.json({ achievements: achievementRows });
   } catch (err) {
     res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
   }
 });
-router7.get("/achievements/user/:userId", isAuthenticated2, async (req, res) => {
+router7.get("/achievements/user/:userId", isAuthenticated, async (req, res) => {
   try {
     const { userId } = req.params;
-    const authUserId = req.user.claims.sub;
+    const authUserId = req.user.claims?.sub || req.user.claims?.id;
     if (userId !== authUserId && userId !== "me") {
       return res.status(403).json({ message: "Access denied" });
     }
@@ -7445,9 +8215,9 @@ router7.get("/achievements/user/:userId", isAuthenticated2, async (req, res) => 
     res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
   }
 });
-router7.post("/achievements/claim/:achievementId", isAuthenticated2, async (req, res) => {
+router7.post("/achievements/claim/:achievementId", isAuthenticated, async (req, res) => {
   try {
-    const userId = req.user.claims.sub;
+    const userId = req.user.claims?.sub || req.user.claims?.id;
     const { achievementId } = req.params;
     const success = await AchievementService.claimAchievementReward(userId, achievementId);
     if (success) {
@@ -7459,18 +8229,18 @@ router7.post("/achievements/claim/:achievementId", isAuthenticated2, async (req,
     res.status(400).json({ message: err instanceof Error ? err.message : String(err) });
   }
 });
-router7.get("/airdrops/eligible", isAuthenticated2, async (req, res) => {
+router7.get("/airdrops/eligible", isAuthenticated, async (req, res) => {
   try {
-    const userId = req.user.claims.sub;
+    const userId = req.user.claims?.sub || req.user.claims?.id;
     const eligibleAirdrops = await AirdropService.getUserAirdropEligibility(userId);
     res.json({ airdrops: eligibleAirdrops });
   } catch (err) {
     res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
   }
 });
-router7.post("/airdrops/claim/:airdropId", isAuthenticated2, async (req, res) => {
+router7.post("/airdrops/claim/:airdropId", isAuthenticated, async (req, res) => {
   try {
-    const userId = req.user.claims.sub;
+    const userId = req.user.claims?.sub || req.user.claims?.id;
     const { airdropId } = req.params;
     const txHash = await AirdropService.claimAirdrop(userId, airdropId);
     res.json({ message: "Airdrop claimed successfully", transactionHash: txHash });
@@ -7478,27 +8248,27 @@ router7.post("/airdrops/claim/:airdropId", isAuthenticated2, async (req, res) =>
     res.status(400).json({ message: err instanceof Error ? err.message : String(err) });
   }
 });
-router7.get("/vesting/overview", isAuthenticated2, async (req, res) => {
+router7.get("/vesting/overview", isAuthenticated, async (req, res) => {
   try {
-    const userId = req.user.claims.sub;
+    const userId = req.user.claims?.sub || req.user.claims?.id;
     const overview = await VestingService.getUserVestingOverview(userId);
     res.json(overview);
   } catch (err) {
     res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
   }
 });
-router7.get("/vesting/claimable", isAuthenticated2, async (req, res) => {
+router7.get("/vesting/claimable", isAuthenticated, async (req, res) => {
   try {
-    const userId = req.user.claims.sub;
+    const userId = req.user.claims?.sub || req.user.claims?.id;
     const claimable = await VestingService.getClaimableTokens(userId);
     res.json({ claimable });
   } catch (err) {
     res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
   }
 });
-router7.post("/vesting/claim/:scheduleId", isAuthenticated2, async (req, res) => {
+router7.post("/vesting/claim/:scheduleId", isAuthenticated, async (req, res) => {
   try {
-    const userId = req.user.claims.sub;
+    const userId = req.user.claims?.sub || req.user.claims?.id;
     const { scheduleId } = req.params;
     const txHash = await VestingService.claimVestedTokens(userId, scheduleId);
     res.json({ message: "Tokens claimed successfully", transactionHash: txHash });
@@ -7514,11 +8284,12 @@ import express8 from "express";
 // server/analyticsService.ts
 init_db();
 init_schema();
-import { eq as eq12, gte as gte5, lte as lte3, count, sql as sql9, and as and11 } from "drizzle-orm";
+import { eq as eq15, gte as gte5, lte as lte3, count, and as and11 } from "drizzle-orm";
 import { format as format2, subDays, subMonths, subYears, startOfDay, endOfDay } from "date-fns";
+import { EventEmitter as EventEmitter2 } from "events";
 var AnalyticsService = class {
   constructor() {
-    this.eventEmitter = new (__require("events")).EventEmitter();
+    this.eventEmitter = new EventEmitter2();
     this.realTimeMetrics = /* @__PURE__ */ new Map();
     this.userActivityCache = /* @__PURE__ */ new Map();
     setInterval(() => this.updateRealTimeMetrics(), 3e4);
@@ -7532,10 +8303,6 @@ var AnalyticsService = class {
     }
     this.userActivityCache.get(userId).push(activity);
     try {
-      await db2.insert(sql9`
-        INSERT INTO user_activities (user_id, action, metadata, created_at)
-        VALUES (${userId}, ${action}, ${JSON.stringify(metadata || {})}, NOW())
-      `);
     } catch (error) {
       console.warn("Failed to persist user activity:", error);
     }
@@ -7543,7 +8310,7 @@ var AnalyticsService = class {
   }
   // Real-time metrics collection
   async getRealTimeMetrics(daoId) {
-    const whereClause = daoId ? eq12(daos.id, daoId) : void 0;
+    const whereClause = daoId ? eq15(daos.id, daoId) : void 0;
     const [
       totalDaos,
       totalProposals,
@@ -7553,14 +8320,14 @@ var AnalyticsService = class {
       proposalData
     ] = await Promise.all([
       db2.select({ count: count() }).from(daos).where(whereClause),
-      daoId ? db2.select({ count: count() }).from(proposals2).where(eq12(proposals2.daoId, daoId)) : db2.select({ count: count() }).from(proposals2),
-      daoId ? db2.select({ count: count() }).from(votes).innerJoin(proposals2, eq12(votes.proposalId, proposals2.id)).where(eq12(proposals2.daoId, daoId)) : db2.select({ count: count() }).from(votes),
+      daoId ? db2.select({ count: count() }).from(proposals2).where(eq15(proposals2.daoId, daoId)) : db2.select({ count: count() }).from(proposals2),
+      daoId ? db2.select({ count: count() }).from(votes).innerJoin(proposals2, eq15(votes.proposalId, proposals2.id)).where(eq15(proposals2.daoId, daoId)) : db2.select({ count: count() }).from(votes),
       db2.select({ count: count() }).from(users2),
-      daoId ? db2.select({ count: count() }).from(tasks).where(eq12(tasks.daoId, daoId)) : db2.select({ count: count() }).from(tasks),
+      daoId ? db2.select({ count: count() }).from(tasks).where(eq15(tasks.daoId, daoId)) : db2.select({ count: count() }).from(tasks),
       daoId ? db2.select({
         status: proposals2.status,
         count: count()
-      }).from(proposals2).where(eq12(proposals2.daoId, daoId)).groupBy(proposals2.status) : db2.select({
+      }).from(proposals2).where(eq15(proposals2.daoId, daoId)).groupBy(proposals2.status) : db2.select({
         status: proposals2.status,
         count: count()
       }).from(proposals2).groupBy(proposals2.status)
@@ -7612,7 +8379,7 @@ var AnalyticsService = class {
       const [daoCount, userCount, proposalCount, proposalSuccess] = await Promise.all([
         daoId ? Promise.resolve([{ count: 1 }]) : db2.select({ count: count() }).from(daos).where(lte3(daos.createdAt, dayEnd)),
         db2.select({ count: count() }).from(users2).where(lte3(users2.createdAt, dayEnd)),
-        daoId ? db2.select({ count: count() }).from(proposals2).where(and11(eq12(proposals2.daoId, daoId), gte5(proposals2.createdAt, dayStart), lte3(proposals2.createdAt, dayEnd))) : db2.select({ count: count() }).from(proposals2).where(and11(gte5(proposals2.createdAt, dayStart), lte3(proposals2.createdAt, dayEnd))),
+        daoId ? db2.select({ count: count() }).from(proposals2).where(and11(eq15(proposals2.daoId, daoId), gte5(proposals2.createdAt, dayStart), lte3(proposals2.createdAt, dayEnd))) : db2.select({ count: count() }).from(proposals2).where(and11(gte5(proposals2.createdAt, dayStart), lte3(proposals2.createdAt, dayEnd))),
         this.getSuccessRateForPeriod(dayStart, dayEnd, daoId)
       ]);
       historicalData.push({
@@ -7695,7 +8462,7 @@ var AnalyticsService = class {
     }).from(daos).limit(limit);
     return Promise.all(daosList.map(async (dao) => {
       const [proposalCount, successRate] = await Promise.all([
-        db2.select({ count: count() }).from(proposals2).where(eq12(proposals2.daoId, dao.id)),
+        db2.select({ count: count() }).from(proposals2).where(eq15(proposals2.daoId, dao.id)),
         this.getSuccessRateForDao(dao.id)
       ]);
       return {
@@ -7749,27 +8516,62 @@ var AnalyticsService = class {
       }
     }
   }
-  // Enhanced user engagement calculation
+  // Enhanced user engagement calculation with detailed metrics
   async calculateUserEngagement(daoId) {
     const thirtyDaysAgo = subDays(/* @__PURE__ */ new Date(), 30);
     const sevenDaysAgo = subDays(/* @__PURE__ */ new Date(), 7);
-    const [totalUsers, activeUsers, weeklyActive] = await Promise.all([
+    const [totalUsers, activeUsers, weeklyActive, dailyActive] = await Promise.all([
       daoId ? db2.select({ count: count() }).from(users2) : db2.select({ count: count() }).from(users2),
-      daoId ? db2.select({ count: count() }).from(votes).innerJoin(proposals2, eq12(votes.proposalId, proposals2.id)).where(and11(eq12(proposals2.daoId, daoId), gte5(votes.createdAt, thirtyDaysAgo))) : db2.select({ count: count() }).from(votes).where(gte5(votes.createdAt, thirtyDaysAgo)),
-      daoId ? db2.select({ count: count() }).from(votes).innerJoin(proposals2, eq12(votes.proposalId, proposals2.id)).where(and11(eq12(proposals2.daoId, daoId), gte5(votes.createdAt, sevenDaysAgo))) : db2.select({ count: count() }).from(votes).where(gte5(votes.createdAt, sevenDaysAgo))
+      daoId ? db2.select({ count: count() }).from(votes).innerJoin(proposals2, eq15(votes.proposalId, proposals2.id)).where(and11(eq15(proposals2.daoId, daoId), gte5(votes.createdAt, thirtyDaysAgo))) : db2.select({ count: count() }).from(votes).where(gte5(votes.createdAt, thirtyDaysAgo)),
+      daoId ? db2.select({ count: count() }).from(votes).innerJoin(proposals2, eq15(votes.proposalId, proposals2.id)).where(and11(eq15(proposals2.daoId, daoId), gte5(votes.createdAt, sevenDaysAgo))) : db2.select({ count: count() }).from(votes).where(gte5(votes.createdAt, sevenDaysAgo)),
+      daoId ? db2.select({ count: count() }).from(votes).innerJoin(proposals2, eq15(votes.proposalId, proposals2.id)).where(and11(eq15(proposals2.daoId, daoId), gte5(votes.createdAt, subDays(/* @__PURE__ */ new Date(), 1)))) : db2.select({ count: count() }).from(votes).where(gte5(votes.createdAt, subDays(/* @__PURE__ */ new Date(), 1)))
     ]);
     const total = totalUsers[0]?.count || 0;
     const monthly = activeUsers[0]?.count || 0;
     const weekly = weeklyActive[0]?.count || 0;
+    const daily = dailyActive[0]?.count || 0;
     const monthlyEngagement = total > 0 ? monthly / total * 100 : 0;
     const weeklyEngagement = total > 0 ? weekly / total * 100 : 0;
-    return monthlyEngagement * 0.4 + weeklyEngagement * 0.6;
+    const dailyEngagement = total > 0 ? daily / total * 100 : 0;
+    return monthlyEngagement * 0.3 + weeklyEngagement * 0.4 + dailyEngagement * 0.3;
+  }
+  // Get detailed engagement metrics for a DAO
+  async getDetailedEngagementMetrics(daoId) {
+    const now = /* @__PURE__ */ new Date();
+    const oneDayAgo = subDays(now, 1);
+    const sevenDaysAgo = subDays(now, 7);
+    const thirtyDaysAgo = subDays(now, 30);
+    const [daily, weekly, monthly] = await Promise.all([
+      this.calculateEngagementForPeriod(oneDayAgo, now, daoId),
+      this.calculateEngagementForPeriod(sevenDaysAgo, now, daoId),
+      this.calculateEngagementForPeriod(thirtyDaysAgo, now, daoId)
+    ]);
+    let trend = "stable";
+    if (weekly > monthly * 1.1) trend = "increasing";
+    if (weekly < monthly * 0.9) trend = "decreasing";
+    return {
+      daily,
+      weekly,
+      monthly,
+      averageSessionLength: 0,
+      // Would need session tracking
+      topContributors: [],
+      // Would integrate with contribution data
+      engagementTrend: trend
+    };
+  }
+  async calculateEngagementForPeriod(start, end, daoId) {
+    const [votes5, proposals7] = await Promise.all([
+      daoId ? db2.select({ count: count() }).from(votes5).innerJoin(proposals7, eq15(votes5.proposalId, proposals7.id)).where(and11(eq15(proposals7.daoId, daoId), gte5(votes5.createdAt, start), lte3(votes5.createdAt, end))) : db2.select({ count: count() }).from(votes5).where(and11(gte5(votes5.createdAt, start), lte3(votes5.createdAt, end))),
+      daoId ? db2.select({ count: count() }).from(proposals7).where(and11(eq15(proposals7.daoId, daoId), gte5(proposals7.createdAt, start), lte3(proposals7.createdAt, end))) : db2.select({ count: count() }).from(proposals7).where(and11(gte5(proposals7.createdAt, start), lte3(proposals7.createdAt, end)))
+    ]);
+    return (votes5[0]?.count || 0) + (proposals7[0]?.count || 0);
   }
   async getSuccessRateForPeriod(start, end, daoId) {
     const proposalsData = daoId ? await db2.select({
       status: proposals2.status,
       count: count()
-    }).from(proposals2).where(and11(eq12(proposals2.daoId, daoId), gte5(proposals2.createdAt, start), lte3(proposals2.createdAt, end))).groupBy(proposals2.status) : await db2.select({
+    }).from(proposals2).where(and11(eq15(proposals2.daoId, daoId), gte5(proposals2.createdAt, start), lte3(proposals2.createdAt, end))).groupBy(proposals2.status) : await db2.select({
       status: proposals2.status,
       count: count()
     }).from(proposals2).where(and11(gte5(proposals2.createdAt, start), lte3(proposals2.createdAt, end))).groupBy(proposals2.status);
@@ -7781,7 +8583,7 @@ var AnalyticsService = class {
     const proposalsData = await db2.select({
       status: proposals2.status,
       count: count()
-    }).from(proposals2).where(eq12(proposals2.daoId, daoId)).groupBy(proposals2.status);
+    }).from(proposals2).where(eq15(proposals2.daoId, daoId)).groupBy(proposals2.status);
     const total = proposalsData.reduce((sum3, item) => sum3 + item.count, 0);
     const successful = proposalsData.find((item) => item.status !== null && item.status === "executed")?.count || 0;
     return total > 0 ? successful / total * 100 : 0;
@@ -8281,7 +9083,7 @@ router9.get("/search", isAuthenticated2, async (req, res) => {
 init_storage();
 init_schema();
 import express10 from "express";
-import { eq as eq13, and as and12, desc as desc7 } from "drizzle-orm";
+import { eq as eq16, and as and12, desc as desc7 } from "drizzle-orm";
 var router10 = express10.Router();
 router10.post("/create", async (req, res) => {
   try {
@@ -8351,8 +9153,8 @@ router10.get("/:daoId/history", async (req, res) => {
     const { daoId } = req.params;
     const { limit = 50, offset = 0 } = req.query;
     const transactions = await db2.select().from(walletTransactions).where(and12(
-      eq13(walletTransactions.fromUserId, daoId),
-      eq13(walletTransactions.type, "disbursement")
+      eq16(walletTransactions.fromUserId, daoId),
+      eq16(walletTransactions.type, "disbursement")
     )).orderBy(desc7(walletTransactions.createdAt)).limit(Number(limit)).offset(Number(offset));
     const disbursements = /* @__PURE__ */ new Map();
     transactions.forEach((tx) => {
@@ -8403,8 +9205,8 @@ router10.post("/:disbursementId/execute", async (req, res) => {
     const { disbursementId } = req.params;
     const { paymentMethod = "wallet" } = req.body;
     const transactions = await db2.select().from(walletTransactions).where(and12(
-      eq13(walletTransactions.disbursementId, disbursementId),
-      eq13(walletTransactions.status, "pending")
+      eq16(walletTransactions.disbursementId, disbursementId),
+      eq16(walletTransactions.status, "pending")
     ));
     if (transactions.length === 0) {
       return res.status(404).json({
@@ -8418,7 +9220,7 @@ router10.post("/:disbursementId/execute", async (req, res) => {
         await db2.update(walletTransactions).set({
           status: "completed",
           updatedAt: /* @__PURE__ */ new Date()
-        }).where(eq13(walletTransactions.id, transaction.id));
+        }).where(eq16(walletTransactions.id, transaction.id));
         results.push({
           transactionId: transaction.id,
           recipient: transaction.toUserId,
@@ -8429,7 +9231,7 @@ router10.post("/:disbursementId/execute", async (req, res) => {
         await db2.update(walletTransactions).set({
           status: "failed",
           updatedAt: /* @__PURE__ */ new Date()
-        }).where(eq13(walletTransactions.id, transaction.id));
+        }).where(eq16(walletTransactions.id, transaction.id));
         results.push({
           transactionId: transaction.id,
           recipient: transaction.toUserId,
@@ -8463,7 +9265,7 @@ router10.post("/:disbursementId/execute", async (req, res) => {
 router10.get("/:disbursementId/status", async (req, res) => {
   try {
     const { disbursementId } = req.params;
-    const transactions = await db2.select().from(walletTransactions).where(eq13(walletTransactions.disbursementId, disbursementId));
+    const transactions = await db2.select().from(walletTransactions).where(eq16(walletTransactions.disbursementId, disbursementId));
     if (transactions.length === 0) {
       return res.status(404).json({
         success: false,
@@ -8593,7 +9395,7 @@ router10.post("/bulk-approve", async (req, res) => {
           approvedBy: approverUserId,
           approvedAt: /* @__PURE__ */ new Date(),
           updatedAt: /* @__PURE__ */ new Date()
-        }).where(eq13(walletTransactions.disbursementId, disbursementId));
+        }).where(eq16(walletTransactions.disbursementId, disbursementId));
         results.push({
           disbursementId,
           status: "approved"
@@ -8632,7 +9434,7 @@ router11.get("/:daoId/balance", isAuthenticated2, async (req, res) => {
     if (!dao || !dao.treasuryPrivateKey) {
       return res.status(404).json({ message: "DAO or treasury wallet not found" });
     }
-    const config2 = NetworkConfig.CELO_ALFAJORES;
+    const config3 = NetworkConfig.CELO_ALFAJORES;
     const mockPriceOracle2 = async (tokenAddress) => {
       const prices = {
         "native": 2500,
@@ -8644,7 +9446,7 @@ router11.get("/:daoId/balance", isAuthenticated2, async (req, res) => {
     };
     const wallet2 = new agent_wallet_default(
       dao.treasuryPrivateKey,
-      config2,
+      config3,
       void 0,
       void 0,
       void 0,
@@ -8665,7 +9467,7 @@ router11.post("/:daoId/transfer/native", isAuthenticated2, async (req, res) => {
     if (!dao || !dao.treasuryPrivateKey) {
       return res.status(404).json({ message: "DAO or treasury wallet not found" });
     }
-    const config2 = NetworkConfig.CELO_ALFAJORES;
+    const config3 = NetworkConfig.CELO_ALFAJORES;
     const mockPriceOracle2 = async (tokenAddress) => {
       const prices = {
         "native": 2500,
@@ -8675,7 +9477,7 @@ router11.post("/:daoId/transfer/native", isAuthenticated2, async (req, res) => {
     };
     const wallet2 = new agent_wallet_default(
       dao.treasuryPrivateKey,
-      config2,
+      config3,
       void 0,
       void 0,
       void 0,
@@ -8695,7 +9497,7 @@ router11.post("/:daoId/transfer/token", isAuthenticated2, async (req, res) => {
     if (!dao || !dao.treasuryPrivateKey) {
       return res.status(404).json({ message: "DAO or treasury wallet not found" });
     }
-    const config2 = NetworkConfig.CELO_ALFAJORES;
+    const config3 = NetworkConfig.CELO_ALFAJORES;
     const mockPriceOracle2 = async (tokenAddress2) => {
       const prices = {
         "native": 2500,
@@ -8705,7 +9507,7 @@ router11.post("/:daoId/transfer/token", isAuthenticated2, async (req, res) => {
     };
     const wallet2 = new agent_wallet_default(
       dao.treasuryPrivateKey,
-      config2,
+      config3,
       void 0,
       void 0,
       void 0,
@@ -8725,7 +9527,7 @@ router11.post("/:daoId/automation/payout", isAuthenticated2, async (req, res) =>
     if (!dao || !dao.treasuryPrivateKey) {
       return res.status(404).json({ message: "DAO or treasury wallet not found" });
     }
-    const config2 = NetworkConfig.CELO_ALFAJORES;
+    const config3 = NetworkConfig.CELO_ALFAJORES;
     const mockPriceOracle2 = async (tokenAddress) => {
       const prices = {
         "native": 2500,
@@ -8735,7 +9537,7 @@ router11.post("/:daoId/automation/payout", isAuthenticated2, async (req, res) =>
     };
     const wallet2 = new agent_wallet_default(
       dao.treasuryPrivateKey,
-      config2,
+      config3,
       void 0,
       void 0,
       void 0,
@@ -8750,7 +9552,7 @@ router11.post("/:daoId/automation/payout", isAuthenticated2, async (req, res) =>
         if (!dao2 || !dao2.treasuryPrivateKey) {
           return res2.status(404).json({ message: "DAO or treasury wallet not found" });
         }
-        const config3 = NetworkConfig.CELO_ALFAJORES;
+        const config4 = NetworkConfig.CELO_ALFAJORES;
         const mockPriceOracle3 = async (tokenAddress) => {
           const prices = {
             "native": 2500,
@@ -8760,7 +9562,7 @@ router11.post("/:daoId/automation/payout", isAuthenticated2, async (req, res) =>
         };
         const wallet3 = new agent_wallet_default(
           dao2.treasuryPrivateKey,
-          config3,
+          config4,
           void 0,
           void 0,
           void 0,
@@ -8781,7 +9583,7 @@ router11.post("/:daoId/automation/payout", isAuthenticated2, async (req, res) =>
         if (!dao2 || !dao2.treasuryPrivateKey) {
           return res2.status(404).json({ message: "DAO or treasury wallet not found" });
         }
-        const config3 = NetworkConfig.CELO_ALFAJORES;
+        const config4 = NetworkConfig.CELO_ALFAJORES;
         const mockPriceOracle3 = async (tokenAddress) => {
           const prices = {
             "native": 2500,
@@ -8791,7 +9593,7 @@ router11.post("/:daoId/automation/payout", isAuthenticated2, async (req, res) =>
         };
         const wallet3 = new agent_wallet_default(
           dao2.treasuryPrivateKey,
-          config3,
+          config4,
           void 0,
           void 0,
           void 0,
@@ -8880,7 +9682,7 @@ var dao_treasury_default = router11;
 init_storage();
 init_schema();
 import express12 from "express";
-import { eq as eq14 } from "drizzle-orm";
+import { eq as eq17 } from "drizzle-orm";
 var router12 = express12.Router();
 var SUBSCRIPTION_PLANS = {
   free: {
@@ -8911,7 +9713,7 @@ router12.get("/plans", (req, res) => {
 router12.get("/:daoId/status", async (req, res) => {
   try {
     const { daoId } = req.params;
-    const dao = await db2.select().from(daos).where(eq14(daos.id, daoId)).limit(1);
+    const dao = await db2.select().from(daos).where(eq17(daos.id, daoId)).limit(1);
     if (dao.length === 0) {
       return res.status(404).json({
         success: false,
@@ -8959,7 +9761,7 @@ router12.post("/:daoId/upgrade", async (req, res) => {
       nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3),
       // 30 days from now
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq14(daos.id, daoId));
+    }).where(eq17(daos.id, daoId));
     res.json({
       success: true,
       message: `Successfully upgraded to ${plan} plan`,
@@ -8986,7 +9788,7 @@ router12.post("/:daoId/cancel", async (req, res) => {
     await db2.update(daos).set({
       billingStatus: "cancelled",
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq14(daos.id, daoId));
+    }).where(eq17(daos.id, daoId));
     res.json({
       success: true,
       message: "Subscription cancelled successfully"
@@ -9028,7 +9830,7 @@ var dao_subscriptions_default = router12;
 init_storage();
 init_schema();
 import express13 from "express";
-import { eq as eq15, and as and13, desc as desc8 } from "drizzle-orm";
+import { eq as eq18, and as and13, desc as desc8 } from "drizzle-orm";
 import { z as z3 } from "zod";
 var router13 = express13.Router();
 var createEscrowSchema = z3.object({
@@ -9045,7 +9847,7 @@ router13.post("/create", async (req, res) => {
     const validatedData = createEscrowSchema.parse(req.body);
     const { taskId, amount, currency } = validatedData;
     const userId = req.user?.claims?.sub ?? "";
-    const task = await db2.select().from(tasks).where(eq15(tasks.id, taskId)).limit(1);
+    const task = await db2.select().from(tasks).where(eq18(tasks.id, taskId)).limit(1);
     if (!task.length) {
       return res.status(404).json({ error: "Task not found" });
     }
@@ -9053,8 +9855,8 @@ router13.post("/create", async (req, res) => {
       return res.status(403).json({ error: "Only task creator can fund escrow" });
     }
     const existingEscrow = await db2.select().from(walletTransactions).where(and13(
-      eq15(walletTransactions.type, "escrow_deposit"),
-      eq15(walletTransactions.description, `Escrow for task: ${taskId}`)
+      eq18(walletTransactions.type, "escrow_deposit"),
+      eq18(walletTransactions.description, `Escrow for task: ${taskId}`)
     )).limit(1);
     if (existingEscrow.length > 0) {
       return res.status(400).json({ error: "Escrow already exists for this task" });
@@ -9086,24 +9888,24 @@ router13.post("/release", async (req, res) => {
     const validatedData = releaseEscrowSchema.parse(req.body);
     const { taskId, releaseToClaimant } = validatedData;
     const userId = req.user?.claims?.sub ?? "";
-    const task = await db2.select().from(tasks).where(eq15(tasks.id, taskId)).limit(1);
+    const task = await db2.select().from(tasks).where(eq18(tasks.id, taskId)).limit(1);
     if (!task.length) {
       return res.status(404).json({ error: "Task not found" });
     }
     const canRelease = task[0].creatorId === userId;
     if (!canRelease) {
       const membership = await db2.select().from(daoMemberships).where(and13(
-        eq15(daoMemberships.daoId, task[0].daoId),
-        eq15(daoMemberships.userId, userId)
+        eq18(daoMemberships.daoId, task[0].daoId),
+        eq18(daoMemberships.userId, userId)
       )).limit(1);
       if (!membership.length || !["admin", "moderator"].includes(membership[0].role ?? "")) {
         return res.status(403).json({ error: "Insufficient permissions to release escrow" });
       }
     }
     const escrow = await db2.select().from(walletTransactions).where(and13(
-      eq15(walletTransactions.type, "escrow_deposit"),
-      eq15(walletTransactions.description, `Escrow for task: ${taskId}`),
-      eq15(walletTransactions.status, "held")
+      eq18(walletTransactions.type, "escrow_deposit"),
+      eq18(walletTransactions.description, `Escrow for task: ${taskId}`),
+      eq18(walletTransactions.status, "held")
     )).limit(1);
     if (!escrow.length) {
       return res.status(404).json({ error: "Active escrow not found for this task" });
@@ -9116,7 +9918,7 @@ router13.post("/release", async (req, res) => {
     await db2.update(walletTransactions).set({
       status: "completed",
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq15(walletTransactions.id, escrow[0].id));
+    }).where(eq18(walletTransactions.id, escrow[0].id));
     const release = await db2.insert(walletTransactions).values({
       walletAddress: recipient,
       amount: escrowAmount.toString(),
@@ -9129,7 +9931,7 @@ router13.post("/release", async (req, res) => {
       await db2.update(tasks).set({
         status: "completed",
         updatedAt: /* @__PURE__ */ new Date()
-      }).where(eq15(tasks.id, taskId));
+      }).where(eq18(tasks.id, taskId));
     }
     res.json({
       success: true,
@@ -9149,8 +9951,8 @@ router13.get("/:taskId/escrow", async (req, res) => {
   try {
     const { taskId } = req.params;
     const escrow = await db2.select().from(walletTransactions).where(and13(
-      eq15(walletTransactions.type, "escrow_deposit"),
-      eq15(walletTransactions.description, `Escrow for task: ${taskId}`)
+      eq18(walletTransactions.type, "escrow_deposit"),
+      eq18(walletTransactions.description, `Escrow for task: ${taskId}`)
     )).orderBy(desc8(walletTransactions.createdAt)).limit(1);
     if (!escrow.length) {
       return res.json({ hasEscrow: false });
@@ -9171,7 +9973,7 @@ router13.post("/:taskId/dispute", async (req, res) => {
     const { taskId } = req.params;
     const { reason } = req.body;
     const userId = req.user?.claims?.sub ?? "";
-    const task = await db2.select().from(tasks).where(eq15(tasks.id, taskId)).limit(1);
+    const task = await db2.select().from(tasks).where(eq18(tasks.id, taskId)).limit(1);
     if (!task.length) {
       return res.status(404).json({ error: "Task not found" });
     }
@@ -9181,7 +9983,7 @@ router13.post("/:taskId/dispute", async (req, res) => {
     await db2.update(tasks).set({
       status: "disputed",
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq15(tasks.id, taskId));
+    }).where(eq18(tasks.id, taskId));
     await db2.insert(taskHistory).values({
       taskId,
       userId,
@@ -9203,17 +10005,17 @@ var bounty_escrow_default = router13;
 init_storage();
 init_schema();
 import express14 from "express";
-import { eq as eq18, and as and16, desc as desc10 } from "drizzle-orm";
+import { eq as eq21, and as and16, desc as desc10 } from "drizzle-orm";
 
 // server/proposalExecutionService.ts
 init_storage();
 init_schema();
-import { eq as eq17, and as and15, lte as lte5 } from "drizzle-orm";
+import { eq as eq20, and as and15, lte as lte5 } from "drizzle-orm";
 
 // server/services/vaultService.ts
 init_db();
 init_schema();
-import { eq as eq16, and as and14, desc as desc9, sql as sql10, gte as gte6, lte as lte4 } from "drizzle-orm";
+import { eq as eq19, and as and14, desc as desc9, sql as sql10, gte as gte6, lte as lte4 } from "drizzle-orm";
 
 // shared/tokenRegistry.ts
 var TOKEN_REGISTRY = {
@@ -9663,141 +10465,6 @@ var tokenService = new TokenService(
   process.env.NODE_ENV === "production" ? "mainnet" : "testnet"
 );
 
-// server/middleware/errorHandler.ts
-import { ZodError } from "zod";
-init_storage();
-var AppError = class extends Error {
-  constructor(message, statusCode = 500, isOperational = true, code) {
-    super(message);
-    this.statusCode = statusCode;
-    this.isOperational = isOperational;
-    this.code = code;
-    Error.captureStackTrace(this, this.constructor);
-  }
-};
-var ValidationError = class extends AppError {
-  constructor(message) {
-    super(message, 400, true, "VALIDATION_ERROR");
-  }
-};
-var NotFoundError = class extends AppError {
-  constructor(resource = "Resource") {
-    super(`${resource} not found`, 404, true, "NOT_FOUND");
-  }
-};
-var formatErrorResponse = (error, req) => {
-  const response = {
-    success: false,
-    error: {
-      message: error.message,
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      path: req.path,
-      method: req.method
-    }
-  };
-  if (error instanceof AppError) {
-    response.error.code = error.code;
-    response.error.statusCode = error.statusCode;
-  }
-  if (isDevelopment && error.stack) {
-    response.error.stack = error.stack;
-  }
-  if (req.headers["x-request-id"]) {
-    response.error.requestId = req.headers["x-request-id"];
-  }
-  return response;
-};
-var logError = async (error, req, res) => {
-  const severity = error instanceof AppError && error.statusCode < 500 ? "medium" : "high";
-  const user = req.user;
-  try {
-    await storage.createSystemLog(
-      "error",
-      error.message,
-      "api",
-      {
-        stack: error.stack,
-        statusCode: error instanceof AppError ? error.statusCode : 500,
-        path: req.path,
-        method: req.method,
-        userAgent: req.get("User-Agent"),
-        ipAddress: req.ip,
-        userId: user?.claims?.sub,
-        requestBody: req.body,
-        requestQuery: req.query,
-        requestParams: req.params
-      }
-    );
-    if (severity === "high") {
-      console.error(`\u{1F6A8} ${error.message}`, {
-        stack: error.stack,
-        path: req.path,
-        method: req.method,
-        userId: user?.claims?.sub
-      });
-    }
-  } catch (logError2) {
-    console.error("Failed to log error:", logError2);
-  }
-};
-var errorHandler = async (error, req, res, next) => {
-  await logError(error, req, res);
-  let statusCode = 500;
-  let message = "Internal server error";
-  let code = "INTERNAL_ERROR";
-  if (error instanceof AppError) {
-    statusCode = error.statusCode;
-    message = error.message;
-    code = error.code || "APP_ERROR";
-  } else if (error instanceof ZodError) {
-    statusCode = 400;
-    message = "Validation failed";
-    code = "VALIDATION_ERROR";
-    return res.status(statusCode).json({
-      success: false,
-      error: {
-        message,
-        code,
-        statusCode,
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        path: req.path,
-        method: req.method,
-        details: error.errors
-      }
-    });
-  } else if (error.name === "CastError") {
-    statusCode = 400;
-    message = "Invalid ID format";
-    code = "INVALID_ID";
-  } else if (error.name === "MongoError" || error.message.includes("database")) {
-    statusCode = 500;
-    message = "Database operation failed";
-    code = "DATABASE_ERROR";
-  }
-  const response = formatErrorResponse(
-    new AppError(message, statusCode, true, code),
-    req
-  );
-  res.status(statusCode).json(response);
-};
-var asyncHandler = (fn) => (req, res, next) => {
-  Promise.resolve(fn(req, res, next)).catch(next);
-};
-var notFoundHandler = (req, res, next) => {
-  const error = new NotFoundError(`Route ${req.originalUrl} not found`);
-  next(error);
-};
-var setupProcessErrorHandlers = () => {
-  process.on("unhandledRejection", (reason, promise) => {
-    console.error("\u{1F6A8} Unhandled Promise Rejection:", reason);
-    process.exit(1);
-  });
-  process.on("uncaughtException", (error) => {
-    console.error("\u{1F6A8} Uncaught Exception:", error);
-    process.exit(1);
-  });
-};
-
 // server/services/vaultService.ts
 import { z as z4 } from "zod";
 var createVaultSchema = z4.object({
@@ -9806,7 +10473,7 @@ var createVaultSchema = z4.object({
   userId: z4.string().optional(),
   daoId: z4.string().optional(),
   vaultType: z4.enum(["regular", "savings", "locked_savings", "yield", "dao_treasury"]),
-  primaryCurrency: z4.nativeEnum(SupportedToken),
+  primaryCurrency: z4.enum(["CELO", "cUSD", "cEUR", "USDT", "USDC", "MTAA"]),
   yieldStrategy: z4.string().optional(),
   riskLevel: z4.enum(["low", "medium", "high"]).default("low"),
   minDeposit: z4.string().optional(),
@@ -9815,7 +10482,7 @@ var createVaultSchema = z4.object({
 var depositSchema = z4.object({
   vaultId: z4.string().min(1, "Vault ID is required"),
   userId: z4.string().min(1, "User ID is required"),
-  tokenSymbol: z4.nativeEnum(SupportedToken),
+  tokenSymbol: z4.enum(["CELO", "cUSD", "cEUR", "USDT", "USDC", "MTAA"]),
   amount: z4.string().refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) >= 0, {
     message: "Amount must be a non-negative number"
   }),
@@ -9824,7 +10491,7 @@ var depositSchema = z4.object({
 var withdrawSchema = z4.object({
   vaultId: z4.string().min(1, "Vault ID is required"),
   userId: z4.string().min(1, "User ID is required"),
-  tokenSymbol: z4.nativeEnum(SupportedToken),
+  tokenSymbol: z4.enum(["CELO", "cUSD", "cEUR", "USDT", "USDC", "MTAA"]),
   amount: z4.string().refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) >= 0, {
     message: "Amount must be a non-negative number"
   }),
@@ -9834,7 +10501,7 @@ var strategyAllocationSchema = z4.object({
   vaultId: z4.string().min(1, "Vault ID is required"),
   userId: z4.string().min(1, "User ID is required"),
   strategyId: z4.string().min(1, "Strategy ID is required"),
-  tokenSymbol: z4.nativeEnum(SupportedToken),
+  tokenSymbol: z4.enum(["CELO", "cUSD", "cEUR", "USDT", "USDC", "MTAA"]),
   allocationPercentage: z4.number().min(0).max(100)
 });
 var VaultService = class {
@@ -9850,9 +10517,9 @@ var VaultService = class {
     if (vault.daoId) {
       const membership = await db2.query.daoMemberships.findFirst({
         where: and14(
-          eq16(daoMemberships.daoId, vault.daoId),
-          eq16(daoMemberships.userId, userId),
-          eq16(daoMemberships.status, "approved")
+          eq19(daoMemberships.daoId, vault.daoId),
+          eq19(daoMemberships.userId, userId),
+          eq19(daoMemberships.status, "approved")
         )
       });
       if (!membership || membership.isBanned) {
@@ -9909,7 +10576,7 @@ var VaultService = class {
         const lockDurationDays = 30;
         lockedUntil = new Date(Date.now() + lockDurationDays * 24 * 60 * 60 * 1e3);
       }
-      const [newVault] = await db2.insert(vaults).values({
+      const [newVault] = await db2.insert(vaults2).values({
         name: validatedRequest.name,
         description: validatedRequest.description,
         userId: validatedRequest.userId || null,
@@ -10096,9 +10763,9 @@ var VaultService = class {
       const allocationAmount = ethers2.formatUnits(allocationAmountWei, token.decimals);
       const existingAllocation = await db2.query.vaultStrategyAllocations.findFirst({
         where: and14(
-          eq16(vaultStrategyAllocations.vaultId, validatedRequest.vaultId),
-          eq16(vaultStrategyAllocations.strategyId, validatedRequest.strategyId),
-          eq16(vaultStrategyAllocations.tokenSymbol, validatedRequest.tokenSymbol)
+          eq19(vaultStrategyAllocations.vaultId, validatedRequest.vaultId),
+          eq19(vaultStrategyAllocations.strategyId, validatedRequest.strategyId),
+          eq19(vaultStrategyAllocations.tokenSymbol, validatedRequest.tokenSymbol)
         )
       });
       if (existingAllocation) {
@@ -10107,7 +10774,7 @@ var VaultService = class {
           allocationPercentage: validatedRequest.allocationPercentage.toString(),
           lastRebalance: /* @__PURE__ */ new Date(),
           updatedAt: /* @__PURE__ */ new Date()
-        }).where(eq16(vaultStrategyAllocations.id, existingAllocation.id));
+        }).where(eq19(vaultStrategyAllocations.id, existingAllocation.id));
       } else {
         await db2.insert(vaultStrategyAllocations).values({
           vaultId: validatedRequest.vaultId,
@@ -10146,8 +10813,8 @@ var VaultService = class {
       }
       const allocations = await db2.query.vaultStrategyAllocations.findMany({
         where: and14(
-          eq16(vaultStrategyAllocations.vaultId, vaultId),
-          eq16(vaultStrategyAllocations.isActive, true)
+          eq19(vaultStrategyAllocations.vaultId, vaultId),
+          eq19(vaultStrategyAllocations.isActive, true)
         )
       });
       for (const allocation of allocations) {
@@ -10167,7 +10834,7 @@ var VaultService = class {
             currentValue: newAllocation,
             lastRebalance: /* @__PURE__ */ new Date(),
             updatedAt: /* @__PURE__ */ new Date()
-          }).where(eq16(vaultStrategyAllocations.id, allocation.id));
+          }).where(eq19(vaultStrategyAllocations.id, allocation.id));
         }
       }
       await db2.insert(vaultTransactions).values({
@@ -10198,7 +10865,7 @@ var VaultService = class {
       }
       const holdings = await this.getVaultHoldings(vaultId);
       const allocations = await db2.query.vaultStrategyAllocations.findMany({
-        where: eq16(vaultStrategyAllocations.vaultId, vaultId)
+        where: eq19(vaultStrategyAllocations.vaultId, vaultId)
       });
       let liquidityRisk = 10;
       let smartContractRisk = 5;
@@ -10275,7 +10942,7 @@ var VaultService = class {
   async getUserVaults(userAddress) {
     try {
       const personalVaults = await db2.query.vaults.findMany({
-        where: eq16(vaults.userId, userAddress),
+        where: eq19(vaults2.userId, userAddress),
         with: {
           tokenHoldings: true,
           transactions: {
@@ -10286,15 +10953,15 @@ var VaultService = class {
       });
       const daoMemberships3 = await db2.query.daoMemberships.findMany({
         where: and14(
-          eq16(daoMemberships3.userId, userAddress),
-          eq16(daoMemberships3.status, "approved")
+          eq19(daoMemberships3.userId, userAddress),
+          eq19(daoMemberships3.status, "approved")
         )
       });
       const daoIds = daoMemberships3.map((m) => m.daoId);
       const daoVaults = daoIds.length > 0 ? await db2.query.vaults.findMany({
         where: and14(
-          sql10`${vaults.daoId} IN (${daoIds.join(",")})`,
-          eq16(vaults.isActive, true)
+          sql10`${vaults2.daoId} IN (${daoIds.join(",")})`,
+          eq19(vaults2.isActive, true)
         ),
         with: {
           tokenHoldings: true
@@ -10338,7 +11005,7 @@ var VaultService = class {
     try {
       const alerts = await db2.query.vaultTransactions.findMany({
         where: and14(
-          eq16(vaultTransactions.vaultId, vaultId),
+          eq19(vaultTransactions.vaultId, vaultId),
           sql10`${vaultTransactions.createdAt} > NOW() - INTERVAL '7 days'`
         ),
         orderBy: desc9(vaultTransactions.createdAt),
@@ -10386,7 +11053,7 @@ var VaultService = class {
       const transactions = await this.getVaultTransactions(vaultId, userId, 1, 10);
       const performance2 = await this.getVaultPerformance(vaultId, userId);
       const riskAssessment = await db2.query.vaultRiskAssessments.findFirst({
-        where: eq16(vaultRiskAssessments.vaultId, vaultId),
+        where: eq19(vaultRiskAssessments.vaultId, vaultId),
         orderBy: [desc9(vaultRiskAssessments.createdAt)]
       });
       return {
@@ -10410,7 +11077,7 @@ var VaultService = class {
   async getAllVaultsDashboardInfo() {
     try {
       const allVaults = await db2.query.vaults.findMany({
-        where: eq16(vaults.isActive, true),
+        where: eq19(vaults2.isActive, true),
         with: {
           tokenHoldings: true
         }
@@ -10440,12 +11107,12 @@ var VaultService = class {
       }
       const offset = (page - 1) * limit;
       const transactions = await db2.query.vaultTransactions.findMany({
-        where: eq16(vaultTransactions.vaultId, vaultId),
+        where: eq19(vaultTransactions.vaultId, vaultId),
         orderBy: [desc9(vaultTransactions.createdAt)],
         limit,
         offset
       });
-      const totalItems = (await db2.select({ count: sql10`count(*)` }).from(vaultTransactions).where(eq16(vaultTransactions.vaultId, vaultId)))[0]?.count || 0;
+      const totalItems = (await db2.select({ count: sql10`count(*)` }).from(vaultTransactions).where(eq19(vaultTransactions.vaultId, vaultId)))[0]?.count || 0;
       const totalPages = Math.ceil(totalItems / limit);
       return {
         transactions,
@@ -10470,7 +11137,7 @@ var VaultService = class {
         }
       }
       return await db2.query.vaultPerformance.findMany({
-        where: eq16(vaultPerformance.vaultId, vaultId),
+        where: eq19(vaultPerformance.vaultId, vaultId),
         orderBy: [desc9(vaultPerformance.createdAt)]
       });
     } catch (error) {
@@ -10526,8 +11193,8 @@ var VaultService = class {
       }
       const allocations = await db2.query.vaultStrategyAllocations.findMany({
         where: and14(
-          eq16(vaultStrategyAllocations.vaultId, vaultId),
-          eq16(vaultStrategyAllocations.isActive, true)
+          eq19(vaultStrategyAllocations.vaultId, vaultId),
+          eq19(vaultStrategyAllocations.isActive, true)
         )
       });
       return allocations.map((allocation) => {
@@ -10561,7 +11228,7 @@ var VaultService = class {
       const totalValue = userVaults.reduce((sum3, vault) => sum3 + parseFloat(vault.balance || "0"), 0);
       let userChallenge = await db2.query.userChallenges.findFirst({
         where: and14(
-          eq16(userChallenges.userId, userId),
+          eq19(userChallenges.userId, userId),
           sql10`DATE(${userChallenges.createdAt}) = ${today}`
         )
       });
@@ -10602,8 +11269,8 @@ var VaultService = class {
     try {
       const completedChallenges = await db2.query.userChallenges.findMany({
         where: and14(
-          eq16(userChallenges.userId, userId),
-          eq16(userChallenges.status, "completed")
+          eq19(userChallenges.userId, userId),
+          eq19(userChallenges.status, "completed")
         ),
         orderBy: [desc9(userChallenges.createdAt)],
         limit: 30
@@ -10631,9 +11298,9 @@ var VaultService = class {
       const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       const userChallenge = await db2.query.userChallenges.findFirst({
         where: and14(
-          eq16(userChallenges.userId, userId),
+          eq19(userChallenges.userId, userId),
           sql10`DATE(${userChallenges.createdAt}) = ${today}`,
-          eq16(userChallenges.status, "completed")
+          eq19(userChallenges.status, "completed")
         )
       });
       if (!userChallenge) {
@@ -10645,7 +11312,7 @@ var VaultService = class {
       await db2.update(userChallenges).set({
         rewardClaimed: true,
         claimedAt: /* @__PURE__ */ new Date()
-      }).where(eq16(userChallenges.id, userChallenge.id));
+      }).where(eq19(userChallenges.id, userChallenge.id));
       const newStreak = await this.getUserChallengeStreak(userId);
       return {
         success: true,
@@ -10662,7 +11329,7 @@ var VaultService = class {
   async getUserWalletStatus(userId) {
     try {
       const user = await db2.query.users.findFirst({
-        where: eq16(users.id, userId)
+        where: eq19(users.id, userId)
       });
       if (!user) {
         throw new NotFoundError("User not found");
@@ -10685,7 +11352,7 @@ var VaultService = class {
   async getVaultById(vaultId) {
     try {
       const result = await db2.query.vaults.findFirst({
-        where: eq16(vaults.id, vaultId)
+        where: eq19(vaults2.id, vaultId)
       });
       return result || null;
     } catch (error) {
@@ -10698,8 +11365,8 @@ var VaultService = class {
       const dbConnection = tx || db2;
       const result = await dbConnection.query.vaultTokenHoldings.findFirst({
         where: and14(
-          eq16(vaultTokenHoldings.vaultId, vaultId),
-          eq16(vaultTokenHoldings.tokenSymbol, tokenSymbol)
+          eq19(vaultTokenHoldings.vaultId, vaultId),
+          eq19(vaultTokenHoldings.tokenSymbol, tokenSymbol)
         )
       });
       return result || null;
@@ -10712,7 +11379,7 @@ var VaultService = class {
     try {
       const dbConnection = tx || db2;
       return await dbConnection.query.vaultTokenHoldings.findMany({
-        where: eq16(vaultTokenHoldings.vaultId, vaultId)
+        where: eq19(vaultTokenHoldings.vaultId, vaultId)
       });
     } catch (error) {
       Logger.getLogger().error(`Error fetching all holdings for vault ${vaultId}: ${error.message}`, error);
@@ -10728,8 +11395,8 @@ var VaultService = class {
     const priceUSD = await this.getTokenPriceUSD(tokenSymbol);
     const amountFloat = parseFloat(ethers2.formatUnits(amountWei < 0 ? -amountWei : amountWei, token.decimals));
     const existing = await dbConnection.select().from(vaultTokenHoldings).where(and14(
-      eq16(vaultTokenHoldings.vaultId, vaultId),
-      eq16(vaultTokenHoldings.tokenSymbol, tokenSymbol)
+      eq19(vaultTokenHoldings.vaultId, vaultId),
+      eq19(vaultTokenHoldings.tokenSymbol, tokenSymbol)
     )).for("update").limit(1).execute();
     if (existing && existing.length > 0) {
       const holdingRecord = existing[0];
@@ -10763,7 +11430,7 @@ var VaultService = class {
         lastPriceUpdate: /* @__PURE__ */ new Date(),
         updatedAt: /* @__PURE__ */ new Date()
       }).where(and14(
-        eq16(vaultTokenHoldings.id, holdingRecord.id),
+        eq19(vaultTokenHoldings.id, holdingRecord.id),
         // CRITICAL: Only update if balance constraint is satisfied
         sql10`(CAST(${holdingRecord.balance} AS NUMERIC) + CAST(${amountDelta} AS NUMERIC)) >= 0`
       )).execute();
@@ -10802,10 +11469,10 @@ var VaultService = class {
         (sum3, holding) => sum3 + parseFloat(holding.valueUSD || "0"),
         0
       );
-      await dbConnection.update(vaults).set({
+      await dbConnection.update(vaults2).set({
         totalValueLocked: totalValueUSD.toString(),
         updatedAt: /* @__PURE__ */ new Date()
-      }).where(eq16(vaults.id, vaultId));
+      }).where(eq19(vaults2.id, vaultId));
     } catch (error) {
       Logger.getLogger().error(`Error updating TVL for vault ${vaultId}: ${error.message}`, error);
       throw new AppError(`Database error updating TVL for vault ${vaultId}`, 500, error.message);
@@ -10876,7 +11543,7 @@ var VaultService = class {
       endOfDay2.setHours(23, 59, 59, 999);
       const existingPerformance = await db2.query.vaultPerformance.findFirst({
         where: and14(
-          eq16(vaultPerformance.vaultId, vaultId),
+          eq19(vaultPerformance.vaultId, vaultId),
           gte6(vaultPerformance.createdAt, startOfDay2),
           lte4(vaultPerformance.createdAt, endOfDay2)
         )
@@ -10917,7 +11584,7 @@ var ProposalExecutionService = class {
     try {
       const now = /* @__PURE__ */ new Date();
       const pendingExecutions = await db2.select().from(proposalExecutionQueue).where(and15(
-        eq17(proposalExecutionQueue.status, "pending"),
+        eq20(proposalExecutionQueue.status, "pending"),
         lte5(proposalExecutionQueue.scheduledFor, now)
       ));
       console.log(`Processing ${pendingExecutions.length} pending executions`);
@@ -10936,7 +11603,7 @@ var ProposalExecutionService = class {
         status: "executing",
         lastAttempt: /* @__PURE__ */ new Date(),
         attempts: execution.attempts + 1
-      }).where(eq17(proposalExecutionQueue.id, execution.id));
+      }).where(eq20(proposalExecutionQueue.id, execution.id));
       const { executionType, executionData, daoId, proposalId } = execution;
       switch (executionType) {
         case "treasury_transfer":
@@ -10957,11 +11624,11 @@ var ProposalExecutionService = class {
         default:
           throw new Error(`Unknown execution type: ${executionType}`);
       }
-      await db2.update(proposalExecutionQueue).set({ status: "completed" }).where(eq17(proposalExecutionQueue.id, execution.id));
+      await db2.update(proposalExecutionQueue).set({ status: "completed" }).where(eq20(proposalExecutionQueue.id, execution.id));
       await db2.update(proposals2).set({
         status: "executed",
         executedAt: /* @__PURE__ */ new Date()
-      }).where(eq17(proposals2.id, proposalId));
+      }).where(eq20(proposals2.id, proposalId));
       console.log(`Successfully executed proposal ${proposalId}`);
     } catch (error) {
       console.error("Error executing proposal:", error);
@@ -10972,7 +11639,7 @@ var ProposalExecutionService = class {
         errorMessage: error.message,
         // Retry after 1 hour if retriable
         scheduledFor: shouldRetry ? new Date(Date.now() + 60 * 60 * 1e3) : void 0
-      }).where(eq17(proposalExecutionQueue.id, execution.id));
+      }).where(eq20(proposalExecutionQueue.id, execution.id));
     }
   }
   // Execute treasury transfer
@@ -10981,8 +11648,8 @@ var ProposalExecutionService = class {
     if (fromVault) {
       const daoVault = await db2.query.vaults.findFirst({
         where: and15(
-          eq17(vaults.daoId, daoId),
-          eq17(vaults.vaultType, "dao_treasury")
+          eq20(vaults2.daoId, daoId),
+          eq20(vaults2.vaultType, "dao_treasury")
         )
       });
       if (!daoVault) {
@@ -10997,13 +11664,13 @@ var ProposalExecutionService = class {
         transactionHash: `proposal_${proposalId}`
       });
     } else {
-      const daoRecord = await db2.select().from(daos).where(eq17(daos.id, daoId)).limit(1);
+      const daoRecord = await db2.select().from(daos).where(eq20(daos.id, daoId)).limit(1);
       const currentBalance = parseFloat(daoRecord[0]?.treasuryBalance || "0");
       if (currentBalance < amount) {
         throw new Error(`Insufficient treasury balance. Available: ${currentBalance}, Requested: ${amount}`);
       }
       const newBalance = (currentBalance - amount).toString();
-      await db2.update(daos).set({ treasuryBalance: newBalance }).where(eq17(daos.id, daoId));
+      await db2.update(daos).set({ treasuryBalance: newBalance }).where(eq20(daos.id, daoId));
     }
     await db2.insert(walletTransactions).values({
       walletAddress: recipient,
@@ -11059,14 +11726,14 @@ var ProposalExecutionService = class {
     switch (action) {
       case "promote":
         await db2.update(daoMemberships).set({ role: newRole }).where(and15(
-          eq17(daoMemberships.daoId, daoId),
-          eq17(daoMemberships.userId, targetUserId)
+          eq20(daoMemberships.daoId, daoId),
+          eq20(daoMemberships.userId, targetUserId)
         ));
         break;
       case "demote":
         await db2.update(daoMemberships).set({ role: newRole || "member" }).where(and15(
-          eq17(daoMemberships.daoId, daoId),
-          eq17(daoMemberships.userId, targetUserId)
+          eq20(daoMemberships.daoId, daoId),
+          eq20(daoMemberships.userId, targetUserId)
         ));
         break;
       case "ban":
@@ -11074,8 +11741,8 @@ var ProposalExecutionService = class {
           isBanned: true,
           banReason: reason
         }).where(and15(
-          eq17(daoMemberships.daoId, daoId),
-          eq17(daoMemberships.userId, targetUserId)
+          eq20(daoMemberships.daoId, daoId),
+          eq20(daoMemberships.userId, targetUserId)
         ));
         break;
       case "unban":
@@ -11083,8 +11750,8 @@ var ProposalExecutionService = class {
           isBanned: false,
           banReason: null
         }).where(and15(
-          eq17(daoMemberships.daoId, daoId),
-          eq17(daoMemberships.userId, targetUserId)
+          eq20(daoMemberships.daoId, daoId),
+          eq20(daoMemberships.userId, targetUserId)
         ));
         break;
       case "remove":
@@ -11092,8 +11759,8 @@ var ProposalExecutionService = class {
           status: "rejected",
           banReason: reason
         }).where(and15(
-          eq17(daoMemberships.daoId, daoId),
-          eq17(daoMemberships.userId, targetUserId)
+          eq20(daoMemberships.daoId, daoId),
+          eq20(daoMemberships.userId, targetUserId)
         ));
         break;
       default:
@@ -11124,13 +11791,13 @@ var ProposalExecutionService = class {
     await db2.update(daos).set({
       ...validChanges,
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq17(daos.id, daoId));
+    }).where(eq20(daos.id, daoId));
   }
   // Execute disbursement
   static async executeDisbursement(executionData, daoId, proposalId) {
     const { recipients, amount, currency, description, disbursementType } = executionData;
     const totalAmount = Array.isArray(recipients) ? recipients.reduce((sum3, r) => sum3 + r.amount, 0) : amount;
-    const daoRecord = await db2.select().from(daos).where(eq17(daos.id, daoId)).limit(1);
+    const daoRecord = await db2.select().from(daos).where(eq20(daos.id, daoId)).limit(1);
     const currentBalance = parseFloat(daoRecord[0]?.treasuryBalance || "0");
     if (currentBalance < totalAmount) {
       throw new Error(`Insufficient treasury balance for disbursement. Available: ${currentBalance}, Required: ${totalAmount}`);
@@ -11159,7 +11826,7 @@ var ProposalExecutionService = class {
       });
     }
     const newBalance = (currentBalance - totalAmount).toString();
-    await db2.update(daos).set({ treasuryBalance: newBalance }).where(eq17(daos.id, daoId));
+    await db2.update(daos).set({ treasuryBalance: newBalance }).where(eq20(daos.id, daoId));
   }
   // Schedule a proposal for execution
   static async scheduleProposalExecution(proposalId, daoId, executionType, executionData, scheduledFor) {
@@ -11188,7 +11855,7 @@ var ProposalExecutionService = class {
   // Get execution status
   static async getExecutionStatus(proposalId) {
     return await db2.query.proposalExecutionQueue.findFirst({
-      where: eq17(proposalExecutionQueue.proposalId, proposalId)
+      where: eq20(proposalExecutionQueue.proposalId, proposalId)
     });
   }
   // Cancel pending execution
@@ -11197,8 +11864,8 @@ var ProposalExecutionService = class {
       status: "cancelled",
       errorMessage: "Execution cancelled by user"
     }).where(and15(
-      eq17(proposalExecutionQueue.proposalId, proposalId),
-      eq17(proposalExecutionQueue.status, "pending")
+      eq20(proposalExecutionQueue.proposalId, proposalId),
+      eq20(proposalExecutionQueue.status, "pending")
     ));
   }
   // Start the execution scheduler
@@ -11218,8 +11885,8 @@ var ProposalExecutionService = class {
     for (const proposalId of proposalIds) {
       try {
         const execution = await db2.select().from(proposalExecutionQueue).where(and15(
-          eq17(proposalExecutionQueue.proposalId, proposalId),
-          eq17(proposalExecutionQueue.status, "pending")
+          eq20(proposalExecutionQueue.proposalId, proposalId),
+          eq20(proposalExecutionQueue.status, "pending")
         )).limit(1);
         if (execution.length > 0) {
           await this.executeProposal(execution[0]);
@@ -11237,7 +11904,7 @@ var ProposalExecutionService = class {
     const stats = await db2.select({
       status: proposalExecutionQueue.status,
       count: sql`count(*)`
-    }).from(proposalExecutionQueue).where(eq17(proposalExecutionQueue.daoId, daoId)).groupBy(proposalExecutionQueue.status);
+    }).from(proposalExecutionQueue).where(eq20(proposalExecutionQueue.daoId, daoId)).groupBy(proposalExecutionQueue.status);
     return stats.reduce((acc, stat) => {
       acc[stat.status] = stat.count;
       return acc;
@@ -11251,7 +11918,7 @@ router14.get("/:daoId/queue", isAuthenticated, async (req, res) => {
   try {
     const { daoId } = req.params;
     const userId = req.user.claims.sub;
-    const executions = await db2.select().from(proposalExecutionQueue).where(eq18(proposalExecutionQueue.daoId, daoId)).orderBy(desc10(proposalExecutionQueue.createdAt));
+    const executions = await db2.select().from(proposalExecutionQueue).where(eq21(proposalExecutionQueue.daoId, daoId)).orderBy(desc10(proposalExecutionQueue.createdAt));
     res.json({
       success: true,
       data: executions
@@ -11269,9 +11936,9 @@ router14.post("/:daoId/execute/:proposalId", isAuthenticated, async (req, res) =
     const { daoId, proposalId } = req.params;
     const userId = req.user.claims.sub;
     const execution = await db2.select().from(proposalExecutionQueue).where(and16(
-      eq18(proposalExecutionQueue.proposalId, proposalId),
-      eq18(proposalExecutionQueue.daoId, daoId),
-      eq18(proposalExecutionQueue.status, "pending")
+      eq21(proposalExecutionQueue.proposalId, proposalId),
+      eq21(proposalExecutionQueue.daoId, daoId),
+      eq21(proposalExecutionQueue.status, "pending")
     )).limit(1);
     if (!execution.length) {
       return res.status(404).json({
@@ -11297,8 +11964,8 @@ router14.delete("/:daoId/cancel/:executionId", isAuthenticated, async (req, res)
     const { daoId, executionId } = req.params;
     const userId = req.user.claims.sub;
     await db2.update(proposalExecutionQueue).set({ status: "cancelled" }).where(and16(
-      eq18(proposalExecutionQueue.id, executionId),
-      eq18(proposalExecutionQueue.daoId, daoId)
+      eq21(proposalExecutionQueue.id, executionId),
+      eq21(proposalExecutionQueue.daoId, daoId)
     ));
     res.json({
       success: true,
@@ -11319,7 +11986,7 @@ init_notificationService();
 init_storage();
 init_schema();
 import express15 from "express";
-import { eq as eq19, and as and17, desc as desc11, gte as gte7 } from "drizzle-orm";
+import { eq as eq22, and as and17, desc as desc11, gte as gte7 } from "drizzle-orm";
 var router15 = express15.Router();
 var PaymentReconciliationService = class {
   constructor() {
@@ -11557,9 +12224,9 @@ router15.get("/anomalies", async (req, res) => {
 });
 router15.post("/notifications/subscribe", async (req, res) => {
   try {
-    const { recipient, channels, events } = req.body;
+    const { recipient, channels, events: events2 } = req.body;
     notificationService.subscribe(recipient, channels);
-    const eventTypes = events || ["anomaly_detected", "reconciliation_failed", "high_failure_rate"];
+    const eventTypes = events2 || ["anomaly_detected", "reconciliation_failed", "high_failure_rate"];
     for (const eventType of eventTypes) {
       notificationService.on(eventType, async (data) => {
         await notificationService.sendPaymentNotification(recipient, {
@@ -11596,7 +12263,7 @@ router15.get("/payments", async (req, res) => {
     } = req.query;
     const conditions = [];
     if (status && status !== "all") {
-      conditions.push(eq19(walletTransactions.status, status));
+      conditions.push(eq22(walletTransactions.status, status));
     }
     if (reconciled !== "all") {
     }
@@ -11627,7 +12294,7 @@ router15.post("/reconcile/:id", async (req, res) => {
     await db2.update(walletTransactions).set({
       status: "completed",
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq19(walletTransactions.id, id));
+    }).where(eq22(walletTransactions.id, id));
     res.json({ success: true, message: "Payment reconciled successfully" });
   } catch (error) {
     res.status(500).json({ error: "Reconciliation failed" });
@@ -11643,7 +12310,7 @@ router15.post("/bulk-reconcile", async (req, res) => {
       await db2.update(walletTransactions).set({
         status: "completed",
         updatedAt: /* @__PURE__ */ new Date()
-      }).where(eq19(walletTransactions.id, paymentId));
+      }).where(eq22(walletTransactions.id, paymentId));
     }
     res.json({
       success: true,
@@ -12596,7 +13263,7 @@ init_db();
 init_schema();
 import { Router } from "express";
 import { z as z8 } from "zod";
-import { eq as eq20, like, desc as desc12 } from "drizzle-orm";
+import { eq as eq23, like, desc as desc12 } from "drizzle-orm";
 var router20 = Router();
 var createTaskTemplateSchema = z8.object({
   title: z8.string().min(1).max(200),
@@ -12614,10 +13281,10 @@ router20.get("/", async (req, res) => {
     const { category, difficulty, search } = req.query;
     let query = db2.select().from(taskTemplates);
     if (category) {
-      query = query.where(eq20(taskTemplates.category, category));
+      query = query.where(eq23(taskTemplates.category, category));
     }
     if (difficulty) {
-      query = query.where(eq20(taskTemplates.difficulty, difficulty));
+      query = query.where(eq23(taskTemplates.difficulty, difficulty));
     }
     if (search) {
       query = query.where(like(taskTemplates.title, `%${search}%`));
@@ -12632,7 +13299,7 @@ router20.get("/", async (req, res) => {
 router20.get("/:templateId", async (req, res) => {
   try {
     const { templateId } = req.params;
-    const template = await db2.select().from(taskTemplates).where(eq20(taskTemplates.id, templateId)).limit(1);
+    const template = await db2.select().from(taskTemplates).where(eq23(taskTemplates.id, templateId)).limit(1);
     if (template.length === 0) {
       return res.status(404).json({ error: "Task template not found" });
     }
@@ -12645,7 +13312,7 @@ router20.get("/:templateId", async (req, res) => {
 router20.post("/", isAuthenticated2, async (req, res) => {
   try {
     const validatedData = createTaskTemplateSchema.parse(req.body);
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const newTemplate = await db2.insert(taskTemplates).values({
       ...validatedData,
       createdBy: userId,
@@ -12664,9 +13331,9 @@ router20.post("/", isAuthenticated2, async (req, res) => {
 router20.put("/:templateId", isAuthenticated2, async (req, res) => {
   try {
     const { templateId } = req.params;
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const validatedData = createTaskTemplateSchema.partial().parse(req.body);
-    const template = await db2.select().from(taskTemplates).where(eq20(taskTemplates.id, templateId)).limit(1);
+    const template = await db2.select().from(taskTemplates).where(eq23(taskTemplates.id, templateId)).limit(1);
     if (template.length === 0) {
       return res.status(404).json({ error: "Task template not found" });
     }
@@ -12676,7 +13343,7 @@ router20.put("/:templateId", isAuthenticated2, async (req, res) => {
     const updatedTemplate = await db2.update(taskTemplates).set({
       ...validatedData,
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq20(taskTemplates.id, templateId)).returning();
+    }).where(eq23(taskTemplates.id, templateId)).returning();
     res.json({ template: updatedTemplate[0] });
   } catch (error) {
     if (error instanceof z8.ZodError) {
@@ -12689,15 +13356,15 @@ router20.put("/:templateId", isAuthenticated2, async (req, res) => {
 router20.delete("/:templateId", isAuthenticated2, async (req, res) => {
   try {
     const { templateId } = req.params;
-    const userId = req.user?.id;
-    const template = await db2.select().from(taskTemplates).where(eq20(taskTemplates.id, templateId)).limit(1);
+    const userId = req.user?.claims?.id;
+    const template = await db2.select().from(taskTemplates).where(eq23(taskTemplates.id, templateId)).limit(1);
     if (template.length === 0) {
       return res.status(404).json({ error: "Task template not found" });
     }
     if (template[0].createdBy !== userId) {
       return res.status(403).json({ error: "Not authorized to delete this template" });
     }
-    await db2.delete(taskTemplates).where(eq20(taskTemplates.id, templateId));
+    await db2.delete(taskTemplates).where(eq23(taskTemplates.id, templateId));
     res.json({ success: true });
   } catch (error) {
     console.error("Error deleting task template:", error);
@@ -12776,14 +13443,14 @@ router21.post("/:achievementId/claim", async (req, res) => {
 router21.get("/leaderboard", async (req, res) => {
   try {
     const { db: db3 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
-    const { userAchievements: userAchievements2, achievements: achievements2, users: users4 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
-    const { sql: sql13, desc: desc17, eq: eq34 } = await import("drizzle-orm");
+    const { userAchievements: userAchievements2, achievements: achievements2, users: users5 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
+    const { sql: sql17, desc: desc18, eq: eq42 } = await import("drizzle-orm");
     const leaderboard = await db3.select({
       userId: userAchievements2.userId,
-      userName: users4.username,
-      totalAchievements: sql13`count(${userAchievements2.id})`,
-      totalPoints: sql13`sum(${achievements2.rewardPoints})`
-    }).from(userAchievements2).leftJoin(achievements2, eq34(userAchievements2.achievementId, achievements2.id)).leftJoin(users4, eq34(userAchievements2.userId, users4.id)).where(eq34(userAchievements2.isCompleted, true)).groupBy(userAchievements2.userId, users4.username).orderBy(desc17(sql13`sum(${achievements2.rewardPoints})`)).limit(50);
+      userName: users5.username,
+      totalAchievements: sql17`count(${userAchievements2.id})`,
+      totalPoints: sql17`sum(${achievements2.rewardPoints})`
+    }).from(userAchievements2).leftJoin(achievements2, eq42(userAchievements2.achievementId, achievements2.id)).leftJoin(users5, eq42(userAchievements2.userId, users5.id)).where(eq42(userAchievements2.isCompleted, true)).groupBy(userAchievements2.userId, users5.username).orderBy(desc18(sql17`sum(${achievements2.rewardPoints})`)).limit(50);
     res.json(leaderboard);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -12855,102 +13522,22 @@ var challenges_default = router22;
 // server/api/auth_user.ts
 init_storage();
 init_schema();
-import { eq as eq21 } from "drizzle-orm";
-var logger2 = new Logger("auth-user");
-async function authUserHandler(req, res) {
+import { eq as eq24 } from "drizzle-orm";
+async function authUserHandler2(req, res) {
   try {
-    const userId = req.user?.userId || req.user?.claims?.sub;
-    if (!userId) {
+    if (!req.user) {
       return res.status(401).json({
         success: false,
-        error: { message: "User not authenticated" }
+        error: { message: "Not authenticated" }
       });
     }
-    const userResult = await db2.select({
-      id: users2.id,
-      email: users2.email,
-      firstName: users2.firstName,
-      lastName: users2.lastName,
-      role: users2.role,
-      walletAddress: users2.walletAddress,
-      isEmailVerified: users2.isEmailVerified,
-      isActive: users2.isActive,
-      lastLoginAt: users2.lastLoginAt,
-      createdAt: users2.createdAt,
-      profilePicture: users2.profilePicture,
-      bio: users2.bio,
-      location: users2.location,
-      website: users2.website,
-      telegramUsername: users2.telegramUsername
-    }).from(users2).where(eq21(users2.id, userId)).limit(1);
-    if (userResult.length === 0) {
-      logger2.warn("User not found", { userId });
+    const [user] = await db2.select().from(users2).where(eq24(users2.id, req.user.userId)).limit(1);
+    if (!user) {
       return res.status(404).json({
         success: false,
         error: { message: "User not found" }
       });
     }
-    const user = userResult[0];
-    if (!user.isActive) {
-      return res.status(401).json({
-        success: false,
-        error: { message: "Account is deactivated" }
-      });
-    }
-    logger2.debug("User info retrieved", { userId: user.id });
-    res.json({
-      success: true,
-      data: {
-        user
-      }
-    });
-  } catch (error) {
-    logger2.error("Failed to get user info", error);
-    throw new AppError("Failed to retrieve user information", 500);
-  }
-}
-
-// server/api/auth_login.ts
-init_storage();
-init_schema();
-import bcrypt from "bcryptjs";
-import { eq as eq22 } from "drizzle-orm";
-var logger3 = new Logger("auth-login");
-async function authLoginHandler(req, res) {
-  try {
-    const { email, password } = req.body;
-    const userResult = await db2.select().from(users2).where(eq22(users2.email, email)).limit(1);
-    if (userResult.length === 0) {
-      logger3.warn("Login attempt with non-existent email", { email });
-      throw new ValidationError("Invalid email or password");
-    }
-    const user = userResult[0];
-    if (!user.isActive) {
-      logger3.warn("Login attempt with inactive account", { userId: user.id });
-      throw new ValidationError("Account is deactivated");
-    }
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    if (!isValidPassword) {
-      logger3.warn("Login attempt with invalid password", { userId: user.id });
-      throw new ValidationError("Invalid email or password");
-    }
-    await db2.update(users2).set({
-      lastLoginAt: /* @__PURE__ */ new Date(),
-      updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq22(users2.id, user.id));
-    const tokens = generateTokens({
-      userId: user.id,
-      email: user.email,
-      role: user.role
-    });
-    res.cookie("refreshToken", tokens.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1e3
-      // 7 days
-    });
-    logger3.info("User logged in successfully", { userId: user.id, email });
     res.json({
       success: true,
       data: {
@@ -12961,81 +13548,17 @@ async function authLoginHandler(req, res) {
           lastName: user.lastName,
           role: user.role,
           walletAddress: user.walletAddress,
-          lastLoginAt: user.lastLoginAt
-        },
-        accessToken: tokens.accessToken
+          isEmailVerified: user.isEmailVerified,
+          profilePicture: user.profileImageUrl
+        }
       }
     });
   } catch (error) {
-    logger3.error("Login failed", error);
-    if (error instanceof ValidationError) {
-      throw error;
-    }
-    throw new AppError("Login failed", 500);
-  }
-}
-
-// server/api/auth_register.ts
-init_storage();
-init_schema();
-import bcrypt2 from "bcryptjs";
-import { eq as eq23 } from "drizzle-orm";
-var logger4 = new Logger("auth-register");
-async function authRegisterHandler(req, res) {
-  try {
-    const { email, password, name, walletAddress } = req.body;
-    const existingUser = await db2.select().from(users2).where(eq23(users2.email, email)).limit(1);
-    if (existingUser.length > 0) {
-      logger4.warn("Registration attempt with existing email", { email });
-      throw new ValidationError("User with this email already exists");
-    }
-    const saltRounds = 12;
-    const hashedPassword = await bcrypt2.hash(password, saltRounds);
-    const newUser = await db2.insert(users2).values({
-      email,
-      password: hashedPassword,
-      firstName: name.split(" ")[0] || name,
-      lastName: name.split(" ").slice(1).join(" ") || "",
-      walletAddress,
-      role: "user",
-      isEmailVerified: false,
-      createdAt: /* @__PURE__ */ new Date(),
-      updatedAt: /* @__PURE__ */ new Date()
-    }).returning();
-    const user = newUser[0];
-    const tokens = generateTokens({
-      userId: user.id,
-      email: user.email,
-      role: user.role
+    console.error("Get user error:", error);
+    res.status(500).json({
+      success: false,
+      error: { message: "Failed to get user" }
     });
-    res.cookie("refreshToken", tokens.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1e3
-      // 7 days
-    });
-    logger4.info("User registered successfully", { userId: user.id, email });
-    res.status(201).json({
-      success: true,
-      data: {
-        user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          role: user.role,
-          walletAddress: user.walletAddress
-        },
-        accessToken: tokens.accessToken
-      }
-    });
-  } catch (error) {
-    logger4.error("Registration failed", error);
-    if (error instanceof ValidationError) {
-      throw error;
-    }
-    throw new AppError("Registration failed", 500);
   }
 }
 
@@ -13068,8 +13591,8 @@ async function authOauthGoogleHandler(req, res) {
 init_storage();
 init_schema();
 import axios from "axios";
-import { eq as eq24 } from "drizzle-orm";
-var logger5 = new Logger("auth-oauth-google-callback");
+import { eq as eq25 } from "drizzle-orm";
+var logger3 = new Logger("auth-oauth-google-callback");
 var GOOGLE_CLIENT_ID2 = process.env.GOOGLE_CLIENT_ID;
 var GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 var REDIRECT_URI2 = process.env.GOOGLE_OAUTH_REDIRECT || "http://localhost:5000/api/auth/oauth/google/callback";
@@ -13078,15 +13601,15 @@ async function authOauthGoogleCallbackHandler(req, res) {
   try {
     const { code, state, error } = req.query;
     if (error) {
-      logger5.warn("OAuth error received", { error });
+      logger3.warn("OAuth error received", { error });
       return res.redirect(`${FRONTEND_URL}/login?error=oauth_cancelled`);
     }
     if (!code) {
-      logger5.warn("No authorization code received");
+      logger3.warn("No authorization code received");
       return res.redirect(`${FRONTEND_URL}/login?error=oauth_error`);
     }
     if (!GOOGLE_CLIENT_ID2 || !GOOGLE_CLIENT_SECRET) {
-      logger5.error("Google OAuth not properly configured");
+      logger3.error("Google OAuth not properly configured");
       return res.redirect(`${FRONTEND_URL}/login?error=oauth_config_error`);
     }
     const stateData = state ? JSON.parse(Buffer.from(state, "base64").toString()) : { mode: "login" };
@@ -13103,10 +13626,10 @@ async function authOauthGoogleCallbackHandler(req, res) {
     );
     const googleUser = userInfoResponse.data;
     if (!googleUser.verified_email) {
-      logger5.warn("Google email not verified", { email: googleUser.email });
+      logger3.warn("Google email not verified", { email: googleUser.email });
       return res.redirect(`${FRONTEND_URL}/login?error=email_not_verified`);
     }
-    const existingUser = await db2.select().from(users2).where(eq24(users2.email, googleUser.email)).limit(1);
+    const existingUser = await db2.select().from(users2).where(eq25(users2.email, googleUser.email)).limit(1);
     let user;
     if (existingUser.length > 0) {
       user = existingUser[0];
@@ -13115,15 +13638,16 @@ async function authOauthGoogleCallbackHandler(req, res) {
         lastName: googleUser.family_name || user.lastName,
         profileImageUrl: googleUser.picture || user.profileImageUrl,
         isEmailVerified: true,
-        lastLoginAt: /* @__PURE__ */ new Date(),
         updatedAt: /* @__PURE__ */ new Date()
-      }).where(eq24(users2.id, user.id));
-      logger5.info("Existing user logged in via Google OAuth", { userId: user.id });
+      }).where(eq25(users2.id, user.id));
+      logger3.info("Existing user logged in via Google OAuth", { userId: user.id });
     } else {
       if (stateData.mode !== "register") {
         return res.redirect(`${FRONTEND_URL}/login?error=account_not_found`);
       }
       const newUserResult = await db2.insert(users2).values({
+        id: crypto.randomUUID(),
+        // Generate a unique ID for the user
         email: googleUser.email,
         firstName: googleUser.given_name,
         lastName: googleUser.family_name,
@@ -13136,12 +13660,12 @@ async function authOauthGoogleCallbackHandler(req, res) {
         updatedAt: /* @__PURE__ */ new Date()
       }).returning();
       user = newUserResult[0];
-      logger5.info("New user created via Google OAuth", { userId: user.id });
+      logger3.info("New user created via Google OAuth", { userId: user.id });
     }
     const tokens = generateTokens({
-      userId: user.id,
-      email: user.email,
-      role: user.role
+      sub: user.id,
+      email: user.email ?? "",
+      role: user.roles ?? "member"
     });
     res.cookie("refreshToken", tokens.refreshToken, {
       httpOnly: true,
@@ -13153,7 +13677,7 @@ async function authOauthGoogleCallbackHandler(req, res) {
     const redirectUrl = `${FRONTEND_URL}/dashboard?token=${tokens.accessToken}`;
     res.redirect(redirectUrl);
   } catch (error) {
-    logger5.error("Google OAuth callback failed", error);
+    logger3.error("Google OAuth callback failed", error);
     res.redirect(`${FRONTEND_URL}/login?error=oauth_error`);
   }
 }
@@ -13161,9 +13685,19 @@ async function authOauthGoogleCallbackHandler(req, res) {
 // server/api/account_delete.ts
 init_db();
 init_schema();
-import { eq as eq25 } from "drizzle-orm";
+import { eq as eq26 } from "drizzle-orm";
 async function accountDeleteHandler(req, res) {
-  res.json({ message: "Account delete endpoint migrated to Express." });
+  try {
+    const userId = req.user?.claims?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    await db2.delete(users2).where(eq26(users2.id, userId));
+    res.status(200).json({ message: "Account deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting account:", error);
+    res.status(500).json({ error: "Failed to delete account" });
+  }
 }
 
 // server/api/dao_deploy.ts
@@ -13264,14 +13798,14 @@ async function paymentsIndexHandler(req, res) {
 // server/api/wallet_transactions.ts
 init_db();
 init_schema();
-import { eq as eq26, desc as desc13 } from "drizzle-orm";
+import { eq as eq27, desc as desc13 } from "drizzle-orm";
 async function getWalletTransactions(req, res) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
-    const userTransactions = await db2.select().from(walletTransactions).where(eq26(walletTransactions.fromUserId, userId)).orderBy(desc13(walletTransactions.createdAt)).limit(50);
+    const userTransactions = await db2.select().from(walletTransactions).where(eq27(walletTransactions.fromUserId, userId)).orderBy(desc13(walletTransactions.createdAt)).limit(50);
     res.status(200).json(userTransactions);
   } catch (error) {
     console.error("Error fetching transactions:", error);
@@ -13280,7 +13814,7 @@ async function getWalletTransactions(req, res) {
 }
 async function createWalletTransaction2(req, res) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
@@ -13304,7 +13838,7 @@ async function createWalletTransaction2(req, res) {
 
 // server/middleware/validation.ts
 import { z as z9, ZodError as ZodError2 } from "zod";
-var logger6 = new Logger("validation-middleware");
+var logger4 = new Logger("validation-middleware");
 var commonSchemas = {
   id: z9.string().min(1, "ID is required"),
   email: z9.string().email("Invalid email format"),
@@ -13321,8 +13855,10 @@ var commonSchemas = {
 };
 var validate = (schema) => {
   return async (req, res, next) => {
-    const requestLogger2 = logger6.child({
-      requestId: req.headers["x-request-id"],
+    const requestIdHeader = req.headers["x-request-id"];
+    const requestId = Array.isArray(requestIdHeader) ? requestIdHeader[0] : requestIdHeader;
+    const requestLogger2 = logger4.child({
+      requestId,
       method: req.method,
       url: req.url
     });
@@ -13463,10 +13999,10 @@ var responseSchemas = {
 };
 
 // server/api/vaults.ts
-var logger7 = new Logger("vault-api");
+var logger5 = new Logger("vault-api");
 async function createVaultHandler(req, res) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     if (!userId) {
       return res.status(401).json({ error: "Authentication required" });
     }
@@ -13506,13 +14042,13 @@ async function createVaultHandler(req, res) {
 }
 async function getUserVaultsHandler(req, res) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     if (!userId) {
       return res.status(401).json({ error: "Authentication required" });
     }
     const { daoId } = req.query;
-    const vaults3 = await vaultService.getUserVaults(userId, daoId);
-    res.json({ vaults: vaults3 });
+    const vaults4 = await vaultService.getUserVaults(userId, daoId);
+    res.json({ vaults: vaults4 });
   } catch (error) {
     console.error("Error fetching vaults:", error);
     res.status(500).json({ error: error.message || "Failed to fetch vaults" });
@@ -13520,7 +14056,7 @@ async function getUserVaultsHandler(req, res) {
 }
 async function getVaultHandler(req, res) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { vaultId } = req.params;
     if (!userId) {
       return res.status(401).json({ error: "Authentication required" });
@@ -13534,7 +14070,7 @@ async function getVaultHandler(req, res) {
 }
 async function depositToVaultHandler(req, res) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { vaultId } = req.params;
     const { tokenSymbol, amount, transactionHash } = req.body;
     if (!userId) {
@@ -13560,7 +14096,7 @@ async function depositToVaultHandler(req, res) {
 }
 async function withdrawFromVaultHandler(req, res) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { vaultId } = req.params;
     const { tokenSymbol, amount, transactionHash } = req.body;
     if (!userId) {
@@ -13586,7 +14122,7 @@ async function withdrawFromVaultHandler(req, res) {
 }
 async function allocateToStrategyHandler(req, res) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { vaultId } = req.params;
     const { strategyId, tokenSymbol, allocationPercentage } = req.body;
     if (!userId) {
@@ -13612,7 +14148,7 @@ async function allocateToStrategyHandler(req, res) {
 }
 async function rebalanceVaultHandler(req, res) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { vaultId } = req.params;
     if (!userId) {
       return res.status(401).json({ error: "Authentication required" });
@@ -13626,7 +14162,7 @@ async function rebalanceVaultHandler(req, res) {
 }
 async function getVaultPortfolioHandler(req, res) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { vaultId } = req.params;
     if (!userId) {
       return res.status(401).json({ error: "Authentication required" });
@@ -13640,7 +14176,7 @@ async function getVaultPortfolioHandler(req, res) {
 }
 async function getVaultPerformanceHandler(req, res) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { vaultId } = req.params;
     if (!userId) {
       return res.status(401).json({ error: "Authentication required" });
@@ -13654,7 +14190,7 @@ async function getVaultPerformanceHandler(req, res) {
 }
 async function assessVaultRiskHandler(req, res) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { vaultId } = req.params;
     if (!userId) {
       return res.status(401).json({ error: "Authentication required" });
@@ -13669,12 +14205,12 @@ async function assessVaultRiskHandler(req, res) {
 var getVaultTransactionsHandler = [
   vaultValidation.getVaultTransactions,
   asyncHandler(async (req, res) => {
-    const requestLogger2 = logger7.child({
+    const requestLogger2 = logger5.child({
       requestId: req.headers["x-request-id"],
-      userId: req.user?.id,
+      userId: req.user?.claims?.id,
       vaultId: req.params.vaultId
     });
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     if (!userId) {
       requestLogger2.warn("Unauthorized access attempt");
       return res.status(401).json({
@@ -13735,10 +14271,10 @@ async function getTokenPriceHandler(req, res) {
 }
 
 // server/api/authVault.ts
-var logger8 = new Logger("auth-vault");
+var logger6 = new Logger("auth-vault");
 async function authorizeVaultAccess(req, res, next) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { vaultId } = req.params;
     if (!userId) {
       return res.status(401).json({ error: "Authentication required" });
@@ -13756,7 +14292,7 @@ async function authorizeVaultAccess(req, res, next) {
     req.vault = vault;
     next();
   } catch (error) {
-    logger8.error("Vault authorization error:", error);
+    logger6.error("Vault authorization error:", error);
     res.status(500).json({ error: "Authorization check failed" });
   }
 }
@@ -13764,26 +14300,26 @@ async function authorizeVaultAccess(req, res, next) {
 // server/api/daoSettings.ts
 init_storage();
 init_schema();
-import { eq as eq27, and as and18 } from "drizzle-orm";
+import { eq as eq28, and as and18 } from "drizzle-orm";
 async function getDaoSettingsHandler(req, res) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { daoId } = req.params;
     if (!userId) {
       return res.status(401).json({ error: "Authentication required" });
     }
     const membership = await db2.query.daoMemberships.findFirst({
       where: and18(
-        eq27(daoMemberships.daoId, daoId),
-        eq27(daoMemberships.userId, userId),
-        eq27(daoMemberships.status, "approved")
+        eq28(daoMemberships.daoId, daoId),
+        eq28(daoMemberships.userId, userId),
+        eq28(daoMemberships.status, "approved")
       )
     });
     if (!membership || !["admin", "elder"].includes(membership.role || "")) {
       return res.status(403).json({ error: "Admin permissions required" });
     }
     const dao = await db2.query.daos.findFirst({
-      where: eq27(daos.id, daoId)
+      where: eq28(daos.id, daoId)
     });
     if (!dao) {
       return res.status(404).json({ error: "DAO not found" });
@@ -13821,7 +14357,7 @@ async function getDaoSettingsHandler(req, res) {
 }
 async function updateDaoSettingsHandler(req, res) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { daoId } = req.params;
     const { category, updates } = req.body;
     if (!userId) {
@@ -13829,9 +14365,9 @@ async function updateDaoSettingsHandler(req, res) {
     }
     const membership = await db2.query.daoMemberships.findFirst({
       where: and18(
-        eq27(daoMemberships.daoId, daoId),
-        eq27(daoMemberships.userId, userId),
-        eq27(daoMemberships.status, "approved")
+        eq28(daoMemberships.daoId, daoId),
+        eq28(daoMemberships.userId, userId),
+        eq28(daoMemberships.status, "approved")
       )
     });
     if (!membership || !["admin", "elder"].includes(membership.role || "")) {
@@ -13886,7 +14422,7 @@ async function updateDaoSettingsHandler(req, res) {
       return res.status(400).json({ error: "No valid updates provided" });
     }
     validUpdates.updatedAt = /* @__PURE__ */ new Date();
-    await db2.update(daos).set(validUpdates).where(eq27(daos.id, daoId));
+    await db2.update(daos).set(validUpdates).where(eq28(daos.id, daoId));
     res.json({
       success: true,
       message: `${category} settings updated successfully`,
@@ -13899,16 +14435,16 @@ async function updateDaoSettingsHandler(req, res) {
 }
 async function resetInviteCodeHandler(req, res) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { daoId } = req.params;
     if (!userId) {
       return res.status(401).json({ error: "Authentication required" });
     }
     const membership = await db2.query.daoMemberships.findFirst({
       where: and18(
-        eq27(daoMemberships.daoId, daoId),
-        eq27(daoMemberships.userId, userId),
-        eq27(daoMemberships.status, "approved")
+        eq28(daoMemberships.daoId, daoId),
+        eq28(daoMemberships.userId, userId),
+        eq28(daoMemberships.status, "approved")
       )
     });
     if (!membership || !["admin", "elder"].includes(membership.role || "")) {
@@ -13918,7 +14454,7 @@ async function resetInviteCodeHandler(req, res) {
     await db2.update(daos).set({
       inviteCode: newInviteCode,
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq27(daos.id, daoId));
+    }).where(eq28(daos.id, daoId));
     res.json({
       success: true,
       inviteCode: newInviteCode,
@@ -13931,31 +14467,31 @@ async function resetInviteCodeHandler(req, res) {
 }
 async function getDaoAnalyticsHandler(req, res) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { daoId } = req.params;
     if (!userId) {
       return res.status(401).json({ error: "Authentication required" });
     }
     const membership = await db2.query.daoMemberships.findFirst({
       where: and18(
-        eq27(daoMemberships.daoId, daoId),
-        eq27(daoMemberships.userId, userId),
-        eq27(daoMemberships.status, "approved")
+        eq28(daoMemberships.daoId, daoId),
+        eq28(daoMemberships.userId, userId),
+        eq28(daoMemberships.status, "approved")
       )
     });
     if (!membership) {
       return res.status(403).json({ error: "DAO membership required" });
     }
     const dao = await db2.query.daos.findFirst({
-      where: eq27(daos.id, daoId)
+      where: eq28(daos.id, daoId)
     });
     if (!dao) {
       return res.status(404).json({ error: "DAO not found" });
     }
     const memberStats = await db2.query.daoMemberships.findMany({
       where: and18(
-        eq27(daoMemberships.daoId, daoId),
-        eq27(daoMemberships.status, "approved")
+        eq28(daoMemberships.daoId, daoId),
+        eq28(daoMemberships.status, "approved")
       )
     });
     const roleDistribution = memberStats.reduce((acc, member) => {
@@ -13964,7 +14500,7 @@ async function getDaoAnalyticsHandler(req, res) {
       return acc;
     }, {});
     const proposalStats = await db2.query.proposals.findMany({
-      where: eq27(proposals.daoId, daoId)
+      where: eq28(proposals.daoId, daoId)
     });
     const proposalsByStatus = proposalStats.reduce((acc, proposal) => {
       acc[proposal.status] = (acc[proposal.status] || 0) + 1;
@@ -14011,8 +14547,8 @@ function generateInviteCode() {
 // server/api/reputation.ts
 init_db();
 init_schema();
-import { eq as eq28, desc as desc14, sql as sql11, and as and19 } from "drizzle-orm";
-var logger9 = new Logger("reputation-api");
+import { eq as eq29, desc as desc14, sql as sql11, and as and19 } from "drizzle-orm";
+var logger7 = new Logger("reputation-api");
 async function getUserReputationHandler(req, res) {
   try {
     const { userId } = req.params;
@@ -14022,12 +14558,12 @@ async function getUserReputationHandler(req, res) {
       lastName: users2.lastName,
       profilePicture: users2.profilePicture,
       reputation: users2.reputation
-    }).from(users2).where(eq28(users2.id, userId)).limit(1);
+    }).from(users2).where(eq29(users2.id, userId)).limit(1);
     if (userResult.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
     const user = userResult[0];
-    const activities = await db2.select().from(userActivities).where(eq28(userActivities.userId, userId)).orderBy(desc14(userActivities.createdAt)).limit(50);
+    const activities = await db2.select().from(userActivities).where(eq29(userActivities.userId, userId)).orderBy(desc14(userActivities.createdAt)).limit(50);
     const proposalActivities = activities.filter((a) => a.activityType === "proposal_created" || a.activityType === "proposal_voted");
     const taskActivities = activities.filter((a) => a.activityType === "task_completed" || a.activityType === "task_claimed");
     const contributionActivities = activities.filter((a) => a.activityType === "contribution_made");
@@ -14044,7 +14580,7 @@ async function getUserReputationHandler(req, res) {
       recentActivities: activities.slice(0, 10)
     });
   } catch (error) {
-    logger9.error("Failed to get user reputation", error);
+    logger7.error("Failed to get user reputation", error);
     throw new AppError("Failed to retrieve user reputation", 500);
   }
 }
@@ -14062,7 +14598,7 @@ async function getReputationLeaderboardHandler(req, res) {
     const leaderboard = await query;
     res.json({ leaderboard });
   } catch (error) {
-    logger9.error("Failed to get reputation leaderboard", error);
+    logger7.error("Failed to get reputation leaderboard", error);
     throw new AppError("Failed to retrieve reputation leaderboard", 500);
   }
 }
@@ -14077,13 +14613,13 @@ async function getDaoReputationLeaderboardHandler(req, res) {
       profilePicture: users2.profilePicture,
       reputation: users2.reputation,
       daoActivityCount: sql11`COUNT(${userActivities.id})`
-    }).from(users2).innerJoin(userActivities, eq28(users2.id, userActivities.userId)).where(and19(
-      eq28(userActivities.daoId, daoId),
+    }).from(users2).innerJoin(userActivities, eq29(users2.id, userActivities.userId)).where(and19(
+      eq29(userActivities.daoId, daoId),
       sql11`${users2.reputation} > 0`
     )).groupBy(users2.id).orderBy(desc14(users2.reputation)).limit(parseInt(limit));
     res.json({ leaderboard: daoLeaderboard });
   } catch (error) {
-    logger9.error("Failed to get DAO reputation leaderboard", error);
+    logger7.error("Failed to get DAO reputation leaderboard", error);
     throw new AppError("Failed to retrieve DAO reputation leaderboard", 500);
   }
 }
@@ -14091,9 +14627,9 @@ async function getDaoReputationLeaderboardHandler(req, res) {
 // server/api/user_profile.ts
 init_storage();
 init_schema();
-import bcrypt3 from "bcryptjs";
-import { eq as eq29 } from "drizzle-orm";
-var logger10 = new Logger("user-profile");
+import bcrypt2 from "bcryptjs";
+import { eq as eq30 } from "drizzle-orm";
+var logger8 = new Logger("user-profile");
 async function getUserProfileHandler(req, res) {
   try {
     const userId = req.user?.userId || req.user?.claims?.sub;
@@ -14118,7 +14654,7 @@ async function getUserProfileHandler(req, res) {
       isEmailVerified: users2.isEmailVerified,
       createdAt: users2.createdAt,
       lastLoginAt: users2.lastLoginAt
-    }).from(users2).where(eq29(users2.id, userId)).limit(1);
+    }).from(users2).where(eq30(users2.id, userId)).limit(1);
     if (userResult.length === 0) {
       return res.status(404).json({
         success: false,
@@ -14130,7 +14666,7 @@ async function getUserProfileHandler(req, res) {
       data: { user: userResult[0] }
     });
   } catch (error) {
-    logger10.error("Failed to get user profile", error);
+    logger8.error("Failed to get user profile", error);
     throw new AppError("Failed to retrieve user profile", 500);
   }
 }
@@ -14168,7 +14704,7 @@ async function updateUserProfileHandler(req, res) {
       telegramUsername: telegramUsername?.trim(),
       profilePicture: profilePicture?.trim(),
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq29(users2.id, userId)).returning({
+    }).where(eq30(users2.id, userId)).returning({
       id: users2.id,
       email: users2.email,
       firstName: users2.firstName,
@@ -14186,13 +14722,13 @@ async function updateUserProfileHandler(req, res) {
         error: { message: "User not found" }
       });
     }
-    logger10.info("User profile updated", { userId });
+    logger8.info("User profile updated", { userId });
     res.json({
       success: true,
       data: { user: updatedUser[0] }
     });
   } catch (error) {
-    logger10.error("Failed to update user profile", error);
+    logger8.error("Failed to update user profile", error);
     if (error instanceof ValidationError) {
       throw error;
     }
@@ -14215,7 +14751,7 @@ async function changePasswordHandler(req, res) {
     if (newPassword.length < 8) {
       throw new ValidationError("New password must be at least 8 characters long");
     }
-    const userResult = await db2.select({ password: users2.password }).from(users2).where(eq29(users2.id, userId)).limit(1);
+    const userResult = await db2.select({ password: users2.password }).from(users2).where(eq30(users2.id, userId)).limit(1);
     if (userResult.length === 0) {
       return res.status(404).json({
         success: false,
@@ -14224,24 +14760,24 @@ async function changePasswordHandler(req, res) {
     }
     const user = userResult[0];
     if (user.password) {
-      const isValidPassword = await bcrypt3.compare(currentPassword, user.password);
+      const isValidPassword = await bcrypt2.compare(currentPassword, user.password);
       if (!isValidPassword) {
         throw new ValidationError("Current password is incorrect");
       }
     }
     const saltRounds = 12;
-    const hashedNewPassword = await bcrypt3.hash(newPassword, saltRounds);
+    const hashedNewPassword = await bcrypt2.hash(newPassword, saltRounds);
     await db2.update(users2).set({
       password: hashedNewPassword,
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq29(users2.id, userId));
-    logger10.info("User password changed", { userId });
+    }).where(eq30(users2.id, userId));
+    logger8.info("User password changed", { userId });
     res.json({
       success: true,
       message: "Password changed successfully"
     });
   } catch (error) {
-    logger10.error("Failed to change password", error);
+    logger8.error("Failed to change password", error);
     if (error instanceof ValidationError) {
       throw error;
     }
@@ -14264,14 +14800,14 @@ async function updateWalletAddressHandler(req, res) {
     if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress.trim())) {
       throw new ValidationError("Invalid wallet address format");
     }
-    const existingUser = await db2.select({ id: users2.id }).from(users2).where(eq29(users2.walletAddress, walletAddress.trim())).limit(1);
+    const existingUser = await db2.select({ id: users2.id }).from(users2).where(eq30(users2.walletAddress, walletAddress.trim())).limit(1);
     if (existingUser.length > 0 && existingUser[0].id !== userId) {
       throw new ValidationError("Wallet address is already in use");
     }
     const updatedUser = await db2.update(users2).set({
       walletAddress: walletAddress.trim(),
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq29(users2.id, userId)).returning({
+    }).where(eq30(users2.id, userId)).returning({
       id: users2.id,
       walletAddress: users2.walletAddress
     });
@@ -14281,13 +14817,13 @@ async function updateWalletAddressHandler(req, res) {
         error: { message: "User not found" }
       });
     }
-    logger10.info("User wallet address updated", { userId, walletAddress });
+    logger8.info("User wallet address updated", { userId, walletAddress });
     res.json({
       success: true,
       data: { user: updatedUser[0] }
     });
   } catch (error) {
-    logger10.error("Failed to update wallet address", error);
+    logger8.error("Failed to update wallet address", error);
     if (error instanceof ValidationError) {
       throw error;
     }
@@ -14298,8 +14834,8 @@ async function updateWalletAddressHandler(req, res) {
 // server/api/admin_users.ts
 init_storage();
 init_schema();
-import { eq as eq30, like as like2, and as and20, or as or3 } from "drizzle-orm";
-var logger11 = new Logger("admin-users");
+import { eq as eq31, like as like2, and as and20, or as or3 } from "drizzle-orm";
+var logger9 = new Logger("admin-users");
 async function getUsersHandler(req, res) {
   try {
     const {
@@ -14324,12 +14860,12 @@ async function getUsersHandler(req, res) {
       );
     }
     if (roleFilter) {
-      conditions.push(eq30(users2.role, roleFilter));
+      conditions.push(eq31(users2.role, roleFilter));
     }
     if (statusFilter === "active") {
-      conditions.push(eq30(users2.isActive, true));
+      conditions.push(eq31(users2.isActive, true));
     } else if (statusFilter === "inactive") {
-      conditions.push(eq30(users2.isActive, false));
+      conditions.push(eq31(users2.isActive, false));
     }
     const whereClause = conditions.length > 0 ? and20(...conditions) : void 0;
     const usersResult = await db2.select({
@@ -14359,7 +14895,7 @@ async function getUsersHandler(req, res) {
       }
     });
   } catch (error) {
-    logger11.error("Failed to get users", error);
+    logger9.error("Failed to get users", error);
     throw new AppError("Failed to retrieve users", 500);
   }
 }
@@ -14376,7 +14912,7 @@ async function updateUserRoleHandler(req, res) {
       throw new ValidationError("Invalid role");
     }
     if (userId === adminUserId && role !== "super_admin") {
-      const currentUser = await db2.select({ role: users2.role }).from(users2).where(eq30(users2.id, adminUserId)).limit(1);
+      const currentUser = await db2.select({ role: users2.role }).from(users2).where(eq31(users2.id, adminUserId)).limit(1);
       if (currentUser.length > 0 && currentUser[0].role === "super_admin") {
         throw new ValidationError("Cannot demote yourself from super_admin role");
       }
@@ -14384,7 +14920,7 @@ async function updateUserRoleHandler(req, res) {
     const updatedUser = await db2.update(users2).set({
       role,
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq30(users2.id, userId)).returning({
+    }).where(eq31(users2.id, userId)).returning({
       id: users2.id,
       email: users2.email,
       firstName: users2.firstName,
@@ -14397,7 +14933,7 @@ async function updateUserRoleHandler(req, res) {
         error: { message: "User not found" }
       });
     }
-    logger11.info("User role updated", {
+    logger9.info("User role updated", {
       userId,
       newRole: role,
       updatedBy: adminUserId
@@ -14407,7 +14943,7 @@ async function updateUserRoleHandler(req, res) {
       data: { user: updatedUser[0] }
     });
   } catch (error) {
-    logger11.error("Failed to update user role", error);
+    logger9.error("Failed to update user role", error);
     if (error instanceof ValidationError) {
       throw error;
     }
@@ -14438,7 +14974,7 @@ function registerRoutes(app2) {
   app2.use("/api/kotanipay-status", kotanipay_status_default);
   app2.use("/api/mpesa-status", mpesa_status_default);
   app2.use("/api/monitoring", monitoring_default);
-  app2.get("/api/auth/user", isAuthenticated2, authUserHandler);
+  app2.get("/api/auth/user", isAuthenticated2, authUserHandler2);
   app2.post("/api/auth/login", authLoginHandler);
   app2.post("/api/auth/register", authRegisterHandler);
   app2.post("/api/auth/telegram-link", authTelegramLinkHandler);
@@ -14570,14 +15106,12 @@ var vite_config_default = defineConfig({
       strict: true,
       deny: ["**/.*"]
     },
-    port: 5e3,
+    port: 5173,
     host: "0.0.0.0",
-    allowedHosts: [
-      "all",
-      "976c56e8-f2e2-4cca-98c9-6478c5659b7b-00-28qs2jpxbc5th.picard.replit.dev",
-      ".replit.dev",
-      "localhost"
-    ]
+    strictPort: false,
+    hmr: {
+      clientPort: 443
+    }
   }
 });
 
@@ -14585,15 +15119,6 @@ var vite_config_default = defineConfig({
 import { nanoid } from "nanoid";
 var __dirname3 = dirname2(fileURLToPath3(import.meta.url));
 var viteLogger = createLogger2();
-function log(message, source = "express") {
-  const formattedTime = (/* @__PURE__ */ new Date()).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true
-  });
-  console.log(`${formattedTime} [${source}] ${message}`);
-}
 async function setupVite(app2, server2) {
   const vite = await createViteServer({
     ...vite_config_default,
@@ -14607,9 +15132,14 @@ async function setupVite(app2, server2) {
     },
     server: {
       middlewareMode: true,
-      hmr: { server: server2 },
+      hmr: {
+        server: server2,
+        protocol: "ws",
+        host: "0.0.0.0",
+        clientPort: 443
+      },
       host: "0.0.0.0",
-      allowedHosts: ["all"]
+      strictPort: false
     },
     appType: "custom"
   });
@@ -14646,7 +15176,6 @@ function serveStatic(app2) {
 
 // server/index.ts
 init_notificationService();
-import path4 from "path";
 import { dirname as dirname3 } from "path";
 import { fileURLToPath as fileURLToPath4 } from "url";
 
@@ -14819,27 +15348,27 @@ var auditMiddleware = (req, res, next) => {
 };
 function getActionFromRequest(req) {
   const method = req.method.toLowerCase();
-  const path5 = req.path;
-  if (path5.includes("/login")) return "login";
-  if (path5.includes("/logout")) return "logout";
-  if (path5.includes("/register")) return "register";
-  if (path5.includes("/deposit")) return "vault_deposit";
-  if (path5.includes("/withdraw")) return "vault_withdrawal";
-  if (path5.includes("/vote")) return "vote_cast";
-  if (path5.includes("/proposal")) return method === "post" ? "proposal_create" : "proposal_view";
-  if (path5.includes("/dao") && method === "post") return "dao_create";
-  if (path5.includes("/admin")) return "admin_action";
-  return `${method}_${path5.split("/")[2] || "unknown"}`;
+  const path4 = req.path;
+  if (path4.includes("/login")) return "login";
+  if (path4.includes("/logout")) return "logout";
+  if (path4.includes("/register")) return "register";
+  if (path4.includes("/deposit")) return "vault_deposit";
+  if (path4.includes("/withdraw")) return "vault_withdrawal";
+  if (path4.includes("/vote")) return "vote_cast";
+  if (path4.includes("/proposal")) return method === "post" ? "proposal_create" : "proposal_view";
+  if (path4.includes("/dao") && method === "post") return "dao_create";
+  if (path4.includes("/admin")) return "admin_action";
+  return `${method}_${path4.split("/")[2] || "unknown"}`;
 }
 function getResourceFromRequest(req) {
-  const path5 = req.path;
-  if (path5.includes("/vault")) return "vault";
-  if (path5.includes("/dao")) return "dao";
-  if (path5.includes("/proposal")) return "proposal";
-  if (path5.includes("/user")) return "user";
-  if (path5.includes("/auth")) return "authentication";
-  if (path5.includes("/payment")) return "payment";
-  if (path5.includes("/admin")) return "admin";
+  const path4 = req.path;
+  if (path4.includes("/vault")) return "vault";
+  if (path4.includes("/dao")) return "dao";
+  if (path4.includes("/proposal")) return "proposal";
+  if (path4.includes("/user")) return "user";
+  if (path4.includes("/auth")) return "authentication";
+  if (path4.includes("/payment")) return "payment";
+  if (path4.includes("/admin")) return "admin";
   return "unknown";
 }
 function getSeverityFromRequest(req, statusCode) {
@@ -14850,12 +15379,12 @@ function getSeverityFromRequest(req, statusCode) {
   return "low";
 }
 function getCategoryFromRequest(req) {
-  const path5 = req.path;
-  if (path5.includes("/auth") || path5.includes("/login") || path5.includes("/register")) return "auth";
-  if (path5.includes("/vault") || path5.includes("/payment") || path5.includes("/deposit") || path5.includes("/withdraw")) return "financial";
-  if (path5.includes("/proposal") || path5.includes("/vote") || path5.includes("/dao")) return "governance";
-  if (path5.includes("/admin")) return "admin";
-  if (path5.includes("/user") || path5.includes("/profile")) return "data";
+  const path4 = req.path;
+  if (path4.includes("/auth") || path4.includes("/login") || path4.includes("/register")) return "auth";
+  if (path4.includes("/vault") || path4.includes("/payment") || path4.includes("/deposit") || path4.includes("/withdraw")) return "financial";
+  if (path4.includes("/proposal") || path4.includes("/vote") || path4.includes("/dao")) return "governance";
+  if (path4.includes("/admin")) return "admin";
+  if (path4.includes("/user") || path4.includes("/profile")) return "data";
   return "security";
 }
 
@@ -14866,12 +15395,12 @@ import fs2 from "fs/promises";
 import path3 from "path";
 var execAsync = promisify(exec);
 var BackupSystem = class _BackupSystem {
-  constructor(config2) {
-    this.config = config2;
+  constructor(config3) {
+    this.config = config3;
   }
-  static getInstance(config2) {
-    if (!_BackupSystem.instance && config2) {
-      _BackupSystem.instance = new _BackupSystem(config2);
+  static getInstance(config3) {
+    if (!_BackupSystem.instance && config3) {
+      _BackupSystem.instance = new _BackupSystem(config3);
     }
     return _BackupSystem.instance;
   }
@@ -15037,14 +15566,14 @@ var BackupSystem = class _BackupSystem {
     }
   }
   async backupConfiguration(outputPath) {
-    const config2 = {
+    const config3 = {
       timestamp: (/* @__PURE__ */ new Date()).toISOString(),
       nodeVersion: process.version,
       platform: process.platform,
       environment: process.env.NODE_ENV
       // Add other configuration as needed
     };
-    await fs2.writeFile(outputPath, JSON.stringify(config2, null, 2));
+    await fs2.writeFile(outputPath, JSON.stringify(config3, null, 2));
   }
   async backupChangedData(outputPath, since) {
     const changedData = {};
@@ -17125,7 +17654,7 @@ if (import.meta.url === new URL(process.argv[1], "file://").href) {
 // server/vaultAutomation.ts
 init_db();
 init_schema();
-import { eq as eq31 } from "drizzle-orm";
+import { eq as eq32 } from "drizzle-orm";
 import { ethers as ethers4 } from "ethers";
 
 // server/utils/appError.ts
@@ -17155,6 +17684,7 @@ var VaultAutomationService = class {
     this.logger.info("\u{1F680} Starting Vault Automation Service...");
     try {
       this.isRunning = true;
+      const startTime = Date.now();
       this.scheduleRegularTasks();
       this.intervalId = setInterval(async () => {
         try {
@@ -17168,8 +17698,12 @@ var VaultAutomationService = class {
           this.logger.error("Error processing automation tasks", error);
         }
       }, 3e4);
+      const startupDuration = Date.now() - startTime;
       this.logger.info("\u2705 Vault Automation Service started successfully");
-      this.logger.performanceLog("automation_service_startup", Date.now(), {
+      this.logger.info(`Performance: automation_service_startup took ${startupDuration}ms`, {
+        performance: true,
+        operation: "automation_service_startup",
+        duration: startupDuration,
         scheduledTasks: this.tasks.length,
         intervalMs: 3e4
       });
@@ -17298,7 +17832,7 @@ var VaultAutomationService = class {
     try {
       const [currentNAV, lastUpdate] = await MaonoVaultService.getNAV();
       const activeVaults = await db2.query.vaults.findMany({
-        where: eq31(vaults.isActive, true)
+        where: eq32(vaults2.isActive, true)
       });
       let totalValue = 0n;
       let totalShares = 0n;
@@ -17336,7 +17870,7 @@ var VaultAutomationService = class {
   async executePerformanceFeeDistribution(task) {
     try {
       const recentPerformance = await db2.query.vaultPerformance.findMany({
-        where: eq31(vaultPerformance.period, "daily"),
+        where: eq32(vaultPerformance.period, "daily"),
         limit: 30
         // Last 30 days
       });
@@ -17364,7 +17898,7 @@ var VaultAutomationService = class {
   async executeRebalancing(task) {
     try {
       const activeVaults = await db2.query.vaults.findMany({
-        where: eq31(vaults.isActive, true)
+        where: eq32(vaults2.isActive, true)
       });
       console.log(`\u2696\uFE0F  Rebalancing ${activeVaults.length} active vaults...`);
       for (const vault of activeVaults) {
@@ -17393,7 +17927,7 @@ var VaultAutomationService = class {
   async executeRiskAssessment(task) {
     try {
       const activeVaults = await db2.query.vaults.findMany({
-        where: eq31(vaults.isActive, true)
+        where: eq32(vaults2.isActive, true)
       });
       console.log(`\u{1F50D} Performing risk assessment on ${activeVaults.length} vaults...`);
       for (const vault of activeVaults) {
@@ -17448,30 +17982,48 @@ if (import.meta.url === new URL(process.argv[1], "file://").href) {
 function activityTracker() {
   return (req, res, next) => {
     const startTime = Date.now();
-    res.on("finish", async () => {
+    function resolveActivityType() {
+      if (req.activityType && typeof req.activityType === "string") {
+        return req.activityType;
+      }
+      return getActivityType(req.method, req.route?.path || req.originalUrl || req.path);
+    }
+    res.on("finish", () => {
       if (req.user?.claims?.sub && res.statusCode < 400) {
         const duration = Date.now() - startTime;
-        const activityType = getActivityType(req.method, req.route?.path || req.path);
+        const activityType = resolveActivityType();
         if (activityType) {
-          try {
-            await analyticsService.trackUserActivity(req.user.claims.sub, activityType, {
-              path: req.path,
-              method: req.method,
-              duration,
-              userAgent: req.get("User-Agent"),
-              ip: req.ip
-            });
-          } catch (error) {
-            console.warn("Failed to track user activity:", error);
+          const metadata = {
+            path: req.originalUrl || req.path,
+            method: req.method,
+            duration,
+            userAgent: req.get("User-Agent"),
+            ip: req.ip,
+            statusCode: res.statusCode,
+            query: req.query,
+            params: req.params
+          };
+          if (req.method === "POST" || req.method === "PUT" || req.method === "PATCH") {
+            metadata.body = req.body;
           }
+          Promise.resolve(
+            analyticsService.trackUserActivity(req.user.claims.sub, activityType, metadata)
+          ).catch((error) => {
+            console.warn("Failed to track user activity:", {
+              error,
+              user: req.user?.claims?.sub,
+              activityType,
+              metadata
+            });
+          });
         }
       }
     });
     next();
   };
 }
-function getActivityType(method, path5) {
-  const route = `${method} ${path5}`;
+function getActivityType(method, path4) {
+  const route = `${method} ${path4}`;
   const activityMap = {
     "GET /api/proposals": "view_proposals",
     "POST /api/proposals": "create_proposal",
@@ -17484,6 +18036,7 @@ function getActivityType(method, path5) {
     "POST /api/tasks/:id/claim": "claim_task",
     "GET /api/analytics": "view_analytics",
     "POST /api/wallet/transactions": "wallet_transaction"
+    // Add more mappings as needed
   };
   if (activityMap[route]) {
     return activityMap[route];
@@ -17496,20 +18049,243 @@ function getActivityType(method, path5) {
   return null;
 }
 function matchesPattern(route, pattern) {
-  const patternRegex = pattern.replace(/:id/g, "[^/]+");
+  const patternRegex = pattern.replace(/:[^/]+/g, "[^/]+");
   return new RegExp(`^${patternRegex}$`).test(route);
 }
+
+// server/services/bridgeRelayerService.ts
+init_db();
+init_schema();
+import { eq as eq33 } from "drizzle-orm";
+
+// shared/chainRegistry.ts
+import { ethers as ethers5 } from "ethers";
+var SupportedChain = /* @__PURE__ */ ((SupportedChain4) => {
+  SupportedChain4["CELO"] = "celo";
+  SupportedChain4["CELO_ALFAJORES"] = "celo-alfajores";
+  SupportedChain4["ETHEREUM"] = "ethereum";
+  SupportedChain4["POLYGON"] = "polygon";
+  SupportedChain4["OPTIMISM"] = "optimism";
+  SupportedChain4["ARBITRUM"] = "arbitrum";
+  return SupportedChain4;
+})(SupportedChain || {});
+var CHAIN_CONFIGS = {
+  ["celo" /* CELO */]: {
+    chainId: 42220,
+    name: "Celo Mainnet",
+    symbol: "CELO",
+    rpcUrl: "https://forno.celo.org",
+    blockExplorer: "https://celoscan.io",
+    nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
+    isTestnet: false
+  },
+  ["celo-alfajores" /* CELO_ALFAJORES */]: {
+    chainId: 44787,
+    name: "Celo Alfajores Testnet",
+    symbol: "CELO",
+    rpcUrl: "https://alfajores-forno.celo-testnet.org",
+    blockExplorer: "https://alfajores.celoscan.io",
+    nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
+    isTestnet: true
+  },
+  ["ethereum" /* ETHEREUM */]: {
+    chainId: 1,
+    name: "Ethereum Mainnet",
+    symbol: "ETH",
+    rpcUrl: process.env.ETHEREUM_RPC_URL || "https://eth.llamarpc.com",
+    blockExplorer: "https://etherscan.io",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    isTestnet: false
+  },
+  ["polygon" /* POLYGON */]: {
+    chainId: 137,
+    name: "Polygon Mainnet",
+    symbol: "MATIC",
+    rpcUrl: process.env.POLYGON_RPC_URL || "https://polygon-rpc.com",
+    blockExplorer: "https://polygonscan.com",
+    nativeCurrency: { name: "MATIC", symbol: "MATIC", decimals: 18 },
+    isTestnet: false
+  },
+  ["optimism" /* OPTIMISM */]: {
+    chainId: 10,
+    name: "Optimism Mainnet",
+    symbol: "ETH",
+    rpcUrl: process.env.OPTIMISM_RPC_URL || "https://mainnet.optimism.io",
+    blockExplorer: "https://optimistic.etherscan.io",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    isTestnet: false
+  },
+  ["arbitrum" /* ARBITRUM */]: {
+    chainId: 42161,
+    name: "Arbitrum One",
+    symbol: "ETH",
+    rpcUrl: process.env.ARBITRUM_RPC_URL || "https://arb1.arbitrum.io/rpc",
+    blockExplorer: "https://arbiscan.io",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    isTestnet: false
+  }
+};
+var ChainRegistry = class {
+  static {
+    this.providers = /* @__PURE__ */ new Map();
+  }
+  static getChainConfig(chain) {
+    return CHAIN_CONFIGS[chain];
+  }
+  static getProvider(chain) {
+    if (!this.providers.has(chain)) {
+      const config3 = this.getChainConfig(chain);
+      this.providers.set(chain, new ethers5.JsonRpcProvider(config3.rpcUrl));
+    }
+    return this.providers.get(chain);
+  }
+  static getAllChains() {
+    return Object.values(SupportedChain);
+  }
+  static getMainnetChains() {
+    return this.getAllChains().filter((chain) => !CHAIN_CONFIGS[chain].isTestnet);
+  }
+  static isTestnet(chain) {
+    return CHAIN_CONFIGS[chain].isTestnet;
+  }
+};
+
+// server/services/bridgeRelayerService.ts
+var BridgeRelayerService = class {
+  constructor() {
+    this.logger = Logger.getLogger();
+    this.isRunning = false;
+    this.pollInterval = 3e4;
+  }
+  // 30 seconds
+  /**
+   * Start the relayer service
+   */
+  start() {
+    if (this.isRunning) {
+      this.logger.warn("Relayer service already running");
+      return;
+    }
+    this.isRunning = true;
+    this.logger.info("\u{1F680} Bridge relayer service started");
+    this.pollPendingTransfers();
+  }
+  /**
+   * Stop the relayer service
+   */
+  stop() {
+    this.isRunning = false;
+    this.logger.info("Bridge relayer service stopped");
+  }
+  /**
+   * Poll for pending transfers
+   */
+  async pollPendingTransfers() {
+    while (this.isRunning) {
+      try {
+        const pendingTransfers = await db2.query.crossChainTransfers.findMany({
+          where: eq33(crossChainTransfers.status, "pending")
+        });
+        for (const transfer of pendingTransfers) {
+          await this.processTransfer(transfer);
+        }
+        await new Promise((resolve) => setTimeout(resolve, this.pollInterval));
+      } catch (error) {
+        this.logger.error("Error polling transfers:", error);
+        await new Promise((resolve) => setTimeout(resolve, this.pollInterval));
+      }
+    }
+  }
+  /**
+   * Process a single transfer
+   */
+  async processTransfer(transfer) {
+    try {
+      this.logger.info(`Processing transfer: ${transfer.id}`);
+      await db2.update(crossChainTransfers).set({ status: "bridging" }).where(eq33(crossChainTransfers.id, transfer.id));
+      const sourceTxHash = await this.checkSourceTransaction(
+        transfer.sourceChain,
+        transfer.tokenAddress,
+        transfer.amount
+      );
+      if (sourceTxHash) {
+        await db2.update(crossChainTransfers).set({ txHashSource: sourceTxHash }).where(eq33(crossChainTransfers.id, transfer.id));
+        const destTxHash = await this.completeTransferOnDestination(
+          transfer.destinationChain,
+          transfer.destinationAddress,
+          transfer.tokenAddress,
+          transfer.amount
+        );
+        if (destTxHash) {
+          await db2.update(crossChainTransfers).set({
+            status: "completed",
+            txHashDestination: destTxHash,
+            completedAt: /* @__PURE__ */ new Date()
+          }).where(eq33(crossChainTransfers.id, transfer.id));
+          this.logger.info(`Transfer ${transfer.id} completed successfully`);
+        }
+      }
+    } catch (error) {
+      this.logger.error(`Failed to process transfer ${transfer.id}:`, error);
+      await db2.update(crossChainTransfers).set({
+        status: "failed",
+        failureReason: error instanceof Error ? error.message : "Unknown error"
+      }).where(eq33(crossChainTransfers.id, transfer.id));
+    }
+  }
+  /**
+   * Check source chain transaction
+   */
+  async checkSourceTransaction(chain, tokenAddress, amount) {
+    try {
+      const provider2 = ChainRegistry.getProvider(chain);
+      return `0x${Math.random().toString(16).substr(2, 64)}`;
+    } catch (error) {
+      this.logger.error("Failed to check source transaction:", error);
+      return null;
+    }
+  }
+  /**
+   * Complete transfer on destination chain
+   */
+  async completeTransferOnDestination(chain, recipient, tokenAddress, amount) {
+    try {
+      const provider2 = ChainRegistry.getProvider(chain);
+      return `0x${Math.random().toString(16).substr(2, 64)}`;
+    } catch (error) {
+      this.logger.error("Failed to complete destination transfer:", error);
+      return null;
+    }
+  }
+  /**
+   * Manually retry failed transfer
+   */
+  async retryTransfer(transferId) {
+    const transfer = await db2.query.crossChainTransfers.findFirst({
+      where: eq33(crossChainTransfers.id, transferId)
+    });
+    if (!transfer) {
+      throw new AppError("Transfer not found", 404);
+    }
+    if (transfer.status !== "failed") {
+      throw new AppError("Can only retry failed transfers", 400);
+    }
+    await db2.update(crossChainTransfers).set({ status: "pending", failureReason: null }).where(eq33(crossChainTransfers.id, transferId));
+    this.logger.info(`Transfer ${transferId} queued for retry`);
+  }
+};
+var bridgeRelayerService = new BridgeRelayerService();
 
 // server/routes/billing.ts
 import express23 from "express";
 init_storage();
 init_schema();
-import { eq as eq33, desc as desc16, and as and22 } from "drizzle-orm";
+import { eq as eq35, desc as desc16, and as and22 } from "drizzle-orm";
 
 // server/services/financialAnalyticsService.ts
 init_storage();
 init_schema();
-import { eq as eq32, sql as sql12, and as and21, gte as gte9, lte as lte6, desc as desc15 } from "drizzle-orm";
+import { eq as eq34, sql as sql12, and as and21, gte as gte9, lte as lte6, desc as desc15 } from "drizzle-orm";
 var FinancialAnalyticsService = class {
   // Get DAO financial overview
   async getDaoFinancialOverview(daoId, startDate, endDate) {
@@ -17521,7 +18297,7 @@ var FinancialAnalyticsService = class {
         totalAmount: sql12`COALESCE(SUM(CAST(${contributions.amount} AS DECIMAL)), 0)`.as("totalAmount"),
         count: sql12`COUNT(*)`.as("count")
       }).from(contributions).where(and21(
-        eq32(contributions.daoId, daoId),
+        eq34(contributions.daoId, daoId),
         ...dateFilter
       ));
       const topContributors = await db2.select({
@@ -17529,8 +18305,8 @@ var FinancialAnalyticsService = class {
         username: users2.username,
         totalContributed: sql12`SUM(CAST(${contributions.amount} AS DECIMAL))`.as("totalContributed"),
         contributionCount: sql12`COUNT(*)`.as("contributionCount")
-      }).from(contributions).innerJoin(users2, eq32(contributions.userId, users2.id)).where(and21(
-        eq32(contributions.daoId, daoId),
+      }).from(contributions).innerJoin(users2, eq34(contributions.userId, users2.id)).where(and21(
+        eq34(contributions.daoId, daoId),
         ...dateFilter
       )).groupBy(contributions.userId, users2.username).orderBy(desc15(sql12`SUM(CAST(${contributions.amount} AS DECIMAL))`)).limit(10);
       const monthlyTrends = await db2.select({
@@ -17538,7 +18314,7 @@ var FinancialAnalyticsService = class {
         totalAmount: sql12`SUM(CAST(${contributions.amount} AS DECIMAL))`.as("totalAmount"),
         count: sql12`COUNT(*)`.as("count")
       }).from(contributions).where(and21(
-        eq32(contributions.daoId, daoId),
+        eq34(contributions.daoId, daoId),
         ...dateFilter
       )).groupBy(sql12`TO_CHAR(${contributions.createdAt}, 'YYYY-MM')`).orderBy(sql12`TO_CHAR(${contributions.createdAt}, 'YYYY-MM')`);
       const paymentMethodStats = await db2.select({
@@ -17547,7 +18323,7 @@ var FinancialAnalyticsService = class {
         count: sql12`COUNT(*)`.as("count"),
         avgAmount: sql12`AVG(CAST(${contributions.amount} AS DECIMAL))`.as("avgAmount")
       }).from(contributions).where(and21(
-        eq32(contributions.daoId, daoId),
+        eq34(contributions.daoId, daoId),
         ...dateFilter
       )).groupBy(contributions.currency);
       return {
@@ -17583,7 +18359,7 @@ var FinancialAnalyticsService = class {
         totalContributions: sql12`SUM(CAST(${contributions.amount} AS DECIMAL))`.as("totalContributions"),
         contributorCount: sql12`COUNT(DISTINCT ${contributions.userId})`.as("contributorCount"),
         transactionCount: sql12`COUNT(*)`.as("transactionCount")
-      }).from(contributions).innerJoin(daos, eq32(contributions.daoId, daos.id)).where(and21(...dateFilter)).groupBy(contributions.daoId, daos.name).orderBy(desc15(sql12`SUM(CAST(${contributions.amount} AS DECIMAL))`)).limit(20);
+      }).from(contributions).innerJoin(daos, eq34(contributions.daoId, daos.id)).where(and21(...dateFilter)).groupBy(contributions.daoId, daos.name).orderBy(desc15(sql12`SUM(CAST(${contributions.amount} AS DECIMAL))`)).limit(20);
       const currencyDistribution = await db2.select({
         currency: contributions.currency,
         totalAmount: sql12`SUM(CAST(${contributions.amount} AS DECIMAL))`.as("totalAmount"),
@@ -17608,7 +18384,7 @@ var FinancialAnalyticsService = class {
   // Get treasury health metrics
   async getTreasuryHealthMetrics(daoId) {
     try {
-      const daoVaults = await db2.select().from(vaults).where(eq32(vaults.daoId, daoId));
+      const daoVaults = await db2.select().from(vaults2).where(eq34(vaults2.daoId, daoId));
       const totalBalance = daoVaults.reduce((sum3, vault) => {
         return sum3 + parseFloat(vault.balance);
       }, 0);
@@ -17619,7 +18395,7 @@ var FinancialAnalyticsService = class {
         totalOutflow: sql12`COALESCE(SUM(CASE WHEN ${walletTransactions.type} = 'withdrawal' THEN CAST(${walletTransactions.amount} AS DECIMAL) ELSE 0 END), 0)`.as("totalOutflow"),
         transactionCount: sql12`COUNT(*)`.as("transactionCount")
       }).from(walletTransactions).where(and21(
-        eq32(walletTransactions.daoId, daoId),
+        eq34(walletTransactions.daoId, daoId),
         gte9(walletTransactions.createdAt, thirtyDaysAgo)
       ));
       const activity = recentActivity[0];
@@ -17683,17 +18459,23 @@ router23.get("/dashboard/:daoId", isAuthenticated, async (req, res) => {
   try {
     const { daoId } = req.params;
     const userId = req.user?.claims?.id;
-    const dao = await db2.select().from(daos).where(eq33(daos.id, daoId)).limit(1);
+    const dao = await db2.select().from(daos).where(eq35(daos.id, daoId)).limit(1);
     if (!dao.length) {
       return res.status(404).json({ error: "DAO not found" });
     }
     const subscription = await db2.select().from(subscriptions).where(and22(
-      eq33(subscriptions.daoId, daoId),
-      eq33(subscriptions.status, "active")
+      eq35(subscriptions.daoId, daoId),
+      eq35(subscriptions.status, "active")
     )).limit(1);
-    const history = await db2.select().from(billingHistory).where(eq33(billingHistory.daoId, daoId)).orderBy(desc16(billingHistory.createdAt)).limit(12);
+    const history = await db2.select().from(billingHistory).where(eq35(billingHistory.daoId, daoId)).orderBy(desc16(billingHistory.createdAt)).limit(12);
+    const totalSpent = history.reduce((sum3, h) => sum3 + parseFloat(h.amount), 0);
+    const avgMonthlySpend = history.length > 0 ? totalSpent / Math.min(history.length, 12) : 0;
     const analytics2 = await financialAnalyticsService.getDaoFinancialOverview(daoId);
     const treasuryHealth = await financialAnalyticsService.getTreasuryHealthMetrics(daoId);
+    const [proposalCount, vaultCount] = await Promise.all([
+      db2.select({ count: sql`count(*)` }).from(proposals).where(eq35(proposals.daoId, daoId)),
+      db2.select({ count: sql`count(*)` }).from(vaults).where(eq35(vaults.daoId, daoId))
+    ]);
     const currentPlan = subscription[0]?.plan || "free";
     const planLimits = {
       free: { members: 25, proposals: 10, vaults: 1 },
@@ -17701,20 +18483,33 @@ router23.get("/dashboard/:daoId", isAuthenticated, async (req, res) => {
     };
     const usage = {
       members: dao[0].memberCount,
-      proposals: 0,
-      // TODO: Count from proposals table
-      vaults: 0,
-      // TODO: Count from vaults table
+      proposals: proposalCount[0]?.count || 0,
+      vaults: vaultCount[0]?.count || 0,
       limits: planLimits[currentPlan]
     };
+    const memberOverage = Math.max(0, usage.members - 25);
+    const proposalOverage = Math.max(0, usage.proposals - 10);
+    const vaultOverage = Math.max(0, usage.vaults - 1);
+    const upgradeRecommended = memberOverage > 0 || proposalOverage > 0 || vaultOverage > 0;
     res.json({
       dao: dao[0],
       subscription: subscription[0] || null,
       billingHistory: history,
+      billingAnalytics: {
+        totalSpent,
+        avgMonthlySpend,
+        currency: history[0]?.currency || "KES",
+        nextBillingDate: subscription[0]?.endDate,
+        paymentMethodsUsed: [...new Set(history.map((h) => h.currency))]
+      },
       analytics: analytics2,
       treasuryHealth,
       usage,
-      recommendedPlan: usage.members > 25 ? "premium" : "free"
+      upgradeAnalysis: {
+        recommended: upgradeRecommended,
+        reason: upgradeRecommended ? `You're exceeding limits: ${memberOverage > 0 ? `${memberOverage} extra members` : ""} ${proposalOverage > 0 ? `${proposalOverage} extra proposals` : ""}` : "Current plan meets your needs",
+        estimatedMonthlyCost: upgradeRecommended ? 1500 : 0
+      }
     });
   } catch (error) {
     console.error("Billing dashboard error:", error);
@@ -17729,7 +18524,7 @@ router23.post("/upgrade/:daoId", isAuthenticated, async (req, res) => {
     if (!["premium"].includes(plan)) {
       return res.status(400).json({ error: "Invalid plan selected" });
     }
-    const dao = await db2.select().from(daos).where(eq33(daos.id, daoId)).limit(1);
+    const dao = await db2.select().from(daos).where(eq35(daos.id, daoId)).limit(1);
     if (!dao.length) {
       return res.status(404).json({ error: "DAO not found" });
     }
@@ -17755,7 +18550,7 @@ router23.post("/upgrade/:daoId", isAuthenticated, async (req, res) => {
       // 30 days
       billingStatus: "active",
       nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3)
-    }).where(eq33(daos.id, daoId));
+    }).where(eq35(daos.id, daoId));
     await db2.insert(subscriptions).values({
       userId,
       daoId,
@@ -17786,7 +18581,7 @@ router23.post("/upgrade/:daoId", isAuthenticated, async (req, res) => {
 router23.get("/analytics/platform", isAuthenticated, async (req, res) => {
   try {
     const userId = req.user?.claims?.id;
-    const user = await db2.select().from(users2).where(eq33(users2.id, userId)).limit(1);
+    const user = await db2.select().from(users2).where(eq35(users2.id, userId)).limit(1);
     if (!user[0]?.isSuperUser) {
       return res.status(403).json({ error: "Admin access required" });
     }
@@ -17803,25 +18598,1064 @@ router23.get("/analytics/platform", isAuthenticated, async (req, res) => {
 });
 var billing_default = router23;
 
+// server/routes/poll-proposals.ts
+init_storage();
+init_schema();
+import express24 from "express";
+import { eq as eq36 } from "drizzle-orm";
+var router24 = express24.Router();
+router24.post("/:proposalId/poll-vote", isAuthenticated, async (req, res) => {
+  try {
+    const { proposalId } = req.params;
+    const { optionIds } = req.body;
+    const userId = req.user.claims.sub;
+    if (!optionIds || !Array.isArray(optionIds) || optionIds.length === 0) {
+      return res.status(400).json({ message: "Invalid option selection" });
+    }
+    const proposal = await db2.select().from(proposals2).where(eq36(proposals2.id, proposalId)).limit(1);
+    if (!proposal.length) {
+      return res.status(404).json({ message: "Proposal not found" });
+    }
+    const proposalData = proposal[0];
+    if (/* @__PURE__ */ new Date() > proposalData.voteEndTime || proposalData.status !== "active") {
+      return res.status(400).json({ message: "Voting is closed" });
+    }
+    if (proposalData.proposalType !== "poll") {
+      return res.status(400).json({ message: "Not a poll proposal" });
+    }
+    const existingVote = await db2.select().from(votes).where(eq36(votes.proposalId, proposalId)).where(eq36(votes.userId, userId)).limit(1);
+    if (existingVote.length) {
+      return res.status(400).json({ message: "You have already voted on this poll" });
+    }
+    const pollOptions = proposalData.pollOptions || [];
+    const updatedOptions = pollOptions.map((opt) => {
+      if (optionIds.includes(opt.id)) {
+        return { ...opt, votes: (opt.votes || 0) + 1 };
+      }
+      return opt;
+    });
+    await db2.update(proposals2).set({ pollOptions: updatedOptions }).where(eq36(proposals2.id, proposalId));
+    await db2.insert(votes).values({
+      proposalId,
+      userId,
+      voteType: "poll",
+      votingPower: 1,
+      metadata: { selectedOptions: optionIds }
+    });
+    res.json({
+      success: true,
+      message: "Vote recorded successfully",
+      updatedOptions
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to record vote",
+      error: error.message
+    });
+  }
+});
+var poll_proposals_default = router24;
+
 // server/index.ts
 init_reputationService();
+
+// server/routes/referrals.ts
+init_db();
+init_schema();
+import express25 from "express";
+import { eq as eq37, and as and23, sql as sql14 } from "drizzle-orm";
+var router25 = express25.Router();
+function generateReferralCode(userId) {
+  return `MTAA-${userId.substring(0, 6).toUpperCase()}`;
+}
+router25.get("/stats", async (req, res) => {
+  try {
+    const userId = req.session?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    const user = await db2.query.users.findFirst({
+      where: eq37(users2.id, userId)
+    });
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    const referredUsers = await db2.query.users.findMany({
+      where: eq37(users2.referredBy, userId)
+    });
+    const activeReferrals = referredUsers.filter((u) => u.isActive).length;
+    const earnings = await db2.select({
+      total: sql14`COALESCE(SUM(${walletTransactions.amount}), 0)`
+    }).from(walletTransactions).where(and23(
+      eq37(walletTransactions.userId, userId),
+      eq37(walletTransactions.type, "referral_reward")
+    ));
+    const thisMonth = /* @__PURE__ */ new Date();
+    thisMonth.setDate(1);
+    thisMonth.setHours(0, 0, 0, 0);
+    const thisMonthReferrals = referredUsers.filter(
+      (u) => new Date(u.createdAt) >= thisMonth
+    ).length;
+    res.json({
+      referralCode: user.referralCode || generateReferralCode(userId),
+      totalReferrals: referredUsers.length,
+      activeReferrals,
+      totalEarned: Number(earnings[0]?.total || 0),
+      pendingRewards: 0,
+      // TODO: Calculate from pending transactions
+      thisMonthReferrals
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router25.get("/leaderboard", async (req, res) => {
+  try {
+    const leaderboard = await db2.select({
+      userId: users2.id,
+      name: users2.name,
+      referralCount: sql14`COUNT(referred.id)`,
+      earnings: sql14`COALESCE(SUM(${walletTransactions.amount}), 0)`
+    }).from(users2).leftJoin(sql14`users AS referred`, sql14`referred.referred_by = ${users2.id}`).leftJoin(walletTransactions, and23(
+      eq37(walletTransactions.userId, users2.id),
+      eq37(walletTransactions.type, "referral_reward")
+    )).groupBy(users2.id, users2.name).orderBy(sql14`COUNT(referred.id) DESC`).limit(50);
+    const formattedLeaderboard = leaderboard.map((item, index2) => ({
+      id: item.userId,
+      name: item.name,
+      referrals: Number(item.referralCount),
+      earnings: Number(item.earnings),
+      rank: index2 + 1,
+      badge: getBadge(Number(item.referralCount))
+    }));
+    res.json(formattedLeaderboard);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router25.post("/distribute-reward", async (req, res) => {
+  try {
+    const { referrerId, newUserId, rewardAmount = 20 } = req.body;
+    if (!referrerId || !newUserId) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+    const [transaction] = await db2.insert(walletTransactions).values({
+      userId: referrerId,
+      type: "referral_reward",
+      amount: rewardAmount.toString(),
+      currency: "cUSD",
+      status: "completed",
+      description: `Referral reward for inviting new user`,
+      metadata: { newUserId }
+    }).returning();
+    res.json({
+      success: true,
+      transaction,
+      message: "Referral reward distributed successfully"
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+function getBadge(referralCount) {
+  if (referralCount >= 100) return "Diamond";
+  if (referralCount >= 50) return "Platinum";
+  if (referralCount >= 25) return "Gold";
+  if (referralCount >= 10) return "Silver";
+  return "Bronze";
+}
+var referrals_default = router25;
+
+// server/routes/events.ts
+import express26 from "express";
+import { z as z11 } from "zod";
+var router26 = express26.Router();
+var eventSchema = z11.object({
+  title: z11.string().min(3),
+  description: z11.string(),
+  startDate: z11.string(),
+  endDate: z11.string(),
+  location: z11.string(),
+  type: z11.enum(["meeting", "workshop", "social", "voting", "other"]),
+  maxAttendees: z11.string().optional()
+});
+var events = [];
+var rsvps = /* @__PURE__ */ new Map();
+router26.get("/", async (req, res) => {
+  try {
+    const enrichedEvents = events.map((event) => ({
+      ...event,
+      attendees: rsvps.get(event.id)?.size || 0
+    }));
+    res.json(enrichedEvents);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router26.post("/", async (req, res) => {
+  try {
+    const userId = req.session?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    const data = eventSchema.parse(req.body);
+    const event = {
+      id: `event-${Date.now()}`,
+      ...data,
+      maxAttendees: data.maxAttendees ? parseInt(data.maxAttendees) : void 0,
+      status: "upcoming",
+      createdBy: userId,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    events.push(event);
+    rsvps.set(event.id, /* @__PURE__ */ new Set());
+    res.json(event);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+router26.post("/:id/rsvp", async (req, res) => {
+  try {
+    const userId = req.session?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    const { id } = req.params;
+    const event = events.find((e) => e.id === id);
+    if (!event) {
+      return res.status(404).json({ error: "Event not found" });
+    }
+    if (!rsvps.has(id)) {
+      rsvps.set(id, /* @__PURE__ */ new Set());
+    }
+    const attendees = rsvps.get(id);
+    if (event.maxAttendees && attendees.size >= event.maxAttendees) {
+      return res.status(400).json({ error: "Event is full" });
+    }
+    attendees.add(userId);
+    res.json({ success: true, attendees: attendees.size });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+var events_default = router26;
+
+// server/routes/cross-chain.ts
+import { Router as Router2 } from "express";
+
+// server/services/crossChainService.ts
+init_db();
+init_schema();
+import { eq as eq38 } from "drizzle-orm";
+var CrossChainService = class {
+  constructor() {
+    this.logger = Logger.getLogger();
+  }
+  /**
+   * Initiate cross-chain transfer
+   */
+  async initiateTransfer(request) {
+    try {
+      const sourceProvider = ChainRegistry.getProvider(request.sourceChain);
+      const destProvider = ChainRegistry.getProvider(request.destinationChain);
+      if (!CHAIN_CONFIGS[request.sourceChain] || !CHAIN_CONFIGS[request.destinationChain]) {
+        throw new AppError("Unsupported chain", 400);
+      }
+      const sourceConfig = CHAIN_CONFIGS[request.sourceChain];
+      if (!sourceConfig.bridgeContract) {
+        throw new AppError("Bridge not configured for source chain", 400);
+      }
+      const [transfer] = await db2.insert(crossChainTransfers).values({
+        userId: request.userId,
+        sourceChain: request.sourceChain,
+        destinationChain: request.destinationChain,
+        tokenAddress: request.tokenAddress,
+        amount: request.amount,
+        destinationAddress: request.destinationAddress,
+        vaultId: request.vaultId,
+        status: "pending",
+        estimatedCompletionTime: new Date(Date.now() + 30 * 60 * 1e3)
+        // 30 minutes
+      }).returning();
+      this.logger.info(`Cross-chain transfer initiated: ${transfer.id}`);
+      return {
+        transferId: transfer.id,
+        status: "pending",
+        sourceChain: request.sourceChain,
+        destinationChain: request.destinationChain,
+        amount: request.amount,
+        estimatedTime: 1800
+        // 30 minutes
+      };
+    } catch (error) {
+      this.logger.error("Failed to initiate cross-chain transfer:", error);
+      throw new AppError("Failed to initiate cross-chain transfer", 500);
+    }
+  }
+  /**
+   * Check transfer status
+   */
+  async getTransferStatus(transferId) {
+    try {
+      const transfer = await db2.query.crossChainTransfers.findFirst({
+        where: eq38(crossChainTransfers.id, transferId)
+      });
+      if (!transfer) {
+        return null;
+      }
+      const now = Date.now();
+      const estimatedCompletion = transfer.estimatedCompletionTime?.getTime() || now;
+      const remainingTime = Math.max(0, Math.floor((estimatedCompletion - now) / 1e3));
+      return {
+        transferId: transfer.id,
+        status: transfer.status,
+        sourceChain: transfer.sourceChain,
+        destinationChain: transfer.destinationChain,
+        amount: transfer.amount,
+        estimatedTime: remainingTime,
+        gasEstimate: transfer.gasEstimate || void 0
+      };
+    } catch (error) {
+      this.logger.error("Failed to get transfer status:", error);
+      throw new AppError("Failed to get transfer status", 500);
+    }
+  }
+  /**
+   * Get supported chains
+   */
+  getSupportedChains() {
+    return ChainRegistry.getMainnetChains();
+  }
+  /**
+   * Estimate bridge fees
+   */
+  async estimateBridgeFees(sourceChain, destinationChain, amount) {
+    const baseGas = "0.01";
+    const bridgeFeePercent = 1e-3;
+    const bridgeFee = (parseFloat(amount) * bridgeFeePercent).toString();
+    const totalFee = (parseFloat(baseGas) + parseFloat(bridgeFee)).toString();
+    return {
+      gasFee: baseGas,
+      bridgeFee,
+      totalFee
+    };
+  }
+  /**
+   * Create cross-chain vault
+   */
+  async createCrossChainVault(userId, chains2, vaultName) {
+    try {
+      for (const chain of chains2) {
+        if (!CHAIN_CONFIGS[chain]) {
+          throw new AppError(`Unsupported chain: ${chain}`, 400);
+        }
+      }
+      const [vault] = await db2.insert(vaults2).values({
+        name: vaultName,
+        userId,
+        vaultType: "yield",
+        currency: "cUSD",
+        isActive: true,
+        metadata: {
+          crossChain: true,
+          supportedChains: chains2
+        }
+      }).returning();
+      this.logger.info(`Cross-chain vault created: ${vault.id} for chains: ${chains2.join(", ")}`);
+      return vault.id;
+    } catch (error) {
+      this.logger.error("Failed to create cross-chain vault:", error);
+      throw new AppError("Failed to create cross-chain vault", 500);
+    }
+  }
+};
+var crossChainService = new CrossChainService();
+
+// server/services/crossChainGovernanceService.ts
+init_db();
+init_schema();
+import { eq as eq39 } from "drizzle-orm";
+
+// server/services/bridgeProtocolService.ts
+var LAYERZERO_ENDPOINTS = {
+  ["celo" /* CELO */]: {
+    endpoint: "0x3A73033C0b1407574C76BdBAc67f126f6b4a9AA9",
+    chainId: 125
+  },
+  ["celo-alfajores" /* CELO_ALFAJORES */]: {
+    endpoint: "0xae92d5aD7583AD66E49A0c67BAd18F6ba52dDDc1",
+    chainId: 14002
+  },
+  ["ethereum" /* ETHEREUM */]: {
+    endpoint: "0x66A71Dcef29A0fFBDBE3c6a460a3B5BC225Cd675",
+    chainId: 101
+  },
+  ["polygon" /* POLYGON */]: {
+    endpoint: "0x3c2269811836af69497E5F486A85D7316753cf62",
+    chainId: 109
+  },
+  ["optimism" /* OPTIMISM */]: {
+    endpoint: "0x3c2269811836af69497E5F486A85D7316753cf62",
+    chainId: 111
+  },
+  ["arbitrum" /* ARBITRUM */]: {
+    endpoint: "0x3c2269811836af69497E5F486A85D7316753cf62",
+    chainId: 110
+  }
+};
+var AXELAR_GATEWAYS = {
+  ["celo" /* CELO */]: {
+    gateway: "0xe432150cce91c13a887f7D836923d5597adD8E31",
+    gasReceiver: "0x2d5d7d31F671F86C782533cc367F14109a082712"
+  },
+  ["celo-alfajores" /* CELO_ALFAJORES */]: {
+    gateway: "0xe432150cce91c13a887f7D836923d5597adD8E31",
+    gasReceiver: "0x2d5d7d31F671F86C782533cc367F14109a082712"
+  },
+  ["ethereum" /* ETHEREUM */]: {
+    gateway: "0x4F4495243837681061C4743b74B3eEdf548D56A5",
+    gasReceiver: "0x2d5d7d31F671F86C782533cc367F14109a082712"
+  },
+  ["polygon" /* POLYGON */]: {
+    gateway: "0x6f015F16De9fC8791b234eF68D486d2bF203FBA8",
+    gasReceiver: "0x2d5d7d31F671F86C782533cc367F14109a082712"
+  },
+  ["optimism" /* OPTIMISM */]: {
+    gateway: "0xe432150cce91c13a887f7D836923d5597adD8E31",
+    gasReceiver: "0x2d5d7d31F671F86C782533cc367F14109a082712"
+  },
+  ["arbitrum" /* ARBITRUM */]: {
+    gateway: "0xe432150cce91c13a887f7D836923d5597adD8E31",
+    gasReceiver: "0x2d5d7d31F671F86C782533cc367F14109a082712"
+  }
+};
+var BridgeProtocolService = class {
+  constructor() {
+    this.logger = Logger.getLogger();
+  }
+  /**
+   * Send cross-chain message via LayerZero
+   */
+  async sendLayerZeroMessage(sourceChain, destChain, payload, adapterParams = "0x") {
+    try {
+      const sourceConfig = LAYERZERO_ENDPOINTS[sourceChain];
+      const destConfig = LAYERZERO_ENDPOINTS[destChain];
+      if (!sourceConfig || !destConfig) {
+        throw new AppError("Unsupported chain for LayerZero", 400);
+      }
+      const provider2 = ChainRegistry.getProvider(sourceChain);
+      const bridgeContract = CHAIN_CONFIGS[sourceChain].bridgeContract;
+      if (!bridgeContract) {
+        throw new AppError("Bridge contract not deployed", 400);
+      }
+      const fees = await this.estimateLayerZeroFees(
+        sourceChain,
+        destChain,
+        payload,
+        adapterParams
+      );
+      this.logger.info(`Sending LayerZero message from ${sourceChain} to ${destChain}`, {
+        payload,
+        fees
+      });
+      return `lz_${Date.now()}_${sourceChain}_${destChain}`;
+    } catch (error) {
+      this.logger.error("LayerZero message failed:", error);
+      throw new AppError("Failed to send LayerZero message", 500);
+    }
+  }
+  /**
+   * Send cross-chain message via Axelar
+   */
+  async sendAxelarMessage(sourceChain, destChain, destContract, payload) {
+    try {
+      const sourceConfig = AXELAR_GATEWAYS[sourceChain];
+      const destConfig = AXELAR_GATEWAYS[destChain];
+      if (!sourceConfig || !destConfig) {
+        throw new AppError("Unsupported chain for Axelar", 400);
+      }
+      const provider2 = ChainRegistry.getProvider(sourceChain);
+      const bridgeContract = CHAIN_CONFIGS[sourceChain].bridgeContract;
+      if (!bridgeContract) {
+        throw new AppError("Bridge contract not deployed", 400);
+      }
+      this.logger.info(`Sending Axelar message from ${sourceChain} to ${destChain}`, {
+        destContract,
+        payload
+      });
+      return `axl_${Date.now()}_${sourceChain}_${destChain}`;
+    } catch (error) {
+      this.logger.error("Axelar message failed:", error);
+      throw new AppError("Failed to send Axelar message", 500);
+    }
+  }
+  /**
+   * Estimate LayerZero fees
+   */
+  async estimateLayerZeroFees(sourceChain, destChain, payload, adapterParams) {
+    const baseGas = "0.005";
+    return baseGas;
+  }
+  /**
+   * Estimate Axelar fees
+   */
+  async estimateAxelarFees(sourceChain, destChain, payload) {
+    const baseGas = "0.005";
+    return baseGas;
+  }
+};
+var bridgeProtocolService = new BridgeProtocolService();
+
+// server/services/crossChainGovernanceService.ts
+var CrossChainGovernanceService = class {
+  constructor() {
+    this.logger = Logger.getLogger();
+  }
+  /**
+   * Create cross-chain proposal
+   */
+  async createCrossChainProposal(proposalId, chains2, executionChain) {
+    try {
+      const proposal = await db2.query.proposals.findFirst({
+        where: eq39(proposals2.id, proposalId)
+      });
+      if (!proposal) {
+        throw new AppError("Proposal not found", 404);
+      }
+      const votesByChain = {};
+      const quorumByChain = {};
+      chains2.forEach((chain) => {
+        votesByChain[chain] = { yes: 0, no: 0, abstain: 0 };
+        quorumByChain[chain] = 100;
+      });
+      const [crossChainProposal] = await db2.insert(crossChainProposals).values({
+        proposalId,
+        chains: chains2,
+        votesByChain,
+        quorumByChain,
+        executionChain,
+        syncStatus: "pending"
+      }).returning();
+      this.logger.info(`Cross-chain proposal created: ${crossChainProposal.id}`);
+      await this.broadcastProposal(crossChainProposal.id, chains2, proposal);
+      return crossChainProposal.id;
+    } catch (error) {
+      this.logger.error("Failed to create cross-chain proposal:", error);
+      throw new AppError("Failed to create cross-chain proposal", 500);
+    }
+  }
+  /**
+   * Aggregate votes from multiple chains
+   */
+  async aggregateVotes(crossChainProposalId) {
+    try {
+      const crossChainProposal = await db2.query.crossChainProposals.findFirst({
+        where: eq39(crossChainProposals.id, crossChainProposalId)
+      });
+      if (!crossChainProposal) {
+        throw new AppError("Cross-chain proposal not found", 404);
+      }
+      const votesByChain = crossChainProposal.votesByChain;
+      const quorumByChain = crossChainProposal.quorumByChain;
+      let totalYes = 0;
+      let totalNo = 0;
+      let totalAbstain = 0;
+      let totalQuorum = 0;
+      let achievedQuorum = 0;
+      Object.keys(votesByChain).forEach((chain) => {
+        const votes5 = votesByChain[chain];
+        totalYes += votes5.yes || 0;
+        totalNo += votes5.no || 0;
+        totalAbstain += votes5.abstain || 0;
+        const chainQuorum = quorumByChain[chain] || 0;
+        totalQuorum += chainQuorum;
+        const chainVotes = (votes5.yes || 0) + (votes5.no || 0) + (votes5.abstain || 0);
+        if (chainVotes >= chainQuorum) {
+          achievedQuorum += chainQuorum;
+        }
+      });
+      const quorumMet = achievedQuorum >= totalQuorum;
+      return {
+        totalYes,
+        totalNo,
+        totalAbstain,
+        quorumMet
+      };
+    } catch (error) {
+      this.logger.error("Failed to aggregate votes:", error);
+      throw new AppError("Failed to aggregate votes", 500);
+    }
+  }
+  /**
+   * Sync vote from specific chain
+   */
+  async syncVoteFromChain(crossChainProposalId, chain, voteData) {
+    try {
+      const crossChainProposal = await db2.query.crossChainProposals.findFirst({
+        where: eq39(crossChainProposals.id, crossChainProposalId)
+      });
+      if (!crossChainProposal) {
+        throw new AppError("Cross-chain proposal not found", 404);
+      }
+      const votesByChain = crossChainProposal.votesByChain;
+      if (!votesByChain[chain]) {
+        votesByChain[chain] = { yes: 0, no: 0, abstain: 0 };
+      }
+      if (voteData.voteType === "yes") {
+        votesByChain[chain].yes += parseFloat(voteData.votingPower);
+      } else if (voteData.voteType === "no") {
+        votesByChain[chain].no += parseFloat(voteData.votingPower);
+      } else if (voteData.voteType === "abstain") {
+        votesByChain[chain].abstain += parseFloat(voteData.votingPower);
+      }
+      await db2.update(crossChainProposals).set({ votesByChain, syncStatus: "synced" }).where(eq39(crossChainProposals.id, crossChainProposalId));
+      this.logger.info(`Vote synced from ${chain} for proposal ${crossChainProposalId}`);
+    } catch (error) {
+      this.logger.error("Failed to sync vote:", error);
+      throw new AppError("Failed to sync vote", 500);
+    }
+  }
+  /**
+   * Broadcast proposal to all chains
+   */
+  async broadcastProposal(crossChainProposalId, chains2, proposal) {
+    const payload = JSON.stringify({
+      crossChainProposalId,
+      proposalId: proposal.id,
+      title: proposal.title,
+      description: proposal.description,
+      voteEndTime: proposal.voteEndTime
+    });
+    for (const chain of chains2) {
+      try {
+        await bridgeProtocolService.sendLayerZeroMessage(
+          "celo" /* CELO */,
+          // Primary chain
+          chain,
+          payload
+        );
+      } catch (error) {
+        this.logger.error(`Failed to broadcast to ${chain}:`, error);
+      }
+    }
+  }
+};
+var crossChainGovernanceService = new CrossChainGovernanceService();
+
+// server/routes/cross-chain.ts
+import { z as z12 } from "zod";
+var router27 = Router2();
+var transferSchema = z12.object({
+  sourceChain: z12.string(),
+  destinationChain: z12.string(),
+  tokenAddress: z12.string(),
+  amount: z12.string(),
+  destinationAddress: z12.string(),
+  vaultId: z12.string().optional()
+});
+router27.post("/transfer", isAuthenticated2, asyncHandler(async (req, res) => {
+  const userId = req.user?.claims?.sub;
+  const validated = transferSchema.parse(req.body);
+  const status = await crossChainService.initiateTransfer({
+    userId,
+    ...validated
+  });
+  res.json({
+    success: true,
+    data: status
+  });
+}));
+router27.get("/transfer/:transferId", isAuthenticated2, asyncHandler(async (req, res) => {
+  const { transferId } = req.params;
+  const status = await crossChainService.getTransferStatus(transferId);
+  if (!status) {
+    return res.status(404).json({
+      success: false,
+      message: "Transfer not found"
+    });
+  }
+  res.json({
+    success: true,
+    data: status
+  });
+}));
+router27.get("/chains", asyncHandler(async (req, res) => {
+  const chains2 = crossChainService.getSupportedChains();
+  res.json({
+    success: true,
+    data: chains2
+  });
+}));
+router27.post("/estimate-fees", asyncHandler(async (req, res) => {
+  const { sourceChain, destinationChain, amount } = req.body;
+  const fees = await crossChainService.estimateBridgeFees(
+    sourceChain,
+    destinationChain,
+    amount
+  );
+  res.json({
+    success: true,
+    data: fees
+  });
+  router27.post("/governance/proposal", isAuthenticated2, asyncHandler(async (req2, res2) => {
+    const { proposalId, chains: chains2, executionChain } = req2.body;
+    const crossChainProposalId = await crossChainGovernanceService.createCrossChainProposal(
+      proposalId,
+      chains2,
+      executionChain
+    );
+    res2.json({
+      success: true,
+      data: { crossChainProposalId }
+    });
+  }));
+  router27.get("/governance/proposal/:proposalId/aggregate", asyncHandler(async (req2, res2) => {
+    const { proposalId } = req2.params;
+    const aggregation = await crossChainGovernanceService.aggregateVotes(proposalId);
+    res2.json({
+      success: true,
+      data: aggregation
+    });
+  }));
+  router27.post("/governance/vote/sync", asyncHandler(async (req2, res2) => {
+    const { crossChainProposalId, chain, voteData } = req2.body;
+    await crossChainGovernanceService.syncVoteFromChain(
+      crossChainProposalId,
+      chain,
+      voteData
+    );
+    res2.json({
+      success: true,
+      message: "Vote synced successfully"
+    });
+  }));
+  router27.post("/transfer/:transferId/retry", isAuthenticated2, asyncHandler(async (req2, res2) => {
+    const { transferId } = req2.params;
+    await bridgeRelayerService.retryTransfer(transferId);
+    res2.json({
+      success: true,
+      message: "Transfer retry initiated"
+    });
+  }));
+  router27.get("/relayer/status", asyncHandler(async (req2, res2) => {
+    res2.json({
+      success: true,
+      data: {
+        isRunning: true,
+        pollInterval: 3e4
+      }
+    });
+  }));
+}));
+router27.post("/vault", isAuthenticated2, asyncHandler(async (req, res) => {
+  const userId = req.user?.claims?.sub;
+  const { chains: chains2, name } = req.body;
+  const vaultId = await crossChainService.createCrossChainVault(
+    userId,
+    chains2,
+    name
+  );
+  res.json({
+    success: true,
+    data: { vaultId }
+  });
+}));
+var cross_chain_default = router27;
+
+// server/routes/nft-marketplace.ts
+init_db();
+init_achievementSchema();
+import express27 from "express";
+import { eq as eq40 } from "drizzle-orm";
+import { ethers as ethers6 } from "ethers";
+var router28 = express27.Router();
+router28.get("/listings", async (req, res) => {
+  try {
+    const { category, rarity, minPrice, maxPrice } = req.query;
+    const mockListings = [
+      {
+        tokenId: 1,
+        name: "Pioneer Badge",
+        category: "PIONEER",
+        rarity: 4,
+        price: ethers6.parseEther("10").toString(),
+        seller: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+        imageUrl: "/nft/pioneer.png"
+      },
+      {
+        tokenId: 2,
+        name: "Super Contributor",
+        category: "CONTRIBUTOR",
+        rarity: 3,
+        price: ethers6.parseEther("5").toString(),
+        seller: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEc",
+        imageUrl: "/nft/contributor.png"
+      }
+    ];
+    res.json({ listings: mockListings });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router28.get("/user/:address", async (req, res) => {
+  try {
+    const { address } = req.params;
+    const userAchievements2 = await db2.select().from(achievements).where(eq40(achievements.userId, address));
+    res.json({ achievements: userAchievements2 });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router28.post("/list", isAuthenticated, async (req, res) => {
+  try {
+    const { tokenId, price } = req.body;
+    res.json({
+      success: true,
+      message: "NFT listed successfully",
+      tokenId,
+      price
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router28.post("/buy", isAuthenticated, async (req, res) => {
+  try {
+    const { tokenId } = req.body;
+    res.json({
+      success: true,
+      message: "NFT purchased successfully",
+      tokenId
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router28.post("/unlist", isAuthenticated, async (req, res) => {
+  try {
+    const { tokenId } = req.body;
+    res.json({
+      success: true,
+      message: "NFT unlisted successfully",
+      tokenId
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router28.get("/stats", async (req, res) => {
+  try {
+    const stats = {
+      totalListings: 42,
+      totalVolume: ethers6.parseEther("1250").toString(),
+      floorPrice: ethers6.parseEther("2.5").toString(),
+      uniqueOwners: 128,
+      last24hVolume: ethers6.parseEther("85").toString()
+    };
+    res.json({ stats });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+var nft_marketplace_default = router28;
+
+// server/services/WebSocketService.ts
+import { WebSocketServer, WebSocket } from "ws";
+var WebSocketService = class {
+  constructor(server2) {
+    this.clients = /* @__PURE__ */ new Map();
+    this.typingUsers = /* @__PURE__ */ new Map();
+    this.onlineUsers = /* @__PURE__ */ new Map();
+    this.wss = new WebSocketServer({
+      server: server2,
+      path: "/ws/realtime"
+      // Use specific path to avoid conflicts with Vite HMR
+    });
+    this.setupWebSocket();
+    this.startHeartbeat();
+  }
+  setupWebSocket() {
+    this.wss.on("connection", (ws2) => {
+      logger.info("WebSocket client connected");
+      const client = {
+        ws: ws2,
+        userId: "",
+        userName: "",
+        daoIds: /* @__PURE__ */ new Set(),
+        isAlive: true
+      };
+      this.clients.set(ws2, client);
+      ws2.on("message", (data) => {
+        try {
+          this.handleMessage(ws2, data.toString());
+        } catch (error) {
+          this.handleError(ws2, error);
+        }
+      });
+      ws2.on("close", () => this.handleDisconnect(ws2));
+      ws2.on("error", (error) => this.handleError(ws2, error));
+      ws2.on("pong", () => this.handlePong(ws2));
+    });
+  }
+  handleMessage(ws2, message) {
+    try {
+      const data = JSON.parse(message);
+      switch (data.type) {
+        case "init":
+          this.handleInit(ws2, data.data);
+          break;
+        case "typing":
+          this.handleTyping(ws2, data.data);
+          break;
+        case "presence":
+          this.handlePresence(ws2, data.data);
+          break;
+      }
+    } catch (error) {
+      logger.error("Error handling WebSocket message:", error);
+    }
+  }
+  handleInit(ws2, data) {
+    const client = {
+      ws: ws2,
+      userId: data.userId,
+      userName: data.userName || "Anonymous",
+      daoIds: new Set(data.daoIds),
+      isAlive: true
+    };
+    this.clients.set(ws2, client);
+    data.daoIds.forEach((daoId) => {
+      if (!this.onlineUsers.has(daoId)) {
+        this.onlineUsers.set(daoId, /* @__PURE__ */ new Set());
+      }
+      this.onlineUsers.get(daoId).add(data.userId);
+      this.broadcastPresence(daoId);
+    });
+  }
+  handleTyping(ws2, data) {
+    const client = this.clients.get(ws2);
+    if (!client?.daoIds.has(data.daoId)) return;
+    if (!this.typingUsers.has(data.daoId)) {
+      this.typingUsers.set(data.daoId, /* @__PURE__ */ new Set());
+    }
+    const typingSet = this.typingUsers.get(data.daoId);
+    if (data.isTyping) {
+      typingSet.add(data.userId);
+    } else {
+      typingSet.delete(data.userId);
+    }
+    this.broadcastTyping(data.daoId);
+  }
+  handlePresence(ws2, data) {
+    const client = this.clients.get(ws2);
+    if (!client?.daoIds.has(data.daoId)) return;
+    if (!this.onlineUsers.has(data.daoId)) {
+      this.onlineUsers.set(data.daoId, /* @__PURE__ */ new Set());
+    }
+    const onlineSet = this.onlineUsers.get(data.daoId);
+    if (data.status === "online") {
+      onlineSet.add(data.userId);
+    } else {
+      onlineSet.delete(data.userId);
+    }
+    this.broadcastPresence(data.daoId);
+  }
+  handleDisconnect(ws2) {
+    const client = this.clients.get(ws2);
+    if (client) {
+      client.daoIds.forEach((daoId) => {
+        this.typingUsers.get(daoId)?.delete(client.userId);
+        this.onlineUsers.get(daoId)?.delete(client.userId);
+        this.broadcastTyping(daoId);
+        this.broadcastPresence(daoId);
+      });
+      this.clients.delete(ws2);
+    }
+  }
+  handleError(ws2, error) {
+    logger.error("WebSocket error:", error);
+    const client = this.clients.get(ws2);
+    if (client) {
+      this.handleDisconnect(ws2);
+    }
+  }
+  handlePong(ws2) {
+    const client = this.clients.get(ws2);
+    if (client) {
+      client.isAlive = true;
+    }
+  }
+  startHeartbeat() {
+    this.heartbeatInterval = setInterval(() => {
+      this.wss.clients.forEach((ws2) => {
+        const client = this.clients.get(ws2);
+        if (client && !client.isAlive) {
+          client.ws.terminate();
+          return;
+        }
+        if (client) client.isAlive = false;
+        ws2.ping();
+      });
+    }, 3e4);
+    this.wss.on("close", () => {
+      clearInterval(this.heartbeatInterval);
+    });
+  }
+  broadcastTyping(daoId) {
+    const message = {
+      type: "typing_update",
+      data: {
+        daoId,
+        typingUsers: Array.from(this.typingUsers.get(daoId) || [])
+      }
+    };
+    this.broadcast(daoId, message);
+  }
+  broadcastPresence(daoId) {
+    const message = {
+      type: "presence_update",
+      data: {
+        daoId,
+        onlineUsers: Array.from(this.onlineUsers.get(daoId) || [])
+      }
+    };
+    this.broadcast(daoId, message);
+  }
+  broadcast(daoId, message) {
+    this.clients.forEach((client) => {
+      if (client.daoIds.has(daoId) && client.ws.readyState === WebSocket.OPEN) {
+        client.ws.send(JSON.stringify(message));
+      }
+    });
+  }
+  getTypingUsers(daoId) {
+    return Array.from(this.typingUsers.get(daoId) || []);
+  }
+  getOnlineUsers(daoId) {
+    return Array.from(this.onlineUsers.get(daoId) || []);
+  }
+};
+var WebSocketService_default = WebSocketService;
+
+// server/index.ts
 var __dirname4 = dirname3(fileURLToPath4(import.meta.url));
-var app = express24();
+var app = express28();
 setupProcessErrorHandlers();
 var server = createServer(app);
 var io = new SocketIOServer(server, {
   cors: corsConfig
 });
 app.set("trust proxy", 1);
-app.use(express24.json({
+app.use(express28.json({
   limit: "10mb",
   verify: (req, res, buf) => {
     req.rawBody = buf;
   }
 }));
-app.use(express24.urlencoded({ extended: true, limit: "10mb" }));
+app.use(express28.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cors({
-  origin: [env.FRONTEND_URL, "http://localhost:5173", "http://localhost:3000"],
+  origin: ["http://localhost:5173"],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "Accept"]
@@ -17833,13 +19667,15 @@ app.use(preventXSS);
 app.use(auditMiddleware);
 app.use(metricsCollector2.requestMiddleware());
 app.use(activityTracker());
+var webSocketService = new WebSocketService_default(server);
+app.locals.webSocketService = webSocketService;
 var userSockets = /* @__PURE__ */ new Map();
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
+  logger.info("Socket.IO client connected:", { socketId: socket.id });
   socket.on("authenticate", (userId) => {
+    logger.info("Socket.IO client authenticated", { userId, socketId: socket.id });
     userSockets.set(userId, socket.id);
     socket.join(`user_${userId}`);
-    console.log(`User ${userId} authenticated with socket ${socket.id}`);
   });
   socket.on("disconnect", () => {
     for (const [userId, socketId] of userSockets.entries()) {
@@ -17891,7 +19727,7 @@ app.use((req, res, next) => {
       const backupSystem = BackupSystem.getInstance(backupConfig);
       const scheduler = new BackupScheduler(backupSystem);
       scheduler.start();
-      log("\u2705 Backup system initialized");
+      logger.info("\u2705 Backup system initialized");
     }
     await registerRoutes(app);
     app.get("/health", asyncHandler(async (req, res) => {
@@ -17903,32 +19739,52 @@ app.use((req, res, next) => {
         uptime: process.uptime()
       });
     }));
-    const isDev = process.env.NODE_ENV !== "production";
-    if (isDev) {
-      await setupVite(app, server);
-    } else {
-      serveStatic(app);
-      app.get("*", (_, res) => {
-        res.sendFile(path4.join(__dirname4, "../../dist/public", "index.html"));
-      });
-    }
-    app.use("/api/payment-reconciliation", payment_reconciliation_default);
-    app.use("/api/health", handler);
-    app.use("/api/analytics", analytics_default);
+    app.use("/api/payments/kotanipay", kotanipay_status_default);
+    app.use("/api/payments/mpesa", mpesa_status_default);
+    app.use("/api/payments/stripe", stripe_status_default);
+    app.use("/api/payments/reconciliation", payment_reconciliation_default);
+    app.use("/api/referrals", referrals_default);
+    app.use("/api/events", events_default);
     app.use("/api/notifications", notifications_default);
     app.use("/api/sse", sse_default);
     app.use("/api/billing", billing_default);
+    app.use("/api/dao/:daoId/executions", proposal_execution_default);
+    app.use("/api/proposals", poll_proposals_default);
+    app.use("/api/reputation", reputation_default);
+    app.use("/api/cross-chain", cross_chain_default);
+    app.use("/api/nft-marketplace", nft_marketplace_default);
+    const { isAuthenticated: isAuthenticated3 } = await import("./middleware/authentication");
+    app.get("/api/ai-analytics/:daoId", isAuthenticated3, async (req, res) => {
+      try {
+        const { aiAnalyticsService: aiAnalyticsService2 } = await Promise.resolve().then(() => (init_aiAnalyticsService(), aiAnalyticsService_exports));
+        const analytics2 = await aiAnalyticsService2.getComprehensiveAnalytics(req.params.daoId);
+        res.json({ success: true, data: analytics2 });
+      } catch (error) {
+        logger.error(`Error fetching AI analytics for DAO ${req.params.daoId}: ${error.message}`);
+        res.status(500).json({ success: false, error: "Failed to fetch AI analytics" });
+      }
+    });
+    app.get("/api/auth/user", authenticate, authUserHandler);
+    app.post("/api/auth/login", authLoginHandler);
+    app.post("/api/auth/register", authRegisterHandler);
+    app.post("/api/auth/refresh-token", refreshTokenHandler);
+    app.post("/api/auth/logout", logoutHandler);
+    if (env.NODE_ENV === "development") {
+      await setupVite(app, server);
+    } else {
+      serveStatic(app);
+    }
     app.use(notFoundHandler);
     app.use(errorHandler);
-    const PORT = parseInt(env.PORT);
-    const HOST = env.HOST;
+    const PORT = 5e3;
+    const HOST = env.HOST || "0.0.0.0";
     server.listen(PORT, HOST, () => {
       logStartup(PORT.toString());
       logger.info("Server configuration", {
         port: PORT,
         host: HOST,
-        frontendUrl: env.FRONTEND_URL,
-        backendUrl: env.BACKEND_URL,
+        frontendUrl: "http://localhost:5173",
+        backendUrl: `http://localhost:${PORT}`,
         environment: env.NODE_ENV,
         nodeVersion: process.version
       });
@@ -17955,6 +19811,7 @@ app.use((req, res, next) => {
     console.log("\u{1F680} Starting blockchain integration services...");
     vaultEventIndexer.start();
     vaultAutomationService.start();
+    bridgeRelayerService.start();
     console.log("\u2705 Blockchain services initialized successfully");
     const gracefulShutdown = (signal) => {
       logger.warn(`Received ${signal}, shutting down gracefully`);

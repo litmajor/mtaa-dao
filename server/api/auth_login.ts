@@ -32,10 +32,10 @@ export async function authLoginHandler(req: Request, res: Response) {
     }
 
     // Check if account is active
-    if (!user.isActive) {
+    if (user.isBanned) {
       return res.status(403).json({
         success: false,
-        error: { message: 'Account is deactivated' }
+        error: { message: 'Account is banned' }
       });
     }
 
@@ -60,9 +60,9 @@ export async function authLoginHandler(req: Request, res: Response) {
 
     // Generate tokens
     const tokens = generateTokens({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
+  sub: user.id,
+  email: user.email || '',
+  role: typeof user.roles === 'string' ? user.roles : 'user',
     });
 
     // Set refresh token cookie
@@ -78,10 +78,10 @@ export async function authLoginHandler(req: Request, res: Response) {
       data: {
         user: {
           id: user.id,
-          email: user.email,
+          email: user.email || '',
           firstName: user.firstName,
           lastName: user.lastName,
-          role: user.role,
+          roles: typeof user.roles === 'string' ? user.roles : 'user',
           walletAddress: user.walletAddress,
           isEmailVerified: user.isEmailVerified,
           profilePicture: user.profileImageUrl,

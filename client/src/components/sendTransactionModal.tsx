@@ -55,37 +55,24 @@ export default function SendTransactionModal({ open, onClose }: Props) {
 
   const handleSend = async () => {
     if (!isValidCeloAddress(recipient)) {
-      toast({
-        title: 'Invalid address',
-        variant: 'destructive',
-      });
+      toast('Invalid address', 'error');
       return;
     }
 
     if (parseFloat(amount) <= 0 || isNaN(parseFloat(amount))) {
-      toast({
-        title: 'Enter a valid amount',
-        variant: 'destructive',
-      });
+      toast('Enter a valid amount', 'error');
       return;
     }
 
     setSubmitting(true);
     try {
       const txHash = await sendTransaction(recipient, amount, currency === 'cUSD' ? CUSD_TOKEN_ADDRESS : undefined);
-      toast({
-        title: 'Success',
-        description: `${currency} sent! Hash: ${txHash.slice(0, 10)}...`,
-      });
+      toast(`${currency} sent! Hash: ${txHash.slice(0, 10)}...`, 'success');
       setRecipient('');
       setAmount('');
       onClose();
     } catch (err: any) {
-      toast({
-        title: 'Transaction failed',
-        description: err.message || 'Transaction failed',
-        variant: 'destructive',
-      });
+      toast(err.message || 'Transaction failed', 'error');
     } finally {
       setSubmitting(false);
       refreshBalances();

@@ -1,9 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 // Update the import path to the correct location of your storage functions
-import { getUserByEmail, createUser, loginUser } from '@/server/storage';
+//import { getUserByEmail, createUser, loginUser } from '@/server/storage';
 // If your storage file is actually located elsewhere, adjust the path accordingly.
 // For example, if it's in 'src/server/storage.ts', use:
-// import { getUserByEmail, createUser, loginUser } from '../../../server/storage';
+ import { getUserByEmail, createUser, loginUser } from '../server/storage';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;

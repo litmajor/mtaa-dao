@@ -2,9 +2,9 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db';
 import { taskTemplates } from '../../shared/schema';
+import { taskTemplatesCreatedBy } from '../../shared/schema';
 import { eq, like, desc } from 'drizzle-orm';
 import { isAuthenticated } from '../nextAuthMiddleware';
-
 const router = Router();
 
 const createTaskTemplateSchema = z.object({
@@ -24,20 +24,21 @@ router.get('/', async (req, res) => {
   try {
     const { category, difficulty, search } = req.query;
 
-    let query = db.select().from(taskTemplates);
-
+    const whereClauses = [];
     if (category) {
-      query = query.where(eq(taskTemplates.category, category as string));
+      whereClauses.push(eq(taskTemplates.category, category as string));
     }
-
     if (difficulty) {
-      query = query.where(eq(taskTemplates.difficulty, difficulty as string));
+      whereClauses.push(eq(taskTemplates.difficulty, difficulty as string));
     }
-
     if (search) {
-      query = query.where(like(taskTemplates.title, `%${search}%`));
+      whereClauses.push(like(taskTemplates.title, `%${search}%`));
     }
-
+    let query = db.select().from(taskTemplates);
+    if (whereClauses.length > 0) {
+      // @ts-ignore drizzle-orm: allow .where(and(...))
+      query = query.where(whereClauses.length === 1 ? whereClauses[0] : { and: whereClauses });
+    }
     const templates = await query.orderBy(desc(taskTemplates.createdAt));
 
     res.json({ templates });
@@ -73,18 +74,27 @@ router.get('/:templateId', async (req, res) => {
 router.post('/', isAuthenticated, async (req, res) => {
   try {
     const validatedData = createTaskTemplateSchema.parse(req.body);
-    const userId = req.user?.claims?.id;
-
+  const userId = req.user?.claims?.sub;
+    const insertData: any = {
+      title: validatedData.title,
+      description: validatedData.description,
+      category: validatedData.category,
+      difficulty: validatedData.difficulty,
+      estimatedHours: validatedData.estimatedHours ?? 1,
+      requiredSkills: validatedData.requiredSkills ?? [],
+      bountyAmount: String(validatedData.bountyAmount),
+      deliverables: validatedData.deliverables ?? [],
+      acceptanceCriteria: validatedData.acceptanceCriteria ?? [],
+      createdBy: userId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    // Remove undefined values
+    Object.keys(insertData).forEach(key => insertData[key] === undefined && delete insertData[key]);
     const newTemplate = await db
       .insert(taskTemplates)
-      .values({
-        ...validatedData,
-        createdBy: userId,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
+      .values(insertData)
       .returning();
-
     res.status(201).json({ template: newTemplate[0] });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -99,7 +109,7 @@ router.post('/', isAuthenticated, async (req, res) => {
 router.put('/:templateId', isAuthenticated, async (req, res) => {
   try {
     const { templateId } = req.params;
-    const userId = req.user?.claims?.id;
+  const userId = req.user?.claims?.sub;
     const validatedData = createTaskTemplateSchema.partial().parse(req.body);
 
     // Check if user is the creator
@@ -117,15 +127,25 @@ router.put('/:templateId', isAuthenticated, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to update this template' });
     }
 
+    const updateData: any = {
+      updatedAt: new Date(),
+    };
+    if (validatedData.title !== undefined) updateData.title = validatedData.title;
+    if (validatedData.description !== undefined) updateData.description = validatedData.description;
+    if (validatedData.category !== undefined) updateData.category = validatedData.category;
+    if (validatedData.difficulty !== undefined) updateData.difficulty = validatedData.difficulty;
+    if (validatedData.estimatedHours !== undefined) updateData.estimatedHours = validatedData.estimatedHours;
+    if (validatedData.requiredSkills !== undefined) updateData.requiredSkills = validatedData.requiredSkills;
+    if (validatedData.bountyAmount !== undefined) updateData.bountyAmount = String(validatedData.bountyAmount);
+    if (validatedData.deliverables !== undefined) updateData.deliverables = validatedData.deliverables;
+    if (validatedData.acceptanceCriteria !== undefined) updateData.acceptanceCriteria = validatedData.acceptanceCriteria;
+    // Remove undefined values
+    Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]);
     const updatedTemplate = await db
       .update(taskTemplates)
-      .set({
-        ...validatedData,
-        updatedAt: new Date(),
-      })
+      .set(updateData)
       .where(eq(taskTemplates.id, templateId))
       .returning();
-
     res.json({ template: updatedTemplate[0] });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -140,7 +160,7 @@ router.put('/:templateId', isAuthenticated, async (req, res) => {
 router.delete('/:templateId', isAuthenticated, async (req, res) => {
   try {
     const { templateId } = req.params;
-    const userId = req.user?.claims?.id;
+  const userId = req.user?.claims?.sub;
 
     // Check if user is the creator
     const template = await db

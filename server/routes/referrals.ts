@@ -32,7 +32,8 @@ router.get('/stats', async (req: Request, res: Response) => {
       where: eq(users.referredBy, userId)
     });
 
-    const activeReferrals = referredUsers.filter(u => u.isActive).length;
+  // Count referrals that are not banned
+  const activeReferrals = referredUsers.filter(u => !u.isBanned).length;
     
     // Calculate total earnings from referrals
     const earnings = await db.select({
@@ -40,7 +41,7 @@ router.get('/stats', async (req: Request, res: Response) => {
     })
     .from(walletTransactions)
     .where(and(
-      eq(walletTransactions.userId, userId),
+      eq(walletTransactions.toUserId, userId),
       eq(walletTransactions.type, 'referral_reward')
     ));
 
@@ -49,7 +50,7 @@ router.get('/stats', async (req: Request, res: Response) => {
     thisMonth.setHours(0, 0, 0, 0);
 
     const thisMonthReferrals = referredUsers.filter(
-      u => new Date(u.createdAt) >= thisMonth
+      u => u.createdAt && new Date(u.createdAt) >= thisMonth
     ).length;
 
     res.json({
@@ -77,7 +78,7 @@ router.get('/leaderboard', async (req: Request, res: Response) => {
     .from(users)
     .leftJoin(sql`users AS referred`, sql`referred.referred_by = ${users.id}`)
     .leftJoin(walletTransactions, and(
-      eq(walletTransactions.userId, users.id),
+      eq(walletTransactions.toUserId, users.id),
       eq(walletTransactions.type, 'referral_reward')
     ))
     .groupBy(users.id, users.name)
@@ -109,14 +110,17 @@ router.post('/distribute-reward', async (req: Request, res: Response) => {
     }
 
     // Create reward transaction
+    // Get referrer's wallet address
+    const referrer = await db.query.users.findFirst({ where: eq(users.id, referrerId) });
+    const walletAddress = referrer?.walletAddress || '';
     const [transaction] = await db.insert(walletTransactions).values({
-      userId: referrerId,
+      fromUserId: referrerId,
+      walletAddress,
       type: 'referral_reward',
       amount: rewardAmount.toString(),
       currency: 'cUSD',
       status: 'completed',
-      description: `Referral reward for inviting new user`,
-      metadata: { newUserId }
+      description: `Referral reward for inviting new user (userId: ${newUserId})`
     }).returning();
 
     // Update referrer's balance (if using internal balances)

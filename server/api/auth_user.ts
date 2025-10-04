@@ -16,7 +16,7 @@ export async function authUserHandler(req: AuthRequest, res: Response) {
     const [user] = await db
       .select()
       .from(users)
-      .where(eq(users.id, req.user.userId))
+      .where(eq(users.id, req.user.claims.sub))
       .limit(1);
 
     if (!user) {
@@ -34,9 +34,9 @@ export async function authUserHandler(req: AuthRequest, res: Response) {
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
-          role: user.role,
+          roles: user.roles,
           walletAddress: user.walletAddress,
-          isEmailVerified: user.isEmailVerified,
+          emailVerified: user.emailVerified,
           profilePicture: user.profileImageUrl,
         },
       },

@@ -12,6 +12,8 @@ export default function Referrals() {
   // Mock auth and toast for demo
   const user = { id: "demo123" };
   const toast = (params: { title: string; description?: string }) => console.log("Toast:", params);
+  // Use compatible toast API
+  const showToast = (message: string, type?: 'success' | 'error' | 'info') => console.log('Toast:', message, type);
   const [activeTab, setActiveTab] = useState("overview");
 
   // OAuth handlers
@@ -52,14 +54,20 @@ export default function Referrals() {
     thisMonthReferrals: 0,
   };
 
-  const mockLeaderboard = leaderboardData.length > 0 ? leaderboardData : [];
+  const mockLeaderboard: LeaderboardEntry[] = leaderboardData.length > 0 ? leaderboardData as LeaderboardEntry[] : [];
+  // Type for leaderboard entries
+  type LeaderboardEntry = {
+    id: string;
+    rank: number;
+    name: string;
+    badge: string;
+    referrals: number;
+    earnings: number;
+  };
 
   const copyReferralLink = () => {
     navigator.clipboard.writeText(referralLink);
-    toast({
-      title: "Copied!",
-      description: "Referral link copied to clipboard",
-    });
+    showToast("Referral link copied to clipboard", "success");
   };
 
   const getRankBadge = (rank: number) => {
@@ -414,7 +422,7 @@ export default function Referrals() {
                             <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-emerald-600 rounded-full blur opacity-25"></div>
                             <Avatar className="relative w-14 h-14 border-2 border-white/20 shadow-lg">
                               <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-blue-500 text-white font-bold text-lg">
-                                {leader.name.split(' ').map(n => n[0]).join('')}
+                                {leader.name.split(' ').map((n: string) => n[0]).join('')}
                               </AvatarFallback>
                             </Avatar>
                           </div>
