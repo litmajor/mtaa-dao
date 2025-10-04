@@ -118,12 +118,16 @@
 
 ---
 
-### **Phase 5 – Advanced Features (Q3 2025)**
+### **Phase 5 – Advanced Features (🚧 In Progress - Q3 2025)**
 
 * **Cross-Chain Integration**
-  * Bridges to Ethereum, Polygon, Optimism.
-  * Multi-chain vault support.
-  * Cross-chain governance proposals.
+  * ✅ Chain registry with Ethereum, Polygon, Optimism, Arbitrum support
+  * ✅ Cross-chain bridge contract (LayerZero/Axelar compatible)
+  * ✅ Cross-chain service for transfer management
+  * ✅ Multi-chain vault support with cross-chain deposits/withdrawals
+  * ✅ Bridge UI with fee estimation and status tracking
+  * 🚧 Cross-chain governance proposals (schema ready, execution pending)
+  * 🚧 Multi-chain vote aggregation
 * **Advanced Analytics**
   * AI-powered predictive modeling.
   * Automated risk assessment.

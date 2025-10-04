@@ -62,6 +62,9 @@ import Treasury from './pages/dao/treasury';
 import Checkout from './pages/Checkout';
 import Subscribe from './pages/Subscribe';
 
+// Cross-chain integration
+import CrossChainBridge from '@/pages/CrossChainBridge';
+
 // Protected/Public wrappers (unchanged)
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -186,6 +189,9 @@ function App() {
                 <Route path="/minipay" element={<ProtectedRoute><MiniPayDemo /></ProtectedRoute>} />
                 <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
                 <Route path="/subscribe" element={<ProtectedRoute><Subscribe /></ProtectedRoute>} />
+
+                {/* Cross-chain bridge route */}
+                <Route path="/cross-chain" element={<ProtectedRoute><CrossChainBridge /></ProtectedRoute>} />
 
                 {/* Catch-all 404 */}
                 <Route path="*" element={<NotFound />} />

@@ -45,6 +45,7 @@ import mpesaStatusRoutes from './routes/mpesa-status';
 import stripeStatusRoutes from './routes/stripe-status';
 import referralsRoutes from './routes/referrals';
 import eventsRoutes from './routes/events';
+import crossChainRoutes from './routes/cross-chain';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -205,6 +206,7 @@ app.use((req, res, next) => {
     app.use('/api/dao/:daoId/executions', proposalExecutionRouter);
     app.use('/api/proposals', pollProposalsRouter);
     app.use('/api/reputation', reputationRoutes); // Added reputation routes
+    app.use('/api/cross-chain', crossChainRoutes);
 
     // Auth endpoints
     app.get('/api/auth/user', authenticate, authUserHandler);

@@ -997,6 +997,44 @@ export const insertNotificationSchema = createInsertSchema(notifications);
 export const insertTaskHistorySchema = createInsertSchema(taskHistory);
 export const insertProposalTemplateSchema = createInsertSchema(proposalTemplates);
 export const insertVoteDelegationSchema = createInsertSchema(voteDelegations);
+
+// Cross-chain transfers table
+export const crossChainTransfers = pgTable('cross_chain_transfers', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  userId: text('user_id').notNull().references(() => users.id),
+  sourceChain: text('source_chain').notNull(),
+  destinationChain: text('destination_chain').notNull(),
+  tokenAddress: text('token_address').notNull(),
+  amount: text('amount').notNull(),
+  destinationAddress: text('destination_address').notNull(),
+  vaultId: text('vault_id').references(() => vaults.id),
+  status: text('status').notNull().default('pending'), // pending, bridging, completed, failed
+  txHashSource: text('tx_hash_source'),
+  txHashDestination: text('tx_hash_destination'),
+  bridgeProtocol: text('bridge_protocol'), // layerzero, axelar, wormhole
+  gasEstimate: text('gas_estimate'),
+  bridgeFee: text('bridge_fee'),
+  estimatedCompletionTime: timestamp('estimated_completion_time'),
+  completedAt: timestamp('completed_at'),
+  failureReason: text('failure_reason'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow()
+});
+
+// Cross-chain governance proposals
+export const crossChainProposals = pgTable('cross_chain_proposals', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  proposalId: text('proposal_id').notNull().references(() => proposals.id),
+  chains: text('chains').array().notNull(), // Array of chain identifiers
+  votesByChain: jsonb('votes_by_chain').default({}), // Chain-specific vote tallies
+  quorumByChain: jsonb('quorum_by_chain').default({}),
+  executionChain: text('execution_chain'), // Primary chain for execution
+  bridgeProposalId: text('bridge_proposal_id'), // Cross-chain message ID
+  syncStatus: text('sync_status').default('pending'), // pending, synced, failed
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow()
+});
+
 export const insertQuorumHistorySchema = createInsertSchema(quorumHistory);
 export const insertProposalExecutionQueueSchema = createInsertSchema(proposalExecutionQueue);
 
