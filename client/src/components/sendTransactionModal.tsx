@@ -37,9 +37,9 @@ export default function SendTransactionModal({ open, onClose }: Props) {
       let fee = '0';
       try {
         if (currency === 'CELO') {
-          fee = await estimateCeloGasFee(recipient, amount);
+          fee = await estimateCeloGasFee(recipient, amount.toString());
         } else if (currency === 'cUSD') {
-          fee = await estimateCUSDGasFee(recipient, amount);
+          fee = await estimateCUSDGasFee(recipient, amount.toString());
         } else {
           fee = '~0.001';
         }
@@ -72,7 +72,7 @@ export default function SendTransactionModal({ open, onClose }: Props) {
 
     setSubmitting(true);
     try {
-      const txHash = await sendTransaction({ to: recipient, amount, currency });
+      const txHash = await sendTransaction(recipient, amount, currency === 'cUSD' ? getTokenAddress('cUSD') : undefined);
       toast({
         title: 'Success',
         description: `${currency} sent! Hash: ${txHash.slice(0, 10)}...`,

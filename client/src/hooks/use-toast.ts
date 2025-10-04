@@ -16,7 +16,7 @@ export function useToast() {
     throw new Error("useToast must be used within a ToastProvider");
   }
 
-  const { addToast, removeToast, toasts } = context;
+  const { toast, dismiss, toasts } = context;
 
   const toast = (options: ToastOptions) => {
     return addToast(options);

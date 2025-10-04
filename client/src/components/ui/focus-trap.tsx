@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, ReactNode } from 'react';
 
 interface FocusTrapProps {
@@ -23,7 +22,7 @@ export function FocusTrap({
 
   const getFocusableElements = (): HTMLElement[] => {
     if (!containerRef.current) return [];
-    
+
     const focusableSelectors = [
       'button:not([disabled]):not([aria-hidden="true"])',
       'input:not([disabled]):not([aria-hidden="true"])',
@@ -33,7 +32,7 @@ export function FocusTrap({
       '[tabindex]:not([tabindex="-1"]):not([aria-hidden="true"])',
       '[contenteditable="true"]:not([aria-hidden="true"])'
     ].join(', ');
-    
+
     return Array.from(containerRef.current.querySelectorAll(focusableSelectors))
       .filter((el) => {
         const element = el as HTMLElement;
@@ -72,17 +71,17 @@ export function FocusTrap({
     // Focus initial element
     if (autoFocus) {
       const focusableElements = getFocusableElements();
-      
+
       let elementToFocus: HTMLElement | null = null;
-      
+
       if (initialFocus) {
-        elementToFocus = containerRef.current?.querySelector(initialFocus) as HTMLElement;
+        elementToToFocus = containerRef.current?.querySelector(initialFocus) as HTMLElement;
       }
-      
+
       if (!elementToFocus && focusableElements.length > 0) {
         elementToFocus = focusableElements[0];
       }
-      
+
       if (elementToFocus) {
         // Use setTimeout to ensure the element is rendered
         setTimeout(() => elementToFocus?.focus(), 0);
@@ -94,18 +93,18 @@ export function FocusTrap({
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      
+
       // Restore focus to previously focused element
       if (restoreFocus && previouslyFocusedElementRef.current) {
         let elementToFocus = previouslyFocusedElementRef.current;
-        
+
         if (finalFocus) {
           const finalElement = document.querySelector(finalFocus) as HTMLElement;
           if (finalElement) {
             elementToFocus = finalElement;
           }
         }
-        
+
         setTimeout(() => elementToFocus?.focus(), 0);
       }
     };
@@ -117,64 +116,3 @@ export function FocusTrap({
     </div>
   );
 }
-
-interface FocusTrapProps {
-  children: ReactNode;
-  active?: boolean;
-  restoreFocus?: boolean;
-}
-
-export const FocusTrap: React.FC<FocusTrapProps> = ({ 
-  children, 
-  active = true, 
-  restoreFocus = true 
-}) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const previousActiveElement = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    if (!active || !containerRef.current) return;
-
-    const container = containerRef.current;
-    previousActiveElement.current = document.activeElement as HTMLElement;
-
-    const focusableElements = container.querySelectorAll(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    ) as NodeListOf<HTMLElement>;
-
-    const firstElement = focusableElements[0];
-    const lastElement = focusableElements[focusableElements.length - 1];
-
-    const handleTabKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab') return;
-
-      if (e.shiftKey) {
-        if (document.activeElement === firstElement) {
-          lastElement?.focus();
-          e.preventDefault();
-        }
-      } else {
-        if (document.activeElement === lastElement) {
-          firstElement?.focus();
-          e.preventDefault();
-        }
-      }
-    };
-
-    firstElement?.focus();
-    document.addEventListener('keydown', handleTabKey);
-
-    return () => {
-      document.removeEventListener('keydown', handleTabKey);
-      if (restoreFocus && previousActiveElement.current) {
-        previousActiveElement.current.focus();
-      }
-    };
-  }, [active, restoreFocus]);
-
-  return (
-    <div ref={containerRef} className="focus-trap">
-      {children}
-    </div>
-  );
-};
