@@ -5,8 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { CheckCircle2, Circle } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { toast } from "@/hooks/use-toast";
+import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
+
 
 interface PollOption {
   id: string;
@@ -27,6 +28,7 @@ interface PollProposalCardProps {
 }
 
 export default function PollProposalCard({ proposal }: PollProposalCardProps) {
+  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
   

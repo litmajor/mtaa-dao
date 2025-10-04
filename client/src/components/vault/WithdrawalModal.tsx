@@ -25,7 +25,7 @@ export default function WithdrawalModal({
 
   const { address } = useAccount();
   const { data: vault } = useVaultContract(vaultAddress);
-  const { data: balance, refetch: refetchBalance } = useTokenBalance(address ?? "", vaultAddress);
+  const { data: balance } = useTokenBalance(address ?? "", vaultAddress);
   const withdrawMutation = useVaultWithdraw();
 
   const handleWithdraw = async () => {
@@ -47,7 +47,7 @@ export default function WithdrawalModal({
         destination: address
       });
       setSuccess(true);
-      await refetchBalance();
+      // Optionally trigger a refresh here if needed, e.g., by re-calling useTokenBalance or using a state update
       setTimeout(() => {
         onOpenChange(false);
         setSuccess(false);

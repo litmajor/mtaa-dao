@@ -1,7 +1,7 @@
 // MtaaDAO: useVaultHooks.ts — Unified hooks for Personal and Community Vaults
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAccount, useContractRead, useContractWrite, usePrepareContractWrite } from "wagmi";
+import { useAccount, useContractRead, useContractWrite } from "wagmi";
 import { parseEther, formatEther, Address } from "viem";
 import { toast } from "sonner";
 
@@ -47,38 +47,49 @@ export function useVaultContract(vaultAddress: string) {
 // Get vault information
 export function useVaultInfo(vaultAddress: string) {
   const { data: contract } = useVaultContract(vaultAddress);
-
-  return useContractRead({
+  if (!contract) return { data: undefined };
+  const contractRead = useContractRead({
     ...contract,
     functionName: "getVaultInfo",
-    enabled: !!contract,
-    select: (data: any) => ({
-      tvl: data[0],
-      sharePrice: data[1],
-      cap: data[2],
-      minDeposit: data[3],
-      isPaused: data[4],
-    }),
-  });
+  }) as {
+    data?: [bigint, bigint, bigint, bigint, boolean];
+    isLoading?: boolean;
+    isError?: boolean;
+    error?: Error;
+  };
+
+  // Transform the data to VaultInfo shape
+  const data = contractRead.data
+    ? {
+        tvl: contractRead.data[0] ?? BigInt(0),
+        sharePrice: contractRead.data[1] ?? BigInt(0),
+        cap: contractRead.data[2] ?? BigInt(0),
+        minDeposit: contractRead.data[3] ?? BigInt(0),
+        isPaused: contractRead.data[4] ?? false,
+      }
+    : undefined;
+
+  return { ...contractRead, data };
 }
 
 // Get user's vault balance
 export function useVaultBalance(userAddress: string, vaultAddress: string) {
   const { data: contract } = useVaultContract(vaultAddress);
+  const shares = contract && userAddress
+    ? useContractRead({
+        ...contract,
+        functionName: "balanceOf",
+        args: [userAddress as Address],
+      }).data
+    : undefined;
 
-  const { data: shares } = useContractRead({
-    ...contract,
-    functionName: "balanceOf",
-    args: [userAddress as Address],
-    enabled: !!contract && !!userAddress,
-  });
-
-  const { data: assets } = useContractRead({
-    ...contract,
-    functionName: "convertToAssets",
-    args: [shares || BigInt(0)],
-    enabled: !!contract && !!shares,
-  });
+  const assets = contract && shares
+    ? useContractRead({
+        ...contract,
+        functionName: "convertToAssets",
+        args: [shares || BigInt(0)],
+      }).data
+    : undefined;
 
   return useQuery({
     queryKey: ["vaultBalance", userAddress, vaultAddress, shares, assets],
@@ -102,6 +113,7 @@ export function useVaultBalance(userAddress: string, vaultAddress: string) {
 
 // Get token balance for deposits
 export function useTokenBalance(userAddress: string, tokenAddress?: string) {
+  if (!userAddress || !tokenAddress) return { data: undefined };
   return useContractRead({
     address: tokenAddress as Address,
     abi: [
@@ -115,30 +127,30 @@ export function useTokenBalance(userAddress: string, tokenAddress?: string) {
     ],
     functionName: "balanceOf",
     args: [userAddress as Address],
-    enabled: !!userAddress && !!tokenAddress,
   });
 }
 
 // Check token approval
 export function useTokenApproval(userAddress: string, amount: string, tokenAddress?: string, vaultAddress?: string) {
-  const { data: allowance } = useContractRead({
-    address: tokenAddress as Address,
-    abi: [
-      {
-        name: "allowance",
-        type: "function",
-        stateMutability: "view",
-        inputs: [
-          { name: "owner", type: "address" },
-          { name: "spender", type: "address" }
+  const allowance = userAddress && tokenAddress && vaultAddress
+    ? useContractRead({
+        address: tokenAddress as Address,
+        abi: [
+          {
+            name: "allowance",
+            type: "function",
+            stateMutability: "view",
+            inputs: [
+              { name: "owner", type: "address" },
+              { name: "spender", type: "address" }
+            ],
+            outputs: [{ name: "", type: "uint256" }],
+          },
         ],
-        outputs: [{ name: "", type: "uint256" }],
-      },
-    ],
-    functionName: "allowance",
-    args: [userAddress as Address, vaultAddress as Address],
-    enabled: !!userAddress && !!tokenAddress && !!vaultAddress,
-  });
+        functionName: "allowance",
+        args: [userAddress as Address, vaultAddress as Address],
+      }).data
+    : undefined;
 
   return useQuery({
     queryKey: ["tokenApproval", userAddress, amount, tokenAddress, vaultAddress, allowance],

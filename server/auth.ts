@@ -9,13 +9,21 @@ const ACCESS_TOKEN_EXPIRY = '15m';
 const REFRESH_TOKEN_EXPIRY = '7d';
 
 export interface TokenPayload {
-  userId: string;
-  email: string;
-  role: string;
+  sub: string;
+  email?: string;
+  role?: string;
 }
 
+// Import or define UserClaims type
+import type { UserClaims } from './nextAuthMiddleware'; // adjust path if needed
+
+// Re-export handler functions from their respective files
+export { authUserHandler } from './api/authUser';
+export { authLoginHandler } from './api/auth_login';
+export { authRegisterHandler } from './api/auth_register';
+
 export interface AuthRequest extends Request {
-  user?: TokenPayload;
+  user?: { claims: UserClaims };
 }
 
 // Generate access and refresh tokens
@@ -77,7 +85,7 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
       });
     }
 
-    req.user = payload;
+    req.user = { claims: { sub: payload.sub, email: payload.email, role: payload.role } };
     next();
   } catch (error) {
     return res.status(401).json({ 
@@ -113,7 +121,7 @@ export const refreshTokenHandler = async (req: Request, res: Response) => {
 
     // Generate new tokens
     const tokens = generateTokens({
-      userId: decoded.userId,
+      sub: decoded.sub,
       email: decoded.email,
       role: decoded.role
     });

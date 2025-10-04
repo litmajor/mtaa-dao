@@ -110,7 +110,14 @@ export default function SettingsFeatures() {
             alt="avatar"
             className="w-16 h-16 rounded-full border"
           />
-          <input type="file" accept="image/*" onChange={handleAvatarChange} />
+          <label htmlFor="avatar-upload" className="sr-only">Upload profile picture</label>
+          <input
+            id="avatar-upload"
+            type="file"
+            accept="image/*"
+            onChange={handleAvatarChange}
+            title="Upload profile picture"
+          />
         </div>
       </section>
       {/* Social Linking */}
@@ -148,7 +155,14 @@ export default function SettingsFeatures() {
       {/* Theme Preference */}
       <section>
         <h2 className="text-lg font-bold mb-2">Theme</h2>
-        <select value={theme} onChange={handleThemeChange} className="border rounded px-2 py-1">
+        <label htmlFor="theme-select" className="sr-only">Select theme</label>
+        <select
+          id="theme-select"
+          value={theme}
+          onChange={handleThemeChange}
+          className="border rounded px-2 py-1"
+          title="Select theme"
+        >
           <option value="light">Light</option>
           <option value="dark">Dark</option>
           <option value="system">System</option>
@@ -157,7 +171,14 @@ export default function SettingsFeatures() {
       {/* Language Selection */}
       <section>
         <h2 className="text-lg font-bold mb-2">Language</h2>
-        <select value={language} onChange={handleLanguageChange} className="border rounded px-2 py-1">
+        <label htmlFor="language-select" className="sr-only">Select language</label>
+        <select
+          id="language-select"
+          value={language}
+          onChange={handleLanguageChange}
+          className="border rounded px-2 py-1"
+          title="Select language"
+        >
           <option value="en">English</option>
           <option value="fr">French</option>
           <option value="sw">Swahili</option>

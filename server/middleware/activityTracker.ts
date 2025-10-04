@@ -1,31 +1,61 @@
 
 import { Request, Response, NextFunction } from 'express';
+
+// Extend Express Request type to support custom activityType
+declare global {
+  namespace Express {
+    interface Request {
+      activityType?: string;
+    }
+  }
+}
 import { analyticsService } from '../analyticsService';
 
 export function activityTracker() {
   return (req: Request, res: Response, next: NextFunction) => {
     const startTime = Date.now();
 
-    res.on('finish', async () => {
-      // Only track authenticated user activities
+    // Allow custom activity type via req.activityType
+    function resolveActivityType() {
+      if (req.activityType && typeof req.activityType === 'string') {
+        return req.activityType;
+      }
+      // Use originalUrl for better matching
+      return getActivityType(req.method, req.route?.path || req.originalUrl || req.path);
+    }
+
+    res.on('finish', () => {
+      // Only track authenticated user activities and successful responses
       if (req.user?.claims?.sub && res.statusCode < 400) {
         const duration = Date.now() - startTime;
-        
-        // Determine activity type based on route and method
-        const activityType = getActivityType(req.method, req.route?.path || req.path);
-        
+        const activityType = resolveActivityType();
+
         if (activityType) {
-          try {
-            await analyticsService.trackUserActivity(req.user.claims.sub, activityType, {
-              path: req.path,
-              method: req.method,
-              duration,
-              userAgent: req.get('User-Agent'),
-              ip: req.ip
-            });
-          } catch (error) {
-            console.warn('Failed to track user activity:', error);
+          // Collect richer metadata
+          const metadata: Record<string, any> = {
+            path: req.originalUrl || req.path,
+            method: req.method,
+            duration,
+            userAgent: req.get('User-Agent'),
+            ip: req.ip,
+            statusCode: res.statusCode,
+            query: req.query,
+            params: req.params,
+          };
+          if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+            metadata.body = req.body;
           }
+          // Non-blocking tracking
+          Promise.resolve(
+            analyticsService.trackUserActivity(req.user.claims.sub, activityType, metadata)
+          ).catch(error => {
+            console.warn('Failed to track user activity:', {
+              error,
+              user: req.user?.claims?.sub,
+              activityType,
+              metadata
+            });
+          });
         }
       }
     });
@@ -36,8 +66,7 @@ export function activityTracker() {
 
 function getActivityType(method: string, path: string): string | null {
   const route = `${method} ${path}`;
-  
-  // Map routes to activity types
+  // Map routes to activity types (extensible)
   const activityMap: Record<string, string> = {
     'GET /api/proposals': 'view_proposals',
     'POST /api/proposals': 'create_proposal',
@@ -49,26 +78,28 @@ function getActivityType(method: string, path: string): string | null {
     'POST /api/tasks': 'create_task',
     'POST /api/tasks/:id/claim': 'claim_task',
     'GET /api/analytics': 'view_analytics',
-    'POST /api/wallet/transactions': 'wallet_transaction'
+    'POST /api/wallet/transactions': 'wallet_transaction',
+    // Add more mappings as needed
   };
 
-  // Check for exact matches first
+  // Exact match
   if (activityMap[route]) {
     return activityMap[route];
   }
 
-  // Check for pattern matches
+  // Pattern match (support :param extraction)
   for (const [pattern, activity] of Object.entries(activityMap)) {
     if (matchesPattern(route, pattern)) {
       return activity;
     }
   }
 
+  // Fallback: allow custom annotation via req.activityType
   return null;
 }
 
 function matchesPattern(route: string, pattern: string): boolean {
-  // Simple pattern matching for :id parameters
-  const patternRegex = pattern.replace(/:id/g, '[^/]+');
+  // Enhanced pattern matching for :param parameters
+  const patternRegex = pattern.replace(/:[^/]+/g, '[^/]+');
   return new RegExp(`^${patternRegex}$`).test(route);
 }
