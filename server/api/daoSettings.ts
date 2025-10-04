@@ -1,4 +1,3 @@
-
 import { Request, Response } from 'express';
 import { db } from '../storage';
 import { daos, daoMemberships } from '../../shared/schema';
@@ -7,7 +6,7 @@ import { eq, and } from 'drizzle-orm';
 // Get DAO settings
 export async function getDaoSettingsHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { daoId } = req.params;
 
     if (!userId) {
@@ -72,7 +71,7 @@ export async function getDaoSettingsHandler(req: Request, res: Response) {
 // Update DAO settings
 export async function updateDaoSettingsHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { daoId } = req.params;
     const { category, updates } = req.body;
 
@@ -104,7 +103,7 @@ export async function updateDaoSettingsHandler(req: Request, res: Response) {
             validUpdates[key] = value;
           }
         }
-        
+
         // Generate new invite code if inviteOnly is being enabled
         if (updates.inviteOnly && !updates.inviteCode) {
           validUpdates.inviteCode = generateInviteCode();
@@ -154,7 +153,7 @@ export async function updateDaoSettingsHandler(req: Request, res: Response) {
 
     // Apply updates
     validUpdates.updatedAt = new Date();
-    
+
     await db.update(daos)
       .set(validUpdates)
       .where(eq(daos.id, daoId));
@@ -173,7 +172,7 @@ export async function updateDaoSettingsHandler(req: Request, res: Response) {
 // Reset invite code
 export async function resetInviteCodeHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { daoId } = req.params;
 
     if (!userId) {
@@ -194,7 +193,7 @@ export async function resetInviteCodeHandler(req: Request, res: Response) {
     }
 
     const newInviteCode = generateInviteCode();
-    
+
     await db.update(daos)
       .set({ 
         inviteCode: newInviteCode,
@@ -216,7 +215,7 @@ export async function resetInviteCodeHandler(req: Request, res: Response) {
 // Get DAO analytics for settings
 export async function getDaoAnalyticsHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { daoId } = req.params;
 
     if (!userId) {
@@ -313,7 +312,7 @@ function generateInviteCode(): string {
 // Bulk update DAO settings
 export async function bulkUpdateDaoSettingsHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { daoId } = req.params;
     const { updates } = req.body;
 
@@ -362,7 +361,7 @@ export async function bulkUpdateDaoSettingsHandler(req: Request, res: Response) 
     }
 
     validUpdates.updatedAt = new Date();
-    
+
     await db.update(daos)
       .set(validUpdates)
       .where(eq(daos.id, daoId));
@@ -381,7 +380,7 @@ export async function bulkUpdateDaoSettingsHandler(req: Request, res: Response) 
 // Export configuration for specific DAO
 export async function exportDaoConfigHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { daoId } = req.params;
 
     if (!userId) {

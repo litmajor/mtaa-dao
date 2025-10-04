@@ -119,6 +119,7 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
         // Send CELO (native token)
         const walletClient = getWalletClientInstance();
         const hash = await walletClient.sendTransaction({
+          account: address as `0x${string}`,
           to: sendTo as `0x${string}`,
           value: BigInt(Math.floor(parseFloat(sendAmount) * 1e18)), // Convert to wei
         });
@@ -149,9 +150,9 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
 
       let fee: string;
       if (selectedCurrency === 'cUSD') {
-        fee = await estimateCUSDGasFee(sendTo, sendAmount);
+        fee = await estimateCUSDGasFee(sendTo, sendAmount, sendAmount);
       } else {
-        fee = await estimateCeloGasFee(sendTo, sendAmount);
+        fee = await estimateCeloGasFee(sendTo, sendAmount, sendAmount);
       }
 
       setEstimatedFee(fee);

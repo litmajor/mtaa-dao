@@ -75,7 +75,7 @@ export function FocusTrap({
       let elementToFocus: HTMLElement | null = null;
 
       if (initialFocus) {
-        elementToToFocus = containerRef.current?.querySelector(initialFocus) as HTMLElement;
+        elementToFocus = containerRef.current?.querySelector(initialFocus) as HTMLElement;
       }
 
       if (!elementToFocus && focusableElements.length > 0) {

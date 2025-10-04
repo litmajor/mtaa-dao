@@ -7,7 +7,7 @@ const logger = new Logger('auth-vault');
 
 export async function authorizeVaultAccess(req: Request, res: Response, next: NextFunction) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.claims?.id;
     const { vaultId } = req.params;
 
     if (!userId) {

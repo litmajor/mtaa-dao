@@ -582,7 +582,7 @@ const EnhancedWalletPage = () => {
           }} />
 
           {/* Recurring Payments */}
-          {address && <RecurringPayments walletAddress={address} />}
+          {address && <RecurringPayments walletAddress={address} onPaymentCreated={() => {}} />}
 
           {/* Transaction History */}
           <TransactionHistory userId={user?.id} walletAddress={address} />

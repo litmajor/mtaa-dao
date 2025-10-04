@@ -189,7 +189,7 @@ export const TaskManagementDashboard: React.FC<TaskManagementDashboardProps> = (
                 </div>
 
                 {/* Action buttons */}
-                {canVerifyTasks && task.status === 'submitted' && (
+                {canVerifyTasks && task.status === 'completed' && (
                   <div className="flex gap-2 pt-2">
                     <Button 
                       size="sm" 
