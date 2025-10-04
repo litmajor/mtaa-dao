@@ -151,6 +151,7 @@ export default function MtaaDAOLanding() {
         <nav className="flex space-x-8">
           <a href="#features" className="text-purple-200 hover:text-white font-semibold transition">Features</a>
           <a href="/pricing" className="text-purple-200 hover:text-white font-semibold transition">Pricing</a>
+          <a href="/whitepaper.html" target="_blank" className="text-purple-200 hover:text-white font-semibold transition">Whitepaper</a>
           <a href="/maonovault" className="text-purple-200 hover:text-white font-semibold transition">MaonoVault</a>
           <a href="#benefits" className="text-purple-200 hover:text-white font-semibold transition">Benefits</a>
           <a href="#trust" className="text-purple-200 hover:text-white font-semibold transition">Trust</a>
@@ -590,6 +591,38 @@ export default function MtaaDAOLanding() {
           <p className="text-gray-600 max-w-2xl mx-auto">
             Everything you need to get started and succeed with MtaaDAO
           </p>
+        </div>
+
+        {/* Whitepaper Download Section */}
+        <div className="bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl p-8 mb-8 text-center">
+          <h3 className="text-2xl font-bold text-white mb-4">📄 Official Whitepaper</h3>
+          <p className="text-white/90 mb-6">Read our comprehensive whitepaper in your preferred format</p>
+          <div className="flex flex-wrap justify-center gap-4">
+            <a 
+              href="/whitepaper.html" 
+              target="_blank"
+              className="inline-flex items-center bg-white text-purple-600 px-6 py-3 rounded-xl font-bold hover:shadow-lg transition-all transform hover:scale-105"
+            >
+              <Globe className="w-5 h-5 mr-2" />
+              Read Online (HTML)
+            </a>
+            <a 
+              href="/MtaaDAO-Whitepaper.pdf" 
+              download
+              className="inline-flex items-center bg-white text-purple-600 px-6 py-3 rounded-xl font-bold hover:shadow-lg transition-all transform hover:scale-105"
+            >
+              <BookOpen className="w-5 h-5 mr-2" />
+              Download PDF
+            </a>
+            <a 
+              href="https://mtaadao.github.io/mtaa-dao" 
+              target="_blank"
+              className="inline-flex items-center bg-white text-purple-600 px-6 py-3 rounded-xl font-bold hover:shadow-lg transition-all transform hover:scale-105"
+            >
+              <Code className="w-5 h-5 mr-2" />
+              Rust Docs (Technical)
+            </a>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
