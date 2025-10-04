@@ -8,7 +8,7 @@ import { financialAnalyticsService } from '../services/financialAnalyticsService
 
 const router = express.Router();
 
-// Get billing dashboard data
+// Get billing dashboard data with enhanced analytics
 router.get('/dashboard/:daoId', isAuthenticated, async (req, res) => {
   try {
     const { daoId } = req.params;
@@ -35,7 +35,7 @@ router.get('/dashboard/:daoId', isAuthenticated, async (req, res) => {
       ))
       .limit(1);
 
-    // Get billing history
+    // Get billing history with payment method breakdown
     const history = await db
       .select()
       .from(billingHistory)
@@ -43,9 +43,19 @@ router.get('/dashboard/:daoId', isAuthenticated, async (req, res) => {
       .orderBy(desc(billingHistory.createdAt))
       .limit(12);
 
+    // Calculate billing analytics
+    const totalSpent = history.reduce((sum, h) => sum + parseFloat(h.amount), 0);
+    const avgMonthlySpend = history.length > 0 ? totalSpent / Math.min(history.length, 12) : 0;
+    
     // Get financial analytics
     const analytics = await financialAnalyticsService.getDaoFinancialOverview(daoId);
     const treasuryHealth = await financialAnalyticsService.getTreasuryHealthMetrics(daoId);
+
+    // Get actual counts for proposals and vaults
+    const [proposalCount, vaultCount] = await Promise.all([
+      db.select({ count: sql`count(*)` }).from(proposals).where(eq(proposals.daoId, daoId)),
+      db.select({ count: sql`count(*)` }).from(vaults).where(eq(vaults.daoId, daoId))
+    ]);
 
     // Calculate usage metrics
     const currentPlan = subscription[0]?.plan || 'free';
@@ -56,19 +66,38 @@ router.get('/dashboard/:daoId', isAuthenticated, async (req, res) => {
 
     const usage = {
       members: dao[0].memberCount,
-      proposals: 0, // TODO: Count from proposals table
-      vaults: 0, // TODO: Count from vaults table
+      proposals: proposalCount[0]?.count || 0,
+      vaults: vaultCount[0]?.count || 0,
       limits: planLimits[currentPlan as keyof typeof planLimits]
     };
+
+    // Calculate upgrade ROI
+    const memberOverage = Math.max(0, usage.members - 25);
+    const proposalOverage = Math.max(0, usage.proposals - 10);
+    const vaultOverage = Math.max(0, usage.vaults - 1);
+    const upgradeRecommended = memberOverage > 0 || proposalOverage > 0 || vaultOverage > 0;
 
     res.json({
       dao: dao[0],
       subscription: subscription[0] || null,
       billingHistory: history,
+      billingAnalytics: {
+        totalSpent,
+        avgMonthlySpend,
+        currency: history[0]?.currency || 'KES',
+        nextBillingDate: subscription[0]?.endDate,
+        paymentMethodsUsed: [...new Set(history.map(h => h.currency))]
+      },
       analytics,
       treasuryHealth,
       usage,
-      recommendedPlan: usage.members > 25 ? 'premium' : 'free'
+      upgradeAnalysis: {
+        recommended: upgradeRecommended,
+        reason: upgradeRecommended 
+          ? `You're exceeding limits: ${memberOverage > 0 ? `${memberOverage} extra members` : ''} ${proposalOverage > 0 ? `${proposalOverage} extra proposals` : ''}`
+          : 'Current plan meets your needs',
+        estimatedMonthlyCost: upgradeRecommended ? 1500 : 0
+      }
     });
 
   } catch (error: any) {

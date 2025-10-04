@@ -1,4 +1,52 @@
 
+import express from 'express';
+import { ReputationService } from '../reputationService';
+import { isAuthenticated } from '../auth';
+
+const router = express.Router();
+
+// Daily check-in
+router.post('/check-in', isAuthenticated, async (req, res) => {
+  try {
+    const userId = (req.user as any)?.claims?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const result = await ReputationService.recordDailyCheckIn(userId);
+    
+    res.json({
+      success: true,
+      message: result.pointsAwarded > 0 ? 'Check-in recorded successfully!' : 'Already checked in today',
+      ...result
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get streak info
+router.get('/streak', isAuthenticated, async (req, res) => {
+  try {
+    const userId = (req.user as any)?.claims?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const streakInfo = await ReputationService.getStreakInfo(userId);
+    
+    res.json({
+      success: true,
+      ...streakInfo
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+export default router;
+
+
 import express, { Request, Response } from 'express';
 import { db } from '../db';
 import { eq } from 'drizzle-orm';

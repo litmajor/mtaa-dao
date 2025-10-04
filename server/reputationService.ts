@@ -443,4 +443,120 @@ export class ReputationService {
       );
     }
   }
+
+  // Daily check-in and streak tracking
+  static async recordDailyCheckIn(userId: string): Promise<{
+    streak: number;
+    pointsAwarded: number;
+    bonusAwarded: number;
+  }> {
+    const userRep = await db
+      .select()
+      .from(userReputation)
+      .where(eq(userReputation.userId, userId));
+
+    const now = new Date();
+    const lastActivity = userRep[0]?.lastActivity ? new Date(userRep[0].lastActivity) : null;
+    
+    let currentStreak = userRep[0]?.currentStreak || 0;
+    let longestStreak = userRep[0]?.longestStreak || 0;
+    let pointsAwarded = REPUTATION_VALUES.DAILY_STREAK;
+    let bonusAwarded = 0;
+
+    // Check if last activity was yesterday
+    if (lastActivity) {
+      const daysSinceLastActivity = Math.floor((now.getTime() - lastActivity.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (daysSinceLastActivity === 1) {
+        // Continue streak
+        currentStreak += 1;
+        
+        // Weekly bonus (every 7 days)
+        if (currentStreak % 7 === 0) {
+          bonusAwarded += REPUTATION_VALUES.WEEKLY_STREAK_BONUS;
+        }
+        
+        // Monthly bonus (every 30 days)
+        if (currentStreak % 30 === 0) {
+          bonusAwarded += REPUTATION_VALUES.MONTHLY_STREAK_BONUS;
+        }
+      } else if (daysSinceLastActivity > 1) {
+        // Streak broken
+        currentStreak = 1;
+      } else {
+        // Already checked in today
+        return { streak: currentStreak, pointsAwarded: 0, bonusAwarded: 0 };
+      }
+    } else {
+      // First check-in
+      currentStreak = 1;
+    }
+
+    // Update longest streak
+    if (currentStreak > longestStreak) {
+      longestStreak = currentStreak;
+    }
+
+    // Award points
+    const totalPoints = pointsAwarded + bonusAwarded;
+    await this.awardPoints(
+      userId,
+      'DAILY_CHECK_IN',
+      totalPoints,
+      undefined,
+      `Daily check-in (${currentStreak}-day streak)`,
+      1.0
+    );
+
+    // Update user reputation with streak info
+    if (userRep.length > 0) {
+      await db
+        .update(userReputation)
+        .set({
+          currentStreak,
+          longestStreak,
+          lastActivity: now,
+          updatedAt: now
+        })
+        .where(eq(userReputation.userId, userId));
+    } else {
+      await db.insert(userReputation).values({
+        userId,
+        totalPoints: 0,
+        weeklyPoints: 0,
+        monthlyPoints: 0,
+        badge: 'Bronze',
+        level: 1,
+        nextLevelPoints: 100,
+        currentStreak,
+        longestStreak,
+        lastActivity: now
+      });
+    }
+
+    return { streak: currentStreak, pointsAwarded, bonusAwarded };
+  }
+
+  // Get streak information for user
+  static async getStreakInfo(userId: string): Promise<{
+    currentStreak: number;
+    longestStreak: number;
+    daysUntilWeeklyBonus: number;
+    daysUntilMonthlyBonus: number;
+  }> {
+    const userRep = await db
+      .select()
+      .from(userReputation)
+      .where(eq(userReputation.userId, userId));
+
+    const currentStreak = userRep[0]?.currentStreak || 0;
+    const longestStreak = userRep[0]?.longestStreak || 0;
+
+    return {
+      currentStreak,
+      longestStreak,
+      daysUntilWeeklyBonus: currentStreak > 0 ? 7 - (currentStreak % 7) : 7,
+      daysUntilMonthlyBonus: currentStreak > 0 ? 30 - (currentStreak % 30) : 30
+    };
+  }
 }
