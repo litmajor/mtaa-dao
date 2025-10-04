@@ -121,19 +121,19 @@ export default function Navigation() {
         <div className="flex justify-between items-center h-16">
           {/* Logo Section */}
           <div className="flex items-center space-x-8">
-            <Link href="/" className="flex items-center space-x-3 group">
+            <Link href="/" className="flex items-center space-x-2 group">
               <div className="relative">
-                <div className="w-10 h-10 bg-gradient-to-br from-mtaa-orange via-amber-500 to-orange-600 rounded-xl flex items-center justify-center shadow-lg shadow-mtaa-orange/30 group-hover:shadow-mtaa-orange/50 transition-all duration-300 group-hover:scale-105">
-                  <span className="text-white font-bold text-lg">M</span>
-                  <Sparkles className="absolute -top-1 -right-1 w-4 h-4 text-yellow-400 animate-pulse" />
-                </div>
+                <img 
+                  src={theme === "dark" ? "/attached_assets/mtaa_dao_logos/icon_dark_md.png" : "/attached_assets/mtaa_dao_logos/icon_light_md.png"}
+                  alt="Mtaa DAO Icon"
+                  className="w-10 h-10 object-contain group-hover:scale-105 transition-all duration-300"
+                />
               </div>
-              <div className="flex flex-col">
-                <span className="font-display font-bold text-xl bg-gradient-to-r from-gray-900 via-gray-700 to-gray-900 dark:from-white dark:via-gray-200 dark:to-white bg-clip-text text-transparent">
-                  Mtaa DAO
-                </span>
-                <span className="text-xs text-gray-500 dark:text-gray-400 -mt-1">Community Powered</span>
-              </div>
+              <img 
+                src={theme === "dark" ? "/attached_assets/mtaa_dao_logos/full_logo_dark_md.png" : "/attached_assets/mtaa_dao_logos/full_logo_light_md.png"}
+                alt="Mtaa DAO"
+                className="h-7 object-contain hidden sm:block"
+              />
             </Link>
 
             {/* Navigation Items */}
