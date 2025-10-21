@@ -128,6 +128,12 @@ export const users = pgTable("users", {
   telegramId: varchar("telegram_id"),
   telegramChatId: varchar("telegram_chat_id"),
   telegramUsername: varchar("telegram_username"),
+  // Encrypted wallet storage fields
+  encryptedWallet: text("encrypted_wallet"),
+  walletSalt: text("wallet_salt"),
+  walletIv: text("wallet_iv"),
+  walletAuthTag: text("wallet_auth_tag"),
+  hasBackedUpMnemonic: boolean("has_backed_up_mnemonic").default(false),
 });
 
 // User Activities table
