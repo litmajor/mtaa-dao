@@ -1,8 +1,10 @@
 
 import crypto from 'crypto';
 import { generateMnemonic, mnemonicToSeedSync, validateMnemonic } from 'bip39';
-import { hdkey } from 'ethereumjs-wallet';
+import * as EthereumJSWallet from 'ethereumjs-wallet';
 import Web3 from 'web3';
+
+const hdkey = (EthereumJSWallet as any).hdkey || EthereumJSWallet;
 
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
 const SALT_LENGTH = 16;

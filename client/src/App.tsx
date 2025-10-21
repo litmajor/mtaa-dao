@@ -20,6 +20,7 @@ const ProfileLazy = lazy(() => import('./pages/profile'));
 const DAOsLazy = lazy(() => import('./pages/daos'));
 const WalletLazy = lazy(() => import('./pages/wallet'));
 const ReferralsLazy = lazy(() => import('./pages/referrals'));
+const MorioDemoLazy = lazy(() => import('./pages/MorioDemo'));
 
 
 import Wallet from './pages/wallet';
@@ -159,6 +160,7 @@ function App() {
                 <Route path="/tasks" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><TaskBountyBoardPageLazy /></Suspense></ProtectedRoute>} />
                 <Route path="/rewards" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><RewardsHubLazy /></Suspense></ProtectedRoute>} />
                 <Route path="/nft-marketplace" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><NFTMarketplace /></Suspense></ProtectedRoute>} />
+                <Route path="/morio" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><MorioDemoLazy /></Suspense></ProtectedRoute>} />
 
                 {/* Nested DAO routes */}
                 <Route path="/dao" element={<ProtectedRoute><DaoLayout /></ProtectedRoute>}>
