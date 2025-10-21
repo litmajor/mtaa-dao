@@ -28,8 +28,13 @@ export default defineConfig({
     port: 5173,
     host: "0.0.0.0",
     strictPort: false,
+    allowedHosts: [
+      ".replit.dev",
+      ".repl.co",
+      "localhost"
+    ],
     hmr: {
-      host: "localhost", // Updated for HMR
+      host: "localhost",
       clientPort: 443,
     },
   },
