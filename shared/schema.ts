@@ -1040,13 +1040,13 @@ export const insertVoteDelegationSchema = createInsertSchema(voteDelegations);
 // Cross-chain transfers table
 export const crossChainTransfers = pgTable('cross_chain_transfers', {
   id: text('id').primaryKey().default(sql`gen_random_uuid()`),
-  userId: text('user_id').notNull().references(() => users.id),
+  userId: varchar('user_id').notNull().references(() => users.id),
   sourceChain: text('source_chain').notNull(),
   destinationChain: text('destination_chain').notNull(),
   tokenAddress: text('token_address').notNull(),
   amount: text('amount').notNull(),
   destinationAddress: text('destination_address').notNull(),
-  vaultId: text('vault_id').references(() => vaults.id),
+  vaultId: text('vault_id'),
   status: text('status').notNull().default('pending'), // pending, bridging, completed, failed
   txHashSource: text('tx_hash_source'),
   txHashDestination: text('tx_hash_destination'),
@@ -1063,7 +1063,7 @@ export const crossChainTransfers = pgTable('cross_chain_transfers', {
 // Cross-chain governance proposals
 export const crossChainProposals = pgTable('cross_chain_proposals', {
   id: text('id').primaryKey().default(sql`gen_random_uuid()`),
-  proposalId: text('proposal_id').notNull().references(() => proposals.id),
+  proposalId: text('proposal_id').notNull(),
   chains: text('chains').array().notNull(), // Array of chain identifiers
   votesByChain: jsonb('votes_by_chain').default({}), // Chain-specific vote tallies
   quorumByChain: jsonb('quorum_by_chain').default({}),
