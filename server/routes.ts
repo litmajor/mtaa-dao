@@ -26,6 +26,7 @@ import taskTemplatesRoutes from './api/task_templates';
 import achievementsRouter from './api/achievements';
 import vaultRoutes from './routes/vault';
 import challengesRoutes from './routes/challenges';
+import morioRoutes from './routes/morio';
 
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
@@ -252,6 +253,9 @@ export function registerRoutes(app: express.Application) {
       }
     });
   }
+
+  // === MORIO AI ASSISTANT API ===
+  app.use('/api/morio', morioRoutes);
 
   // === RBAC ENDPOINTS ===  
   app.get('/api/admin/users', isAuthenticated, getUsersHandler);
