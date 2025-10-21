@@ -52,6 +52,8 @@ import nftMarketplaceRouter from './routes/nft-marketplace';
 import walletRouter from './routes/wallet';
 import walletSetupRouter from './routes/wallet-setup';
 import paymentGatewayRouter from './routes/payment-gateway';
+// Import KYC routes
+import kycRouter from './routes/kyc';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -234,6 +236,8 @@ app.use((req, res, next) => {
     app.use('/api/wallet', walletRouter);
     app.use('/api/wallet-setup', walletSetupRouter);
     app.use('/api/payment-gateway', paymentGatewayRouter);
+    // Mount KYC routes
+    app.use('/api/kyc', kycRouter);
 
   // AI Analytics endpoints
   // Load authentication middleware dynamically (avoid top-level static import inside function scope)
