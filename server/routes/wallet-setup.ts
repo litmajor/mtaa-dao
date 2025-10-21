@@ -7,7 +7,11 @@ import { notificationService } from '../notificationService';
 import {
   generateWalletFromMnemonic,
   recoverWalletFromMnemonic,
+  encryptWallet,
+  decryptWallet
+} from '../utils/cryptoWallet';
 
+const router = express.Router();
 
 // POST /api/wallet-setup/create-wallet-mnemonic
 router.post('/create-wallet-mnemonic', async (req, res) => {
@@ -265,14 +269,6 @@ router.post('/unlock-wallet', async (req, res) => {
     res.status(500).json({ error: errorMsg === 'Unsupported state or unable to authenticate data' ? 'Invalid password' : errorMsg });
   }
 });
-
-  importWalletFromPrivateKey,
-  encryptWallet,
-  decryptWallet,
-  isValidMnemonic
-} from '../utils/cryptoWallet';
-
-const router = express.Router();
 
 // POST /api/wallet-setup/create-wallet
 router.post('/create-wallet', async (req, res) => {
