@@ -49,6 +49,9 @@ import eventsRoutes from './routes/events';
 import crossChainRoutes from './routes/cross-chain';
 // Import NFT Marketplace routes
 import nftMarketplaceRouter from './routes/nft-marketplace';
+import walletRouter from './routes/wallet';
+import walletSetupRouter from './routes/wallet-setup';
+import paymentGatewayRouter from './routes/payment-gateway';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -226,6 +229,11 @@ app.use((req, res, next) => {
 
     // NFT Marketplace routes
     app.use('/api/nft-marketplace', nftMarketplaceRouter);
+
+    // Wallet routes
+    app.use('/api/wallet', walletRouter);
+    app.use('/api/wallet-setup', walletSetupRouter);
+    app.use('/api/payment-gateway', paymentGatewayRouter);
 
   // AI Analytics endpoints
   // Load authentication middleware dynamically (avoid top-level static import inside function scope)

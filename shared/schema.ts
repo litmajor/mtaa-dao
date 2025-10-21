@@ -17,7 +17,8 @@ import {
   integer,
   decimal,
   boolean,
-  uuid
+  uuid,
+  json
 } from "drizzle-orm/pg-core";
 import { sql } from 'drizzle-orm';
 import { createInsertSchema } from "drizzle-zod";
@@ -477,6 +478,21 @@ export const paymentRequests = pgTable("payment_requests", {
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Payment Transactions table
+export const paymentTransactions = pgTable('payment_transactions', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()::text`),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  reference: text('reference').notNull().unique(),
+  type: text('type').notNull(),
+  amount: text('amount').notNull(),
+  currency: text('currency').notNull().default('KES'),
+  provider: text('provider').notNull(),
+  status: text('status').notNull().default('pending'),
+  metadata: json('metadata'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow()
 });
 
 // Payment Receipts table
@@ -1101,7 +1117,7 @@ export const crossChainTransfers = pgTable('cross_chain_transfers', {
 
 // Cross-chain governance proposals
 export const crossChainProposals = pgTable('cross_chain_proposals', {
-  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  id: text('id').primaryKey().default(sql`gen_random_uuid()::text`),
   proposalId: text('proposal_id').notNull(),
   chains: text('chains').array().notNull(), // Array of chain identifiers
   votesByChain: jsonb('votes_by_chain').default({}), // Chain-specific vote tallies
