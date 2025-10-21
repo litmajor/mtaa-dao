@@ -19,6 +19,28 @@ export interface TokenInfo {
   requiresKyc?: boolean;
 }
 
+// Bridge configuration for cross-chain tokens
+export interface BridgeConfig {
+  protocol: 'layerzero' | 'axelar' | 'wormhole';
+  sourceChain: string;
+  bridgeContract?: string;
+  minimumAmount: string;
+  estimatedTime: number; // in seconds
+}
+
+export interface TokenConfig {
+  symbol: string;
+  name: string;
+  address: string;
+  decimals: number;
+  isStable: boolean;
+  isNative: boolean;
+  coingeckoId: string;
+  category: 'native' | 'stable' | 'crypto' | 'fiat';
+  bridge?: BridgeConfig;
+}
+
+
 export interface YieldStrategy {
   id: string;
   name: string;
@@ -103,6 +125,54 @@ export const TOKEN_REGISTRY: Record<string, TokenInfo> = {
     priceApi: 'coingecko:tether',
     riskLevel: 'low',
     requiresKyc: true
+  },
+
+  BTC: {
+    symbol: 'BTC',
+    name: 'Bitcoin (Bridged)',
+    address: {
+      mainnet: '0x0000000000000000000000000000000000000000', // Placeholder - update after bridge deployment
+      testnet: '0x0000000000000000000000000000000000000000'
+    },
+    decimals: 8,
+    category: 'bridged',
+    isActive: false, // Will be activated after bridge deployment and address confirmation
+    logoUrl: '/tokens/btc.png',
+    description: 'Bitcoin bridged to Celo',
+    priceApi: 'coingecko:bitcoin',
+    riskLevel: 'high', // Higher risk due to bridging complexity
+    requiresKyc: true
+  },
+  ETH: {
+    symbol: 'ETH',
+    name: 'Ethereum (Bridged)',
+    address: {
+      mainnet: '0x0000000000000000000000000000000000000000', // Placeholder - update after bridge deployment
+      testnet: '0x0000000000000000000000000000000000000000'
+    },
+    decimals: 18,
+    category: 'bridged',
+    isActive: false, // Will be activated after bridge deployment and address confirmation
+    logoUrl: '/tokens/eth.png',
+    description: 'Ethereum bridged to Celo via CrossChainBridge contract',
+    priceApi: 'coingecko:ethereum',
+    riskLevel: 'high', // Higher risk due to bridging complexity
+    requiresKyc: true
+  },
+  USDC: {
+    symbol: 'USDC',
+    name: 'USD Coin (Native)',
+    address: {
+      mainnet: '0xcebA9300f2b948710d2653dD7B07f33A8B32118C', // Celo native USDC
+      testnet: '0x2550F036b621f94073647E7f4163736E3f1C3094' // Celo testnet USDC
+    },
+    decimals: 6,
+    category: 'stablecoin',
+    isActive: true,
+    logoUrl: '/tokens/usdc.png',
+    description: 'USD Coin native to Celo',
+    priceApi: 'coingecko:usd-coin',
+    riskLevel: 'low'
   },
 
   // Framework for custom community tokens
@@ -250,5 +320,7 @@ export const SupportedTokenEnum = {
   cEUR: 'cEUR',
   USDT: 'USDT',
   USDC: 'USDC',
+  BTC: 'BTC',
+  ETH: 'ETH',
   MTAA: 'MTAA'
 } as const;

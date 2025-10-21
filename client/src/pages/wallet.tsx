@@ -24,12 +24,14 @@ import ExchangeRateWidget from '../components/wallet/ExchangeRateWidget';
 import { useWallet } from './hooks/useWallet';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import PaymentRequestModal from '@/components/wallet/PaymentRequestModal';
 
 const EnhancedWalletPage = () => {
   const [activeTab, setActiveTab] = useState("overview");
   const [depositOpen, setDepositOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [paymentRequestOpen, setPaymentRequestOpen] = useState(false);
   const [selectedVault, setSelectedVault] = useState<any>(null);
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [vaults, setVaults] = useState<any[]>([]);
@@ -499,6 +501,14 @@ const EnhancedWalletPage = () => {
                 <Download className="mr-2 h-5 w-5" />
                 Deposit Funds
               </Button>
+              <Button 
+                variant="outline" 
+                className="w-full py-4 text-lg"
+                onClick={() => setPaymentRequestOpen(true)}
+              >
+                <QrCode className="mr-2 h-5 w-5" />
+                Request Payment
+              </Button>
               <Button
                 variant="outline"
                 className="w-full py-4 text-lg"
@@ -642,6 +652,14 @@ const EnhancedWalletPage = () => {
             <Button onClick={() => setWithdrawOpen(false)} className="w-full mt-2" variant="outline">Close</Button>
           </CustomCard>
         </div>
+      )}
+
+      {address && (
+        <PaymentRequestModal
+          isOpen={paymentRequestOpen}
+          onClose={() => setPaymentRequestOpen(false)}
+          userAddress={address}
+        />
       )}
     </div>
   );
