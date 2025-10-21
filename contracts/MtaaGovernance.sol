@@ -47,13 +47,13 @@ contract MTAARewardsManager is Ownable, ReentrancyGuard {
     }
     
     struct VaultPerformance {
-    uint256 totalDeposits;
-    uint256 totalWithdrawals;
-    uint256 highWaterMark;
-    uint256 lastRewardTime;
-    bool isTopPerformer;
-    int256 netProfit;
-    int256 roi;
+        uint256 totalDeposits;
+        uint256 totalWithdrawals;
+        uint256 highWaterMark;
+        uint256 lastRewardTime;
+        bool isTopPerformer;
+        int256 netProfit;
+        int256 roi;
     }
     
     enum TaskDifficulty {
@@ -63,12 +63,23 @@ contract MTAARewardsManager is Ownable, ReentrancyGuard {
         EXPERT   // 10000+ MTAA
     }
 
+    enum ChallengeType {
+        VOTE_PROPOSAL,
+        COMPLETE_TASK,
+        INVITE_MEMBER,
+        COMMENT_PROPOSAL,
+        ATTEND_MEETING,
+        OTHER
+    }
+
     // Events
     event RewardDistributed(address indexed user, uint256 amount, string reason);
     event TaskCreated(bytes32 indexed taskId, TaskDifficulty difficulty, uint256 reward);
     event TaskCompleted(address indexed user, bytes32 indexed taskId, uint256 reward);
     event MilestoneReached(address indexed user, uint256 milestone, uint256 reward);
     event VaultPerformanceUpdated(address indexed vault, bool isTopPerformer);
+    event MilestoneRewardSet(uint256 milestone, uint256 reward);
+    event TaskDeactivated(bytes32 indexed taskId);
 
     // Errors
     error TaskNotActive();
@@ -76,11 +87,15 @@ contract MTAARewardsManager is Ownable, ReentrancyGuard {
     error TaskExpired();
     error MilestoneAlreadyClaimed();
     error InsufficientMTAABalance();
+    error InvalidVault();
+    error InvalidChallengeType();
+    error ChallengeAlreadyClaimedToday();
+    error NotMinter();
 
     constructor(address _mtaaToken, address _vaultFactory) Ownable(msg.sender) {
-    mtaaToken = MTAAToken(_mtaaToken);
-    vaultFactory = MaonoVaultFactory(_vaultFactory);
-    daoTreasury = owner();
+        mtaaToken = MTAAToken(_mtaaToken);
+        vaultFactory = MaonoVaultFactory(_vaultFactory);
+        daoTreasury = owner();
         
         // Initialize milestone rewards
         milestoneRewards[1000 * 1e18] = 200 * 1e18;    // $1K milestone: 200 MTAA
@@ -90,6 +105,11 @@ contract MTAARewardsManager is Ownable, ReentrancyGuard {
 
     // === VAULT REWARDS ===
 
+    /**
+     * @notice Reward for creating a vault (called by factory)
+     * @param creator The creator address
+     * @param vault The vault address
+     */
     function rewardVaultCreation(address creator, address vault) external {
         require(msg.sender == address(vaultFactory), "Only factory can reward");
         
@@ -101,13 +121,21 @@ contract MTAARewardsManager is Ownable, ReentrancyGuard {
             totalWithdrawals: 0,
             highWaterMark: 0,
             lastRewardTime: block.timestamp,
-            isTopPerformer: false
+            isTopPerformer: false,
+            netProfit: 0,
+            roi: 0
         });
     }
 
+    /**
+     * @notice Reward for first deposit
+     * @param depositor The depositor address
+     * @param vault The vault address
+     * @param amount Deposit amount
+     */
     function rewardFirstDeposit(address depositor, address vault, uint256 amount) external {
-        require(_isValidVault(vault), "Invalid vault");
-        require(!firstDepositClaimed[depositor], "First deposit already claimed");
+        if (!_isValidVault(vault)) revert InvalidVault();
+        if (firstDepositClaimed[depositor]) revert("First deposit already claimed");
         
         firstDepositClaimed[depositor] = true;
         _distributeReward(depositor, FIRST_DEPOSIT_REWARD, "First Deposit");
@@ -119,8 +147,14 @@ contract MTAARewardsManager is Ownable, ReentrancyGuard {
         _updateVaultPerformance(vault, amount, true);
     }
 
+    /**
+     * @notice Reward for deposit
+     * @param depositor The depositor address
+     * @param vault The vault address
+     * @param amount Deposit amount
+     */
     function rewardDeposit(address depositor, address vault, uint256 amount) external {
-        require(_isValidVault(vault), "Invalid vault");
+        if (!_isValidVault(vault)) revert InvalidVault();
         
         // Check for milestone rewards
         _checkMilestoneRewards(depositor, amount);
@@ -134,25 +168,30 @@ contract MTAARewardsManager is Ownable, ReentrancyGuard {
     }
 
     function _checkMilestoneRewards(address user, uint256 amount) internal {
-        for (uint256 milestone = 1000 * 1e18; milestone <= 100000 * 1e18; milestone *= 10) {
-            if (amount >= milestone && !claimedMilestones[user][milestone]) {
-                claimedMilestones[user][milestone] = true;
-                _distributeReward(user, milestoneRewards[milestone], "Milestone Reached");
-                emit MilestoneReached(user, milestone, milestoneRewards[milestone]);
-            }
+        // Unrolled loop for fixed milestones
+        _checkSingleMilestone(user, amount, 1000 * 1e18, milestoneRewards[1000 * 1e18]);
+        _checkSingleMilestone(user, amount, 10000 * 1e18, milestoneRewards[10000 * 1e18]);
+        _checkSingleMilestone(user, amount, 100000 * 1e18, milestoneRewards[100000 * 1e18]);
+    }
+
+    function _checkSingleMilestone(address user, uint256 amount, uint256 milestone, uint256 reward) internal {
+        if (amount >= milestone && !claimedMilestones[user][milestone]) {
+            claimedMilestones[user][milestone] = true;
+            _distributeReward(user, reward, "Milestone Reached");
+            emit MilestoneReached(user, milestone, reward);
         }
     }
 
     function _updateVaultPerformance(address vault, uint256 amount, bool isDeposit) internal {
         VaultPerformance storage perf = vaultPerformances[vault];
         if (isDeposit) {
-            perf.totalDeposits += amount;
+            unchecked { perf.totalDeposits += amount; }
             if (perf.totalDeposits > perf.highWaterMark) {
                 perf.highWaterMark = perf.totalDeposits;
             }
             perf.netProfit += int256(amount);
         } else {
-            perf.totalWithdrawals += amount;
+            unchecked { perf.totalWithdrawals += amount; }
             perf.netProfit -= int256(amount);
         }
         // ROI = netProfit / totalDeposits (scaled by 1e18)
@@ -163,6 +202,14 @@ contract MTAARewardsManager is Ownable, ReentrancyGuard {
 
     // === TASK SYSTEM ===
 
+    /**
+     * @notice Create a new task
+     * @param taskId Task ID
+     * @param difficulty Task difficulty
+     * @param customReward Custom reward (0 for default)
+     * @param deadline Task deadline
+     * @param description Task description
+     */
     function createTask(
         bytes32 taskId,
         TaskDifficulty difficulty,
@@ -177,7 +224,7 @@ contract MTAARewardsManager is Ownable, ReentrancyGuard {
             if (difficulty == TaskDifficulty.EASY) reward = 250 * 1e18;
             else if (difficulty == TaskDifficulty.MEDIUM) reward = 1250 * 1e18;
             else if (difficulty == TaskDifficulty.HARD) reward = 6000 * 1e18;
-            else if (difficulty == TaskDifficulty.EXPERT) reward = 25000 * 1e18;
+            else reward = 25000 * 1e18; // EXPERT
         }
         
         tasks[taskId] = TaskInfo({
@@ -191,15 +238,20 @@ contract MTAARewardsManager is Ownable, ReentrancyGuard {
         emit TaskCreated(taskId, difficulty, reward);
     }
 
+    /**
+     * @notice Complete a task for a user
+     * @param taskId Task ID
+     * @param user User address
+     */
     function completeTask(bytes32 taskId, address user) external onlyOwner {
-        TaskInfo storage task = tasks[taskId];
+        TaskInfo memory task = tasks[taskId];
         
         if (!task.isActive) revert TaskNotActive();
         if (block.timestamp > task.deadline) revert TaskExpired();
         if (completedTasks[user][taskId]) revert TaskAlreadyCompleted();
         
         completedTasks[user][taskId] = true;
-        userTaskCount[user]++;
+        unchecked { userTaskCount[user]++; }
         
         // Apply reputation multiplier
         uint256 finalReward = _applyReputationMultiplier(user, task.reward);
@@ -217,8 +269,7 @@ contract MTAARewardsManager is Ownable, ReentrancyGuard {
         if (difficulty == TaskDifficulty.EASY) return 25;
         if (difficulty == TaskDifficulty.MEDIUM) return 50;
         if (difficulty == TaskDifficulty.HARD) return 100;
-        if (difficulty == TaskDifficulty.EXPERT) return 200;
-        return 25;
+        return 200; // EXPERT
     }
 
     function _applyReputationMultiplier(address user, uint256 baseReward) internal view returns (uint256) {
@@ -269,47 +320,64 @@ contract MTAARewardsManager is Ownable, ReentrancyGuard {
 
     // === LIQUIDITY REWARDS ===
 
+    /**
+     * @notice Reward liquidity provider
+     * @param provider Provider address
+     * @param lpTokens LP tokens amount
+     * @param poolName Pool name
+     */
     function rewardLiquidityProvider(address provider, uint256 lpTokens, string calldata poolName) 
         external 
         onlyOwner 
     {
         uint256 monthlyReward;
-        // Different rewards based on pool
-        if (_compareStrings(poolName, "MTAA/cUSD")) {
+        bytes32 poolHash = keccak256(abi.encodePacked(poolName));
+        if (poolHash == keccak256(abi.encodePacked("MTAA/cUSD"))) {
             monthlyReward = 20000 * 1e18; // 20k MTAA/month
-        } else if (_compareStrings(poolName, "MTAA/CELO")) {
+        } else if (poolHash == keccak256(abi.encodePacked("MTAA/CELO"))) {
             monthlyReward = 15000 * 1e18; // 15k MTAA/month
-        } else if (_compareStrings(poolName, "MTAA/cEUR")) {
+        } else if (poolHash == keccak256(abi.encodePacked("MTAA/cEUR"))) {
             monthlyReward = 10000 * 1e18; // 10k MTAA/month
         } else {
             monthlyReward = 5000 * 1e18;  // 5k MTAA/month for other pools
         }
         // Pro-rate based on LP share (requires totalLPTokens from pool)
-        uint256 totalLPTokens = 1; // TODO: fetch from pool contract
+        uint256 totalLPTokens = _getTotalLPTokens(poolName); // Implement dynamic fetch
+        if (totalLPTokens == 0) totalLPTokens = 1; // Prevent div0
         uint256 actualReward = (monthlyReward * lpTokens) / totalLPTokens;
-        _distributeReward(provider, actualReward, string(abi.encodePacked("Liquidity ", poolName)));
+        _distributeReward(provider, actualReward, string.concat("Liquidity ", poolName));
+    }
+
+    function _getTotalLPTokens(string calldata poolName) internal view returns (uint256) {
+        // TODO: Map poolName to LP contract and call totalSupply()
+        // e.g., address lp = poolAddresses[keccak256(abi.encodePacked(poolName))];
+        // return IERC20(lp).totalSupply();
+        return 1; // Placeholder; implement properly
     }
 
     // === DAILY CHALLENGES ===
 
-    function completeDailyChallenge(address user, string calldata challengeType) external onlyOwner {
-        require(block.timestamp > lastChallengeTimestamp[user] + 1 days, "Challenge already claimed today");
+    function completeDailyChallenge(address user, ChallengeType challengeType) external onlyOwner {
+        if (block.timestamp <= lastChallengeTimestamp[user] + 1 days) revert ChallengeAlreadyClaimedToday();
         lastChallengeTimestamp[user] = block.timestamp;
         uint256 baseReward;
-        if (_compareStrings(challengeType, "VOTE_PROPOSAL")) {
-            baseReward = 50 * 1e18;
-        } else if (_compareStrings(challengeType, "COMPLETE_TASK")) {
-            baseReward = 100 * 1e18;
-        } else if (_compareStrings(challengeType, "INVITE_MEMBER")) {
-            baseReward = 200 * 1e18;
-        } else if (_compareStrings(challengeType, "COMMENT_PROPOSAL")) {
-            baseReward = 25 * 1e18;
-        } else if (_compareStrings(challengeType, "ATTEND_MEETING")) {
-            baseReward = 75 * 1e18;
-        } else {
-            baseReward = 50 * 1e18; // Default reward
-        }
-        mtaaToken.completeDailyChallenge(user, challengeType, baseReward);
+        if (challengeType == ChallengeType.VOTE_PROPOSAL) baseReward = 50 * 1e18;
+        else if (challengeType == ChallengeType.COMPLETE_TASK) baseReward = 100 * 1e18;
+        else if (challengeType == ChallengeType.INVITE_MEMBER) baseReward = 200 * 1e18;
+        else if (challengeType == ChallengeType.COMMENT_PROPOSAL) baseReward = 25 * 1e18;
+        else if (challengeType == ChallengeType.ATTEND_MEETING) baseReward = 75 * 1e18;
+        else if (challengeType == ChallengeType.OTHER) baseReward = 50 * 1e18;
+        else revert InvalidChallengeType();
+        mtaaToken.completeDailyChallenge(user, _challengeTypeToString(challengeType), baseReward);
+    }
+
+    function _challengeTypeToString(ChallengeType challengeType) internal pure returns (string memory) {
+        if (challengeType == ChallengeType.VOTE_PROPOSAL) return "VOTE_PROPOSAL";
+        if (challengeType == ChallengeType.COMPLETE_TASK) return "COMPLETE_TASK";
+        if (challengeType == ChallengeType.INVITE_MEMBER) return "INVITE_MEMBER";
+        if (challengeType == ChallengeType.COMMENT_PROPOSAL) return "COMMENT_PROPOSAL";
+        if (challengeType == ChallengeType.ATTEND_MEETING) return "ATTEND_MEETING";
+        return "OTHER";
     }
 
     // === UTILITY FUNCTIONS ===
@@ -317,39 +385,30 @@ contract MTAARewardsManager is Ownable, ReentrancyGuard {
     function _distributeReward(address user, uint256 amount, string memory reason) internal {
         if (amount == 0) return;
         emit RewardDistributed(user, amount, reason);
-        // Mint directly if allowed, else transfer
+        // Check if minter first to avoid try-catch gas
+        // Assume isMinter flag or check mtaaToken.minters(address(this))
         if (mtaaToken.balanceOf(address(this)) < amount) {
-            // Mint if RewardsManager is minter
-            try mtaaToken.mint(user, amount) {
-                return;
-            } catch {
-                revert InsufficientMTAABalance();
-            }
+            mtaaToken.mint(user, amount); // Revert if not minter
         } else {
             mtaaToken.transfer(user, amount);
         }
     }
 
     function _isValidVault(address vault) internal view returns (bool) {
-        try vaultFactory.vaultInfo(vault) returns (MaonoVaultFactory.VaultInfo memory info) {
-            return info.isActive;
-        } catch {
-            return false;
-        }
-    }
-
-    function _compareStrings(string memory a, string memory b) internal pure returns (bool) {
-        return keccak256(abi.encodePacked(a)) == keccak256(abi.encodePacked(b));
+        MaonoVaultFactory.VaultInfo memory info = vaultFactory.vaultInfo(vault);
+        return info.isActive;
     }
 
     // === ADMIN FUNCTIONS ===
 
     function setMilestoneReward(uint256 milestone, uint256 reward) external onlyOwner {
         milestoneRewards[milestone] = reward;
+        emit MilestoneRewardSet(milestone, reward);
     }
 
     function deactivateTask(bytes32 taskId) external onlyOwner {
         tasks[taskId].isActive = false;
+        emit TaskDeactivated(taskId);
     }
 
     function emergencyWithdraw(uint256 amount) external onlyOwner {
@@ -384,252 +443,5 @@ contract MTAARewardsManager is Ownable, ReentrancyGuard {
 
     function hasClaimedMilestone(address user, uint256 milestone) external view returns (bool) {
         return claimedMilestones[user][milestone];
-    }
-}
-
-/**
- * @title MTAAGovernance
- * @notice Handles governance proposals and voting with MTAA tokens
- */
-contract MTAAGovernance is Ownable, ReentrancyGuard {
-    MTAAToken public immutable mtaaToken;
-    MTAARewardsManager public immutable rewardsManager;
-    address public daoTreasury;
-    
-    struct Proposal {
-        uint256 id;
-        address proposer;
-        string title;
-        string description;
-        uint256 startTime;
-        uint256 endTime;
-        uint256 forVotes;
-        uint256 againstVotes;
-        uint256 abstainVotes;
-        bool executed;
-        bool canceled;
-        ProposalType proposalType;
-        mapping(address => bool) hasVoted;
-        mapping(address => VoteType) votes;
-    }
-    
-    enum ProposalType {
-        STANDARD,    // 100 MTAA + 1000 reputation
-        TREASURY,    // 500 MTAA + 5000 reputation
-        PROTOCOL,    // 1000 MTAA + 10000 reputation
-        EMERGENCY    // 2000 MTAA + Elder status
-    }
-    
-    enum VoteType {
-        AGAINST,
-        FOR,
-        ABSTAIN
-    }
-    
-    uint256 public proposalCount;
-    mapping(uint256 => Proposal) public proposals;
-    
-    uint256 public constant VOTING_PERIOD = 7 days;
-    uint256 public constant EXECUTION_DELAY = 2 days;
-    uint256 public constant QUORUM_PERCENTAGE = 5; // 5% of total supply
-    
-    // Proposal requirements
-    mapping(ProposalType => uint256) public proposalFees;
-    mapping(ProposalType => uint256) public reputationRequirements;
-
-    // Events
-    event ProposalCreated(uint256 indexed proposalId, address indexed proposer, string title);
-    event VoteCast(address indexed voter, uint256 indexed proposalId, VoteType vote, uint256 weight);
-    event ProposalExecuted(uint256 indexed proposalId);
-    event ProposalCanceled(uint256 indexed proposalId);
-
-    // Errors
-    error InsufficientReputation();
-    error InsufficientMTAA();
-    error ProposalNotActive();
-    error AlreadyVoted();
-    error ProposalNotPassed();
-    error ProposalAlreadyExecuted();
-
-    constructor(address _mtaaToken, address _rewardsManager) Ownable(msg.sender) {
-    mtaaToken = MTAAToken(_mtaaToken);
-    rewardsManager = MTAARewardsManager(_rewardsManager);
-    daoTreasury = owner();
-    proposalFees[ProposalType.STANDARD] = 100 * 1e18;
-    proposalFees[ProposalType.TREASURY] = 500 * 1e18;
-    proposalFees[ProposalType.PROTOCOL] = 1000 * 1e18;
-    proposalFees[ProposalType.EMERGENCY] = 2000 * 1e18;
-    reputationRequirements[ProposalType.STANDARD] = 1000;
-    reputationRequirements[ProposalType.TREASURY] = 5000;
-    reputationRequirements[ProposalType.PROTOCOL] = 10000;
-    reputationRequirements[ProposalType.EMERGENCY] = 5000; // Elder+ required
-    }
-
-    function createProposal(
-        string calldata title,
-        string calldata description,
-        ProposalType proposalType
-    ) external nonReentrant returns (uint256) {
-        // Check requirements
-        uint256 requiredFee = proposalFees[proposalType];
-        uint256 requiredReputation = reputationRequirements[proposalType];
-        
-        if (mtaaToken.balanceOf(msg.sender) < requiredFee) revert InsufficientMTAA();
-        if (mtaaToken.reputationScores(msg.sender) < requiredReputation) revert InsufficientReputation();
-        
-        // For emergency proposals, check for Elder status
-        if (proposalType == ProposalType.EMERGENCY) {
-            MTAAToken.ReputationTier tier = mtaaToken.getReputationTier(msg.sender);
-            require(
-                tier == MTAAToken.ReputationTier.ELDER || tier == MTAAToken.ReputationTier.ARCHITECT,
-                "Requires Elder+ status"
-            );
-        }
-        
-        // Pay proposal fee
-        mtaaToken.transferFrom(msg.sender, address(this), requiredFee);
-        
-        proposalCount++;
-        uint256 proposalId = proposalCount;
-        
-        Proposal storage proposal = proposals[proposalId];
-        proposal.id = proposalId;
-        proposal.proposer = msg.sender;
-        proposal.title = title;
-        proposal.description = description;
-        proposal.startTime = block.timestamp;
-        proposal.endTime = block.timestamp + VOTING_PERIOD;
-        proposal.proposalType = proposalType;
-        
-        emit ProposalCreated(proposalId, msg.sender, title);
-        return proposalId;
-    }
-
-    function vote(uint256 proposalId, VoteType voteType) external nonReentrant {
-        Proposal storage proposal = proposals[proposalId];
-        
-        if (block.timestamp < proposal.startTime || block.timestamp > proposal.endTime) {
-            revert ProposalNotActive();
-        }
-        if (proposal.hasVoted[msg.sender]) revert AlreadyVoted();
-        
-        // Calculate voting power (quadratic voting)
-        uint256 votingPower = mtaaToken.getVotingPower(msg.sender);
-        
-        proposal.hasVoted[msg.sender] = true;
-        proposal.votes[msg.sender] = voteType;
-        
-        if (voteType == VoteType.FOR) {
-            proposal.forVotes += votingPower;
-        } else if (voteType == VoteType.AGAINST) {
-            proposal.againstVotes += votingPower;
-        } else {
-            proposal.abstainVotes += votingPower;
-        }
-        
-        // Reward voting
-        rewardsManager.rewardVoting(msg.sender);
-        
-        emit VoteCast(msg.sender, proposalId, voteType, votingPower);
-    }
-
-    function executeProposal(uint256 proposalId) external nonReentrant {
-    Proposal storage proposal = proposals[proposalId];
-    if (block.timestamp < proposal.endTime + EXECUTION_DELAY) revert ProposalNotActive();
-    if (proposal.executed) revert ProposalAlreadyExecuted();
-    // Check if proposal passed
-    uint256 totalVotes = proposal.forVotes + proposal.againstVotes + proposal.abstainVotes;
-    uint256 quorum = (mtaaToken.totalSupply() * QUORUM_PERCENTAGE) / 100;
-    bool passed = totalVotes >= quorum && proposal.forVotes > proposal.againstVotes;
-    if (!passed) revert ProposalNotPassed();
-    proposal.executed = true;
-    // Reward proposer if executed successfully
-    rewardsManager.rewardProposalApproval(proposal.proposer);
-    // Timelock hook: TODO - queue/execute actions if proposal has on-chain actions
-    emit ProposalExecuted(proposalId);
-    }
-
-    function cancelProposal(uint256 proposalId) external {
-        Proposal storage proposal = proposals[proposalId];
-        require(
-            msg.sender == proposal.proposer || msg.sender == owner(),
-            "Not authorized"
-        );
-        require(block.timestamp <= proposal.endTime, "Voting ended");
-        
-        proposal.canceled = true;
-        emit ProposalCanceled(proposalId);
-    }
-
-    // === VIEW FUNCTIONS ===
-
-    function getProposal(uint256 proposalId) external view returns (
-        uint256 id,
-        address proposer,
-        string memory title,
-        string memory description,
-        uint256 startTime,
-        uint256 endTime,
-        uint256 forVotes,
-        uint256 againstVotes,
-        uint256 abstainVotes,
-        bool executed,
-        bool canceled
-    ) {
-        Proposal storage proposal = proposals[proposalId];
-        return (
-            proposal.id,
-            proposal.proposer,
-            proposal.title,
-            proposal.description,
-            proposal.startTime,
-            proposal.endTime,
-            proposal.forVotes,
-            proposal.againstVotes,
-            proposal.abstainVotes,
-            proposal.executed,
-            proposal.canceled
-        );
-    }
-
-    function hasVoted(uint256 proposalId, address voter) external view returns (bool) {
-        return proposals[proposalId].hasVoted[voter];
-    }
-
-    function getVote(uint256 proposalId, address voter) external view returns (VoteType) {
-        return proposals[proposalId].votes[voter];
-    }
-
-    function getProposalState(uint256 proposalId) external view returns (string memory) {
-        Proposal storage proposal = proposals[proposalId];
-        
-        if (proposal.canceled) return "Canceled";
-        if (proposal.executed) return "Executed";
-        if (block.timestamp < proposal.startTime) return "Pending";
-        if (block.timestamp <= proposal.endTime) return "Active";
-        
-        uint256 totalVotes = proposal.forVotes + proposal.againstVotes + proposal.abstainVotes;
-        uint256 quorum = (mtaaToken.totalSupply() * QUORUM_PERCENTAGE) / 100;
-        
-        if (totalVotes < quorum) return "Failed (No Quorum)";
-        if (proposal.forVotes <= proposal.againstVotes) return "Failed";
-        
-        return "Succeeded";
-    }
-
-    // === ADMIN FUNCTIONS ===
-
-    function setProposalFee(ProposalType proposalType, uint256 fee) external onlyOwner {
-        proposalFees[proposalType] = fee;
-    }
-
-    function setReputationRequirement(ProposalType proposalType, uint256 reputation) external onlyOwner {
-        reputationRequirements[proposalType] = reputation;
-    }
-
-    function withdrawFees() external onlyOwner {
-    uint256 balance = mtaaToken.balanceOf(address(this));
-    mtaaToken.transfer(daoTreasury, balance);
-    daoTreasury = treasury;
     }
 }

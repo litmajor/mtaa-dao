@@ -10,6 +10,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useTheme } from "@/components/theme-provider";
 import type { User } from "../../../shared/schema";
 import NotificationCenter from "./NotificationCenter";
+import { AnimatedLogo } from "@/components/ui/logo";
 
 export default function Navigation() {
   const { user } = useAuth() as { user?: User };
@@ -122,18 +123,16 @@ export default function Navigation() {
         <div className="flex justify-between items-center h-16">
           {/* Logo Section */}
           <div className="flex items-center space-x-8">
-            <Link href="/" className="flex items-center space-x-2 group">
-              <div className="relative">
-                <img 
-                  src={theme === "dark" ? "/attached_assets/mtaa_dao_logos/icon_dark_md.png" : "/attached_assets/mtaa_dao_logos/icon_light_md.png"}
-                  alt="Mtaa DAO Icon"
-                  className="w-10 h-10 object-contain group-hover:scale-105 transition-all duration-300"
-                />
-              </div>
-              <img 
-                src={theme === "dark" ? "/attached_assets/mtaa_dao_logos/full_logo_dark_md.png" : "/attached_assets/mtaa_dao_logos/full_logo_light_md.png"}
-                alt="Mtaa DAO"
-                className="h-7 object-contain hidden sm:block"
+            <Link href="/" className="group">
+              <AnimatedLogo 
+                variant="full" 
+                size="md"
+                className="hidden sm:flex"
+              />
+              <AnimatedLogo 
+                variant="icon" 
+                size="md"
+                className="sm:hidden"
               />
             </Link>
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, Mail, Lock, AlertCircle, Phone, Send, Sparkles, Shield, ArrowRight, Star, Zap, Globe, Heart } from 'lucide-react';
+import { HeroLogo } from '@/components/ui/logo';
 
 export default function MtaaDAOLogin() {
   // OAuth handlers
@@ -143,13 +144,12 @@ export default function MtaaDAOLogin() {
             {/* Header */}
             <div className="text-center mb-8">
               {/* Logo */}
-              <div className="relative group/logo mb-6">
-                <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-pink-600 rounded-3xl blur-xl opacity-60 group-hover/logo:opacity-80 transition-all duration-300 animate-pulse"></div>
-                <div className="relative w-20 h-20 bg-gradient-to-br from-orange-500 via-pink-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto shadow-2xl transform group-hover/logo:scale-110 transition-all duration-300">
-                  <span className="text-white font-black text-2xl">M</span>
-                </div>
-                <div className="absolute -top-2 -right-2 w-8 h-8 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center animate-bounce">
-                  <Sparkles className="w-4 h-4 text-white" />
+              <div className="mb-6 flex justify-center">
+                <div className="relative">
+                  <HeroLogo variant="icon" size="lg" forceTheme="dark" />
+                  <div className="absolute -top-2 -right-2 w-8 h-8 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center animate-bounce">
+                    <Sparkles className="w-4 h-4 text-white" />
+                  </div>
                 </div>
               </div>
               
