@@ -906,4 +906,141 @@ function calculateNextPayment(frequency: string): string {
   return now.toISOString();
 }
 
+// === PAYMENT REQUESTS ===
+
+// POST /api/wallet/payment-requests
+router.post('/payment-requests', async (req, res) => {
+  try {
+    const { toAddress, toUserId, amount, currency, description, qrCode, celoUri, expiresAt, recipientEmail } = req.body;
+    
+    const request = await db.insert(paymentRequests).values({
+      fromUserId: req.user?.id || 'anonymous',
+      toUserId,
+      toAddress,
+      amount,
+      currency,
+      description,
+      qrCode,
+      celoUri,
+      expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+      metadata: { recipientEmail }
+    }).returning();
+
+    res.json(request[0]);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// GET /api/wallet/payment-requests/:id
+router.get('/payment-requests/:id', async (req, res) => {
+  try {
+    const request = await db.query.paymentRequests.findFirst({
+      where: eq(paymentRequests.id, req.params.id)
+    });
+
+    if (!request) {
+      return res.status(404).json({ error: 'Payment request not found' });
+    }
+
+    res.json(request);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// POST /api/wallet/payment-requests/:id/pay
+router.post('/payment-requests/:id/pay', async (req, res) => {
+  try {
+    const { transactionHash } = req.body;
+    
+    const request = await db.query.paymentRequests.findFirst({
+      where: eq(paymentRequests.id, req.params.id)
+    });
+
+    if (!request) {
+      return res.status(404).json({ error: 'Payment request not found' });
+    }
+
+    if (request.status === 'paid') {
+      return res.status(400).json({ error: 'Payment request already paid' });
+    }
+
+    await db.update(paymentRequests)
+      .set({
+        status: 'paid',
+        paidAt: new Date(),
+        transactionHash,
+        updatedAt: new Date()
+      })
+      .where(eq(paymentRequests.id, req.params.id));
+
+    res.json({ success: true });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// === PAYMENT RECEIPTS ===
+
+// POST /api/wallet/receipts/generate
+router.post('/receipts/generate', async (req, res) => {
+  try {
+    const { transactionId, paymentRequestId } = req.body;
+    
+    // Generate unique receipt number
+    const receiptNumber = `MTAA-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+    
+    // Get transaction details
+    let transaction;
+    if (transactionId) {
+      transaction = await db.query.walletTransactions.findFirst({
+        where: eq(walletTransactions.id, transactionId)
+      });
+    }
+
+    // Create receipt record
+    const receipt = await db.insert(paymentReceipts).values({
+      transactionId,
+      paymentRequestId,
+      receiptNumber,
+      metadata: { transaction }
+    }).returning();
+
+    res.json({
+      ...receipt[0],
+      downloadUrl: `/api/wallet/receipts/${receipt[0].id}/download`
+    });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// GET /api/wallet/receipts/:id/download
+router.get('/receipts/:id/download', async (req, res) => {
+  try {
+    const receipt = await db.query.paymentReceipts.findFirst({
+      where: eq(paymentReceipts.id, req.params.id)
+    });
+
+    if (!receipt) {
+      return res.status(404).json({ error: 'Receipt not found' });
+    }
+
+    // Generate PDF (placeholder - implement with pdfkit or similar)
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=receipt-${receipt.receiptNumber}.pdf`);
+    
+    // TODO: Implement actual PDF generation
+    res.send('PDF generation coming soon');
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
 export default router;

@@ -459,6 +459,39 @@ export const daoMemberships = pgTable("dao_memberships", {
   lastActive: timestamp("last_active").defaultNow(), // for quorum calculations
 });
 
+// Payment Requests table
+export const paymentRequests = pgTable("payment_requests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  fromUserId: varchar("from_user_id").references(() => users.id).notNull(),
+  toUserId: varchar("to_user_id").references(() => users.id),
+  toAddress: varchar("to_address"),
+  amount: decimal("amount", { precision: 18, scale: 8 }).notNull(),
+  currency: varchar("currency").notNull(),
+  description: text("description"),
+  qrCode: text("qr_code"), // Base64 encoded QR code
+  celoUri: text("celo_uri"), // celo://pay?address=...&amount=...&token=...
+  status: varchar("status").default("pending"), // pending, paid, expired, cancelled
+  expiresAt: timestamp("expires_at"),
+  paidAt: timestamp("paid_at"),
+  transactionHash: varchar("transaction_hash"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Payment Receipts table
+export const paymentReceipts = pgTable("payment_receipts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  transactionId: uuid("transaction_id").references(() => walletTransactions.id),
+  paymentRequestId: uuid("payment_request_id").references(() => paymentRequests.id),
+  receiptNumber: varchar("receipt_number").notNull().unique(),
+  pdfUrl: text("pdf_url"),
+  emailSent: boolean("email_sent").default(false),
+  emailSentAt: timestamp("email_sent_at"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Wallet Transactions table
 export const walletTransactions = pgTable("wallet_transactions", {
   id: uuid("id").primaryKey().defaultRandom(),
