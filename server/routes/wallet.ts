@@ -3,12 +3,13 @@ import express from 'express';
 import EnhancedAgentWallet, { NetworkConfig, WalletManager } from '../agent_wallet';
 
 import { db } from '../storage';
-import { walletTransactions, contributions, paymentRequests } from '../../shared/schema';
-import { lockedSavings, savingsGoals } from '../../shared/schema';
+import { walletTransactions, contributions, paymentRequests, lockedSavings, savingsGoals, paymentReceipts } from '../../shared/schema';
 import { desc, eq, or, and, sql, gte } from 'drizzle-orm';
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 import { notificationService } from '../notificationService';
+import { users } from '../../shared/schema';
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -340,7 +341,7 @@ router.get('/token-info/:tokenAddress', async (req, res) => {
 router.post('/send-native', async (req, res) => {
   try {
     const { toAddress, amount, userId } = req.body;
-    
+
     // Check KYC limits
     if (userId) {
       const { kycService } = await import('../services/kycService');
@@ -349,7 +350,7 @@ router.post('/send-native', async (req, res) => {
         return res.status(403).json({ error: limitCheck.reason });
       }
     }
-    
+
     const result = await wallet!.sendNativeToken(toAddress, amount); // Non-null assertion
 
     // Create notification for successful transaction
@@ -807,7 +808,78 @@ router.get('/transactions', async (req, res) => {
     const { 
       userId, 
       walletAddress, 
+      type, 
+      status, 
+      currency, 
+      search, 
+      dateRange = '30',
+      page = '1',
+      limit = '10'
+    } = req.query;
 
+    const pageNum = parseInt(page as string);
+    const limitNum = parseInt(limit as string);
+    const offset = (pageNum - 1) * limitNum;
+
+    // Build where conditions
+    const conditions = [];
+    if (userId) {
+      conditions.push(or(eq(walletTransactions.fromUserId, userId as string), eq(walletTransactions.toUserId, userId as string)));
+    }
+    if (walletAddress) {
+      conditions.push(eq(walletTransactions.walletAddress, walletAddress as string));
+    }
+    if (type) {
+      conditions.push(eq(walletTransactions.type, type as string));
+    }
+    if (status) {
+      conditions.push(eq(walletTransactions.status, status as string));
+    }
+    if (currency) {
+      conditions.push(eq(walletTransactions.currency, currency as string));
+    }
+
+    // Date range filter
+    const dateFilter = new Date();
+    dateFilter.setDate(dateFilter.getDate() - parseInt(dateRange as string));
+
+    let whereClause = undefined;
+    if (conditions.length > 0) {
+      whereClause = and(...conditions);
+    }
+
+    const transactions = await db
+      .select()
+      .from(walletTransactions)
+      .where(whereClause)
+      .orderBy(desc(walletTransactions.createdAt))
+      .limit(limitNum)
+      .offset(offset);
+
+    // If search is provided, filter in memory (for simple implementation)
+    let filteredTransactions = transactions;
+    if (search) {
+      const searchTerm = (search as string).toLowerCase();
+      filteredTransactions = transactions.filter(tx => 
+        tx.description?.toLowerCase().includes(searchTerm) ||
+        tx.transactionHash?.toLowerCase().includes(searchTerm) ||
+        tx.type?.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    res.json({
+      transactions: filteredTransactions,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total: filteredTransactions.length
+      }
+    });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
 
 // === PAYMENT LINKS ===
 
@@ -975,79 +1047,6 @@ router.get('/payment-links/:linkId', async (req, res) => {
     }
 
     res.json(paymentLink);
-  } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: errorMsg });
-  }
-});
-
-      type, 
-      status, 
-      currency, 
-      search, 
-      dateRange = '30',
-      page = '1',
-      limit = '10'
-    } = req.query;
-
-    const pageNum = parseInt(page as string);
-    const limitNum = parseInt(limit as string);
-    const offset = (pageNum - 1) * limitNum;
-
-    // Build where conditions
-    const conditions = [];
-    if (userId) {
-      conditions.push(or(eq(walletTransactions.fromUserId, userId as string), eq(walletTransactions.toUserId, userId as string)));
-    }
-    if (walletAddress) {
-      conditions.push(eq(walletTransactions.walletAddress, walletAddress as string));
-    }
-    if (type) {
-      conditions.push(eq(walletTransactions.type, type as string));
-    }
-    if (status) {
-      conditions.push(eq(walletTransactions.status, status as string));
-    }
-    if (currency) {
-      conditions.push(eq(walletTransactions.currency, currency as string));
-    }
-
-    // Date range filter
-    const dateFilter = new Date();
-    dateFilter.setDate(dateFilter.getDate() - parseInt(dateRange as string));
-
-    let whereClause = undefined;
-    if (conditions.length > 0) {
-      whereClause = and(...conditions);
-    }
-
-    const transactions = await db
-      .select()
-      .from(walletTransactions)
-      .where(whereClause)
-      .orderBy(desc(walletTransactions.createdAt))
-      .limit(limitNum)
-      .offset(offset);
-
-    // If search is provided, filter in memory (for simple implementation)
-    let filteredTransactions = transactions;
-    if (search) {
-      const searchTerm = (search as string).toLowerCase();
-      filteredTransactions = transactions.filter(tx => 
-        tx.description?.toLowerCase().includes(searchTerm) ||
-        tx.transactionHash?.toLowerCase().includes(searchTerm) ||
-        tx.type?.toLowerCase().includes(searchTerm)
-      );
-    }
-
-    res.json({
-      transactions: filteredTransactions,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total: filteredTransactions.length
-      }
-    });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: errorMsg });
