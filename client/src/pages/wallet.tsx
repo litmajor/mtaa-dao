@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Send, Download, History, DollarSign, ArrowUpRight, ArrowDownLeft, User, Wallet, CreditCard, TrendingUp, Shield, Zap, Star, Crown, Sparkles, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import { Plus, Send, Download, History, DollarSign, ArrowUpRight, ArrowDownLeft, User, Wallet, CreditCard, TrendingUp, Shield, Zap, Star, Crown, Sparkles, Eye, EyeOff, RefreshCw, Users, Share2, Repeat, QrCode } from 'lucide-react';
 
 import { Line, Pie, Bar } from 'react-chartjs-2';
 import {
@@ -25,6 +25,9 @@ import { useWallet } from './hooks/useWallet';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import PaymentRequestModal from '@/components/wallet/PaymentRequestModal';
+import PhonePaymentModal from '@/components/wallet/PhonePaymentModal';
+import SplitBillModal from '@/components/wallet/SplitBillModal';
+import PaymentLinkModal from '@/components/wallet/PaymentLinkModal';
 
 const EnhancedWalletPage = () => {
   const [activeTab, setActiveTab] = useState("overview");
@@ -36,6 +39,10 @@ const EnhancedWalletPage = () => {
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [vaults, setVaults] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [phonePaymentOpen, setPhonePaymentOpen] = useState(false);
+  const [splitBillOpen, setSplitBillOpen] = useState(false);
+  const [paymentLinkOpen, setPaymentLinkOpen] = useState(false);
+  const [recurringPaymentOpen, setRecurringPaymentOpen] = useState(false);
 
   // Use real wallet data instead of mock data
   const { address, isConnected, balance, connectMetaMask, connectValora, connectMiniPay, isLoading, error, disconnect } = useWallet();
@@ -509,6 +516,38 @@ const EnhancedWalletPage = () => {
                 <QrCode className="mr-2 h-5 w-5" />
                 Request Payment
               </Button>
+              <Button 
+                variant="outline" 
+                className="w-full py-4 text-lg"
+                onClick={() => setPhonePaymentOpen(true)}
+              >
+                <User className="mr-2 h-5 w-5" />
+                Pay by Phone
+              </Button>
+              <Button 
+                variant="outline" 
+                className="w-full py-4 text-lg"
+                onClick={() => setSplitBillOpen(true)}
+              >
+                <Users className="mr-2 h-5 w-5" />
+                Split Bill
+              </Button>
+              <Button 
+                variant="outline" 
+                className="w-full py-4 text-lg"
+                onClick={() => setPaymentLinkOpen(true)}
+              >
+                <Share2 className="mr-2 h-5 w-5" />
+                Payment Link
+              </Button>
+              <Button 
+                variant="outline" 
+                className="w-full py-4 text-lg"
+                onClick={() => setRecurringPaymentOpen(true)}
+              >
+                <Repeat className="mr-2 h-5 w-5" />
+                Set Recurring
+              </Button>
               <Button
                 variant="outline"
                 className="w-full py-4 text-lg"
@@ -655,11 +694,28 @@ const EnhancedWalletPage = () => {
       )}
 
       {address && (
-        <PaymentRequestModal
-          isOpen={paymentRequestOpen}
-          onClose={() => setPaymentRequestOpen(false)}
-          userAddress={address}
-        />
+        <>
+          <PaymentRequestModal
+            isOpen={paymentRequestOpen}
+            onClose={() => setPaymentRequestOpen(false)}
+            userAddress={address}
+          />
+          <PhonePaymentModal
+            isOpen={phonePaymentOpen}
+            onClose={() => setPhonePaymentOpen(false)}
+            userAddress={address}
+          />
+          <SplitBillModal
+            isOpen={splitBillOpen}
+            onClose={() => setSplitBillOpen(false)}
+            userAddress={address}
+          />
+          <PaymentLinkModal
+            isOpen={paymentLinkOpen}
+            onClose={() => setPaymentLinkOpen(false)}
+            userAddress={address}
+          />
+        </>
       )}
     </div>
   );
