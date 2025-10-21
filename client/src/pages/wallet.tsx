@@ -21,6 +21,8 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 import TransactionHistory from '../components/wallet/TransactionHistory';
 import RecurringPayments from '../components/wallet/RecurringPayments';
 import ExchangeRateWidget from '../components/wallet/ExchangeRateWidget';
+import RecurringPaymentsManager from '@/components/wallet/RecurringPaymentsManager';
+import GiftCardVoucher from '@/components/wallet/GiftCardVoucher';
 import { useWallet } from './hooks/useWallet';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,6 +30,8 @@ import PaymentRequestModal from '@/components/wallet/PaymentRequestModal';
 import PhonePaymentModal from '@/components/wallet/PhonePaymentModal';
 import SplitBillModal from '@/components/wallet/SplitBillModal';
 import PaymentLinkModal from '@/components/wallet/PaymentLinkModal';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
 
 const EnhancedWalletPage = () => {
   const [activeTab, setActiveTab] = useState("overview");
@@ -141,28 +145,28 @@ const EnhancedWalletPage = () => {
                 {error}
               </div>
             )}
-            
+
             <div className="space-y-3">
-              <button 
-                onClick={connectMetaMask} 
+              <button
+                onClick={connectMetaMask}
                 disabled={isLoading}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 data-testid="button-connect-metamask"
               >
                 {isLoading ? "Connecting..." : "Connect MetaMask"}
               </button>
-              
-              <button 
-                onClick={connectValora} 
+
+              <button
+                onClick={connectValora}
                 disabled={isLoading}
                 className="w-full border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2 px-4 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 data-testid="button-connect-valora"
               >
                 {isLoading ? "Connecting..." : "Connect Valora"}
               </button>
-              
-              <button 
-                onClick={connectMiniPay} 
+
+              <button
+                onClick={connectMiniPay}
                 disabled={isLoading}
                 className="w-full border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2 px-4 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 data-testid="button-connect-minipay"
@@ -170,7 +174,7 @@ const EnhancedWalletPage = () => {
                 {isLoading ? "Connecting..." : "Connect MiniPay"}
               </button>
             </div>
-            
+
             <div className="text-xs text-gray-500 text-center mt-4">
               Make sure you're on the Celo network. We'll help you switch if needed.
             </div>
@@ -508,40 +512,40 @@ const EnhancedWalletPage = () => {
                 <Download className="mr-2 h-5 w-5" />
                 Deposit Funds
               </Button>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="w-full py-4 text-lg"
                 onClick={() => setPaymentRequestOpen(true)}
               >
                 <QrCode className="mr-2 h-5 w-5" />
                 Request Payment
               </Button>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="w-full py-4 text-lg"
                 onClick={() => setPhonePaymentOpen(true)}
               >
                 <User className="mr-2 h-5 w-5" />
                 Pay by Phone
               </Button>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="w-full py-4 text-lg"
                 onClick={() => setSplitBillOpen(true)}
               >
                 <Users className="mr-2 h-5 w-5" />
                 Split Bill
               </Button>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="w-full py-4 text-lg"
                 onClick={() => setPaymentLinkOpen(true)}
               >
                 <Share2 className="mr-2 h-5 w-5" />
                 Payment Link
               </Button>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="w-full py-4 text-lg"
                 onClick={() => setRecurringPaymentOpen(true)}
               >
@@ -630,11 +634,39 @@ const EnhancedWalletPage = () => {
             console.log(`Converting ${fromAmount} ${fromCurrency} to ${toAmount} ${toCurrency}`);
           }} />
 
-          {/* Recurring Payments */}
-          {address && <RecurringPayments walletAddress={address} onPaymentCreated={() => {}} />}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="transactions">Transactions</TabsTrigger>
+              <TabsTrigger value="recurring">Recurring</TabsTrigger>
+              <TabsTrigger value="vouchers">Vouchers</TabsTrigger>
+            </TabsList>
 
-          {/* Transaction History */}
-          <TransactionHistory userId={user?.id} walletAddress={address} />
+            <TabsContent value="overview">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Wallet Overview</CardTitle>
+                  <CardDescription>Summary of your wallet activities.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {/* Placeholder for future overview components */}
+                  <p className="text-sm text-gray-500">Detailed overview coming soon...</p>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="transactions">
+              <TransactionHistory userId={user?.id} walletAddress={address} />
+            </TabsContent>
+
+            <TabsContent value="recurring">
+              <RecurringPaymentsManager />
+            </TabsContent>
+
+            <TabsContent value="vouchers">
+              <GiftCardVoucher />
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
 

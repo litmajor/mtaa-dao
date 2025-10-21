@@ -235,6 +235,9 @@ app.use((req, res, next) => {
     // Wallet routes
     app.use('/api/wallet', walletRouter);
     app.use('/api/wallet-setup', walletSetupRouter);
+    app.use('/api/wallet/recurring-payments', (await import('./routes/recurring-payments')).default);
+    app.use('/api/wallet/vouchers', (await import('./routes/vouchers')).default);
+    app.use('/api/wallet/phone', (await import('./routes/phone-payments')).default);
     app.use('/api/payment-gateway', paymentGatewayRouter);
     // Mount KYC routes
     app.use('/api/kyc', kycRouter);
