@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, Mail, Lock, AlertCircle, UserPlus, Check, Phone, Send, Sparkles, Shield, Zap, ArrowLeft } from 'lucide-react';
+import { HeroLogo } from '@/components/ui/logo';
 
 export default function StunningRegister() {
   const [email, setEmail] = useState('');
@@ -328,16 +329,14 @@ export default function StunningRegister() {
 
             {/* Main card */}
             <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-3xl shadow-2xl p-8 transition-all duration-500 hover:shadow-3xl hover:bg-white/15 mb-4">
-              {/* Header with animated icon */}
+              {/* Header with animated logo */}
               <div className="text-center mb-8">
-                <div className="relative mb-6">
-                  <div className="w-20 h-20 bg-gradient-to-br from-purple-500 via-pink-500 to-red-500 rounded-full flex items-center justify-center mx-auto shadow-2xl relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-br from-purple-400 via-pink-400 to-red-400 rounded-full animate-pulse opacity-75"></div>
-                    <UserPlus className="w-10 h-10 text-white relative z-10" />
-                    <Sparkles className="absolute top-1 right-1 w-4 h-4 text-yellow-300 animate-pulse" />
-                  </div>
-                  <div className="absolute -top-2 -right-2 w-6 h-6 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full flex items-center justify-center">
-                    <Zap className="w-3 h-3 text-white" />
+                <div className="mb-6 flex justify-center">
+                  <div className="relative">
+                    <HeroLogo variant="icon" size="lg" forceTheme="dark" />
+                    <div className="absolute -top-2 -right-2 w-8 h-8 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full flex items-center justify-center animate-bounce">
+                      <Zap className="w-4 h-4 text-white" />
+                    </div>
                   </div>
                 </div>
                 <h2 className="text-4xl font-bold bg-gradient-to-r from-white via-purple-200 to-pink-200 bg-clip-text text-transparent mb-3">

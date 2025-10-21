@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowRight, Users, Vote, Wallet, Target, Trophy, Zap, DollarSign, ClipboardList, Star, TrendingUp, Shield, Globe, CheckCircle, Sparkles, Heart, Coins, Award, Lock, BookOpen, Code, HelpCircle } from "lucide-react";
 import { useState, useEffect } from "react";
+import { HeroLogo } from "@/components/ui/logo";
 import { Link } from 'wouter';
 
 export default function MtaaDAOLanding() {
@@ -283,12 +284,9 @@ export default function MtaaDAOLanding() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
           <div className={`text-center transform transition-all duration-2000 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-20 opacity-0'}`}>
             {/* Logo */}
-            <div className="flex items-center justify-center space-x-4 mb-8">
-              <div className="relative group">
-                <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-pink-600 rounded-3xl blur-xl opacity-60 group-hover:opacity-80 transition-all duration-300 animate-pulse"></div>
-                <div className="relative w-20 h-20 bg-gradient-to-br from-orange-500 via-pink-500 to-purple-600 rounded-3xl flex items-center justify-center shadow-2xl transform group-hover:scale-110 transition-all duration-300">
-                  <span className="text-white font-black text-3xl">M</span>
-                </div>
+            <div className="flex items-center justify-center space-x-6 mb-8">
+              <div className="relative">
+                <HeroLogo variant="icon" size="banner" forceTheme="dark" />
                 <div className="absolute -top-2 -right-2 w-8 h-8 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center animate-bounce">
                   <Sparkles className="w-4 h-4 text-white" />
                 </div>

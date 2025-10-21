@@ -112,10 +112,11 @@ function App() {
               <Routes>
                 {/* Public routes - Authentication & Info Pages */}
                 <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" /> : <Landing />} />
-                <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-                <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
-                <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
-                <Route path="/reset-password" element={<PublicRoute><ResetPassword /></PublicRoute>} />
+                <Route path="/maonovault" element={<Suspense fallback={<PageLoading />}><MaonoVaultWeb3PageLazy /></Suspense>} />
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/register" element={<Register />} />
+                  <Route path="/forgot-password" element={<ForgotPassword />} />
+                  <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/pricing" element={<PricingPage />} />
                 <Route path="/success-stories" element={<SuccessStories />} />
                 <Route path="/about" element={
@@ -153,7 +154,6 @@ function App() {
                 <Route path="/profile" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><ProfileLazy /></Suspense></ProtectedRoute>} />
                 <Route path="/daos" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><DAOsLazy /></Suspense></ProtectedRoute>} />
                 <Route path="/referrals" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><ReferralsLazy /></Suspense></ProtectedRoute>} />
-                <Route path="/maonovault" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><MaonoVaultWeb3PageLazy /></Suspense></ProtectedRoute>} />
                 <Route path="/settings" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><SettingsLazy /></Suspense></ProtectedRoute>} />
                 <Route path="/analytics" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><AnalyticsPageLazy /></Suspense></ProtectedRoute>} />
                 <Route path="/tasks" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><TaskBountyBoardPageLazy /></Suspense></ProtectedRoute>} />

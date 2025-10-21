@@ -39,6 +39,14 @@ contract MaonoVaultFactory is Ownable {
         bool isActive;
     }
 
+    struct VaultConfig {
+        uint256 minDeposit;
+        uint256 vaultCap;
+        uint256 performanceFee;
+        uint256 managementFee;
+        uint256 withdrawalDelay;
+    }
+
     // Events
     event VaultDeployed(
         address indexed vault,
@@ -56,18 +64,22 @@ contract MaonoVaultFactory is Ownable {
     // Errors
     error UnsupportedAsset();
     error InsufficientDeploymentFee();
+    error InvalidAddress();
+    error InvalidConfig();
     error VaultNotFound();
+    error RateTooHigh();
 
     constructor(
         address _platformTreasury,
         address[] memory _initialAssets,
         string[] memory _initialAssetSymbols
     ) Ownable(msg.sender) {
+        if (_platformTreasury == address(0)) revert InvalidAddress();
         platformTreasury = _platformTreasury;
         
         // Add initial supported assets
-        require(_initialAssets.length == _initialAssetSymbols.length, "Arrays length mismatch");
-        for (uint i = 0; i < _initialAssets.length; i++) {
+        if (_initialAssets.length != _initialAssetSymbols.length) revert("Arrays length mismatch");
+        for (uint256 i = 0; i < _initialAssets.length; ++i) {
             _addSupportedAsset(_initialAssets[i], _initialAssetSymbols[i]);
         }
     }
@@ -91,12 +103,14 @@ contract MaonoVaultFactory is Ownable {
         string[] memory initialDAOs,
         VaultConfig memory config
     ) external payable returns (address vault) {
-        // Validate inputs
         if (!supportedAssets[asset]) revert UnsupportedAsset();
-        if (msg.value < deploymentFee) revert InsufficientDeploymentFee();
-        require(manager != address(0) && daoTreasury != address(0), "Zero address");
+        if (msg.value != deploymentFee) revert InsufficientDeploymentFee(); // Exact fee only, no refund gas
+        if (manager == address(0) || daoTreasury == address(0)) revert InvalidAddress();
 
-        // Deploy new vault
+        // Validate config
+        if (config.performanceFee > 5000 || config.managementFee > 1000) revert InvalidConfig(); // e.g., max 50% perf, 10% mgmt
+
+        // Deploy new vault (assuming MaonoVault constructor sets name/symbol – adjust if needed)
         vault = address(new MaonoVault(
             asset,
             daoTreasury,
@@ -104,25 +118,16 @@ contract MaonoVaultFactory is Ownable {
             initialDAOs
         ));
 
-        // Configure vault parameters if provided
-        if (config.minDeposit > 0) {
-            MaonoVault(vault).setMinDeposit(config.minDeposit);
-        }
-        if (config.vaultCap > 0) {
-            MaonoVault(vault).setVaultCap(config.vaultCap);
-        }
-        if (config.performanceFee > 0) {
-            MaonoVault(vault).setPerformanceFee(config.performanceFee);
-        }
-        if (config.managementFee > 0) {
-            MaonoVault(vault).setManagementFee(config.managementFee);
-        }
-        if (config.withdrawalDelay > 0) {
-            MaonoVault(vault).setWithdrawalDelay(config.withdrawalDelay);
-        }
+        // Batch config settings if MaonoVault supports an init function; otherwise, individual sets
+        MaonoVault vaultInstance = MaonoVault(vault);
+        if (config.minDeposit > 0) vaultInstance.setMinDeposit(config.minDeposit);
+        if (config.vaultCap > 0) vaultInstance.setVaultCap(config.vaultCap);
+        if (config.performanceFee > 0) vaultInstance.setPerformanceFee(config.performanceFee);
+        if (config.managementFee > 0) vaultInstance.setManagementFee(config.managementFee);
+        if (config.withdrawalDelay > 0) vaultInstance.setWithdrawalDelay(config.withdrawalDelay);
 
-        // Transfer ownership to deployer (DAO founder). Manager retains operational control.
-        MaonoVault(vault).transferOwnership(msg.sender);
+        // Transfer ownership to deployer
+        vaultInstance.transferOwnership(msg.sender);
 
         // Record vault info
         vaultInfo[vault] = VaultInfo({
@@ -139,51 +144,51 @@ contract MaonoVaultFactory is Ownable {
         deployedVaults.push(vault);
         userVaults[msg.sender].push(vault);
 
-        // Send deployment fee to platform, refund excess
-        uint256 fee = deploymentFee;
-        if (msg.value > fee) {
-            payable(msg.sender).transfer(msg.value - fee); // refund excess
-        }
-        payable(platformTreasury).transfer(fee);
+        // Send fee to platform
+        payable(platformTreasury).transfer(deploymentFee);
 
         emit VaultDeployed(vault, msg.sender, manager, asset, vaultName, vaultSymbol);
         return vault;
     }
 
-    struct VaultConfig {
-        uint256 minDeposit;
-        uint256 vaultCap;
-        uint256 performanceFee;
-        uint256 managementFee;
-        uint256 withdrawalDelay;
-    }
-
     // --- Admin Functions ---
     
+    /**
+     * @notice Add a supported asset
+     * @param asset The asset address
+     * @param symbol The asset symbol
+     */
     function addSupportedAsset(address asset, string memory symbol) external onlyOwner {
         _addSupportedAsset(asset, symbol);
     }
 
     function _addSupportedAsset(address asset, string memory symbol) internal {
-    require(asset != address(0), "Zero address");
-    require(!supportedAssets[asset], "Already supported");
+        if (asset == address(0)) revert InvalidAddress();
+        if (supportedAssets[asset]) revert("Already supported");
         
-    supportedAssets[asset] = true;
-    supportedAssetsList.push(asset);
-    assetSymbols[asset] = symbol;
+        supportedAssets[asset] = true;
+        supportedAssetsList.push(asset);
+        assetSymbols[asset] = symbol;
         
-    emit AssetAdded(asset, symbol);
+        emit AssetAdded(asset, symbol);
     }
 
+    /**
+     * @notice Remove a supported asset
+     * @param asset The asset address
+     */
     function removeSupportedAsset(address asset) external onlyOwner {
-        require(supportedAssets[asset], "Not supported");
+        if (!supportedAssets[asset]) revert("Not supported");
         
         supportedAssets[asset] = false;
         
-        // Remove from array (expensive but infrequent operation)
-        for (uint i = 0; i < supportedAssetsList.length; i++) {
+        // Unordered removal to save gas: swap with last and pop
+        uint256 length = supportedAssetsList.length;
+        for (uint256 i = 0; i < length; ++i) {
             if (supportedAssetsList[i] == asset) {
-                supportedAssetsList[i] = supportedAssetsList[supportedAssetsList.length - 1];
+                if (i != length - 1) {
+                    supportedAssetsList[i] = supportedAssetsList[length - 1];
+                }
                 supportedAssetsList.pop();
                 break;
             }
@@ -192,48 +197,81 @@ contract MaonoVaultFactory is Ownable {
         emit AssetRemoved(asset);
     }
 
+    /**
+     * @notice Set new deployment fee
+     * @param newFee The new fee amount
+     */
     function setDeploymentFee(uint256 newFee) external onlyOwner {
         uint256 oldFee = deploymentFee;
         deploymentFee = newFee;
         emit DeploymentFeeChanged(oldFee, newFee);
     }
 
+    /**
+     * @notice Set new platform fee rate
+     * @param newRate The new rate in basis points
+     */
     function setPlatformFeeRate(uint256 newRate) external onlyOwner {
-        require(newRate <= 1000, "Rate too high"); // Max 10%
+        if (newRate > 1000) revert RateTooHigh(); // Max 10%
         uint256 oldRate = platformFeeRate;
         platformFeeRate = newRate;
         emit PlatformFeeRateChanged(oldRate, newRate);
     }
 
+    /**
+     * @notice Set new platform treasury
+     * @param newTreasury The new treasury address
+     */
     function setPlatformTreasury(address newTreasury) external onlyOwner {
-        require(newTreasury != address(0), "Zero address");
+        if (newTreasury == address(0)) revert InvalidAddress();
         platformTreasury = newTreasury;
     }
 
     // --- View Functions ---
     
+    /**
+     * @notice Get count of deployed vaults
+     */
     function getDeployedVaultsCount() external view returns (uint256) {
         return deployedVaults.length;
     }
 
+    /**
+     * @notice Get vaults deployed by a user
+     * @param user The user address
+     */
     function getUserVaults(address user) external view returns (address[] memory) {
         return userVaults[user];
     }
 
+    /**
+     * @notice Get list of supported assets
+     */
     function getSupportedAssets() external view returns (address[] memory) {
         return supportedAssetsList;
     }
 
+    /**
+     * @notice Get info for a vault
+     * @param vault The vault address
+     */
     function getVaultInfo(address vault) external view returns (VaultInfo memory) {
         return vaultInfo[vault];
     }
 
+    /**
+     * @notice Get current deployment cost
+     */
     function calculateDeploymentCost() external view returns (uint256) {
         return deploymentFee;
     }
 
     // --- Helper Functions for Frontend ---
     
+    /**
+     * @notice Get overview for a single vault
+     * @param vault The vault address
+     */
     function getVaultOverview(address vault) external view returns (
         VaultInfo memory info,
         uint256 tvl,
@@ -241,9 +279,9 @@ contract MaonoVaultFactory is Ownable {
         uint256 totalShares,
         bool isPaused
     ) {
-        if (vaultInfo[vault].owner == address(0)) revert VaultNotFound();
-        
         info = vaultInfo[vault];
+        if (info.owner == address(0)) revert VaultNotFound();
+        
         MaonoVault vaultContract = MaonoVault(vault);
         
         tvl = vaultContract.totalAssets();
@@ -252,6 +290,10 @@ contract MaonoVaultFactory is Ownable {
         isPaused = vaultContract.paused();
     }
 
+    /**
+     * @notice Get overviews for multiple vaults
+     * @param vaults Array of vault addresses
+     */
     function getMultipleVaultOverviews(address[] calldata vaults) external view returns (
         VaultInfo[] memory infos,
         uint256[] memory tvls,
@@ -262,7 +304,7 @@ contract MaonoVaultFactory is Ownable {
         tvls = new uint256[](length);
         sharePrices = new uint256[](length);
 
-        for (uint256 i = 0; i < length; i++) {
+        for (uint256 i = 0; i < length; ++i) {
             address vault = vaults[i];
             infos[i] = vaultInfo[vault];
             
@@ -280,7 +322,7 @@ contract MaonoVaultFactory is Ownable {
 
 /**
  * @title DeploymentExample
- * @notice Example deployment and usage patterns
+ * @notice Example deployment and usage patterns (for illustration/testing only)
  */
 contract DeploymentExample {
     MaonoVaultFactory public factory;
@@ -339,10 +381,11 @@ contract DeploymentExample {
         vault = MaonoVault(vaultAddress);
     }
 
-    // Example 3: User interactions
+    // Example 3: User interactions (assume approvals handled externally)
     function userDeposit(uint256 amount) external {
-        asset.transferFrom(msg.sender, address(this), amount);
-        asset.approve(address(vault), amount);
+        // In production, use SafeERC20 and ensure approvals
+        asset.safeTransferFrom(msg.sender, address(this), amount);
+        asset.safeApprove(address(vault), amount);
         vault.deposit(amount, msg.sender);
     }
 
@@ -350,14 +393,12 @@ contract DeploymentExample {
         vault.redeem(shares, msg.sender, msg.sender);
     }
 
-    // Example 4: Manager operations
+    // Example 4: Manager operations (assume caller is manager)
     function managerUpdateNAV(uint256 newNAV) external {
-        // Only vault manager can call this
         vault.updateNAV(newNAV);
     }
 
     function managerCollectFees() external {
-        // Only vault manager can call this
         vault.collectManagementFees();
     }
 }
