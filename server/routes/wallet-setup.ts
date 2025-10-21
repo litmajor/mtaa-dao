@@ -4,6 +4,273 @@ import { db } from '../storage';
 import { users, vaults, walletTransactions } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
 import { notificationService } from '../notificationService';
+import {
+  generateWalletFromMnemonic,
+  recoverWalletFromMnemonic,
+
+
+// POST /api/wallet-setup/create-wallet-mnemonic
+router.post('/create-wallet-mnemonic', async (req, res) => {
+  try {
+    const { userId, currency = 'cUSD', initialGoal = 0, password, wordCount = 12 } = req.body;
+
+    if (!userId || !password) {
+      return res.status(400).json({ error: 'User ID and password are required' });
+    }
+
+    if (wordCount !== 12 && wordCount !== 24) {
+      return res.status(400).json({ error: 'Word count must be 12 or 24' });
+    }
+
+    // Check if user already has a wallet
+    const existingUser = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (existingUser.length > 0 && existingUser[0].encryptedWallet) {
+      return res.status(400).json({ error: 'User already has a wallet' });
+    }
+
+    // Generate wallet with mnemonic
+    const walletCredentials = generateWalletFromMnemonic(wordCount);
+
+    // Encrypt wallet data
+    const encrypted = encryptWallet(walletCredentials, password);
+
+    // Update user with encrypted wallet
+    await db.update(users)
+      .set({
+        encryptedWallet: encrypted.encryptedData,
+        walletSalt: encrypted.salt,
+        walletIv: encrypted.iv,
+        walletAuthTag: encrypted.authTag,
+        hasBackedUpMnemonic: false,
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, userId));
+
+    // Create primary vault
+    const primaryVault = await db.insert(vaults).values({
+      userId,
+      currency,
+      address: walletCredentials.address,
+      balance: '0.00',
+      monthlyGoal: initialGoal.toString(),
+    }).returning();
+
+    await notificationService.createNotification({
+      userId,
+      type: 'wallet',
+      title: 'Wallet Created Successfully',
+      message: `Your new wallet has been created. Please backup your recovery phrase.`,
+      metadata: {
+        vaultId: primaryVault[0].id,
+        currency
+      }
+    });
+
+    res.json({
+      success: true,
+      wallet: {
+        address: walletCredentials.address,
+        mnemonic: walletCredentials.mnemonic, // Only sent once - client must save
+      },
+      primaryVault: primaryVault[0],
+      message: 'Wallet created successfully. Please backup your recovery phrase immediately.'
+    });
+
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// POST /api/wallet-setup/backup-confirmed
+router.post('/backup-confirmed', async (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    await db.update(users)
+      .set({ hasBackedUpMnemonic: true })
+      .where(eq(users.id, userId));
+
+    res.json({ success: true, message: 'Backup confirmation recorded' });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// POST /api/wallet-setup/recover-wallet
+router.post('/recover-wallet', async (req, res) => {
+  try {
+    const { userId, mnemonic, password, currency = 'cUSD' } = req.body;
+
+    if (!userId || !mnemonic || !password) {
+      return res.status(400).json({ error: 'User ID, mnemonic, and password are required' });
+    }
+
+    if (!isValidMnemonic(mnemonic)) {
+      return res.status(400).json({ error: 'Invalid recovery phrase' });
+    }
+
+    // Recover wallet from mnemonic
+    const walletCredentials = recoverWalletFromMnemonic(mnemonic);
+
+    // Encrypt wallet data
+    const encrypted = encryptWallet(walletCredentials, password);
+
+    // Update user with encrypted wallet
+    await db.update(users)
+      .set({
+        encryptedWallet: encrypted.encryptedData,
+        walletSalt: encrypted.salt,
+        walletIv: encrypted.iv,
+        walletAuthTag: encrypted.authTag,
+        hasBackedUpMnemonic: true,
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, userId));
+
+    // Create primary vault
+    const primaryVault = await db.insert(vaults).values({
+      userId,
+      currency,
+      address: walletCredentials.address,
+      balance: '0.00',
+      monthlyGoal: '0.00',
+    }).returning();
+
+    await notificationService.createNotification({
+      userId,
+      type: 'wallet',
+      title: 'Wallet Recovered Successfully',
+      message: `Your wallet has been recovered from your recovery phrase.`,
+      metadata: {
+        vaultId: primaryVault[0].id,
+        imported: true
+      }
+    });
+
+    res.json({
+      success: true,
+      wallet: { address: walletCredentials.address },
+      primaryVault: primaryVault[0],
+      message: 'Wallet recovered successfully'
+    });
+
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// POST /api/wallet-setup/import-private-key
+router.post('/import-private-key', async (req, res) => {
+  try {
+    const { userId, privateKey, password, currency = 'cUSD' } = req.body;
+
+    if (!userId || !privateKey || !password) {
+      return res.status(400).json({ error: 'User ID, private key, and password are required' });
+    }
+
+    // Import wallet from private key
+    const walletCredentials = importWalletFromPrivateKey(privateKey);
+
+    // Encrypt wallet data (no mnemonic for imported keys)
+    const encrypted = encryptWallet(walletCredentials, password);
+
+    // Update user with encrypted wallet
+    await db.update(users)
+      .set({
+        encryptedWallet: encrypted.encryptedData,
+        walletSalt: encrypted.salt,
+        walletIv: encrypted.iv,
+        walletAuthTag: encrypted.authTag,
+        hasBackedUpMnemonic: false,
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, userId));
+
+    // Create primary vault
+    const primaryVault = await db.insert(vaults).values({
+      userId,
+      currency,
+      address: walletCredentials.address,
+      balance: '0.00',
+      monthlyGoal: '0.00',
+    }).returning();
+
+    await notificationService.createNotification({
+      userId,
+      type: 'wallet',
+      title: 'Wallet Imported Successfully',
+      message: `Your wallet has been imported using a private key.`,
+      metadata: {
+        vaultId: primaryVault[0].id,
+        imported: true
+      }
+    });
+
+    res.json({
+      success: true,
+      wallet: { address: walletCredentials.address },
+      primaryVault: primaryVault[0],
+      message: 'Wallet imported successfully'
+    });
+
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// POST /api/wallet-setup/unlock-wallet
+router.post('/unlock-wallet', async (req, res) => {
+  try {
+    const { userId, password } = req.body;
+
+    if (!userId || !password) {
+      return res.status(400).json({ error: 'User ID and password are required' });
+    }
+
+    const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    
+    if (!user.length || !user[0].encryptedWallet) {
+      return res.status(404).json({ error: 'No wallet found for this user' });
+    }
+
+    const encrypted = {
+      encryptedData: user[0].encryptedWallet,
+      salt: user[0].walletSalt!,
+      iv: user[0].walletIv!,
+      authTag: user[0].walletAuthTag!
+    };
+
+    const walletCredentials = decryptWallet(encrypted, password);
+
+    res.json({
+      success: true,
+      wallet: {
+        address: walletCredentials.address,
+        privateKey: walletCredentials.privateKey,
+        mnemonic: walletCredentials.mnemonic
+      },
+      message: 'Wallet unlocked successfully'
+    });
+
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg === 'Unsupported state or unable to authenticate data' ? 'Invalid password' : errorMsg });
+  }
+});
+
+  importWalletFromPrivateKey,
+  encryptWallet,
+  decryptWallet,
+  isValidMnemonic
+} from '../utils/cryptoWallet';
 
 const router = express.Router();
 

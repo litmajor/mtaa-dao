@@ -77,11 +77,24 @@ app.use(express.json({
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // CORS Configuration
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://0.0.0.0:5173',
+  'http://localhost:5000',
+  'http://0.0.0.0:5000',
+  process.env.CLIENT_URL,
+  process.env.REPL_SLUG ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co` : null,
+].filter(Boolean);
+
 app.use(cors({
-  origin: ['http://localhost:5173'],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
 }));
 
 // Request logging middleware (before other middleware)
