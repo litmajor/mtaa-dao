@@ -239,6 +239,14 @@ app.use((req, res, next) => {
     // Mount KYC routes
     app.use('/api/kyc', kycRouter);
 
+    // Import and mount escrow routes
+    const escrowRouter = (await import('./routes/escrow')).default;
+    app.use('/api/escrow', escrowRouter);
+
+    // Import and mount invoice routes
+    const invoiceRouter = (await import('./routes/invoices')).default;
+    app.use('/api/invoices', invoiceRouter);
+
   // AI Analytics endpoints
   // Load authentication middleware dynamically (avoid top-level static import inside function scope)
   const { isAuthenticated } = await import('./auth'); // Dynamically imported
