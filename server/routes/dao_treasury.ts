@@ -309,4 +309,229 @@ router.post('/:daoId/limits', isAuthenticated, async (req: Request, res: Respons
   }
 });
 
+// POST /api/dao-treasury/revenue-distribution - Configure automated revenue distribution
+router.post('/revenue-distribution', async (req, res) => {
+  try {
+    const { daoId, distributions } = req.body;
+
+    // Validate distributions array
+    if (!Array.isArray(distributions)) {
+      return res.status(400).json({ error: 'Distributions must be an array' });
+    }
+
+    // Ensure percentages add up to 100
+    const totalPercentage = distributions.reduce((sum, d) => sum + d.percentage, 0);
+    if (totalPercentage !== 100) {
+      return res.status(400).json({ error: 'Distribution percentages must total 100%' });
+    }
+
+    // Store in config table
+    await db.insert(config).values({
+      key: `revenue_distribution_${daoId}`,
+      value: distributions,
+    }).onConflictDoUpdate({
+      target: config.key,
+      set: { value: distributions, updatedAt: new Date() },
+    });
+
+    res.json({
+      success: true,
+      message: 'Revenue distribution configured',
+      distributions,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/dao-treasury/revenue-distribution/:daoId - Get revenue distribution config
+router.get('/revenue-distribution/:daoId', async (req, res) => {
+  try {
+    const { daoId } = req.params;
+
+    const result = await db
+      .select()
+      .from(config)
+      .where(eq(config.key, `revenue_distribution_${daoId}`))
+      .limit(1);
+
+    if (!result.length) {
+      return res.json({
+        success: true,
+        data: {
+          distributions: [],
+          configured: false,
+        },
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        distributions: result[0].value,
+        configured: true,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/dao-treasury/budget-allocation - Set budget allocation per project/team
+router.post('/budget-allocation', async (req, res) => {
+  try {
+    const { daoId, allocations } = req.body;
+
+    // Store budget allocations
+    await db.insert(config).values({
+      key: `budget_allocation_${daoId}`,
+      value: allocations,
+    }).onConflictDoUpdate({
+      target: config.key,
+      set: { value: allocations, updatedAt: new Date() },
+    });
+
+    res.json({
+      success: true,
+      message: 'Budget allocation saved',
+      allocations,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/dao-treasury/budget-allocation/:daoId - Get budget allocation
+router.get('/budget-allocation/:daoId', async (req, res) => {
+  try {
+    const { daoId } = req.params;
+
+    const result = await db
+      .select()
+      .from(config)
+      .where(eq(config.key, `budget_allocation_${daoId}`))
+      .limit(1);
+
+    if (!result.length) {
+      return res.json({
+        success: true,
+        data: {
+          allocations: [],
+          configured: false,
+        },
+      });
+    }
+
+    // Calculate spending vs allocation
+    const allocations = result[0].value as any[];
+    const enrichedAllocations = await Promise.all(
+      allocations.map(async (allocation: any) => {
+        const spent = await db
+          .select({ total: sql<number>`COALESCE(SUM(CAST(${walletTransactions.amount} AS DECIMAL)), 0)` })
+          .from(walletTransactions)
+          .where(
+            and(
+              eq(walletTransactions.daoId, daoId),
+              sql`${walletTransactions.description} LIKE ${`%${allocation.category}%`}`
+            )
+          );
+
+        return {
+          ...allocation,
+          spent: spent[0]?.total || 0,
+          remaining: allocation.budget - (spent[0]?.total || 0),
+          utilization: ((spent[0]?.total || 0) / allocation.budget) * 100,
+        };
+      })
+    );
+
+    res.json({
+      success: true,
+      data: {
+        allocations: enrichedAllocations,
+        configured: true,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/dao-treasury/yield-farming - Configure treasury yield farming
+router.post('/yield-farming', async (req, res) => {
+  try {
+    const { daoId, strategy, allocation } = req.body;
+
+    // Supported strategies
+    const supportedStrategies = ['moola_lending', 'ubeswap_lp', 'celo_staking', 'mento_pool'];
+    
+    if (!supportedStrategies.includes(strategy)) {
+      return res.status(400).json({ error: 'Unsupported yield strategy' });
+    }
+
+    // Store yield farming config
+    await db.insert(config).values({
+      key: `yield_farming_${daoId}`,
+      value: { strategy, allocation, enabled: true },
+    }).onConflictDoUpdate({
+      target: config.key,
+      set: { value: { strategy, allocation, enabled: true }, updatedAt: new Date() },
+    });
+
+    res.json({
+      success: true,
+      message: 'Yield farming configured',
+      strategy,
+      allocation,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/dao-treasury/yield-farming/:daoId - Get yield farming status
+router.get('/yield-farming/:daoId', async (req, res) => {
+  try {
+    const { daoId } = req.params;
+
+    const result = await db
+      .select()
+      .from(config)
+      .where(eq(config.key, `yield_farming_${daoId}`))
+      .limit(1);
+
+    if (!result.length) {
+      return res.json({
+        success: true,
+        data: {
+          enabled: false,
+          strategy: null,
+          allocation: 0,
+          estimatedAPY: 0,
+        },
+      });
+    }
+
+    const farmingConfig = result[0].value as any;
+
+    // Estimated APYs by strategy
+    const apyMap: Record<string, number> = {
+      moola_lending: 8.5,
+      ubeswap_lp: 12.3,
+      celo_staking: 6.2,
+      mento_pool: 7.8,
+    };
+
+    res.json({
+      success: true,
+      data: {
+        ...farmingConfig,
+        estimatedAPY: apyMap[farmingConfig.strategy] || 0,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 export default router;
