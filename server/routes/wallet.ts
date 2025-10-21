@@ -3,10 +3,9 @@ import express from 'express';
 import EnhancedAgentWallet, { NetworkConfig, WalletManager } from '../agent_wallet';
 
 import { db } from '../storage';
-import { walletTransactions, contributions } from '../../shared/schema';
+import { walletTransactions, contributions, paymentRequests } from '../../shared/schema';
 import { lockedSavings, savingsGoals } from '../../shared/schema';
-import { desc, eq, or } from 'drizzle-orm';
-import { and } from 'drizzle-orm';
+import { desc, eq, or, and, sql, gte } from 'drizzle-orm';
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 import { notificationService } from '../notificationService';
@@ -137,58 +136,141 @@ router.post('/allowed-tokens/remove', requireRole('admin', 'elder'), (req, res) 
 });
 
 
-// GET /api/wallet/analytics
+// GET /api/wallet/analytics - Get wallet analytics
 router.get('/analytics', async (req, res) => {
   try {
-    // Optionally filter by userId or walletAddress
-    const { userId, walletAddress } = req.query;
-    let whereClause = undefined;
-    if (typeof userId === 'string') {
-      whereClause = or(eq(walletTransactions.fromUserId, userId), eq(walletTransactions.toUserId, userId));
-    } else if (typeof walletAddress === 'string') {
-      whereClause = eq(walletTransactions.walletAddress, walletAddress);
-    }
-    const txs = await db
-      .select()
-      .from(walletTransactions)
-      .where(whereClause)
-      .orderBy(desc(walletTransactions.createdAt));
-
-    // Portfolio value over time (simple: sum by month)
-    const valueOverTime: Record<string, number> = {};
-    const tokenBreakdown: Record<string, number> = {};
-    let total = 0;
-    for (const tx of txs) {
-      const month = tx.createdAt ? new Date(tx.createdAt).toISOString().slice(0, 7) : 'unknown';
-      const amt = typeof tx.amount === 'string' ? parseFloat(tx.amount) : tx.amount;
-      if (!valueOverTime[month]) valueOverTime[month] = 0;
-      valueOverTime[month] += amt;
-      const currency = tx.currency || 'UNKNOWN';
-      if (!tokenBreakdown[currency]) tokenBreakdown[currency] = 0;
-      tokenBreakdown[currency] += amt;
-      total += amt;
+    const walletAddress = req.query.address as string;
+    if (!walletAddress) {
+      return res.status(400).json({ error: 'Wallet address required' });
     }
 
-    // Transaction type summary
-    const typeSummary: Record<string, number> = {};
-    for (const tx of txs) {
-      const type = tx.type || 'unknown';
-      if (!typeSummary[type]) typeSummary[type] = 0;
-      const amt = typeof tx.amount === 'string' ? parseFloat(tx.amount) : tx.amount;
-      typeSummary[type] += amt;
+    // Fetch analytics data
+    const analytics = await fetchWalletAnalytics(walletAddress);
+    res.json(analytics);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/wallet/pending-payments - Get pending payments overview
+router.get('/pending-payments', async (req, res) => {
+  try {
+    const { walletAddress, userId } = req.query;
+
+    const query = db
+      .select({
+        id: paymentRequests.id,
+        fromUserId: paymentRequests.fromUserId,
+        toUserId: paymentRequests.toUserId,
+        toAddress: paymentRequests.toAddress,
+        amount: paymentRequests.amount,
+        currency: paymentRequests.currency,
+        description: paymentRequests.description,
+        status: paymentRequests.status,
+        expiresAt: paymentRequests.expiresAt,
+        createdAt: paymentRequests.createdAt,
+      })
+      .from(paymentRequests)
+      .where(eq(paymentRequests.status, 'pending'));
+
+    if (walletAddress) {
+      query.where(eq(paymentRequests.toAddress, walletAddress as string));
+    } else if (userId) {
+      query.where(eq(paymentRequests.toUserId, userId as string));
     }
+
+    const pending = await query.orderBy(desc(paymentRequests.createdAt));
+
+    // Calculate totals by currency
+    const totalsByCurrency = pending.reduce((acc, payment) => {
+      const currency = payment.currency;
+      if (!acc[currency]) {
+        acc[currency] = { total: 0, count: 0 };
+      }
+      acc[currency].total += parseFloat(payment.amount);
+      acc[currency].count += 1;
+      return acc;
+    }, {} as Record<string, { total: number; count: number }>);
 
     res.json({
-      valueOverTime,
-      tokenBreakdown,
-      typeSummary,
-      total,
-      txCount: txs.length,
-      recent: txs.slice(0, 10),
+      success: true,
+      data: {
+        payments: pending,
+        summary: {
+          totalPending: pending.length,
+          byCurrency: totalsByCurrency,
+        },
+      },
     });
-  } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: errorMsg });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/wallet/balance-trends - Get balance trends over time
+router.get('/balance-trends', async (req, res) => {
+  try {
+    const { walletAddress, period = 'weekly' } = req.query;
+    if (!walletAddress) {
+      return res.status(400).json({ error: 'Wallet address required' });
+    }
+
+    const daysBack = period === 'monthly' ? 30 : 7;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - daysBack);
+
+    // Get transactions for the period
+    const transactions = await db
+      .select({
+        date: sql<string>`DATE(${walletTransactions.createdAt})`,
+        type: walletTransactions.type,
+        amount: walletTransactions.amount,
+        currency: walletTransactions.currency,
+      })
+      .from(walletTransactions)
+      .where(
+        and(
+          eq(walletTransactions.walletAddress, walletAddress as string),
+          gte(walletTransactions.createdAt, startDate)
+        )
+      )
+      .orderBy(walletTransactions.createdAt);
+
+    // Group by date and calculate running balance
+    const balanceByDate: Record<string, Record<string, number>> = {};
+
+    transactions.forEach((tx) => {
+      if (!balanceByDate[tx.date]) {
+        balanceByDate[tx.date] = {};
+      }
+      if (!balanceByDate[tx.date][tx.currency]) {
+        balanceByDate[tx.date][tx.currency] = 0;
+      }
+
+      const amount = parseFloat(tx.amount);
+      if (tx.type === 'deposit' || tx.type === 'contribution') {
+        balanceByDate[tx.date][tx.currency] += amount;
+      } else if (tx.type === 'withdrawal' || tx.type === 'transfer') {
+        balanceByDate[tx.date][tx.currency] -= amount;
+      }
+    });
+
+    // Format for chart
+    const chartData = Object.entries(balanceByDate).map(([date, currencies]) => ({
+      date,
+      ...currencies,
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        period,
+        chartData,
+        currencies: [...new Set(transactions.map(tx => tx.currency))],
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -259,7 +341,7 @@ router.post('/send-native', async (req, res) => {
   try {
     const { toAddress, amount, userId } = req.body;
     const result = await wallet!.sendNativeToken(toAddress, amount); // Non-null assertion
-    
+
     // Create notification for successful transaction
     if (userId && result.hash) {
       await notificationService.createNotification({
@@ -275,7 +357,7 @@ router.post('/send-native', async (req, res) => {
         }
       });
     }
-    
+
     res.json(result);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -288,7 +370,7 @@ router.post('/send-token', async (req, res) => {
   try {
     const { tokenAddress, toAddress, amount, userId } = req.body;
     const result = await wallet!.sendTokenHuman(tokenAddress, toAddress, amount); // Non-null assertion
-    
+
     // Create notification for successful token transaction
     if (userId && result.hash) {
       const currency = tokenAddress.includes('cUSD') ? 'cUSD' : 'TOKEN';
@@ -306,7 +388,7 @@ router.post('/send-token', async (req, res) => {
         }
       });
     }
-    
+
     res.json(result);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -550,7 +632,7 @@ router.post('/savings-goals/:id/contribute', async (req, res) => {
 router.post('/contribute', async (req, res) => {
   try {
     const { userId, daoId, proposalId, amount, currency, transactionHash, purpose, isAnonymous = false } = req.body;
-    
+
     // Create contribution record
     const contribution = await db.insert(contributions).values({
       userId,
@@ -632,7 +714,7 @@ router.get('/contributions/:userId', async (req, res) => {
     const totalContributed = userContributions.reduce((sum, contrib) => 
       sum + parseFloat(contrib.amount), 0
     );
-    
+
     const contributionsByDAO = userContributions.reduce((acc, contrib) => {
       const daoId = contrib.daoId;
       if (!acc[daoId]) acc[daoId] = { count: 0, total: 0 };
@@ -743,7 +825,7 @@ router.get('/transactions', async (req, res) => {
 router.get('/recurring-payments', async (req, res) => {
   try {
     const { walletAddress } = req.query;
-    
+
     // For demo, return mock data. In production, query from database
     const recurringPayments = [
       {
@@ -774,7 +856,7 @@ router.get('/recurring-payments', async (req, res) => {
 router.post('/recurring-payments', async (req, res) => {
   try {
     const { title, description, amount, currency, toAddress, frequency, walletAddress } = req.body;
-    
+
     // In production, save to database
     const newPayment = {
       id: Date.now().toString(),
@@ -804,7 +886,7 @@ router.patch('/recurring-payments/:id/toggle', async (req, res) => {
   try {
     const { id } = req.params;
     const { isActive } = req.body;
-    
+
     // In production, update in database
     res.json({ success: true, id, isActive });
   } catch (err) {
@@ -817,7 +899,7 @@ router.patch('/recurring-payments/:id/toggle', async (req, res) => {
 router.delete('/recurring-payments/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     // In production, delete from database
     res.json({ success: true, id });
   } catch (err) {
@@ -854,7 +936,7 @@ router.get('/exchange-rates', async (req, res) => {
 router.post('/multisig/create', requireRole('admin', 'elder'), async (req, res) => {
   try {
     const { owners, threshold } = req.body;
-    
+
     // In production, deploy multisig contract
     const mockMultisig = {
       address: '0x' + Math.random().toString(16).substr(2, 40),
@@ -875,10 +957,10 @@ router.get('/multisig/:address/transactions', requireRole('admin', 'elder'), asy
   try {
     const { address } = req.params;
     const { pending } = req.query;
-    
+
     // In production, fetch from blockchain
   const mockTransactions: any[] = [];
-    
+
     res.json({ transactions: mockTransactions });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -912,7 +994,7 @@ function calculateNextPayment(frequency: string): string {
 router.post('/payment-requests', async (req, res) => {
   try {
     const { toAddress, toUserId, amount, currency, description, qrCode, celoUri, expiresAt, recipientEmail } = req.body;
-    
+
     const request = await db.insert(paymentRequests).values({
       fromUserId: req.user?.id || 'anonymous',
       toUserId,
@@ -955,7 +1037,7 @@ router.get('/payment-requests/:id', async (req, res) => {
 router.post('/payment-requests/:id/pay', async (req, res) => {
   try {
     const { transactionHash } = req.body;
-    
+
     const request = await db.query.paymentRequests.findFirst({
       where: eq(paymentRequests.id, req.params.id)
     });
@@ -990,10 +1072,10 @@ router.post('/payment-requests/:id/pay', async (req, res) => {
 router.post('/receipts/generate', async (req, res) => {
   try {
     const { transactionId, paymentRequestId } = req.body;
-    
+
     // Generate unique receipt number
     const receiptNumber = `MTAA-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-    
+
     // Get transaction details
     let transaction;
     if (transactionId) {
@@ -1034,7 +1116,7 @@ router.get('/receipts/:id/download', async (req, res) => {
     // Generate PDF (placeholder - implement with pdfkit or similar)
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=receipt-${receipt.receiptNumber}.pdf`);
-    
+
     // TODO: Implement actual PDF generation
     res.send('PDF generation coming soon');
   } catch (err) {
