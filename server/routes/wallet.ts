@@ -396,6 +396,57 @@ router.post('/send-token', async (req, res) => {
   }
 });
 
+// POST /api/wallet/send-to-address - Direct wallet address transfer
+router.post('/send-to-address', async (req, res) => {
+  try {
+    const { fromUserId, toAddress, amount, currency, description } = req.body;
+
+    // Validate address format
+    if (!WalletManager.validateAddress(toAddress)) {
+      return res.status(400).json({ error: 'Invalid wallet address format' });
+    }
+
+    // Send transaction
+    const result = currency === 'CELO' 
+      ? await wallet!.sendNativeToken(toAddress, amount)
+      : await wallet!.sendTokenHuman(currency, toAddress, amount);
+
+    // Record transaction
+    await db.insert(walletTransactions).values({
+      fromUserId,
+      toUserId: null, // External address
+      walletAddress: toAddress,
+      amount,
+      currency,
+      type: 'transfer',
+      status: 'completed',
+      transactionHash: result.hash,
+      description: description || `Transfer to ${toAddress.slice(0, 6)}...${toAddress.slice(-4)}`
+    });
+
+    // Notification
+    if (fromUserId && result.hash) {
+      await notificationService.createNotification({
+        userId: fromUserId,
+        type: 'transaction',
+        title: 'Transfer Successful',
+        message: `Sent ${amount} ${currency} to ${toAddress.slice(0, 6)}...${toAddress.slice(-4)}`,
+        metadata: {
+          transactionHash: result.hash,
+          amount,
+          currency,
+          toAddress
+        }
+      });
+    }
+
+    res.json({ success: true, txHash: result.hash, message: 'Transfer successful' });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
 // POST /api/wallet/approve-token
 router.post('/approve-token', async (req, res) => {
   try {
@@ -746,6 +797,180 @@ router.get('/transactions', async (req, res) => {
     const { 
       userId, 
       walletAddress, 
+
+
+// === PAYMENT LINKS ===
+
+// POST /api/wallet/payment-links
+router.post('/payment-links', async (req, res) => {
+  try {
+    const { userId, amount, currency, description, expiresInHours } = req.body;
+
+    const linkId = `pl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + (expiresInHours || 24));
+
+    // Get user wallet address
+    const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (!user.length) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const paymentLink = {
+      id: linkId,
+      userId,
+      walletAddress: user[0].walletAddress,
+      amount,
+      currency,
+      description,
+      expiresAt,
+      url: `${process.env.APP_URL}/pay/${linkId}`,
+      isActive: true,
+      createdAt: new Date()
+    };
+
+    // Store in payment requests table
+    await db.insert(paymentRequests).values({
+      fromUserId: userId,
+      toAddress: user[0].walletAddress || '',
+      amount,
+      currency,
+      description,
+      expiresAt,
+      metadata: { linkId, isPaymentLink: true }
+    });
+
+    res.json(paymentLink);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+
+
+// === BILL SPLITTING ===
+
+// POST /api/wallet/split-bill
+router.post('/split-bill', async (req, res) => {
+  try {
+    const { creatorId, totalAmount, currency, description, participants, splitType } = req.body;
+    // splitType: 'equal' | 'custom' | 'percentage'
+
+    const billId = `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    let splits: any[] = [];
+
+    if (splitType === 'equal') {
+      const amountPerPerson = parseFloat(totalAmount) / participants.length;
+      splits = participants.map((p: any) => ({
+        userId: p.userId,
+        amount: amountPerPerson.toFixed(2),
+        paid: p.userId === creatorId
+      }));
+    } else if (splitType === 'custom') {
+      splits = participants.map((p: any) => ({
+        userId: p.userId,
+        amount: p.amount,
+        paid: p.userId === creatorId
+      }));
+    } else if (splitType === 'percentage') {
+      splits = participants.map((p: any) => ({
+        userId: p.userId,
+        amount: (parseFloat(totalAmount) * (p.percentage / 100)).toFixed(2),
+        paid: p.userId === creatorId
+      }));
+    }
+
+    // Create payment requests for each participant (except creator)
+    for (const split of splits) {
+      if (split.userId !== creatorId) {
+        await db.insert(paymentRequests).values({
+          fromUserId: creatorId,
+          toUserId: split.userId,
+          amount: split.amount,
+          currency,
+          description: `${description} - Your share`,
+          metadata: { billId, splitType, totalAmount }
+        });
+
+        // Send notification
+        await notificationService.createNotification({
+          userId: split.userId,
+          type: 'payment_request',
+          title: 'Bill Split Request',
+          message: `${description} - You owe ${split.amount} ${currency}`,
+          metadata: { billId, amount: split.amount, currency }
+        });
+      }
+    }
+
+    res.json({
+      billId,
+      totalAmount,
+      currency,
+      description,
+      splits,
+      message: 'Bill split created successfully'
+    });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// GET /api/wallet/split-bills/:userId
+router.get('/split-bills/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const bills = await db.select()
+      .from(paymentRequests)
+      .where(
+        or(
+          eq(paymentRequests.fromUserId, userId),
+          eq(paymentRequests.toUserId, userId)
+        )
+      )
+      .orderBy(desc(paymentRequests.createdAt));
+
+    const splitBills = bills.filter(b => b.metadata && (b.metadata as any).billId);
+
+    res.json(splitBills);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// GET /api/wallet/payment-links/:linkId
+router.get('/payment-links/:linkId', async (req, res) => {
+  try {
+    const { linkId } = req.params;
+
+    const link = await db.select()
+      .from(paymentRequests)
+      .where(sql`metadata->>'linkId' = ${linkId}`)
+      .limit(1);
+
+    if (!link.length) {
+      return res.status(404).json({ error: 'Payment link not found' });
+    }
+
+    const paymentLink = link[0];
+
+    // Check if expired
+    if (paymentLink.expiresAt && new Date() > new Date(paymentLink.expiresAt)) {
+      return res.status(410).json({ error: 'Payment link expired' });
+    }
+
+    res.json(paymentLink);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
       type, 
       status, 
       currency, 
