@@ -1290,3 +1290,5 @@ export const insertVaultGovernanceProposalSchema = createInsertSchema(vaultGover
 export * from './vestingSchema';
 export * from './messageReactionsSchema';
 export * from './kycSchema';
+export * from './escrowSchema';
+export * from './invoiceSchema';
