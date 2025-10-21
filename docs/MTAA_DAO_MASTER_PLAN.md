@@ -1,4 +1,3 @@
-
 # 🌍 Mtaa DAO - Master System Plan & Architecture
 
 **Project Codename:** Morio System  
@@ -1108,11 +1107,6 @@ WS /morio/ws/:userId
 POST   /morio/voice/transcribe
 POST   /morio/voice/speak
 POST   /morio/voice/vote
-
-// Notifications
-GET    /morio/notifications/:userId
-POST   /morio/notifications/mark-read
-POST   /morio/notifications/settings
 ```
 
 ---
@@ -1495,7 +1489,7 @@ CREATE INDEX idx_fraud_logs_target ON fraud_detection_logs(target_id);
 - ✅ Timelock delays on governance actions
 - ✅ Rate limiting on withdrawals
 - 🚧 Automated security audits (Slither, Mythril)
-- 🚧 Formal verification
+- ❌ Formal verification
 - ❌ Bug bounty program (planned)
 - ❌ Insurance coverage (planned)
 
@@ -1943,4 +1937,3 @@ This document is living and will evolve as the Mtaa DAO ecosystem grows. For upd
 **Last Updated:** October 21, 2025  
 **Status:** 🟢 Active Development - 55% Complete  
 **Next Milestone:** Q1 2026 - NLP & Payments Launch
-
