@@ -1286,3 +1286,7 @@ export const insertVaultPerformanceSchema = createInsertSchema(vaultPerformance)
 export const insertVaultRiskAssessmentSchema = createInsertSchema(vaultRiskAssessments);
 export const insertVaultStrategyAllocationSchema = createInsertSchema(vaultStrategyAllocations);
 export const insertVaultGovernanceProposalSchema = createInsertSchema(vaultGovernanceProposals);
+
+export * from './vestingSchema';
+export * from './messageReactionsSchema';
+export * from './kycSchema';

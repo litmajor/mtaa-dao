@@ -340,6 +340,16 @@ router.get('/token-info/:tokenAddress', async (req, res) => {
 router.post('/send-native', async (req, res) => {
   try {
     const { toAddress, amount, userId } = req.body;
+    
+    // Check KYC limits
+    if (userId) {
+      const { kycService } = await import('../services/kycService');
+      const limitCheck = await kycService.checkTransactionLimit(userId, parseFloat(amount), 'CELO');
+      if (!limitCheck.allowed) {
+        return res.status(403).json({ error: limitCheck.reason });
+      }
+    }
+    
     const result = await wallet!.sendNativeToken(toAddress, amount); // Non-null assertion
 
     // Create notification for successful transaction
