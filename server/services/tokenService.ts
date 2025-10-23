@@ -29,7 +29,19 @@ export class TokenService {
     privateKey?: string,
     network: 'mainnet' | 'testnet' = 'testnet'
   ) {
-    this.provider = new ethers.JsonRpcProvider(providerUrl);
+    // Configure provider with timeout settings
+    this.provider = new ethers.JsonRpcProvider(
+      providerUrl,
+      undefined,
+      {
+        staticNetwork: true,
+        batchMaxCount: 1
+      }
+    );
+    
+    // Set polling interval for faster updates (optional)
+    this.provider.pollingInterval = 12000; // 12 seconds
+    
     this.signer = privateKey ? new ethers.Wallet(privateKey, this.provider) : undefined;
     this.network = network;
 

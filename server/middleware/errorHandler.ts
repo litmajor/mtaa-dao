@@ -1,7 +1,7 @@
 
 import type { Request, Response, NextFunction, ErrorRequestHandler } from 'express';
 import { ZodError } from 'zod';
-import { env, isDevelopment } from '@shared/config';
+import { env, isDevelopment } from '../../shared/config.js';
 import { storage } from '../storage';
 
 export class AppError extends Error {

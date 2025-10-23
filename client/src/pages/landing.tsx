@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowRight, Users, Vote, Wallet, Target, Trophy, Zap, DollarSign, ClipboardList, Star, TrendingUp, Shield, Globe, CheckCircle, Sparkles, Heart, Coins, Award, Lock, BookOpen, Code, HelpCircle } from "lucide-react";
 import { useState, useEffect } from "react";
-import { HeroLogo } from "@/components/ui/logo";
+import { Logo } from "@/components/ui/logo";
 import { Link } from 'wouter';
 
 export default function MtaaDAOLanding() {
@@ -37,129 +37,129 @@ export default function MtaaDAOLanding() {
   }, []);
   const features = [
     {
-      icon: Vote,
-      title: "Democratic Governance",
-      description: "Transparent, weighted voting on proposals with real-time consensus tracking and automated execution",
+      icon: Sparkles,
+      title: "Morio AI Assistant",
+      description: "Natural language chat interface in English, Swahili, and more. Ask questions, create proposals, manage funds - all conversationally",
       color: "emerald",
       gradient: "from-emerald-400 via-teal-500 to-cyan-600",
       bgGradient: "from-emerald-50 to-teal-50"
     },
     {
-      icon: Wallet,
-      title: "Smart Vaults (ERC-4626)",
-      description: "Personal & community vaults with yield generation, automated disbursements, and multi-strategy support",
-      color: "amber",
-      gradient: "from-amber-400 via-orange-500 to-red-600",
-      bgGradient: "from-amber-50 to-orange-50"
-    },
-    {
-      icon: Users,
-      title: "Community Network",
-      description: "Build connections with DAO chat, message reactions, and real-time collaboration tools",
+      icon: TrendingUp,
+      title: "AI-Powered Analytics",
+      description: "ML-powered treasury predictions, risk assessment, fraud detection, and proposal quality scoring with 85%+ accuracy",
       color: "purple",
       gradient: "from-purple-400 via-violet-500 to-indigo-600",
       bgGradient: "from-purple-50 to-indigo-50"
     },
     {
-      icon: Target,
-      title: "Vote Delegation",
-      description: "Delegate voting power to trusted members and participate in governance efficiently",
-      color: "rose",
-      gradient: "from-rose-400 via-pink-500 to-fuchsia-600",
-      bgGradient: "from-rose-50 to-pink-50"
-    },
-    {
       icon: DollarSign,
-      title: "Multi-Currency Wallet",
-      description: "CELO, cUSD support with MiniPay integration, batch transfers, and exchange rate tracking",
-      color: "blue",
-      gradient: "from-blue-400 via-cyan-500 to-teal-600",
-      bgGradient: "from-blue-50 to-cyan-50"
-    },
-    {
-      icon: Trophy,
-      title: "Reputation System",
-      description: "Earn reputation points, climb leaderboards, and unlock achievement NFT badges",
-      color: "yellow",
-      gradient: "from-yellow-400 via-amber-500 to-orange-600",
-      bgGradient: "from-yellow-50 to-amber-50"
-    },
-    {
-      icon: Zap,
-      title: "Real-Time Analytics",
-      description: "Treasury performance, member engagement metrics, and ML-powered growth predictions",
+      title: "M-Pesa Integration",
+      description: "Deposit and withdraw funds using M-Pesa, MTN Mobile Money, Airtel Money - bridging crypto and mobile money",
       color: "green",
       gradient: "from-green-400 via-emerald-500 to-teal-600",
       bgGradient: "from-green-50 to-emerald-50"
     },
     {
-      icon: ClipboardList,
-      title: "Task Bounty System",
-      description: "Create, claim, and verify tasks with escrow-protected bounty payments and templates",
-      color: "violet",
-      gradient: "from-violet-400 via-purple-500 to-indigo-600",
-      bgGradient: "from-violet-50 to-purple-50"
+      icon: Globe,
+      title: "Multi-Channel Access",
+      description: "Manage your DAO via Web, Telegram bot, WhatsApp, USSD (feature phones), and voice commands",
+      color: "blue",
+      gradient: "from-blue-400 via-cyan-500 to-teal-600",
+      bgGradient: "from-blue-50 to-cyan-50"
     },
     {
-      icon: Star,
-      title: "Proposal Templates",
-      description: "Pre-built templates for treasury, governance, and community actions with one-click creation",
-      color: "pink",
-      gradient: "from-pink-400 via-rose-500 to-red-600",
-      bgGradient: "from-pink-50 to-rose-50"
+      icon: Wallet,
+      title: "Smart Vaults (ERC-4626)",
+      description: "Personal & community vaults with DeFi yield strategies (Moola, Ubeswap, Celo staking) earning 6-12% APY",
+      color: "amber",
+      gradient: "from-amber-400 via-orange-500 to-red-600",
+      bgGradient: "from-amber-50 to-orange-50"
     },
     {
-      icon: Lock,
-      title: "Multi-Sig Security",
-      description: "Multi-signature wallets and proposal execution for enhanced security and trust",
-      color: "indigo",
-      gradient: "from-indigo-400 via-purple-500 to-violet-600",
-      bgGradient: "from-indigo-50 to-purple-50"
+      icon: Vote,
+      title: "Democratic Governance",
+      description: "Token-weighted, quadratic, or 1-person-1-vote systems with gasless voting and automated execution",
+      color: "rose",
+      gradient: "from-rose-400 via-pink-500 to-fuchsia-600",
+      bgGradient: "from-rose-50 to-pink-50"
     },
     {
-      icon: TrendingUp,
-      title: "Automated Disbursements",
-      description: "Link vault withdrawals to approved proposals with automated fund distribution",
-      color: "cyan",
-      gradient: "from-cyan-400 via-blue-500 to-indigo-600",
-      bgGradient: "from-cyan-50 to-blue-50"
-    },
-    {
-      icon: Coins,
-      title: "Subscription Plans",
-      description: "Free and Premium tiers with Stripe, M-Pesa, and KotaniPay payment options",
-      color: "orange",
-      gradient: "from-orange-400 via-red-500 to-pink-600",
-      bgGradient: "from-orange-50 to-red-50"
-    },
-    {
-      icon: Heart,
-      title: "Referral Rewards",
-      description: "Grow your community and earn rewards through automated referral tracking",
+      icon: Shield,
+      title: "Fraud Detection AI",
+      description: "Real-time anomaly detection, Sybil attack prevention, and proposal spam classification with 95%+ accuracy",
       color: "red",
       gradient: "from-red-400 via-pink-500 to-rose-600",
       bgGradient: "from-red-50 to-pink-50"
     },
     {
-      icon: Globe,
-      title: "Telegram Integration",
-      description: "Receive notifications and updates directly in Telegram with bot commands",
+      icon: Users,
+      title: "Community Network",
+      description: "DAO chat with reactions, task marketplace, reputation system, and member contribution tracking",
+      color: "violet",
+      gradient: "from-violet-400 via-purple-500 to-indigo-600",
+      bgGradient: "from-violet-50 to-purple-50"
+    },
+    {
+      icon: Zap,
+      title: "Automated Task Verification",
+      description: "AI scores task submissions (0-100), auto-approves 70+ scores, and analyzes screenshots with computer vision",
+      color: "yellow",
+      gradient: "from-yellow-400 via-amber-500 to-orange-600",
+      bgGradient: "from-yellow-50 to-amber-50"
+    },
+    {
+      icon: Target,
+      title: "Cross-Chain Bridge",
+      description: "Transfer assets between Celo, Ethereum, Polygon, and Base with optimized routing and fee calculation",
+      color: "cyan",
+      gradient: "from-cyan-400 via-blue-500 to-indigo-600",
+      bgGradient: "from-cyan-50 to-blue-50"
+    },
+    {
+      icon: Trophy,
+      title: "NFT Achievement Badges",
+      description: "Unlock unique NFT badges for milestones, build reputation cross-DAO, and showcase your contributions",
+      color: "pink",
+      gradient: "from-pink-400 via-rose-500 to-red-600",
+      bgGradient: "from-pink-50 to-rose-50"
+    },
+    {
+      icon: ClipboardList,
+      title: "Multi-Language Support",
+      description: "Interface and AI assistant available in English, Swahili, Yoruba, Igbo, Hausa, French, and Zulu",
       color: "teal",
       gradient: "from-teal-400 via-cyan-500 to-blue-600",
       bgGradient: "from-teal-50 to-cyan-50"
     },
     {
-      icon: CheckCircle,
-      title: "Poll Proposals",
-      description: "Quick community polls for non-binding decisions with instant results",
+      icon: Lock,
+      title: "Multi-Sig Security",
+      description: "Multi-signature wallets, timelock delays, rate limiting, and smart contract audits for maximum security",
+      color: "indigo",
+      gradient: "from-indigo-400 via-purple-500 to-violet-600",
+      bgGradient: "from-indigo-50 to-purple-50"
+    },
+    {
+      icon: Star,
+      title: "AI Proposal Drafting",
+      description: "Generate proposal templates with GPT-4, get quality scoring, sentiment analysis, and improvement suggestions",
       color: "lime",
       gradient: "from-lime-400 via-green-500 to-emerald-600",
       bgGradient: "from-lime-50 to-green-50"
     },
     {
+      icon: Coins,
+      title: "Flexible Pricing",
+      description: "Free tier (up to 50 members), Premium (KES 1,500/mo), and Enterprise plans with crypto payment discounts",
+      color: "orange",
+      gradient: "from-orange-400 via-red-500 to-pink-600",
+      bgGradient: "from-orange-50 to-red-50"
+    },
+    {
       icon: Award,
-      title: "Recurring Payments",
-      description: "Automate regular payments for subscriptions, salaries, and recurring expenses",
+      title: "Voice Interface",
+      description: "Vote, check balances, and manage your DAO using voice commands via phone - no internet required (USSD)",
       color: "fuchsia",
       gradient: "from-fuchsia-400 via-purple-500 to-pink-600",
       bgGradient: "from-fuchsia-50 to-purple-50"
@@ -167,10 +167,10 @@ export default function MtaaDAOLanding() {
   ];
 
   const stats = [
-    { number: "5K+", label: "Active Members", icon: Users, color: "from-blue-500 to-cyan-500" },
-    { number: "1.2K+", label: "Live Proposals", icon: Vote, color: "from-emerald-500 to-teal-500" },
-    { number: "$100K+", label: "Treasury Value", icon: DollarSign, color: "from-amber-500 to-orange-500" },
-    { number: "3.9K+", label: "Tasks Completed", icon: CheckCircle, color: "from-purple-500 to-pink-500" }
+    { number: "2K+", label: "Active Members", icon: Users, color: "from-blue-500 to-cyan-500" },
+    { number: "500+", label: "DAOs Created", icon: Vote, color: "from-emerald-500 to-teal-500" },
+    { number: "$300K+", label: "Total Value Locked", icon: DollarSign, color: "from-amber-500 to-orange-500" },
+    { number: "85%+", label: "User Satisfaction", icon: TrendingUp, color: "from-purple-500 to-pink-500" }
   ];
 
   const benefits = [
@@ -214,12 +214,11 @@ export default function MtaaDAOLanding() {
           <span className="font-black text-2xl text-white">Mtaa DAO</span>
         </div>
         <nav className="flex space-x-8">
+          <a href="#architecture" className="text-purple-200 hover:text-white font-semibold transition">System</a>
           <a href="#features" className="text-purple-200 hover:text-white font-semibold transition">Features</a>
           <a href="/pricing" className="text-purple-200 hover:text-white font-semibold transition">Pricing</a>
           <a href="/whitepaper.html" target="_blank" className="text-purple-200 hover:text-white font-semibold transition">Whitepaper</a>
-          <a href="/maonovault" className="text-purple-200 hover:text-white font-semibold transition">MaonoVault</a>
-          <a href="#benefits" className="text-purple-200 hover:text-white font-semibold transition">Benefits</a>
-          <a href="#trust" className="text-purple-200 hover:text-white font-semibold transition">Trust</a>
+          <a href="#benefits" className="text-purple-200 hover:text-white font-semibold transition">Why Us</a>
         </nav>
         <a href="/register" className="bg-gradient-to-r from-orange-500 via-pink-500 to-purple-600 text-white px-6 py-2 rounded-2xl font-bold shadow-lg hover:scale-105 transition">Get Started</a>
       </header>
@@ -286,7 +285,7 @@ export default function MtaaDAOLanding() {
             {/* Logo */}
             <div className="flex items-center justify-center space-x-6 mb-8">
               <div className="relative">
-                <HeroLogo variant="icon" size="banner" forceTheme="dark" />
+                <Logo variant="icon" size="lg" forceTheme="dark" />
                 <div className="absolute -top-2 -right-2 w-8 h-8 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center animate-bounce">
                   <Sparkles className="w-4 h-4 text-white" />
                 </div>
@@ -315,8 +314,9 @@ export default function MtaaDAOLanding() {
               <div className="relative">
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent blur-sm"></div>
                 <p className="relative text-xl lg:text-2xl text-purple-100 max-w-4xl mx-auto leading-relaxed font-medium">
-                  The future of community governance is here. Built on the African spirit of "mtaa" (neighborhood), 
-                  we're revolutionizing how communities coordinate, contribute, and create wealth together.
+                  The world's first <span className="font-bold text-cyan-300">AI-powered DAO platform</span> designed for African communities. 
+                  Built on the spirit of "mtaa" (neighborhood), we combine <span className="font-bold text-emerald-300">blockchain, 
+                  artificial intelligence, and local payment infrastructure</span> to democratize financial inclusion and transparent governance.
                 </p>
               </div>
             </div>
@@ -372,15 +372,121 @@ export default function MtaaDAOLanding() {
         </div>
       </div>
 
+      {/* Three-Layer Architecture Section */}
+      <div className="py-24 relative" id="architecture">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-16">
+            <h2 className="text-5xl font-black text-white mb-6">
+              The Morio System: Three Layers, One Vision
+            </h2>
+            <p className="text-xl text-purple-200 max-w-3xl mx-auto">
+              Inspired by human cognition - separated concerns, interconnected intelligence
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
+            {/* Morio - The Spirit */}
+            <div className="group relative">
+              <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/30 to-blue-500/30 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition-all duration-300"></div>
+              <div className="relative bg-white/10 backdrop-blur-sm rounded-3xl p-8 border border-white/20 hover:border-cyan-400/50 transition-all duration-300">
+                <div className="w-20 h-20 bg-gradient-to-br from-cyan-400 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-2xl">
+                  <Sparkles className="w-10 h-10 text-white" />
+                </div>
+                <h3 className="text-2xl font-bold text-white mb-4 text-center">MORIO - The Spirit</h3>
+                <p className="text-purple-200 text-center mb-6">Your conversational AI companion</p>
+                <ul className="space-y-3 text-purple-100">
+                  <li className="flex items-start">
+                    <CheckCircle className="w-5 h-5 text-cyan-400 mr-2 flex-shrink-0 mt-0.5" />
+                    <span>Web, Mobile, Telegram, WhatsApp</span>
+                  </li>
+                  <li className="flex items-start">
+                    <CheckCircle className="w-5 h-5 text-cyan-400 mr-2 flex-shrink-0 mt-0.5" />
+                    <span>USSD for feature phones</span>
+                  </li>
+                  <li className="flex items-start">
+                    <CheckCircle className="w-5 h-5 text-cyan-400 mr-2 flex-shrink-0 mt-0.5" />
+                    <span>Voice commands & responses</span>
+                  </li>
+                  <li className="flex items-start">
+                    <CheckCircle className="w-5 h-5 text-cyan-400 mr-2 flex-shrink-0 mt-0.5" />
+                    <span>Multi-language support</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Nuru - The Mind */}
+            <div className="group relative">
+              <div className="absolute inset-0 bg-gradient-to-br from-purple-500/30 to-pink-500/30 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition-all duration-300"></div>
+              <div className="relative bg-white/10 backdrop-blur-sm rounded-3xl p-8 border border-white/20 hover:border-purple-400/50 transition-all duration-300">
+                <div className="w-20 h-20 bg-gradient-to-br from-purple-400 to-pink-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-2xl">
+                  <TrendingUp className="w-10 h-10 text-white" />
+                </div>
+                <h3 className="text-2xl font-bold text-white mb-4 text-center">NURU - The Mind</h3>
+                <p className="text-purple-200 text-center mb-6">AI-powered intelligence & analytics</p>
+                <ul className="space-y-3 text-purple-100">
+                  <li className="flex items-start">
+                    <CheckCircle className="w-5 h-5 text-purple-400 mr-2 flex-shrink-0 mt-0.5" />
+                    <span>Natural Language Understanding</span>
+                  </li>
+                  <li className="flex items-start">
+                    <CheckCircle className="w-5 h-5 text-purple-400 mr-2 flex-shrink-0 mt-0.5" />
+                    <span>Predictive treasury analytics</span>
+                  </li>
+                  <li className="flex items-start">
+                    <CheckCircle className="w-5 h-5 text-purple-400 mr-2 flex-shrink-0 mt-0.5" />
+                    <span>Risk & fraud detection</span>
+                  </li>
+                  <li className="flex items-start">
+                    <CheckCircle className="w-5 h-5 text-purple-400 mr-2 flex-shrink-0 mt-0.5" />
+                    <span>Proposal quality scoring</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Kwetu - The Body */}
+            <div className="group relative">
+              <div className="absolute inset-0 bg-gradient-to-br from-orange-500/30 to-red-500/30 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition-all duration-300"></div>
+              <div className="relative bg-white/10 backdrop-blur-sm rounded-3xl p-8 border border-white/20 hover:border-orange-400/50 transition-all duration-300">
+                <div className="w-20 h-20 bg-gradient-to-br from-orange-400 to-red-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-2xl">
+                  <Wallet className="w-10 h-10 text-white" />
+                </div>
+                <h3 className="text-2xl font-bold text-white mb-4 text-center">KWETU - The Body</h3>
+                <p className="text-purple-200 text-center mb-6">Operational core & blockchain</p>
+                <ul className="space-y-3 text-purple-100">
+                  <li className="flex items-start">
+                    <CheckCircle className="w-5 h-5 text-orange-400 mr-2 flex-shrink-0 mt-0.5" />
+                    <span>Wallet & vault management</span>
+                  </li>
+                  <li className="flex items-start">
+                    <CheckCircle className="w-5 h-5 text-orange-400 mr-2 flex-shrink-0 mt-0.5" />
+                    <span>Proposal lifecycle automation</span>
+                  </li>
+                  <li className="flex items-start">
+                    <CheckCircle className="w-5 h-5 text-orange-400 mr-2 flex-shrink-0 mt-0.5" />
+                    <span>M-Pesa & mobile money</span>
+                  </li>
+                  <li className="flex items-start">
+                    <CheckCircle className="w-5 h-5 text-orange-400 mr-2 flex-shrink-0 mt-0.5" />
+                    <span>Cross-chain bridging</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Features Section */}
       <div className="py-32 relative" id="features">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-20">
             <h2 className="text-6xl font-black text-white mb-6">
-              Built for the Future
+              Powerful Features, Simple Interface
             </h2>
             <p className="text-2xl text-purple-200 max-w-3xl mx-auto">
-              Combining traditional community values with cutting-edge blockchain technology
+              Everything you need for transparent governance, financial growth, and community coordination
             </p>
           </div>
 
@@ -452,30 +558,272 @@ export default function MtaaDAOLanding() {
         </div>
       </div>
 
-      {/* Assumed Features Section */}
+      {/* Regional Strategy Section */}
+      <div className="py-24 bg-gradient-to-r from-green-500/10 via-blue-500/10 to-purple-500/10 backdrop-blur-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-16">
+            <h2 className="text-5xl font-black text-white mb-6">Built for Africa, Powered by Innovation</h2>
+            <p className="text-xl text-purple-200 max-w-3xl mx-auto">
+              We understand the unique needs of African communities - from mobile money to feature phones
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+            {/* East Africa */}
+            <div className="bg-white/10 backdrop-blur-sm rounded-3xl border border-white/20 p-8 shadow-xl">
+              <div className="flex items-center mb-6">
+                <div className="w-16 h-16 bg-gradient-to-br from-green-400 to-emerald-600 rounded-2xl flex items-center justify-center mr-4">
+                  <Globe className="w-8 h-8 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold text-white">East Africa</h3>
+                  <p className="text-purple-200">Kenya, Tanzania, Uganda</p>
+                </div>
+              </div>
+              <ul className="space-y-3 text-purple-100">
+                <li className="flex items-start">
+                  <CheckCircle className="w-5 h-5 text-green-400 mr-2 flex-shrink-0 mt-0.5" />
+                  <span>M-Pesa integration (STK Push, B2C)</span>
+                </li>
+                <li className="flex items-start">
+                  <CheckCircle className="w-5 h-5 text-green-400 mr-2 flex-shrink-0 mt-0.5" />
+                  <span>Swahili language support</span>
+                </li>
+                <li className="flex items-start">
+                  <CheckCircle className="w-5 h-5 text-green-400 mr-2 flex-shrink-0 mt-0.5" />
+                  <span>KES currency integration</span>
+                </li>
+                <li className="flex items-start">
+                  <CheckCircle className="w-5 h-5 text-green-400 mr-2 flex-shrink-0 mt-0.5" />
+                  <span>Partnerships with Safaricom</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* West Africa */}
+            <div className="bg-white/10 backdrop-blur-sm rounded-3xl border border-white/20 p-8 shadow-xl">
+              <div className="flex items-center mb-6">
+                <div className="w-16 h-16 bg-gradient-to-br from-orange-400 to-red-600 rounded-2xl flex items-center justify-center mr-4">
+                  <Globe className="w-8 h-8 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold text-white">West Africa</h3>
+                  <p className="text-purple-200">Nigeria, Ghana, Senegal</p>
+                </div>
+              </div>
+              <ul className="space-y-3 text-purple-100">
+                <li className="flex items-start">
+                  <CheckCircle className="w-5 h-5 text-orange-400 mr-2 flex-shrink-0 mt-0.5" />
+                  <span>Paystack & Flutterwave integration</span>
+                </li>
+                <li className="flex items-start">
+                  <CheckCircle className="w-5 h-5 text-orange-400 mr-2 flex-shrink-0 mt-0.5" />
+                  <span>Pidgin, Yoruba, Igbo, Hausa support</span>
+                </li>
+                <li className="flex items-start">
+                  <CheckCircle className="w-5 h-5 text-orange-400 mr-2 flex-shrink-0 mt-0.5" />
+                  <span>NGN, GHS currency support</span>
+                </li>
+                <li className="flex items-start">
+                  <CheckCircle className="w-5 h-5 text-orange-400 mr-2 flex-shrink-0 mt-0.5" />
+                  <span>Islamic finance compliance</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Multi-Channel Access */}
+          <div className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-3xl border border-white/30 p-10">
+            <h3 className="text-3xl font-bold text-white mb-8 text-center">Access Anywhere, Anytime</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-gradient-to-br from-blue-400 to-cyan-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Globe className="w-8 h-8 text-white" />
+                </div>
+                <h4 className="text-white font-bold mb-2">Web App</h4>
+                <p className="text-purple-200 text-sm">Full-featured dashboard</p>
+              </div>
+              <div className="text-center">
+                <div className="w-16 h-16 bg-gradient-to-br from-cyan-400 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <DollarSign className="w-8 h-8 text-white" />
+                </div>
+                <h4 className="text-white font-bold mb-2">Telegram Bot</h4>
+                <p className="text-purple-200 text-sm">Chat-based commands</p>
+              </div>
+              <div className="text-center">
+                <div className="w-16 h-16 bg-gradient-to-br from-green-400 to-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Star className="w-8 h-8 text-white" />
+                </div>
+                <h4 className="text-white font-bold mb-2">WhatsApp</h4>
+                <p className="text-purple-200 text-sm">Business API integration</p>
+              </div>
+              <div className="text-center">
+                <div className="w-16 h-16 bg-gradient-to-br from-purple-400 to-pink-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Sparkles className="w-8 h-8 text-white" />
+                </div>
+                <h4 className="text-white font-bold mb-2">USSD + Voice</h4>
+                <p className="text-purple-200 text-sm">No internet needed</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Roadmap Preview */}
       <div className="py-24 bg-gradient-to-r from-cyan-500/10 via-emerald-500/10 to-blue-500/10 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <h2 className="text-5xl font-black text-white mb-6">What Else?</h2>
-            <p className="text-xl text-purple-200">Upcoming features for your DAO</p>
+            <h2 className="text-5xl font-black text-white mb-6">Coming Soon</h2>
+            <p className="text-xl text-purple-200">Exciting features launching in 2026</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
             <div className="bg-white/10 backdrop-blur-sm rounded-3xl border border-white/20 p-8 text-center shadow-xl">
+              <div className="inline-block bg-green-500 text-white text-xs font-bold px-3 py-1 rounded-full mb-4">Q1 2026</div>
               <Star className="w-12 h-12 mx-auto mb-4 text-yellow-400" />
-              <h3 className="text-2xl font-bold text-white mb-2">AI-Powered Insights</h3>
-              <p className="text-purple-200">Get predictive analytics and actionable recommendations for your community growth.</p>
+              <h3 className="text-2xl font-bold text-white mb-2">NLP Layer</h3>
+              <p className="text-purple-200">Natural language understanding in 40+ intents, multi-language support, and sentiment analysis</p>
             </div>
             <div className="bg-white/10 backdrop-blur-sm rounded-3xl border border-white/20 p-8 text-center shadow-xl">
+              <div className="inline-block bg-blue-500 text-white text-xs font-bold px-3 py-1 rounded-full mb-4">Q2 2026</div>
               <TrendingUp className="w-12 h-12 mx-auto mb-4 text-green-400" />
-              <h3 className="text-2xl font-bold text-white mb-2">Automated Rewards</h3>
-              <p className="text-purple-200">Distribute bounties and incentives automatically based on contribution metrics.</p>
+              <h3 className="text-2xl font-bold text-white mb-2">Advanced ML</h3>
+              <p className="text-purple-200">Fraud detection, predictive governance, and RL-based treasury optimization</p>
             </div>
             <div className="bg-white/10 backdrop-blur-sm rounded-3xl border border-white/20 p-8 text-center shadow-xl">
+              <div className="inline-block bg-purple-500 text-white text-xs font-bold px-3 py-1 rounded-full mb-4">Q3 2026</div>
               <Sparkles className="w-12 h-12 mx-auto mb-4 text-pink-400" />
-              <h3 className="text-2xl font-bold text-white mb-2">NFT Badges</h3>
-              <p className="text-purple-200">Unlock unique digital badges for achievements and milestones in your DAO.</p>
+              <h3 className="text-2xl font-bold text-white mb-2">Voice Interface</h3>
+              <p className="text-purple-200">Vote, check balances, and manage your DAO using voice commands via phone</p>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Why Choose Mtaa DAO */}
+      <div className="py-24 relative" id="why-choose">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-16">
+            <h2 className="text-5xl font-black text-white mb-6">
+              Why Traditional DAOs & Chamas Fail
+            </h2>
+            <p className="text-xl text-purple-200 max-w-3xl mx-auto">
+              We built Mtaa DAO because existing solutions - both digital DAOs and traditional chamas - don't work for modern African communities
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+            {/* Problems - Traditional DAOs */}
+            <div className="bg-red-500/10 backdrop-blur-sm rounded-3xl border border-red-500/30 p-8">
+              <h3 className="text-2xl font-bold text-red-300 mb-6 flex items-center">
+                <span className="text-3xl mr-3">❌</span> Traditional DAO Platforms
+              </h3>
+              <ul className="space-y-4">
+                <li className="flex items-start text-purple-100">
+                  <span className="text-red-400 mr-3 text-xl">•</span>
+                  <span>Require high technical literacy (complex UIs, crypto jargon)</span>
+                </li>
+                <li className="flex items-start text-purple-100">
+                  <span className="text-red-400 mr-3 text-xl">•</span>
+                  <span>Don't integrate with M-Pesa or mobile money</span>
+                </li>
+                <li className="flex items-start text-purple-100">
+                  <span className="text-red-400 mr-3 text-xl">•</span>
+                  <span>Lack cultural context and language support</span>
+                </li>
+                <li className="flex items-start text-purple-100">
+                  <span className="text-red-400 mr-3 text-xl">•</span>
+                  <span>Expensive to deploy and maintain ($1000s)</span>
+                </li>
+                <li className="flex items-start text-purple-100">
+                  <span className="text-red-400 mr-3 text-xl">•</span>
+                  <span>Don't work offline or on feature phones</span>
+                </li>
+                <li className="flex items-start text-purple-100">
+                  <span className="text-red-400 mr-3 text-xl">•</span>
+                  <span>No AI assistance for decision-making</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Problems - Traditional Chamas */}
+            <div className="bg-orange-500/10 backdrop-blur-sm rounded-3xl border border-orange-500/30 p-8">
+              <h3 className="text-2xl font-bold text-orange-300 mb-6 flex items-center">
+                <span className="text-3xl mr-3">❌</span> Traditional Chamas/Savings Groups
+              </h3>
+              <ul className="space-y-4">
+                <li className="flex items-start text-purple-100">
+                  <span className="text-orange-400 mr-3 text-xl">•</span>
+                  <span>Manual record-keeping (notebooks, Excel sheets) prone to errors</span>
+                </li>
+                <li className="flex items-start text-purple-100">
+                  <span className="text-orange-400 mr-3 text-xl">•</span>
+                  <span>Lack of transparency - members can't verify transactions</span>
+                </li>
+                <li className="flex items-start text-purple-100">
+                  <span className="text-orange-400 mr-3 text-xl">•</span>
+                  <span>No automated enforcement - rely on trust and social pressure</span>
+                </li>
+                <li className="flex items-start text-purple-100">
+                  <span className="text-orange-400 mr-3 text-xl">•</span>
+                  <span>Cash handling risks (theft, loss, mismanagement)</span>
+                </li>
+                <li className="flex items-start text-purple-100">
+                  <span className="text-orange-400 mr-3 text-xl">•</span>
+                  <span>Limited to physical meetings - hard to scale remotely</span>
+                </li>
+                <li className="flex items-start text-purple-100">
+                  <span className="text-orange-400 mr-3 text-xl">•</span>
+                  <span>No yield generation - money sits idle without returns</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Mtaa DAO Solution */}
+          <div className="bg-green-500/10 backdrop-blur-sm rounded-3xl border border-green-500/30 p-10">
+            <h3 className="text-3xl font-bold text-green-300 mb-8 flex items-center justify-center">
+              <span className="text-4xl mr-4">✅</span> Mtaa DAO: Best of Both Worlds
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <ul className="space-y-4">
+                <li className="flex items-start text-purple-100">
+                  <CheckCircle className="w-6 h-6 text-green-400 mr-3 flex-shrink-0 mt-0.5" />
+                  <span><strong className="text-white">AI-Powered Assistant</strong> - Natural language in Swahili, English, Pidgin</span>
+                </li>
+                <li className="flex items-start text-purple-100">
+                  <CheckCircle className="w-6 h-6 text-green-400 mr-3 flex-shrink-0 mt-0.5" />
+                  <span><strong className="text-white">Blockchain Transparency</strong> - Every transaction is recorded and verifiable</span>
+                </li>
+                <li className="flex items-start text-purple-100">
+                  <CheckCircle className="w-6 h-6 text-green-400 mr-3 flex-shrink-0 mt-0.5" />
+                  <span><strong className="text-white">Local Payment Integration</strong> - M-Pesa, Paystack, mobile money</span>
+                </li>
+                <li className="flex items-start text-purple-100">
+                  <CheckCircle className="w-6 h-6 text-green-400 mr-3 flex-shrink-0 mt-0.5" />
+                  <span><strong className="text-white">Automated Smart Contracts</strong> - Rules enforced automatically, no trust needed</span>
+                </li>
+              </ul>
+              <ul className="space-y-4">
+                <li className="flex items-start text-purple-100">
+                  <CheckCircle className="w-6 h-6 text-green-400 mr-3 flex-shrink-0 mt-0.5" />
+                  <span><strong className="text-white">DeFi Yield Generation</strong> - Earn 6-12% APY on idle funds</span>
+                </li>
+                <li className="flex items-start text-purple-100">
+                  <CheckCircle className="w-6 h-6 text-green-400 mr-3 flex-shrink-0 mt-0.5" />
+                  <span><strong className="text-white">Multi-Channel Access</strong> - Web, Telegram, WhatsApp, USSD, Voice</span>
+                </li>
+                <li className="flex items-start text-purple-100">
+                  <CheckCircle className="w-6 h-6 text-green-400 mr-3 flex-shrink-0 mt-0.5" />
+                  <span><strong className="text-white">Fraud Detection AI</strong> - 95%+ accuracy in detecting suspicious activity</span>
+                </li>
+                <li className="flex items-start text-purple-100">
+                  <CheckCircle className="w-6 h-6 text-green-400 mr-3 flex-shrink-0 mt-0.5" />
+                  <span><strong className="text-white">Culturally Aware</strong> - Respects local customs, languages, and practices</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -517,7 +865,7 @@ export default function MtaaDAOLanding() {
           <h2 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent mb-4">
             Real Impact, Real Stories
           </h2>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+          <p className="text-xl text-purple-200 max-w-3xl mx-auto">
             See how communities across Kenya are transforming their financial futures through MtaaDAO
           </p>
         </div>
@@ -568,7 +916,7 @@ export default function MtaaDAOLanding() {
           <h2 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent mb-4">
             Complete Financial Ecosystem
           </h2>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+          <p className="text-xl text-purple-200 max-w-3xl mx-auto">
             Everything your community needs for transparent, efficient financial management
           </p>
         </div>
@@ -588,7 +936,7 @@ export default function MtaaDAOLanding() {
             },
             { 
               icon: "💳", 
-              title: "Digital Wallet", 
+              title: "Mtaa Wallet", 
               description: "Multi-currency wallet with DeFi integrations and MiniPay support",
               link: "/wallet"
             },
@@ -618,9 +966,9 @@ export default function MtaaDAOLanding() {
             },
             { 
               icon: "🔄", 
-              title: "Batch Transfers", 
-              description: "Efficient bulk payments and automated disbursements",
-              link: "/wallet/batch-transfer"
+              title: "Bill Splitting", 
+              description: "Automatically split subscription costs among DAO members (equal, custom, or percentage-based)",
+              link: "/wallet"
             },
             { 
               icon: "🏆", 
@@ -766,13 +1114,55 @@ export default function MtaaDAOLanding() {
       </div>
       {/* Footer */}
       <footer className="w-full py-10 px-8 bg-gradient-to-r from-slate-900 via-purple-900 to-slate-900 border-t border-white/10 text-center text-purple-200 font-medium mt-auto">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between">
-          <span>© {new Date().getFullYear()} Mtaa DAO. All rights reserved.</span>
-          <div className="flex space-x-6 mt-4 md:mt-0">
-            <a href="#features" className="hover:text-white transition">Features</a>
-            <a href="/pricing" className="hover:text-white transition">Pricing</a>
-            <a href="#benefits" className="hover:text-white transition">Benefits</a>
-            <a href="#trust" className="hover:text-white transition">Trust</a>
+        <div className="max-w-7xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+            {/* About */}
+            <div>
+              <h3 className="text-white font-bold mb-4">About Mtaa DAO</h3>
+              <p className="text-sm text-purple-300">
+                The world's first AI-powered DAO platform designed for African communities, combining blockchain and local payment infrastructure.
+              </p>
+            </div>
+            
+            {/* Quick Links */}
+            <div>
+              <h3 className="text-white font-bold mb-4">Quick Links</h3>
+              <div className="flex flex-col space-y-2">
+                <a href="#architecture" className="hover:text-white transition text-sm">System Architecture</a>
+                <a href="#features" className="hover:text-white transition text-sm">Features</a>
+                <a href="/pricing" className="hover:text-white transition text-sm">Pricing</a>
+                <a href="/whitepaper.html" target="_blank" className="hover:text-white transition text-sm">Whitepaper</a>
+              </div>
+            </div>
+
+            {/* Platform */}
+            <div>
+              <h3 className="text-white font-bold mb-4">Platform</h3>
+              <div className="flex flex-col space-y-2">
+                <a href="/vault" className="hover:text-white transition text-sm">MaonoVault</a>
+                <a href="/wallet" className="hover:text-white transition text-sm">Wallet</a>
+                <a href="/proposals" className="hover:text-white transition text-sm">Governance</a>
+                <a href="/analytics" className="hover:text-white transition text-sm">Analytics</a>
+              </div>
+            </div>
+
+            {/* Community */}
+            <div>
+              <h3 className="text-white font-bold mb-4">Community</h3>
+              <div className="flex flex-col space-y-2">
+                <a href="/daos" className="hover:text-white transition text-sm">Explore DAOs</a>
+                <a href="/success-stories" className="hover:text-white transition text-sm">Success Stories</a>
+                <a href="/help" className="hover:text-white transition text-sm">Support</a>
+                <a href="https://t.me/mtaadao" target="_blank" rel="noopener" className="hover:text-white transition text-sm">Telegram</a>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-white/10 pt-6 flex flex-col md:flex-row items-center justify-between">
+            <span>© {new Date().getFullYear()} Mtaa DAO. All rights reserved.</span>
+            <div className="flex space-x-6 mt-4 md:mt-0 text-sm">
+              <span className="text-cyan-300">🚀 55% Complete - Q1 2026 Launch</span>
+            </div>
           </div>
         </div>
       </footer>

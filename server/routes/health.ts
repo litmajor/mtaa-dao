@@ -7,7 +7,7 @@ export default function handler(req: Request, res: Response) {
 import { db } from '../storage';
 import { metricsCollector } from '../monitoring/metricsCollector';
 import { logger } from '../utils/logger';
-import { env } from '@shared/config';
+import { env } from '../../shared/config.js';
 
 const router = express.Router();
 

@@ -39,6 +39,14 @@ const PROVIDER_URL = process.env.RPC_URL || "https://alfajores-forno.celo-testne
 const provider = tokenService.provider;
 const signer = tokenService.signer;
 
+// Helper to check if contract is deployed and valid
+function isContractConfigured(): boolean {
+  if (!Maono_CONTRACT_ADDRESS || Maono_CONTRACT_ADDRESS === "" || Maono_CONTRACT_ADDRESS === "0x1234567890123456789012345678901234567890") {
+    return false;
+  }
+  return ethers.isAddress(Maono_CONTRACT_ADDRESS);
+}
+
 // --- Contract Instances ---
 const maonoVault = new ethers.Contract(
   Maono_CONTRACT_ADDRESS,
@@ -54,8 +62,19 @@ export const MaonoVaultService = {
   contract: maonoVault,
   provider,
   signer,
+  isConfigured: isContractConfigured,
 
   async getNAV() {
+    if (!isContractConfigured()) {
+      throw new Error("MaonoVault contract not configured. Please deploy the contract and set MAONO_CONTRACT_ADDRESS in .env");
+    }
+    
+    // Verify contract exists on chain
+    const code = await provider.getCode(Maono_CONTRACT_ADDRESS);
+    if (code === "0x") {
+      throw new Error(`No contract found at address ${Maono_CONTRACT_ADDRESS}. Please verify the contract is deployed.`);
+    }
+    
     return maonoVault.previewNAV();
   },
 
@@ -79,9 +98,53 @@ export const MaonoVaultService = {
   },
 
   async listenToEvents(callback: (event: any) => void) {
-    maonoVault.on("NAVUpdated", (newNAV, timestamp) => {
-      callback({ type: "NAVUpdated", newNAV, timestamp });
-    });
-    // Add more event listeners as needed
+    // Use polling instead of filters to avoid "filter not found" errors
+    let lastProcessedBlock = await provider.getBlockNumber();
+    
+    const pollEvents = async () => {
+      try {
+        const currentBlock = await provider.getBlockNumber();
+        
+        if (currentBlock > lastProcessedBlock) {
+          // Query events from last processed block to current block
+          const events = await maonoVault.queryFilter(
+            "*", // All events
+            lastProcessedBlock + 1,
+            currentBlock
+          );
+          
+          for (const event of events) {
+            try {
+              const eventName = event.eventName || event.fragment?.name;
+              if (!eventName) continue;
+              
+              // Parse event based on type
+              callback({
+                type: eventName,
+                ...event.args,
+                transactionHash: event.transactionHash,
+                blockNumber: event.blockNumber,
+                timestamp: (await event.getBlock()).timestamp,
+              });
+            } catch (err) {
+              console.error('Error processing event:', err);
+            }
+          }
+          
+          lastProcessedBlock = currentBlock;
+        }
+      } catch (error: any) {
+        // Suppress filter-related errors, log others
+        if (!error.message?.includes('filter')) {
+          console.error('@TODO Error:', error);
+        }
+      }
+    };
+    
+    // Poll every 15 seconds
+    setInterval(pollEvents, 15000);
+    
+    // Initial poll
+    pollEvents();
   },
 };

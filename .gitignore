@@ -13,3 +13,4 @@ mtaa-dao-whitepaper/.env
 
 /target
 **/*.rs.bk
+.env

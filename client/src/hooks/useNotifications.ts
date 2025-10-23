@@ -21,15 +21,25 @@ export function useNotifications() {
 
   // Initialize WebSocket connection
   useEffect(() => {
-    const newSocket = io(window.location.origin);
+    // Get token from localStorage
+    const token = localStorage.getItem('accessToken');
+    
+    const newSocket = io(window.location.origin, {
+      auth: {
+        token: token || undefined,
+      },
+      // Also send token in query as backup
+      query: token ? { token } : {},
+      // Reconnection settings
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 5,
+    });
     
     newSocket.on('connect', () => {
       setIsConnected(true);
-      // Authenticate with user ID (you might need to get this from auth context)
-      const userId = localStorage.getItem('userId'); // Replace with actual auth
-      if (userId) {
-        newSocket.emit('authenticate', userId);
-      }
+      console.log('Socket.IO connected successfully');
     });
 
     newSocket.on('disconnect', () => {

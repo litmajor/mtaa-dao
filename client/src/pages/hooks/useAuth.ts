@@ -3,13 +3,15 @@ import { useLocation } from "wouter";
 
 interface User {
   id: string;
-  email: string;
+  email: string | null;
+  phone: string | null;
   firstName: string;
   lastName: string;
   role: string;
-  walletAddress?: string;
+  walletAddress?: string | null;
   isEmailVerified: boolean;
-  profilePicture?: string;
+  isPhoneVerified: boolean;
+  profilePicture?: string | null;
 }
 
 interface AuthResponse {
@@ -30,12 +32,25 @@ export function useAuth() {
   const { data: authData, isLoading, error } = useQuery({
     queryKey: ["/api/auth/user"],
     queryFn: async (): Promise<AuthResponse> => {
+      const token = localStorage.getItem('accessToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const res = await fetch("/api/auth/user", {
         credentials: 'include',
+        headers,
       });
 
       if (!res.ok) {
         if (res.status === 401) {
+          // Clear invalid token
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('user');
           throw new Error("Not authenticated");
         }
         throw new Error("Failed to fetch user");
@@ -61,7 +76,7 @@ export function useAuth() {
 
       if (!res.ok) {
         const error = await res.json();
-        throw new Error(error.error?.message || "Login failed");
+        throw new Error(error.error || error.message || "Login failed");
       }
 
       return res.json();
@@ -69,8 +84,11 @@ export function useAuth() {
     onSuccess: (data) => {
       if (data.success && data.data?.accessToken) {
         localStorage.setItem('accessToken', data.data.accessToken);
+        localStorage.setItem('user', JSON.stringify(data.data.user));
       }
       queryClient.setQueryData(["/api/auth/user"], data);
+      // Force refetch to update auth state
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       setLocation("/dashboard");
     },
   });
@@ -89,6 +107,9 @@ export function useAuth() {
       return res.json();
     },
     onSuccess: () => {
+      // Clear all auth data
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('user');
       queryClient.clear();
       setLocation("/login");
     },

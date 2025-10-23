@@ -1,6 +1,6 @@
 import { createLogger, format, transports } from 'winston';
 import { Logger as WinstonLogger } from 'winston';
-import { env, isDevelopment, isProduction } from '@shared/config';
+import { env, isDevelopment, isProduction } from '../../shared/config.js';
 import { storage } from '../storage';
 
 const { combine, timestamp, errors, json, colorize, simple, printf } = format;
