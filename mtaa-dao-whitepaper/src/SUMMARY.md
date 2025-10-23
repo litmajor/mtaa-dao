@@ -11,6 +11,7 @@
 # Technical Architecture
 
 - [System Overview](./architecture/overview.md)
+- [AI Layer (NURU)](./architecture/ai-layer.md)
 - [Smart Contracts](./architecture/contracts.md)
 - [Vault System](./architecture/vaults.md)
 - [Blockchain Integration](./architecture/blockchain.md)

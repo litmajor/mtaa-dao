@@ -95,15 +95,21 @@ class VaultAutomationService {
 
   // Schedule regular automation tasks
   private scheduleRegularTasks() {
-    // Schedule NAV updates every hour
-    this.addTask({
-      id: `nav_update_${Date.now()}`,
-      type: 'nav_update',
-      priority: 'high',
-      scheduledAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
-      retryCount: 0,
+    // Only schedule NAV updates if contract is configured
+    if (MaonoVaultService.isConfigured()) {
+      // Schedule NAV updates every hour
+      this.addTask({
+        id: `nav_update_${Date.now()}`,
+        type: 'nav_update',
+        priority: 'high',
+        scheduledAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
+        retryCount: 0,
       maxRetries: 3
     });
+    } else {
+      this.logger.warn('⚠️  NAV update automation skipped: MaonoVault contract not configured');
+      this.logger.info('   Deploy MaonoVault contract and set MAONO_CONTRACT_ADDRESS in .env to enable automation');
+    }
 
     // Schedule vault rebalancing every 6 hours
     this.addTask({
@@ -223,6 +229,15 @@ class VaultAutomationService {
   // Execute NAV update
   private async executeNAVUpdate(task: AutomationTask) {
     try {
+      // Check if contract is configured
+      if (!MaonoVaultService.isConfigured()) {
+        this.logger.warn('⚠️  NAV update skipped: MaonoVault contract not configured');
+        this.logger.info('   Deploy MaonoVault contract and set MAONO_CONTRACT_ADDRESS in .env to enable NAV updates');
+        // Don't retry this task
+        task.retryCount = task.maxRetries;
+        return;
+      }
+      
       // Get current on-chain NAV
       const [currentNAV, lastUpdate] = await MaonoVaultService.getNAV();
 

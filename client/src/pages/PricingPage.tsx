@@ -24,71 +24,90 @@ type PlatformFee = {
 
 const pricingTiers: PricingTier[] = [
   {
-    name: "Free DAO",
+    name: "Free Tier",
     price: { monthly: "KES 0", yearly: "KES 0" },
-    description: "Perfect for starting your community journey",
+    description: "Perfect for starting your community journey (Per DAO)",
     features: [
-      "Public DAO creation",
-      "Up to 25 members",
-      "Basic proposal system",
-      "Simple voting mechanism",
-      "Community dashboard",
-      "Basic wallet integration",
+      "Basic DAO creation (up to 50 members)",
+      "Standard wallet features",
+      "Community vault (single vault)",
+      "Basic proposals and voting",
+      "Web and Telegram chat",
+      "Standard AI analytics (weekly reports)",
+      "Transaction limits: KES 1M/month",
       "Email support"
     ],
     limitations: [
-      "No private DAO (invite-only)",
-      "No advanced governance features",
-      "Limited treasury analytics",
-      "No multiple vaults",
-      "No reputation system",
-      "No advanced integrations"
+      "No AI-assisted proposal drafting",
+      "No advanced fraud detection",
+      "No voice interface access",
+      "No custom branding",
+      "Limited API access (1K requests/month)"
     ],
     cta: "Start Free",
     color: "from-slate-600 to-slate-800",
     icon: <Users className="w-8 h-8 text-white" />
   },
   {
-    name: "Premium DAO",
+    name: "Basic",
     price: { monthly: "KES 1,500", yearly: "KES 15,000" },
-    description: "Full-featured platform for serious communities",
+    description: "Essential tools for growing communities (Per DAO)",
     features: [
       "Everything in Free",
-      "Private & Public DAOs",
       "Unlimited members",
-      "Advanced governance system",
-      "Elder/Admin role management",
-      "Comprehensive treasury analytics",
-      "Multiple vault management",
-      "Reputation & ranking system",
-      "Proposal templates & automation",
-      "Advanced integrations (DeFi, MiniPay)",
-      "Bulk payment processing",
-      "Custom DAO branding",
+      "Multiple vaults",
+      "Advanced analytics (daily)",
       "Priority support",
-      "API access"
+      "Telegram + WhatsApp bots",
+      "Transaction limits: KES 5M/month",
+      "API access (10K requests/month)",
+      "M-Pesa integration",
+      "Cross-chain bridging"
     ],
-    cta: "Upgrade to Premium",
+    cta: "Get Basic",
+    color: "from-blue-500 via-cyan-500 to-teal-600",
+    icon: <Star className="w-8 h-8 text-white" />,
+    badge: "Great Value"
+  },
+  {
+    name: "Pro",
+    price: { monthly: "KES 4,500", yearly: "KES 45,000" },
+    description: "Advanced AI features for power users (Per DAO)",
+    features: [
+      "Everything in Basic",
+      "AI-assisted proposal drafting",
+      "Voice interface access",
+      "Custom branding",
+      "Advanced fraud detection (95%+ accuracy)",
+      "Transaction limits: KES 25M/month",
+      "API access (100K requests/month)",
+      "Dedicated account manager",
+      "Multi-DAO management",
+      "White-label options"
+    ],
+    cta: "Upgrade to Pro",
     popular: true,
-    color: "from-orange-500 via-red-500 to-purple-600",
+    color: "from-orange-500 via-pink-500 to-purple-600",
     icon: <Crown className="w-8 h-8 text-white" />,
     badge: "Most Popular"
   },
   {
     name: "Enterprise",
-    price: { monthly: "Custom", yearly: "Custom" },
-    description: "Tailored solutions for large organizations",
+    price: { monthly: "KES 15,000+", yearly: "Custom" },
+    description: "Tailored solutions for large organizations (Per Organization)",
     features: [
-      "Everything in Premium",
-      "Custom feature development",
-      "Dedicated account manager",
-      "SLA guarantees",
-      "Advanced security features",
+      "Everything in Pro",
+      "White-label solution",
       "Custom integrations",
-      "White-label solutions",
-      "On-premise deployment options",
-      "Training & onboarding",
-      "24/7 phone support"
+      "SLA guarantees (99.9% uptime)",
+      "Unlimited transactions",
+      "Unlimited API access",
+      "Custom AI training",
+      "On-chain governance NFTs",
+      "Multi-DAO management dashboard",
+      "24/7 dedicated support",
+      "Security audits included",
+      "Training & onboarding"
     ],
     cta: "Contact Sales",
     color: "from-purple-600 to-indigo-600",
@@ -99,45 +118,63 @@ const pricingTiers: PricingTier[] = [
 
 const platformFees: PlatformFee[] = [
   {
-    action: "Vault Deposits",
-    fee: "Free",
-    notes: "No fees for contributing to community vaults",
-    category: 'vault'
+    action: "DAO Setup Fee",
+    fee: "KES 500",
+    notes: "One-time setup fee per DAO (optional - Free tier available)",
+    category: 'governance'
   },
   {
-    action: "Vault Withdrawals",
-    fee: "1-2%",
-    notes: "Deducted from withdrawal amount",
-    category: 'vault'
-  },
-  {
-    action: "Vault Disbursements",
-    fee: "1-2%",
-    notes: "Deducted from vault at disbursement time",
-    category: 'vault'
-  },
-  {
-    action: "Yield Generation",
-    fee: "10-15%",
-    notes: "Platform takes percentage of yield earned",
-    category: 'yield'
-  },
-  {
-    action: "Bulk Payments",
-    fee: "Flat rate",
-    notes: "Based on number of recipients",
+    action: "Fiat Deposits (M-Pesa)",
+    fee: "0.5%",
+    notes: "Card/bank deposits when feature launches Q1 2026",
     category: 'payments'
   },
   {
-    action: "MiniPay Transactions",
-    fee: "Network fees",
-    notes: "Standard Celo network transaction costs",
+    action: "Crypto Withdrawals",
+    fee: "0.3%",
+    notes: "External wallet withdrawals",
+    category: 'payments'
+  },
+  {
+    action: "Currency Swaps",
+    fee: "0.2%",
+    notes: "Token conversion fees",
+    category: 'payments'
+  },
+  {
+    action: "Vault Management Fee",
+    fee: "1-2% annual",
+    notes: "Deducted from vault balance yearly",
+    category: 'vault'
+  },
+  {
+    action: "Vault Performance Fee",
+    fee: "10-20%",
+    notes: "Percentage of profits earned",
+    category: 'yield'
+  },
+  {
+    action: "Yield Strategy Profits",
+    fee: "50%",
+    notes: "Platform share of DeFi strategy earnings",
+    category: 'yield'
+  },
+  {
+    action: "Mtaa-to-Mtaa Transfers",
+    fee: "Free",
+    notes: "No fees for transfers between Mtaa DAO users",
     category: 'payments'
   },
   {
     action: "Governance Actions",
     fee: "Free",
-    notes: "Voting and proposals are always free",
+    notes: "Voting and proposals are always free (gasless)",
+    category: 'governance'
+  },
+  {
+    action: "AI Analytics Reports",
+    fee: "KES 5,000 - 20,000",
+    notes: "Per custom report (included in Pro/Enterprise)",
     category: 'governance'
   }
 ];
@@ -208,7 +245,7 @@ const tokenEcosystem = [
 
 export default function PricingPage() {
   const [isYearly, setIsYearly] = useState(false);
-  const [selectedTier, setSelectedTier] = useState<string>("Premium DAO");
+  const [selectedTier, setSelectedTier] = useState<string>("Pro");
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
@@ -284,10 +321,10 @@ export default function PricingPage() {
           {/* Key Statistics */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12">
             {[
-              { number: "2,300+", label: "Active Communities" },
-              { number: "45,000+", label: "Members Served" },
-              { number: "KES 14M+", label: "Funds Managed" },
-              { number: "98%", label: "Success Rate" }
+              { number: "500+", label: "DAOs Created" },
+              { number: "10,000+", label: "Active Members" },
+              { number: "KES 50M+", label: "Total Value Locked" },
+              { number: "85%+", label: "AI Accuracy" }
             ].map((stat, index) => (
               <motion.div
                 key={index}
@@ -305,7 +342,49 @@ export default function PricingPage() {
           </div>
         </div>
 
-        {/* Billing Toggle */}
+          {/* Pricing Clarification */}
+          <div className="bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-200 rounded-2xl p-6 mb-12 max-w-4xl mx-auto">
+            <div className="flex items-start space-x-4">
+              <Users className="w-6 h-6 text-blue-600 flex-shrink-0 mt-1" />
+              <div>
+                <h3 className="text-lg font-bold text-blue-900 mb-2">💡 How Collective DAO Billing Works</h3>
+                <div className="text-blue-800 space-y-3">
+                  <p>
+                    <strong>✅ Built-in Bill Splitting:</strong> Our platform includes automatic bill splitting functionality! 
+                    The DAO subscription fee is automatically split among members based on your chosen method (equal split, custom shares, or percentage-based).
+                  </p>
+                  <p>
+                    <strong>🏦 Treasury-Based Payment:</strong> The DAO pays as a collective entity through its treasury. 
+                    Members vote on which tier to subscribe to, and the subscription fee is automatically deducted from the DAO treasury each month.
+                  </p>
+                  <p>
+                    <strong>💰 Pricing is per DAO:</strong> Each subscription tier is priced per individual DAO/community. 
+                    If you manage multiple DAOs, each one needs its own subscription, paid from its own treasury.
+                  </p>
+                  <p>
+                    <strong>👥 Members don't pay individually:</strong> If you're just a member participating in a DAO, you don't pay anything out of pocket. 
+                    The cost is shared fairly through the collective treasury using our bill splitting feature.
+                  </p>
+                  <div className="bg-white/50 rounded-lg p-4 mt-3">
+                    <p className="font-semibold text-blue-900 mb-2">📊 Example with Bill Splitting:</p>
+                    <p className="text-sm">
+                      A 100-member DAO subscribes to the <strong>Pro tier (KES 4,500/month)</strong>:
+                    </p>
+                    <ul className="text-sm mt-2 space-y-1 ml-4">
+                      <li>• <strong>Equal Split:</strong> Each member contributes KES 45/month automatically</li>
+                      <li>• <strong>Custom Split:</strong> Split by role (admins pay more, members pay less)</li>
+                      <li>• <strong>Percentage Split:</strong> Split by voting power or contribution level</li>
+                    </ul>
+                    <p className="text-sm mt-2 text-green-700 font-medium">
+                      ✨ All splits are handled automatically - no manual collection needed!
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Billing Toggle */}
         <div className="flex justify-center items-center gap-6 mb-12">
           <span className={`text-xl font-bold transition-all duration-300 ${!isYearly ? 'text-orange-500 scale-110' : 'text-gray-500'}`}>
             Monthly
@@ -570,21 +649,25 @@ export default function PricingPage() {
               <div>
                 <h3 className="text-lg font-bold text-blue-900 mb-2">Important: Community-First Approach</h3>
                 <p className="text-blue-800 mb-4">
-                  All platform fees are paid by the DAO/community collectively, not by individual members. 
-                  This ensures that the cost of transparency and security is shared fairly across the community.
+                  All subscriptions and platform fees are paid by the DAO/community collectively through the treasury, not by individual members. 
+                  This ensures that the cost of transparency and security is shared fairly across the entire community.
                 </p>
                 <ul className="text-blue-700 space-y-2">
                   <li className="flex items-center">
                     <CheckCircle className="w-4 h-4 text-green-600 mr-2" />
-                    <span>Individual members never pay hidden fees</span>
+                    <span>Individual members never pay out of pocket - the DAO treasury handles all payments</span>
                   </li>
                   <li className="flex items-center">
                     <CheckCircle className="w-4 h-4 text-green-600 mr-2" />
-                    <span>All costs are transparent and voted on by the community</span>
+                    <span>Subscription tier and all costs are voted on and approved by the community</span>
                   </li>
                   <li className="flex items-center">
                     <CheckCircle className="w-4 h-4 text-green-600 mr-2" />
-                    <span>Fees are only charged when value is created</span>
+                    <span>Automatic billing from DAO treasury - no manual payment collection needed</span>
+                  </li>
+                  <li className="flex items-center">
+                    <CheckCircle className="w-4 h-4 text-green-600 mr-2" />
+                    <span>Full transparency - all members can see exactly what the DAO is paying for</span>
                   </li>
                 </ul>
               </div>
@@ -642,17 +725,26 @@ export default function PricingPage() {
           </h2>
           <p className="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
             Join thousands of communities already building stronger financial futures through transparent, 
-            democratic, and inclusive financial solutions.
+            democratic, and inclusive governance powered by AI.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-12 py-4 rounded-2xl font-bold text-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
-              Start Your Free DAO Today
-            </button>
-            <button className="bg-white text-orange-600 px-12 py-4 rounded-2xl font-bold text-xl border-2 border-orange-500 hover:bg-orange-50 transition-all duration-300">
-              Schedule a Demo
-            </button>
+            <a href="/register">
+              <button className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-12 py-4 rounded-2xl font-bold text-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
+                Start Your Free DAO Today
+              </button>
+            </a>
+            <a href="/contact">
+              <button className="bg-white text-orange-600 px-12 py-4 rounded-2xl font-bold text-xl border-2 border-orange-500 hover:bg-orange-50 transition-all duration-300">
+                Schedule a Demo
+              </button>
+            </a>
           </div>
           <p className="text-gray-500 mt-6">No credit card required • Free forever • Upgrade anytime</p>
+          <div className="mt-6 inline-block bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl px-6 py-3">
+            <p className="text-sm text-green-800">
+              💰 <strong>Pay with CELO or MTAA tokens and get 10% off!</strong>
+            </p>
+          </div>
         </div>
       </div>
     </div>

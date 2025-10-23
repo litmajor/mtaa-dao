@@ -1,0 +1,245 @@
+name: Deploy Documentation to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'mtaa-dao-whitepaper/**'
+      - 'client/public/whitepaper.html'
+      - 'PROGRESS.html'
+      - '.github/workflows/deploy-docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup mdBook
+        uses: peaceiris/actions-mdbook@v1
+        with:
+          mdbook-version: 'latest'
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Build Rust docs
+        working-directory: ./mtaa-dao-whitepaper
+        run: |
+          cargo doc --no-deps
+          mdbook build
+
+      - name: Create docs directory structure
+        run: |
+          mkdir -p ./docs-output
+          mkdir -p ./docs-output/book
+          mkdir -p ./docs-output/rust-docs
+          mkdir -p ./docs-output/whitepaper
+
+      - name: Copy documentation files
+        run: |
+          # Copy mdBook output
+          cp -r ./mtaa-dao-whitepaper/book/* ./docs-output/book/
+          
+          # Copy Rust docs
+          cp -r ./mtaa-dao-whitepaper/target/doc/* ./docs-output/rust-docs/
+          
+          # Copy HTML whitepaper
+          cp ./client/public/whitepaper.html ./docs-output/whitepaper/index.html
+          
+          # Copy progress tracker
+          cp ./PROGRESS.html ./docs-output/progress.html
+
+      - name: Create index page
+        run: |
+          cat > ./docs-output/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>MtaaDAO Documentation Hub</title>
+              <style>
+                  * {
+                      margin: 0;
+                      padding: 0;
+                      box-sizing: border-box;
+                  }
+                  
+                  body {
+                      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                      background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+                      color: #e2e8f0;
+                      min-height: 100vh;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      padding: 2rem;
+                  }
+                  
+                  .container {
+                      max-width: 1200px;
+                      width: 100%;
+                  }
+                  
+                  header {
+                      text-align: center;
+                      margin-bottom: 3rem;
+                      padding: 3rem;
+                      background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+                      border-radius: 20px;
+                      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+                  }
+                  
+                  h1 {
+                      font-size: 3rem;
+                      margin-bottom: 1rem;
+                  }
+                  
+                  .subtitle {
+                      font-size: 1.2rem;
+                      opacity: 0.9;
+                  }
+                  
+                  .docs-grid {
+                      display: grid;
+                      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                      gap: 2rem;
+                      margin-top: 2rem;
+                  }
+                  
+                  .doc-card {
+                      background: #151b3d;
+                      padding: 2rem;
+                      border-radius: 15px;
+                      border: 1px solid #2d3659;
+                      box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);
+                      transition: transform 0.3s ease, box-shadow 0.3s ease;
+                      text-decoration: none;
+                      color: inherit;
+                      display: block;
+                  }
+                  
+                  .doc-card:hover {
+                      transform: translateY(-5px);
+                      box-shadow: 0 10px 30px rgba(59, 130, 246, 0.3);
+                  }
+                  
+                  .doc-icon {
+                      font-size: 3rem;
+                      margin-bottom: 1rem;
+                  }
+                  
+                  .doc-card h2 {
+                      color: #3b82f6;
+                      margin-bottom: 1rem;
+                  }
+                  
+                  .doc-card p {
+                      color: #94a3b8;
+                      line-height: 1.6;
+                  }
+                  
+                  .badge {
+                      display: inline-block;
+                      padding: 0.3rem 0.8rem;
+                      border-radius: 20px;
+                      font-size: 0.85rem;
+                      font-weight: bold;
+                      margin-top: 1rem;
+                  }
+                  
+                  .badge-new { background: #10b981; color: white; }
+                  .badge-technical { background: #8b5cf6; color: white; }
+                  .badge-overview { background: #3b82f6; color: white; }
+                  
+                  footer {
+                      text-align: center;
+                      margin-top: 3rem;
+                      padding: 2rem;
+                      color: #94a3b8;
+                  }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <header>
+                      <h1>🏘️ MtaaDAO Documentation Hub</h1>
+                      <p class="subtitle">Complete Technical Documentation & Resources</p>
+                  </header>
+                  
+                  <div class="docs-grid">
+                      <a href="./whitepaper/" class="doc-card">
+                          <div class="doc-icon">📄</div>
+                          <h2>Whitepaper</h2>
+                          <p>Comprehensive overview of MtaaDAO platform, features, architecture, and vision for community-driven finance in Africa.</p>
+                          <span class="badge badge-overview">Overview</span>
+                      </a>
+                      
+                      <a href="./progress.html" class="doc-card">
+                          <div class="doc-icon">📊</div>
+                          <h2>Progress Tracker</h2>
+                          <p>Real-time development progress across all layers: AI, Blockchain, Backend, Frontend, and more. See where we are!</p>
+                          <span class="badge badge-new">Live Status</span>
+                      </a>
+                      
+                      <a href="./book/" class="doc-card">
+                          <div class="doc-icon">📚</div>
+                          <h2>Technical Guide (mdBook)</h2>
+                          <p>Deep dive into system architecture, smart contracts, governance models, and implementation details with code examples.</p>
+                          <span class="badge badge-technical">Technical</span>
+                      </a>
+                      
+                      <a href="./rust-docs/mtaa_dao/" class="doc-card">
+                          <div class="doc-icon">🦀</div>
+                          <h2>Rust API Documentation</h2>
+                          <p>Auto-generated Rust documentation for core modules, data structures, and API references. For developers and contributors.</p>
+                          <span class="badge badge-technical">API Reference</span>
+                      </a>
+                  </div>
+                  
+                  <footer>
+                      <p><strong>MtaaDAO</strong> - Empowering Communities Through Technology</p>
+                      <p style="margin-top: 0.5rem; font-size: 0.9rem;">
+                          © 2025 MtaaDAO. Built with ❤️ for the community.
+                      </p>
+                  </footer>
+              </div>
+          </body>
+          </html>
+          EOF
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './docs-output'
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+

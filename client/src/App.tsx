@@ -8,6 +8,7 @@ import { SkipLink } from './components/ui/skip-link';
 import Navigation from './components/navigation';
 import { MobileNav } from './components/mobile-nav';
 import { ThemeProvider } from "./components/theme-provider";
+import { TooltipProvider } from "./components/ui/tooltip";
 
 // Lazy load heavy pages
 const CreateDaoLazy = lazy(() => import('./pages/create-dao'));
@@ -96,7 +97,8 @@ function App() {
   return (
     <HelmetProvider>
       <ThemeProvider>
-        <BrowserRouter>
+        <TooltipProvider>
+          <BrowserRouter>
           <div className="min-h-screen bg-background text-foreground">
             <Helmet>
               <title>{isAuthenticated ? "Dashboard | Mtaa DAO" : "Welcome | Mtaa DAO"}</title>
@@ -204,7 +206,8 @@ function App() {
 
             {isAuthenticated && <MobileNav />}
           </div>
-        </BrowserRouter>
+          </BrowserRouter>
+        </TooltipProvider>
       </ThemeProvider>
     </HelmetProvider>
   );

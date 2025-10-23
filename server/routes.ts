@@ -31,7 +31,7 @@ import morioRoutes from './routes/morio';
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
 import { authLoginHandler } from './api/auth_login';
-import { authRegisterHandler } from './api/auth_register';
+import { authRegisterHandler, verifyOtpHandler, resendOtpHandler } from './api/auth_register';
 import { authTelegramLinkHandler } from './api/auth_telegram_link';
 import { authOauthGoogleHandler } from './api/auth_oauth_google';
 import { authOauthGoogleCallbackHandler } from './api/auth_oauth_google_callback';
@@ -40,6 +40,16 @@ import { daoDeployHandler } from './api/dao_deploy';
 import { paymentsEstimateGasHandler } from './api/payments_estimate_gas';
 import { paymentsIndexHandler } from './api/payments_index';
 import { getWalletTransactions, createWalletTransaction } from './api/wallet_transactions';
+
+// Import Dashboard handlers
+import { 
+  getDashboardStatsHandler,
+  getDashboardProposalsHandler,
+  getDashboardVaultsHandler,
+  getDashboardContributionsHandler,
+  getDashboardMembersHandler,
+  getDashboardTasksHandler
+} from './api/dashboard';
 
 // Import Vault API handlers
 import { createVaultHandler, getUserVaultsHandler, getVaultHandler, depositToVaultHandler, withdrawFromVaultHandler, allocateToStrategyHandler, rebalanceVaultHandler, getVaultPortfolioHandler, getVaultPerformanceHandler, assessVaultRiskHandler, getVaultTransactionsHandler } from './api/vaults';
@@ -65,6 +75,14 @@ import {
 
 // RBAC middleware
 import { requireRole, requireDAORole, requirePermission } from './middleware/rbac';
+
+// Rate limiting middleware
+import { 
+  registerRateLimiter, 
+  otpResendRateLimiter, 
+  otpVerifyRateLimiter,
+  loginRateLimiter 
+} from './middleware/rateLimiter';
 
 // Admin handlers
 import { getUsersHandler, updateUserRoleHandler } from './api/admin_users';
@@ -112,10 +130,12 @@ export function registerRoutes(app: express.Application) {
   // Monitoring
   app.use('/api/monitoring', monitoringRoutes);
 
-  // Auth endpoints
+  // Auth endpoints (with rate limiting)
   app.get('/api/auth/user', isAuthenticated, authUserHandler);
-  app.post('/api/auth/login', authLoginHandler);
-  app.post('/api/auth/register', authRegisterHandler);
+  app.post('/api/auth/login', loginRateLimiter, authLoginHandler);
+  app.post('/api/auth/register', registerRateLimiter, authRegisterHandler);
+  app.post('/api/auth/verify-otp', otpVerifyRateLimiter, verifyOtpHandler);
+  app.post('/api/auth/resend-otp', otpResendRateLimiter, resendOtpHandler);
   app.post('/api/auth/telegram-link', authTelegramLinkHandler);
   app.get('/api/auth/oauth/google', authOauthGoogleHandler);
   app.get('/api/auth/oauth/google/callback', authOauthGoogleCallbackHandler);
@@ -135,6 +155,14 @@ export function registerRoutes(app: express.Application) {
   // Wallet transactions
   app.get('/api/wallet/transactions', isAuthenticated, getWalletTransactions);
   app.post('/api/wallet/transactions', isAuthenticated, createWalletTransaction);
+
+  // === DASHBOARD API ENDPOINTS ===
+  app.get('/api/dashboard/stats', isAuthenticated, getDashboardStatsHandler);
+  app.get('/api/dashboard/proposals', isAuthenticated, getDashboardProposalsHandler);
+  app.get('/api/dashboard/vaults', isAuthenticated, getDashboardVaultsHandler);
+  app.get('/api/dashboard/contributions', isAuthenticated, getDashboardContributionsHandler);
+  app.get('/api/dashboard/members', isAuthenticated, getDashboardMembersHandler);
+  app.get('/api/dashboard/tasks', isAuthenticated, getDashboardTasksHandler);
 
   // === VAULT API ENDPOINTS ===
   // Create vault

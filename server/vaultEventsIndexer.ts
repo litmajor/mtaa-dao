@@ -65,10 +65,19 @@ class VaultEventIndexer {
       console.log("Vault event indexer is already running.");
       return;
     }
+
+    // Check if MAONO_CONTRACT_ADDRESS is configured
+    if (!process.env.MAONO_CONTRACT_ADDRESS || process.env.MAONO_CONTRACT_ADDRESS === "") {
+      console.log("⚠️  Vault event indexer skipped: MAONO_CONTRACT_ADDRESS not configured.");
+      console.log("   Deploy MaonoVault contract and set MAONO_CONTRACT_ADDRESS in .env to enable vault events.");
+      return;
+    }
+
     this.isRunning = true;
     console.log("Starting vault event indexer...");
 
-    MaonoVaultService.listenToEvents(async (event) => {
+    try {
+      MaonoVaultService.listenToEvents(async (event) => {
       try {
         const handler = this.eventHandlers.get(event.type);
         if (handler) {
@@ -119,6 +128,11 @@ class VaultEventIndexer {
         }
       }
     });
+    } catch (error) {
+      console.error("❌ Failed to start vault event indexer:", error);
+      this.isRunning = false;
+      throw error;
+    }
   }
 
   stop() {

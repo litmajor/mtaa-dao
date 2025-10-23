@@ -14,6 +14,8 @@ export default function MtaaDAOLogin() {
   const [loginType, setLoginType] = useState<'email' | 'phone' | null>(null);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [remainingAttempts, setRemainingAttempts] = useState<number | null>(null);
+  const [lockedUntil, setLockedUntil] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
@@ -33,6 +35,8 @@ export default function MtaaDAOLogin() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setRemainingAttempts(null);
+    setLockedUntil(null);
     setIsLoading(true);
     
     if (!emailOrPhone || !password) {
@@ -40,6 +44,7 @@ export default function MtaaDAOLogin() {
       setIsLoading(false);
       return;
     }
+    
     // Determine login type
     let type: 'email' | 'phone' | null = null;
     if (emailOrPhone.includes('@')) {
@@ -52,26 +57,72 @@ export default function MtaaDAOLogin() {
     try {
       // Call backend login API
       const payload: any = { password };
-      if (loginType === 'email') payload.email = emailOrPhone;
-      else if (loginType === 'phone') payload.phone = emailOrPhone;
-      else payload.emailOrPhone = emailOrPhone;
+      if (type === 'email') {
+        payload.email = emailOrPhone;
+      } else if (type === 'phone') {
+        payload.phone = emailOrPhone;
+      } else {
+        // Try as email by default
+        payload.email = emailOrPhone;
+      }
+      
+      console.log('[LOGIN] Sending login request...');
+      
+      // Add timeout to prevent indefinite waiting
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+      
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
-      if (!response.ok) {
-        throw new Error('Invalid credentials. Please try again.');
-      }
+      
+      clearTimeout(timeoutId);
+      console.log('[LOGIN] Received response:', response.status);
+      
       const data = await response.json();
-      if (!data || !data.userId) {
-        throw new Error('Login failed. No user found.');
+      
+      if (!response.ok) {
+        // Handle specific error cases
+        if (response.status === 429) {
+          // Account locked
+          setLockedUntil(data.lockedUntil);
+          setError(data.error || 'Too many failed attempts. Please try again later.');
+        } else if (data.remainingAttempts !== undefined) {
+          // Show remaining attempts
+          setRemainingAttempts(data.remainingAttempts);
+          setError(data.error || 'Invalid credentials.');
+        } else {
+          setError(data.error || 'Invalid credentials. Please try again.');
+        }
+        setIsLoading(false);
+        return;
       }
-      // Set userId cookie and redirect
-      document.cookie = `userId=${data.userId}; path=/;`;
-      window.location.href = '/dashboard';
+      
+      // Successful login - data will be stored by useAuth hook if used
+      if (data.success && data.data?.user) {
+        console.log('[LOGIN] Login successful, storing data and redirecting...');
+        // Store user data in localStorage
+        localStorage.setItem('user', JSON.stringify(data.data.user));
+        localStorage.setItem('accessToken', data.data.accessToken);
+        
+        // Redirect to dashboard - use replace to avoid back button issues
+        console.log('[LOGIN] Redirecting to dashboard...');
+        setTimeout(() => {
+          window.location.replace('/dashboard');
+        }, 100);
+      } else {
+        throw new Error('Login failed. Invalid response from server.');
+      }
     } catch (err: any) {
-      setError(err.message || 'Invalid credentials. Please try again.');
+      console.error('[LOGIN] Error:', err);
+      if (err.name === 'AbortError') {
+        setError('Login request timed out. Please check your connection and try again.');
+      } else {
+        setError(err.message || 'An error occurred during login. Please try again.');
+      }
       setIsLoading(false);
     }
   };
@@ -181,9 +232,38 @@ export default function MtaaDAOLogin() {
 
             {/* Error Message */}
             {error && (
-              <div className="mb-6 p-4 bg-red-500/20 border border-red-500/30 rounded-2xl flex items-center text-red-100 backdrop-blur-sm animate-pulse">
-                <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
-                <span className="font-medium">{error}</span>
+              <div className={`mb-6 p-4 rounded-2xl flex flex-col backdrop-blur-sm animate-pulse ${
+                lockedUntil 
+                  ? 'bg-orange-500/20 border border-orange-500/30' 
+                  : 'bg-red-500/20 border border-red-500/30'
+              }`}>
+                <div className="flex items-start">
+                  <AlertCircle className={`w-5 h-5 mr-3 flex-shrink-0 mt-0.5 ${
+                    lockedUntil ? 'text-orange-300' : 'text-red-300'
+                  }`} />
+                  <div className="flex-1">
+                    <span className={`font-medium ${
+                      lockedUntil ? 'text-orange-100' : 'text-red-100'
+                    }`}>{error}</span>
+                    
+                    {remainingAttempts !== null && remainingAttempts > 0 && (
+                      <div className="mt-2 text-sm text-yellow-200">
+                        ⚠️ {remainingAttempts} attempt{remainingAttempts !== 1 ? 's' : ''} remaining before account lockout
+                      </div>
+                    )}
+                    
+                    {lockedUntil && (
+                      <div className="mt-3 p-3 bg-orange-600/20 rounded-lg">
+                        <div className="text-sm text-orange-200">
+                          🔒 Account temporarily locked for security
+                        </div>
+                        <div className="text-xs text-orange-300 mt-1">
+                          You can try again after 15 minutes or <a href="/forgot-password" className="underline font-semibold">reset your password</a>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 

@@ -1036,9 +1036,16 @@ export class WalletManager {
 
 // Comprehensive example with real functionality
 export async function enhancedExample() {
+  // Add timeout to prevent hanging on RPC failures
+  const timeout = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error('Wallet demo timeout after 10s')), 10000)
+  );
+
   try {
-    // Use testnet for safe testing
-    const config = NetworkConfig.CELO_ALFAJORES;
+    await Promise.race([
+      (async () => {
+        // Use testnet for safe testing
+        const config = NetworkConfig.CELO_ALFAJORES;
     
     // Realistic price oracle with actual token addresses
     const mockPriceOracle = async (tokenAddress: string): Promise<number> => {
@@ -1245,10 +1252,16 @@ const isValidPrivateKey = (key: string | undefined): boolean => {
     console.log('✓ DAO treasury features previewed');
     console.log('✓ Risk management validated');
     console.log('✓ Gas estimation completed');
-    
+      })(),
+      timeout
+    ]);
   } catch (error) {
-    console.error('Enhanced example failed:', error);
-    console.error('Stack trace:', error instanceof Error ? error.stack : 'No stack trace available');
+    if (error instanceof Error && error.message.includes('timeout')) {
+      console.warn('⚠️  Wallet demo timed out (RPC connection slow/unavailable)');
+      console.warn('   This is non-critical - server will continue normally');
+    } else {
+      console.error('Enhanced example failed:', error instanceof Error ? error.message : String(error));
+    }
   }
 }
 
@@ -1653,5 +1666,9 @@ export class TransactionAnalytics {
 // Export enhanced wallet as default
 export default EnhancedAgentWallet;
 
-// Always run demo when this file is executed
-enhancedExample();
+// Run demo only if explicitly enabled (prevent unhandled promise rejections)
+if (process.env.RUN_WALLET_DEMO === 'true') {
+  enhancedExample().catch(error => {
+    console.error('Wallet demo failed (non-critical):', error.message);
+  });
+}

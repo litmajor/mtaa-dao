@@ -1,869 +1,1572 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MtaaDAO Whitepaper - Decentralized Community Finance for Africa</title>
+    <title>MtaaDAO Whitepaper v2.0 - AI-Powered Community Finance for Africa</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            line-height: 1.8;
-            color: #1a202c;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+
+        :root {
+            --bg-primary: #0a0e27;
+            --bg-secondary: #151b3d;
+            --bg-tertiary: #1e2749;
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --accent-blue: #3b82f6;
+            --accent-purple: #8b5cf6;
+            --accent-green: #10b981;
+            --accent-yellow: #f59e0b;
+            --accent-red: #ef4444;
+            --border-color: #2d3659;
+            --shadow: rgba(0, 0, 0, 0.5);
         }
-        
+
+        body {
+            background: linear-gradient(135deg, var(--bg-primary) 0%, #1a1f3a 100%);
+            color: var(--text-primary);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.8;
+            min-height: 100vh;
+            padding: 0;
+        }
+
         .container {
-            max-width: 900px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 2rem;
-            background: white;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
-        
+
         header {
             text-align: center;
-            padding: 3rem 0;
-            border-bottom: 3px solid #667eea;
             margin-bottom: 3rem;
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            padding: 4rem 2rem;
+            background: linear-gradient(135deg, var(--accent-purple), var(--accent-blue));
+            border-radius: 20px;
+            box-shadow: 0 20px 60px var(--shadow);
+            animation: fadeInDown 0.6s ease-out;
         }
-        
+
         .logo {
-            width: 100px;
-            height: 100px;
-            margin: 0 auto 1rem;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 2rem;
+            background: rgba(255, 255, 255, 0.2);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 3rem;
-            color: white;
-            font-weight: bold;
+            font-size: 4rem;
+            backdrop-filter: blur(10px);
+            border: 3px solid rgba(255, 255, 255, 0.3);
         }
-        
+
         h1 {
-            font-size: 2.5rem;
-            color: #2d3748;
-            margin-bottom: 0.5rem;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        
-        .tagline {
-            font-size: 1.2rem;
-            color: #4a5568;
-            font-style: italic;
-        }
-        
-        .toc {
-            background: #f7fafc;
-            padding: 2rem;
-            border-radius: 8px;
-            margin-bottom: 3rem;
-            border-left: 4px solid #667eea;
-        }
-        
-        .toc h2 {
-            color: #2d3748;
+            font-size: 3.5rem;
             margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+            line-height: 1.2;
         }
-        
+
+        .subtitle {
+            font-size: 1.3rem;
+            color: rgba(255, 255, 255, 0.9);
+            margin-bottom: 0.5rem;
+        }
+
+        .version-info {
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.7);
+            margin-top: 1rem;
+        }
+
+        .toc {
+            background: var(--bg-secondary);
+            padding: 2rem;
+            border-radius: 15px;
+            margin-bottom: 3rem;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 5px 20px var(--shadow);
+        }
+
+        .toc h2 {
+            color: var(--accent-blue);
+            margin-bottom: 1.5rem;
+            font-size: 1.8rem;
+        }
+
         .toc ul {
             list-style: none;
+            columns: 2;
+            column-gap: 2rem;
         }
-        
+
         .toc li {
             padding: 0.5rem 0;
+            break-inside: avoid;
         }
-        
+
         .toc a {
-            color: #667eea;
+            color: var(--text-primary);
             text-decoration: none;
-            font-weight: 500;
             transition: all 0.3s;
-        }
-        
-        .toc a:hover {
-            color: #764ba2;
-            padding-left: 0.5rem;
-        }
-        
-        section {
-            margin-bottom: 4rem;
-            scroll-margin-top: 2rem;
-        }
-        
-        h2 {
-            font-size: 2rem;
-            color: #2d3748;
-            margin-bottom: 1.5rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 2px solid #e2e8f0;
-        }
-        
-        h3 {
-            font-size: 1.5rem;
-            color: #4a5568;
-            margin: 2rem 0 1rem;
-        }
-        
-        h4 {
-            font-size: 1.2rem;
-            color: #4a5568;
-            margin: 1.5rem 0 0.75rem;
-        }
-        
-        p {
-            margin-bottom: 1.5rem;
-            text-align: justify;
-        }
-        
-        .highlight-box {
-            background: linear-gradient(135deg, #f0f4ff 0%, #e6efff 100%);
-            padding: 1.5rem;
-            border-radius: 8px;
-            border-left: 4px solid #667eea;
-            margin: 2rem 0;
-        }
-        
-        .stat-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1.5rem;
-            margin: 2rem 0;
-        }
-        
-        .stat-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 1.5rem;
-            border-radius: 8px;
-            text-align: center;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        
-        .stat-number {
-            font-size: 2.5rem;
-            font-weight: bold;
             display: block;
-            margin-bottom: 0.5rem;
+            padding: 0.5rem;
+            border-radius: 5px;
         }
-        
-        .stat-label {
-            font-size: 0.9rem;
-            opacity: 0.9;
+
+        .toc a:hover {
+            color: var(--accent-blue);
+            background: var(--bg-tertiary);
+            padding-left: 1rem;
         }
-        
-        ul, ol {
-            margin-left: 2rem;
+
+        .section {
+            background: var(--bg-secondary);
+            padding: 3rem;
+            border-radius: 15px;
+            margin-bottom: 3rem;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 5px 20px var(--shadow);
+            animation: fadeInUp 0.6s ease-out;
+            animation-fill-mode: both;
+        }
+
+        .section h2 {
+            font-size: 2.5rem;
+            color: var(--accent-blue);
             margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid var(--border-color);
         }
-        
-        li {
-            margin-bottom: 0.5rem;
+
+        .section h3 {
+            font-size: 1.8rem;
+            color: var(--accent-purple);
+            margin-top: 2rem;
+            margin-bottom: 1rem;
         }
-        
+
+        .section h4 {
+            font-size: 1.3rem;
+            color: var(--text-primary);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        p {
+            margin-bottom: 1rem;
+            color: var(--text-secondary);
+        }
+
+        .highlight-box {
+            background: var(--bg-tertiary);
+            padding: 2rem;
+            border-radius: 10px;
+            border-left: 4px solid var(--accent-blue);
+            margin: 2rem 0;
+        }
+
         .feature-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
             gap: 1.5rem;
             margin: 2rem 0;
         }
-        
+
         .feature-card {
-            background: #f7fafc;
-            padding: 1.5rem;
-            border-radius: 8px;
-            border-top: 3px solid #667eea;
+            background: var(--bg-tertiary);
+            padding: 2rem;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
         }
-        
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px var(--shadow);
+        }
+
         .feature-card h4 {
-            color: #667eea;
+            color: var(--accent-blue);
             margin-top: 0;
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
         }
-        
-        .icon {
-            font-size: 2rem;
-            margin-bottom: 0.5rem;
+
+        .feature-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
             display: block;
         }
-        
+
+        ul, ol {
+            margin: 1rem 0 1rem 2rem;
+            color: var(--text-secondary);
+        }
+
+        li {
+            margin: 0.5rem 0;
+        }
+
+        .architecture-diagram {
+            background: var(--bg-tertiary);
+            padding: 2rem;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            overflow-x: auto;
+            margin: 2rem 0;
+            border: 1px solid var(--border-color);
+        }
+
+        .architecture-diagram pre {
+            margin: 0;
+            color: var(--accent-green);
+            white-space: pre;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            padding: 2rem;
+            border-radius: 15px;
+            text-align: center;
+            margin: 1rem 0;
+        }
+
+        .stat-number {
+            font-size: 3rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
             margin: 2rem 0;
+            background: var(--bg-tertiary);
+            border-radius: 10px;
+            overflow: hidden;
         }
-        
+
         th, td {
             padding: 1rem;
             text-align: left;
-            border-bottom: 1px solid #e2e8f0;
+            border-bottom: 1px solid var(--border-color);
         }
-        
+
         th {
-            background: #667eea;
-            color: white;
-            font-weight: 600;
-        }
-        
-        tr:hover {
-            background: #f7fafc;
-        }
-        
-        .cta-box {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 3rem;
-            border-radius: 8px;
-            text-align: center;
-            margin: 3rem 0;
-        }
-        
-        .cta-box h2 {
-            color: white;
-            border: none;
-            margin-bottom: 1rem;
-        }
-        
-        .cta-button {
-            display: inline-block;
-            background: white;
-            color: #667eea;
-            padding: 1rem 2rem;
-            border-radius: 50px;
-            text-decoration: none;
+            background: var(--bg-primary);
+            color: var(--accent-blue);
             font-weight: bold;
-            margin-top: 1rem;
-            transition: transform 0.3s;
+            text-transform: uppercase;
+            font-size: 0.85rem;
         }
-        
-        .cta-button:hover {
-            transform: scale(1.05);
+
+        tr:hover {
+            background: rgba(59, 130, 246, 0.1);
         }
-        
+
+        .badge {
+            display: inline-block;
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: bold;
+            margin-right: 0.5rem;
+        }
+
+        .badge-success { background: var(--accent-green); color: white; }
+        .badge-warning { background: var(--accent-yellow); color: black; }
+        .badge-info { background: var(--accent-blue); color: white; }
+        .badge-danger { background: var(--accent-red); color: white; }
+
+        .timeline {
+            position: relative;
+            padding-left: 2rem;
+            margin: 2rem 0;
+        }
+
+        .timeline-item {
+            position: relative;
+            padding-bottom: 2rem;
+            border-left: 2px solid var(--accent-blue);
+            padding-left: 2rem;
+        }
+
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -8px;
+            top: 0;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--accent-blue);
+            box-shadow: 0 0 10px var(--accent-blue);
+        }
+
+        .timeline-item h4 {
+            color: var(--accent-blue);
+            margin-top: 0;
+        }
+
+        code {
+            background: var(--bg-tertiary);
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            color: var(--accent-green);
+            font-size: 0.9em;
+        }
+
+        pre {
+            background: var(--bg-tertiary);
+            padding: 1.5rem;
+            border-radius: 10px;
+            overflow-x: auto;
+            margin: 1.5rem 0;
+            border: 1px solid var(--border-color);
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .warning-box {
+            background: rgba(239, 68, 68, 0.1);
+            border-left: 4px solid var(--accent-red);
+            padding: 1.5rem;
+            border-radius: 10px;
+            margin: 2rem 0;
+        }
+
+        .success-box {
+            background: rgba(16, 185, 129, 0.1);
+            border-left: 4px solid var(--accent-green);
+            padding: 1.5rem;
+            border-radius: 10px;
+            margin: 2rem 0;
+        }
+
         footer {
             text-align: center;
-            padding: 2rem;
-            border-top: 2px solid #e2e8f0;
-            color: #718096;
+            padding: 3rem 2rem;
+            margin-top: 4rem;
+            border-top: 2px solid var(--border-color);
+            color: var(--text-secondary);
         }
-        
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .section:nth-child(1) { animation-delay: 0.1s; }
+        .section:nth-child(2) { animation-delay: 0.2s; }
+        .section:nth-child(3) { animation-delay: 0.3s; }
+
         @media (max-width: 768px) {
-            .container {
-                padding: 1rem;
-            }
-            
-            h1 {
-                font-size: 2rem;
-            }
-            
-            .stat-grid, .feature-grid {
-                grid-template-columns: 1fr;
-            }
+            .container { padding: 1rem; }
+            h1 { font-size: 2rem; }
+            .section { padding: 1.5rem; }
+            .toc ul { columns: 1; }
+            .feature-grid { grid-template-columns: 1fr; }
+        }
+
+        .scroll-to-top {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: var(--accent-blue);
+            color: white;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 5px 15px var(--shadow);
+            transition: all 0.3s;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .scroll-to-top.visible {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .scroll-to-top:hover {
+            background: var(--accent-purple);
+            transform: translateY(-5px);
         }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <div class="logo">M</div>
-            <h1>MtaaDAO</h1>
-            <p class="tagline">"From Mtaa, For Mtaa" - Harambee, On-Chain</p>
-            <p style="margin-top: 1rem; color: #4a5568;">Version 1.0 | January 2025</p>
+            <div class="logo">🏘️</div>
+            <h1>MtaaDAO Whitepaper</h1>
+            <p class="subtitle">AI-Powered Decentralized Community Finance for Africa</p>
+            <p class="version-info">
+                Version 2.0 | October 2025 | Celo Mainnet & Alfajores Testnet
+            </p>
         </header>
 
         <nav class="toc">
-            <h2>📋 Table of Contents</h2>
+            <h2>📑 Table of Contents</h2>
             <ul>
-                <li><a href="#introduction">1. Introduction</a></li>
-                <li><a href="#problem">2. The Problem</a></li>
-                <li><a href="#solution">3. Our Solution</a></li>
-                <li><a href="#architecture">4. Platform Architecture</a></li>
-                <li><a href="#governance">5. Governance Model</a></li>
-                <li><a href="#tokenomics">6. Tokenomics</a></li>
-                <li><a href="#vault">7. Vault System</a></li>
-                <li><a href="#impact">8. Social Impact</a></li>
-                <li><a href="#risks">9. Risks & Mitigation</a></li>
-                <li><a href="#roadmap">10. Roadmap</a></li>
-                <li><a href="#conclusion">11. Conclusion</a></li>
+                <li><a href="#executive-summary">Executive Summary</a></li>
+                <li><a href="#vision-mission">Vision & Mission</a></li>
+                <li><a href="#problem-statement">Problem Statement</a></li>
+                <li><a href="#solution">Our Solution</a></li>
+                <li><a href="#architecture">System Architecture</a></li>
+                <li><a href="#ai-layer">AI Layer (Nuru)</a></li>
+                <li><a href="#blockchain">Blockchain Layer</a></li>
+                <li><a href="#smart-contracts">Smart Contracts</a></li>
+                <li><a href="#features">Core Features</a></li>
+                <li><a href="#governance">Governance Model</a></li>
+                <li><a href="#tokenomics">Tokenomics</a></li>
+                <li><a href="#security">Security & Compliance</a></li>
+                <li><a href="#technical-stack">Technical Stack</a></li>
+                <li><a href="#roadmap">Roadmap</a></li>
+                <li><a href="#team">Team & Partners</a></li>
+                <li><a href="#conclusion">Conclusion</a></li>
             </ul>
         </nav>
 
-        <section id="introduction">
-            <h2>🌍 Introduction</h2>
-            <p>
-                MtaaDAO is a revolutionary decentralized autonomous organization platform designed specifically for African communities. Built on the Celo blockchain, we're bringing traditional African community finance (chamas, savings groups) into the Web3 era with transparent governance, democratic decision-making, and yield-generating treasury vaults.
-            </p>
+        <!-- Executive Summary -->
+        <section class="section" id="executive-summary">
+            <h2>🌍 Executive Summary</h2>
             
             <div class="highlight-box">
-                <h3>💡 Our Vision</h3>
-                <p>
-                    To democratize community finance across Africa through blockchain technology, making transparent and efficient financial tools accessible to every community, regardless of size or location.
+                <p style="font-size: 1.2rem; color: var(--text-primary); margin-bottom: 0;">
+                    <strong>MtaaDAO</strong> is the first fully AI-powered, community-driven DAO platform specifically designed for African communities. We combine blockchain technology, artificial intelligence, and local payment infrastructure to democratize financial inclusion and transparent governance across the continent.
                 </p>
             </div>
 
-            <div class="stat-grid">
-                <div class="stat-card">
-                    <span class="stat-number">5K+</span>
-                    <span class="stat-label">Active Members</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-number">1.2K+</span>
-                    <span class="stat-label">Live Proposals</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-number">$100K+</span>
-                    <span class="stat-label">Treasury Value</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-number">3.9K+</span>
-                    <span class="stat-label">Tasks Completed</span>
-                </div>
+            <h3>The Complete System</h3>
+            <p><strong>MtaaDAO = Intelligent AI Assistant + Decentralized Finance + Community Governance</strong></p>
+
+            <div class="architecture-diagram">
+<pre>
+┌─────────────────────────────────────────────────────────┐
+│                    MORIO - The Spirit                    │
+│              (Conversational Interface)                  │
+│  Web App | Mobile | Telegram | WhatsApp | USSD | Voice  │
+└───────────────────────┬─────────────────────────────────┘
+                        │
+        ┌───────────────┼───────────────┐
+        ▼               ▼               ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│    NURU      │ │    KWETU     │ │  BLOCKCHAIN  │
+│  (The Mind)  │ │  (The Body)  │ │   (State)    │
+│              │ │              │ │              │
+│ • AI/ML      │ │ • Wallets    │ │ • Celo       │
+│ • Analytics  │ │ • Vaults     │ │ • Polygon    │
+│ • NLP        │ │ • Payments   │ │ • Base       │
+│ • Reasoning  │ │ • Proposals  │ │ • Ethereum   │
+└──────────────┘ └──────────────┘ └──────────────┘
+</pre>
             </div>
 
-            <h3>✨ Key Features</h3>
+            <h3>Key Achievements</h3>
             <div class="feature-grid">
-                <div class="feature-card">
-                    <span class="icon">🏛️</span>
-                    <h4>Democratic Governance</h4>
-                    <p>Transparent, weighted voting on proposals with real-time consensus tracking</p>
+                <div class="stat-box">
+                    <div class="stat-number">90%</div>
+                    <div class="stat-label">Blockchain Infrastructure</div>
                 </div>
-                <div class="feature-card">
-                    <span class="icon">💰</span>
-                    <h4>Smart Vaults</h4>
-                    <p>ERC4626 compliant treasury management with multiple yield strategies</p>
+                <div class="stat-box">
+                    <div class="stat-number">80%</div>
+                    <div class="stat-label">Backend Services</div>
                 </div>
-                <div class="feature-card">
-                    <span class="icon">🎖️</span>
-                    <h4>Reputation System</h4>
-                    <p>Merit-based influence that rewards active contributors</p>
+                <div class="stat-box">
+                    <div class="stat-number">70%</div>
+                    <div class="stat-label">Frontend Application</div>
                 </div>
-                <div class="feature-card">
-                    <span class="icon">📱</span>
-                    <h4>Mobile-First</h4>
-                    <p>MiniPay integration for seamless Opera Mini access</p>
+                <div class="stat-box">
+                    <div class="stat-number">50%</div>
+                    <div class="stat-label">AI Layer</div>
                 </div>
             </div>
         </section>
 
-        <section id="problem">
-            <h2>⚠️ The Problem: Traditional Chamas Are Broken</h2>
-            <p>
-                Traditional community savings groups (chamas) across Africa face critical challenges that limit their effectiveness and put members' funds at risk.
-            </p>
+        <!-- Vision & Mission -->
+        <section class="section" id="vision-mission">
+            <h2>🎯 Vision & Mission</h2>
+            
+            <h3>Our Vision</h3>
+            <p>To become the primary platform for community-driven financial management and governance across Africa, empowering millions of people to collectively manage resources, make transparent decisions, and build sustainable economic futures.</p>
 
-            <h3>Critical Issues</h3>
+            <h3>Our Mission</h3>
             <ul>
-                <li><strong>Lack of Transparency (78.5%):</strong> Manual record-keeping leads to disputes and trust deficits</li>
-                <li><strong>Single Point of Failure (82.3%):</strong> One person controls all funds, risking fraud and mismanagement</li>
-                <li><strong>Slow Processes (71.8%):</strong> Monthly meetings cause delayed decisions and missed opportunities</li>
-                <li><strong>Geographic Constraints (65.2%):</strong> Physical presence required, excluding diaspora contributions</li>
-                <li><strong>Poor Records (69.7%):</strong> Paper ledgers prone to loss and manipulation</li>
+                <li><strong>Democratize Finance:</strong> Make DeFi accessible to everyone, from urban tech workers to rural communities</li>
+                <li><strong>Empower Communities:</strong> Enable transparent, fair governance for collective decision-making</li>
+                <li><strong>Bridge the Gap:</strong> Connect traditional financial systems with blockchain technology</li>
+                <li><strong>Foster Inclusion:</strong> Support multiple languages, payment methods, and access channels</li>
+                <li><strong>Drive Innovation:</strong> Leverage AI to make complex financial decisions simple and accessible</li>
             </ul>
 
-            <div class="highlight-box">
-                <h3>📊 Economic Impact</h3>
+            <div class="success-box">
+                <h4>🌟 What Makes Us Different</h4>
                 <ul>
-                    <li><strong>KES 5 Billion:</strong> Annual fraud losses in Kenya alone</li>
-                    <li><strong>KES 3 Billion:</strong> Lost diaspora contribution potential</li>
-                    <li><strong>17.5 hours/month:</strong> Administrative overhead per chama</li>
+                    <li>✅ <strong>AI-First Approach:</strong> Natural language interface in local languages</li>
+                    <li>✅ <strong>Local Payment Integration:</strong> M-Pesa, Paystack, mobile money</li>
+                    <li>✅ <strong>Multi-Channel Access:</strong> Web, Telegram, WhatsApp, USSD, Voice</li>
+                    <li>✅ <strong>Offline-First:</strong> Works with low connectivity</li>
+                    <li>✅ <strong>Culturally Aware:</strong> Respects local customs and practices</li>
                 </ul>
             </div>
         </section>
 
-        <section id="solution">
-            <h2>💡 Our Solution: Complete Platform Integration</h2>
-            <p>
-                MtaaDAO addresses these challenges with a comprehensive blockchain-powered platform that combines traditional community values with cutting-edge technology.
-            </p>
-
-            <h3>How It Works</h3>
-            <ol>
-                <li><strong>Connect Wallet:</strong> Use MiniPay (Opera Mini) or MetaMask to access the platform</li>
-                <li><strong>Create/Join DAO:</strong> Deploy a new DAO in minutes or join an existing community</li>
-                <li><strong>Deposit to Vault:</strong> Add funds to personal or community vaults (cUSD, CELO, USDT)</li>
-                <li><strong>Participate:</strong> Vote on proposals, earn reputation, complete tasks, and build wealth collectively</li>
-            </ol>
+        <!-- Problem Statement -->
+        <section class="section" id="problem-statement">
+            <h2>⚠️ Problem Statement</h2>
+            
+            <h3>The Challenge</h3>
+            <p>African communities face significant barriers to financial inclusion and transparent governance:</p>
 
             <div class="feature-grid">
                 <div class="feature-card">
-                    <span class="icon">🔗</span>
+                    <span class="feature-icon">🔒</span>
+                    <h4>Limited Access to Banking</h4>
+                    <p>Over 60% of Africans remain unbanked or underbanked, lacking access to basic financial services.</p>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">📱</span>
+                    <h4>Complex Technology</h4>
+                    <p>Existing DAO platforms require high technical literacy and crypto knowledge, excluding the majority.</p>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">💸</span>
+                    <h4>High Transaction Costs</h4>
+                    <p>Traditional financial systems charge excessive fees for cross-border transactions and remittances.</p>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">🤝</span>
+                    <h4>Lack of Transparency</h4>
+                    <p>Traditional community organizations (chamas, cooperatives) often lack transparent record-keeping.</p>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">🌐</span>
+                    <h4>Connectivity Issues</h4>
+                    <p>Inconsistent internet access makes web-only platforms unreliable in many regions.</p>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">💱</span>
+                    <h4>Currency Volatility</h4>
+                    <p>Local currencies subject to inflation and volatility affect savings and investments.</p>
+                </div>
+            </div>
+
+            <h3>Why Existing Solutions Fail</h3>
+            <ul>
+                <li>❌ Don't integrate with local payment rails (M-Pesa, mobile money)</li>
+                <li>❌ Require constant internet connectivity</li>
+                <li>❌ Use complex UIs with crypto jargon</li>
+                <li>❌ Lack language support for local languages</li>
+                <li>❌ No AI assistance for decision-making</li>
+                <li>❌ Don't work on feature phones (USSD)</li>
+                <li>❌ Expensive to deploy and maintain</li>
+            </ul>
+        </section>
+
+        <!-- Solution -->
+        <section class="section" id="solution">
+            <h2>✨ Our Solution</h2>
+            
+            <p>MtaaDAO addresses these challenges through a three-layer architecture that combines AI intelligence, robust financial infrastructure, and blockchain technology.</p>
+
+            <h3>Core Components</h3>
+
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <span class="feature-icon">🤖</span>
+                    <h4>NURU - The Mind</h4>
+                    <p><strong>AI & Cognitive Core</strong></p>
+                    <ul>
+                        <li>Natural Language Understanding</li>
+                        <li>Predictive Analytics</li>
+                        <li>Risk Assessment & Fraud Detection</li>
+                        <li>Portfolio Optimization</li>
+                        <li>Multi-language Support (Swahili, English, Pidgin)</li>
+                    </ul>
+                    <span class="badge badge-info">50% Complete</span>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">🏗️</span>
+                    <h4>KWETU - The Body</h4>
+                    <p><strong>Operational Core</strong></p>
+                    <ul>
+                        <li>Multi-asset Wallet System</li>
+                        <li>ERC4626 Vault Management</li>
+                        <li>Payment Processing</li>
+                        <li>Proposal & Voting System</li>
+                        <li>Member Management</li>
+                    </ul>
+                    <span class="badge badge-success">80% Complete</span>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">⛓️</span>
                     <h4>Blockchain Layer</h4>
-                    <p>Celo network with 1000 TPS, 5-second finality, and $0.001 gas fees</p>
+                    <p><strong>Decentralized State</strong></p>
+                    <ul>
+                        <li>Celo (Primary Network)</li>
+                        <li>Polygon, Base, Ethereum</li>
+                        <li>Smart Contract Suite</li>
+                        <li>Cross-chain Bridge</li>
+                        <li>Event Indexing</li>
+                    </ul>
+                    <span class="badge badge-success">90% Complete</span>
                 </div>
+
                 <div class="feature-card">
-                    <span class="icon">📜</span>
-                    <h4>Smart Contracts</h4>
-                    <p>DAO factory, governance engine, ERC4626 vaults, and MTAA token</p>
-                </div>
-                <div class="feature-card">
-                    <span class="icon">⚙️</span>
-                    <h4>Backend Services</h4>
-                    <p>RESTful API, event indexing, real-time notifications, and analytics</p>
-                </div>
-                <div class="feature-card">
-                    <span class="icon">🎨</span>
-                    <h4>Frontend App</h4>
-                    <p>React PWA with mobile-first design and offline capabilities</p>
+                    <span class="feature-icon">💬</span>
+                    <h4>MORIO - The Spirit</h4>
+                    <p><strong>User Interface</strong></p>
+                    <ul>
+                        <li>Web Application (React)</li>
+                        <li>Telegram Bot Integration</li>
+                        <li>WhatsApp (Planned)</li>
+                        <li>USSD for Feature Phones</li>
+                        <li>Voice Interface (Planned)</li>
+                    </ul>
+                    <span class="badge badge-info">70% Complete</span>
                 </div>
             </div>
         </section>
 
-        <section id="architecture">
-            <h2>🏗️ Platform Architecture</h2>
-            <p>
-                MtaaDAO is built on a modern, scalable technology stack designed for reliability, security, and performance.
-            </p>
+        <!-- System Architecture -->
+        <section class="section" id="architecture">
+            <h2>🏛️ System Architecture</h2>
+            
+            <h3>Technology Stack Overview</h3>
 
-            <h3>Technology Stack</h3>
+            <div class="architecture-diagram">
+<pre>
+┌─────────────────────────────────────────────────────────────┐
+│                      FRONTEND LAYER                          │
+│  React 18 + TypeScript + TailwindCSS + shadcn/ui           │
+│  • Dashboard • Wallet • Proposals • Analytics               │
+│  • Mobile-First Design • PWA Support                        │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                       API LAYER                              │
+│  Express.js + TypeScript + WebSocket                        │
+│  • RESTful API • Real-time Updates • Authentication         │
+│  • Rate Limiting • Request Validation                       │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+         ┌───────────────┼───────────────┐
+         ▼               ▼               ▼
+┌──────────────┐  ┌─────────────┐  ┌─────────────┐
+│  AI SERVICES │  │  DATABASE   │  │  BLOCKCHAIN │
+│  (Python)    │  │  PostgreSQL │  │    Celo     │
+│  • NLP       │  │  + Drizzle  │  │   Ethers.js │
+│  • Analytics │  │  • Users    │  │  • Vaults   │
+│  • ML Models │  │  • DAOs     │  │  • Tokens   │
+│              │  │  • Vaults   │  │  • NFTs     │
+└──────────────┘  └─────────────┘  └─────────────┘
+         │               │               │
+         └───────────────┴───────────────┘
+                         │
+                         ▼
+              ┌──────────────────┐
+              │   REDIS CACHE    │
+              │   (Session/Temp) │
+              └──────────────────┘
+</pre>
+            </div>
+
+            <h3>Layer Breakdown</h3>
+
+            <h4>1. Frontend Layer</h4>
             <table>
-                <thead>
-                    <tr>
-                        <th>Layer</th>
-                        <th>Technology</th>
-                        <th>Purpose</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>Blockchain</td>
-                        <td>Celo (L1)</td>
-                        <td>Mobile-first, carbon-negative consensus</td>
-                    </tr>
-                    <tr>
-                        <td>Smart Contracts</td>
-                        <td>Solidity 0.8+</td>
-                        <td>Secure, audited contract logic</td>
-                    </tr>
-                    <tr>
-                        <td>Backend</td>
-                        <td>Node.js + Express</td>
-                        <td>RESTful API and event processing</td>
-                    </tr>
-                    <tr>
-                        <td>Database</td>
-                        <td>PostgreSQL (Neon)</td>
-                        <td>Scalable serverless database</td>
-                    </tr>
-                    <tr>
-                        <td>Frontend</td>
-                        <td>React + TypeScript</td>
-                        <td>Responsive, accessible UI</td>
-                    </tr>
-                    <tr>
-                        <td>State Management</td>
-                        <td>TanStack Query</td>
-                        <td>Efficient data fetching and caching</td>
-                    </tr>
-                </tbody>
+                <tr>
+                    <th>Component</th>
+                    <th>Technology</th>
+                    <th>Status</th>
+                </tr>
+                <tr>
+                    <td>Framework</td>
+                    <td>React 18 + TypeScript</td>
+                    <td><span class="badge badge-success">Complete</span></td>
+                </tr>
+                <tr>
+                    <td>Build Tool</td>
+                    <td>Vite</td>
+                    <td><span class="badge badge-success">Complete</span></td>
+                </tr>
+                <tr>
+                    <td>Styling</td>
+                    <td>TailwindCSS + shadcn/ui</td>
+                    <td><span class="badge badge-success">Complete</span></td>
+                </tr>
+                <tr>
+                    <td>State Management</td>
+                    <td>React Query + Zustand</td>
+                    <td><span class="badge badge-success">Complete</span></td>
+                </tr>
+                <tr>
+                    <td>Web3 Integration</td>
+                    <td>Ethers.js v6</td>
+                    <td><span class="badge badge-success">Complete</span></td>
+                </tr>
+                <tr>
+                    <td>Mobile PWA</td>
+                    <td>Workbox + Service Workers</td>
+                    <td><span class="badge badge-warning">In Progress</span></td>
+                </tr>
             </table>
 
-            <h3>Network Information</h3>
-            <div class="highlight-box">
-                <ul>
-                    <li><strong>Mainnet:</strong> Celo (Chain ID: 42220)</li>
-                    <li><strong>Testnet:</strong> Alfajores (Chain ID: 44787)</li>
-                    <li><strong>RPC:</strong> https://alfajores-forno.celo-testnet.org</li>
-                    <li><strong>Gas Cost:</strong> ~$0.001 per transaction</li>
-                </ul>
-            </div>
-        </section>
+            <h4>2. Backend Layer</h4>
+            <table>
+                <tr>
+                    <th>Component</th>
+                    <th>Technology</th>
+                    <th>Status</th>
+                </tr>
+                <tr>
+                    <td>Runtime</td>
+                    <td>Node.js 22 + TypeScript</td>
+                    <td><span class="badge badge-success">Complete</span></td>
+                </tr>
+                <tr>
+                    <td>Framework</td>
+                    <td>Express.js</td>
+                    <td><span class="badge badge-success">Complete</span></td>
+                </tr>
+                <tr>
+                    <td>Database ORM</td>
+                    <td>Drizzle ORM</td>
+                    <td><span class="badge badge-success">Complete</span></td>
+                </tr>
+                <tr>
+                    <td>Authentication</td>
+                    <td>JWT + Passport.js</td>
+                    <td><span class="badge badge-success">Complete</span></td>
+                </tr>
+                <tr>
+                    <td>Real-time</td>
+                    <td>Socket.io</td>
+                    <td><span class="badge badge-warning">In Progress</span></td>
+                </tr>
+                <tr>
+                    <td>Payment Integration</td>
+                    <td>Stripe, Paystack, M-Pesa</td>
+                    <td><span class="badge badge-success">Complete</span></td>
+                </tr>
+            </table>
 
-        <section id="governance">
-            <h2>🗳️ Governance Model</h2>
-            <p>
-                MtaaDAO uses a sophisticated governance system that balances democracy with practical efficiency, ensuring every voice is heard while preventing whale dominance.
-            </p>
-
-            <h3>Quadratic Voting</h3>
-            <p>
-                Unlike traditional one-token-one-vote systems, we use quadratic voting to prevent wealthy members from dominating decisions:
-            </p>
+            <h4>3. Database Layer</h4>
+            <p><strong>PostgreSQL 15 with pgvector extension</strong></p>
             <ul>
-                <li>Voting power = √(token balance) × reputation multiplier</li>
-                <li>Reputation earned through active participation</li>
-                <li>Maximum 10% voting weight per address</li>
-                <li>Delegation capped at 5% per delegate</li>
+                <li>✅ 13+ Migration Files</li>
+                <li>✅ User & Authentication Tables</li>
+                <li>✅ DAO & Governance Tables</li>
+                <li>✅ Vault & Transaction Tables</li>
+                <li>✅ Financial Tables (Escrow, Invoices, Payments)</li>
+                <li>✅ KYC & Compliance Tables</li>
+                <li>✅ Messaging & Notification Tables</li>
             </ul>
-
-            <h3>Proposal Types</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Type</th>
-                        <th>Requirements</th>
-                        <th>Voting Period</th>
-                        <th>Quorum</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>Standard</td>
-                        <td>100 MTAA + 1,000 reputation</td>
-                        <td>7 days</td>
-                        <td>51%</td>
-                    </tr>
-                    <tr>
-                        <td>Treasury</td>
-                        <td>500 MTAA + 5,000 reputation</td>
-                        <td>7 days</td>
-                        <td>10%</td>
-                    </tr>
-                    <tr>
-                        <td>Protocol Change</td>
-                        <td>1,000 MTAA + 10,000 reputation</td>
-                        <td>10 days</td>
-                        <td>51%</td>
-                    </tr>
-                </tbody>
-            </table>
         </section>
 
-        <section id="tokenomics">
-            <h2>💎 Tokenomics: MTAA Token Economy</h2>
-            <p>
-                The MTAA token powers the entire ecosystem, serving as both governance and utility token with carefully designed incentive mechanisms.
-            </p>
+        <!-- AI Layer -->
+        <section class="section" id="ai-layer">
+            <h2>🧠 AI Layer - NURU (The Mind)</h2>
+            
+            <p>NURU is our intelligent cognitive layer that provides AI-powered analytics, decision support, and natural language understanding.</p>
 
-            <h3>Token Distribution (1 Billion MTAA)</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Allocation</th>
-                        <th>Amount</th>
-                        <th>Percentage</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>Community Rewards</td>
-                        <td>400,000,000</td>
-                        <td>40%</td>
-                    </tr>
-                    <tr>
-                        <td>DAO Treasury</td>
-                        <td>200,000,000</td>
-                        <td>20%</td>
-                    </tr>
-                    <tr>
-                        <td>Team & Advisors</td>
-                        <td>150,000,000</td>
-                        <td>15%</td>
-                    </tr>
-                    <tr>
-                        <td>Ecosystem Development</td>
-                        <td>100,000,000</td>
-                        <td>10%</td>
-                    </tr>
-                    <tr>
-                        <td>Liquidity</td>
-                        <td>75,000,000</td>
-                        <td>7.5%</td>
-                    </tr>
-                    <tr>
-                        <td>Public Sale</td>
-                        <td>50,000,000</td>
-                        <td>5%</td>
-                    </tr>
-                    <tr>
-                        <td>Strategic Partners</td>
-                        <td>25,000,000</td>
-                        <td>2.5%</td>
-                    </tr>
-                </tbody>
-            </table>
-
-            <h3>Earning Mechanisms</h3>
+            <h3>Capabilities</h3>
             <div class="feature-grid">
                 <div class="feature-card">
-                    <span class="icon">🎯</span>
-                    <h4>Daily Challenges</h4>
-                    <ul>
-                        <li>Vote on proposal: 50 MTAA</li>
-                        <li>Complete task: 100 MTAA</li>
-                        <li>Invite member: 200 MTAA</li>
-                    </ul>
+                    <span class="feature-icon">💬</span>
+                    <h4>Natural Language Processing</h4>
+                    <p>Understand user intents in multiple languages (Swahili, English, Pidgin) and translate complex crypto operations into simple conversations.</p>
+                    <span class="badge badge-warning">Planned Q1 2026</span>
                 </div>
+
                 <div class="feature-card">
-                    <span class="icon">🔥</span>
-                    <h4>Streak Bonuses</h4>
-                    <ul>
-                        <li>7 days: 1.5x multiplier</li>
-                        <li>30 days: 2x multiplier</li>
-                        <li>365 days: 5x multiplier</li>
-                    </ul>
+                    <span class="feature-icon">📊</span>
+                    <h4>Predictive Analytics</h4>
+                    <p>Treasury forecasting, risk assessment, and member behavior prediction using ML models.</p>
+                    <span class="badge badge-success">Active</span>
                 </div>
+
                 <div class="feature-card">
-                    <span class="icon">🏦</span>
-                    <h4>Staking Rewards</h4>
-                    <ul>
-                        <li>30 days: 8% APY</li>
-                        <li>90 days: 10% APY</li>
-                        <li>365 days: 15% APY</li>
-                    </ul>
+                    <span class="feature-icon">🔍</span>
+                    <h4>Risk Assessment</h4>
+                    <p>Real-time fraud detection, anomaly detection in transactions, and proposal risk scoring.</p>
+                    <span class="badge badge-success">Active</span>
                 </div>
+
                 <div class="feature-card">
-                    <span class="icon">🔥</span>
-                    <h4>Deflationary</h4>
-                    <ul>
-                        <li>50% fees burned</li>
-                        <li>Quarterly 2.5% burns</li>
-                        <li>Failed proposal burns</li>
-                    </ul>
+                    <span class="feature-icon">📈</span>
+                    <h4>Portfolio Optimization</h4>
+                    <p>Modern Portfolio Theory implementation for optimal asset allocation in vaults.</p>
+                    <span class="badge badge-info">In Development</span>
                 </div>
             </div>
-        </section>
 
-        <section id="vault">
-            <h2>🏦 Vault System: MaonoVault</h2>
-            <p>
-                Our ERC4626-compliant vault system enables secure, yield-generating treasury management with multiple strategies and complete transparency.
-            </p>
-
-            <h3>Vault Types</h3>
+            <h3>AI Services</h3>
             <ul>
-                <li><strong>Personal Vaults:</strong> Individual savings with auto-compound options</li>
-                <li><strong>Community Vaults:</strong> Pooled resources for DAO treasuries</li>
-                <li><strong>Strategy Vaults:</strong> Automated yield optimization across DeFi protocols</li>
+                <li><strong>Treasury Analytics:</strong> Predicts future treasury values based on historical data</li>
+                <li><strong>Task Verification:</strong> AI-powered scoring of task completion claims</li>
+                <li><strong>Governance Insights:</strong> Analyzes voting patterns and proposal outcomes</li>
+                <li><strong>Risk Scoring:</strong> Evaluates financial risks for proposals and investments</li>
+                <li><strong>Natural Language Queries:</strong> "How much do we have?" → Returns treasury balance</li>
             </ul>
 
-            <h3>Yield Strategies</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Strategy</th>
-                        <th>Protocol</th>
-                        <th>APY Range</th>
-                        <th>Risk Level</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>Lending</td>
-                        <td>Moola Market</td>
-                        <td>5-8%</td>
-                        <td>Low</td>
-                    </tr>
-                    <tr>
-                        <td>Liquidity Provision</td>
-                        <td>Ubeswap</td>
-                        <td>10-15%</td>
-                        <td>Medium</td>
-                    </tr>
-                    <tr>
-                        <td>Staking</td>
-                        <td>CELO Native</td>
-                        <td>5%</td>
-                        <td>Low</td>
-                    </tr>
-                </tbody>
-            </table>
-
-            <h3>Fee Structure</h3>
             <div class="highlight-box">
+                <h4>🎯 Roadmap</h4>
                 <ul>
-                    <li><strong>Management Fee:</strong> 0.5% per year</li>
-                    <li><strong>Performance Fee:</strong> 10% of profits</li>
-                    <li><strong>Early Withdrawal:</strong> 0.5% if withdrawn within 30 days</li>
+                    <li>✅ <strong>Phase 1:</strong> Basic analytics and financial predictions (Complete)</li>
+                    <li>🔄 <strong>Phase 2:</strong> NLP query system (Q1 2026)</li>
+                    <li>📅 <strong>Phase 3:</strong> Voice interface integration (Q3 2026)</li>
+                    <li>📅 <strong>Phase 4:</strong> Autonomous proposal generation (Q4 2026)</li>
                 </ul>
             </div>
         </section>
 
-        <section id="impact">
-            <h2>🌟 Social & Economic Impact</h2>
-            <p>
-                MtaaDAO is more than a platform—it's a movement to transform African community finance and empower the next generation.
-            </p>
-
-            <h3>Financial Inclusion for Gen Z</h3>
-            <ul>
-                <li>No bank account required—crypto wallet = bank</li>
-                <li>No minimum balance—start with $1</li>
-                <li>Mobile-first—accessible anywhere</li>
-                <li>Gamification—achievement NFTs and leaderboards</li>
-                <li>Learn-to-earn—blockchain education rewards</li>
-            </ul>
-
-            <h3>Community Infrastructure Funding</h3>
-            <p>Examples of real-world projects enabled by MtaaDAO:</p>
-            <ul>
-                <li><strong>School Renovation:</strong> $50K target, 6 months, 500 students impacted</li>
-                <li><strong>Health Clinic:</strong> $100K target, 12 months, 5,000 residents served</li>
-                <li><strong>Water Borehole:</strong> $20K target, 3 months, 1,000 people with safe water</li>
-            </ul>
-
-            <h3>Impact Projections</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Year</th>
-                        <th>Users</th>
-                        <th>DAOs</th>
-                        <th>TVL</th>
-                        <th>Projects</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>2025</td>
-                        <td>10,000</td>
-                        <td>100</td>
-                        <td>$1M</td>
-                        <td>10</td>
-                    </tr>
-                    <tr>
-                        <td>2026</td>
-                        <td>50,000</td>
-                        <td>500</td>
-                        <td>$10M</td>
-                        <td>50</td>
-                    </tr>
-                    <tr>
-                        <td>2027</td>
-                        <td>200,000</td>
-                        <td>2,000</td>
-                        <td>$50M</td>
-                        <td>200</td>
-                    </tr>
-                </tbody>
-            </table>
-        </section>
-
-        <section id="risks">
-            <h2>⚠️ Risks & Mitigation</h2>
-            <p>
-                We take security and risk management seriously, implementing multiple layers of protection across technical, governance, and operational domains.
-            </p>
-
-            <h3>Technical Security</h3>
-            <ul>
-                <li><strong>Smart Contract Audits:</strong> 2 independent audits pre-launch, quarterly reviews</li>
-                <li><strong>Bug Bounty Program:</strong> Up to 100,000 MTAA rewards</li>
-                <li><strong>Reentrancy Protection:</strong> OpenZeppelin ReentrancyGuard implementation</li>
-                <li><strong>Oracle Redundancy:</strong> Multiple price sources (Chainlink, Pyth, Uniswap TWAP)</li>
-                <li><strong>Circuit Breakers:</strong> Automatic pause on >10% price deviation</li>
-            </ul>
-
-            <h3>Governance Protection</h3>
-            <ul>
-                <li><strong>Quadratic Voting:</strong> Reduces whale dominance</li>
-                <li><strong>Voting Weight Cap:</strong> Maximum 10% per address</li>
-                <li><strong>Delegation Limits:</strong> 5% max per delegate</li>
-                <li><strong>Reputation Requirements:</strong> Minimum thresholds for voting</li>
-                <li><strong>Gas Costs:</strong> Economic barrier to Sybil attacks</li>
-            </ul>
-
-            <h3>Phased Deployment</h3>
-            <ol>
-                <li><strong>Phase 1:</strong> Testnet (3 months) - Extensive testing</li>
-                <li><strong>Phase 2:</strong> Mainnet Beta ($100K TVL cap)</li>
-                <li><strong>Phase 3:</strong> Gradual cap increase based on security audits</li>
-                <li><strong>Phase 4:</strong> Full launch after proven stability</li>
-            </ol>
-        </section>
-
-        <section id="roadmap">
-            <h2>🗺️ Development Roadmap</h2>
+        <!-- Blockchain Layer -->
+        <section class="section" id="blockchain">
+            <h2>⛓️ Blockchain Layer</h2>
             
-            <h3>Phase 1: Foundation (Q1 2025) ✅ Complete</h3>
-            <ul>
-                <li>✅ MTAA token deployed</li>
-                <li>✅ MaonoVault (ERC4626) live</li>
-                <li>✅ Governance system operational</li>
-                <li>✅ MiniPay integration</li>
-                <li>✅ 100+ active users, 10 DAOs, $10K TVL</li>
-            </ul>
+            <h3>Why Celo?</h3>
+            <div class="success-box">
+                <p><strong>Celo</strong> is optimized for mobile-first users and offers unique advantages for African markets:</p>
+                <ul>
+                    <li>💰 <strong>Low Fees:</strong> ~$0.001 per transaction</li>
+                    <li>📱 <strong>Mobile-First:</strong> Built for smartphone users</li>
+                    <li>💵 <strong>Stablecoins:</strong> Native cUSD, cEUR, cREAL</li>
+                    <li>🌍 <strong>Carbon Negative:</strong> Environmentally sustainable</li>
+                    <li>⚡ <strong>Fast:</strong> ~5 second block time</li>
+                    <li>🔢 <strong>Phone Numbers:</strong> Map addresses to phone numbers</li>
+                </ul>
+            </div>
 
-            <h3>Phase 2: Ecosystem Growth (Q2 2025) 🚧 In Progress</h3>
-            <ul>
-                <li>Multiple vault strategies (Moola, Ubeswap, CELO staking)</li>
-                <li>Task bounty system with escrow</li>
-                <li>NFT marketplace for achievements</li>
-                <li>Advanced analytics dashboard</li>
-                <li>Target: 1,000 users, 50 DAOs, $100K TVL</li>
-            </ul>
+            <h3>Multi-Chain Support</h3>
+            <table>
+                <tr>
+                    <th>Network</th>
+                    <th>Purpose</th>
+                    <th>Status</th>
+                </tr>
+                <tr>
+                    <td>Celo Mainnet</td>
+                    <td>Primary production network</td>
+                    <td><span class="badge badge-success">Active</span></td>
+                </tr>
+                <tr>
+                    <td>Celo Alfajores</td>
+                    <td>Testnet for development</td>
+                    <td><span class="badge badge-success">Active</span></td>
+                </tr>
+                <tr>
+                    <td>Polygon</td>
+                    <td>Alternative L2 for scaling</td>
+                    <td><span class="badge badge-warning">Planned</span></td>
+                </tr>
+                <tr>
+                    <td>Base</td>
+                    <td>Coinbase L2 integration</td>
+                    <td><span class="badge badge-warning">Planned</span></td>
+                </tr>
+                <tr>
+                    <td>Ethereum</td>
+                    <td>Cross-chain bridge</td>
+                    <td><span class="badge badge-warning">Planned</span></td>
+                </tr>
+            </table>
 
-            <h3>Phase 3: Advanced Features (Q3 2025)</h3>
+            <h3>Supported Assets</h3>
             <ul>
-                <li>Cross-chain bridges (Ethereum, Polygon, Optimism)</li>
-                <li>Enhanced governance (delegation, veMTAA)</li>
-                <li>DEX liquidity mining</li>
-                <li>Mobile apps (iOS/Android)</li>
-                <li>Target: 5,000 users, 200 DAOs, $500K TVL</li>
-            </ul>
-
-            <h3>Phase 4: Maturity & Scale (Q4 2025)</h3>
-            <ul>
-                <li>Predictive analytics and auto-rebalancing</li>
-                <li>Enterprise white-label solutions</li>
-                <li>API access tiers</li>
-                <li>Target: 10,000 users, 500 DAOs, $2M TVL</li>
-            </ul>
-
-            <h3>Phase 5: Decentralization (2026+)</h3>
-            <ul>
-                <li>Progressive community governance transition</li>
-                <li>Decentralized oracle network</li>
-                <li>Full community control by Year 4</li>
-                <li>Target: 50,000+ users, 2,000+ DAOs, $10M+ TVL</li>
+                <li><strong>CELO:</strong> Native gas token</li>
+                <li><strong>cUSD:</strong> Stablecoin pegged to USD</li>
+                <li><strong>cEUR:</strong> Stablecoin pegged to EUR</li>
+                <li><strong>cREAL:</strong> Stablecoin pegged to Brazilian Real</li>
+                <li><strong>MTAA:</strong> Platform governance token (future)</li>
             </ul>
         </section>
 
-        <section id="conclusion">
-            <h2>🚀 Conclusion: The Future is Collective</h2>
-            <p>
-                In the tradition of harambee—where communities pull together to achieve what individuals cannot alone—MtaaDAO brings this timeless wisdom into the digital age.
-            </p>
+        <!-- Smart Contracts -->
+        <section class="section" id="smart-contracts">
+            <h2>📜 Smart Contracts</h2>
+            
+            <h3>Contract Suite</h3>
+
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <span class="feature-icon">🪙</span>
+                    <h4>MtaaToken (ERC20)</h4>
+                    <p>Platform governance token with voting rights and staking capabilities.</p>
+                    <span class="badge badge-success">Deployed</span>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">🏛️</span>
+                    <h4>MtaaGovernance</h4>
+                    <p>On-chain governance with proposals, voting, and execution mechanisms.</p>
+                    <span class="badge badge-success">Deployed</span>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">🏦</span>
+                    <h4>MaonoVault (ERC4626)</h4>
+                    <p>Tokenized vaults for community savings and investments with yield strategies.</p>
+                    <span class="badge badge-success">Deployed</span>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">🏭</span>
+                    <h4>MaonoVaultFactory</h4>
+                    <p>Factory pattern for deploying new vaults with custom configurations.</p>
+                    <span class="badge badge-success">Deployed</span>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">🏆</span>
+                    <h4>AchievementNFT (ERC721)</h4>
+                    <p>Soul-bound NFTs for community achievements and reputation.</p>
+                    <span class="badge badge-success">Deployed</span>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">🌉</span>
+                    <h4>CrossChainBridge</h4>
+                    <p>Bridge assets between Celo and other EVM chains.</p>
+                    <span class="badge badge-success">Deployed</span>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">📊</span>
+                    <h4>SampleLendingStrategy</h4>
+                    <p>Yield generation through DeFi lending protocols.</p>
+                    <span class="badge badge-success">Deployed</span>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">🔐</span>
+                    <h4>Multi-Sig Wallet</h4>
+                    <p>Multi-signature wallet for treasury management with role-based access.</p>
+                    <span class="badge badge-info">In Development</span>
+                </div>
+            </div>
+
+            <h3>Security Features</h3>
+            <ul>
+                <li>✅ OpenZeppelin contract libraries</li>
+                <li>✅ Pausable emergency controls</li>
+                <li>✅ Upgradeable proxy patterns</li>
+                <li>✅ Role-based access control (RBAC)</li>
+                <li>✅ Reentrancy guards</li>
+                <li>✅ Rate limiting on critical functions</li>
+                <li>🔄 Formal verification (planned)</li>
+                <li>🔄 Multi-chain audit (planned)</li>
+            </ul>
+        </section>
+
+        <!-- Core Features -->
+        <section class="section" id="features">
+            <h2>🎨 Core Features</h2>
+            
+            <h3>1. Wallet Management</h3>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <h4>Multi-Asset Support</h4>
+                    <p>CELO, cUSD, cEUR, cREAL with real-time balance tracking and portfolio analytics.</p>
+                </div>
+                <div class="feature-card">
+                    <h4>Secure Storage</h4>
+                    <p>Encrypted wallet keys with hardware wallet support (Ledger, Trezor).</p>
+                </div>
+                <div class="feature-card">
+                    <h4>Transaction History</h4>
+                    <p>Complete audit trail with filtering, search, and export capabilities.</p>
+                </div>
+                <div class="feature-card">
+                    <h4>QR Code Payments</h4>
+                    <p>Easy peer-to-peer transfers via QR codes for mobile users.</p>
+                </div>
+            </div>
+
+            <h3>2. Vault System</h3>
+            <ul>
+                <li><strong>Community Vaults:</strong> Shared savings pools with configurable withdrawal rules</li>
+                <li><strong>Personal Vaults:</strong> Individual savings with auto-compounding yields</li>
+                <li><strong>Locked Savings:</strong> Time-locked deposits with bonus APY</li>
+                <li><strong>Yield Strategies:</strong> Automated DeFi yield farming strategies</li>
+                <li><strong>NAV Tracking:</strong> Real-time Net Asset Value calculation</li>
+                <li><strong>Fee Management:</strong> Configurable performance and management fees</li>
+            </ul>
+
+            <h3>3. Governance System</h3>
+            <ul>
+                <li><strong>Proposal Creation:</strong> Anyone can create proposals with customizable templates</li>
+                <li><strong>Voting Mechanisms:</strong> Democratic, token-weighted, reputation-weighted, quadratic</li>
+                <li><strong>Delegation:</strong> Delegate voting power to trusted members</li>
+                <li><strong>Timelock:</strong> Delayed execution for security</li>
+                <li><strong>Discussion:</strong> On-chain comments and reactions</li>
+                <li><strong>Execution:</strong> Automated proposal execution after approval</li>
+            </ul>
+
+            <h3>4. Financial Features</h3>
+            <ul>
+                <li><strong>Payment Requests:</strong> Create and track payment requests</li>
+                <li><strong>Invoicing:</strong> Generate invoices with due dates and reminders</li>
+                <li><strong>Escrow:</strong> Trustless escrow for p2p transactions</li>
+                <li><strong>Recurring Payments:</strong> Automated subscription payments</li>
+                <li><strong>Split Bills:</strong> Easy bill splitting among members</li>
+                <li><strong>Gift Cards:</strong> Digital gift cards and vouchers</li>
+                <li><strong>Fiat On-Ramp:</strong> Buy crypto with local currency</li>
+            </ul>
+
+            <h3>5. Social Features</h3>
+            <ul>
+                <li><strong>Messaging:</strong> In-app messaging with notifications</li>
+                <li><strong>Telegram Integration:</strong> Manage DAO via Telegram bot</li>
+                <li><strong>Activity Feed:</strong> Real-time updates on DAO activities</li>
+                <li><strong>Reputation System:</strong> Merit-based influence and rewards</li>
+                <li><strong>Task Bounties:</strong> Post and claim tasks with rewards</li>
+                <li><strong>Leaderboards:</strong> Gamification with achievement tracking</li>
+            </ul>
+
+            <h3>6. Analytics & Insights</h3>
+            <ul>
+                <li><strong>Treasury Dashboard:</strong> Real-time treasury analytics</li>
+                <li><strong>Member Analytics:</strong> Participation and contribution tracking</li>
+                <li><strong>Proposal Analytics:</strong> Voting patterns and outcomes</li>
+                <li><strong>Financial Reports:</strong> Income statements, balance sheets</li>
+                <li><strong>Performance Metrics:</strong> APY, ROI, risk scores</li>
+                <li><strong>AI Predictions:</strong> Future treasury forecasts</li>
+            </ul>
+        </section>
+
+        <!-- Governance -->
+        <section class="section" id="governance">
+            <h2>🗳️ Governance Model</h2>
+            
+            <h3>Voting Mechanisms</h3>
+
+            <table>
+                <tr>
+                    <th>Model</th>
+                    <th>Description</th>
+                    <th>Best For</th>
+                </tr>
+                <tr>
+                    <td><strong>Democratic</strong></td>
+                    <td>One member, one vote</td>
+                    <td>Small communities with equal stakes</td>
+                </tr>
+                <tr>
+                    <td><strong>Token-Weighted</strong></td>
+                    <td>Votes proportional to token holdings</td>
+                    <td>Investment clubs, treasury management</td>
+                </tr>
+                <tr>
+                    <td><strong>Reputation-Weighted</strong></td>
+                    <td>Votes based on contribution and merit</td>
+                    <td>Work cooperatives, contributor DAOs</td>
+                </tr>
+                <tr>
+                    <td><strong>Quadratic</strong></td>
+                    <td>Square root of tokens (prevents whales)</td>
+                    <td>Large communities with diverse stakes</td>
+                </tr>
+            </table>
+
+            <h3>Proposal Lifecycle</h3>
+
+            <div class="timeline">
+                <div class="timeline-item">
+                    <h4>1. Creation</h4>
+                    <p>Member creates proposal with description, actions, and voting parameters</p>
+                </div>
+                <div class="timeline-item">
+                    <h4>2. Discussion</h4>
+                    <p>Community discusses and suggests improvements (2-7 days)</p>
+                </div>
+                <div class="timeline-item">
+                    <h4>3. Voting</h4>
+                    <p>Members vote for/against/abstain (configurable duration)</p>
+                </div>
+                <div class="timeline-item">
+                    <h4>4. Quorum Check</h4>
+                    <p>Verify minimum participation threshold met</p>
+                </div>
+                <div class="timeline-item">
+                    <h4>5. Timelock</h4>
+                    <p>Waiting period before execution (24-72 hours for security)</p>
+                </div>
+                <div class="timeline-item">
+                    <h4>6. Execution</h4>
+                    <p>Automated on-chain execution of approved actions</p>
+                </div>
+            </div>
+
+            <h3>Governance Parameters</h3>
+            <ul>
+                <li><strong>Quorum:</strong> Minimum 51% participation (configurable)</li>
+                <li><strong>Approval Threshold:</strong> Simple majority (>50%)</li>
+                <li><strong>Voting Period:</strong> 3-7 days (DAO configurable)</li>
+                <li><strong>Timelock:</strong> 24-72 hours delay</li>
+                <li><strong>Proposal Bond:</strong> Optional stake to prevent spam</li>
+            </ul>
+        </section>
+
+        <!-- Tokenomics -->
+        <section class="section" id="tokenomics">
+            <h2>💰 Tokenomics</h2>
+            
+            <h3>MTAA Token</h3>
+            <p><strong>Platform Governance Token</strong></p>
 
             <div class="highlight-box">
-                <p style="font-size: 1.1rem; font-style: italic;">
-                    "We're not just building a DAO platform. We're architecting a financial revolution. From the streets of Nairobi to the diaspora in London, from tech-savvy Gen Z to tradition-respecting elders, MtaaDAO unites communities across borders and generations."
+                <h4>Token Utility</h4>
+                <ul>
+                    <li>🗳️ <strong>Governance:</strong> Vote on platform upgrades and parameters</li>
+                    <li>💎 <strong>Staking:</strong> Stake for rewards and premium features</li>
+                    <li>💰 <strong>Fee Discounts:</strong> Reduced platform fees for holders</li>
+                    <li>🎁 <strong>Rewards:</strong> Earn tokens for contributions</li>
+                    <li>🔓 <strong>Access:</strong> Unlock premium analytics and features</li>
+                </ul>
+            </div>
+
+            <h3>Token Distribution</h3>
+            <table>
+                <tr>
+                    <th>Allocation</th>
+                    <th>Percentage</th>
+                    <th>Vesting</th>
+                </tr>
+                <tr>
+                    <td>Community Treasury</td>
+                    <td>30%</td>
+                    <td>Unlocked for grants and incentives</td>
+                </tr>
+                <tr>
+                    <td>Early Users & Airdrops</td>
+                    <td>25%</td>
+                    <td>6-month linear vesting</td>
+                </tr>
+                <tr>
+                    <td>Team & Advisors</td>
+                    <td>20%</td>
+                    <td>4-year vesting, 1-year cliff</td>
+                </tr>
+                <tr>
+                    <td>Liquidity Pool</td>
+                    <td>15%</td>
+                    <td>Immediate liquidity provision</td>
+                </tr>
+                <tr>
+                    <td>Strategic Partners</td>
+                    <td>10%</td>
+                    <td>2-year vesting</td>
+                </tr>
+            </table>
+
+            <h3>Revenue Model</h3>
+            <ul>
+                <li><strong>Vault Fees:</strong> 1-2% performance fee on vault profits</li>
+                <li><strong>Transaction Fees:</strong> 0.1% on platform transactions</li>
+                <li><strong>Premium Features:</strong> Advanced analytics, white-label DAOs</li>
+                <li><strong>Partnership Revenue:</strong> Integrations with DeFi protocols</li>
+            </ul>
+
+            <div class="success-box">
+                <h4>💡 Value Accrual</h4>
+                <p>50% of platform revenue is used to buy back and burn MTAA tokens, creating deflationary pressure and value for holders.</p>
+            </div>
+        </section>
+
+        <!-- Security -->
+        <section class="section" id="security">
+            <h2>🔐 Security & Compliance</h2>
+            
+            <h3>Security Measures</h3>
+
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <span class="feature-icon">🔒</span>
+                    <h4>Smart Contract Security</h4>
+                    <ul>
+                        <li>OpenZeppelin libraries</li>
+                        <li>Reentrancy guards</li>
+                        <li>Pausable contracts</li>
+                        <li>Role-based access</li>
+                        <li>Multi-sig admin</li>
+                    </ul>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">🛡️</span>
+                    <h4>Application Security</h4>
+                    <ul>
+                        <li>JWT authentication</li>
+                        <li>Encrypted storage</li>
+                        <li>Rate limiting</li>
+                        <li>Input validation</li>
+                        <li>SQL injection prevention</li>
+                    </ul>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">👁️</span>
+                    <h4>Monitoring</h4>
+                    <ul>
+                        <li>Real-time alerts</li>
+                        <li>Audit logging</li>
+                        <li>Anomaly detection</li>
+                        <li>Transaction monitoring</li>
+                        <li>Prometheus metrics</li>
+                    </ul>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">🔍</span>
+                    <h4>Compliance</h4>
+                    <ul>
+                        <li>KYC verification</li>
+                        <li>AML screening</li>
+                        <li>Transaction limits</li>
+                        <li>Regulatory reporting</li>
+                        <li>GDPR compliance</li>
+                    </ul>
+                </div>
+            </div>
+
+            <h3>KYC & Compliance</h3>
+            <ul>
+                <li><strong>Tiered KYC:</strong> Different verification levels for different features</li>
+                <li><strong>Document Verification:</strong> ID, proof of address, selfie checks</li>
+                <li><strong>AML Screening:</strong> Transaction monitoring and risk scoring</li>
+                <li><strong>Wallet Screening:</strong> Check against sanctioned addresses</li>
+                <li><strong>Compliance Dashboard:</strong> For operators to manage compliance</li>
+            </ul>
+
+            <div class="warning-box">
+                <h4>⚠️ Security Best Practices</h4>
+                <ul>
+                    <li>Never share your private keys or seed phrase</li>
+                    <li>Enable 2FA on your account</li>
+                    <li>Verify contract addresses before interacting</li>
+                    <li>Start with small amounts when testing</li>
+                    <li>Keep software and wallets updated</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Technical Stack -->
+        <section class="section" id="technical-stack">
+            <h2>⚙️ Technical Stack</h2>
+            
+            <h3>Complete Technology Overview</h3>
+
+            <h4>Frontend</h4>
+            <ul>
+                <li><strong>Framework:</strong> React 18 with TypeScript</li>
+                <li><strong>Build Tool:</strong> Vite for fast development</li>
+                <li><strong>Styling:</strong> TailwindCSS + shadcn/ui components</li>
+                <li><strong>State:</strong> React Query + Zustand</li>
+                <li><strong>Web3:</strong> Ethers.js v6, Wagmi, RainbowKit</li>
+                <li><strong>Charts:</strong> Recharts, Chart.js</li>
+                <li><strong>Forms:</strong> React Hook Form + Zod validation</li>
+            </ul>
+
+            <h4>Backend</h4>
+            <ul>
+                <li><strong>Runtime:</strong> Node.js 22 with TypeScript</li>
+                <li><strong>Framework:</strong> Express.js</li>
+                <li><strong>ORM:</strong> Drizzle ORM</li>
+                <li><strong>Database:</strong> PostgreSQL 15 with pgvector</li>
+                <li><strong>Cache:</strong> Redis 7 for sessions and temp data</li>
+                <li><strong>Authentication:</strong> Passport.js + JWT</li>
+                <li><strong>Blockchain:</strong> Ethers.js for contract interaction</li>
+                <li><strong>Jobs:</strong> Node-cron for scheduled tasks</li>
+            </ul>
+
+            <h4>AI & ML</h4>
+            <ul>
+                <li><strong>Language:</strong> Python 3.11+</li>
+                <li><strong>LLM:</strong> OpenAI GPT-4, Claude 3.5 Sonnet</li>
+                <li><strong>Vector DB:</strong> Pinecone or Weaviate (planned)</li>
+                <li><strong>ML Framework:</strong> TensorFlow/PyTorch (future)</li>
+                <li><strong>NLP:</strong> LangChain, NLTK</li>
+            </ul>
+
+            <h4>Infrastructure</h4>
+            <ul>
+                <li><strong>Containerization:</strong> Docker + Docker Compose</li>
+                <li><strong>Web Server:</strong> Nginx reverse proxy</li>
+                <li><strong>Monitoring:</strong> Prometheus + Grafana</li>
+                <li><strong>Logging:</strong> Winston + Elasticsearch (planned)</li>
+                <li><strong>CI/CD:</strong> GitHub Actions (in progress)</li>
+                <li><strong>Hosting:</strong> AWS/DigitalOcean/Vercel</li>
+            </ul>
+
+            <h4>Blockchain</h4>
+            <ul>
+                <li><strong>Primary Network:</strong> Celo (Mainnet & Alfajores)</li>
+                <li><strong>Smart Contracts:</strong> Solidity 0.8.x</li>
+                <li><strong>Development:</strong> Hardhat</li>
+                <li><strong>Testing:</strong> Chai, Waffle</li>
+                <li><strong>Security:</strong> OpenZeppelin contracts</li>
+            </ul>
+        </section>
+
+        <!-- Roadmap -->
+        <section class="section" id="roadmap">
+            <h2>🗺️ Roadmap</h2>
+            
+            <h3>Development Timeline</h3>
+
+            <div class="timeline">
+                <div class="timeline-item">
+                    <h4>Q4 2024 - Foundation ✅</h4>
+                    <ul>
+                        <li>✅ Core smart contracts deployed</li>
+                        <li>✅ Backend API infrastructure</li>
+                        <li>✅ Frontend dashboard MVP</li>
+                        <li>✅ Wallet integration</li>
+                        <li>✅ Basic governance system</li>
+                    </ul>
+                </div>
+
+                <div class="timeline-item">
+                    <h4>Q1 2025 - Expansion ✅</h4>
+                    <ul>
+                        <li>✅ Vault system with yield strategies</li>
+                        <li>✅ Payment processing integration</li>
+                        <li>✅ KYC & compliance system</li>
+                        <li>✅ Financial features (escrow, invoices)</li>
+                        <li>✅ Telegram bot integration</li>
+                        <li>✅ AI analytics foundation</li>
+                    </ul>
+                </div>
+
+                <div class="timeline-item">
+                    <h4>Q2 2025 - Enhancement ✅</h4>
+                    <ul>
+                        <li>✅ Advanced governance features</li>
+                        <li>✅ Task bounty system</li>
+                        <li>✅ Reputation & achievements</li>
+                        <li>✅ Messaging system</li>
+                        <li>✅ Analytics dashboard</li>
+                    </ul>
+                </div>
+
+                <div class="timeline-item">
+                    <h4>Q3 2025 - Scale (Current) 🔄</h4>
+                    <ul>
+                        <li>🔄 Production deployment</li>
+                        <li>🔄 Comprehensive testing</li>
+                        <li>🔄 Security audits</li>
+                        <li>🔄 Mobile PWA optimization</li>
+                        <li>🔄 Performance tuning</li>
+                    </ul>
+                </div>
+
+                <div class="timeline-item">
+                    <h4>Q4 2025 - AI Integration 📅</h4>
+                    <ul>
+                        <li>📅 NLP query system</li>
+                        <li>📅 Advanced AI predictions</li>
+                        <li>📅 WhatsApp integration</li>
+                        <li>📅 USSD support</li>
+                        <li>📅 Beta launch</li>
+                    </ul>
+                </div>
+
+                <div class="timeline-item">
+                    <h4>Q1 2026 - Full Launch 📅</h4>
+                    <ul>
+                        <li>📅 Public mainnet launch</li>
+                        <li>📅 MTAA token generation</li>
+                        <li>📅 Multi-chain support</li>
+                        <li>📅 Voice interface</li>
+                        <li>📅 Enterprise features</li>
+                    </ul>
+                </div>
+            </div>
+
+            <h3>Future Vision (2026+)</h3>
+            <ul>
+                <li>🌟 Support for 1M+ users across Africa</li>
+                <li>🌟 Integration with 50+ local payment providers</li>
+                <li>🌟 AI-powered autonomous DAO management</li>
+                <li>🌟 Cross-chain interoperability</li>
+                <li>🌟 Offline-first mobile apps</li>
+                <li>🌟 Regulatory compliance in 20+ countries</li>
+            </ul>
+        </section>
+
+        <!-- Team & Partners -->
+        <section class="section" id="team">
+            <h2>👥 Team & Partners</h2>
+            
+            <h3>Core Team</h3>
+            <p>Our team combines expertise in blockchain, AI, product design, and African market dynamics.</p>
+
+            <h3>Technology Partners</h3>
+            <ul>
+                <li><strong>Celo Foundation:</strong> Blockchain infrastructure and support</li>
+                <li><strong>OpenAI:</strong> AI/ML capabilities</li>
+                <li><strong>Stripe & Paystack:</strong> Payment processing</li>
+                <li><strong>Telegram:</strong> Messaging platform integration</li>
+            </ul>
+
+            <h3>Community</h3>
+            <p>Join our growing community of builders, users, and contributors:</p>
+            <ul>
+                <li>💬 <strong>Telegram:</strong> t.me/mtaadao</li>
+                <li>🐦 <strong>Twitter:</strong> @mtaadao</li>
+                <li>💻 <strong>GitHub:</strong> github.com/mtaadao</li>
+                <li>📧 <strong>Email:</strong> hello@mtaadao.org</li>
+            </ul>
+        </section>
+
+        <!-- Conclusion -->
+        <section class="section" id="conclusion">
+            <h2>🎯 Conclusion</h2>
+            
+            <div class="highlight-box">
+                <p style="font-size: 1.2rem; color: var(--text-primary);">
+                    <strong>MtaaDAO is more than a platform—it's a movement.</strong>
+                </p>
+                <p>
+                    We're building the financial infrastructure for the next billion people who deserve access to transparent, efficient, and fair financial services. By combining AI intelligence with blockchain technology and deep cultural understanding, we're creating a platform that works for everyone, not just the technically savvy.
                 </p>
             </div>
 
-            <h3>Why MtaaDAO Will Succeed</h3>
+            <h3>Our Commitment</h3>
             <ul>
-                <li><strong>Cultural Resonance:</strong> Built on African values (Ubuntu, Harambee)</li>
-                <li><strong>Solid Foundation:</strong> Battle-tested technology and secure smart contracts</li>
-                <li><strong>Accessibility First:</strong> Mobile-first design with MiniPay integration</li>
-                <li><strong>Real Utility:</strong> Solving actual problems faced by millions</li>
-                <li><strong>Community-Driven:</strong> Progressive decentralization ensures long-term sustainability</li>
+                <li>🌍 <strong>Accessibility:</strong> Financial services for everyone, everywhere</li>
+                <li>🔓 <strong>Transparency:</strong> Open-source code and auditable operations</li>
+                <li>🤝 <strong>Community:</strong> Governed by and for the people</li>
+                <li>📈 <strong>Innovation:</strong> Continuous improvement and adaptation</li>
+                <li>🌱 <strong>Sustainability:</strong> Building for long-term impact</li>
             </ul>
 
-            <div class="cta-box">
-                <h2>Ready to Join the Revolution?</h2>
-                <p>Start building wealth with your community today</p>
-                <a href="/register" class="cta-button">Launch Your DAO</a>
-                <a href="/maonovault" class="cta-button" style="background: transparent; border: 2px solid white; color: white; margin-left: 1rem;">Explore MaonoVault</a>
+            <h3>Get Involved</h3>
+            <p>We're actively seeking:</p>
+            <ul>
+                <li>💼 <strong>Early Adopters:</strong> Community groups ready to pilot the platform</li>
+                <li>🔨 <strong>Contributors:</strong> Developers, designers, translators</li>
+                <li>💰 <strong>Partners:</strong> Payment providers, DeFi protocols, NGOs</li>
+                <li>🎓 <strong>Advisors:</strong> Domain experts in governance, finance, AI</li>
+            </ul>
+
+            <div class="success-box">
+                <h4>🚀 Ready to Join?</h4>
+                <p>Visit <strong>app.mtaadao.org</strong> to create your first DAO or join an existing community. Together, we're building the future of collaborative finance in Africa.</p>
             </div>
         </section>
 
         <footer>
-            <p><strong>MtaaDAO Whitepaper v1.0</strong></p>
-            <p>January 2025</p>
-            <p>Built by: The MtaaDAO Community | Powered by: Celo Blockchain</p>
-            <p>Inspired by: African Ubuntu & Harambee Spirit</p>
-            <p style="margin-top: 1rem;">
-                🌐 <a href="https://mtaadao.com" style="color: #667eea;">mtaadao.com</a> | 
-                🐦 <a href="https://twitter.com/mtaadao" style="color: #667eea;">@MtaaDAO</a> | 
-                💬 <a href="https://t.me/mtaadao" style="color: #667eea;">Telegram</a> | 
-                💻 <a href="https://github.com/mtaadao" style="color: #667eea;">GitHub</a>
-            </p>
-            <p style="margin-top: 1rem; font-style: italic; color: #667eea;">
-                "From local chamas to global impact. From tradition to innovation. From Mtaa, For Mtaa."
+            <p><strong>MtaaDAO</strong> - Empowering Communities Through Technology</p>
+            <p style="margin-top: 1rem;">© 2025 MtaaDAO. All rights reserved.</p>
+            <p style="margin-top: 0.5rem; font-size: 0.85rem;">
+                This whitepaper is for informational purposes only and does not constitute financial advice.
             </p>
         </footer>
     </div>
+
+    <div class="scroll-to-top" id="scrollTop">
+        ⬆️
+    </div>
+
+    <script>
+        // Smooth scroll for TOC links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
+
+        // Scroll to top button
+        const scrollTop = document.getElementById('scrollTop');
+        window.addEventListener('scroll', () => {
+            if (window.pageYOffset > 300) {
+                scrollTop.classList.add('visible');
+            } else {
+                scrollTop.classList.remove('visible');
+            }
+        });
+
+        scrollTop.addEventListener('click', () => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+
+        // Animate sections on scroll
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -100px 0px'
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.style.opacity = '1';
+                    entry.target.style.transform = 'translateY(0)';
+                }
+            });
+        }, observerOptions);
+
+        document.querySelectorAll('.section').forEach(section => {
+            section.style.opacity = '0';
+            section.style.transform = 'translateY(30px)';
+            section.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+            observer.observe(section);
+        });
+    </script>
 </body>
 </html>

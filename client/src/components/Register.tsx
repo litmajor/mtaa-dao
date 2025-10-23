@@ -6,6 +6,8 @@ import { HeroLogo } from '@/components/ui/logo';
 export default function StunningRegister() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState(''); // Phone number without country code
+  const [countryCode, setCountryCode] = useState('+254'); // Default to Kenya
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
@@ -15,23 +17,34 @@ export default function StunningRegister() {
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendFeedback, setResendFeedback] = useState<{ type: 'success' | 'error' | ''; message: string }>({ type: '', message: '' });
+  const [resendCooldown, setResendCooldown] = useState(0);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [step, setStep] = useState('method'); // 'method', 'email', 'phone', 'password', 'otp'
   const [method, setMethod] = useState<'email' | 'phone' | ''>('');
   const [countryInfo, setCountryInfo] = useState<{ code: string; flag: string; name: string } | null>(null);
+  const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   
-  // Extended country code map
+  // Extended country code map with popular African countries first
   const countryCodes: Record<string, { flag: string; name: string }> = {
+    '+254': { flag: '🇰🇪', name: 'Kenya' },
+    '+234': { flag: '🇳🇬', name: 'Nigeria' },
+    '+255': { flag: '🇹🇿', name: 'Tanzania' },
+    '+256': { flag: '🇺🇬', name: 'Uganda' },
+    '+27': { flag: '🇿🇦', name: 'South Africa' },
+    '+233': { flag: '🇬🇭', name: 'Ghana' },
+    '+251': { flag: '🇪🇹', name: 'Ethiopia' },
+    '+250': { flag: '🇷🇼', name: 'Rwanda' },
+    '+237': { flag: '🇨🇲', name: 'Cameroon' },
+    '+225': { flag: '🇨🇮', name: 'Côte d\'Ivoire' },
     '+1': { flag: '🇺🇸', name: 'United States' },
     '+44': { flag: '🇬🇧', name: 'United Kingdom' },
-    '+254': { flag: '🇰🇪', name: 'Kenya' },
     '+91': { flag: '🇮🇳', name: 'India' },
     '+49': { flag: '🇩🇪', name: 'Germany' },
     '+81': { flag: '🇯🇵', name: 'Japan' },
     '+61': { flag: '🇦🇺', name: 'Australia' },
     '+33': { flag: '🇫🇷', name: 'France' },
-    '+234': { flag: '🇳🇬', name: 'Nigeria' },
-    '+27': { flag: '🇿🇦', name: 'South Africa' },
     '+86': { flag: '🇨🇳', name: 'China' },
     '+7': { flag: '🇷🇺', name: 'Russia' },
     '+55': { flag: '🇧🇷', name: 'Brazil' },
@@ -61,38 +74,46 @@ export default function StunningRegister() {
     '+372': { flag: '🇪🇪', name: 'Estonia' },
   };
   
-  // Phone number validation
-  const validatePhoneNumber = (phoneNumber: string) => {
-    if (!phoneNumber.startsWith('+')) return false;
+  // Phone number validation (for the number part only, without country code)
+  const validatePhoneNumber = (number: string) => {
+    // Check if it's only digits
+    if (!/^\d+$/.test(number)) return false;
     
-    // Remove the + and check if the rest are digits
-    const digits = phoneNumber.slice(1);
-    if (!/^\d+$/.test(digits)) return false;
-    
-    // Check if it's a valid country code
-    const sortedCodes = Object.keys(countryCodes).sort((a, b) => b.length - a.length);
-    const matchedCode = sortedCodes.find(code => phoneNumber.startsWith(code));
-    
-    if (!matchedCode) return false;
-    
-    // Check minimum length (country code + at least 6 digits)
-    return digits.length >= 7 && digits.length <= 15;
+    // Check length (typically 7-15 digits for most countries)
+    return number.length >= 7 && number.length <= 15;
   };
   
-  // Detect country code from phone input
+  // Update full phone when country code or phone number changes
   useEffect(() => {
-    if (method === 'phone' && phone.startsWith('+')) {
-      const sortedCodes = Object.keys(countryCodes).sort((a, b) => b.length - a.length);
-      const match = sortedCodes.find(code => phone.startsWith(code));
-      if (match) {
-        setCountryInfo({ code: match, ...countryCodes[match] });
-      } else {
-        setCountryInfo(null);
+    if (method === 'phone') {
+      const fullPhone = `${countryCode}${phoneNumber}`;
+      setPhone(fullPhone);
+      
+      if (countryCodes[countryCode]) {
+        setCountryInfo({ code: countryCode, ...countryCodes[countryCode] });
       }
-    } else {
-      setCountryInfo(null);
     }
-  }, [phone, method]);
+  }, [countryCode, phoneNumber, method]);
+  
+  // Auto-detect country code from user's location (optional feature)
+  useEffect(() => {
+    if (method === 'phone') {
+      // Try to detect user's country from browser/IP
+      // This is a simple implementation - you could use a geolocation API
+      fetch('https://ipapi.co/json/')
+        .then(res => res.json())
+        .then(data => {
+          const detectedCode = data.country_calling_code;
+          if (detectedCode && countryCodes[detectedCode]) {
+            setCountryCode(detectedCode);
+          }
+        })
+        .catch(() => {
+          // Fallback to Kenya if detection fails
+          setCountryCode('+254');
+        });
+    }
+  }, [method]);
 
   // Track mouse position for interactive effects
   useEffect(() => {
@@ -103,16 +124,31 @@ export default function StunningRegister() {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
+  // Cooldown timer for resend OTP
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => {
+        setResendCooldown(resendCooldown - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
+
   // Reset form when method changes
   const resetForm = () => {
     setEmail('');
     setPhone('');
+    setPhoneNumber('');
+    setCountryCode('+254');
     setPassword('');
     setConfirmPassword('');
     setError('');
     setOtp('');
     setOtpSent(false);
     setCountryInfo(null);
+    setShowCountryDropdown(false);
+    setResendFeedback({ type: '', message: '' });
+    setResendCooldown(0);
   };
 
   // Password strength checker
@@ -158,13 +194,13 @@ export default function StunningRegister() {
       return;
     }
     if (method === 'phone') {
-      if (!phone) {
+      if (!phoneNumber) {
         setError('Please enter your phone number.');
         setIsLoading(false);
         return;
       }
-      if (!validatePhoneNumber(phone)) {
-        setError('Please enter a valid phone number with country code (e.g., +254712345678).');
+      if (!validatePhoneNumber(phoneNumber)) {
+        setError('Please enter a valid phone number (7-15 digits).');
         setIsLoading(false);
         return;
       }
@@ -172,7 +208,7 @@ export default function StunningRegister() {
 
     try {
   // Send registration details to backend
-  const response = await fetch('/api/register', {
+  const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -224,6 +260,53 @@ export default function StunningRegister() {
       setError(err.message || 'OTP verification failed');
     } finally {
       setOtpLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0) return;
+    
+    setResendLoading(true);
+    setResendFeedback({ type: '', message: '' });
+    setError('');
+    
+    try {
+      // Resend OTP to backend
+      const response = await fetch('/api/auth/resend-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...(method === 'email' ? { email } : { phone })
+        })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to resend OTP');
+      }
+
+      setResendFeedback({ 
+        type: 'success', 
+        message: `OTP sent successfully to your ${method === 'email' ? 'email' : 'phone'}!` 
+      });
+      setResendCooldown(60); // 60 seconds cooldown
+      
+      // Clear success message after 5 seconds
+      setTimeout(() => {
+        setResendFeedback({ type: '', message: '' });
+      }, 5000);
+    } catch (err: any) {
+      setResendFeedback({ 
+        type: 'error', 
+        message: err.message || 'Failed to resend OTP. Please try again.' 
+      });
+      
+      // Clear error message after 5 seconds
+      setTimeout(() => {
+        setResendFeedback({ type: '', message: '' });
+      }, 5000);
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -471,42 +554,78 @@ export default function StunningRegister() {
                 <form onSubmit={(e) => { e.preventDefault(); setStep('password'); }} className="space-y-6">
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-white/90">Phone Number</label>
-                    <div className="relative group flex items-center">
-                      <Phone className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5 z-10" />
-                      <input
-                        type="tel"
-                        className="w-full pl-12 pr-20 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15"
-                        placeholder="Enter phone with country code (e.g. +254712345678)"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        required
-                      />
-                      {countryInfo && validatePhoneNumber(phone) ? (
-                        <div className="absolute right-4 top-1/2 flex items-center space-x-2 bg-green-500/20 px-2 py-1 rounded-xl border border-green-400/30 shadow-lg transition-all duration-300 transform -translate-y-1/2">
-                          <span className="text-xl">{countryInfo.flag}</span>
-                          <span className="text-xs text-green-300">{countryInfo.code}</span>
-                        </div>
-                      ) : phone.startsWith('+') && phone.length > 1 ? (
-                        <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-xs text-red-300 bg-red-500/20 px-2 py-1 rounded-xl border border-red-400/30">
-                          {countryInfo ? 'Invalid format' : 'Unknown code'}
-                        </div>
-                      ) : null}
+                    <div className="flex gap-2">
+                      {/* Country Code Selector */}
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setShowCountryDropdown(!showCountryDropdown)}
+                          className="h-full px-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white flex items-center gap-2 hover:bg-white/15 transition-all duration-300 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-purple-500 min-w-[120px]"
+                        >
+                          <span className="text-xl">{countryCodes[countryCode]?.flag || '🌍'}</span>
+                          <span className="text-sm font-medium">{countryCode}</span>
+                          <svg className={`w-4 h-4 transition-transform duration-200 ${showCountryDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        
+                        {/* Country Code Dropdown */}
+                        {showCountryDropdown && (
+                          <div className="absolute top-full left-0 mt-2 w-64 max-h-64 overflow-y-auto bg-gray-900/95 backdrop-blur-md border border-purple-500/30 rounded-2xl shadow-2xl z-50 scrollbar-thin scrollbar-thumb-purple-500/50 scrollbar-track-gray-800/50">
+                            {Object.entries(countryCodes).map(([code, info]) => (
+                              <button
+                                key={code}
+                                type="button"
+                                onClick={() => {
+                                  setCountryCode(code);
+                                  setShowCountryDropdown(false);
+                                }}
+                                className={`w-full px-4 py-3 text-left flex items-center gap-3 hover:bg-purple-600/30 transition-colors ${
+                                  countryCode === code ? 'bg-purple-600/40' : ''
+                                }`}
+                              >
+                                <span className="text-xl">{info.flag}</span>
+                                <span className="text-sm text-white flex-1">{info.name}</span>
+                                <span className="text-sm text-purple-200 font-mono">{code}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Phone Number Input */}
+                      <div className="relative group flex-1">
+                        <Phone className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5 z-10" />
+                        <input
+                          type="tel"
+                          className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15"
+                          placeholder="712345678"
+                          value={phoneNumber}
+                          onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))}
+                          required
+                        />
+                      </div>
                     </div>
-                    {countryInfo && validatePhoneNumber(phone) && (
-                      <div className="mt-2 text-xs text-green-300 flex items-center">
-                        <Check className="w-3 h-3 mr-1" />
-                        Valid number from {countryInfo.name}
+                    
+                    {/* Validation Messages */}
+                    {countryInfo && phoneNumber && validatePhoneNumber(phoneNumber) && (
+                      <div className="mt-2 text-xs text-green-300 flex items-center bg-green-500/10 px-3 py-2 rounded-xl border border-green-400/30">
+                        <Check className="w-4 h-4 mr-2" />
+                        <span>Valid number from {countryInfo.name}: <strong>{phone}</strong></span>
                       </div>
                     )}
-                    {phone && !phone.startsWith('+') && (
-                      <div className="mt-2 text-xs text-yellow-300">
-                        Please include country code (e.g., +254 for Kenya)
+                    {phoneNumber && !validatePhoneNumber(phoneNumber) && (
+                      <div className="mt-2 text-xs text-yellow-300 bg-yellow-500/10 px-3 py-2 rounded-xl border border-yellow-400/30">
+                        Phone number should be 7-15 digits
                       </div>
                     )}
+                    <div className="mt-2 text-xs text-white/60">
+                      Select your country code and enter your phone number
+                    </div>
                   </div>
                   <button
                     type="submit"
-                    disabled={!validatePhoneNumber(phone)}
+                    disabled={!phoneNumber || !validatePhoneNumber(phoneNumber)}
                     className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-red-600 text-white py-4 rounded-2xl font-semibold shadow-2xl hover:from-purple-700 hover:via-pink-700 hover:to-red-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:scale-105 group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                   >
                     <div className="absolute inset-0 bg-gradient-to-r from-purple-400 via-pink-400 to-red-400 opacity-0 group-hover:opacity-20 transition-opacity duration-300 rounded-2xl"></div>
@@ -700,21 +819,65 @@ export default function StunningRegister() {
                       <Shield className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
                       <input
                           type="text"
-                          className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15"
-                          placeholder="Enter the OTP sent to your email/phone"
+                          className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15 text-center text-2xl tracking-widest font-mono"
+                          placeholder="000000"
                           title="OTP input"
                           value={otp}
-                          onChange={(e) => setOtp(e.target.value)}
+                          onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          maxLength={6}
                           required
                         />
                     </div>
-                    <p className="text-white/60 text-sm">
+                    <p className="text-white/60 text-sm text-center">
                       A verification code has been sent to {method === 'email' ? email : phone}
                     </p>
                   </div>
+
+                  {/* Resend OTP Feedback */}
+                  {resendFeedback.message && (
+                    <div className={`p-4 rounded-2xl flex items-center animate-pulse backdrop-blur-sm ${
+                      resendFeedback.type === 'success' 
+                        ? 'bg-green-500/20 border border-green-500/30 text-green-100' 
+                        : 'bg-red-500/20 border border-red-500/30 text-red-100'
+                    }`}>
+                      {resendFeedback.type === 'success' ? (
+                        <Check className="w-5 h-5 mr-3 flex-shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
+                      )}
+                      <span className="text-sm">{resendFeedback.message}</span>
+                    </div>
+                  )}
+
+                  {/* Resend OTP Button */}
+                  <div className="flex items-center justify-center">
+                    <button
+                      type="button"
+                      onClick={handleResendOtp}
+                      disabled={resendLoading || resendCooldown > 0}
+                      className="text-sm text-purple-300 hover:text-purple-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {resendLoading ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-purple-300/30 border-t-purple-300 rounded-full animate-spin"></div>
+                          <span>Sending...</span>
+                        </>
+                      ) : resendCooldown > 0 ? (
+                        <>
+                          <span>Resend OTP in {resendCooldown}s</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4" />
+                          <span>Resend OTP</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
                   <button
                     type="submit"
-                    disabled={otpLoading}
+                    disabled={otpLoading || otp.length !== 6}
                     className="w-full bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 text-white py-4 rounded-2xl font-semibold shadow-2xl hover:from-green-700 hover:via-emerald-700 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none relative overflow-hidden group"
                   >
                     <div className="absolute inset-0 bg-gradient-to-r from-green-400 via-emerald-400 to-teal-400 opacity-0 group-hover:opacity-20 transition-opacity duration-300 rounded-2xl"></div>

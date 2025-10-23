@@ -15,7 +15,7 @@ import { generalRateLimit } from './security/rateLimiter';
 import { sanitizeInput, preventSqlInjection, preventXSS } from './security/inputSanitizer';
 import { auditMiddleware } from './security/auditLogger';
 import { BackupSystem, BackupScheduler } from './security/backupSystem';
-import { env, corsConfig } from "@shared/config";
+import { env, corsConfig } from "../shared/config.js";
 import {
   errorHandler,
   notFoundHandler,
@@ -67,6 +67,8 @@ setupProcessErrorHandlers();
 const server = createServer(app); // Assuming server is created here for Socket.IO initialization
 const io = new SocketIOServer(server, {
   cors: corsConfig,
+  // Allow token authentication via query or handshake
+  allowEIO3: true,
 });
 
 // Trust proxy for accurate IP addresses
@@ -124,25 +126,57 @@ app.locals.webSocketService = webSocketService;
 
 // Store user socket connections
 const userSockets = new Map();
+
+// Socket.IO authentication middleware
+io.use(async (socket: any, next) => {
+  try {
+    // Get token from handshake query or auth
+    const token = socket.handshake.query.token || socket.handshake.auth?.token;
+    
+    if (!token) {
+      // Allow connection but mark as unauthenticated
+      socket.userId = null;
+      return next();
+    }
+
+    // Verify JWT token
+    const jwt = await import('jsonwebtoken');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
+    
+    socket.userId = decoded.userId || decoded.id;
+    logger.info('Socket.IO client authenticated via token', { userId: socket.userId, socketId: socket.id });
+    next();
+  } catch (error) {
+    logger.warn('Socket.IO auth failed, allowing unauthenticated connection', { error: (error as Error).message });
+    socket.userId = null;
+    next(); // Allow connection even if auth fails
+  }
+});
+
 // Handle Socket.IO connections for notifications and other real-time events
 io.on('connection', (socket: any) => {
-  logger.info('Socket.IO client connected:', { socketId: socket.id });
+  logger.info('Socket.IO client connected:', { socketId: socket.id, userId: socket.userId || 'anonymous' });
 
+  // If authenticated via middleware, join user room automatically
+  if (socket.userId) {
+    userSockets.set(socket.userId, socket.id);
+    socket.join(`user_${socket.userId}`);
+  }
+
+  // Legacy authenticate event for backwards compatibility
   socket.on('authenticate', (userId: string) => {
-    logger.info('Socket.IO client authenticated', { userId, socketId: socket.id });
+    logger.info('Socket.IO client authenticated via event', { userId, socketId: socket.id });
+    socket.userId = userId;
     userSockets.set(userId, socket.id);
     socket.join(`user_${userId}`);
   });
 
   socket.on('disconnect', () => {
     // Remove user from socket map
-    for (const [userId, socketId] of userSockets.entries()) {
-      if (socketId === socket.id) {
-        userSockets.delete(userId);
-        break;
-      }
+    if (socket.userId) {
+      userSockets.delete(socket.userId);
     }
-    console.log('User disconnected:', socket.id);
+    logger.info('Socket.IO user disconnected:', { socketId: socket.id, userId: socket.userId || 'anonymous' });
   });
 });
 
@@ -185,6 +219,10 @@ app.use((req, res, next) => {
 
 (async () => {
   try {
+    // Initialize Redis connection
+    const { redis } = await import('./services/redis');
+    await redis.connect();
+
     // Initialize backup system
     const backupConfig = {
       enabled: process.env.BACKUPS_ENABLED === 'true',

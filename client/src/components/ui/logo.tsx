@@ -37,9 +37,6 @@ export function Logo({
   const { theme } = useTheme();
   const effectiveTheme = forceTheme || theme;
 
-  // Determine the base path for logos
-  const basePath = "/attached_assets/mtaa_dao_logos";
-
   // Size to dimension mapping
   const iconSizes = {
     sm: "w-6 h-6",
@@ -55,10 +52,15 @@ export function Logo({
     banner: "h-12"
   };
 
-  // Construct the logo path
+  // Use transparent logo (no background) for all themes
   const getLogoPath = (type: "icon" | "full") => {
+    // For now, just use the transparent logo for icons
+    if (type === "icon") {
+      return "/mtaa_dao_logo_transparent.png";
+    }
+    // For full logo, use themed version
     const themeStr = effectiveTheme === "dark" ? "dark" : "light";
-    return `${basePath}/${type}_${themeStr}_${size}.png`;
+    return `/mtaa_dao_logos/full_${themeStr}_${size}.png`;
   };
 
   if (variant === "full") {
