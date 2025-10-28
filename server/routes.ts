@@ -36,6 +36,7 @@ import adminRoutes from './routes/admin';
 import announcementsRoutes from './routes/announcements';
 import investmentPoolsRoutes from './routes/investment-pools';
 import poolGovernanceRoutes from './routes/pool-governance';
+import treasuryIntelligenceRoutes from './routes/treasury-intelligence';
 
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
@@ -306,4 +307,7 @@ export function registerRoutes(app: express.Application) {
   // === RBAC ENDPOINTS ===  
   app.get('/api/admin/users', isAuthenticated, getUsersHandler);
   app.put('/api/admin/users/:userId/role', isAuthenticated, updateUserRoleHandler);
+
+  // === TREASURY INTELLIGENCE API ===
+  app.use('/api/treasury-intelligence', treasuryIntelligenceRoutes);
 }
