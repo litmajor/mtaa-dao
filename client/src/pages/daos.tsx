@@ -1,93 +1,167 @@
 import React, { useState } from 'react';
-import { Plus, Users, DollarSign, TrendingUp, Settings, ArrowRight, Sparkles, Crown, Shield, Star, Zap, Globe, Heart, Trophy, Wallet, Eye, ChevronRight } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
+import { Plus, Users, DollarSign, TrendingUp, Settings, ArrowRight, Sparkles, Crown, Shield, Star, Zap, Globe, Heart, Trophy, Wallet, Eye, ChevronRight, Loader2 } from 'lucide-react';
+import { useToast } from "@/hooks/use-toast";
+
+type DaoRole = "elder" | "proposer" | "member" | null;
+
+interface DAO {
+  id: number;
+  name: string;
+  description: string;
+  memberCount: number;
+  treasuryBalance: number;
+  role: DaoRole;
+  isJoined: boolean;
+  gradient: string;
+  theme: string;
+  trending: boolean;
+  growthRate: number;
+  recentActivity: string;
+  avatar: string;
+}
 
 export default function EnhancedDAOs() {
   const [activeTab, setActiveTab] = useState("joined");
   const [hoveredDao, setHoveredDao] = useState<number | null>(null);
   const [leavingDaoId, setLeavingDaoId] = useState<number | null>(null);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
-  // Enhanced mock data with more visual elements
-  type DaoRole = "elder" | "proposer" | "member" | null;
+  // Fetch DAOs from API
+  const { data: daosData = [], isLoading, error } = useQuery<DAO[]>({
+    queryKey: ["/api/daos"],
+    queryFn: async () => {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch("/api/daos", {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to fetch DAOs");
+      }
+      
+      const data = await response.json();
+      
+      // Add UI properties to each DAO
+      return data.map((dao: any) => ({
+        ...dao,
+        gradient: dao.gradient || getGradientForTheme(dao.theme || 'purple'),
+        avatar: dao.avatar || getAvatarForCategory(dao.category),
+      }));
+    },
+    staleTime: 1 * 60 * 1000, // 1 minute
+  });
 
-  const mockDAOs: Array<{
-    id: number;
-    name: string;
-    description: string;
-    memberCount: number;
-    treasuryBalance: number;
-    role: DaoRole;
-    isJoined: boolean;
-    gradient: string;
-    theme: string;
-    trending: boolean;
-    growthRate: number;
-    recentActivity: string;
-    avatar: string;
-  }> = [
-    {
-      id: 1,
-      name: "Kibera Development DAO",
-      description: "Community-driven development initiatives in Kibera",
-      memberCount: 234,
-      treasuryBalance: 12500,
-      role: "elder",
-      isJoined: true,
-      gradient: "from-purple-600 via-pink-600 to-orange-500",
-      theme: "purple",
-      trending: true,
-      growthRate: 12.5,
-      recentActivity: "3 proposals active",
-      avatar: "🏘️"
+  // Join DAO mutation
+  const joinMutation = useMutation({
+    mutationFn: async (daoId: number) => {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(`/api/daos/${daoId}/join`, {
+        method: "POST",
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to join DAO");
+      }
+      
+      return response.json();
     },
-    {
-      id: 2,
-      name: "Youth Education Fund",
-      description: "Supporting education for youth in Nairobi",
-      memberCount: 156,
-      treasuryBalance: 8900,
-      role: "member",
-      isJoined: true,
-      gradient: "from-blue-600 via-cyan-500 to-teal-400",
-      theme: "blue",
-      trending: false,
-      growthRate: 8.2,
-      recentActivity: "New funding round",
-      avatar: "🎓"
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/daos"] });
+      toast({
+        title: "Success",
+        description: "Successfully joined the DAO!",
+      });
     },
-    {
-      id: 3,
-      name: "Green Energy Initiative",
-      description: "Promoting renewable energy solutions across Kenya",
-      memberCount: 89,
-      treasuryBalance: 5600,
-      role: null,
-      isJoined: false,
-      gradient: "from-green-500 via-emerald-500 to-teal-500",
-      theme: "green",
-      trending: true,
-      growthRate: 22.1,
-      recentActivity: "Solar project launched",
-      avatar: "🌱"
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
     },
-    {
-      id: 4,
-      name: "Women Entrepreneurs DAO",
-      description: "Empowering women-led businesses and startups",
-      memberCount: 78,
-      treasuryBalance: 4200,
-      role: null,
-      isJoined: false,
-      gradient: "from-pink-500 via-rose-500 to-red-500",
-      theme: "pink",
-      trending: false,
-      growthRate: 15.8,
-      recentActivity: "Mentorship program",
-      avatar: "💼"
-    },
-  ];
+  });
 
-  const joinedDAOs = mockDAOs.filter(dao => dao.isJoined);
-  const availableDAOs = mockDAOs.filter(dao => !dao.isJoined);
+  // Leave DAO mutation
+  const leaveMutation = useMutation({
+    mutationFn: async (daoId: number) => {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(`/api/daos/${daoId}/leave`, {
+        method: "POST",
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to leave DAO");
+      }
+      
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/daos"] });
+      setLeavingDaoId(null);
+      toast({
+        title: "Success",
+        description: "Successfully left the DAO",
+      });
+    },
+    onError: (error: Error) => {
+      setLeavingDaoId(null);
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Helper functions for UI properties
+  function getGradientForTheme(theme: string): string {
+    const gradients: Record<string, string> = {
+      purple: "from-purple-600 via-pink-600 to-orange-500",
+      blue: "from-blue-600 via-cyan-500 to-teal-400",
+      green: "from-green-500 via-emerald-500 to-teal-500",
+      pink: "from-pink-500 via-rose-500 to-red-500",
+      orange: "from-orange-500 via-red-500 to-pink-500",
+      teal: "from-teal-500 via-cyan-500 to-blue-500",
+    };
+    return gradients[theme] || gradients.purple;
+  }
+
+  function getAvatarForCategory(category?: string): string {
+    const avatars: Record<string, string> = {
+      development: "🏘️",
+      education: "🎓",
+      energy: "🌱",
+      business: "💼",
+      healthcare: "🏥",
+      arts: "🎨",
+      sports: "⚽",
+      tech: "💻",
+    };
+    return avatars[category || 'development'] || "🏛️";
+  }
+
+  const joinedDAOs = daosData.filter(dao => dao.isJoined);
+  const availableDAOs = daosData.filter(dao => !dao.isJoined);
 
   const getRoleBadge = (role: "elder" | "proposer" | "member" | null, theme: string) => {
     if (!role) return null;
@@ -112,15 +186,45 @@ export default function EnhancedDAOs() {
   const handleLeaveDao = async (daoId: number) => {
     if (!window.confirm("Are you sure you want to leave this DAO? Past contributions are not refunded.")) return;
     setLeavingDaoId(daoId);
-    
-    // Simulate API call
-    setTimeout(() => {
-      setLeavingDaoId(null);
-      // In real implementation, update the state or reload
-    }, 2000);
+    leaveMutation.mutate(daoId);
   };
 
-  const DAOCard = ({ dao, index }: { dao: typeof mockDAOs[number]; index: number }) => (
+  const handleJoinDao = (daoId: number) => {
+    joinMutation.mutate(daoId);
+  };
+
+  const handleEnterDao = (daoId: number) => {
+    navigate(`/dao/${daoId}`);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-purple-900 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 text-purple-600 animate-spin mx-auto mb-4" />
+          <p className="text-lg text-gray-600 dark:text-gray-400">Loading DAOs...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-purple-900 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-lg text-red-600 mb-4">Failed to load DAOs</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const DAOCard = ({ dao, index }: { dao: DAO; index: number }) => (
     <div
       className={`group relative overflow-hidden rounded-2xl bg-white dark:bg-gray-900 shadow-xl hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-2 ${
         hoveredDao === dao.id ? 'scale-105' : ''
@@ -209,19 +313,22 @@ export default function EnhancedDAOs() {
         {/* Action buttons */}
         {dao.isJoined ? (
           <div className="flex flex-col gap-2">
-            <button className={`w-full bg-gradient-to-r ${dao.gradient} text-white py-3 rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-300 flex items-center justify-center gap-2 group/btn`}>
+            <button 
+              onClick={() => handleEnterDao(dao.id)}
+              className={`w-full bg-gradient-to-r ${dao.gradient} text-white py-3 rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-300 flex items-center justify-center gap-2 group/btn`}
+            >
               <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform duration-300" />
               Enter DAO
               <Sparkles className="w-4 h-4 group-hover/btn:rotate-12 transition-transform duration-300" />
             </button>
             <button
               className="w-full bg-gradient-to-r from-red-500 to-pink-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:transform-none"
-              disabled={leavingDaoId === dao.id}
+              disabled={leavingDaoId === dao.id || leaveMutation.isPending}
               onClick={() => handleLeaveDao(dao.id)}
             >
-              {leavingDaoId === dao.id ? (
+              {leavingDaoId === dao.id || leaveMutation.isPending ? (
                 <div className="flex items-center justify-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   Leaving...
                 </div>
               ) : (
@@ -230,10 +337,23 @@ export default function EnhancedDAOs() {
             </button>
           </div>
         ) : (
-          <button className={`w-full bg-gradient-to-r ${dao.gradient} text-white py-3 rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-300 flex items-center justify-center gap-2 group/btn`}>
-            <Plus className="w-4 h-4 group-hover/btn:rotate-90 transition-transform duration-300" />
-            Join DAO
-            <Heart className="w-4 h-4 group-hover/btn:scale-110 transition-transform duration-300" />
+          <button 
+            onClick={() => handleJoinDao(dao.id)}
+            disabled={joinMutation.isPending}
+            className={`w-full bg-gradient-to-r ${dao.gradient} text-white py-3 rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-300 flex items-center justify-center gap-2 group/btn disabled:opacity-50 disabled:transform-none`}
+          >
+            {joinMutation.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Joining...
+              </>
+            ) : (
+              <>
+                <Plus className="w-4 h-4 group-hover/btn:rotate-90 transition-transform duration-300" />
+                Join DAO
+                <Heart className="w-4 h-4 group-hover/btn:scale-110 transition-transform duration-300" />
+              </>
+            )}
           </button>
         )}
       </div>
@@ -265,7 +385,10 @@ export default function EnhancedDAOs() {
             </div>
           </div>
           
-          <button className="group relative overflow-hidden bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 text-white px-8 py-4 rounded-2xl font-semibold shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300">
+          <button 
+            onClick={() => navigate('/create-dao')}
+            className="group relative overflow-hidden bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 text-white px-8 py-4 rounded-2xl font-semibold shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
+          >
             <div className="absolute inset-0 bg-gradient-to-r from-orange-500 via-pink-600 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
             <div className="relative flex items-center gap-2">
               <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
@@ -322,7 +445,10 @@ export default function EnhancedDAOs() {
                 : "Check back soon for new innovative communities to join"
               }
             </p>
-            <button className="bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 text-white px-8 py-4 rounded-2xl font-semibold shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300 group">
+            <button 
+              onClick={() => activeTab === "joined" ? setActiveTab("available") : navigate('/create-dao')}
+              className="bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 text-white px-8 py-4 rounded-2xl font-semibold shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300 group"
+            >
               <div className="flex items-center gap-2">
                 <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
                 {activeTab === "joined" ? "Discover DAOs" : "Create DAO"}

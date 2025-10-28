@@ -1,6 +1,6 @@
 import React, { lazy, Suspense } from 'react';
 import { HelmetProvider } from 'react-helmet-async';
-import { BrowserRouter, Route, Routes, Navigate, Outlet } from 'react-router-dom';
+import { Route, Routes, Navigate, Outlet } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from './pages/hooks/useAuth';
 import { PageLoading } from './components/ui/page-loading';
@@ -9,6 +9,7 @@ import Navigation from './components/navigation';
 import { MobileNav } from './components/mobile-nav';
 import { ThemeProvider } from "./components/theme-provider";
 import { TooltipProvider } from "./components/ui/tooltip";
+import AnnouncementsBanner from './components/AnnouncementsBanner';
 
 // Lazy load heavy pages
 const CreateDaoLazy = lazy(() => import('./pages/create-dao'));
@@ -30,6 +31,15 @@ const SettingsLazy = lazy(() => import('./pages/settings'));
 const AnalyticsPageLazy = lazy(() => import('./pages/AnalyticsPage'));
 const TaskBountyBoardPageLazy = lazy(() => import('./pages/TaskBountyBoardPage'));
 const RewardsHubLazy = lazy(() => import('./pages/RewardsHub'));
+const MyRewardsLazy = lazy(() => import('./pages/my-rewards'));
+const UserManagementLazy = lazy(() => import('./pages/admin/UserManagement'));
+const DaoModerationLazy = lazy(() => import('./pages/admin/DaoModeration'));
+const SystemSettingsLazy = lazy(() => import('./pages/admin/SystemSettings'));
+const SecurityAuditLazy = lazy(() => import('./pages/admin/SecurityAudit'));
+const AnnouncementsManagementLazy = lazy(() => import('./pages/admin/AnnouncementsManagement'));
+const PoolManagementLazy = lazy(() => import('./pages/admin/PoolManagement'));
+const InvestmentPoolsLazy = lazy(() => import('./pages/investment-pools'));
+const InvestmentPoolDetailLazy = lazy(() => import('./pages/investment-pool-detail'));
 
 // Non-lazy (lighter) pages
 import Landing from './pages/landing';
@@ -98,7 +108,6 @@ function App() {
     <HelmetProvider>
       <ThemeProvider>
         <TooltipProvider>
-          <BrowserRouter>
           <div className="min-h-screen bg-background text-foreground">
             <Helmet>
               <title>{isAuthenticated ? "Dashboard | Mtaa DAO" : "Welcome | Mtaa DAO"}</title>
@@ -108,6 +117,8 @@ function App() {
             </Helmet>
 
             <SkipLink />
+            
+            <AnnouncementsBanner />
 
             {isAuthenticated && <Navigation />}
 
@@ -161,6 +172,9 @@ function App() {
                 <Route path="/analytics" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><AnalyticsPageLazy /></Suspense></ProtectedRoute>} />
                 <Route path="/tasks" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><TaskBountyBoardPageLazy /></Suspense></ProtectedRoute>} />
                 <Route path="/rewards" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><RewardsHubLazy /></Suspense></ProtectedRoute>} />
+                <Route path="/my-rewards" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><MyRewardsLazy /></Suspense></ProtectedRoute>} />
+                <Route path="/investment-pools" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><InvestmentPoolsLazy /></Suspense></ProtectedRoute>} />
+                <Route path="/investment-pools/:id" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><InvestmentPoolDetailLazy /></Suspense></ProtectedRoute>} />
                 <Route path="/nft-marketplace" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><NFTMarketplace /></Suspense></ProtectedRoute>} />
                 <Route path="/morio" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><MorioDemoLazy /></Suspense></ProtectedRoute>} />
 
@@ -185,6 +199,12 @@ function App() {
 
                 {/* Admin routes */}
                 <Route path="/superuser" element={<ProtectedRoute><SuperUserDashboard /></ProtectedRoute>} />
+                <Route path="/admin/users" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><UserManagementLazy /></Suspense></ProtectedRoute>} />
+                <Route path="/admin/daos" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><DaoModerationLazy /></Suspense></ProtectedRoute>} />
+                <Route path="/admin/settings" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><SystemSettingsLazy /></Suspense></ProtectedRoute>} />
+                <Route path="/admin/security" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><SecurityAuditLazy /></Suspense></ProtectedRoute>} />
+                <Route path="/admin/announcements" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><AnnouncementsManagementLazy /></Suspense></ProtectedRoute>} />
+                <Route path="/admin/pools" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><PoolManagementLazy /></Suspense></ProtectedRoute>} />
                 <Route path="/admin/billing" element={<ProtectedRoute><AdminBillingDashboard /></ProtectedRoute>} />
                 <Route path="/admin/payments" element={<ProtectedRoute><PaymentReconciliation /></ProtectedRoute>} />
 
@@ -206,7 +226,6 @@ function App() {
 
             {isAuthenticated && <MobileNav />}
           </div>
-          </BrowserRouter>
         </TooltipProvider>
       </ThemeProvider>
     </HelmetProvider>

@@ -83,10 +83,10 @@ const TaskBountyBoard: React.FC<TaskBountyBoardProps> = ({
 
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
-      case "easy": return "bg-green-100 text-green-800 border-green-200";
-      case "medium": return "bg-yellow-100 text-yellow-800 border-yellow-200";
-      case "hard": return "bg-red-100 text-red-800 border-red-200";
-      default: return "bg-gray-100 text-gray-800 border-gray-200";
+      case "easy": return "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 border-green-200 dark:border-green-700";
+      case "medium": return "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 border-yellow-200 dark:border-yellow-700";
+      case "hard": return "bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300 border-red-200 dark:border-red-700";
+      default: return "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 border-gray-200 dark:border-gray-600";
     }
   };
 
@@ -101,69 +101,69 @@ const TaskBountyBoard: React.FC<TaskBountyBoardProps> = ({
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "open": return "bg-blue-50 border-blue-200 text-blue-800";
-      case "claimed": return "bg-yellow-50 border-yellow-200 text-yellow-800";
-      case "completed": return "bg-green-50 border-green-200 text-green-800";
-      default: return "bg-gray-50 border-gray-200 text-gray-800";
+      case "open": return "bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-700 text-blue-800 dark:text-blue-300";
+      case "claimed": return "bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-700 text-yellow-800 dark:text-yellow-300";
+      case "completed": return "bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-700 text-green-800 dark:text-green-300";
+      default: return "bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-300";
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 p-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
             Task Bounty Board
           </h1>
-          <p className="text-gray-600 text-lg">
+          <p className="text-gray-600 dark:text-gray-300 text-lg">
             Discover and claim bounties for your skills
           </p>
         </div>
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white rounded-xl p-6 shadow-lg border border-gray-100">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-700">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Total Tasks</p>
-                <p className="text-2xl font-bold text-gray-900">{tasks.length}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Total Tasks</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{tasks.length}</p>
               </div>
-              <div className="bg-blue-100 rounded-full p-3">
-                <AlertCircle className="w-6 h-6 text-blue-600" />
+              <div className="bg-blue-100 dark:bg-blue-900/30 rounded-full p-3">
+                <AlertCircle className="w-6 h-6 text-blue-600 dark:text-blue-400" />
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-xl p-6 shadow-lg border border-gray-100">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-700">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Open Tasks</p>
-                <p className="text-2xl font-bold text-blue-600">{tasks.filter(t => t.status === 'open').length}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Open Tasks</p>
+                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{tasks.filter(t => t.status === 'open').length}</p>
               </div>
-              <div className="bg-green-100 rounded-full p-3">
-                <Zap className="w-6 h-6 text-green-600" />
+              <div className="bg-green-100 dark:bg-green-900/30 rounded-full p-3">
+                <Zap className="w-6 h-6 text-green-600 dark:text-green-400" />
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-xl p-6 shadow-lg border border-gray-100">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-700">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Total Rewards</p>
-                <p className="text-2xl font-bold text-green-600">{tasks.reduce((sum, task) => sum + task.reward, 0)} cUSD</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Total Rewards</p>
+                <p className="text-2xl font-bold text-green-600 dark:text-green-400">{tasks.reduce((sum, task) => sum + task.reward, 0)} cUSD</p>
               </div>
-              <div className="bg-yellow-100 rounded-full p-3">
-                <DollarSign className="w-6 h-6 text-yellow-600" />
+              <div className="bg-yellow-100 dark:bg-yellow-900/30 rounded-full p-3">
+                <DollarSign className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-xl p-6 shadow-lg border border-gray-100">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-700">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Completed</p>
-                <p className="text-2xl font-bold text-purple-600">{tasks.filter(t => t.status === 'completed').length}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Completed</p>
+                <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{tasks.filter(t => t.status === 'completed').length}</p>
               </div>
-              <div className="bg-purple-100 rounded-full p-3">
-                <CheckCircle className="w-6 h-6 text-purple-600" />
+              <div className="bg-purple-100 dark:bg-purple-900/30 rounded-full p-3">
+                <CheckCircle className="w-6 h-6 text-purple-600 dark:text-purple-400" />
               </div>
             </div>
           </div>
@@ -178,7 +178,7 @@ const TaskBountyBoard: React.FC<TaskBountyBoardProps> = ({
               className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
                 filter === status
                   ? "bg-blue-600 text-white shadow-lg scale-105"
-                  : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+                  : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700"
               }`}
             >
               {status.charAt(0).toUpperCase() + status.slice(1)}
@@ -189,15 +189,15 @@ const TaskBountyBoard: React.FC<TaskBountyBoardProps> = ({
         {/* Tasks Grid */}
         {filteredTasks.length === 0 ? (
           <div className="text-center py-16">
-            <AlertCircle className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500 text-lg">No tasks available for the selected filter.</p>
+            <AlertCircle className="w-16 h-16 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
+            <p className="text-gray-500 dark:text-gray-400 text-lg">No tasks available for the selected filter.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {filteredTasks.map((task) => (
               <div
                 key={task.id}
-                className={`bg-white rounded-2xl p-6 shadow-lg border border-gray-100 transition-all duration-300 hover:shadow-xl hover:scale-[1.02] cursor-pointer ${
+                className={`bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg border border-gray-100 dark:border-gray-700 transition-all duration-300 hover:shadow-xl hover:scale-[1.02] cursor-pointer ${
                   hoveredTask === task.id ? "ring-2 ring-blue-500 ring-opacity-50" : ""
                 }`}
                 onMouseEnter={() => setHoveredTask(task.id)}
@@ -206,8 +206,8 @@ const TaskBountyBoard: React.FC<TaskBountyBoardProps> = ({
                 {/* Task Header */}
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
-                    <h3 className="text-xl font-bold text-gray-900 mb-1">{task.title}</h3>
-                    <span className="inline-block px-3 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">{task.title}</h3>
+                    <span className="inline-block px-3 py-1 text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded-full">
                       {task.category}
                     </span>
                   </div>
@@ -220,7 +220,7 @@ const TaskBountyBoard: React.FC<TaskBountyBoardProps> = ({
                 </div>
 
                 {/* Task Description */}
-                <p className="text-gray-600 mb-4">{task.description}</p>
+                <p className="text-gray-600 dark:text-gray-300 mb-4">{task.description}</p>
 
                 {/* Task Details */}
                 <div className="flex flex-wrap gap-2 mb-4">
@@ -228,13 +228,13 @@ const TaskBountyBoard: React.FC<TaskBountyBoardProps> = ({
                     {task.difficulty.charAt(0).toUpperCase() + task.difficulty.slice(1)}
                   </span>
                   {task.estimatedTime && (
-                    <span className="px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200">
+                    <span className="px-2 py-1 rounded-md text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
                       <Clock className="w-3 h-3 inline mr-1" />
                       {task.estimatedTime}
                     </span>
                   )}
                   {task.deadline && (
-                    <span className="px-2 py-1 rounded-md text-xs font-medium bg-orange-100 text-orange-700 border border-orange-200">
+                    <span className="px-2 py-1 rounded-md text-xs font-medium bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-700">
                       ⏰ {task.deadline}
                     </span>
                   )}
@@ -243,9 +243,9 @@ const TaskBountyBoard: React.FC<TaskBountyBoardProps> = ({
                 {/* Reward and Action */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <DollarSign className="w-5 h-5 text-green-600" />
-                    <span className="text-2xl font-bold text-green-600">{task.reward}</span>
-                    <span className="text-sm text-gray-500">cUSD</span>
+                    <DollarSign className="w-5 h-5 text-green-600 dark:text-green-400" />
+                    <span className="text-2xl font-bold text-green-600 dark:text-green-400">{task.reward}</span>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">cUSD</span>
                   </div>
                   
                   <div className="flex items-center gap-2">
@@ -272,8 +272,8 @@ const TaskBountyBoard: React.FC<TaskBountyBoardProps> = ({
 
                 {/* Claimer Info */}
                 {task.claimer && (
-                  <div className="mt-3 pt-3 border-t border-gray-100">
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                    <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                       <User className="w-4 h-4" />
                       <span>Claimed by: {task.claimer.slice(0, 6)}...{task.claimer.slice(-4)}</span>
                     </div>

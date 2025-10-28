@@ -5,6 +5,8 @@ import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
 import helmet from 'helmet';
 import { registerRoutes } from "./routes";
+import { setupWeeklyRewardsDistribution } from "./jobs/weeklyRewardsDistribution";
+import { setupInvestmentPoolsAutomation } from "./jobs/investmentPoolsAutomation";
 import { setupVite, serveStatic } from './vite';
 import { logger, requestLogger, logStartup } from './utils/logger';
 import path from "path";
@@ -47,6 +49,7 @@ import stripeStatusRoutes from './routes/stripe-status';
 import referralsRoutes from './routes/referrals';
 import eventsRoutes from './routes/events';
 import crossChainRoutes from './routes/cross-chain';
+import jwt from 'jsonwebtoken';
 // Import NFT Marketplace routes
 import nftMarketplaceRouter from './routes/nft-marketplace';
 import walletRouter from './routes/wallet';
@@ -140,7 +143,6 @@ io.use(async (socket: any, next) => {
     }
 
     // Verify JWT token
-    const jwt = await import('jsonwebtoken');
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
     
     socket.userId = decoded.userId || decoded.id;
@@ -238,6 +240,10 @@ app.use((req, res, next) => {
       scheduler.start();
       logger.info('✅ Backup system initialized');
     }
+
+    // Setup weekly rewards distribution job
+    setupWeeklyRewardsDistribution();
+    setupInvestmentPoolsAutomation();
 
     await registerRoutes(app);
 

@@ -22,7 +22,10 @@ export { authLoginHandler } from './api/auth_login';
 export { authRegisterHandler } from './api/auth_register';
 
 export interface AuthRequest extends Request {
-  user?: { claims: UserClaims };
+  user?: { 
+    id: string;
+    claims: TokenPayload;
+  };
 }
 
 // Generate access and refresh tokens
@@ -84,7 +87,10 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
       });
     }
 
-    req.user = { claims: { sub: payload.sub, email: payload.email, role: payload.role } };
+    req.user = { 
+      id: payload.sub,
+      claims: { sub: payload.sub, email: payload.email, role: payload.role } 
+    };
     next();
   } catch (error) {
     return res.status(401).json({ 

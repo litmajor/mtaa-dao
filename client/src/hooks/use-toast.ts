@@ -12,10 +12,32 @@ export function useToast() {
   const context = useContext(ToastContext);
 
   if (!context) {
-    throw new Error("useToast must be used within a ToastProvider");
+    // Provide a fallback instead of throwing
+    return {
+      toast: (messageOrOptions: string | ToastOptions, type?: 'success' | 'error' | 'info') => {
+        if (typeof messageOrOptions === 'string') {
+          console.warn('[Toast] ToastProvider not found, logging:', messageOrOptions, type);
+        } else {
+          console.warn('[Toast] ToastProvider not found, logging:', messageOrOptions.title || messageOrOptions.description);
+        }
+      }
+    };
   }
 
-  return context;
+  // Adapt the context's toast function to support both signatures
+  return {
+    toast: (messageOrOptions: string | ToastOptions, type?: 'success' | 'error' | 'info') => {
+      if (typeof messageOrOptions === 'string') {
+        context.toast(messageOrOptions, type);
+      } else {
+        // Convert ToastOptions to simple message
+        const message = messageOrOptions.title || messageOrOptions.description || 'Notification';
+        const toastType = messageOrOptions.variant === 'destructive' ? 'error' : 
+                         messageOrOptions.variant === 'success' ? 'success' : 'info';
+        context.toast(message, toastType);
+      }
+    }
+  };
 }
 
 export function toast(message: string, type?: 'success' | 'error' | 'info'): void;

@@ -15,6 +15,7 @@ import notificationsRoutes from './routes/notifications';
 import disbursementsRoutes from './routes/disbursements';
 import daoTreasuryRoutes from './routes/dao_treasury';
 import daoSubscriptionsRoutes from './routes/dao-subscriptions';
+import daosRoutes from './routes/daos';
 import bountyEscrowRoutes from './routes/bounty-escrow';
 import proposalExecutionRoutes from './routes/proposal-execution';
 import paymentReconciliationRoutes from './routes/payment-reconciliation';
@@ -27,6 +28,14 @@ import achievementsRouter from './api/achievements';
 import vaultRoutes from './routes/vault';
 import challengesRoutes from './routes/challenges';
 import morioRoutes from './routes/morio';
+import profileRoutes from './routes/profile';
+import accountRoutes from './routes/account';
+import referralRewardsRoutes from './routes/referral-rewards';
+import proposalEngagementRoutes from './routes/proposal-engagement';
+import adminRoutes from './routes/admin';
+import announcementsRoutes from './routes/announcements';
+import investmentPoolsRoutes from './routes/investment-pools';
+import poolGovernanceRoutes from './routes/pool-governance';
 
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
@@ -101,6 +110,7 @@ export function registerRoutes(app: express.Application) {
 
   // Governance and DAO routes
   app.use('/api/governance', governanceRoutes);
+  app.use('/api/daos', daosRoutes);
   app.use('/api/dao-treasury', daoTreasuryRoutes);
   app.use('/api/dao-subscriptions', daoSubscriptionsRoutes);
 
@@ -142,8 +152,16 @@ export function registerRoutes(app: express.Application) {
   app.post('/api/auth/refresh-token', refreshTokenHandler);
   app.post('/api/auth/logout', logoutHandler);
 
-  // Account management
-  app.delete('/api/account/delete', isAuthenticated, accountDeleteHandler);
+  // Profile and Account management
+  app.use('/api/profile', profileRoutes);
+  app.use('/api/account', accountRoutes);
+  app.delete('/api/account/delete', isAuthenticated, accountDeleteHandler); // Legacy endpoint
+  app.use('/api/referral-rewards', referralRewardsRoutes);
+  app.use('/api', proposalEngagementRoutes); // Proposal likes/comments/engagement
+  app.use('/api/admin', adminRoutes); // Admin/SuperUser management
+  app.use('/api/announcements', announcementsRoutes); // Platform announcements
+  app.use('/api/investment-pools', investmentPoolsRoutes); // Multi-asset investment pools
+  app.use('/api/pool-governance', poolGovernanceRoutes); // Pool weighted voting governance
 
   // DAO deployment
   app.post('/api/dao/deploy', isAuthenticated, daoDeployHandler);

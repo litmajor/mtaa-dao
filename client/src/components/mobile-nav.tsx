@@ -15,21 +15,21 @@ export function MobileNav() {
   const isActive = (path: string) => location === path;
 
   const primaryNavItems = [
-    { href: "/dashboard", label: "Community", icon: Home },
-    { href: "/vault-dashboard", label: "DeFi", icon: TrendingUp },
-    { href: "/wallet", label: "Wallet", icon: Wallet },
-    { href: "/proposals", label: "Proposals", icon: FileText },
-    { href: "/tasks", label: "Tasks", icon: Target },
+    { to: "/dashboard", label: "Community", icon: Home },
+    { to: "/vault-dashboard", label: "DeFi", icon: TrendingUp },
+    { to: "/wallet", label: "Wallet", icon: Wallet },
+    { to: "/proposals", label: "Proposals", icon: FileText },
+    { to: "/tasks", label: "Tasks", icon: Target },
   ];
 
   const secondaryNavItems = [
-    { href: "/daos", label: "DAOs", icon: Building },
-    { href: "/maonovault", label: "MaonoVault", icon: Zap },
-    { href: "/rewards", label: "Rewards", icon: Gift },
-    { href: "/referrals", label: "Referrals", icon: Users },
-    { href: "/analytics", label: "Analytics", icon: TrendingUp },
-    { href: "/leaderboard", label: "Leaderboard", icon: Award },
-    { href: "/settings", label: "Settings", icon: Settings },
+    { to: "/daos", label: "DAOs", icon: Building },
+    { to: "/maonovault", label: "MaonoVault", icon: Zap },
+    { to: "/rewards", label: "Rewards", icon: Gift },
+    { to: "/referrals", label: "Referrals", icon: Users },
+    { to: "/analytics", label: "Analytics", icon: TrendingUp },
+    { to: "/leaderboard", label: "Leaderboard", icon: Award },
+    { to: "/settings", label: "Settings", icon: Settings },
   ];
 
   return (
@@ -40,12 +40,12 @@ export function MobileNav() {
           {primaryNavItems.map((item) => {
             const Icon = item.icon;
             return (
-              <Link key={item.href} href={item.href}>
+              <Link key={item.to} to={item.to}>
                 <Button
                   variant="ghost"
                   size="sm"
                   className={`flex flex-col items-center space-y-1 px-2 py-2 rounded-xl transition-all duration-300 ${
-                    isActive(item.href)
+                    isActive(item.to)
                       ? "text-mtaa-orange bg-mtaa-orange/10 shadow-lg shadow-mtaa-orange/20"
                       : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-gray-100/50 dark:hover:bg-gray-800/50"
                   }`}
@@ -84,12 +84,12 @@ export function MobileNav() {
               {secondaryNavItems.map((item) => {
                 const Icon = item.icon;
                 return (
-                  <Link key={item.href} href={item.href}>
+                  <Link key={item.to} to={item.to}>
                     <Button
                       variant="ghost"
                       onClick={() => setShowMore(false)}
                       className={`flex flex-col items-center space-y-2 p-4 rounded-xl h-auto transition-all duration-300 ${
-                        isActive(item.href)
+                        isActive(item.to)
                           ? "text-mtaa-orange bg-mtaa-orange/10"
                           : "text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100 hover:bg-gray-100/50 dark:hover:bg-gray-700/50"
                       }`}
