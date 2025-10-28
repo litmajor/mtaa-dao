@@ -5,18 +5,50 @@ import { msiaMoPoints, userReputation, msiaMoConversions, airdropEligibility } f
 
 // Reputation point values for different actions
 export const REPUTATION_VALUES = {
-  VOTE: 5,
+  // Governance
+  VOTE_CAST: 5,
   PROPOSAL_CREATED: 25,
-  PROPOSAL_PASSED: 50,
-  CONTRIBUTION: 10, // base points, scales with amount
+  PROPOSAL_PASSED: 100,
+
+  // Work & Contribution
+  TASK_COMPLETED: 50,
+  TASK_VERIFIED: 30,
+  GIG_COMPLETED: 75,
+  CONTRIBUTION: 10,
+
+  // Economic Activity
+  LIQUIDITY_PROVIDED: 40,
+  LIQUIDITY_MAINTAINED_30_DAYS: 100,
+  LOAN_REPAID_ON_TIME: 150,
+  TRADE_EXECUTED: 15,
+
+  // Social & Mentorship
+  MENTORSHIP_SESSION: 60,
+  SKILL_ENDORSED: 10,
   REFERRAL: 20,
+  PEER_REVIEW_GIVEN: 25,
+
+  // Consistency
   DAILY_STREAK: 5,
-  WEEKLY_STREAK_BONUS: 25,
-  MONTHLY_STREAK_BONUS: 100,
-  DAO_MEMBERSHIP: 15,
-  COMMENT: 3,
-  LIKE_RECEIVED: 2,
-  TASK_COMPLETION: 30,
+  WEEKLY_BONUS: 50,
+  MONTHLY_BONUS: 200,
+
+  // Verification
+  PHONE_VERIFIED: 100,
+  KYC_VERIFIED: 200,
+  SKILL_VERIFIED: 150,
+} as const;
+
+export const CONTRIBUTION_WEIGHTS = {
+  // Higher weight = more impact on reputation
+  gig_completed: 100,
+  liquidity_provided: 80,
+  vote_cast: 20,
+  mentorship_given: 90,
+  loan_repaid: 120,
+  skill_verified: 110,
+  task_verified: 70,
+  proposal_passed: 150,
 } as const;
 
 // Badge thresholds
@@ -348,7 +380,7 @@ export class ReputationService {
 
   // Automated point awarding for common actions
   static async onVote(userId: string, proposalId: string, daoId: string): Promise<void> {
-    await this.awardPoints(userId, 'VOTE', REPUTATION_VALUES.VOTE, daoId, `Voted on proposal ${proposalId}`);
+    await this.awardPoints(userId, 'VOTE_CAST', REPUTATION_VALUES.VOTE_CAST, daoId, `Voted on proposal ${proposalId}`);
   }
 
   static async onProposalCreated(userId: string, proposalId: string, daoId: string): Promise<void> {
@@ -405,10 +437,10 @@ export class ReputationService {
   // Award bonus points for successful proposals
   static async onProposalPassed(userId: string, proposalId: string, daoId: string): Promise<void> {
     await this.awardPoints(
-      userId, 
-      'PROPOSAL_PASSED', 
-      REPUTATION_VALUES.PROPOSAL_PASSED, 
-      daoId, 
+      userId,
+      'PROPOSAL_PASSED',
+      REPUTATION_VALUES.PROPOSAL_PASSED,
+      daoId,
       `Proposal ${proposalId} passed and executed`
     );
   }
@@ -417,10 +449,10 @@ export class ReputationService {
   static async onDelegationReceived(userId: string, daoId: string, delegatorCount: number): Promise<void> {
     const bonus = Math.min(delegatorCount * 5, 50); // Max 50 points
     await this.awardPoints(
-      userId, 
-      'DELEGATION_RECEIVED', 
-      bonus, 
-      daoId, 
+      userId,
+      'DELEGATION_RECEIVED',
+      bonus,
+      daoId,
       `Received delegation from ${delegatorCount} members`
     );
   }
@@ -457,7 +489,7 @@ export class ReputationService {
 
     const now = new Date();
     const lastActivity = userRep[0]?.lastActivity ? new Date(userRep[0].lastActivity) : null;
-    
+
     let currentStreak = userRep[0]?.currentStreak || 0;
     let longestStreak = userRep[0]?.longestStreak || 0;
     let pointsAwarded = REPUTATION_VALUES.DAILY_STREAK;
@@ -466,19 +498,19 @@ export class ReputationService {
     // Check if last activity was yesterday
     if (lastActivity) {
       const daysSinceLastActivity = Math.floor((now.getTime() - lastActivity.getTime()) / (1000 * 60 * 60 * 24));
-      
+
       if (daysSinceLastActivity === 1) {
         // Continue streak
         currentStreak += 1;
-        
+
         // Weekly bonus (every 7 days)
         if (currentStreak % 7 === 0) {
-          bonusAwarded += REPUTATION_VALUES.WEEKLY_STREAK_BONUS;
+          bonusAwarded += REPUTATION_VALUES.WEEKLY_BONUS;
         }
-        
+
         // Monthly bonus (every 30 days)
         if (currentStreak % 30 === 0) {
-          bonusAwarded += REPUTATION_VALUES.MONTHLY_STREAK_BONUS;
+          bonusAwarded += REPUTATION_VALUES.MONTHLY_BONUS;
         }
       } else if (daysSinceLastActivity > 1) {
         // Streak broken
