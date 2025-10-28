@@ -1,11 +1,10 @@
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Bell, Moon, Sun, Settings, LogOut, ChevronDown, Sparkles } from "lucide-react";
 import { useAuth } from "@/pages/hooks/useAuth";
 import { useEffect, useState } from "react";
-import { useLocation as useWouterLocation } from "wouter"; // Remove this duplicate import
 import { apiRequest } from "@/lib/queryClient";
 import { useTheme } from "@/components/theme-provider";
 import type { User } from "../../../shared/schema";
@@ -14,10 +13,11 @@ import { AnimatedLogo } from "@/components/ui/logo";
 
 export default function Navigation() {
   const { user } = useAuth() as { user?: User };
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [isScrolled, setIsScrolled] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
-  const [notificationCount, setNotificationCount] = useState(0); // Changed from 'notifications' to 'notificationCount' for clarity
+  const [notificationCount, setNotificationCount] = useState(0);
 
   // Fetch notification count
   useEffect(() => {
@@ -53,7 +53,7 @@ export default function Navigation() {
   async function handleLogout() {
     try {
       await apiRequest("POST", "/api/auth/logout");
-      setLocation("/login");
+      navigate("/login");
       window.location.reload();
     } catch (e) {
       alert("Logout failed");
@@ -61,9 +61,8 @@ export default function Navigation() {
   }
 
   const { theme, toggleTheme } = useTheme();
-  const [location] = useLocation();
 
-  const isActive = (path: string) => location === path;
+  const isActive = (path: string) => location.pathname === path;
   const isLoggedIn = !!user;
 
   // Organized navigation with dashboard categories
@@ -418,14 +417,14 @@ export default function Navigation() {
                         </div>
                       </div>
 
-                      <Link href="/profile">
+                      <Link to="/profile">
                         <Button variant="ghost" className="w-full justify-start px-4 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 rounded-none">
                           <span className="mr-3">👤</span>
                           Profile
                         </Button>
                       </Link>
 
-                      <Link href="/settings">
+                      <Link to="/settings">
                         <Button variant="ghost" className="w-full justify-start px-4 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 rounded-none">
                           <Settings className="w-4 h-4 mr-3" />
                           Settings

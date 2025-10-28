@@ -1,5 +1,17 @@
 import { useMemo, useState } from "react"
-import { BarChart2, AlertTriangle, Download, Calendar, TrendingUp, TrendingDown, DollarSign } from "lucide-react"
+import { useQuery } from "@tanstack/react-query"
+import { BarChart2, AlertTriangle, Download, Calendar, TrendingUp, TrendingDown, DollarSign, Loader2 } from "lucide-react"
+
+interface Transaction {
+  id: string;
+  type: "receive" | "send";
+  amount: string;
+  currency: string;
+  to: string;
+  timestamp: string;
+  status?: string;
+  valueUSD?: string;
+}
 
 export default function VaultAnalyticsDashboard() {
   const [currency, setCurrency] = useState("cusd")
@@ -9,19 +21,36 @@ export default function VaultAnalyticsDashboard() {
     endDate: new Date(),
   })
 
-  // Mock data
-  const transactions = [
-    { type: "receive", amount: "250.00", currency: "cusd", to: "0x1234...5678", timestamp: "2025-01-15T10:30:00Z" },
-    { type: "send", amount: "75.50", currency: "cusd", to: "0x8765...4321", timestamp: "2025-01-14T15:45:00Z" },
-    { type: "receive", amount: "1200.00", currency: "cusd", to: "0x9999...1111", timestamp: "2025-01-13T09:20:00Z" },
-    { type: "send", amount: "45.25", currency: "cusd", to: "0x2222...3333", timestamp: "2025-01-12T14:15:00Z" },
-    { type: "receive", amount: "500.75", currency: "cusd", to: "0x4444...5555", timestamp: "2025-01-11T11:00:00Z" },
-    { type: "send", amount: "1500.00", currency: "cusd", to: "0x6666...7777", timestamp: "2025-01-10T16:30:00Z" },
-    { type: "receive", amount: "300.00", currency: "cusd", to: "0x8888...9999", timestamp: "2025-01-09T08:45:00Z" },
-    { type: "send", amount: "125.75", currency: "cusd", to: "0x1111...2222", timestamp: "2025-01-08T13:20:00Z" },
-  ]
+  // Fetch real transaction data
+  const { data: transactionsData, isLoading, error } = useQuery<{ transactions: Transaction[]; count: number }>({
+    queryKey: ["/api/vault/transactions", currency, dateRange],
+    queryFn: async () => {
+      const token = localStorage.getItem('accessToken');
+      const params = new URLSearchParams({
+        currency: currency.toLowerCase(),
+        startDate: dateRange.startDate.toISOString(),
+        endDate: dateRange.endDate.toISOString(),
+        limit: '100',
+      });
+      
+      const response = await fetch(`/api/vault/transactions?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to fetch transactions");
+      }
+      
+      return response.json();
+    },
+    staleTime: 1 * 60 * 1000, // 1 minute
+  });
 
-  const balance = "2,847.25"
+  const transactions = transactionsData?.transactions || []
 
   const inflow = useMemo(() => transactions
     .filter(tx => tx.type === "receive")
@@ -30,6 +59,11 @@ export default function VaultAnalyticsDashboard() {
   const outflow = useMemo(() => transactions
     .filter(tx => tx.type === "send")
     .reduce((acc, tx) => acc + parseFloat(tx.amount), 0), [transactions])
+
+  const balance = useMemo(() => {
+    const total = inflow - outflow;
+    return total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }, [inflow, outflow])
 
   const anomalies = useMemo(() => transactions.filter(tx => parseFloat(tx.amount) > 1000), [transactions])
 
@@ -54,6 +88,36 @@ export default function VaultAnalyticsDashboard() {
 }
 
 
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="max-w-6xl mx-auto p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 text-orange-500 animate-spin mx-auto mb-4" />
+          <p className="text-lg text-gray-600">Loading vault analytics...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="max-w-6xl mx-auto p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <p className="text-lg text-red-600 mb-4">Failed to load analytics</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-6xl mx-auto p-6 bg-gray-50 min-h-screen">
       <div className="space-y-6">
@@ -63,6 +127,11 @@ export default function VaultAnalyticsDashboard() {
             <BarChart2 className="w-6 h-6 text-white" />
           </div>
           <h2 className="text-2xl font-bold text-gray-900">Vault Analytics</h2>
+          {!isLoading && transactionsData && (
+            <span className="text-sm text-gray-500">
+              ({transactionsData.count} transactions)
+            </span>
+          )}
         </div>
 
         {/* Anomaly Alert */}
@@ -211,7 +280,16 @@ export default function VaultAnalyticsDashboard() {
 
               {/* Transaction List */}
               <div className="space-y-2">
-                {transactions.map((tx, i) => (
+                {transactions.length === 0 ? (
+                  <div className="text-center py-12">
+                    <BarChart2 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-gray-600 mb-2">No Transactions Found</h3>
+                    <p className="text-sm text-gray-500">
+                      No vault transactions found for the selected period and currency.
+                    </p>
+                  </div>
+                ) : (
+                  transactions.map((tx, i) => (
                   <div 
                     key={i} 
                     className={`border-b border-gray-100 py-3 flex justify-between items-center ${
@@ -241,11 +319,7 @@ export default function VaultAnalyticsDashboard() {
                       <p className="text-xs text-gray-500">{tx.currency.toUpperCase()}</p>
                     </div>
                   </div>
-                ))}
-                {transactions.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
-                    <p>No transactions in selected range</p>
-                  </div>
+                  ))
                 )}
               </div>
             </div>

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useNavigate } from "react-router-dom";
 
 interface User {
   id: string;
@@ -27,19 +27,22 @@ interface AuthResponse {
 
 export function useAuth() {
   const queryClient = useQueryClient();
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
 
   const { data: authData, isLoading, error } = useQuery({
     queryKey: ["/api/auth/user"],
     queryFn: async (): Promise<AuthResponse> => {
       const token = localStorage.getItem('accessToken');
+      
+      // If no token, skip the API call
+      if (!token) {
+        throw new Error("No authentication token");
+      }
+
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
       };
-      
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
 
       const res = await fetch("/api/auth/user", {
         credentials: 'include',
@@ -59,6 +62,7 @@ export function useAuth() {
       return res.json();
     },
     retry: false,
+    enabled: !!localStorage.getItem('accessToken'), // Only run if token exists
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchInterval: false, // Disable automatic refetching
     refetchOnWindowFocus: false, // Disable refetch on window focus
@@ -89,7 +93,7 @@ export function useAuth() {
       queryClient.setQueryData(["/api/auth/user"], data);
       // Force refetch to update auth state
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-      setLocation("/dashboard");
+      navigate("/dashboard");
     },
   });
 
@@ -111,7 +115,7 @@ export function useAuth() {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('user');
       queryClient.clear();
-      setLocation("/login");
+      navigate("/login");
     },
   });
 
@@ -141,7 +145,7 @@ export function useAuth() {
         localStorage.setItem('accessToken', data.data.accessToken);
       }
       queryClient.setQueryData(["/api/auth/user"], data);
-      setLocation("/dashboard");
+      navigate("/dashboard");
     },
   });
 

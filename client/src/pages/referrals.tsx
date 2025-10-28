@@ -1,19 +1,29 @@
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Copy, Users, DollarSign, Trophy, Gift, Share2, Crown, Award, Star, Sparkles, TrendingUp, Target, Zap } from "lucide-react";
+import { Copy, Users, DollarSign, Trophy, Gift, Share2, Crown, Award, Star, Sparkles, TrendingUp, Target, Zap, Loader2, AlertTriangle } from "lucide-react";
 import { useState } from "react";
+import { useAuth } from "./hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
+
+type LeaderboardEntry = {
+  id: string;
+  rank: number;
+  name: string;
+  badge: string;
+  referrals: number;
+  earnings: number;
+};
 
 export default function Referrals() {
-  // Mock auth and toast for demo
-  const user = { id: "demo123" };
-  const toast = (params: { title: string; description?: string }) => console.log("Toast:", params);
-  // Use compatible toast API
-  const showToast = (message: string, type?: 'success' | 'error' | 'info') => console.log('Toast:', message, type);
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
 
   // OAuth handlers
@@ -25,28 +35,46 @@ export default function Referrals() {
   };
 
   // Fetch real referral data
-  const { data: referralStats } = useQuery({
-    queryKey: ['referral-stats'],
+  const { data: referralStats, isLoading: statsLoading, error: statsError } = useQuery({
+    queryKey: ['/api/referrals/stats'],
     queryFn: async () => {
-      const res = await fetch('/api/referrals/stats');
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch('/api/referrals/stats', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
       if (!res.ok) throw new Error('Failed to fetch referral stats');
       return res.json();
-    }
+    },
+    enabled: !!user,
+    staleTime: 2 * 60 * 1000, // 2 minutes
   });
 
-  const { data: leaderboardData = [] } = useQuery({
-    queryKey: ['referral-leaderboard'],
+  const { data: leaderboardData = [], isLoading: leaderboardLoading, error: leaderboardError } = useQuery<LeaderboardEntry[]>({
+    queryKey: ['/api/referrals/leaderboard'],
     queryFn: async () => {
-      const res = await fetch('/api/referrals/leaderboard');
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch('/api/referrals/leaderboard', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
       if (!res.ok) throw new Error('Failed to fetch leaderboard');
       return res.json();
-    }
+    },
+    enabled: !!user,
+    staleTime: 2 * 60 * 1000,
   });
 
   const referralCode = referralStats?.referralCode || "MTAA-" + (user?.id?.substring(0, 6) || "123456").toUpperCase();
   const referralLink = `https://mtaa-dao.org/join?ref=${referralCode}`;
 
-  const mockReferralStats = referralStats || {
+  const stats = referralStats || {
     totalReferrals: 0,
     activeReferrals: 0,
     totalEarned: 0,
@@ -54,20 +82,14 @@ export default function Referrals() {
     thisMonthReferrals: 0,
   };
 
-  const mockLeaderboard: LeaderboardEntry[] = leaderboardData.length > 0 ? leaderboardData as LeaderboardEntry[] : [];
-  // Type for leaderboard entries
-  type LeaderboardEntry = {
-    id: string;
-    rank: number;
-    name: string;
-    badge: string;
-    referrals: number;
-    earnings: number;
-  };
+  const leaderboard = leaderboardData || [];
 
   const copyReferralLink = () => {
     navigator.clipboard.writeText(referralLink);
-    showToast("Referral link copied to clipboard", "success");
+    toast({
+      title: "Success",
+      description: "Referral link copied to clipboard!",
+    });
   };
 
   const getRankBadge = (rank: number) => {
@@ -76,6 +98,40 @@ export default function Referrals() {
     if (rank === 3) return <Star className="w-5 h-5 text-orange-400 drop-shadow-lg" />;
     return <Trophy className="w-5 h-5 text-emerald-400 drop-shadow-lg" />;
   };
+
+  // Loading state
+  if (statsLoading || leaderboardLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <Card className="p-8 max-w-md text-center bg-white/10 backdrop-blur-xl border-purple-500/30">
+          <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-purple-400" />
+          <h3 className="text-xl font-bold mb-2 text-white">Loading Referrals</h3>
+          <p className="text-gray-300">Fetching your referral stats and leaderboard...</p>
+        </Card>
+      </div>
+    );
+  }
+
+  // Error state
+  if (statsError || leaderboardError) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-6">
+        <Card className="p-8 max-w-md text-center bg-white/10 backdrop-blur-xl border-red-500/30">
+          <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-red-400" />
+          <h3 className="text-xl font-bold mb-2 text-white">Error Loading Data</h3>
+          <p className="text-gray-300 mb-4">
+            {(statsError as Error)?.message || (leaderboardError as Error)?.message || 'Failed to load referral data'}
+          </p>
+          <Button 
+            onClick={() => navigate(0)} 
+            className="bg-purple-600 hover:bg-purple-700"
+          >
+            Retry
+          </Button>
+        </Card>
+      </div>
+    );
+  }
 
   const getBadgeColor = (badge: string) => {
     switch (badge) {
@@ -91,6 +147,36 @@ export default function Referrals() {
         return "bg-gradient-to-r from-emerald-400 to-teal-500 text-white shadow-lg";
     }
   };
+
+  // Loading state
+  if (statsLoading || leaderboardLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 text-purple-500 animate-spin mx-auto mb-4" />
+          <p className="text-lg text-white">Loading referral data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (statsError || leaderboardError) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <div className="text-center text-white">
+          <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <p className="text-lg mb-4">Failed to load referral data</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
@@ -195,7 +281,7 @@ export default function Referrals() {
               {[
                 {
                   icon: Users,
-                  value: mockReferralStats.totalReferrals,
+                  value: stats.totalReferrals,
                   label: "Total Referrals",
                   color: "from-emerald-500 to-teal-600",
                   bgColor: "from-emerald-500/20 to-teal-600/20",
@@ -204,7 +290,7 @@ export default function Referrals() {
                 },
                 {
                   icon: DollarSign,
-                  value: `$${mockReferralStats.totalEarned.toFixed(2)}`,
+                  value: `$${stats.totalEarned.toFixed(2)}`,
                   label: "Total Earned",
                   color: "from-yellow-500 to-orange-600",
                   bgColor: "from-yellow-500/20 to-orange-600/20",
@@ -213,7 +299,7 @@ export default function Referrals() {
                 },
                 {
                   icon: Gift,
-                  value: `$${mockReferralStats.pendingRewards.toFixed(2)}`,
+                  value: `$${stats.pendingRewards.toFixed(2)}`,
                   label: "Pending Rewards",
                   color: "from-purple-500 to-pink-600",
                   bgColor: "from-purple-500/20 to-pink-600/20",
@@ -222,7 +308,7 @@ export default function Referrals() {
                 },
                 {
                   icon: Target,
-                  value: mockReferralStats.thisMonthReferrals,
+                  value: stats.thisMonthReferrals,
                   label: "New This Month",
                   color: "from-blue-500 to-indigo-600",
                   bgColor: "from-blue-500/20 to-indigo-600/20",
@@ -388,7 +474,7 @@ export default function Referrals() {
                 </div>
                 
                 <div className="space-y-4">
-                  {mockLeaderboard.map((leader, index) => (
+                  {leaderboard.map((leader, index) => (
                     <div
                       key={leader.id}
                       className={`group relative transform transition-all duration-300 hover:scale-102 ${

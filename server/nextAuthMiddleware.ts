@@ -12,7 +12,10 @@ export interface UserClaims {
 declare global {
   namespace Express {
     interface Request {
-      user?: { claims: UserClaims };
+      user?: { 
+        id: string;
+        claims: UserClaims;
+      };
     }
   }
 }
@@ -61,7 +64,10 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
       }
     }
 
-    req.user = { claims: userClaims };
+    req.user = { 
+      id: userClaims.sub,
+      claims: userClaims 
+    };
     next();
   } catch (err) {
     return res.status(401).json({ message: "Unauthorized" });

@@ -3,8 +3,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db';
 import { logger } from '../utils/logger';
-import { daoMessages, users, daos } from '../../shared/schema';
-import { eq, desc, and, like, inArray } from 'drizzle-orm';
+import { daoMessages, users, daos, messageReactions, messageAttachments } from '../../shared/schema';
+import { eq, desc, and, like, inArray, sql } from 'drizzle-orm';
 import multer from 'multer';
 import path from 'path';
 
@@ -58,11 +58,15 @@ router.get('/dao/:daoId/messages', async (req, res) => {
         content: daoMessages.content,
         userId: daoMessages.userId,
         userName: users.username,
-        // userAvatar: users.avatar, // Removed, not in schema
+        userFirstName: users.firstName,
+        userLastName: users.lastName,
         createdAt: daoMessages.createdAt,
         updatedAt: daoMessages.updatedAt,
         messageType: daoMessages.messageType,
-        replyToMessageId: daoMessages.replyToMessageId
+        replyToMessageId: daoMessages.replyToMessageId,
+        isPinned: daoMessages.isPinned,
+        pinnedAt: daoMessages.pinnedAt,
+        pinnedBy: daoMessages.pinnedBy,
       })
       .from(daoMessages)
       .leftJoin(users, eq(daoMessages.userId, users.id))
@@ -70,13 +74,64 @@ router.get('/dao/:daoId/messages', async (req, res) => {
       .orderBy(desc(daoMessages.createdAt))
       .limit(parseInt(limit as string));
     
-    // Simulate reactions and attachments (replace with real data when implemented)
+    // Fetch reactions for all messages
+    const messageIds = messages.map(m => m.id);
+    const reactions = messageIds.length > 0 ? await db
+      .select({
+        messageId: messageReactions.messageId,
+        emoji: messageReactions.emoji,
+        userId: messageReactions.userId,
+        userName: users.username,
+      })
+      .from(messageReactions)
+      .leftJoin(users, eq(messageReactions.userId, users.id))
+      .where(inArray(messageReactions.messageId, messageIds)) : [];
+    
+    // Fetch attachments for all messages
+    const attachments = messageIds.length > 0 ? await db
+      .select()
+      .from(messageAttachments)
+      .where(inArray(messageAttachments.messageId, messageIds)) : [];
+    
+    // Fetch reply-to messages
+    const replyToMessageIds = messages
+      .filter(m => m.replyToMessageId)
+      .map(m => m.replyToMessageId as string);
+    
+    const replyToMessages = replyToMessageIds.length > 0 ? await db
+      .select({
+        id: daoMessages.id,
+        content: daoMessages.content,
+        userName: users.username,
+      })
+      .from(daoMessages)
+      .leftJoin(users, eq(daoMessages.userId, users.id))
+      .where(inArray(daoMessages.id, replyToMessageIds)) : [];
+    
+    // Build reaction groups for each message
+    const reactionGroups = reactions.reduce((acc, r) => {
+      if (!acc[r.messageId]) acc[r.messageId] = {};
+      if (!acc[r.messageId][r.emoji]) {
+        acc[r.messageId][r.emoji] = { count: 0, users: [] };
+      }
+      acc[r.messageId][r.emoji].count++;
+      acc[r.messageId][r.emoji].users.push({
+        id: r.userId,
+        name: r.userName || 'Unknown',
+      });
+      return acc;
+    }, {} as Record<string, Record<string, { count: number; users: any[] }>>);
+    
+    // Enhance messages with real data
     const enhancedMessages = messages.map(msg => ({
       ...msg,
-      reactions: [],
-      attachment: null,
-      isPinned: false,
-      replyTo: null // TODO: Fetch reply data if replyToMessageId exists
+      userName: msg.userName || `${msg.userFirstName || ''} ${msg.userLastName || ''}`.trim() || 'Anonymous',
+      reactions: reactionGroups[msg.id] || {},
+      attachment: attachments.find(a => a.messageId === msg.id) || null,
+      isPinned: msg.isPinned || false,
+      replyTo: msg.replyToMessageId
+        ? replyToMessages.find(r => r.id === msg.replyToMessageId) || null
+        : null,
     }));
     
     res.json({ messages: enhancedMessages });
@@ -133,23 +188,128 @@ router.post('/dao/:daoId/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-// Add reaction to message
+// Add/Toggle reaction to message
 router.post('/messages/:messageId/reactions', async (req, res) => {
   try {
     const { messageId } = req.params;
     const { emoji } = req.body;
-  const userId = req.user?.claims?.sub;
+    const userId = req.user?.claims?.sub;
     
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
     
-    // TODO: Implement reactions table and logic
-    // For now, just return success
+    if (!emoji || typeof emoji !== 'string') {
+      return res.status(400).json({ error: 'Emoji is required' });
+    }
+    
+    // Check if user already reacted with this emoji
+    const existingReaction = await db
+      .select()
+      .from(messageReactions)
+      .where(
+        and(
+          eq(messageReactions.messageId, messageId),
+          eq(messageReactions.userId, userId),
+          eq(messageReactions.emoji, emoji)
+        )
+      )
+      .limit(1);
+    
+    if (existingReaction.length > 0) {
+      // Remove reaction (toggle off)
+      await db
+        .delete(messageReactions)
+        .where(eq(messageReactions.id, existingReaction[0].id));
+      
+      res.json({ success: true, action: 'removed', emoji });
+    } else {
+      // Add reaction
+      const [newReaction] = await db
+        .insert(messageReactions)
+        .values({
+          messageId,
+          userId,
+          emoji,
+        })
+        .returning();
+      
+      res.json({ success: true, action: 'added', emoji, reaction: newReaction });
+    }
+  } catch (error) {
+    console.error('Error toggling reaction:', error);
+    res.status(500).json({ error: 'Failed to toggle reaction' });
+  }
+});
+
+// Remove reaction from message
+router.delete('/messages/:messageId/reactions/:emoji', async (req, res) => {
+  try {
+    const { messageId, emoji } = req.params;
+    const userId = req.user?.claims?.sub;
+    
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    await db
+      .delete(messageReactions)
+      .where(
+        and(
+          eq(messageReactions.messageId, messageId),
+          eq(messageReactions.userId, userId),
+          eq(messageReactions.emoji, decodeURIComponent(emoji))
+        )
+      );
+    
     res.json({ success: true });
   } catch (error) {
-    console.error('Error adding reaction:', error);
-    res.status(500).json({ error: 'Failed to add reaction' });
+    console.error('Error removing reaction:', error);
+    res.status(500).json({ error: 'Failed to remove reaction' });
+  }
+});
+
+// Pin/Unpin message
+router.post('/messages/:messageId/pin', async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const userId = req.user?.claims?.sub;
+    
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    // Get the message to check DAO membership
+    const message = await db
+      .select({ daoId: daoMessages.daoId, isPinned: daoMessages.isPinned })
+      .from(daoMessages)
+      .where(eq(daoMessages.id, messageId))
+      .limit(1);
+    
+    if (!message.length) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+    
+    // Toggle pin status
+    const newPinStatus = !message[0].isPinned;
+    
+    await db
+      .update(daoMessages)
+      .set({
+        isPinned: newPinStatus,
+        pinnedAt: newPinStatus ? new Date() : null,
+        pinnedBy: newPinStatus ? userId : null,
+      })
+      .where(eq(daoMessages.id, messageId));
+    
+    res.json({ 
+      success: true, 
+      isPinned: newPinStatus,
+      message: newPinStatus ? 'Message pinned' : 'Message unpinned'
+    });
+  } catch (error) {
+    logger.error('Error pinning message:', error);
+    res.status(500).json({ error: 'Failed to pin message' });
   }
 });
 

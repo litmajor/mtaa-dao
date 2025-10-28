@@ -130,13 +130,13 @@ export default function MtaaDashboard() {
   }, []);
 
   const quickActions: QuickAction[] = [
-    { id: '0', title: 'Create DAO', icon: <Sparkles className="w-5 h-5" />, action: () => window.location.href = '/create-dao', color: 'from-teal-500 to-orange-500' },
-    { id: '1', title: 'Create Proposal', icon: <Plus className="w-5 h-5" />, action: () => window.location.href = '/proposals', color: 'from-orange-500 to-red-500' },
-    { id: '2', title: 'Join Task', icon: <Target className="w-5 h-5" />, action: () => window.location.href = '/tasks', color: 'from-purple-500 to-pink-500' },
-    { id: '3', title: 'Add Funds', icon: <Wallet className="w-5 h-5" />, action: () => window.location.href = '/wallet', color: 'from-green-500 to-emerald-500' },
-    { id: '4', title: 'Invite Friend', icon: <Share2 className="w-5 h-5" />, action: () => window.location.href = '/referrals', color: 'from-blue-500 to-cyan-500' },
+    { id: '0', title: 'Create DAO', icon: <Sparkles className="w-5 h-5" />, action: () => navigate('/create-dao'), color: 'from-teal-500 to-orange-500' },
+    { id: '1', title: 'Create Proposal', icon: <Plus className="w-5 h-5" />, action: () => navigate('/proposals'), color: 'from-orange-500 to-red-500' },
+    { id: '2', title: 'Join Task', icon: <Target className="w-5 h-5" />, action: () => navigate('/tasks'), color: 'from-purple-500 to-pink-500' },
+    { id: '3', title: 'Add Funds', icon: <Wallet className="w-5 h-5" />, action: () => navigate('/wallet'), color: 'from-green-500 to-emerald-500' },
+    { id: '4', title: 'Invite Friend', icon: <Share2 className="w-5 h-5" />, action: () => navigate('/referrals'), color: 'from-blue-500 to-cyan-500' },
     { id: '5', title: 'Daily Check-in', icon: <CheckCircle className="w-5 h-5" />, action: () => setShowCelebration(true), color: 'from-yellow-500 to-orange-500' },
-    { id: '6', title: 'Learn More', icon: <BookOpen className="w-5 h-5" />, action: () => window.location.href = '/about', color: 'from-indigo-500 to-purple-500' }
+    { id: '6', title: 'Learn More', icon: <BookOpen className="w-5 h-5" />, action: () => navigate('/about'), color: 'from-indigo-500 to-purple-500' }
   ];
 
   const handleQuickAction = async (action: QuickAction) => {
@@ -338,11 +338,11 @@ export default function MtaaDashboard() {
                   Community Dashboard
                 </h1>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm" onClick={() => window.location.href = '/vault-dashboard'}>
+                  <Button variant="outline" size="sm" onClick={() => navigate('/vault-dashboard')}>
                     <TrendingUp className="w-4 h-4 mr-1" />
                     Vault Portfolio
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => window.location.href = '/wallet'}>
+                  <Button variant="outline" size="sm" onClick={() => navigate('/wallet')}>
                     <Wallet className="w-4 h-4 mr-1" />
                     Personal Finance
                   </Button>
@@ -640,7 +640,7 @@ export default function MtaaDashboard() {
                     Achievements
                   </h3>
                   <button 
-                    onClick={() => window.location.href = '/achievements'}
+                    onClick={() => navigate('/achievements')}
                     className="text-sm text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300 font-medium"
                   >
                     View All
@@ -719,7 +719,7 @@ export default function MtaaDashboard() {
                     Available Tasks
                   </h3>
                   <button 
-                    onClick={() => window.location.href = '/tasks'}
+                    onClick={() => navigate('/tasks')}
                     className="text-sm text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300 font-medium flex items-center"
                   >
                     View All <ChevronRight className="w-4 h-4 ml-1" />

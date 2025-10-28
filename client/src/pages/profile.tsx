@@ -1,76 +1,103 @@
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { Settings, LogOut, Calendar, TrendingUp, Users, Award, Crown, Star, Sparkles, Target, Trophy, Zap, Gift } from "lucide-react";
+import { Settings, LogOut, Calendar, TrendingUp, Users, Award, Crown, Star, Sparkles, Target, Trophy, Zap, Gift, Loader2 } from "lucide-react";
+import { useAuth } from "./hooks/useAuth";
+
+interface ContributionData {
+  id: number;
+  purpose: string;
+  amount: string;
+  currency: string;
+  createdAt: string;
+}
+
+interface VaultData {
+  id: number;
+  balance: string;
+}
+
+interface ProfileData {
+  user: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    role: string;
+    joinedAt: string;
+    profilePicture?: string | null;
+  };
+  contributionStats: {
+    totalContributions: number;
+    monthlyContributions: number;
+    currentStreak: number;
+  };
+  contributions: ContributionData[];
+  vaults: VaultData[];
+  votingTokenBalance: number;
+}
 
 export default function Profile() {
-  // Mock auth and data for demo
-  const user = {
-    id: "demo123",
-    firstName: "Sarah",
-    lastName: "Muthoni",
-    email: "sarah.muthoni@example.com",
-    role: "elder",
-    joinedAt: "2024-01-15T00:00:00Z",
-    profileImageUrl: null
-  };
+  const navigate = useNavigate();
+  const { user: authUser, logout } = useAuth();
 
-  // Mock data
-  const contributionStats = {
-    totalContributions: 1250.75,
-    monthlyContributions: 180.50,
-    currentStreak: 14
-  };
+  // Fetch profile data from API
+  const { data: profileData, isLoading, error } = useQuery<ProfileData>({
+    queryKey: ["/api/profile"],
+    queryFn: async () => {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch("/api/profile", {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to fetch profile data");
+      }
+      
+      return response.json();
+    },
+    enabled: !!authUser,
+    staleTime: 1 * 60 * 1000, // 1 minute
+  });
 
-  const contributions = [
-    {
-      id: 1,
-      purpose: "Education",
-      amount: "50.00",
-      currency: "KSH",
-      createdAt: "2024-01-15T10:00:00Z"
-    },
-    {
-      id: 2,
-      purpose: "Healthcare",
-      amount: "75.50",
-      currency: "KSH",
-      createdAt: "2024-01-14T15:30:00Z"
-    },
-    {
-      id: 3,
-      purpose: "Infrastructure",
-      amount: "100.00",
-      currency: "KSH",
-      createdAt: "2024-01-13T09:15:00Z"
-    },
-    {
-      id: 4,
-      purpose: "Emergency Fund",
-      amount: "25.00",
-      currency: "KSH",
-      createdAt: "2024-01-12T14:45:00Z"
-    },
-    {
-      id: 5,
-      purpose: "General",
-      amount: "60.25",
-      currency: "KSH",
-      createdAt: "2024-01-11T11:20:00Z"
-    }
-  ];
-
-  const vaults = [
-    { id: 1, balance: "500.00" },
-    { id: 2, balance: "300.25" },
-    { id: 3, balance: "200.50" }
-  ];
+  const user = profileData?.user || authUser;
+  const contributionStats = profileData?.contributionStats || { totalContributions: 0, monthlyContributions: 0, currentStreak: 0 };
+  const contributions = profileData?.contributions || [];
+  const vaults = profileData?.vaults || [];
+  const votingTokenBalance = profileData?.votingTokenBalance || 0;
 
   const totalBalance = vaults?.reduce((sum, vault) =>
     sum + parseFloat(vault.balance || "0"), 0
   ) || 0;
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 text-white animate-spin mx-auto mb-4" />
+          <p className="text-white text-lg">Loading profile...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <div className="text-center text-white">
+          <p className="text-lg mb-4">Failed to load profile data</p>
+          <Button onClick={() => navigate(0)}>Retry</Button>
+        </div>
+      </div>
+    );
+  }
 
   const getRoleBadge = (role: string) => {
     switch (role) {
@@ -114,9 +141,9 @@ export default function Profile() {
         <div className="absolute bottom-40 left-40 w-1.5 h-1.5 bg-purple-400 rounded-full animate-ping opacity-60 delay-1000"></div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 relative z-10">
         {/* Header with Glassmorphism */}
-        <div className="flex items-center justify-between mb-12">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 mb-16">
           <div className="relative">
             <div className="absolute -inset-1 bg-gradient-to-r from-purple-600 to-emerald-600 rounded-lg blur opacity-25 animate-pulse"></div>
             <div className="relative backdrop-blur-sm bg-white/10 rounded-xl p-6 border border-white/20 shadow-2xl">
@@ -135,13 +162,16 @@ export default function Profile() {
           </div>
           
           <div className="flex items-center space-x-4">
-            <Button className="bg-white/10 border-white/20 text-white hover:bg-white/20 backdrop-blur-sm shadow-lg transform hover:scale-105 transition-all duration-200">
+            <Button 
+              className="bg-white/10 border-white/20 text-white hover:bg-white/20 backdrop-blur-sm shadow-lg transform hover:scale-105 transition-all duration-200"
+              onClick={() => navigate('/settings')}
+            >
               <Settings className="mr-2 h-4 w-4" />
               Settings
             </Button>
             <Button
               className="bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white shadow-lg transform hover:scale-105 transition-all duration-200"
-              onClick={() => window.location.href = "/api/logout"}
+              onClick={() => logout()}
             >
               <LogOut className="mr-2 h-4 w-4" />
               Logout
@@ -150,7 +180,7 @@ export default function Profile() {
         </div>
 
         {/* Profile Header with Enhanced Design */}
-        <div className="relative group mb-12">
+        <div className="relative group mb-16">
           <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-emerald-600 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-300"></div>
           <div className="relative backdrop-blur-sm bg-white/10 rounded-2xl border border-white/20 shadow-2xl overflow-hidden">
             <div className="p-8 bg-gradient-to-r from-purple-500/10 to-emerald-500/10">
@@ -198,7 +228,7 @@ export default function Profile() {
         </div>
 
         {/* Stats Grid with Enhanced Design */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
           {[
             {
               icon: TrendingUp,
@@ -229,7 +259,7 @@ export default function Profile() {
             },
             {
               icon: Users,
-              value: "120",
+              value: votingTokenBalance.toString(),
               label: "Your voting token balance",
               color: "from-blue-500 to-indigo-600",
               bgColor: "from-blue-500/20 to-indigo-600/20",
@@ -239,7 +269,7 @@ export default function Profile() {
           ].map((stat, index) => (
             <div key={index} className="group relative transform transition-all duration-300 hover:scale-105">
               <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-emerald-600 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-300"></div>
-              <div className="relative backdrop-blur-sm bg-white/10 rounded-2xl p-6 border border-white/20 shadow-2xl">
+              <div className="relative backdrop-blur-sm bg-white/10 rounded-2xl p-8 border border-white/20 shadow-2xl">
                 <div className="flex items-center justify-between mb-4">
                   <div className={`w-14 h-14 bg-gradient-to-r ${stat.bgColor} rounded-2xl flex items-center justify-center shadow-lg`}>
                     <stat.icon className={`w-7 h-7 bg-gradient-to-r ${stat.color} bg-clip-text text-transparent`} />
@@ -258,7 +288,7 @@ export default function Profile() {
         </div>
 
         {/* Points Table with Enhanced Design */}
-        <div className="relative group mb-12">
+        <div className="relative group mb-16">
           <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-emerald-600 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-300"></div>
           <div className="relative backdrop-blur-sm bg-white/10 rounded-2xl border border-white/20 shadow-2xl overflow-hidden">
             <div className="p-6 bg-gradient-to-r from-purple-500/10 to-emerald-500/10">
@@ -303,7 +333,7 @@ export default function Profile() {
         </div>
 
         {/* Activity and Achievements */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-8">
           {/* Recent Activity */}
           <div className="relative group">
             <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-emerald-600 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-300"></div>

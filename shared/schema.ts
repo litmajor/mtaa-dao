@@ -289,6 +289,8 @@ export const proposals = pgTable("proposals", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   isFeatured: boolean("is_featured").default(false), // for featured proposals on DAO page
+  likesCount: integer("likes_count").default(0), // Denormalized count for performance
+  commentsCount: integer("comments_count").default(0), // Denormalized count for performance
 });
 
 // Vote Delegations table
@@ -776,6 +778,8 @@ export const proposalComments = pgTable("proposal_comments", {
   daoId: uuid("dao_id").references(() => daos.id).notNull(),
   content: text("content").notNull(),
   parentCommentId: uuid("parent_comment_id").references((): any => proposalComments.id), // for replies
+  isEdited: boolean("is_edited").default(false),
+  likesCount: integer("likes_count").default(0), // Denormalized count for performance
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -806,8 +810,32 @@ export const daoMessages = pgTable("dao_messages", {
   content: text("content").notNull(),
   messageType: varchar("message_type").default("text"), // text, image, system
   replyToMessageId: uuid("reply_to_message_id").references((): any => daoMessages.id),
+  isPinned: boolean("is_pinned").default(false),
+  pinnedAt: timestamp("pinned_at"),
+  pinnedBy: varchar("pinned_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Message Reactions table
+export const messageReactions = pgTable("message_reactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  messageId: uuid("message_id").references(() => daoMessages.id, { onDelete: 'cascade' }).notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  emoji: varchar("emoji", { length: 10 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Message Attachments table
+export const messageAttachments = pgTable("message_attachments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  messageId: uuid("message_id").references(() => daoMessages.id, { onDelete: 'cascade' }).notNull(),
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  fileUrl: varchar("file_url", { length: 500 }).notNull(),
+  fileType: varchar("file_type", { length: 50 }),
+  fileSize: integer("file_size"),
+  uploadedBy: varchar("uploaded_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Subscriptions table
@@ -835,6 +863,241 @@ export const userReputation = pgTable("user_reputation", {
   lastUpdated: timestamp("last_updated").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Platform Announcements table
+export const platformAnnouncements = pgTable("platform_announcements", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message").notNull(),
+  type: varchar("type", { length: 50 }).default("info"), // info, warning, error, success
+  priority: integer("priority").default(0), // higher numbers = higher priority
+  isActive: boolean("is_active").default(true),
+  targetAudience: varchar("target_audience", { length: 50 }).default("all"), // all, members, admins, specific_dao
+  targetDaoId: uuid("target_dao_id").references(() => daos.id, { onDelete: 'cascade' }),
+  linkUrl: varchar("link_url", { length: 500 }),
+  linkText: varchar("link_text", { length: 100 }),
+  startsAt: timestamp("starts_at"),
+  expiresAt: timestamp("expires_at"),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// User Announcement Views table
+export const userAnnouncementViews = pgTable("user_announcement_views", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  announcementId: uuid("announcement_id").references(() => platformAnnouncements.id, { onDelete: 'cascade' }).notNull(),
+  viewedAt: timestamp("viewed_at").defaultNow(),
+  dismissed: boolean("dismissed").default(false),
+});
+
+// Investment Pools Tables
+export const investmentPools = pgTable("investment_pools", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }),
+  name: varchar("name", { length: 255 }).notNull(),
+  symbol: varchar("symbol", { length: 10 }).notNull(),
+  description: text("description"),
+  contractAddress: varchar("contract_address", { length: 255 }),
+  totalValueLocked: decimal("total_value_locked", { precision: 18, scale: 8 }).default("0"),
+  shareTokenSupply: decimal("share_token_supply", { precision: 18, scale: 8 }).default("0"),
+  sharePrice: decimal("share_price", { precision: 18, scale: 8 }).default("1.0"),
+  performanceFee: integer("performance_fee").default(200), // basis points
+  minimumInvestment: decimal("minimum_investment", { precision: 18, scale: 2 }).default("10.00"),
+  isActive: boolean("is_active").default(true),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const poolAssets = pgTable("pool_assets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  poolId: uuid("pool_id").references(() => investmentPools.id, { onDelete: 'cascade' }).notNull(),
+  assetSymbol: varchar("asset_symbol", { length: 10 }).notNull(),
+  assetName: varchar("asset_name", { length: 100 }),
+  tokenAddress: varchar("token_address", { length: 255 }),
+  network: varchar("network", { length: 50 }),
+  targetAllocation: integer("target_allocation").notNull(), // basis points
+  currentBalance: decimal("current_balance", { precision: 18, scale: 8 }).default("0"),
+  currentValueUsd: decimal("current_value_usd", { precision: 18, scale: 2 }).default("0"),
+  lastPriceUsd: decimal("last_price_usd", { precision: 18, scale: 2 }),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const poolInvestments = pgTable("pool_investments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  poolId: uuid("pool_id").references(() => investmentPools.id, { onDelete: 'cascade' }).notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  investmentAmountUsd: decimal("investment_amount_usd", { precision: 18, scale: 2 }).notNull(),
+  sharesMinted: decimal("shares_minted", { precision: 18, scale: 8 }).notNull(),
+  sharePriceAtInvestment: decimal("share_price_at_investment", { precision: 18, scale: 8 }).notNull(),
+  paymentToken: varchar("payment_token", { length: 50 }),
+  transactionHash: varchar("transaction_hash", { length: 255 }),
+  status: varchar("status", { length: 50 }).default("pending"),
+  investedAt: timestamp("invested_at").defaultNow(),
+});
+
+export const poolWithdrawals = pgTable("pool_withdrawals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  poolId: uuid("pool_id").references(() => investmentPools.id, { onDelete: 'cascade' }).notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  sharesBurned: decimal("shares_burned", { precision: 18, scale: 8 }).notNull(),
+  withdrawalValueUsd: decimal("withdrawal_value_usd", { precision: 18, scale: 2 }).notNull(),
+  sharePriceAtWithdrawal: decimal("share_price_at_withdrawal", { precision: 18, scale: 8 }).notNull(),
+  feeCharged: decimal("fee_charged", { precision: 18, scale: 2 }).default("0"),
+  netAmount: decimal("net_amount", { precision: 18, scale: 2 }),
+  transactionHash: varchar("transaction_hash", { length: 255 }),
+  status: varchar("status", { length: 50 }).default("pending"),
+  withdrawnAt: timestamp("withdrawn_at").defaultNow(),
+});
+
+export const poolRebalances = pgTable("pool_rebalances", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  poolId: uuid("pool_id").references(() => investmentPools.id, { onDelete: 'cascade' }).notNull(),
+  initiatedBy: varchar("initiated_by").references(() => users.id),
+  tvlBefore: decimal("tvl_before", { precision: 18, scale: 2 }),
+  tvlAfter: decimal("tvl_after", { precision: 18, scale: 2 }),
+  assetsChanged: jsonb("assets_changed"),
+  transactionHash: varchar("transaction_hash", { length: 255 }),
+  reason: text("reason"),
+  status: varchar("status", { length: 50 }).default("completed"),
+  rebalancedAt: timestamp("rebalanced_at").defaultNow(),
+});
+
+export const poolPerformance = pgTable("pool_performance", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  poolId: uuid("pool_id").references(() => investmentPools.id, { onDelete: 'cascade' }).notNull(),
+  tvl: decimal("tvl", { precision: 18, scale: 2 }),
+  sharePrice: decimal("share_price", { precision: 18, scale: 8 }),
+  totalReturnPercentage: decimal("total_return_percentage", { precision: 10, scale: 4 }),
+  btcPrice: decimal("btc_price", { precision: 18, scale: 2 }),
+  ethPrice: decimal("eth_price", { precision: 18, scale: 2 }),
+  solPrice: decimal("sol_price", { precision: 18, scale: 2 }),
+  bnbPrice: decimal("bnb_price", { precision: 18, scale: 2 }),
+  xrpPrice: decimal("xrp_price", { precision: 18, scale: 2 }),
+  ltcPrice: decimal("ltc_price", { precision: 18, scale: 2 }),
+  volatility: decimal("volatility", { precision: 10, scale: 4 }),
+  sharpeRatio: decimal("sharpe_ratio", { precision: 10, scale: 4 }),
+  snapshotAt: timestamp("snapshot_at").defaultNow(),
+});
+
+// Phase 2: Portfolio Templates
+export const portfolioTemplates = pgTable("portfolio_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: varchar("name", { length: 100 }).notNull(),
+  description: text("description"),
+  riskLevel: varchar("risk_level", { length: 50 }).notNull(),
+  targetReturnAnnual: decimal("target_return_annual", { precision: 5, scale: 2 }),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const templateAssetAllocations = pgTable("template_asset_allocations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  templateId: uuid("template_id").references(() => portfolioTemplates.id, { onDelete: 'cascade' }).notNull(),
+  assetSymbol: varchar("asset_symbol", { length: 10 }).notNull(),
+  targetAllocation: integer("target_allocation").notNull(),
+});
+
+export const rebalancingSettings = pgTable("rebalancing_settings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  poolId: uuid("pool_id").references(() => investmentPools.id, { onDelete: 'cascade' }).notNull(),
+  autoRebalanceEnabled: boolean("auto_rebalance_enabled").default(false),
+  rebalanceFrequency: varchar("rebalance_frequency", { length: 50 }).default("weekly"),
+  rebalanceThreshold: integer("rebalance_threshold").default(500),
+  lastRebalanceCheck: timestamp("last_rebalance_check"),
+  nextRebalanceScheduled: timestamp("next_rebalance_scheduled"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const assetPriceHistory = pgTable("asset_price_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  assetSymbol: varchar("asset_symbol", { length: 10 }).notNull(),
+  priceUsd: decimal("price_usd", { precision: 18, scale: 2 }).notNull(),
+  marketCap: decimal("market_cap", { precision: 20, scale: 2 }),
+  volume24h: decimal("volume_24h", { precision: 20, scale: 2 }),
+  priceChange24h: decimal("price_change_24h", { precision: 10, scale: 4 }),
+  recordedAt: timestamp("recorded_at").defaultNow(),
+});
+
+export const poolSwapTransactions = pgTable("pool_swap_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  poolId: uuid("pool_id").references(() => investmentPools.id, { onDelete: 'cascade' }).notNull(),
+  rebalanceId: uuid("rebalance_id").references(() => poolRebalances.id),
+  fromAsset: varchar("from_asset", { length: 10 }).notNull(),
+  toAsset: varchar("to_asset", { length: 10 }).notNull(),
+  amountFrom: decimal("amount_from", { precision: 18, scale: 8 }).notNull(),
+  amountTo: decimal("amount_to", { precision: 18, scale: 8 }).notNull(),
+  exchangeRate: decimal("exchange_rate", { precision: 18, scale: 8 }),
+  dexUsed: varchar("dex_used", { length: 50 }),
+  transactionHash: varchar("transaction_hash", { length: 255 }),
+  gasFee: decimal("gas_fee", { precision: 18, scale: 8 }),
+  status: varchar("status", { length: 50 }).default("pending"),
+  swappedAt: timestamp("swapped_at").defaultNow(),
+});
+
+// Pool Governance - Weighted Voting System
+export const poolProposals = pgTable("pool_proposals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  poolId: uuid("pool_id").references(() => investmentPools.id, { onDelete: 'cascade' }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description").notNull(),
+  proposalType: varchar("proposal_type", { length: 50 }).notNull(),
+  details: jsonb("details"),
+  totalVotingPower: decimal("total_voting_power", { precision: 18, scale: 8 }).default("0"),
+  votesFor: decimal("votes_for", { precision: 18, scale: 8 }).default("0"),
+  votesAgainst: decimal("votes_against", { precision: 18, scale: 8 }).default("0"),
+  votesAbstain: decimal("votes_abstain", { precision: 18, scale: 8 }).default("0"),
+  quorumRequired: decimal("quorum_required", { precision: 5, scale: 2 }).default("30.00"),
+  approvalThreshold: decimal("approval_threshold", { precision: 5, scale: 2 }).default("51.00"),
+  status: varchar("status", { length: 50 }).default("active"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  votingEndsAt: timestamp("voting_ends_at").notNull(),
+  executedAt: timestamp("executed_at"),
+  executionTxHash: varchar("execution_tx_hash", { length: 255 }),
+  executionResult: jsonb("execution_result"),
+});
+
+export const poolVotes = pgTable("pool_votes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  proposalId: uuid("proposal_id").references(() => poolProposals.id, { onDelete: 'cascade' }).notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  vote: varchar("vote", { length: 20 }).notNull(),
+  votingPower: decimal("voting_power", { precision: 18, scale: 8 }).notNull(),
+  sharePercentage: decimal("share_percentage", { precision: 10, scale: 6 }),
+  reason: text("reason"),
+  votedAt: timestamp("voted_at").defaultNow(),
+});
+
+export const poolGovernanceSettings = pgTable("pool_governance_settings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  poolId: uuid("pool_id").references(() => investmentPools.id, { onDelete: 'cascade' }).notNull(),
+  defaultQuorum: decimal("default_quorum", { precision: 5, scale: 2 }).default("30.00"),
+  defaultApprovalThreshold: decimal("default_approval_threshold", { precision: 5, scale: 2 }).default("51.00"),
+  votingPeriodDays: integer("voting_period_days").default(3),
+  minSharesToPropose: decimal("min_shares_to_propose", { precision: 18, scale: 8 }).default("1.0"),
+  proposalCooldownHours: integer("proposal_cooldown_hours").default(24),
+  timelockHours: integer("timelock_hours").default(24),
+  governanceEnabled: boolean("governance_enabled").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const poolVoteDelegations = pgTable("pool_vote_delegations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  poolId: uuid("pool_id").references(() => investmentPools.id, { onDelete: 'cascade' }).notNull(),
+  delegatorId: varchar("delegator_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  delegateId: varchar("delegate_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  delegatedShares: decimal("delegated_shares", { precision: 18, scale: 8 }).notNull(),
+  isActive: boolean("is_active").default(true),
+  delegatedAt: timestamp("delegated_at").defaultNow(),
+  revokedAt: timestamp("revoked_at"),
 });
 
 // Add unique constraints to prevent duplicate likes (temporarily commented out for debugging)

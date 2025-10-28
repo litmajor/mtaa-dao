@@ -2,9 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { Shield, BarChart, Users, Coins, Network, Eye, Loader2, Settings, AlertTriangle, TrendingUp, Clock, Database, Server, Activity } from 'lucide-react';
 import { Link } from 'react-router-dom';
-
-// TODO: Replace with real owner check (e.g., from auth context)
-const isOwner = localStorage.getItem('superuser') === 'true';
+import { useAuth } from '../pages/hooks/useAuth';
 
 type ChainInfo = {
   chain?: string;
@@ -68,6 +66,9 @@ type Stats = {
 };
 
 export default function SuperUserDashboard() {
+  const { user } = useAuth();
+  const isOwner = user?.roles === 'super_admin' || user?.roles === 'admin';
+  
   const [stats, setStats] = useState<Stats>({
     daos: 0,
     treasury: 0,
@@ -96,11 +97,20 @@ export default function SuperUserDashboard() {
   const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
+    if (!isOwner) return;
+    
     async function fetchAnalytics() {
       setLoading(true);
       setError('');
       try {
-        const res = await fetch('/api/admin/analytics');
+        const token = localStorage.getItem('accessToken');
+        const res = await fetch('/api/admin/analytics', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+        });
         if (!res.ok) throw new Error('Failed to fetch analytics');
         const data = await res.json();
         setStats(data);
@@ -119,7 +129,7 @@ export default function SuperUserDashboard() {
     // Auto-refresh every 30 seconds
     const interval = setInterval(fetchAnalytics, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isOwner]);
 
   const getHealthColor = (status: string) => {
     switch (status) {
@@ -398,29 +408,53 @@ export default function SuperUserDashboard() {
                     <p className="text-white/70">Detailed platform analytics</p>
                   </Link>
 
-                  <Link to="/daos" className="block bg-white/10 rounded-2xl p-6 hover:bg-white/20 transition-colors">
+                  <Link to="/admin/users" className="block bg-white/10 rounded-2xl p-6 hover:bg-white/20 transition-colors">
                     <div className="flex items-center mb-4">
-                      <Users className="w-8 h-8 text-orange-400 mr-3" />
-                      <h3 className="text-lg font-bold text-white">DAO Management</h3>
+                      <Users className="w-8 h-8 text-yellow-400 mr-3" />
+                      <h3 className="text-lg font-bold text-white">User Management</h3>
                     </div>
-                    <p className="text-white/70">Oversee all DAOs</p>
+                    <p className="text-white/70">Manage users and permissions</p>
                   </Link>
 
-                  <div className="bg-white/10 rounded-2xl p-6">
+                  <Link to="/admin/daos" className="block bg-white/10 rounded-2xl p-6 hover:bg-white/20 transition-colors">
+                    <div className="flex items-center mb-4">
+                      <Network className="w-8 h-8 text-orange-400 mr-3" />
+                      <h3 className="text-lg font-bold text-white">DAO Management</h3>
+                    </div>
+                    <p className="text-white/70">Oversee and moderate DAOs</p>
+                  </Link>
+
+                  <Link to="/admin/settings" className="block bg-white/10 rounded-2xl p-6 hover:bg-white/20 transition-colors">
                     <div className="flex items-center mb-4">
                       <Settings className="w-8 h-8 text-gray-400 mr-3" />
                       <h3 className="text-lg font-bold text-white">System Settings</h3>
                     </div>
                     <p className="text-white/70">Configure system parameters</p>
-                  </div>
+                  </Link>
 
-                  <div className="bg-white/10 rounded-2xl p-6">
+                  <Link to="/admin/security" className="block bg-white/10 rounded-2xl p-6 hover:bg-white/20 transition-colors">
                     <div className="flex items-center mb-4">
                       <Shield className="w-8 h-8 text-red-400 mr-3" />
                       <h3 className="text-lg font-bold text-white">Security Audit</h3>
                     </div>
                     <p className="text-white/70">Security monitoring and reports</p>
-                  </div>
+                  </Link>
+
+                  <Link to="/admin/announcements" className="block bg-white/10 rounded-2xl p-6 hover:bg-white/20 transition-colors">
+                    <div className="flex items-center mb-4">
+                      <Activity className="w-8 h-8 text-indigo-400 mr-3" />
+                      <h3 className="text-lg font-bold text-white">Announcements</h3>
+                    </div>
+                    <p className="text-white/70">Manage platform announcements</p>
+                  </Link>
+
+                  <Link to="/admin/pools" className="block bg-white/10 rounded-2xl p-6 hover:bg-white/20 transition-colors">
+                    <div className="flex items-center mb-4">
+                      <Coins className="w-8 h-8 text-purple-400 mr-3" />
+                      <h3 className="text-lg font-bold text-white">Investment Pools</h3>
+                    </div>
+                    <p className="text-white/70">Create and manage investment pools</p>
+                  </Link>
                 </div>
 
                 {/* Recent DAOs */}

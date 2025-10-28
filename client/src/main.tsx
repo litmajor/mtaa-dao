@@ -1,5 +1,6 @@
 
 import { createRoot } from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import "./index.css";
 import { ToastProvider } from "./components/ui/ToastProvider";
@@ -19,9 +20,11 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById("root")!).render(
   <HelmetProvider>
     <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <App />
-      </ToastProvider>
+      <BrowserRouter>
+        <ToastProvider>
+          <App />
+        </ToastProvider>
+      </BrowserRouter>
     </QueryClientProvider>
   </HelmetProvider>
 );

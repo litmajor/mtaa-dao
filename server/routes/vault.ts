@@ -347,6 +347,80 @@ router.get('/alerts/:vaultId', asyncHandler(async (req, res) => {
   }
 }));
 
+// GET /api/vault/transactions - Get vault transaction history
+router.get('/transactions', asyncHandler(async (req, res) => {
+  const userId = (req.user as any)?.claims?.id || req.user?.id;
+  
+  if (!userId) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  const { currency, startDate, endDate, limit = '100', vaultId } = req.query;
+
+  try {
+    const { db } = await import('../db');
+    const { vaultTransactions, vaults } = await import('../../shared/schema');
+    const { eq, and, gte, lte, desc, sql } = await import('drizzle-orm');
+
+    // Build query conditions
+    const conditions = [eq(vaultTransactions.userId, userId)];
+    
+    if (currency) {
+      conditions.push(eq(vaultTransactions.tokenSymbol, currency as string));
+    }
+    
+    if (startDate) {
+      conditions.push(gte(vaultTransactions.createdAt, new Date(startDate as string)));
+    }
+    
+    if (endDate) {
+      conditions.push(lte(vaultTransactions.createdAt, new Date(endDate as string)));
+    }
+    
+    if (vaultId) {
+      conditions.push(eq(vaultTransactions.vaultId, vaultId as string));
+    }
+
+    // Fetch transactions
+    const transactions = await db
+      .select({
+        id: vaultTransactions.id,
+        type: vaultTransactions.transactionType,
+        amount: vaultTransactions.amount,
+        currency: vaultTransactions.tokenSymbol,
+        to: vaultTransactions.transactionHash,
+        timestamp: vaultTransactions.createdAt,
+        status: vaultTransactions.status,
+        valueUSD: vaultTransactions.valueUSD,
+      })
+      .from(vaultTransactions)
+      .where(and(...conditions))
+      .orderBy(desc(vaultTransactions.createdAt))
+      .limit(parseInt(limit as string));
+
+    // Transform for frontend
+    const formattedTransactions = transactions.map(tx => ({
+      id: tx.id,
+      type: tx.type === 'deposit' ? 'receive' : 'send',
+      amount: tx.amount,
+      currency: tx.currency?.toUpperCase() || 'CUSD',
+      to: tx.to || '0x0000...0000',
+      timestamp: tx.timestamp?.toISOString() || new Date().toISOString(),
+      status: tx.status || 'completed',
+      valueUSD: tx.valueUSD || '0',
+    }));
+
+    res.json({
+      success: true,
+      transactions: formattedTransactions,
+      count: formattedTransactions.length,
+    });
+  } catch (error) {
+    logger.error('Failed to get vault transactions:', error);
+    res.status(500).json({ error: 'Failed to fetch transactions' });
+  }
+}));
+
 // Helper function to generate mock chart data
 function generateMockChartData(period: string) {
   const points = period === '24h' ? 24 : period === '7d' ? 7 : 30;
