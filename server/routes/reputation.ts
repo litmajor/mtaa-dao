@@ -147,6 +147,187 @@ router.get('/achievements', async (req: Request, res: Response) => {
     res.json({ achievements: achievementRows });
   } catch (err) {
     res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+
+
+// Get economic identity (credit score)
+router.get('/economic-identity/:userId', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const authUserId = (req.user as any).claims?.sub || (req.user as any).claims?.id;
+
+    // Users can only view their own economic identity unless admin
+    if (userId !== authUserId && userId !== 'me' && (req.user as any).role !== 'superuser') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const targetUserId = userId === 'me' ? authUserId : userId;
+    const identity = await ReputationService.getEconomicIdentity(targetUserId);
+    
+    res.json({ identity });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Record a contribution
+router.post('/contribution', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const userId = (req.user as any).claims?.sub || (req.user as any).claims?.id;
+    const { contributionType, daoId, value, metadata, relatedEntityId, relatedEntityType } = req.body;
+
+    // Determine reputation weight based on contribution type
+    const weight = CONTRIBUTION_WEIGHTS[contributionType as keyof typeof CONTRIBUTION_WEIGHTS] || 50;
+
+    const contribution = await ReputationService.recordContribution({
+      userId,
+      contributionType,
+      daoId,
+      value,
+      reputationWeight: weight,
+      metadata,
+      relatedEntityId,
+      relatedEntityType,
+      autoVerify: false, // Requires verification
+    });
+
+    res.json({ contribution });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Verify a contribution (admin/verifier only)
+router.post('/contribution/:contributionId/verify', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { contributionId } = req.params;
+    const verifierId = (req.user as any).claims?.sub || (req.user as any).claims?.id;
+    const { approved, notes } = req.body;
+
+    // Check if user has verification rights
+    // TODO: Implement proper verifier role check
+
+    await db.update(contributionGraph)
+      .set({
+        verified: approved,
+        verifiedBy: verifierId,
+        verifiedAt: new Date(),
+        metadata: sql`jsonb_set(metadata, '{verificationNotes}', ${JSON.stringify(notes)})`,
+      })
+      .where(eq(contributionGraph.id, contributionId));
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Award a soulbound badge
+router.post('/badge/award', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const userId = (req.user as any).claims?.sub || (req.user as any).claims?.id;
+    const { badgeType, badgeTier, name, description, category, criteriaType, criteriaValue } = req.body;
+
+    // Only admins can manually award badges
+    if ((req.user as any).role !== 'superuser' && (req.user as any).role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const badge = await ReputationService.awardBadge({
+      userId,
+      badgeType,
+      badgeTier,
+      name,
+      description,
+      category,
+      criteriaType,
+      criteriaValue,
+    });
+
+    res.json({ badge });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Verify a skill
+router.post('/skill/verify', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const verifierId = (req.user as any).claims?.sub || (req.user as any).claims?.id;
+    const { userId, skillName, skillCategory, verificationMethod, proficiencyLevel, verificationProof } = req.body;
+
+    const skill = await ReputationService.verifySkill({
+      userId,
+      skillName,
+      skillCategory,
+      verifiedBy: verifierId,
+      verificationMethod,
+      proficiencyLevel,
+      verificationProof,
+    });
+
+    res.json({ skill });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Link phone number (M-Pesa integration)
+router.post('/phone/link', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const userId = (req.user as any).claims?.sub || (req.user as any).claims?.id;
+    const { phoneNumber } = req.body;
+
+    // TODO: Implement phone verification flow (send OTP)
+    await ReputationService.linkPhoneNumber(userId, phoneNumber, false);
+
+    res.json({ success: true, message: 'Phone number linked. Verification pending.' });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Get user's contribution history
+router.get('/contributions/:userId', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const { limit = 50 } = req.query;
+
+    const contributions = await db
+      .select()
+      .from(contributionGraph)
+      .where(eq(contributionGraph.userId, userId))
+      .orderBy(desc(contributionGraph.createdAt))
+      .limit(parseInt(limit as string));
+
+    res.json({ contributions });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Get user's badges
+router.get('/badges/:userId', async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+
+    const badges = await db
+      .select()
+      .from(reputationBadges)
+      .where(and(
+        eq(reputationBadges.userId, userId),
+        eq(reputationBadges.isActive, true)
+      ))
+      .orderBy(desc(reputationBadges.earnedAt));
+
+    res.json({ badges });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Export contribution weights for reference
+export { CONTRIBUTION_WEIGHTS } from '../reputationService';
+
   }
 });
 
