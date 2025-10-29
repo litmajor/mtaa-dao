@@ -30,7 +30,15 @@ interface ChatResponse {
   }>;
 }
 
-export function MorioChat({ userId, daoId }: { userId: string; daoId?: string }) {
+export function MorioChat({ 
+  userId, 
+  daoId, 
+  isOnboarding = false 
+}: { 
+  userId: string; 
+  daoId?: string;
+  isOnboarding?: boolean;
+}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -87,13 +95,25 @@ export function MorioChat({ userId, daoId }: { userId: string; daoId?: string })
   // Welcome message
   useEffect(() => {
     if (messages.length === 0) {
+      const welcomeMessage = isOnboarding 
+        ? `Habari! 👋 I'm Morio, your personal guide to MtaaDAO!
+
+I'll help you navigate the platform and teach you how to:
+• Manage your wallet and treasury
+• Create and vote on proposals
+• Track community activities
+• Understand analytics and insights
+
+Would you like a quick tour of the main features? Just say "show me around" or "help"!`
+        : 'Habari! 👋 I\'m Morio, your DAO assistant. I can help you with treasury management, proposals, voting, and analytics. What would you like to do today?';
+      
       setMessages([{
         role: 'assistant',
-        content: 'Habari! 👋 I\'m Morio, your DAO assistant. I can help you with treasury management, proposals, voting, and analytics. What would you like to do today?',
+        content: welcomeMessage,
         timestamp: new Date()
       }]);
     }
-  }, []);
+  }, [isOnboarding]);
 
   return (
     <Card className="h-[600px] flex flex-col" data-testid="morio-chat">
@@ -157,27 +177,58 @@ export function MorioChat({ userId, daoId }: { userId: string; daoId?: string })
 
         {/* Quick suggestions */}
         <div className="flex flex-wrap gap-2 mt-2">
-          <button
-            onClick={() => handleSuggestion('Check DAO balance')}
-            className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
-            data-testid="suggestion-balance"
-          >
-            Check balance
-          </button>
-          <button
-            onClick={() => handleSuggestion('Show active proposals')}
-            className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
-            data-testid="suggestion-proposals"
-          >
-            Active proposals
-          </button>
-          <button
-            onClick={() => handleSuggestion('Treasury analytics')}
-            className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
-            data-testid="suggestion-analytics"
-          >
-            Analytics
-          </button>
+          {isOnboarding ? (
+            <>
+              <button
+                onClick={() => handleSuggestion('Show me around')}
+                className="text-xs px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded hover:bg-purple-200 dark:hover:bg-purple-900/50"
+              >
+                🎯 Take a tour
+              </button>
+              <button
+                onClick={() => handleSuggestion('How do I create a proposal?')}
+                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+              >
+                📝 Create proposal
+              </button>
+              <button
+                onClick={() => handleSuggestion('How do I vote?')}
+                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+              >
+                🗳️ Voting guide
+              </button>
+              <button
+                onClick={() => handleSuggestion('Explain treasury')}
+                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+              >
+                💰 Treasury help
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => handleSuggestion('Check DAO balance')}
+                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                data-testid="suggestion-balance"
+              >
+                Check balance
+              </button>
+              <button
+                onClick={() => handleSuggestion('Show active proposals')}
+                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                data-testid="suggestion-proposals"
+              >
+                Active proposals
+              </button>
+              <button
+                onClick={() => handleSuggestion('Treasury analytics')}
+                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                data-testid="suggestion-analytics"
+              >
+                Analytics
+              </button>
+            </>
+          )}
         </div>
       </div>
     </Card>

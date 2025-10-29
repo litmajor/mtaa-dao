@@ -1,6 +1,6 @@
 /**
  * Intent Classification Module
- * 
+ *
  * Classifies user messages into specific intents and extracts entities.
  * Uses pattern matching and keyword detection (can be upgraded to ML models later).
  */
@@ -19,7 +19,7 @@ export class IntentClassifier {
    */
   async classify(message: string): Promise<Intent> {
     const normalizedMessage = message.toLowerCase().trim();
-    
+
     // Check each intent pattern
     for (const [intentType, patterns] of this.intentPatterns.entries()) {
       for (const pattern of patterns) {
@@ -50,6 +50,18 @@ export class IntentClassifier {
    */
   private buildIntentPatterns(): Map<IntentType, RegExp[]> {
     return new Map([
+      ['onboarding_tour', [
+        /show me around|tour|guide|walk through|help me start|getting started/i,
+      ]],
+      ['onboarding_proposals', [
+        /how.*proposal|create proposal|make proposal/i,
+      ]],
+      ['onboarding_voting', [
+        /how.*vote|voting guide|how to vote/i,
+      ]],
+      ['onboarding_treasury', [
+        /explain treasury|treasury help|how treasury/i,
+      ]],
       ['withdraw', [
         /withdraw|nataka kutoa|pull out|take out/i,
         /send.*to.*wallet|transfer out/i
@@ -146,7 +158,7 @@ export class IntentClassifier {
     // Swahili keywords
     const swahiliKeywords = ['nataka', 'pesa', 'ngapi', 'weka', 'toa', 'kiasi', 'kura', 'wanachama', 'fedha'];
     const hasSwahili = swahiliKeywords.some(keyword => message.toLowerCase().includes(keyword));
-    
+
     return hasSwahili ? 'sw' : 'en';
   }
 
@@ -156,18 +168,18 @@ export class IntentClassifier {
   private analyzeSentiment(message: string): number {
     const positiveWords = ['good', 'great', 'excellent', 'love', 'awesome', 'nzuri', 'poa'];
     const negativeWords = ['bad', 'poor', 'hate', 'terrible', 'awful', 'mbaya'];
-    
+
     const lowerMessage = message.toLowerCase();
     let sentiment = 0;
-    
+
     positiveWords.forEach(word => {
       if (lowerMessage.includes(word)) sentiment += 0.2;
     });
-    
+
     negativeWords.forEach(word => {
       if (lowerMessage.includes(word)) sentiment -= 0.2;
     });
-    
+
     return Math.max(-1, Math.min(1, sentiment));
   }
 }
