@@ -37,6 +37,7 @@ import announcementsRoutes from './routes/announcements';
 import investmentPoolsRoutes from './routes/investment-pools';
 import poolGovernanceRoutes from './routes/pool-governance';
 import treasuryIntelligenceRoutes from './routes/treasury-intelligence';
+import phoneVerificationRouter from './routes/phone-verification';
 
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
@@ -73,7 +74,7 @@ import { getDaoSettingsHandler, updateDaoSettingsHandler, resetInviteCodeHandler
 import { getUserReputationHandler, getReputationLeaderboardHandler, getDaoReputationLeaderboardHandler } from './api/reputation';
 
 // Auth handlers
-import { refreshTokenHandler, logoutHandler } from './auth';
+import {refreshTokenHandler, logoutHandler } from './auth';
 
 // User profile handlers
 import { 
@@ -95,7 +96,7 @@ import {
 } from './middleware/rateLimiter';
 
 // Admin handlers
-import { getUsersHandler, updateUserRoleHandler } from './api/admin_users';
+import {getUsersHandler, updateUserRoleHandler } from './api/admin_users';
 
 
 export function registerRoutes(app: express.Application) {
@@ -310,4 +311,7 @@ export function registerRoutes(app: express.Application) {
 
   // === TREASURY INTELLIGENCE API ===
   app.use('/api/treasury-intelligence', treasuryIntelligenceRoutes);
+
+  // === PHONE VERIFICATION API ===
+  app.use('/api/phone-verification', phoneVerificationRouter);
 }

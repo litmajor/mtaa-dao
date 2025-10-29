@@ -55,6 +55,7 @@ import ArchitectSetupPage from './pages/architect-setup';
 import PricingPage from './pages/PricingPage';
 import AdminBillingDashboard from './pages/AdminBillingDashboard';
 import ReputationLeaderboard from './pages/ReputationLeaderboard';
+import ReputationDashboard from "./pages/ReputationDashboard";
 import DaoSettings from './pages/DaoSettings';
 import SuperUserDashboard from './components/SuperUserDashboard';
 import NotFound from './pages/not-found';
@@ -117,7 +118,7 @@ function App() {
             </Helmet>
 
             <SkipLink />
-            
+
             <AnnouncementsBanner />
 
             {isAuthenticated && <Navigation />}
@@ -211,7 +212,8 @@ function App() {
                 {/* Protected special routes */}
                 <Route path="/architect-setup" element={<ProtectedRoute><ArchitectSetupPage /></ProtectedRoute>} />
                 <Route path="/wallet-setup" element={<ProtectedRoute><WalletSetupPage /></ProtectedRoute>} />
-                <Route path="/leaderboard" element={<ProtectedRoute><ReputationLeaderboard /></ProtectedRoute>} />
+                <Route path="/leaderboard" element={<ReputationLeaderboard />} />
+                <Route path="/reputation-dashboard" element={<ReputationDashboard />} />
                 <Route path="/minipay" element={<ProtectedRoute><MiniPayDemo /></ProtectedRoute>} />
                 <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
                 <Route path="/subscribe" element={<ProtectedRoute><Subscribe /></ProtectedRoute>} />
