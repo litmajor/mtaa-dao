@@ -282,6 +282,10 @@ app.use((req, res, next) => {
     app.use('/api/reputation', reputationRoutes); // Added reputation routes
     app.use('/api/cross-chain', crossChainRoutes);
     app.use('/api/morio', morioRoutes);
+    
+    // Blog routes
+    const blogRoutes = (await import('./routes/blog')).default;
+    app.use('/api/blog', blogRoutes);
 
     // NFT Marketplace routes
     app.use('/api/nft-marketplace', nftMarketplaceRouter);
