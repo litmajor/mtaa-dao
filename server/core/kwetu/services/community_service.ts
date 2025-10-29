@@ -1,4 +1,3 @@
-
 import { db } from '../../../db';
 import { users, daoMembers } from '../../../../shared/schema';
 import { eq, and, sql } from 'drizzle-orm';
@@ -8,31 +7,15 @@ export class CommunityService {
    * Get DAO member count from database
    */
   async getMemberCount(daoId: string) {
-    try {
-      const members = await db.query.daoMembers.findMany({
-        where: eq(daoMembers.daoId, daoId)
-      });
+    const db = (await import('../../../db')).default;
+    const { daoMembers } = await import('../../../../shared/schema');
+    const { eq, count } = await import('drizzle-orm');
 
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const result = await db.select({ count: count() })
+      .from(daoMembers)
+      .where(eq(daoMembers.daoId, daoId));
 
-      const newMembers = members.filter(m => 
-        m.joinedAt && new Date(m.joinedAt) >= thirtyDaysAgo
-      );
-
-      return {
-        total: members.length,
-        active: Math.floor(members.length * 0.67), // Estimate
-        newThisMonth: newMembers.length
-      };
-    } catch (error) {
-      console.error('Member count error:', error);
-      return {
-        total: 78,
-        active: 52,
-        newThisMonth: 12
-      };
-    }
+    return result[0]?.count || 0;
   }
 
   /**
@@ -79,7 +62,7 @@ export class CommunityService {
   async getEngagementMetrics(daoId: string) {
     try {
       const memberCount = await this.getMemberCount(daoId);
-      
+
       return {
         engagementScore: 0.72,
         activeRate: memberCount.active / memberCount.total,

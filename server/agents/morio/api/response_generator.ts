@@ -1,12 +1,12 @@
 /**
  * Response Generator
- * 
+ *
  * Generates natural, contextual responses based on intent and context
  */
 
 import type { UserContext } from '../../../core/nuru/types';
 import type { Action, MorioConfig } from '../types';
-import { responseTemplates } from '../config/responses';
+import { responses, onboardingGuides } from '../config/responses';
 
 export class ResponseGenerator {
   private config: MorioConfig;
@@ -23,15 +23,51 @@ export class ResponseGenerator {
 
     // Get base response template
     const template = this.getResponseTemplate(intent);
-    
+
+    // Generate contextual suggestions and actions
+    let suggestions: string[] = [];
+    let actions: Action[] = [];
+
+    // Handle onboarding intents
+    switch (intent) {
+      case 'onboarding_tour':
+        return {
+          text: onboardingGuides.tour,
+          suggestions: ['How do I create a proposal?', 'Explain treasury', 'How do I vote?']
+        };
+
+      case 'onboarding_proposals':
+        return {
+          text: onboardingGuides.proposals,
+          suggestions: ['Show example proposal', 'What makes a good proposal?', 'Back to tour']
+        };
+
+      case 'onboarding_voting':
+        return {
+          text: onboardingGuides.voting,
+          suggestions: ['Show active proposals', 'What is voting power?', 'Back to tour']
+        };
+
+      case 'onboarding_treasury':
+        return {
+          text: onboardingGuides.treasury,
+          suggestions: ['Check DAO balance', 'How do I deposit?', 'Back to tour']
+        };
+
+      case 'check_balance':
+        suggestions = this.generateSuggestions(intent, context);
+        actions = this.generateActions(intent, entities);
+        break;
+
+      default:
+        // For other intents, proceed with default response generation
+        suggestions = this.generateSuggestions(intent, context);
+        actions = this.generateActions(intent, entities);
+        break;
+    }
+
     // Personalize response
     const personalizedText = this.personalizeResponse(template.text, context, entities);
-    
-    // Generate contextual suggestions
-    const suggestions = this.generateSuggestions(intent, context);
-    
-    // Generate actionable buttons/actions
-    const actions = this.generateActions(intent, entities);
 
     return {
       text: personalizedText,
@@ -44,7 +80,7 @@ export class ResponseGenerator {
    * Get response template for intent
    */
   private getResponseTemplate(intent: string) {
-    return responseTemplates[intent] || responseTemplates.default;
+    return responses[intent] || responses.default;
   }
 
   /**
@@ -77,7 +113,7 @@ export class ResponseGenerator {
   private addFriendlyTouch(response: string): string {
     const greetings = ['Hi!', 'Hello!', 'Hey there!', 'Habari!'];
     const confirmations = ['Sure thing!', 'Got it!', 'Absolutely!', 'Sawa!'];
-    
+
     // 30% chance to add greeting
     if (Math.random() < 0.3) {
       const greeting = greetings[Math.floor(Math.random() * greetings.length)];
@@ -141,7 +177,7 @@ export class ResponseGenerator {
           data: entities
         });
         break;
-        
+
       case 'deposit':
         actions.push({
           type: 'open_deposit',
@@ -149,7 +185,7 @@ export class ResponseGenerator {
           data: entities
         });
         break;
-        
+
       case 'submit_proposal':
         actions.push({
           type: 'create_proposal',
@@ -157,7 +193,7 @@ export class ResponseGenerator {
           data: entities
         });
         break;
-        
+
       case 'vote':
         actions.push({
           type: 'cast_vote',
@@ -165,7 +201,7 @@ export class ResponseGenerator {
           data: entities
         });
         break;
-        
+
       case 'check_balance':
         actions.push({
           type: 'view_balance',

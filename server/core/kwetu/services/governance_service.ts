@@ -1,4 +1,3 @@
-
 import { db } from '../../../db';
 import { proposals, votes } from '../../../../shared/schema';
 import { eq, and, desc } from 'drizzle-orm';
@@ -17,7 +16,7 @@ export class GovernanceService {
       const allProposals = await query;
 
       // Filter by status if provided
-      const filtered = status 
+      const filtered = status
         ? allProposals.filter(p => p.status === status)
         : allProposals;
 
