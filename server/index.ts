@@ -57,6 +57,8 @@ import walletSetupRouter from './routes/wallet-setup';
 import paymentGatewayRouter from './routes/payment-gateway';
 // Import KYC routes
 import kycRouter from './routes/kyc';
+import referralRewardsRouter from './routes/referral-rewards';
+import economyRouter from './routes/economy';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -141,7 +143,7 @@ io.use(async (socket: any, next) => {
   try {
     // Get token from handshake query or auth
     const token = socket.handshake.query.token || socket.handshake.auth?.token;
-    
+
     if (!token) {
       // Allow connection but mark as unauthenticated
       socket.userId = null;
@@ -150,7 +152,7 @@ io.use(async (socket: any, next) => {
 
     // Verify JWT token
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
-    
+
     socket.userId = decoded.userId || decoded.id;
     logger.info('Socket.IO client authenticated via token', { userId: socket.userId, socketId: socket.id });
     next();
