@@ -1,9 +1,10 @@
-
 import express from 'express';
 import { db } from '../storage';
-import { tasks, taskHistory, users, daoMemberships, walletTransactions } from '../../shared/schema';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { tasks, taskHistory, users } from '../../shared/schema';
+import { contributionGraph } from '../../shared/reputationSchema';
+import { eq, and, or, desc, sql } from 'drizzle-orm';
 import { z } from 'zod';
+import { ReputationService, REPUTATION_VALUES } from '../reputationService';
 
 const router = express.Router();
 
@@ -134,7 +135,7 @@ router.get('/categories', async (req, res) => {
       .select({ category: tasks.category })
       .from(tasks)
       .groupBy(tasks.category);
-    
+
     res.json(categories.map(c => c.category).filter(Boolean));
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -276,10 +277,10 @@ router.post('/:taskId/verify', requireRole('admin', 'moderator'), async (req, re
         description: task[0].verificationNotes || '',
         screenshots: []
       };
-      
+
       verificationScore = await TaskVerificationService.calculateVerificationScore(taskId, submissionData);
       autoApproved = verificationScore >= 70; // Auto-approve if score >= 70
-      
+
       if (autoApproved && !approved) {
         // Override manual decision with auto-approval
         req.body.approved = true;
@@ -288,8 +289,8 @@ router.post('/:taskId/verify', requireRole('admin', 'moderator'), async (req, re
     }
 
     const finalApproval = req.body.approved || autoApproved;
-    const newStatus = finalApproval ? 'completed' : 'claimed';
-    
+    const newStatus = finalApproval ? 'completed' : 'rejected'; // Changed from 'claimed' to 'rejected'
+
     // Update task status with verification notes
     await db
       .update(tasks)
@@ -318,9 +319,8 @@ router.post('/:taskId/verify', requireRole('admin', 'moderator'), async (req, re
       // Process escrow release
       const { TaskVerificationService } = await import('../taskVerificationService');
       await TaskVerificationService.processEscrowRelease(taskId, true);
-      
+
       // Award reputation points based on task difficulty
-      const { ReputationService } = await import('../reputationService');
       const difficultyMultiplier = { easy: 1, medium: 2, hard: 3 }[task[0].difficulty] || 1;
       await ReputationService.awardPoints(
         task[0].claimerId,
@@ -331,10 +331,30 @@ router.post('/:taskId/verify', requireRole('admin', 'moderator'), async (req, re
         verificationScore / 100
       );
 
+      // Record contribution in reputation graph
+      await db.insert(contributionGraph).values({
+        userId: task[0].claimerId,
+        contributionType: 'task_completed',
+        daoId: task[0].daoId,
+        value: task[0].reward?.toString(),
+        reputationWeight: 70, // Example weight, adjust as needed
+        verified: true,
+        verifiedBy: userId,
+        verifiedAt: new Date(),
+        metadata: {
+          taskId: task[0].id,
+          taskTitle: task[0].title,
+          category: task[0].category
+        },
+        relatedEntityId: taskId,
+        relatedEntityType: 'task'
+      });
+
+
       // Check for achievement unlocks
       const { AchievementService } = await import('../achievementService');
       const newAchievements = await AchievementService.checkUserAchievements(task[0].claimerId);
-      
+
       if (newAchievements.length > 0) {
         // Notify about new achievements
         const { notificationService } = await import('../notificationService');
@@ -344,6 +364,14 @@ router.post('/:taskId/verify', requireRole('admin', 'moderator'), async (req, re
           type: 'achievement'
         });
       }
+    } else if (!finalApproval && task[0].claimerId) {
+      // If rejected, log the rejection in task history
+      await db.insert(taskHistory).values({
+        taskId,
+        userId, // The verifier's ID
+        action: 'rejected',
+        details: { feedback: req.body.feedback || feedback, rejectedAt: new Date().toISOString() }
+      });
     }
 
     res.json({ 
@@ -362,7 +390,7 @@ router.post('/:taskId/verify', requireRole('admin', 'moderator'), async (req, re
 router.get('/:taskId/history', async (req, res) => {
   try {
     const { taskId } = req.params;
-    
+
     const history = await db
       .select()
       .from(taskHistory)
@@ -382,7 +410,7 @@ router.get('/user/claimed', async (req, res) => {
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    
+
     const claimedTasks = await db
       .select()
       .from(tasks)
@@ -399,7 +427,7 @@ router.get('/user/claimed', async (req, res) => {
 router.get('/analytics', async (req, res) => {
   try {
     const { daoId } = req.query;
-    
+
     // Get task statistics
     let statsQuery;
     if (daoId) {

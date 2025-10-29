@@ -325,10 +325,7 @@ router.get('/badges/:userId', async (req: Request, res: Response) => {
   }
 });
 
-// Export contribution weights for reference
-export { CONTRIBUTION_WEIGHTS } from '../reputationService';
-
-  }
+}
 });
 
 router.get('/achievements/user/:userId', isAuthenticated, async (req: Request, res: Response) => {
