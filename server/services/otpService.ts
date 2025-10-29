@@ -64,28 +64,28 @@ class OTPService {
   async verifyOTP(identifier: string, otp: string): Promise<{ valid: boolean; password?: string; error?: string }> {
     try {
       console.log(`🔍 Verifying OTP for identifier: ${identifier}, OTP: ${otp}`);
-      
+
       // Development/Testing bypass: Accept 000000 as a test OTP
       if (otp === '000000' && (process.env.NODE_ENV === 'development' || process.env.ALLOW_TEST_OTP === 'true')) {
         console.log('⚠️  Using test OTP bypass (000000) - development mode');
         const data = await redis.get(`otp:${identifier}`);
-        
+
         if (!data) {
           console.log('❌ No OTP data found in Redis for test OTP');
           return { valid: false, error: 'OTP not found or expired' };
         }
-        
+
         const otpData: OTPData = JSON.parse(data);
         console.log('✅ Test OTP accepted - returning stored password');
         return { valid: true, password: otpData.password };
       }
-      
+
       const data = await redis.get(`otp:${identifier}`);
-      
+
       if (!data) {
         console.log(`❌ OTP not found in Redis for identifier: ${identifier}`);
         console.log(`   Redis key checked: otp:${identifier}`);
-        
+
         // List all OTP keys in Redis for debugging
         try {
           const keys = await redis.keys('otp:*');
@@ -93,7 +93,7 @@ class OTPService {
         } catch (e) {
           console.log('   Could not list Redis keys');
         }
-        
+
         return { valid: false, error: 'OTP not found or expired' };
       }
 
@@ -148,11 +148,11 @@ class OTPService {
    */
   async sendEmailOTP(email: string, otp: string): Promise<void> {
     // In development mode without SMTP configured, just log the OTP
-    const hasValidSMTP = process.env.SMTP_USER && 
-                         process.env.SMTP_PASS && 
+    const hasValidSMTP = process.env.SMTP_USER &&
+                         process.env.SMTP_PASS &&
                          !process.env.SMTP_USER.includes('your_smtp') &&
                          !process.env.SMTP_PASS.includes('your_smtp');
-    
+
     if (process.env.NODE_ENV === 'development' && !hasValidSMTP) {
       console.log('\n════════════════════════════════════════');
       console.log('📧 EMAIL OTP (Development Mode - No SMTP)');
@@ -188,11 +188,11 @@ class OTPService {
       // For Africa's Talking (Kenya):
       if (process.env.AFRICAS_TALKING_API_KEY && process.env.AFRICAS_TALKING_USERNAME) {
         await this.sendViaAfricasTalking(phone, otp);
-      } 
+      }
       // For Twilio (International):
       else if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
         await this.sendViaTwilio(phone, otp);
-      } 
+      }
       // Fallback: Log to console (development only)
       else {
         console.log('\n════════════════════════════════════════');
@@ -202,7 +202,7 @@ class OTPService {
         console.log(`OTP Code: ${otp}`);
         console.log(`Expires: ${OTP_EXPIRY_MINUTES} minutes`);
         console.log('════════════════════════════════════════\n');
-        
+
         if (process.env.NODE_ENV !== 'development') {
           console.warn('⚠️  No SMS provider configured in production. Add AFRICAS_TALKING or TWILIO credentials.');
         }
@@ -292,35 +292,35 @@ class OTPService {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>MtaaDAO Verification Code</title>
         <style>
-          body { 
+          body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            line-height: 1.6; 
-            color: #333; 
+            line-height: 1.6;
+            color: #333;
             background-color: #f5f5f5;
             margin: 0;
             padding: 0;
           }
-          .container { 
-            max-width: 600px; 
-            margin: 40px auto; 
+          .container {
+            max-width: 600px;
+            margin: 40px auto;
             background: white;
             border-radius: 12px;
             overflow: hidden;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
           }
-          .header { 
+          .header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white; 
-            padding: 40px 20px; 
-            text-align: center; 
+            color: white;
+            padding: 40px 20px;
+            text-align: center;
           }
           .header h1 {
             margin: 0;
             font-size: 28px;
             font-weight: 600;
           }
-          .content { 
-            padding: 40px 30px; 
+          .content {
+            padding: 40px 30px;
           }
           .otp-box {
             background: #f9fafb;
@@ -337,10 +337,10 @@ class OTPService {
             letter-spacing: 8px;
             font-family: 'Courier New', monospace;
           }
-          .footer { 
-            padding: 20px 30px; 
-            text-align: center; 
-            font-size: 13px; 
+          .footer {
+            padding: 20px 30px;
+            text-align: center;
+            font-size: 13px;
             color: #666;
             border-top: 1px solid #e5e7eb;
           }
@@ -373,7 +373,7 @@ class OTPService {
           <div class="content">
             <p>Hello,</p>
             <p>Thank you for registering with MtaaDAO. Please use the following verification code to complete your registration:</p>
-            
+
             <div class="otp-box">
               <div style="font-size: 14px; color: #666; margin-bottom: 8px;">Your Verification Code</div>
               <div class="otp-code">${otp}</div>
@@ -400,4 +400,3 @@ class OTPService {
 }
 
 export const otpService = new OTPService();
-
