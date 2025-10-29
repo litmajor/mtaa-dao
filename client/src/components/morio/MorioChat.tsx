@@ -92,19 +92,30 @@ export function MorioChat({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Welcome message
+  // Welcome message with onboarding steps
   useEffect(() => {
     if (messages.length === 0) {
       const welcomeMessage = isOnboarding 
         ? `Habari! 👋 I'm Morio, your personal guide to MtaaDAO!
 
-I'll help you navigate the platform and teach you how to:
-• Manage your wallet and treasury
-• Create and vote on proposals
-• Track community activities
-• Understand analytics and insights
+Welcome to the future of community finance. I'll be your companion throughout this journey.
 
-Would you like a quick tour of the main features? Just say "show me around" or "help"!`
+**Let's start with a quick tour:**
+
+🏠 **Dashboard** - Your central hub for all DAO activities
+💰 **Treasury** - Manage shared funds transparently
+📝 **Proposals** - Create and vote on community decisions  
+👛 **Wallet** - Your personal vault and transactions
+📊 **Analytics** - Track growth and insights
+
+**Quick Start Options:**
+• "Take the full tour" - 5-minute walkthrough
+• "Setup my wallet" - Get started with crypto
+• "Create my first DAO" - Build your community
+• "Join existing DAO" - Connect with others
+• "Learn about treasury" - Understand fund management
+
+What would you like to explore first?`
         : 'Habari! 👋 I\'m Morio, your DAO assistant. I can help you with treasury management, proposals, voting, and analytics. What would you like to do today?';
       
       setMessages([{
@@ -180,28 +191,40 @@ Would you like a quick tour of the main features? Just say "show me around" or "
           {isOnboarding ? (
             <>
               <button
-                onClick={() => handleSuggestion('Show me around')}
-                className="text-xs px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded hover:bg-purple-200 dark:hover:bg-purple-900/50"
+                onClick={() => handleSuggestion('Take the full tour')}
+                className="text-xs px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-full hover:shadow-lg transition-all"
               >
-                🎯 Take a tour
+                🎯 Start Tour
               </button>
               <button
-                onClick={() => handleSuggestion('How do I create a proposal?')}
-                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                onClick={() => handleSuggestion('Setup my wallet')}
+                className="text-xs px-3 py-2 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full hover:bg-purple-200 dark:hover:bg-purple-900/50"
               >
-                📝 Create proposal
+                👛 Setup Wallet
+              </button>
+              <button
+                onClick={() => handleSuggestion('Create my first DAO')}
+                className="text-xs px-3 py-2 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+              >
+                🏗️ Create DAO
               </button>
               <button
                 onClick={() => handleSuggestion('How do I vote?')}
-                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="text-xs px-3 py-2 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
               >
-                🗳️ Voting guide
+                🗳️ Voting Guide
               </button>
               <button
-                onClick={() => handleSuggestion('Explain treasury')}
-                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                onClick={() => handleSuggestion('Explain treasury management')}
+                className="text-xs px-3 py-2 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
               >
-                💰 Treasury help
+                💰 Treasury Basics
+              </button>
+              <button
+                onClick={() => handleSuggestion('Show me success stories')}
+                className="text-xs px-3 py-2 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+              >
+                ⭐ Success Stories
               </button>
             </>
           ) : (

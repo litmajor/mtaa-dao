@@ -150,7 +150,7 @@ export default function Navigation() {
                       <ChevronDown className="w-4 h-4" />
                     </span>
                   </Button>
-                  
+
                   {/* Dashboard Dropdown Menu */}
                   <div className="absolute top-full left-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200/50 dark:border-gray-700/50 py-4 z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 backdrop-blur-xl">
                     <div className="px-4 pb-3 border-b border-gray-100 dark:border-gray-700">
@@ -211,7 +211,7 @@ export default function Navigation() {
                       <ChevronDown className="w-4 h-4" />
                     </span>
                   </Button>
-                  
+
                   {/* More Dropdown Menu */}
                   <div className="absolute top-full right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200/50 dark:border-gray-700/50 py-4 z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 backdrop-blur-xl max-h-[80vh] overflow-y-auto">
                     {/* Analytics Section */}
@@ -320,7 +320,13 @@ export default function Navigation() {
                     <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-700">
                       <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">📚 Resources</h4>
                       <div className="space-y-1">
-                        <Link href="/about">
+                        <Link href="/blog" className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">
+                          <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                            <span className="mr-2">📝</span>
+                            Blog
+                          </Button>
+                        </Link>
+                        <Link href="/about" className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">
                           <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
                             <span className="mr-2">ℹ️</span>
                             About

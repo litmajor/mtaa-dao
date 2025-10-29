@@ -181,6 +181,10 @@ function App() {
                 <Route path="/investment-pools/:id" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><InvestmentPoolDetailLazy /></Suspense></ProtectedRoute>} />
                 <Route path="/nft-marketplace" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><NFTMarketplace /></Suspense></ProtectedRoute>} />
                 <Route path="/morio" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><MorioDemoLazy /></Suspense></ProtectedRoute>} />
+                
+                {/* Blog routes */}
+                <Route path="/blog" element={<Suspense fallback={<PageLoading />}>{React.createElement(lazy(() => import('./pages/blog')))}</Suspense>} />
+                <Route path="/blog/:id" element={<Suspense fallback={<PageLoading />}>{React.createElement(lazy(() => import('./pages/blog-post')))}</Suspense>} />
 
                 {/* Nested DAO routes */}
                 <Route path="/dao" element={<ProtectedRoute><DaoLayout /></ProtectedRoute>}>
