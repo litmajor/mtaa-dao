@@ -7,34 +7,37 @@
 import { Router } from 'express';
 import { morio } from '../agents/morio';
 import { nuru } from '../core/nuru';
+import type { ChatMessage } from '../agents/morio/types';
 
 const router = Router();
 
 /**
  * POST /api/morio/chat
- * Send message to Morio assistant
+ * Handle chat messages from users
  */
 router.post('/chat', async (req, res) => {
   try {
     const { userId, daoId, message } = req.body;
 
     if (!userId || !message) {
-      return res.status(400).json({
-        error: 'userId and message are required'
+      return res.status(400).json({ 
+        error: 'Missing required fields: userId and message' 
       });
     }
 
-    const response = await morio.handleMessage({
+    const chatMessage: ChatMessage = {
       userId,
-      daoId,
+      daoId: daoId || '',
       content: message,
       timestamp: new Date()
-    });
+    };
 
-    return res.json(response);
+    const response = await morio.handleMessage(chatMessage);
+
+    res.json(response);
   } catch (error) {
     console.error('Morio chat error:', error);
-    return res.status(500).json({
+    res.status(500).json({ 
       error: 'Failed to process message',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
@@ -49,13 +52,10 @@ router.get('/session/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
     const session = await morio.getSessionStatus(userId);
-
-    return res.json(session);
+    res.json(session);
   } catch (error) {
     console.error('Session fetch error:', error);
-    return res.status(500).json({
-      error: 'Failed to fetch session'
-    });
+    res.status(500).json({ error: 'Failed to fetch session' });
   }
 });
 
@@ -67,69 +67,54 @@ router.delete('/session/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
     await morio.clearSession(userId);
-
-    return res.json({ success: true });
+    res.json({ success: true });
   } catch (error) {
     console.error('Session clear error:', error);
-    return res.status(500).json({
-      error: 'Failed to clear session'
-    });
+    res.status(500).json({ error: 'Failed to clear session' });
   }
 });
 
 /**
  * POST /api/morio/analyze
- * Get analytical insights from Nuru
+ * Request analytics from Nuru
  */
 router.post('/analyze', async (req, res) => {
   try {
     const { type, daoId, timeframe } = req.body;
 
     if (!type || !daoId) {
-      return res.status(400).json({
-        error: 'type and daoId are required'
+      return res.status(400).json({ 
+        error: 'Missing required fields: type and daoId' 
       });
     }
 
-    const analysis = await nuru.analyze({
-      type,
-      daoId,
-      timeframe
-    });
-
-    return res.json(analysis);
+    const analysis = await nuru.analyze({ type, daoId, timeframe });
+    res.json(analysis);
   } catch (error) {
     console.error('Analysis error:', error);
-    return res.status(500).json({
-      error: 'Failed to perform analysis',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
+    res.status(500).json({ error: 'Failed to perform analysis' });
   }
 });
 
 /**
  * POST /api/morio/assess-risk
- * Assess risk for a proposal
+ * Request risk assessment from Nuru
  */
 router.post('/assess-risk', async (req, res) => {
   try {
     const { proposalId, daoId } = req.body;
 
     if (!proposalId || !daoId) {
-      return res.status(400).json({
-        error: 'proposalId and daoId are required'
+      return res.status(400).json({ 
+        error: 'Missing required fields: proposalId and daoId' 
       });
     }
 
-    const assessment = await nuru.assessRisk(proposalId, daoId);
-
-    return res.json(assessment);
+    const riskAssessment = await nuru.assessRisk(proposalId, daoId);
+    res.json(riskAssessment);
   } catch (error) {
     console.error('Risk assessment error:', error);
-    return res.status(500).json({
-      error: 'Failed to assess risk',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
+    res.status(500).json({ error: 'Failed to assess risk' });
   }
 });
 
@@ -139,17 +124,20 @@ router.post('/assess-risk', async (req, res) => {
  */
 router.get('/health', async (req, res) => {
   try {
-    const health = await nuru.healthCheck();
+    const nuruHealth = await nuru.healthCheck();
 
-    return res.json({
-      ...health,
-      morio: {
-        status: 'healthy',
-        activeSessions: 'N/A' // Can be tracked if needed
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      components: {
+        morio: 'active',
+        nuru: nuruHealth.status,
+        kwetu: 'active'
       }
     });
   } catch (error) {
-    return res.status(500).json({
+    console.error('Health check error:', error);
+    res.status(500).json({ 
       status: 'unhealthy',
       error: error instanceof Error ? error.message : 'Unknown error'
     });

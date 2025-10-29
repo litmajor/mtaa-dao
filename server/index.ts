@@ -59,6 +59,7 @@ import paymentGatewayRouter from './routes/payment-gateway';
 import kycRouter from './routes/kyc';
 import referralRewardsRouter from './routes/referral-rewards';
 import economyRouter from './routes/economy';
+import morioRoutes from './routes/morio';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -280,6 +281,7 @@ app.use((req, res, next) => {
     app.use('/api/proposals', pollProposalsRouter);
     app.use('/api/reputation', reputationRoutes); // Added reputation routes
     app.use('/api/cross-chain', crossChainRoutes);
+    app.use('/api/morio', morioRoutes);
 
     // NFT Marketplace routes
     app.use('/api/nft-marketplace', nftMarketplaceRouter);
