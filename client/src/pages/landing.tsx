@@ -214,11 +214,11 @@ export default function MtaaDAOLanding() {
           <span className="font-black text-2xl text-white">Mtaa DAO</span>
         </div>
         <nav className="flex space-x-8">
+          <a href="#manifesto" className="text-purple-200 hover:text-white font-semibold transition">Our Story</a>
           <a href="#architecture" className="text-purple-200 hover:text-white font-semibold transition">System</a>
           <a href="#features" className="text-purple-200 hover:text-white font-semibold transition">Features</a>
           <a href="/pricing" className="text-purple-200 hover:text-white font-semibold transition">Pricing</a>
           <a href="/whitepaper.html" target="_blank" className="text-purple-200 hover:text-white font-semibold transition">Whitepaper</a>
-          <a href="#benefits" className="text-purple-200 hover:text-white font-semibold transition">Why Us</a>
         </nav>
         <a href="/register" className="bg-gradient-to-r from-orange-500 via-pink-500 to-purple-600 text-white px-6 py-2 rounded-2xl font-bold shadow-lg hover:scale-105 transition">Get Started</a>
       </header>
@@ -695,6 +695,121 @@ export default function MtaaDAOLanding() {
               <h3 className="text-2xl font-bold text-white mb-2">Voice Interface</h3>
               <p className="text-purple-200">Vote, check balances, and manage your DAO using voice commands via phone</p>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Founder's Manifesto Section */}
+      <div className="py-32 bg-gradient-to-br from-slate-900 via-gray-900 to-black relative overflow-hidden" id="manifesto">
+        <div className="absolute inset-0 bg-gradient-to-r from-orange-500/5 via-purple-500/5 to-pink-500/5"></div>
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="text-center mb-16">
+            <div className="inline-block bg-gradient-to-r from-orange-500 to-pink-600 text-white text-sm font-bold px-6 py-2 rounded-full mb-6">
+              FROM MTAA, FOR MTAA
+            </div>
+            <h2 className="text-5xl md:text-6xl font-black text-white mb-6 leading-tight">
+              Why I Built MtaaDAO
+            </h2>
+            <p className="text-xl text-purple-200 italic">A Founder's Letter</p>
+          </div>
+
+          <div className="space-y-8 text-lg leading-relaxed">
+            <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10">
+              <p className="text-purple-100 mb-4">
+                <span className="font-bold text-white">I was 12 years old</span>, standing in a dusty football field in my mtaa, watching older boys play with a half-deflated ball held together by tape. We didn't have proper kits. We didn't have goal posts. We barely had a ball.
+              </p>
+              <p className="text-purple-100 mb-4">
+                But we had a dream: to play in a real tournament.
+              </p>
+              <p className="text-purple-100 mb-4">
+                So we decided to raise money — Ksh 50 from each person. Simple, right?
+              </p>
+              <p className="text-purple-100">
+                Except it wasn't. Money came in late. Some people forgot. Others "borrowed" from the pot. Within two weeks, the cash was scattered, trust was broken, and the tournament passed us by.
+              </p>
+              <p className="text-2xl font-bold text-orange-400 mt-6 italic">
+                "Goodwill without structure always collapses."
+              </p>
+            </div>
+
+            <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10">
+              <p className="text-purple-100 mb-4">
+                <span className="font-bold text-white">2014</span> — My grandmother passed. The family needed to raise funds for the funeral. We used M-PESA, WhatsApp, handwritten lists. It took days to know who contributed what. People called asking if their money arrived. Relatives argued over amounts. Grief got tangled in spreadsheets.
+              </p>
+              <p className="text-purple-100 mb-4">
+                <span className="font-bold text-white">2017</span> — I joined my first chama at 21. Finally, I thought, a real way to save and grow together. But even there, I saw the cracks: handwritten ledgers, delayed updates, disputes over contributions, zero transparency between meetings.
+              </p>
+              <p className="text-2xl font-bold text-pink-400 mt-6 italic">
+                "I wanted to trust the system. But the system didn't trust me back."
+              </p>
+            </div>
+
+            <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10">
+              <p className="text-purple-100 mb-4">
+                <span className="font-bold text-white">In 2019</span>, I made some money from a side hustle. Not life-changing. But more than I'd ever had at once. And I froze.
+              </p>
+              <p className="text-purple-100 mb-4">
+                Banks wanted minimums and gave me 3% interest while inflation ate 6%. Money Market Funds felt like something for "financial people," not someone like me. Crypto was everywhere — I'd seen BNB at Ksh 200 — but it felt like gambling if you didn't know the rules.
+              </p>
+              <p className="text-2xl font-bold text-purple-400 mt-6 italic">
+                "We weren't lazy. We weren't reckless. We were excluded by design."
+              </p>
+            </div>
+
+            <div className="bg-gradient-to-r from-orange-500/20 to-pink-500/20 rounded-2xl p-8 border border-orange-500/30">
+              <p className="text-white text-xl mb-4">
+                One night in 2021, I couldn't stop thinking:
+              </p>
+              <p className="text-purple-100 mb-4">
+                What if we took the <span className="font-bold text-white">soul of the chama</span> — community, trust, mutual aid — and gave it the <span className="font-bold text-white">backbone of Web3</span> — transparency, automation, scale?
+              </p>
+              <p className="text-2xl font-bold text-white mt-6">
+                That question became MtaaDAO.
+              </p>
+            </div>
+
+            <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10">
+              <h3 className="text-2xl font-bold text-white mb-4">What MtaaDAO Really Is</h3>
+              <p className="text-purple-100 mb-4">
+                MtaaDAO is not a crypto project. MtaaDAO is not a tech platform.
+              </p>
+              <p className="text-2xl font-bold text-cyan-400 mb-6">
+                MtaaDAO is the system I needed at 12, at 18, at 21.
+              </p>
+              <p className="text-purple-100 mb-4">
+                It's the answer to every time I watched friends fail to organize contributions, families scramble during emergencies, young people give up on saving because nothing felt built for them.
+              </p>
+              <p className="text-xl font-semibold text-white">
+                MtaaDAO is community infrastructure for the informal economy.
+              </p>
+            </div>
+
+            <div className="bg-gradient-to-br from-purple-900/40 to-pink-900/40 rounded-2xl p-10 border border-purple-500/30 text-center">
+              <p className="text-3xl font-black text-white mb-6 leading-tight">
+                "Every street has an economy. It's not always counted. But it's always there."
+              </p>
+              <p className="text-xl text-purple-200 mb-6">
+                Every contribution deserves visibility. Every community can fund its own dreams.
+              </p>
+              <div className="border-t border-white/20 pt-6 mt-6">
+                <p className="text-white font-semibold text-lg mb-2">— James Kimani</p>
+                <p className="text-purple-300">Founder, MtaaDAO</p>
+                <p className="text-purple-400 text-sm mt-2 italic">Written from Nairobi, for the world</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-center mt-16">
+            <a href="/register">
+              <Button
+                size="lg"
+                className="bg-gradient-to-r from-orange-500 via-pink-500 to-purple-600 hover:from-orange-600 hover:via-pink-600 hover:to-purple-700 text-white px-12 py-6 text-xl font-bold rounded-2xl shadow-2xl transform hover:scale-105 transition-all"
+              >
+                <Heart className="mr-3 h-6 w-6" />
+                Join the Movement
+                <ArrowRight className="ml-3 h-6 w-6" />
+              </Button>
+            </a>
           </div>
         </div>
       </div>

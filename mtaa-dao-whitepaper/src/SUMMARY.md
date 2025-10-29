@@ -1,5 +1,7 @@
 # Summary
 
+[Chapter 0: The Story That Built The System](./founders-letter.md)
+
 [Introduction](./introduction.md)
 
 # Core Concepts
