@@ -80,6 +80,9 @@ import Subscribe from './pages/Subscribe';
 import CrossChainBridge from './pages/CrossChainBridge';
 import NFTMarketplace from './pages/NFTMarketplace';
 
+// Subscription Management
+import SubscriptionManagement from './pages/SubscriptionManagement';
+
 // Protected/Public wrappers (unchanged)
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -179,7 +182,7 @@ function App() {
                 <Route path="/investment-pools/:id" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><InvestmentPoolDetailLazy /></Suspense></ProtectedRoute>} />
                 <Route path="/nft-marketplace" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><NFTMarketplace /></Suspense></ProtectedRoute>} />
                 <Route path="/morio" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><MorioDemoLazy /></Suspense></ProtectedRoute>} />
-                
+
                 {/* Blog routes */}
                 <Route path="/blog" element={<Suspense fallback={<PageLoading />}>{React.createElement(lazy(() => import('./pages/blog')))}</Suspense>} />
                 <Route path="/blog/:id" element={<Suspense fallback={<PageLoading />}>{React.createElement(lazy(() => import('./pages/blog-post')))}</Suspense>} />
@@ -192,6 +195,7 @@ function App() {
                   <Route path="contributors" element={<ContributorList />} />
                   <Route path="analytics" element={<CommunityVaultAnalytics />} />
                   <Route path="disbursements" element={<Disbursements />} />
+                  <Route path=":daoId/subscription" element={<Suspense fallback={<PageLoading />}><SubscriptionManagement /></Suspense>} />
                 </Route>
 
                 {/* Nested Wallet routes */}

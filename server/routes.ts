@@ -39,6 +39,7 @@ import poolGovernanceRoutes from './routes/pool-governance';
 import treasuryIntelligenceRoutes from './routes/treasury-intelligence';
 import phoneVerificationRouter from './routes/phone-verification';
 import onboardingRoutes from './routes/onboarding';
+import subscriptionManagementRoutes from './routes/subscription-management'; // Import subscription management routes
 
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
@@ -305,8 +306,10 @@ export function registerRoutes(app: express.Application) {
 
   // === MORIO AI ASSISTANT API ===
   app.use('/api/morio', morioRoutes);
-  // === ONBOARDING API ===
   app.use('/api/onboarding', onboardingRoutes);
+
+  // === SUBSCRIPTION MANAGEMENT API ===
+  app.use('/api/subscription-management', subscriptionManagementRoutes);
 
   // === RBAC ENDPOINTS ===  
   app.get('/api/admin/users', isAuthenticated, getUsersHandler);
