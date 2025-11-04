@@ -103,7 +103,7 @@ import {
 import {getUsersHandler,updateUserRoleHandler } from './api/admin_users';
 
 
-export function registerRoutes(app: Express) {
+export async function registerRoutes(app: Express) {
   // Health check
   app.use('/api/health', healthRoutes);
 
@@ -324,4 +324,8 @@ export function registerRoutes(app: Express) {
 
   // === PHONE VERIFICATION API ===
   app.use('/api/phone-verification', phoneVerificationRouter);
+
+  // DAO Abuse Prevention routes
+  const daoAbusePreventionRouter = await import('./routes/dao-abuse-prevention');
+  app.use('/api/dao-abuse-prevention', daoAbusePreventionRouter.default);
 }

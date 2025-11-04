@@ -18,7 +18,8 @@ import {
   decimal,
   boolean,
   uuid,
-  json
+  json,
+  numeric // Import numeric type
 } from "drizzle-orm/pg-core";
 import { sql } from 'drizzle-orm';
 import { createInsertSchema } from "drizzle-zod";
@@ -201,6 +202,50 @@ export const daos = pgTable("daos", {
   votingPeriod: integer("voting_period").default(72), // voting period in hours
   executionDelay: integer("execution_delay").default(24), // execution delay in hours
   tokenHoldings : boolean("token_holdings").default(false) // whether DAO requires token holdings for membership
+});
+
+// DAO Abuse Prevention Tables
+export const daoCreationTracker = pgTable('dao_creation_tracker', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: varchar('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  daoId: varchar('dao_id').notNull().references(() => daos.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at').defaultNow(),
+  verificationMethod: varchar('verification_method').notNull(),
+  verificationData: jsonb('verification_data').default({}),
+  isVerified: boolean('is_verified').default(false)
+});
+
+export const daoSocialVerifications = pgTable('dao_social_verifications', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  daoId: varchar('dao_id').notNull().references(() => daos.id, { onDelete: 'cascade' }),
+  verifierUserId: varchar('verifier_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  verifiedAt: timestamp('verified_at').defaultNow(),
+  verificationType: varchar('verification_type').default('member_invite'),
+  metadata: jsonb('metadata').default({})
+});
+
+export const daoIdentityNfts = pgTable('dao_identity_nfts', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  daoId: varchar('dao_id').notNull().unique().references(() => daos.id, { onDelete: 'cascade' }),
+  nftTokenId: varchar('nft_token_id'),
+  nftContractAddress: varchar('nft_contract_address'),
+  mintedAt: timestamp('minted_at').defaultNow(),
+  mintCostMtaa: numeric('mint_cost_mtaa').default('10'),
+  isVerified: boolean('is_verified').default(false),
+  metadataUri: varchar('metadata_uri')
+});
+
+export const platformRevenue = pgTable('platform_revenue', {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id),
+  userId: varchar("user_id").references(() => users.id),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  currency: varchar("currency").default("KES"),
+  description: text("description"),
+  transactionType: varchar("transaction_type").notNull(), // e.g., "subscription", "fee", "contribution"
+  status: varchar("status").default("paid"), // paid, pending, failed
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const roles = ["member", "proposer", "elder", "admin", "superUser", "moderator"] as const;
@@ -615,7 +660,7 @@ export const vaultRiskAssessments = pgTable("vault_risk_assessments", {
   protocolRisk: integer("protocol_risk").default(0),
   riskFactors: jsonb("risk_factors"), // detailed risk breakdown
   recommendations: jsonb("recommendations"), // risk mitigation suggestions
-  nextAssessmentDue: timestamp("next_assessment_due"),
+  nextAssessmentDue: timestamp("nextAssessmentDue"),
   assessedBy: varchar("assessed_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -952,7 +997,7 @@ export const poolWithdrawals = pgTable("pool_withdrawals", {
   netAmount: decimal("net_amount", { precision: 18, scale: 2 }),
   transactionHash: varchar("transaction_hash", { length: 255 }),
   status: varchar("status", { length: 50 }).default("pending"),
-  withdrawnAt: timestamp("withdrawn_at").defaultNow(),
+  withdrawnAt: timestamp("withdrawnAt").defaultNow(),
 });
 
 export const poolRebalances = pgTable("pool_rebalances", {
@@ -965,7 +1010,7 @@ export const poolRebalances = pgTable("pool_rebalances", {
   transactionHash: varchar("transaction_hash", { length: 255 }),
   reason: text("reason"),
   status: varchar("status", { length: 50 }).default("completed"),
-  rebalancedAt: timestamp("rebalanced_at").defaultNow(),
+  rebalancedAt: timestamp("rebalancedAt").defaultNow(),
 });
 
 export const poolPerformance = pgTable("pool_performance", {
@@ -982,7 +1027,7 @@ export const poolPerformance = pgTable("pool_performance", {
   ltcPrice: decimal("ltc_price", { precision: 18, scale: 2 }),
   volatility: decimal("volatility", { precision: 10, scale: 4 }),
   sharpeRatio: decimal("sharpe_ratio", { precision: 10, scale: 4 }),
-  snapshotAt: timestamp("snapshot_at").defaultNow(),
+  snapshotAt: timestamp("snapshotAt").defaultNow(),
 });
 
 // Phase 2: Portfolio Templates
@@ -1038,7 +1083,7 @@ export const poolSwapTransactions = pgTable("pool_swap_transactions", {
   transactionHash: varchar("transaction_hash", { length: 255 }),
   gasFee: decimal("gas_fee", { precision: 18, scale: 8 }),
   status: varchar("status", { length: 50 }).default("pending"),
-  swappedAt: timestamp("swapped_at").defaultNow(),
+  swappedAt: timestamp("swappedAt").defaultNow(),
 });
 
 // Pool Governance - Weighted Voting System
@@ -1072,7 +1117,7 @@ export const poolVotes = pgTable("pool_votes", {
   votingPower: decimal("voting_power", { precision: 18, scale: 8 }).notNull(),
   sharePercentage: decimal("share_percentage", { precision: 10, scale: 6 }),
   reason: text("reason"),
-  votedAt: timestamp("voted_at").defaultNow(),
+  votedAt: timestamp("votedAt").defaultNow(),
 });
 
 export const poolGovernanceSettings = pgTable("pool_governance_settings", {
@@ -1096,8 +1141,8 @@ export const poolVoteDelegations = pgTable("pool_vote_delegations", {
   delegateId: varchar("delegate_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
   delegatedShares: decimal("delegated_shares", { precision: 18, scale: 8 }).notNull(),
   isActive: boolean("is_active").default(true),
-  delegatedAt: timestamp("delegated_at").defaultNow(),
-  revokedAt: timestamp("revoked_at"),
+  delegatedAt: timestamp("delegatedAt").defaultNow(),
+  revokedAt: timestamp("revokedAt"),
 });
 
 // Add unique constraints to prevent duplicate likes (temporarily commented out for debugging)
