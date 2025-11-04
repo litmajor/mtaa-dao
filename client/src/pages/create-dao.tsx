@@ -170,6 +170,18 @@ const CreateDAOFlow = () => {
         setIsDeploying(false);
         return;
       }
+
+      // Check DAO creation eligibility
+      const eligibilityCheck = await fetch('/api/dao-abuse-prevention/check-eligibility', {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      const eligibilityData = await eligibilityCheck.json();
+
+      if (!eligibilityData.success || !eligibilityData.data.canCreate) {
+        alert(eligibilityData.data.reason || 'You cannot create a DAO at this time');
+        setIsDeploying(false);
+        return;
+      }
       const response = await fetch('/api/dao-deploy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
