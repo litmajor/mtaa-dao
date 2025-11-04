@@ -1557,3 +1557,4 @@ export * from './escrowSchema';
 export * from './invoiceSchema';
 export * from './securityEnhancedSchema';
 export * from './financialEnhancedSchema';
+export * from './onboardingSchema';
