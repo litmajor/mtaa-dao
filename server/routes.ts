@@ -38,6 +38,7 @@ import investmentPoolsRoutes from './routes/investment-pools';
 import poolGovernanceRoutes from './routes/pool-governance';
 import treasuryIntelligenceRoutes from './routes/treasury-intelligence';
 import phoneVerificationRouter from './routes/phone-verification';
+import onboardingRoutes from './routes/onboarding';
 
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
@@ -71,7 +72,7 @@ import { authorizeVaultAccess } from './api/authVault';
 import { getDaoSettingsHandler, updateDaoSettingsHandler, resetInviteCodeHandler, getDaoAnalyticsHandler } from './api/daoSettings';
 
 // Import Reputation handlers
-import { getUserReputationHandler, getReputationLeaderboardHandler, getDaoReputationLeaderboardHandler } from './api/reputation';
+import {getUserReputationHandler, getReputationLeaderboardHandler, getDaoReputationLeaderboardHandler } from './api/reputation';
 
 // Auth handlers
 import {refreshTokenHandler, logoutHandler } from './auth';
@@ -96,7 +97,7 @@ import {
 } from './middleware/rateLimiter';
 
 // Admin handlers
-import {getUsersHandler, updateUserRoleHandler } from './api/admin_users';
+import {getUsersHandler,updateUserRoleHandler } from './api/admin_users';
 
 
 export function registerRoutes(app: express.Application) {
@@ -304,6 +305,7 @@ export function registerRoutes(app: express.Application) {
 
   // === MORIO AI ASSISTANT API ===
   app.use('/api/morio', morioRoutes);
+  app.use('/api/onboarding', onboardingRoutes);
 
   // === RBAC ENDPOINTS ===  
   app.get('/api/admin/users', isAuthenticated, getUsersHandler);
