@@ -69,3 +69,85 @@ router.post('/detect', authenticate, async (req, res) => {
 });
 
 export default router;
+import express from 'express';
+import { isAuthenticated } from '../nextAuthMiddleware';
+import { onboardingService } from '../services/onboardingService';
+
+const router = express.Router();
+
+/**
+ * Get current onboarding session
+ */
+router.get('/session', isAuthenticated, async (req, res) => {
+  try {
+    const userId = (req.user as any).claims.sub;
+    const session = await onboardingService.getOnboardingSession(userId);
+    res.json(session);
+  } catch (error) {
+    console.error('Get onboarding session error:', error);
+    res.status(500).json({ error: 'Failed to get onboarding session' });
+  }
+});
+
+/**
+ * Complete a step
+ */
+router.post('/complete-step', isAuthenticated, async (req, res) => {
+  try {
+    const userId = (req.user as any).claims.sub;
+    const { stepId } = req.body;
+
+    if (!stepId) {
+      return res.status(400).json({ error: 'Step ID is required' });
+    }
+
+    const session = await onboardingService.completeStep(userId, stepId);
+    res.json(session);
+  } catch (error) {
+    console.error('Complete step error:', error);
+    res.status(500).json({ error: 'Failed to complete step' });
+  }
+});
+
+/**
+ * Skip onboarding
+ */
+router.post('/skip', isAuthenticated, async (req, res) => {
+  try {
+    const userId = (req.user as any).claims.sub;
+    await onboardingService.skipOnboarding(userId);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Skip onboarding error:', error);
+    res.status(500).json({ error: 'Failed to skip onboarding' });
+  }
+});
+
+/**
+ * Reset onboarding
+ */
+router.post('/reset', isAuthenticated, async (req, res) => {
+  try {
+    const userId = (req.user as any).claims.sub;
+    const session = await onboardingService.resetOnboarding(userId);
+    res.json(session);
+  } catch (error) {
+    console.error('Reset onboarding error:', error);
+    res.status(500).json({ error: 'Failed to reset onboarding' });
+  }
+});
+
+/**
+ * Get onboarding metrics (admin only)
+ */
+router.get('/metrics', isAuthenticated, async (req, res) => {
+  try {
+    const metrics = await onboardingService.getMetrics();
+    res.json(metrics);
+  } catch (error) {
+    console.error('Get metrics error:', error);
+    res.status(500).json({ error: 'Failed to get metrics' });
+  }
+});
+
+export default router;
