@@ -48,7 +48,7 @@ export class MorioAgent {
         const onboardingResponse = await this.onboardingService.handleOnboardingStep(message.userId, message.content, onboardingStatus);
         // Update session context with onboarding information
         session.context = { ...session.context, ...onboardingResponse.context };
-        
+
         await this.sessionManager.updateSession(message.userId, {
           lastMessage: message.content,
           lastResponse: onboardingResponse.text,
@@ -74,6 +74,12 @@ export class MorioAgent {
 
       // Understand the message using Nuru, incorporating onboarding context
       const understanding = await nuru.understand(message.content, session.context);
+
+      // Handle onboarding specifically
+      if (understanding.intent === 'onboard') {
+        const onboardingSession = await this.onboardingService.getOnboardingSession(message.userId);
+        return this.responseGenerator.generateOnboardingResponse(understanding, onboardingSession);
+      }
 
       // Generate appropriate response
       const response = await this.responseGenerator.generate(

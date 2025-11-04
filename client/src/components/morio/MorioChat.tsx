@@ -43,6 +43,30 @@ export function MorioChat({
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Fetch onboarding session
+  const { data: onboardingSession } = useQuery({
+    queryKey: ['onboarding', userId],
+    queryFn: async () => {
+      if (!isOnboarding) return null;
+      const response = await apiRequest<any>('/api/onboarding/session', {
+        method: 'GET'
+      });
+      return response;
+    },
+    enabled: isOnboarding
+  });
+
+  // Complete onboarding step mutation
+  const completeStep = useMutation({
+    mutationFn: async (stepId: string) => {
+      const response = await apiRequest<any>('/api/onboarding/complete-step', {
+        method: 'POST',
+        body: JSON.stringify({ stepId })
+      });
+      return response;
+    }
+  });
+
   // Send message to Morio
   const sendMessage = useMutation({
     mutationFn: async (message: string) => {
@@ -95,8 +119,34 @@ export function MorioChat({
   // Welcome message with onboarding steps
   useEffect(() => {
     if (messages.length === 0) {
-      const welcomeMessage = isOnboarding 
-        ? `Habari! 👋 I'm Morio, your personal guide to MtaaDAO!
+      let welcomeMessage = 'Habari! 👋 I\'m Morio, your DAO assistant. I can help you with treasury management, proposals, voting, and analytics. What would you like to do today?';
+      
+      if (isOnboarding && onboardingSession) {
+        const progress = onboardingSession.progress || 0;
+        const currentStepData = onboardingSession.steps[onboardingSession.currentStep];
+        
+        welcomeMessage = `Habari! 👋 I'm Morio, your personal guide to MtaaDAO!
+
+Welcome to the future of community finance. I'll be your companion throughout this journey.
+
+**Your Progress: ${progress}% Complete**
+
+${currentStepData ? `📍 **Current Step:** ${currentStepData.title}` : ''}
+
+**Onboarding Steps:**
+${onboardingSession.steps.map((step: any, idx: number) => 
+  `${step.completed ? '✅' : '⭐'} ${step.title} - ${step.description}`
+).join('\n')}
+
+**Quick Start Options:**
+• "Continue onboarding" - Resume where you left off
+• "Setup my wallet" - Get started with crypto
+• "Create my first DAO" - Build your community
+• "Skip onboarding" - Jump straight in
+
+What would you like to explore first?`;
+      } else if (isOnboarding) {
+        welcomeMessage = `Habari! 👋 I'm Morio, your personal guide to MtaaDAO!
 
 Welcome to the future of community finance. I'll be your companion throughout this journey.
 
@@ -112,11 +162,9 @@ Welcome to the future of community finance. I'll be your companion throughout th
 • "Take the full tour" - 5-minute walkthrough
 • "Setup my wallet" - Get started with crypto
 • "Create my first DAO" - Build your community
-• "Join existing DAO" - Connect with others
-• "Learn about treasury" - Understand fund management
 
-What would you like to explore first?`
-        : 'Habari! 👋 I\'m Morio, your DAO assistant. I can help you with treasury management, proposals, voting, and analytics. What would you like to do today?';
+What would you like to explore first?`;
+      }
       
       setMessages([{
         role: 'assistant',
@@ -124,7 +172,7 @@ What would you like to explore first?`
         timestamp: new Date()
       }]);
     }
-  }, [isOnboarding]);
+  }, [isOnboarding, onboardingSession]);
 
   return (
     <Card className="h-[600px] flex flex-col" data-testid="morio-chat">

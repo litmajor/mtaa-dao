@@ -305,6 +305,7 @@ export function registerRoutes(app: express.Application) {
 
   // === MORIO AI ASSISTANT API ===
   app.use('/api/morio', morioRoutes);
+  // === ONBOARDING API ===
   app.use('/api/onboarding', onboardingRoutes);
 
   // === RBAC ENDPOINTS ===  
