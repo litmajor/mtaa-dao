@@ -75,10 +75,24 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  // Serve static files with caching
+  app.use(express.static(distPath, {
+    maxAge: '1y', // Cache assets for 1 year
+    immutable: true, // Assets are immutable (have hash in filename)
+    etag: true, // Enable ETag for conditional requests
+    lastModified: true,
+    setHeaders: (res, path) => {
+      // Don't cache HTML files as aggressively
+      if (path.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'public, max-age=300'); // 5 minutes
+      }
+    }
+  }));
 
   // Fallback for React Router SPA
   app.use("*", (_req, res) => {
+    // Don't cache the main HTML file
+    res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(path.join(distPath, "index.html"));
   });
 }
