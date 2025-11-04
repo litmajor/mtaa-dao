@@ -10,8 +10,7 @@ import { MobileNav } from './components/mobile-nav';
 import { ThemeProvider } from "./components/theme-provider";
 import { TooltipProvider } from "./components/ui/tooltip";
 import AnnouncementsBanner from './components/AnnouncementsBanner';
-import { MorioProvider } from "@/components/MorioProvider"; // Added MorioProvider import
-import { useUser } from './pages/hooks/useUser'; // Added useUser hook import
+import { MorioProvider } from "@/components/MorioProvider";
 
 // Lazy load heavy pages
 const CreateDaoLazy = lazy(() => import('./pages/create-dao'));
@@ -101,8 +100,7 @@ const DaoLayout = () => <Outlet />; // Can add shared UI here
 const WalletLayout = () => <Outlet />;
 
 function App() {
-  const { isAuthenticated, isLoading } = useAuth();
-  const user = useUser(); // Get user object to pass to MorioProvider
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) {
     return <PageLoading message="Loading Mtaa DAO..." />;
