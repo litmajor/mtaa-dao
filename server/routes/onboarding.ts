@@ -68,12 +68,19 @@ router.post('/detect', authenticate, async (req, res) => {
   }
 });
 
-export default router;
-import express from 'express';
-import { isAuthenticated } from '../nextAuthMiddleware';
-import { onboardingService } from '../services/onboardingService';
+// GET /api/onboarding/session - Get current onboarding session (legacy support)
+router.get('/session', authenticate, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const progress = await onboardingService.getProgress(userId);
+    res.json(progress);
+  } catch (error) {
+    console.error('Get session error:', error);
+    res.status(500).json({ error: 'Failed to get onboarding session' });
+  }
+});
 
-const router = express.Router();
+export default router;
 
 /**
  * Get current onboarding session
