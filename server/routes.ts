@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Express } from 'express';
 import { isAuthenticated } from './nextAuthMiddleware';
 import Stripe from "stripe"; // Stripe integration
 
@@ -41,6 +41,7 @@ import phoneVerificationRouter from './routes/phone-verification';
 import onboardingRoutes from './routes/onboarding';
 import subscriptionManagementRoutes from './routes/subscription-management'; // Import subscription management routes
 import userSubscriptionRoutes from './routes/user-subscription';
+import revenueRoutes from './routes/revenue';
 
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
@@ -102,7 +103,7 @@ import {
 import {getUsersHandler,updateUserRoleHandler } from './api/admin_users';
 
 
-export function registerRoutes(app: express.Application) {
+export function registerRoutes(app: Express) {
   // Health check
   app.use('/api/health', healthRoutes);
 
@@ -309,6 +310,7 @@ export function registerRoutes(app: express.Application) {
   app.use('/api/morio', morioRoutes);
   app.use('/api/onboarding', onboardingRoutes);
   app.use('/api/user-subscription', userSubscriptionRoutes);
+  app.use('/api/revenue', revenueRoutes);
 
   // === SUBSCRIPTION MANAGEMENT API ===
   app.use('/api/subscription-management', subscriptionManagementRoutes);
