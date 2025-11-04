@@ -83,6 +83,9 @@ import NFTMarketplace from './pages/NFTMarketplace';
 // Subscription Management
 import SubscriptionManagement from './pages/SubscriptionManagement';
 
+// MaonoVault Management
+import MaonoVaultManagement from "@/pages/MaonoVaultManagement";
+
 // Protected/Public wrappers (unchanged)
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -229,6 +232,9 @@ function App() {
 
                 {/* Cross-chain bridge route */}
                 <Route path="/cross-chain" element={<ProtectedRoute><CrossChainBridge /></ProtectedRoute>} />
+
+                {/* MaonoVault Management Route */}
+                <Route path="/maonovault-management" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><MaonoVaultManagement /></Suspense></ProtectedRoute>} />
 
                 {/* Catch-all 404 */}
                 <Route path="*" element={<NotFound />} />
