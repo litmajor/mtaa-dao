@@ -85,15 +85,6 @@ class OTPService {
       if (!data) {
         console.log(`❌ OTP not found in Redis for identifier: ${identifier}`);
         console.log(`   Redis key checked: otp:${identifier}`);
-
-        // List all OTP keys in Redis for debugging
-        try {
-          const keys = await redis.keys('otp:*');
-          console.log(`   Available OTP keys in Redis: ${keys.length > 0 ? keys.join(', ') : 'none'}`);
-        } catch (e) {
-          console.log('   Could not list Redis keys');
-        }
-
         return { valid: false, error: 'OTP not found or expired' };
       }
 
