@@ -183,6 +183,15 @@ export class VaultService {
       if (!validatedRequest.userId && !validatedRequest.daoId) {
         throw new ValidationError('Either userId or daoId must be specified');
       }
+
+      // Check vault limits for personal vaults
+      if (validatedRequest.userId) {
+        const { userSubscriptionService } = await import('./userSubscriptionService');
+        const canCreate = await userSubscriptionService.canCreateVault(validatedRequest.userId);
+        if (!canCreate.allowed) {
+          throw new ValidationError(canCreate.reason || 'Vault limit reached');
+        }
+      }
       if (validatedRequest.userId && validatedRequest.daoId) {
         throw new ValidationError('Cannot specify both userId and daoId');
       }

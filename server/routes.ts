@@ -40,6 +40,7 @@ import treasuryIntelligenceRoutes from './routes/treasury-intelligence';
 import phoneVerificationRouter from './routes/phone-verification';
 import onboardingRoutes from './routes/onboarding';
 import subscriptionManagementRoutes from './routes/subscription-management'; // Import subscription management routes
+import userSubscriptionRoutes from './routes/user-subscription';
 
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
@@ -55,7 +56,7 @@ import { paymentsIndexHandler } from './api/payments_index';
 import { getWalletTransactions, createWalletTransaction } from './api/wallet_transactions';
 
 // Import Dashboard handlers
-import { 
+import {
   getDashboardStatsHandler,
   getDashboardProposalsHandler,
   getDashboardVaultsHandler,
@@ -76,25 +77,25 @@ import { getDaoSettingsHandler, updateDaoSettingsHandler, resetInviteCodeHandler
 import {getUserReputationHandler, getReputationLeaderboardHandler, getDaoReputationLeaderboardHandler } from './api/reputation';
 
 // Auth handlers
-import {refreshTokenHandler, logoutHandler } from './auth';
+import {refreshTokenHandler,logoutHandler } from './auth';
 
 // User profile handlers
-import { 
-  getUserProfileHandler, 
-  updateUserProfileHandler, 
-  changePasswordHandler, 
-  updateWalletAddressHandler 
+import {
+  getUserProfileHandler,
+  updateUserProfileHandler,
+  changePasswordHandler,
+  updateWalletAddressHandler
 } from './api/user_profile';
 
 // RBAC middleware
 import { requireRole, requireDAORole, requirePermission } from './middleware/rbac';
 
 // Rate limiting middleware
-import { 
-  registerRateLimiter, 
-  otpResendRateLimiter, 
+import {
+  registerRateLimiter,
+  otpResendRateLimiter,
   otpVerifyRateLimiter,
-  loginRateLimiter 
+  loginRateLimiter
 } from './middleware/rateLimiter';
 
 // Admin handlers
@@ -276,8 +277,8 @@ export function registerRoutes(app: express.Application) {
 
         // Create subscription (requires real STRIPE_PRICE_ID from dashboard)
         if (!process.env.STRIPE_PRICE_ID) {
-          return res.status(400).json({ 
-            error: { message: "Stripe price ID not configured. Please set STRIPE_PRICE_ID environment variable." } 
+          return res.status(400).json({
+            error: { message: "Stripe price ID not configured. Please set STRIPE_PRICE_ID environment variable." }
           });
         }
 
@@ -307,11 +308,12 @@ export function registerRoutes(app: express.Application) {
   // === MORIO AI ASSISTANT API ===
   app.use('/api/morio', morioRoutes);
   app.use('/api/onboarding', onboardingRoutes);
+  app.use('/api/user-subscription', userSubscriptionRoutes);
 
   // === SUBSCRIPTION MANAGEMENT API ===
   app.use('/api/subscription-management', subscriptionManagementRoutes);
 
-  // === RBAC ENDPOINTS ===  
+  // === RBAC ENDPOINTS ===
   app.get('/api/admin/users', isAuthenticated, getUsersHandler);
   app.put('/api/admin/users/:userId/role', isAuthenticated, updateUserRoleHandler);
 

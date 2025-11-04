@@ -82,10 +82,10 @@ router.get('/session', authenticate, async (req, res) => {
 // The following routes were part of a duplicate default export and have been removed.
 // If they are needed, they should be consolidated with the existing routes above or moved to a different file.
 
-// export default router;
+export default router;
 
 /**
- * Get current onboarding session
+ * Get current onboarding session (legacy)
  */
 // router.get('/session', isAuthenticated, async (req, res) => {
 //   try {
