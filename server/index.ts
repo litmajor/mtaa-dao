@@ -4,6 +4,7 @@ import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import { registerRoutes } from "./routes";
 import { setupWeeklyRewardsDistribution } from "./jobs/weeklyRewardsDistribution";
 import { setupInvestmentPoolsAutomation } from "./jobs/investmentPoolsAutomation";
@@ -30,6 +31,7 @@ import { vaultEventIndexer } from './vaultEventsIndexer';
 import { vaultAutomationService } from './vaultAutomation';
 import { activityTracker } from './middleware/activityTracker';
 import { bridgeRelayerService } from './services/bridgeRelayerService';
+import { performanceMonitor } from './middleware/performance';
 import paymentReconciliationRoutes from './routes/payment-reconciliation';
 import healthRoutes from './routes/health';
 import analyticsRoutes from './routes/analytics';
@@ -80,6 +82,25 @@ const io = new SocketIOServer(server, {
 // Trust proxy for accurate IP addresses
 app.set('trust proxy', 1);
 
+// Response compression (gzip/deflate) - must be early in middleware chain, but after security
+// Note: Will be applied after helmet and security middleware
+const compressionMiddleware = compression({
+  level: 6, // Compression level (0-9)
+  threshold: 1024, // Only compress responses > 1KB
+  filter: (req: Request, res: Response) => {
+    const contentType = res.getHeader('Content-Type') as string || '';
+    // Don't compress already-compressed formats
+    if (contentType.includes('image/') || 
+        contentType.includes('video/') ||
+        contentType.includes('application/zip') ||
+        contentType.includes('application/pdf')) {
+      return false;
+    }
+    // Use default compression filter for text-based responses
+    return compression.filter(req, res);
+  }
+});
+
 // Body parsing middleware
 app.use(express.json({
   limit: '10mb',
@@ -124,6 +145,12 @@ app.use(sanitizeInput);
 app.use(preventSqlInjection);
 app.use(preventXSS);
 app.use(auditMiddleware);
+
+// Apply compression AFTER security middleware
+app.use(compressionMiddleware);
+
+// Performance monitoring - must be early to track all requests
+app.use(performanceMonitor(1000)); // Log requests > 1000ms
 
 // Add metrics collection
 app.use(metricsCollector.requestMiddleware());
