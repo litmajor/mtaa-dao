@@ -5,8 +5,10 @@ import { eq, and, or, lt } from 'drizzle-orm';
 import { tokenService } from './tokenService';
 import { Logger } from '../utils/logger';
 import { notificationService } from '../notificationService';
+import { WebSocketService } from './WebSocketService';
 
 const logger = Logger.getLogger();
+const wsService = WebSocketService.getInstance();
 
 interface TransactionRetryConfig {
   maxRetries: number;
@@ -109,13 +111,27 @@ export class TransactionMonitor {
           await this.handleFailedTransaction(tx, 'wallet', 'Transaction reverted on blockchain');
         } else {
           logger.info(`Transaction confirmed: ${tx.transactionHash}`);
-          // Notify user of success
+          
+          // Send WebSocket notification for real-time updates
           if (tx.fromUserId) {
+            wsService.sendToUser(tx.fromUserId, {
+              type: 'TRANSACTION_CONFIRMED',
+              data: {
+                transactionId: tx.id,
+                hash: tx.transactionHash,
+                amount: tx.amount,
+                currency: tx.currency,
+                status: 'completed'
+              }
+            });
+            
+            // Also send persistent notification
             await notificationService.sendNotification(tx.fromUserId, {
               type: 'transaction_success',
               title: 'Transaction Confirmed',
               message: `Your ${tx.currency} transfer of ${tx.amount} was successful`,
-              priority: 'medium'
+              priority: 'medium',
+              metadata: { transactionId: tx.id, hash: tx.transactionHash }
             });
           }
         }
@@ -211,15 +227,29 @@ export class TransactionMonitor {
       })
       .where(eq(table.id, tx.id));
 
-    // Notify user
+    // Notify user via WebSocket (immediate) and notification (persistent)
     const userId = type === 'wallet' ? tx.fromUserId : tx.userId;
     if (userId && DEFAULT_RETRY_CONFIG.notifyOnFailure) {
+      // Immediate WebSocket alert
+      wsService.sendToUser(userId, {
+        type: 'TRANSACTION_FAILED',
+        data: {
+          transactionId: tx.id,
+          hash: tx.transactionHash,
+          amount: tx.amount,
+          currency: tx.currency,
+          reason,
+          status: 'failed'
+        }
+      });
+      
+      // Persistent notification
       await notificationService.sendNotification(userId, {
         type: 'transaction_failed',
         title: 'Transaction Failed',
         message: `Your transaction failed: ${reason}. Please try again or contact support.`,
         priority: 'high',
-        metadata: { transactionId: tx.id, reason }
+        metadata: { transactionId: tx.id, reason, canRetry: true }
       });
     }
 
