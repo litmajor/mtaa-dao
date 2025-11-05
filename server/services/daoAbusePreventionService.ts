@@ -1,6 +1,6 @@
 
 import { db } from '../db';
-import { users, daos, daoCreationTracker, daoSocialVerifications, daoIdentityNfts, economicIdentity } from '../../shared/schema';
+import { users, daos, daoCreationTracker, daoSocialVerifications, daoIdentityNfts } from '../../shared/schema';
 import { eq, and, desc, gte, sql } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
 import { AppError, ValidationError } from '../middleware/errorHandler';
