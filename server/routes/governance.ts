@@ -148,12 +148,13 @@ router.post('/proposals/:proposalId/execute', isAuthenticated, async (req, res) 
       return res.status(403).json({ message: 'Insufficient permissions to execute proposal' });
     }
     
-    // Add to execution queue
-    // Always use DAO's executionDelay
-    let delay = 24;
-    const dao = await db.select().from(daos).where(eq(daos.id, proposalData.daoId)).limit(1);
-    if (dao.length && typeof dao[0].executionDelay === 'number') {
-      delay = dao[0].executionDelay;
+    // Add to execution queue with CRITICAL 48-hour timelock
+    // This prevents immediate execution of malicious proposals
+    let delay = 48; // Default 48 hours for security
+    const daoSettings = await db.select().from(daos).where(eq(daos.id, proposalData.daoId)).limit(1);
+    if (daoSettings.length && typeof daoSettings[0].executionDelay === 'number') {
+      // Enforce minimum 24-hour delay even if DAO sets lower
+      delay = Math.max(24, daoSettings[0].executionDelay);
     }
     const executionTime = new Date(Date.now() + delay * 60 * 60 * 1000);
     
@@ -262,6 +263,36 @@ router.post('/:daoId/delegate', isAuthenticated, async (req, res) => {
     
     if (!delegateMembership.length) {
       return res.status(400).json({ message: 'Delegate must be an active DAO member' });
+    }
+    
+    // CRITICAL: Check delegation cap (10% of total voting power)
+    const daoInfo = await db.select().from(daos).where(eq(daos.id, daoId)).limit(1);
+    if (!daoInfo.length) {
+      return res.status(404).json({ message: 'DAO not found' });
+    }
+    
+    const maxDelegationPercentage = daoInfo[0].maxDelegationPercentage || 10;
+    const totalMembers = daoInfo[0].memberCount || 1;
+    const maxDelegationsAllowed = Math.ceil((totalMembers * maxDelegationPercentage) / 100);
+    
+    // Count current active delegations to this delegate
+    const existingDelegations = await db.select().from(voteDelegations)
+      .where(and(
+        eq(voteDelegations.daoId, daoId),
+        eq(voteDelegations.delegateId, delegateId),
+        eq(voteDelegations.isActive, true)
+      ));
+    
+    if (existingDelegations.length >= maxDelegationsAllowed) {
+      return res.status(400).json({
+        success: false,
+        message: `Delegation cap exceeded: ${delegateId} has reached maximum of ${maxDelegationsAllowed} delegations (${maxDelegationPercentage}% of ${totalMembers} members)`,
+        data: {
+          currentDelegations: existingDelegations.length,
+          maxAllowed: maxDelegationsAllowed,
+          capPercentage: maxDelegationPercentage
+        }
+      });
     }
     
     // Deactivate existing delegation if any
