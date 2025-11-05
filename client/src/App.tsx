@@ -41,7 +41,6 @@ const AnnouncementsManagementLazy = lazy(() => import('./pages/admin/Announcemen
 const PoolManagementLazy = lazy(() => import('./pages/admin/PoolManagement'));
 const InvestmentPoolsLazy = lazy(() => import('./pages/investment-pools'));
 const InvestmentPoolDetailLazy = lazy(() => import('./pages/investment-pool-detail'));
-const RevenueDashboard = lazy(() => import('./pages/admin/RevenueDashboard')); // Assuming RevenueDashboard component exists
 
 // Non-lazy (lighter) pages
 import Landing from './pages/landing';
@@ -225,7 +224,6 @@ function App() {
                 {/* Protected special routes */}
                 <Route path="/architect-setup" element={<ProtectedRoute><ArchitectSetupPage /></ProtectedRoute>} />
                 <Route path="/wallet-setup" element={<WalletSetupPage />} />
-                <Route path="/admin/revenue" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><RevenueDashboard /></Suspense></ProtectedRoute>} />
                 <Route path="/leaderboard" element={<ReputationLeaderboard />} />
                 <Route path="/reputation-dashboard" element={<ReputationDashboard />} />
                 <Route path="/minipay" element={<ProtectedRoute><MiniPayDemo /></ProtectedRoute>} />
