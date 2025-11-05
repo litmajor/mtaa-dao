@@ -200,9 +200,9 @@ export const daos = pgTable("daos", {
   featureOrder: integer("feature_order").default(0), // order of featured DAOs
   quorumPercentage: integer("quorum_percentage").default(20), // percentage of active members for quorum
   votingPeriod: integer("voting_period").default(72), // voting period in hours
-  executionDelay: integer("execution_delay").default(48), // CRITICAL: 48-hour execution delay for security
+  executionDelay: integer("execution_delay").default(48), // CRITICAL: 48-hour execution delay for security (minimum 24h enforced)
   tokenHoldings : boolean("token_holdings").default(false), // whether DAO requires token holdings for membership
-  maxDelegationPercentage: integer("max_delegation_percentage").default(10) // max % of votes a single delegate can hold
+  maxDelegationPercentage: integer("max_delegation_percentage").default(10) // CRITICAL: max % of votes a single delegate can hold to prevent centralization
 });
 
 // DAO Abuse Prevention Tables
