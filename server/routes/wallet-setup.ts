@@ -12,8 +12,10 @@ import {
   isValidMnemonic,
   importWalletFromPrivateKey
 } from '../utils/cryptoWallet';
-import logger from '../utils/logger';
-import { isAuthenticated } from '../middleware/authMiddleware'; // Assuming you have this middleware
+import { Logger } from '../utils/logger';
+import { isAuthenticated } from '../auth';
+
+const logger = new Logger('wallet-setup');
 
 const router = express.Router();
 

@@ -9,7 +9,7 @@ import { parseEther, formatEther } from "viem";
 import { AlertCircle, CheckCircle, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "../ui/alert";
 
-export default function WithdrawalModal({
+export function WithdrawalModal({
   open,
   onOpenChange,
   vaultAddress

@@ -10,8 +10,8 @@ import { Skeleton } from "@/components/ui/skeleton"; // For loading
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Info } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import VaultDepositCard from "@/components/vault/DepositModal";
-import VaultWithdrawInfoCard from "@/components/vault/WithdrawalModal";
+import { DepositModal as VaultDepositCard } from "@/components/vault/DepositModal";
+import { WithdrawalModal as VaultWithdrawInfoCard } from "@/components/vault/WithdrawalModal";
 import ProposalCard from "@/components/proposal-card";
 import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
