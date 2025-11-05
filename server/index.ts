@@ -62,6 +62,7 @@ import kycRouter from './routes/kyc';
 import referralRewardsRouter from './routes/referral-rewards';
 import economyRouter from './routes/economy';
 import morioRoutes from './routes/morio';
+import { transactionMonitor } from './services/transactionMonitor';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -417,6 +418,9 @@ app.use((req, res, next) => {
 
     // Start vault automation service
     vaultAutomationService.start();
+
+    // Start transaction monitor for failure handling
+    transactionMonitor.start();
 
     // Start bridge relayer service
     bridgeRelayerService.start();
