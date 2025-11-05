@@ -8,6 +8,7 @@ import sseRoutes from './routes/sse';
 import walletRoutes from './routes/wallet';
 import walletSetupRoutes from './routes/wallet-setup';
 import governanceRoutes from './routes/governance';
+import governanceQuorumRouter from './routes/governance-quorum';
 import tasksRoutes from './routes/tasks';
 import reputationRoutes from './routes/reputation';
 import analyticsRoutes from './routes/analytics';
@@ -116,6 +117,7 @@ export async function registerRoutes(app: Express) {
 
   // Governance and DAO routes
   app.use('/api/governance', governanceRoutes);
+  app.use('/api/governance', governanceQuorumRouter);
   app.use('/api/daos', daosRoutes);
   app.use('/api/dao-treasury', daoTreasuryRoutes);
   app.use('/api/dao-subscriptions', daoSubscriptionsRoutes);
