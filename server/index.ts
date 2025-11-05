@@ -65,6 +65,8 @@ import morioRoutes from './routes/morio';
 import { transactionMonitor } from './services/transactionMonitor';
 import { recurringPaymentService } from './services/recurringPaymentService';
 import { gasPriceOracle } from './services/gasPriceOracle';
+// Import example function for wallet demonstration
+import { enhancedExample } from './example-wallet';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
