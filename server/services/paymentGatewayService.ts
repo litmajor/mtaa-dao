@@ -285,30 +285,43 @@ export class PaymentGatewayService {
   private async mpesaDeposit(config: PaymentGatewayConfig, request: PaymentRequest): Promise<PaymentResponse> {
     const reference = `MPE-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    // Get OAuth token
-    const authToken = await this.getMpesaToken(config);
-    
-    const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
-    const password = Buffer.from(
-      `${process.env.MPESA_SHORTCODE}${process.env.MPESA_PASSKEY}${timestamp}`
-    ).toString('base64');
-
-    const payload = {
-      BusinessShortCode: process.env.MPESA_SHORTCODE,
-      Password: password,
-      Timestamp: timestamp,
-      TransactionType: 'CustomerPayBillOnline',
-      Amount: request.amount,
-      PartyA: request.metadata?.phone,
-      PartyB: process.env.MPESA_SHORTCODE,
-      PhoneNumber: request.metadata?.phone,
-      CallBackURL: `${process.env.APP_URL}/api/payment-gateway/mpesa/callback`,
-      AccountReference: 'MtaaDAO',
-      TransactionDesc: 'Wallet Deposit'
-    };
-
     try {
-      const response = await fetch('https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest', {
+      // Validate phone number format
+      const phoneNumber = request.metadata?.phone?.replace(/\D/g, '');
+      if (!phoneNumber || phoneNumber.length < 10) {
+        throw new Error('Valid phone number required for M-Pesa');
+      }
+
+      // Format phone number (254XXXXXXXXX)
+      const formattedPhone = phoneNumber.startsWith('254') ? phoneNumber : `254${phoneNumber.slice(-9)}`;
+
+      // Get OAuth token
+      const authToken = await this.getMpesaToken(config);
+      
+      const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+      const password = Buffer.from(
+        `${process.env.MPESA_SHORTCODE}${process.env.MPESA_PASSKEY}${timestamp}`
+      ).toString('base64');
+
+      const payload = {
+        BusinessShortCode: process.env.MPESA_SHORTCODE,
+        Password: password,
+        Timestamp: timestamp,
+        TransactionType: 'CustomerPayBillOnline',
+        Amount: Math.round(parseFloat(request.amount)),
+        PartyA: formattedPhone,
+        PartyB: process.env.MPESA_SHORTCODE,
+        PhoneNumber: formattedPhone,
+        CallBackURL: `${process.env.APP_URL}/api/payment-gateway/mpesa/callback`,
+        AccountReference: `MTAA-${request.userId.slice(0, 8)}`,
+        TransactionDesc: request.metadata?.description || 'MtaaDAO Wallet Deposit'
+      };
+
+      const apiUrl = config.environment === 'production'
+        ? 'https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest'
+        : 'https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest';
+
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${authToken}`,
@@ -320,19 +333,30 @@ export class PaymentGatewayService {
       const data = await response.json();
 
       if (data.ResponseCode === '0') {
-        await this.recordTransaction(request.userId, reference, 'deposit', request.amount, request.currency, 'mpesa', 'pending');
+        await this.recordTransaction(
+          request.userId, 
+          reference, 
+          'deposit', 
+          request.amount, 
+          request.currency, 
+          'mpesa', 
+          'pending',
+          { checkoutRequestID: data.CheckoutRequestID, merchantRequestID: data.MerchantRequestID }
+        );
 
         return {
           success: true,
           transactionId: data.CheckoutRequestID,
           reference,
           status: 'pending',
-          message: 'STK push sent to your phone'
+          message: `STK push sent to ${formattedPhone}. Check your phone to complete payment.`
         };
       }
 
-      throw new Error(data.ResponseDescription || 'M-Pesa request failed');
+      throw new Error(data.ResponseDescription || data.errorMessage || 'M-Pesa request failed');
     } catch (error: any) {
+      await this.recordTransaction(request.userId, reference, 'deposit', request.amount, request.currency, 'mpesa', 'failed', { error: error.message });
+      
       return {
         success: false,
         transactionId: '',
@@ -529,7 +553,8 @@ export class PaymentGatewayService {
     amount: string,
     currency: string,
     provider: string,
-    status: string
+    status: string,
+    additionalMetadata: Record<string, any> = {}
   ) {
     await db.insert(paymentTransactions).values({
       userId,
@@ -539,7 +564,10 @@ export class PaymentGatewayService {
       currency,
       provider,
       status,
-      metadata: { timestamp: new Date().toISOString() }
+      metadata: { 
+        timestamp: new Date().toISOString(),
+        ...additionalMetadata
+      }
     });
   }
 

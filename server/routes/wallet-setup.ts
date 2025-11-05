@@ -8,8 +8,12 @@ import {
   generateWalletFromMnemonic,
   recoverWalletFromMnemonic,
   encryptWallet,
-  decryptWallet
+  decryptWallet,
+  isValidMnemonic,
+  importWalletFromPrivateKey
 } from '../utils/cryptoWallet';
+import logger from '../utils/logger';
+import { isAuthenticated } from '../middleware/authMiddleware'; // Assuming you have this middleware
 
 const router = express.Router();
 
@@ -87,22 +91,151 @@ router.post('/create-wallet-mnemonic', async (req, res) => {
 });
 
 // POST /api/wallet-setup/backup-confirmed
-router.post('/backup-confirmed', async (req, res) => {
+router.post('/backup-confirmed', isAuthenticated, async (req, res) => {
   try {
-    const { userId } = req.body;
-
+    const userId = (req.user as any)?.claims?.id;
     if (!userId) {
-      return res.status(400).json({ error: 'User ID is required' });
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    // Update user record to mark mnemonic as backed up
     await db.update(users)
       .set({ hasBackedUpMnemonic: true })
       .where(eq(users.id, userId));
 
-    res.json({ success: true, message: 'Backup confirmation recorded' });
-  } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: errorMsg });
+    res.json({ success: true });
+  } catch (error: any) {
+    logger.error('Backup confirmation error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/wallet-setup/export-encrypted-backup
+router.post('/export-encrypted-backup', isAuthenticated, async (req, res) => {
+  try {
+    const userId = (req.user as any)?.claims?.id;
+    const { password } = req.body;
+
+    if (!userId || !password) {
+      return res.status(400).json({ error: 'User ID and password required' });
+    }
+
+    // Get user's encrypted wallet
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+    if (!user?.encryptedWallet) {
+      return res.status(404).json({ error: 'No wallet found' });
+    }
+
+    // Create backup package with timestamp
+    const backupPackage = {
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      userId: userId,
+      encryptedWallet: user.encryptedWallet,
+      walletSalt: user.walletSalt,
+      walletIv: user.walletIv,
+      walletAuthTag: user.walletAuthTag,
+      walletAddress: user.walletAddress
+    };
+
+    // Double-encrypt the backup with user's password
+    const backupString = JSON.stringify(backupPackage);
+    const backupBuffer = Buffer.from(backupString, 'utf-8');
+
+    const { createCipheriv, randomBytes, scryptSync } = await import('crypto');
+    const backupSalt = randomBytes(16);
+    const backupKey = scryptSync(password, backupSalt, 32);
+    const backupIv = randomBytes(16);
+    const cipher = createCipheriv('aes-256-gcm', backupKey, backupIv);
+
+    const encryptedBackup = Buffer.concat([
+      cipher.update(backupBuffer),
+      cipher.final()
+    ]);
+
+    const authTag = cipher.getAuthTag();
+
+    // Create downloadable backup file
+    const finalBackup = {
+      v: '1.0',
+      s: backupSalt.toString('hex'),
+      i: backupIv.toString('hex'),
+      d: encryptedBackup.toString('hex'),
+      t: authTag.toString('hex'),
+      created: new Date().toISOString()
+    };
+
+    res.json({
+      success: true,
+      backup: finalBackup,
+      filename: `mtaadao-wallet-backup-${Date.now()}.json`
+    });
+  } catch (error: any) {
+    logger.error('Backup export error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/wallet-setup/restore-from-backup
+router.post('/restore-from-backup', isAuthenticated, async (req, res) => {
+  try {
+    const userId = (req.user as any)?.claims?.id;
+    const { backupData, password } = req.body;
+
+    if (!userId || !backupData || !password) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Decrypt the backup file
+    const { createDecipheriv, scryptSync } = await import('crypto');
+
+    const backupSalt = Buffer.from(backupData.s, 'hex');
+    const backupIv = Buffer.from(backupData.i, 'hex');
+    const encryptedData = Buffer.from(backupData.d, 'hex');
+    const authTag = Buffer.from(backupData.t, 'hex');
+
+    const backupKey = scryptSync(password, backupSalt, 32);
+    const decipher = createDecipheriv('aes-256-gcm', backupKey, backupIv);
+    decipher.setAuthTag(authTag);
+
+    let decryptedBackup;
+    try {
+      decryptedBackup = Buffer.concat([
+        decipher.update(encryptedData),
+        decipher.final()
+      ]);
+    } catch (err) {
+      return res.status(401).json({ error: 'Invalid password or corrupted backup' });
+    }
+
+    const backupPackage = JSON.parse(decryptedBackup.toString('utf-8'));
+
+    // Verify backup version
+    if (backupPackage.version !== '1.0') {
+      return res.status(400).json({ error: 'Unsupported backup version' });
+    }
+
+    // Restore wallet to user account
+    await db.update(users)
+      .set({
+        encryptedWallet: backupPackage.encryptedWallet,
+        walletSalt: backupPackage.walletSalt,
+        walletIv: backupPackage.walletIv,
+        walletAuthTag: backupPackage.walletAuthTag,
+        walletAddress: backupPackage.walletAddress,
+        hasBackedUpMnemonic: true
+      })
+      .where(eq(users.id, userId));
+
+    res.json({
+      success: true,
+      walletAddress: backupPackage.walletAddress,
+      message: 'Wallet restored successfully'
+    });
+  } catch (error: any) {
+    logger.error('Backup restore error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -240,7 +373,7 @@ router.post('/unlock-wallet', async (req, res) => {
     }
 
     const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-    
+
     if (!user.length || !user[0].encryptedWallet) {
       return res.status(404).json({ error: 'No wallet found for this user' });
     }
