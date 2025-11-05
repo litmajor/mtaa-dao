@@ -2,6 +2,10 @@ import express, { Request, Response } from 'express';
 import EnhancedAgentWallet, { NetworkConfig, DaoTreasuryManager } from '../agent_wallet';
 import { isAuthenticated } from '../nextAuthMiddleware';
 import { storage } from '../storage';
+import { treasuryMultisigService } from '../services/treasuryMultisigService';
+import { db } from '../db';
+import { treasuryMultisigTransactions, treasuryBudgetAllocations, treasuryAuditLog } from '../../shared/schema';
+import { eq, desc, and } from 'drizzle-orm';
 
 const router = express.Router();
 
@@ -493,6 +497,158 @@ router.post('/yield-farming', async (req, res) => {
 router.get('/yield-farming/:daoId', async (req, res) => {
   try {
     const { daoId } = req.params;
+
+
+// --- CRITICAL: Multi-Sig Treasury Operations ---
+
+// POST /api/dao-treasury/:daoId/multisig/propose - Propose withdrawal
+router.post('/:daoId/multisig/propose', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { daoId } = req.params;
+    const { amount, recipient, purpose, currency } = req.body;
+    const userId = (req as any).user?.claims?.sub;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const transaction = await treasuryMultisigService.proposeWithdrawal(
+      daoId,
+      userId,
+      parseFloat(amount),
+      recipient,
+      purpose,
+      currency || 'cUSD'
+    );
+
+    res.json({
+      success: true,
+      transaction,
+      message: `Withdrawal proposed. Requires ${transaction.requiredSignatures} signatures.`
+    });
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// POST /api/dao-treasury/:daoId/multisig/:txId/sign - Sign transaction
+router.post('/:daoId/multisig/:txId/sign', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { txId } = req.params;
+    const userId = (req as any).user?.claims?.sub;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const result = await treasuryMultisigService.signTransaction(txId, userId);
+
+    res.json({
+      success: true,
+      ...result,
+      message: result.approved 
+        ? 'Transaction approved and ready for execution'
+        : `Signature added. ${result.signatures} signatures collected.`
+    });
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// POST /api/dao-treasury/:daoId/multisig/:txId/execute - Execute approved transaction
+router.post('/:daoId/multisig/:txId/execute', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { txId } = req.params;
+    const userId = (req as any).user?.claims?.sub;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const result = await treasuryMultisigService.executeTransaction(txId, userId);
+
+    res.json({
+      success: true,
+      ...result,
+      message: 'Withdrawal executed successfully'
+    });
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// GET /api/dao-treasury/:daoId/multisig/pending - Get pending transactions
+router.get('/:daoId/multisig/pending', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { daoId } = req.params;
+
+    const pending = await db.select().from(treasuryMultisigTransactions)
+      .where(and(
+        eq(treasuryMultisigTransactions.daoId, daoId),
+        eq(treasuryMultisigTransactions.status, 'pending')
+      ))
+      .orderBy(desc(treasuryMultisigTransactions.createdAt));
+
+    res.json({ success: true, transactions: pending });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// --- Budget Management ---
+
+// GET /api/dao-treasury/:daoId/budget - Get budget allocations
+router.get('/:daoId/budget', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { daoId } = req.params;
+
+    const allocations = await db.select().from(treasuryBudgetAllocations)
+      .where(and(
+        eq(treasuryBudgetAllocations.daoId, daoId),
+        eq(treasuryBudgetAllocations.isActive, true)
+      ))
+      .orderBy(desc(treasuryBudgetAllocations.periodStart));
+
+    res.json({ success: true, allocations });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// --- Audit Trail ---
+
+// GET /api/dao-treasury/:daoId/audit - Get audit logs
+router.get('/:daoId/audit', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { daoId } = req.params;
+    const { limit = 100, severity } = req.query;
+
+    let query = db.select().from(treasuryAuditLog)
+      .where(eq(treasuryAuditLog.daoId, daoId));
+
+    if (severity) {
+      query = query.where(eq(treasuryAuditLog.severity, severity as string));
+    }
+
+    const logs = await query
+      .orderBy(desc(treasuryAuditLog.timestamp))
+      .limit(parseInt(limit as string));
+
+    res.json({ success: true, logs });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 
     const result = await db
       .select()

@@ -202,7 +202,15 @@ export const daos = pgTable("daos", {
   votingPeriod: integer("voting_period").default(72), // voting period in hours
   executionDelay: integer("execution_delay").default(48), // CRITICAL: 48-hour execution delay for security (minimum 24h enforced)
   tokenHoldings : boolean("token_holdings").default(false), // whether DAO requires token holdings for membership
-  maxDelegationPercentage: integer("max_delegation_percentage").default(10) // CRITICAL: max % of votes a single delegate can hold to prevent centralization
+  maxDelegationPercentage: integer("max_delegation_percentage").default(10), // CRITICAL: max % of votes a single delegate can hold to prevent centralization
+  
+  // CRITICAL: Multi-sig treasury security
+  treasuryMultisigEnabled: boolean("treasury_multisig_enabled").default(true),
+  treasuryRequiredSignatures: integer("treasury_required_signatures").default(3), // minimum 3 signatures for withdrawals
+  treasurySigners: jsonb("treasury_signers").default([]), // array of elder/admin user IDs
+  treasuryWithdrawalThreshold: decimal("treasury_withdrawal_threshold", { precision: 18, scale: 2 }).default("1000.00"), // $1K threshold
+  treasuryDailyLimit: decimal("treasury_daily_limit", { precision: 18, scale: 2 }).default("10000.00"), // daily spending cap
+  treasuryMonthlyBudget: decimal("treasury_monthly_budget", { precision: 18, scale: 2 }) // optional monthly budget limit
 });
 
 // DAO Abuse Prevention Tables
@@ -838,6 +846,80 @@ export const proposalLikes = pgTable("proposal_likes", {
   daoId: uuid("dao_id").references(() => daos.id).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+
+
+// Treasury Multi-Sig Transactions
+export const treasuryMultisigTransactions = pgTable("treasury_multisig_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  proposedBy: varchar("proposed_by").references(() => users.id).notNull(),
+  transactionType: varchar("transaction_type").notNull(), // withdrawal, disbursement, budget_allocation
+  amount: decimal("amount", { precision: 18, scale: 2 }).notNull(),
+  currency: varchar("currency").default("cUSD"),
+  recipient: varchar("recipient"), // wallet address or user ID
+  purpose: text("purpose").notNull(),
+  
+  // Multi-sig tracking
+  requiredSignatures: integer("required_signatures").notNull(),
+  currentSignatures: integer("current_signatures").default(0),
+  signers: jsonb("signers").default([]), // array of {userId, signedAt, signature}
+  
+  // Status
+  status: varchar("status").default("pending"), // pending, approved, rejected, executed, expired
+  approvedAt: timestamp("approved_at"),
+  executedAt: timestamp("executed_at"),
+  executionTxHash: varchar("execution_tx_hash"),
+  expiresAt: timestamp("expires_at").notNull(), // 7 days expiry
+  
+  // Metadata
+  metadata: jsonb("metadata"), // additional transaction details
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Treasury Budget Allocations
+export const treasuryBudgetAllocations = pgTable("treasury_budget_allocations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  category: varchar("category").notNull(), // operations, grants, development, marketing, etc.
+  allocatedAmount: decimal("allocated_amount", { precision: 18, scale: 2 }).notNull(),
+  spentAmount: decimal("spent_amount", { precision: 18, scale: 2 }).default("0"),
+  remainingAmount: decimal("remaining_amount", { precision: 18, scale: 2 }).notNull(),
+  period: varchar("period").notNull(), // monthly, quarterly, yearly
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  isActive: boolean("is_active").default(true),
+  createdBy: varchar("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Treasury Audit Log
+export const treasuryAuditLog = pgTable("treasury_audit_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  actorId: varchar("actor_id").references(() => users.id).notNull(),
+  action: varchar("action").notNull(), // withdrawal, deposit, budget_change, signer_added, signer_removed
+  amount: decimal("amount", { precision: 18, scale: 2 }),
+  previousBalance: decimal("previous_balance", { precision: 18, scale: 2 }),
+  newBalance: decimal("new_balance", { precision: 18, scale: 2 }),
+  category: varchar("category"), // budget category if applicable
+  reason: text("reason").notNull(),
+  multisigTxId: uuid("multisig_tx_id").references(() => treasuryMultisigTransactions.id),
+  transactionHash: varchar("transaction_hash"),
+  ipAddress: varchar("ip_address"),
+  metadata: jsonb("metadata"), // additional audit data
+  severity: varchar("severity").default("medium"), // low, medium, high, critical
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+});
+
+export type TreasuryMultisigTransaction = typeof treasuryMultisigTransactions.$inferSelect;
+export type InsertTreasuryMultisigTransaction = typeof treasuryMultisigTransactions.$inferInsert;
+export type TreasuryBudgetAllocation = typeof treasuryBudgetAllocations.$inferSelect;
+export type InsertTreasuryBudgetAllocation = typeof treasuryBudgetAllocations.$inferInsert;
+export type TreasuryAuditLog = typeof treasuryAuditLog.$inferSelect;
+export type InsertTreasuryAuditLog = typeof treasuryAuditLog.$inferInsert;
 
 // Comment Likes table
 export const commentLikes = pgTable("comment_likes", {
