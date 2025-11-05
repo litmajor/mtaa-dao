@@ -63,6 +63,8 @@ import referralRewardsRouter from './routes/referral-rewards';
 import economyRouter from './routes/economy';
 import morioRoutes from './routes/morio';
 import { transactionMonitor } from './services/transactionMonitor';
+import { recurringPaymentService } from './services/recurringPaymentService';
+import { gasPriceOracle } from './services/gasPriceOracle';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -419,8 +421,18 @@ app.use((req, res, next) => {
     // Start vault automation service
     vaultAutomationService.start();
 
-    // Start transaction monitor for failure handling
+    // Start transaction monitoring with WebSocket support
     transactionMonitor.start();
+
+    // Start recurring payment processor with balance validation
+    recurringPaymentService.start();
+
+    // Warm up gas price oracle cache
+    gasPriceOracle.getCurrentGasPrices().catch(err => 
+      console.warn('Failed to initialize gas price oracle:', err)
+    );
+
+    logger.info('✅ All payment monitoring services started');
 
     // Start bridge relayer service
     bridgeRelayerService.start();
