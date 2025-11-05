@@ -62,7 +62,7 @@ router.get('/:daoId/quorum', isAuthenticated, async (req, res) => {
   }
 });
 
-// Execute passed proposals
+// Execute passed proposals with quorum enforcement
 router.post('/proposals/:proposalId/execute', isAuthenticated, async (req, res) => {
   try {
     const { proposalId } = req.params;
@@ -76,9 +76,65 @@ router.post('/proposals/:proposalId/execute', isAuthenticated, async (req, res) 
     
     const proposalData = proposal[0];
     
+    // CRITICAL: Validate quorum before execution
+    const yesVotes = typeof proposalData.yesVotes === 'number' ? proposalData.yesVotes : 0;
+    const noVotes = typeof proposalData.noVotes === 'number' ? proposalData.noVotes : 0;
+    const abstainVotes = typeof proposalData.abstainVotes === 'number' ? proposalData.abstainVotes : 0;
+    const totalVotes = yesVotes + noVotes + abstainVotes;
+    
+    // Get DAO quorum requirements
+    const dao = await db.select().from(daos).where(eq(daos.id, proposalData.daoId)).limit(1);
+    if (!dao.length) {
+      return res.status(404).json({ message: 'DAO not found' });
+    }
+    
+    const requiredQuorumPercentage = dao[0].quorumPercentage || 20;
+    const memberCount = dao[0].memberCount || 1;
+    const requiredQuorum = Math.ceil((memberCount * requiredQuorumPercentage) / 100);
+    const participationRate = (totalVotes / memberCount) * 100;
+    
+    // Enforce quorum
+    if (totalVotes < requiredQuorum) {
+      await db.update(proposals)
+        .set({ 
+          status: 'failed',
+          metadata: sql`jsonb_set(
+            COALESCE(metadata, '{}'::jsonb), 
+            '{failure_reason}', 
+            ${JSON.stringify(`Quorum not met: ${totalVotes}/${requiredQuorum} votes (${participationRate.toFixed(2)}% participation)`)}
+          )`
+        })
+        .where(eq(proposals.id, proposalId));
+      
+      return res.status(400).json({
+        success: false,
+        message: 'Proposal execution blocked: Quorum not met',
+        data: {
+          totalVotes,
+          requiredQuorum,
+          participationRate: participationRate.toFixed(2),
+          requiredQuorumPercentage
+        }
+      });
+    }
+    
     // Check if proposal has passed
     if (proposalData.status !== 'passed') {
       return res.status(400).json({ message: 'Proposal must be in passed status to execute' });
+    }
+    
+    // Verify majority vote
+    const approvalPercentage = totalVotes > 0 ? (yesVotes / totalVotes) * 100 : 0;
+    if (approvalPercentage < 50) {
+      return res.status(400).json({
+        success: false,
+        message: 'Proposal execution blocked: Majority not reached',
+        data: {
+          approvalPercentage: approvalPercentage.toFixed(2),
+          yesVotes,
+          totalVotes
+        }
+      });
     }
     
     // Check if user has permission to execute
@@ -88,7 +144,7 @@ router.post('/proposals/:proposalId/execute', isAuthenticated, async (req, res) 
         eq(daoMemberships.userId, userId)
       )).limit(1);
     
-  if (!membership.length || !['admin', 'elder'].includes(membership[0].role ?? '')) {
+    if (!membership.length || !['admin', 'elder'].includes(membership[0].role ?? '')) {
       return res.status(403).json({ message: 'Insufficient permissions to execute proposal' });
     }
     
@@ -294,7 +350,7 @@ router.delete('/:daoId/delegate/:delegationId', isAuthenticated, async (req, res
   }
 });
 
-// Check proposal quorum and update status
+// Check proposal quorum and update status with enforcement
 router.post('/proposals/:proposalId/check-quorum', isAuthenticated, async (req, res) => {
   try {
     const { proposalId } = req.params;
@@ -307,40 +363,61 @@ router.post('/proposals/:proposalId/check-quorum', isAuthenticated, async (req, 
     const proposalData = proposal[0];
     
     // Calculate total votes
-  const yesVotes = typeof proposalData.yesVotes === 'number' ? proposalData.yesVotes : 0;
-  const noVotes = typeof proposalData.noVotes === 'number' ? proposalData.noVotes : 0;
-  const abstainVotes = typeof proposalData.abstainVotes === 'number' ? proposalData.abstainVotes : 0;
-  const totalVotes = yesVotes + noVotes + abstainVotes;
+    const yesVotes = typeof proposalData.yesVotes === 'number' ? proposalData.yesVotes : 0;
+    const noVotes = typeof proposalData.noVotes === 'number' ? proposalData.noVotes : 0;
+    const abstainVotes = typeof proposalData.abstainVotes === 'number' ? proposalData.abstainVotes : 0;
+    const totalVotes = yesVotes + noVotes + abstainVotes;
     
-    // Get required quorum
-    const quorumResponse = await fetch(`/api/governance/${proposalData.daoId}/quorum`);
-    const quorumData = await quorumResponse.json();
-    const requiredQuorum = quorumData.data.requiredQuorum;
+    // Get DAO and quorum requirements
+    const dao = await db.select().from(daos).where(eq(daos.id, proposalData.daoId)).limit(1);
+    if (!dao.length) {
+      return res.status(404).json({ message: 'DAO not found' });
+    }
+    
+    const daoData = dao[0];
+    const quorumPercentage = daoData.quorumPercentage || 20;
+    const memberCount = daoData.memberCount || 1;
+    const requiredQuorum = Math.ceil((memberCount * quorumPercentage) / 100);
+    const participationRate = (totalVotes / memberCount) * 100;
     
     const quorumMet = totalVotes >= requiredQuorum;
-  const passed = quorumMet && yesVotes > noVotes;
+    const majorityReached = yesVotes > noVotes;
+    const passed = quorumMet && majorityReached;
     
     // Record quorum history
     await db.insert(quorumHistory).values({
       daoId: proposalData.daoId,
       proposalId,
-      activeMemberCount: quorumData.data.activeMemberCount,
+      activeMemberCount: memberCount,
       requiredQuorum,
       achievedQuorum: totalVotes,
       quorumMet
     });
     
     // Update proposal status if voting ended
-    if (new Date() > proposalData.voteEndTime) {
+    if (new Date() > proposalData.voteEndTime && proposalData.status === 'active') {
       let newStatus = 'failed';
-      if (quorumMet && passed) {
+      let failureReason = '';
+      
+      if (!quorumMet) {
+        newStatus = 'failed';
+        failureReason = `Quorum not met: ${totalVotes}/${requiredQuorum} votes (${participationRate.toFixed(2)}% participation)`;
+      } else if (!majorityReached) {
+        newStatus = 'failed';
+        failureReason = `Majority not reached: ${yesVotes} yes vs ${noVotes} no votes`;
+      } else {
         newStatus = 'passed';
-      } else if (!quorumMet) {
-        newStatus = 'failed'; // Failed due to lack of quorum
       }
       
       await db.update(proposals)
-        .set({ status: newStatus })
+        .set({ 
+          status: newStatus,
+          metadata: failureReason ? sql`jsonb_set(
+            COALESCE(metadata, '{}'::jsonb), 
+            '{failure_reason}', 
+            ${JSON.stringify(failureReason)}
+          )` : proposalData.metadata
+        })
         .where(eq(proposals.id, proposalId));
     }
     
@@ -348,10 +425,15 @@ router.post('/proposals/:proposalId/check-quorum', isAuthenticated, async (req, 
       success: true,
       data: {
         quorumMet,
+        majorityReached,
         passed,
         totalVotes,
         requiredQuorum,
-        status: passed && quorumMet ? 'passed' : 'failed'
+        participationRate: participationRate.toFixed(2),
+        yesVotes,
+        noVotes,
+        abstainVotes,
+        status: new Date() > proposalData.voteEndTime ? (passed ? 'passed' : 'failed') : 'active'
       }
     });
   } catch (error: any) {
