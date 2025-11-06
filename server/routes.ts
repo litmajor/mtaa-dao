@@ -43,6 +43,9 @@ import onboardingRoutes from './routes/onboarding';
 import subscriptionManagementRoutes from './routes/subscription-management'; // Import subscription management routes
 import userSubscriptionRoutes from './routes/user-subscription';
 import revenueRoutes from './routes/revenue';
+// Import savings routes
+import savingsRoutes from './routes/savings';
+
 
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
@@ -114,6 +117,9 @@ export async function registerRoutes(app: Express) {
   // Wallet routes
   app.use('/api/wallet', walletRoutes);
   app.use('/api/wallet-setup', walletSetupRoutes);
+  // Savings routes
+  app.use('/api/wallet/savings', savingsRoutes);
+
 
   // Governance and DAO routes
   app.use('/api/governance', governanceRoutes);
