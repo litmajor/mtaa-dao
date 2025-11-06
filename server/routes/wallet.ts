@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Express, Router, Request, Response } from 'express';
 
 import EnhancedAgentWallet, { NetworkConfig, WalletManager } from '../agent_wallet';
 
@@ -9,6 +9,7 @@ import { fileURLToPath } from "url";
 import { dirname } from "path";
 import { notificationService } from '../notificationService';
 import { users } from '../../shared/schema';
+import { Logger } from '../logger';
 
 
 const __filename = fileURLToPath(import.meta.url);
