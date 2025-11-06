@@ -115,30 +115,9 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// CORS Configuration
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://0.0.0.0:5173',
-  'http://localhost:5000',
-  'http://0.0.0.0:5000',
-  process.env.CLIENT_URL,
-  process.env.REPL_SLUG ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co` : null,
-].filter(Boolean);
-
+// CORS Configuration - Allow all origins
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) {
-      callback(null, true);
-    } else if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else if (typeof origin === 'string' && (origin.includes('.repl.co') || origin.includes('.replit.dev'))) {
-      callback(null, true);
-    } else if (env.NODE_ENV === 'development') {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: true, // Allow all origins
   credentials: true
 }));
 
@@ -164,7 +143,7 @@ app.use(metricsCollector.requestMiddleware());
 app.use(activityTracker());
 
 // Initialize WebSocket service
-import WebSocketService from './services/WebSocketService';
+import { WebSocketService } from './services/WebSocketService';
 const webSocketService = new WebSocketService(server);
 app.locals.webSocketService = webSocketService;
 
@@ -375,7 +354,7 @@ app.use((req, res, next) => {
     app.use(errorHandler);
 
     const PORT = 5000;
-    const HOST = env.HOST || '0.0.0.0';
+    const HOST = '0.0.0.0'; // Bind to all network interfaces
 
     server.listen(PORT, HOST, () => {
       logStartup(PORT.toString());
