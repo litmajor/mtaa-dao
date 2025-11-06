@@ -427,10 +427,10 @@ export const lockedSavings = pgTable("locked_savings", {
   userId: varchar("user_id").references(() => users.id).notNull(),
   vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  currency: varchar("currency").default("KES"),
+  currency: varchar("currency").default("cUSD"),
   lockPeriod: integer("lock_period").notNull(), // in days
   interestRate: decimal("interest_rate", { precision: 5, scale: 4 }).default("0.05"), // 5% default
-  lockedAt: timestamp("locked_at").defaultNow(),
+  lockedAt: timestamp("locked_at").notNull().defaultNow(),
   unlocksAt: timestamp("unlocks_at").notNull(),
   status: varchar("status").default("locked"), // locked, unlocked, withdrawn
   penalty: decimal("penalty", { precision: 10, scale: 2 }).default("0"), // early withdrawal penalty
