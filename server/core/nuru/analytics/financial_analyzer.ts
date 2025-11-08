@@ -4,7 +4,11 @@
  * Analyzes DAO treasury health, cash flow, and financial metrics
  */
 
+
 import type { AnalysisResponse, Risk } from '../types';
+import { db } from '../../../db';
+import { vaults, walletTransactions } from '../../../../shared/schema';
+import { eq, and, desc, sql } from 'drizzle-orm';
 
 export class FinancialAnalyzer {
   /**
@@ -28,19 +32,72 @@ export class FinancialAnalyzer {
   }
 
   private async calculateMetrics(daoId: string, timeframe?: string) {
-    // Mock metrics - replace with actual database queries
+    // Calculate the time window
+    let since: Date | undefined = undefined;
+    if (timeframe === '30d' || !timeframe) {
+      since = new Date();
+      since.setDate(since.getDate() - 30);
+    } else if (timeframe === '7d') {
+      since = new Date();
+      since.setDate(since.getDate() - 7);
+    }
+
+    // Get all vaults for the DAO
+    const daoVaults = await db.query.vaults.findMany({ where: eq(vaults.daoId, daoId) });
+    const currentBalance = daoVaults.reduce((sum, vault) => sum + parseFloat(vault.balance || '0'), 0);
+
+    // Get all wallet transactions for the DAO (optionally filter by timeframe)
+    let txWhere: any = eq(walletTransactions.daoId, daoId);
+    if (since) {
+      txWhere = and(txWhere, sql`${walletTransactions.createdAt} >= ${since}`);
+    }
+    const txs = await db.query.walletTransactions.findMany({ where: txWhere });
+
+    let totalInflow = 0;
+    let totalOutflow = 0;
+    let contributionsCount = 0;
+    let withdrawalsCount = 0;
+    let sumContributions = 0;
+    let sumWithdrawals = 0;
+
+    txs.forEach((tx: typeof walletTransactions.$inferSelect) => {
+      const amount = parseFloat(tx.amount || '0');
+      if (tx.type === 'deposit' || tx.type === 'contribution') {
+        totalInflow += amount;
+        contributionsCount++;
+        sumContributions += amount;
+      } else if (tx.type === 'withdrawal' || tx.type === 'disbursement') {
+        totalOutflow += amount;
+        withdrawalsCount++;
+        sumWithdrawals += amount;
+      }
+    });
+
+    const netChange = totalInflow - totalOutflow;
+    const burnRate = totalOutflow / ((since ? 1 : 1)); // per period (default: month)
+    const runway = burnRate > 0 ? currentBalance / burnRate : 999;
+    const avgContribution = contributionsCount > 0 ? sumContributions / contributionsCount : 0;
+    const avgWithdrawal = withdrawalsCount > 0 ? sumWithdrawals / withdrawalsCount : 0;
+
+    // Calculate treasury growth rate (compare to previous period if possible)
+    // For now, use netChange/currentBalance as a proxy
+    let treasuryGrowthRate = 0;
+    if (currentBalance > 0) {
+      treasuryGrowthRate = netChange / currentBalance;
+    }
+
     return {
-      currentBalance: 15000,
-      totalInflow: 25000,
-      totalOutflow: 10000,
-      netChange: 15000,
-      burnRate: 1250, // per month
-      runway: 12, // months
-      contributionsCount: 45,
-      withdrawalsCount: 12,
-      avgContribution: 555.56,
-      avgWithdrawal: 833.33,
-      treasuryGrowthRate: 0.15 // 15%
+      currentBalance,
+      totalInflow,
+      totalOutflow,
+      netChange,
+      burnRate,
+      runway: Math.floor(runway),
+      contributionsCount,
+      withdrawalsCount,
+      avgContribution,
+      avgWithdrawal,
+      treasuryGrowthRate
     };
   }
 

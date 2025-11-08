@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { Plus, Users, DollarSign, TrendingUp, Zap, Award, Bell, Search, Filter, Calendar, Clock, Star, ArrowRight, Activity, Target, Wallet, Vote, Gift, Trophy, Flame, ChevronRight, Eye, MessageCircle, ThumbsUp, Sparkles, CheckCircle, XCircle, AlertCircle, Heart, Share2, BookOpen, Coins, Timer, Medal, TrendingDown, Send, Repeat, Moon, Sun } from "lucide-react";
 import { apiGet, apiPost } from "@/lib/api";
 import { formatNumber, formatCurrency } from "@/lib/formatters";
@@ -19,9 +20,10 @@ type DailyChallenge = { id: string; title: string; description: string; reward: 
 type QuickAction = { id: string; title: string; icon: React.ReactNode; action: () => void; color: string; };
 
 export default function MtaaDashboard() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<string>("overview");
+  // Remove unused activeTab, tabs are not present in dashboard
   const [mousePosition, setMousePosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
   const [animatedStats, setAnimatedStats] = useState<{ treasury: number; members: number; proposals: number; votes: number; tasks: number }>({ treasury: 0, members: 0, proposals: 0, votes: 0, tasks: 0 });
@@ -144,6 +146,7 @@ export default function MtaaDashboard() {
       await apiPost('/api/user/activity', { action: action.id, timestamp: new Date().toISOString() });
       action.action();
     } catch (error) {
+      action.action(); // Fallback to navigation even if API fails
       console.error('Failed to log activity:', error);
     }
   };

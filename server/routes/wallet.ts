@@ -137,7 +137,7 @@ router.post('/allowed-tokens/remove', requireRole('admin', 'elder'), (req, res) 
 });
 
 
-// GET /api/wallet/analytics - Get wallet analytics
+// GET /api/wallet/analytics - Get wallet analytics (placeholder)
 router.get('/analytics', async (req, res) => {
   try {
     const walletAddress = req.query.address as string;
@@ -145,9 +145,75 @@ router.get('/analytics', async (req, res) => {
       return res.status(400).json({ error: 'Wallet address required' });
     }
 
-    // Fetch analytics data
-    const analytics = await fetchWalletAnalytics(walletAddress);
-    res.json(analytics);
+    // Fetch transactions for the wallet
+    const transactions = await db
+      .select({
+        id: walletTransactions.id,
+        type: walletTransactions.type,
+        amount: walletTransactions.amount,
+        currency: walletTransactions.currency,
+        createdAt: walletTransactions.createdAt,
+        status: walletTransactions.status
+      })
+      .from(walletTransactions)
+      .where(eq(walletTransactions.walletAddress, walletAddress));
+
+    // Calculate analytics
+    let totalDeposits = 0;
+    let totalWithdrawals = 0;
+    let totalContributions = 0;
+    let totalTransfers = 0;
+    let depositCount = 0;
+    let withdrawalCount = 0;
+    let contributionCount = 0;
+    let transferCount = 0;
+    const byCurrency: Record<string, { deposits: number; withdrawals: number; contributions: number; transfers: number }> = {};
+
+    transactions.forEach(tx => {
+      const amount = parseFloat(tx.amount);
+      const currency = tx.currency || 'UNKNOWN';
+      if (!byCurrency[currency]) {
+        byCurrency[currency] = { deposits: 0, withdrawals: 0, contributions: 0, transfers: 0 };
+      }
+      switch (tx.type) {
+        case 'deposit':
+          totalDeposits += amount;
+          depositCount++;
+          byCurrency[currency].deposits += amount;
+          break;
+        case 'withdrawal':
+          totalWithdrawals += amount;
+          withdrawalCount++;
+          byCurrency[currency].withdrawals += amount;
+          break;
+        case 'contribution':
+          totalContributions += amount;
+          contributionCount++;
+          byCurrency[currency].contributions += amount;
+          break;
+        case 'transfer':
+          totalTransfers += amount;
+          transferCount++;
+          byCurrency[currency].transfers += amount;
+          break;
+      }
+    });
+
+    res.json({
+      success: true,
+      analytics: {
+        totalDeposits,
+        totalWithdrawals,
+        totalContributions,
+        totalTransfers,
+        depositCount,
+        withdrawalCount,
+        contributionCount,
+        transferCount,
+        byCurrency
+      },
+      transactionCount: transactions.length
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -158,7 +224,15 @@ router.get('/pending-payments', async (req, res) => {
   try {
     const { walletAddress, userId } = req.query;
 
-    const query = db
+
+    // Build where conditions
+    const conditions = [eq(paymentRequests.status, 'pending')];
+    if (walletAddress) {
+      conditions.push(eq(paymentRequests.toAddress, walletAddress as string));
+    } else if (userId) {
+      conditions.push(eq(paymentRequests.toUserId, userId as string));
+    }
+    const pending = await db
       .select({
         id: paymentRequests.id,
         fromUserId: paymentRequests.fromUserId,
@@ -172,15 +246,8 @@ router.get('/pending-payments', async (req, res) => {
         createdAt: paymentRequests.createdAt,
       })
       .from(paymentRequests)
-      .where(eq(paymentRequests.status, 'pending'));
-
-    if (walletAddress) {
-      query.where(eq(paymentRequests.toAddress, walletAddress as string));
-    } else if (userId) {
-      query.where(eq(paymentRequests.toUserId, userId as string));
-    }
-
-    const pending = await query.orderBy(desc(paymentRequests.createdAt));
+      .where(and(...conditions))
+      .orderBy(desc(paymentRequests.createdAt));
 
     // Calculate totals by currency
     const totalsByCurrency = pending.reduce((acc, payment) => {
@@ -241,18 +308,20 @@ router.get('/balance-trends', async (req, res) => {
     const balanceByDate: Record<string, Record<string, number>> = {};
 
     transactions.forEach((tx) => {
+      const currency = tx.currency;
+      if (!currency) return; // skip null currency
       if (!balanceByDate[tx.date]) {
         balanceByDate[tx.date] = {};
       }
-      if (!balanceByDate[tx.date][tx.currency]) {
-        balanceByDate[tx.date][tx.currency] = 0;
+      if (!balanceByDate[tx.date][currency]) {
+        balanceByDate[tx.date][currency] = 0;
       }
 
       const amount = parseFloat(tx.amount);
       if (tx.type === 'deposit' || tx.type === 'contribution') {
-        balanceByDate[tx.date][tx.currency] += amount;
+        balanceByDate[tx.date][currency] += amount;
       } else if (tx.type === 'withdrawal' || tx.type === 'transfer') {
-        balanceByDate[tx.date][tx.currency] -= amount;
+        balanceByDate[tx.date][currency] -= amount;
       }
     });
 

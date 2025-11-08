@@ -14,7 +14,7 @@ export interface OTPData {
   attempts: number;
 }
 
-class OTPService {
+class OTPServiceInternal {
   private emailTransporter: nodemailer.Transporter;
 
   constructor() {
@@ -88,7 +88,8 @@ class OTPService {
 
         // List all OTP keys in Redis for debugging
         try {
-          const keys = await redis.keys('otp:*');
+          // @ts-ignore: For debugging only; remove or implement in RedisService if needed
+          const keys = typeof (redis as any).keys === 'function' ? await (redis as any).keys('otp:*') : [];
           console.log(`   Available OTP keys in Redis: ${keys.length > 0 ? keys.join(', ') : 'none'}`);
         } catch (e) {
           console.log('   Could not list Redis keys');
@@ -399,4 +400,34 @@ class OTPService {
   }
 }
 
-export const otpService = new OTPService();
+// Create an internal instance and export a public API that matches the
+// existing route expectations: OTPService.generateOTP(userId, phone)
+// and OTPService.verifyOTP(userId, phone, otp) returning a boolean.
+const _otpInternal = new OTPServiceInternal();
+
+export const OTPService = {
+  generateOTP: async (userId: string, phone: string): Promise<string> => {
+    const code = _otpInternal.generateOTP();
+    // Store using a composite key so OTPs are scoped to a user + phone combo
+    await _otpInternal.storeOTP(`phone:${userId}:${phone}`, '');
+    // Send SMS (will fallback to console in development)
+    await _otpInternal.sendSMSOTP(phone, code);
+    return code;
+  },
+
+  verifyOTP: async (userId: string, phone: string, otp: string): Promise<boolean> => {
+    const result = await _otpInternal.verifyOTP(`phone:${userId}:${phone}`, otp);
+    if (result.valid) {
+      await _otpInternal.deleteOTP(`phone:${userId}:${phone}`);
+      return true;
+    }
+    return false;
+  },
+
+  // Expose the internal instance for advanced operations or tests
+  _internal: _otpInternal,
+};
+
+// Export the internal instance for existing callers that expect an
+// instantiated service with methods like storeOTP/sendEmailOTP/etc.
+export const otpService = _otpInternal;

@@ -4,7 +4,11 @@
  * Analyzes voting patterns, proposal success rates, and governance health
  */
 
+
 import type { AnalysisResponse, Risk } from '../types';
+import { db } from '../../../db';
+import { proposals, votes, voteDelegations } from '../../../../shared/schema';
+import { eq, and, sql } from 'drizzle-orm';
 
 export class GovernanceAnalyzer {
   /**
@@ -25,18 +29,84 @@ export class GovernanceAnalyzer {
   }
 
   private async calculateMetrics(daoId: string, timeframe?: string) {
-    // Mock metrics - replace with actual database queries
+    // Calculate the time window
+    let since: Date | undefined = undefined;
+    if (timeframe === '30d' || !timeframe) {
+      since = new Date();
+      since.setDate(since.getDate() - 30);
+    } else if (timeframe === '7d') {
+      since = new Date();
+      since.setDate(since.getDate() - 7);
+    }
+
+    // Proposals
+    let proposalWhere: any = eq(proposals.daoId, daoId);
+    if (since) {
+      proposalWhere = and(proposalWhere, sql`${proposals.createdAt} >= ${since}`);
+    }
+    const allProposals = await db.select().from(proposals).where(proposalWhere);
+    const totalProposals = allProposals.length;
+    const activeProposals = allProposals.filter(p => p.status === 'active').length;
+    const passedProposals = allProposals.filter(p => p.status === 'passed').length;
+    const failedProposals = allProposals.filter(p => p.status === 'failed').length;
+
+    // Votes
+    let voteWhere: any = eq(votes.daoId, daoId);
+    if (since) {
+      voteWhere = and(voteWhere, sql`${votes.createdAt} >= ${since}`);
+    }
+    const allVotes = await db.select().from(votes).where(voteWhere);
+    const uniqueVoters = new Set(allVotes.map(v => v.userId)).size;
+
+    // Participation rate: average % of members voting per proposal
+    let avgParticipationRate = 0;
+    if (totalProposals > 0) {
+      const proposalVoteCounts = allProposals.map(p => allVotes.filter(v => v.proposalId === p.id).length);
+      avgParticipationRate = proposalVoteCounts.reduce((a, b) => a + b, 0) / (totalProposals * (proposalVoteCounts.length > 0 ? 1 : 1));
+      // If you want to normalize by member count, you can fetch member count here
+    }
+
+    // Quorum: average quorum achieved (using yesVotes+noVotes+abstainVotes/quorumRequired)
+    let avgQuorum = 0;
+    if (totalProposals > 0) {
+      avgQuorum = allProposals.reduce((sum, p) => {
+        const totalVotes = (p.yesVotes || 0) + (p.noVotes || 0) + (p.abstainVotes || 0);
+        return sum + (p.quorumRequired ? totalVotes / p.quorumRequired : 0);
+      }, 0) / totalProposals;
+    }
+
+    // Proposal success rate
+    const proposalSuccessRate = totalProposals > 0 ? passedProposals / totalProposals : 0;
+
+    // Average voting time (in days)
+    let avgVotingTime = 0;
+    if (totalProposals > 0) {
+      avgVotingTime = allProposals.reduce((sum, p) => {
+        if (p.voteStartTime && p.voteEndTime) {
+          const start = new Date(p.voteStartTime).getTime();
+          const end = new Date(p.voteEndTime).getTime();
+          return sum + (end - start) / (1000 * 60 * 60 * 24);
+        }
+        return sum;
+      }, 0) / totalProposals;
+    }
+
+    // Delegated votes
+    let delegatedVotes = 0;
+    const delegations = await db.select().from(voteDelegations).where(eq(voteDelegations.daoId, daoId));
+    delegatedVotes = delegations.length;
+
     return {
-      totalProposals: 24,
-      activeProposals: 3,
-      passedProposals: 16,
-      failedProposals: 5,
-      avgParticipationRate: 0.65, // 65%
-      avgQuorum: 0.58,
-      proposalSuccessRate: 0.67,
-      avgVotingTime: 4.5, // days
-      uniqueVoters: 42,
-      delegatedVotes: 15
+      totalProposals,
+      activeProposals,
+      passedProposals,
+      failedProposals,
+      avgParticipationRate,
+      avgQuorum,
+      proposalSuccessRate,
+      avgVotingTime,
+      uniqueVoters,
+      delegatedVotes
     };
   }
 

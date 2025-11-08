@@ -9,7 +9,7 @@ const router = Router();
 // GET /api/daos - List all DAOs with user membership status
 router.get("/", authenticate, async (req, res) => {
   try {
-    const userId = req.user!.id;
+  const userId = (req.user as any).id;
 
     // Get all DAOs with member count and treasury balance
     const allDAOs = await db
@@ -17,12 +17,9 @@ router.get("/", authenticate, async (req, res) => {
         id: daos.id,
         name: daos.name,
         description: daos.description,
-        category: daos.category,
         createdAt: daos.createdAt,
-        founderWallet: daos.founderWallet,
+        founderId: daos.founderId,
         treasuryBalance: daos.treasuryBalance,
-        theme: sql<string>`COALESCE(${daos.theme}, 'purple')`.as('theme'),
-        avatar: sql<string>`COALESCE(${daos.avatar}, '🏛️')`.as('avatar'),
       })
       .from(daos);
 
@@ -97,21 +94,6 @@ router.get("/", authenticate, async (req, res) => {
       const memberCount = memberCountMap.get(dao.id) || 0;
       const activeProposals = activityMap.get(dao.id) || 0;
       const growthRate = growthMap.get(dao.id) || 0;
-
-      // Determine theme colors based on category
-      const themeMap: Record<string, { theme: string; gradient: string }> = {
-        development: { theme: 'purple', gradient: 'from-purple-600 via-pink-600 to-orange-500' },
-        education: { theme: 'blue', gradient: 'from-blue-600 via-cyan-500 to-teal-400' },
-        energy: { theme: 'green', gradient: 'from-green-500 via-emerald-500 to-teal-500' },
-        business: { theme: 'pink', gradient: 'from-pink-500 via-rose-500 to-red-500' },
-        healthcare: { theme: 'teal', gradient: 'from-teal-500 via-cyan-500 to-blue-500' },
-        arts: { theme: 'purple', gradient: 'from-purple-500 via-pink-500 to-red-500' },
-        sports: { theme: 'orange', gradient: 'from-orange-500 via-red-500 to-pink-500' },
-        tech: { theme: 'blue', gradient: 'from-blue-500 via-indigo-500 to-purple-500' },
-      };
-
-      const themeInfo = themeMap[dao.category || 'development'] || themeMap.development;
-
       return {
         id: dao.id,
         name: dao.name,
@@ -120,13 +102,9 @@ router.get("/", authenticate, async (req, res) => {
         treasuryBalance: parseFloat(dao.treasuryBalance || '0'),
         role: membership?.role || null,
         isJoined: !!membership,
-        gradient: themeInfo.gradient,
-        theme: themeInfo.theme,
-        trending: growthRate > 15, // Consider trending if growth > 15%
+        trending: growthRate > 15,
         growthRate: parseFloat(growthRate.toFixed(1)),
         recentActivity: activeProposals > 0 ? `${activeProposals} proposals active` : 'No recent activity',
-        avatar: dao.avatar || '🏛️',
-        category: dao.category,
       };
     });
 
@@ -147,12 +125,8 @@ router.get("/", authenticate, async (req, res) => {
 // POST /api/daos/:id/join - Join a DAO
 router.post("/:id/join", authenticate, async (req, res) => {
   try {
-    const userId = req.user!.id;
-    const daoId = parseInt(req.params.id);
-
-    if (isNaN(daoId)) {
-      return res.status(400).json({ error: "Invalid DAO ID" });
-    }
+  const userId = (req.user as any).id;
+  const daoId = req.params.id as string;
 
     // Check if DAO exists
     const dao = await db.query.daos.findFirst({
@@ -196,12 +170,8 @@ router.post("/:id/join", authenticate, async (req, res) => {
 // POST /api/daos/:id/leave - Leave a DAO
 router.post("/:id/leave", authenticate, async (req, res) => {
   try {
-    const userId = req.user!.id;
-    const daoId = parseInt(req.params.id);
-
-    if (isNaN(daoId)) {
-      return res.status(400).json({ error: "Invalid DAO ID" });
-    }
+  const userId = (req.user as any).id;
+  const daoId = req.params.id as string;
 
     // Check if DAO exists
     const dao = await db.query.daos.findFirst({
@@ -213,7 +183,7 @@ router.post("/:id/leave", authenticate, async (req, res) => {
     }
 
     // Check if user is founder
-    if (dao.founderWallet === userId) {
+    if (dao.founderId === userId) {
       return res.status(400).json({
         error: "Founders cannot leave their own DAO. Transfer ownership first.",
       });
@@ -253,11 +223,7 @@ router.post("/:id/leave", authenticate, async (req, res) => {
 router.get("/:id", authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
-    const daoId = parseInt(req.params.id);
-
-    if (isNaN(daoId)) {
-      return res.status(400).json({ error: "Invalid DAO ID" });
-    }
+    const daoId = req.params.id as string;
 
     const dao = await db.query.daos.findFirst({
       where: eq(daos.id, daoId),

@@ -252,7 +252,7 @@ export class EconomyService {
   }> {
     const merchant = await db.select().from(users).where(eq(users.id, merchantId)).limit(1);
     
-    if (!merchant.length || !merchant[0].isMerchant) {
+    if (!merchant.length || !(merchant[0].roles && merchant[0].roles.includes('merchant'))) {
       throw new Error('Invalid merchant');
     }
 
@@ -278,7 +278,7 @@ export class EconomyService {
         currency: toCurrency,
         method: 'mobile_money',
         metadata: {
-          phone: merchant[0].phoneNumber,
+          phone: merchant[0].phone,
           reason: 'MTAA merchant redemption'
         }
       });
@@ -288,7 +288,7 @@ export class EconomyService {
         amount: netAmount.toString(),
         currency: toCurrency,
         method: 'bank_transfer',
-        metadata: merchant[0].metadata
+        metadata: (merchant[0] as any).metadata ?? {}
       });
     } else {
       // Crypto redemption - direct token transfer
@@ -347,8 +347,7 @@ export class EconomyService {
       currency: 'MTAA',
       type: 'reward',
       status: 'completed',
-      description: `Earned from ${source}`,
-      metadata
+      description: `Earned from ${source}`
     });
 
     Logger.getLogger().info(`User ${userId} earned ${amount} MTAA from ${source}`);

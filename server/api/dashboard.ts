@@ -67,7 +67,7 @@ export async function getDashboardStatsHandler(req: Request, res: Response) {
       .from(tasks)
       .where(
         and(
-          eq(tasks.assigneeId, userId),
+          eq(tasks.claimerId, userId),
           eq(tasks.status, 'completed')
         )
       );
@@ -115,11 +115,9 @@ export async function getDashboardProposalsHandler(req: Request, res: Response) 
         id: proposals.id,
         title: proposals.title,
         description: proposals.description,
-        category: proposals.category,
-        authorId: proposals.authorId,
         status: proposals.status,
         createdAt: proposals.createdAt,
-        endDate: proposals.endDate,
+        proposer: proposals.proposer,
       })
       .from(proposals)
       .where(
@@ -132,7 +130,7 @@ export async function getDashboardProposalsHandler(req: Request, res: Response) 
       .limit(10);
 
     // Get authors
-    const authorIds = [...new Set(activeProposals.map(p => p.authorId))];
+  const authorIds = [...new Set(activeProposals.map(p => p.proposer))];
     const authors = await db
       .select({ id: users.id, username: users.username })
       .from(users)
@@ -143,7 +141,9 @@ export async function getDashboardProposalsHandler(req: Request, res: Response) 
     // Format proposals
     const formattedProposals = activeProposals.map(p => {
       const now = new Date();
-      const endDate = p.endDate ? new Date(p.endDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      // No endDate in schema, use 7 days from createdAt
+      const createdAt = p.createdAt ? new Date(p.createdAt) : new Date();
+      const endDate = new Date(createdAt.getTime() + 7 * 24 * 60 * 60 * 1000);
       const timeLeftMs = endDate.getTime() - now.getTime();
       const daysLeft = Math.max(0, Math.floor(timeLeftMs / (24 * 60 * 60 * 1000)));
       const hoursLeft = Math.max(0, Math.floor((timeLeftMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000)));
@@ -152,8 +152,8 @@ export async function getDashboardProposalsHandler(req: Request, res: Response) 
         id: p.id.toString(),
         title: p.title,
         description: p.description || '',
-        category: p.category || 'general',
-        author: authorMap.get(p.authorId) || 'Unknown',
+        category: 'general',
+        author: authorMap.get(p.proposer) || 'Unknown',
         votes: 0, // TODO: Get actual vote count
         timeLeft: daysLeft > 0 ? `${daysLeft}d left` : `${hoursLeft}h left`,
         status: p.status,
@@ -218,7 +218,7 @@ export async function getDashboardContributionsHandler(req: Request, res: Respon
       .select()
       .from(contributions)
       .where(eq(contributions.userId, userId))
-      .orderBy(desc(contributions.date));
+      .orderBy(desc(contributions.createdAt));
 
     // Calculate streak
     let currentStreak = 0;
@@ -227,11 +227,13 @@ export async function getDashboardContributionsHandler(req: Request, res: Respon
 
     const contributionDates = userContributions
       .map(c => {
-        const d = new Date(c.date!);
+        const d = c.createdAt ? new Date(c.createdAt) : null;
+        if (!d) return null;
         d.setHours(0, 0, 0, 0);
         return d.getTime();
       })
-      .sort((a, b) => b - a);
+      .filter(Boolean)
+      .sort((a, b) => (b as number) - (a as number));
 
     if (contributionDates.length > 0) {
       let checkDate = today.getTime();
@@ -250,7 +252,7 @@ export async function getDashboardContributionsHandler(req: Request, res: Respon
     // Monthly contributions (last 30 days)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const monthlyContributions = userContributions.filter(
-      c => c.date && new Date(c.date) >= thirtyDaysAgo
+      c => c.createdAt && new Date(c.createdAt) >= thirtyDaysAgo
     ).length;
 
     res.json({
@@ -377,7 +379,7 @@ export async function getDashboardTasksHandler(req: Request, res: Response) {
         id: t.id.toString(),
         title: t.title,
         reward: parseFloat(t.reward || '0'),
-        difficulty: t.priority || 'medium',
+  difficulty: t.difficulty || 'medium',
         timeLeft: `${daysLeft}d`,
         category: t.category || 'general',
       };

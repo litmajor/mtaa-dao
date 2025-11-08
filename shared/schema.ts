@@ -1,4 +1,3 @@
-import { messageReactions } from './messageReactionsSchema';
 
 // Unique constraints for proposal_likes and comment_likes are enforced at the database level.
 // Add these to your migration or run manually:
@@ -135,6 +134,8 @@ export const users = pgTable("users", {
   walletIv: text("wallet_iv"),
   walletAuthTag: text("wallet_auth_tag"),
   hasBackedUpMnemonic: boolean("has_backed_up_mnemonic").default(false),
+  votingTokenBalance: decimal("voting_token_balance", { precision: 10, scale: 2 }).default("0"), // Added for admin analytics compatibility
+  isActive: boolean("is_active").default(true), // Added for account enable/disable compatibility
 });
 
 // User Activities table
@@ -168,6 +169,8 @@ export const userActivities = pgTable('user_activities', {
   telegramId: varchar("telegram_id"),
   telegramChatId: varchar("telegram_chat_id"),
   telegramUsername: varchar("telegram_username"),
+  activityType: varchar('activity_type'), // Added for admin analytics compatibility
+  metadata: jsonb('metadata'), // Added for admin analytics compatibility
 });
 
 export const userActivitiesDaoId = userActivities.dao_id;
@@ -201,6 +204,9 @@ export const daos = pgTable("daos", {
   votingPeriod: integer("voting_period").default(72), // voting period in hours
   executionDelay: integer("execution_delay").default(24), // execution delay in hours
   tokenHoldings : boolean("token_holdings").default(false) // whether DAO requires token holdings for membership
+  ,status: varchar("status").default("active") // Added for admin analytics compatibility
+  ,subscriptionPlan: varchar("subscription_plan").default("free") // Added for admin analytics compatibility
+  ,founderId: varchar("founder_id") // Added for admin analytics compatibility
 });
 
 export const roles = ["member", "proposer", "elder", "admin", "superUser", "moderator"] as const;
@@ -216,6 +222,8 @@ export const sessions = pgTable("sessions", {
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  ipAddress: varchar("ip_address"), // Added for admin analytics compatibility
+  userAgent: varchar("user_agent"), // Added for admin analytics compatibility
 });
 
 export type InsertDao = typeof daos.$inferInsert;
@@ -600,6 +608,9 @@ export const vaultTransactions = pgTable("vault_transactions", {
   metadata: jsonb("metadata"), // additional transaction data
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  provider: varchar("provider").default("unknown"), // Added for admin analytics compatibility
+  fromAddress: varchar("from_address"), // Added for admin analytics compatibility
+  timestamp: timestamp("timestamp").defaultNow(), // Added for admin analytics compatibility
 });
 
 // Phase 3: Vault Risk Assessments table

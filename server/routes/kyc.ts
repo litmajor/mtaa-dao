@@ -26,7 +26,7 @@ const requireAdmin = (req: any, res: any, next: any) => {
 // GET /api/kyc/status - Get user's KYC status
 router.get('/status', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+  const userId = (req.user as any).id;
     const kyc = await kycService.getUserKYC(userId);
     const tier = await kycService.getCurrentTier(userId);
 
@@ -59,7 +59,7 @@ router.get('/tiers', async (req, res) => {
 // POST /api/kyc/basic - Submit basic KYC
 router.post('/basic', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+  const userId = (req.user as any).id;
     const { email, phone } = req.body;
 
     if (!email || !phone) {
@@ -81,7 +81,7 @@ router.post('/basic', requireAuth, async (req, res) => {
 // POST /api/kyc/intermediate - Submit intermediate KYC
 router.post('/intermediate', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+  const userId = (req.user as any).id;
     const {
       firstName,
       lastName,
@@ -121,7 +121,7 @@ router.post('/intermediate', requireAuth, async (req, res) => {
 // POST /api/kyc/advanced - Submit advanced KYC
 router.post('/advanced', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+  const userId = (req.user as any).id;
     const {
       address,
       city,
@@ -159,7 +159,7 @@ router.post('/advanced', requireAuth, async (req, res) => {
 // POST /api/kyc/aml-screening - Perform AML screening
 router.post('/aml-screening', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+  const userId = (req.user as any).id;
     const { walletAddress } = req.body;
 
     if (!walletAddress) {
@@ -180,7 +180,7 @@ router.post('/aml-screening', requireAuth, async (req, res) => {
 // POST /api/kyc/check-limit - Check transaction limit
 router.post('/check-limit', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+  const userId = (req.user as any).id;
     const { amount, currency } = req.body;
 
     if (!amount || !currency) {
@@ -222,7 +222,7 @@ router.post('/admin/approve/:userId', requireAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
     const { notes } = req.body;
-    const reviewerId = req.user.id;
+  const reviewerId = (req.user as any).id;
 
     const kyc = await kycService.approveKYC(userId, reviewerId, notes);
 
@@ -241,7 +241,7 @@ router.post('/admin/reject/:userId', requireAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
     const { reason } = req.body;
-    const reviewerId = req.user.id;
+  const reviewerId = (req.user as any).id;
 
     if (!reason) {
       return res.status(400).json({ error: 'Rejection reason is required' });
@@ -264,12 +264,10 @@ router.get('/admin/audit-logs', requireAdmin, async (req, res) => {
   try {
     const { userId, limit = '50' } = req.query;
 
-    let query = db.select().from(complianceAuditLogs);
 
-    if (userId) {
-      query = query.where(eq(complianceAuditLogs.userId, userId as string));
-    }
-
+    const query = userId
+      ? db.select().from(complianceAuditLogs).where(eq(complianceAuditLogs.userId, userId as string))
+      : db.select().from(complianceAuditLogs);
     const logs = await query
       .orderBy(desc(complianceAuditLogs.createdAt))
       .limit(parseInt(limit as string));
