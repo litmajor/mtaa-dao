@@ -24,7 +24,7 @@ interface DaoClient {
   isAlive: boolean;
 }
 
-class WebSocketService {
+export class WebSocketService {
   private wss: WebSocketServer;
   private clients: Map<WebSocket, DaoClient> = new Map();
   private typingUsers: Map<string, Set<string>> = new Map();
@@ -214,5 +214,3 @@ class WebSocketService {
     return Array.from(this.onlineUsers.get(daoId) || []);
   }
 }
-
-export default WebSocketService;

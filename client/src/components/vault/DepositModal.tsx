@@ -24,7 +24,7 @@ const TOKEN_ADDRESSES = {
 
 const DEMO_VAULT_ADDRESS = "0x1234567890123456789012345678901234567890";
 
-export default function DepositModal({ 
+export function DepositModal({ 
   open, 
   onOpenChange 
 }: { 

@@ -4,6 +4,7 @@ import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import { registerRoutes } from "./routes";
 import { setupWeeklyRewardsDistribution } from "./jobs/weeklyRewardsDistribution";
 import { setupInvestmentPoolsAutomation } from "./jobs/investmentPoolsAutomation";
@@ -30,6 +31,7 @@ import { vaultEventIndexer } from './vaultEventsIndexer';
 import { vaultAutomationService } from './vaultAutomation';
 import { activityTracker } from './middleware/activityTracker';
 import { bridgeRelayerService } from './services/bridgeRelayerService';
+import { performanceMonitor } from './middleware/performance';
 import paymentReconciliationRoutes from './routes/payment-reconciliation';
 import healthRoutes from './routes/health';
 import analyticsRoutes from './routes/analytics';
@@ -60,6 +62,11 @@ import kycRouter from './routes/kyc';
 import referralRewardsRouter from './routes/referral-rewards';
 import economyRouter from './routes/economy';
 import morioRoutes from './routes/morio';
+import { transactionMonitor } from './services/transactionMonitor';
+import { recurringPaymentService } from './services/recurringPaymentService';
+import { gasPriceOracle } from './services/gasPriceOracle';
+// Import example function for wallet demonstration
+import { enhancedExample } from './example-wallet';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -80,6 +87,25 @@ const io = new SocketIOServer(server, {
 // Trust proxy for accurate IP addresses
 app.set('trust proxy', 1);
 
+// Response compression (gzip/deflate) - must be early in middleware chain, but after security
+// Note: Will be applied after helmet and security middleware
+const compressionMiddleware = compression({
+  level: 6, // Compression level (0-9)
+  threshold: 1024, // Only compress responses > 1KB
+  filter: (req: Request, res: Response) => {
+    const contentType = res.getHeader('Content-Type') as string || '';
+    // Don't compress already-compressed formats
+    if (contentType.includes('image/') || 
+        contentType.includes('video/') ||
+        contentType.includes('application/zip') ||
+        contentType.includes('application/pdf')) {
+      return false;
+    }
+    // Use default compression filter for text-based responses
+    return compression.filter(req, res);
+  }
+});
+
 // Body parsing middleware
 app.use(express.json({
   limit: '10mb',
@@ -89,30 +115,9 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// CORS Configuration
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://0.0.0.0:5173',
-  'http://localhost:5000',
-  'http://0.0.0.0:5000',
-  process.env.CLIENT_URL,
-  process.env.REPL_SLUG ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co` : null,
-].filter(Boolean);
-
+// CORS Configuration - Allow all origins
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) {
-      callback(null, true);
-    } else if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else if (typeof origin === 'string' && (origin.includes('.repl.co') || origin.includes('.replit.dev'))) {
-      callback(null, true);
-    } else if (env.NODE_ENV === 'development') {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: true, // Allow all origins
   credentials: true
 }));
 
@@ -125,6 +130,12 @@ app.use(preventSqlInjection);
 app.use(preventXSS);
 app.use(auditMiddleware);
 
+// Apply compression AFTER security middleware
+app.use(compressionMiddleware);
+
+// Performance monitoring - must be early to track all requests
+app.use(performanceMonitor(1000)); // Log requests > 1000ms
+
 // Add metrics collection
 app.use(metricsCollector.requestMiddleware());
 
@@ -132,7 +143,7 @@ app.use(metricsCollector.requestMiddleware());
 app.use(activityTracker());
 
 // Initialize WebSocket service
-import WebSocketService from './services/WebSocketService';
+import { WebSocketService } from './services/WebSocketService';
 const webSocketService = new WebSocketService(server);
 app.locals.webSocketService = webSocketService;
 
@@ -282,7 +293,7 @@ app.use((req, res, next) => {
     app.use('/api/reputation', reputationRoutes); // Added reputation routes
     app.use('/api/cross-chain', crossChainRoutes);
     app.use('/api/morio', morioRoutes);
-    
+
     // Blog routes
     const blogRoutes = (await import('./routes/blog')).default;
     app.use('/api/blog', blogRoutes);
@@ -343,7 +354,7 @@ app.use((req, res, next) => {
     app.use(errorHandler);
 
     const PORT = 5000;
-    const HOST = env.HOST || '0.0.0.0';
+    const HOST = '0.0.0.0'; // Bind to all network interfaces
 
     server.listen(PORT, HOST, () => {
       logStartup(PORT.toString());
@@ -390,6 +401,19 @@ app.use((req, res, next) => {
 
     // Start vault automation service
     vaultAutomationService.start();
+
+    // Start transaction monitoring with WebSocket support
+    transactionMonitor.start();
+
+    // Start recurring payment processor with balance validation
+    recurringPaymentService.start();
+
+    // Warm up gas price oracle cache
+    gasPriceOracle.getCurrentGasPrices().catch(err => 
+      console.warn('Failed to initialize gas price oracle:', err)
+    );
+
+    logger.info('✅ All payment monitoring services started');
 
     // Start bridge relayer service
     bridgeRelayerService.start();
