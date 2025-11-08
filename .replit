@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "web"]
+modules = ["nodejs-20", "web", "rust-stable"]
 [agent]
 expertMode = true
 integrations = ["javascript_stripe:1.0.0"]

@@ -212,7 +212,49 @@ router.get('/info/:vaultAddress', asyncHandler(async (req, res) => {
   }
 }));
 
-// Get user's vaults
+// Get current user's vaults
+router.get('/user', asyncHandler(async (req, res) => {
+  const userId = (req.user as any)?.claims?.id || (req.user as any)?.id;
+  
+  if (!userId) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  try {
+    const vaults = await vaultService.getUserVaults(userId);
+    
+    res.json({
+      success: true,
+      vaults
+    });
+  } catch (error) {
+    logger.error('Failed to get user vaults:', error);
+    res.status(500).json({ error: 'Failed to fetch vaults' });
+  }
+}));
+
+// Get user vault stats
+router.get('/stats', asyncHandler(async (req, res) => {
+  const userId = (req.user as any)?.claims?.id || (req.user as any)?.id;
+  
+  if (!userId) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  try {
+    const stats = await vaultService.getUserVaultStats(userId);
+    
+    res.json({
+      success: true,
+      ...stats
+    });
+  } catch (error) {
+    logger.error('Failed to get vault stats:', error);
+    res.status(500).json({ error: 'Failed to fetch statistics' });
+  }
+}));
+
+// Get user's vaults (legacy endpoint)
 router.get('/user/:address', asyncHandler(async (req, res) => {
   const { address } = req.params;
   

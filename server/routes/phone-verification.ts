@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import { economicIdentity } from '../../shared/reputationSchema';
 import { isAuthenticated } from '../auth';
 import { ReputationService, REPUTATION_VALUES } from '../reputationService';
-import { OTPService } from '../services/otpService';
+import { otpService } from '../services/otpService';
 
 const router = express.Router();
 
@@ -20,7 +20,7 @@ router.post('/request-otp', isAuthenticated, async (req: Request, res: Response)
     }
 
     // Generate and send OTP via SMS
-    const otp = await OTPService.generateOTP(userId, phoneNumber);
+    const otp = await otpService.storeOTP(phoneNumber, '');
     
     // TODO: Integrate with Africa's Talking or Twilio to send SMS
     console.log(`OTP for ${phoneNumber}: ${otp}`);
@@ -40,7 +40,8 @@ router.post('/verify-otp', isAuthenticated, async (req: Request, res: Response) 
     const userId = (req.user as any).claims?.sub || (req.user as any).claims?.id;
     const { phoneNumber, otp } = req.body;
 
-    const isValid = await OTPService.verifyOTP(userId, phoneNumber, otp);
+    const result = await otpService.verifyOTP(phoneNumber, otp);
+    const isValid = result.valid;
 
     if (!isValid) {
       return res.status(400).json({ error: 'Invalid or expired OTP' });

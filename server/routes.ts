@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Express } from 'express';
 import { isAuthenticated } from './nextAuthMiddleware';
 import Stripe from "stripe"; // Stripe integration
 
@@ -8,6 +8,7 @@ import sseRoutes from './routes/sse';
 import walletRoutes from './routes/wallet';
 import walletSetupRoutes from './routes/wallet-setup';
 import governanceRoutes from './routes/governance';
+import governanceQuorumRouter from './routes/governance-quorum';
 import tasksRoutes from './routes/tasks';
 import reputationRoutes from './routes/reputation';
 import analyticsRoutes from './routes/analytics';
@@ -38,6 +39,13 @@ import investmentPoolsRoutes from './routes/investment-pools';
 import poolGovernanceRoutes from './routes/pool-governance';
 import treasuryIntelligenceRoutes from './routes/treasury-intelligence';
 import phoneVerificationRouter from './routes/phone-verification';
+import onboardingRoutes from './routes/onboarding';
+import subscriptionManagementRoutes from './routes/subscription-management'; // Import subscription management routes
+import userSubscriptionRoutes from './routes/user-subscription';
+import revenueRoutes from './routes/revenue';
+// Import savings routes
+import savingsRoutes from './routes/savings';
+
 
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
@@ -53,7 +61,7 @@ import { paymentsIndexHandler } from './api/payments_index';
 import { getWalletTransactions, createWalletTransaction } from './api/wallet_transactions';
 
 // Import Dashboard handlers
-import { 
+import {
   getDashboardStatsHandler,
   getDashboardProposalsHandler,
   getDashboardVaultsHandler,
@@ -71,35 +79,35 @@ import { authorizeVaultAccess } from './api/authVault';
 import { getDaoSettingsHandler, updateDaoSettingsHandler, resetInviteCodeHandler, getDaoAnalyticsHandler } from './api/daoSettings';
 
 // Import Reputation handlers
-import { getUserReputationHandler, getReputationLeaderboardHandler, getDaoReputationLeaderboardHandler } from './api/reputation';
+import {getUserReputationHandler, getReputationLeaderboardHandler, getDaoReputationLeaderboardHandler } from './api/reputation';
 
 // Auth handlers
-import {refreshTokenHandler, logoutHandler } from './auth';
+import {refreshTokenHandler,logoutHandler } from './auth';
 
 // User profile handlers
-import { 
-  getUserProfileHandler, 
-  updateUserProfileHandler, 
-  changePasswordHandler, 
-  updateWalletAddressHandler 
+import {
+  getUserProfileHandler,
+  updateUserProfileHandler,
+  changePasswordHandler,
+  updateWalletAddressHandler
 } from './api/user_profile';
 
 // RBAC middleware
 import { requireRole, requireDAORole, requirePermission } from './middleware/rbac';
 
 // Rate limiting middleware
-import { 
-  registerRateLimiter, 
-  otpResendRateLimiter, 
+import {
+  registerRateLimiter,
+  otpResendRateLimiter,
   otpVerifyRateLimiter,
-  loginRateLimiter 
+  loginRateLimiter
 } from './middleware/rateLimiter';
 
 // Admin handlers
-import {getUsersHandler, updateUserRoleHandler } from './api/admin_users';
+import {getUsersHandler,updateUserRoleHandler } from './api/admin_users';
 
 
-export function registerRoutes(app: express.Application) {
+export async function registerRoutes(app: Express) {
   // Health check
   app.use('/api/health', healthRoutes);
 
@@ -109,9 +117,13 @@ export function registerRoutes(app: express.Application) {
   // Wallet routes
   app.use('/api/wallet', walletRoutes);
   app.use('/api/wallet-setup', walletSetupRoutes);
+  // Savings routes
+  app.use('/api/wallet/savings', savingsRoutes);
+
 
   // Governance and DAO routes
   app.use('/api/governance', governanceRoutes);
+  app.use('/api/governance', governanceQuorumRouter);
   app.use('/api/daos', daosRoutes);
   app.use('/api/dao-treasury', daoTreasuryRoutes);
   app.use('/api/dao-subscriptions', daoSubscriptionsRoutes);
@@ -274,8 +286,8 @@ export function registerRoutes(app: express.Application) {
 
         // Create subscription (requires real STRIPE_PRICE_ID from dashboard)
         if (!process.env.STRIPE_PRICE_ID) {
-          return res.status(400).json({ 
-            error: { message: "Stripe price ID not configured. Please set STRIPE_PRICE_ID environment variable." } 
+          return res.status(400).json({
+            error: { message: "Stripe price ID not configured. Please set STRIPE_PRICE_ID environment variable." }
           });
         }
 
@@ -304,8 +316,14 @@ export function registerRoutes(app: express.Application) {
 
   // === MORIO AI ASSISTANT API ===
   app.use('/api/morio', morioRoutes);
+  app.use('/api/onboarding', onboardingRoutes);
+  app.use('/api/user-subscription', userSubscriptionRoutes);
+  app.use('/api/revenue', revenueRoutes);
 
-  // === RBAC ENDPOINTS ===  
+  // === SUBSCRIPTION MANAGEMENT API ===
+  app.use('/api/subscription-management', subscriptionManagementRoutes);
+
+  // === RBAC ENDPOINTS ===
   app.get('/api/admin/users', isAuthenticated, getUsersHandler);
   app.put('/api/admin/users/:userId/role', isAuthenticated, updateUserRoleHandler);
 
@@ -314,4 +332,8 @@ export function registerRoutes(app: express.Application) {
 
   // === PHONE VERIFICATION API ===
   app.use('/api/phone-verification', phoneVerificationRouter);
+
+  // DAO Abuse Prevention routes
+  const daoAbusePreventionRouter = await import('./routes/dao-abuse-prevention');
+  app.use('/api/dao-abuse-prevention', daoAbusePreventionRouter.default);
 }

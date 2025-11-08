@@ -110,11 +110,72 @@ router.post('/mpesa/callback', async (req, res) => {
   try {
     const payload = req.body;
     
-    console.log('M-Pesa callback received:', payload);
+    console.log('M-Pesa callback received:', JSON.stringify(payload, null, 2));
 
-    res.json({ ResultCode: 0, ResultDesc: 'Success' });
+    // Extract callback data
+    const { Body } = payload;
+    const { stkCallback } = Body;
+    
+    const { MerchantRequestID, CheckoutRequestID, ResultCode, ResultDesc } = stkCallback;
+
+    // Update transaction status
+    const { db } = await import('../db');
+    const { paymentTransactions } = await import('../../shared/schema');
+    const { eq, and, sql } = await import('drizzle-orm');
+
+    if (ResultCode === 0) {
+      // Payment successful
+      const callbackMetadata = stkCallback.CallbackMetadata?.Item || [];
+      const amount = callbackMetadata.find((item: any) => item.Name === 'Amount')?.Value;
+      const mpesaReceiptNumber = callbackMetadata.find((item: any) => item.Name === 'MpesaReceiptNumber')?.Value;
+      const transactionDate = callbackMetadata.find((item: any) => item.Name === 'TransactionDate')?.Value;
+      const phoneNumber = callbackMetadata.find((item: any) => item.Name === 'PhoneNumber')?.Value;
+
+      await db.update(paymentTransactions)
+        .set({ 
+          status: 'completed',
+          metadata: sql`metadata || ${JSON.stringify({
+            mpesaReceiptNumber,
+            transactionDate,
+            phoneNumber,
+            completedAt: new Date().toISOString()
+          })}::jsonb`,
+          updatedAt: new Date()
+        })
+        .where(
+          and(
+            sql`metadata->>'checkoutRequestID' = ${CheckoutRequestID}`,
+            eq(paymentTransactions.provider, 'mpesa')
+          )
+        );
+
+      // TODO: Credit user's wallet with the amount
+      console.log(`✅ M-Pesa payment completed: ${mpesaReceiptNumber} - ${amount} KES`);
+    } else {
+      // Payment failed or cancelled
+      await db.update(paymentTransactions)
+        .set({ 
+          status: 'failed',
+          metadata: sql`metadata || ${JSON.stringify({
+            failureReason: ResultDesc,
+            failedAt: new Date().toISOString()
+          })}::jsonb`,
+          updatedAt: new Date()
+        })
+        .where(
+          and(
+            sql`metadata->>'checkoutRequestID' = ${CheckoutRequestID}`,
+            eq(paymentTransactions.provider, 'mpesa')
+          )
+        );
+
+      console.log(`❌ M-Pesa payment failed: ${ResultDesc}`);
+    }
+
+    res.json({ ResultCode: 0, ResultDesc: 'Accepted' });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('M-Pesa callback error:', error);
+    res.status(500).json({ ResultCode: 1, ResultDesc: 'Internal Server Error' });
   }
 });
 

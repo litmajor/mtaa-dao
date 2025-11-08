@@ -17,7 +17,8 @@ import {
   decimal,
   boolean,
   uuid,
-  json
+  json,
+  numeric // Import numeric type
 } from "drizzle-orm/pg-core";
 import { sql } from 'drizzle-orm';
 import { createInsertSchema } from "drizzle-zod";
@@ -203,10 +204,64 @@ export const daos = pgTable("daos", {
   quorumPercentage: integer("quorum_percentage").default(20), // percentage of active members for quorum
   votingPeriod: integer("voting_period").default(72), // voting period in hours
   executionDelay: integer("execution_delay").default(24), // execution delay in hours
-  tokenHoldings : boolean("token_holdings").default(false) // whether DAO requires token holdings for membership
-  ,status: varchar("status").default("active") // Added for admin analytics compatibility
-  ,subscriptionPlan: varchar("subscription_plan").default("free") // Added for admin analytics compatibility
-  ,founderId: varchar("founder_id") // Added for admin analytics compatibility
+  tokenHoldings: boolean("token_holdings").default(false), // whether DAO requires token holdings for membership
+  status: varchar("status").default("active"), // Added for admin analytics compatibility
+  subscriptionPlan: varchar("subscription_plan").default("free"), // Added for admin analytics compatibility
+  founderId: varchar("founder_id"), // Added for admin analytics compatibilitydings: boolean("token_holdings").default(false), // whether DAO requires token holdings for membership
+  maxDelegationPercentage: integer("max_delegation_percentage").default(10), // CRITICAL: max % of votes a single delegate can hold to prevent centralization
+  
+  // CRITICAL: Multi-sig treasury security
+  treasuryMultisigEnabled: boolean("treasury_multisig_enabled").default(true),
+  treasuryRequiredSignatures: integer("treasury_required_signatures").default(3), // minimum 3 signatures for withdrawals
+  treasurySigners: jsonb("treasury_signers").default([]), // array of elder/admin user IDs
+  treasuryWithdrawalThreshold: decimal("treasury_withdrawal_threshold", { precision: 18, scale: 2 }).default("1000.00"), // $1K threshold
+  treasuryDailyLimit: decimal("treasury_daily_limit", { precision: 18, scale: 2 }).default("10000.00"), // daily spending cap
+  treasuryMonthlyBudget: decimal("treasury_monthly_budget", { precision: 18, scale: 2 }) // optional monthly budget limit
+});
+
+// DAO Abuse Prevention Tables
+export const daoCreationTracker = pgTable('dao_creation_tracker', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: varchar('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  daoId: varchar('dao_id').notNull().references(() => daos.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at').defaultNow(),
+  verificationMethod: varchar('verification_method').notNull(),
+  verificationData: jsonb('verification_data').default({}),
+  isVerified: boolean('is_verified').default(false)
+});
+
+export const daoSocialVerifications = pgTable('dao_social_verifications', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  daoId: varchar('dao_id').notNull().references(() => daos.id, { onDelete: 'cascade' }),
+  verifierUserId: varchar('verifier_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  verifiedAt: timestamp('verified_at').defaultNow(),
+  verificationType: varchar('verification_type').default('member_invite'),
+  metadata: jsonb('metadata').default({})
+});
+
+export const daoIdentityNfts = pgTable('dao_identity_nfts', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  daoId: varchar('dao_id').notNull().unique().references(() => daos.id, { onDelete: 'cascade' }),
+  nftTokenId: varchar('nft_token_id'),
+  nftContractAddress: varchar('nft_contract_address'),
+  mintedAt: timestamp('minted_at').defaultNow(),
+  mintCostMtaa: numeric('mint_cost_mtaa').default('10'),
+  isVerified: boolean('is_verified').default(false),
+  metadataUri: varchar('metadata_uri')
+});
+
+export const platformRevenue = pgTable('platform_revenue', {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id),
+  userId: varchar("user_id").references(() => users.id),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  currency: varchar("currency").default("KES"),
+  description: text("description"),
+  transactionType: varchar("transaction_type").notNull(), // e.g., "subscription", "fee", "contribution"
+  status: varchar("status").default("paid"), // paid, pending, failed
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+
 });
 
 export const roles = ["member", "proposer", "elder", "admin", "superUser", "moderator"] as const;
@@ -381,10 +436,10 @@ export const lockedSavings = pgTable("locked_savings", {
   userId: varchar("user_id").references(() => users.id).notNull(),
   vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  currency: varchar("currency").default("KES"),
+  currency: varchar("currency").default("cUSD"),
   lockPeriod: integer("lock_period").notNull(), // in days
   interestRate: decimal("interest_rate", { precision: 5, scale: 4 }).default("0.05"), // 5% default
-  lockedAt: timestamp("locked_at").defaultNow(),
+  lockedAt: timestamp("locked_at").notNull().defaultNow(),
   unlocksAt: timestamp("unlocks_at").notNull(),
   status: varchar("status").default("locked"), // locked, unlocked, withdrawn
   penalty: decimal("penalty", { precision: 10, scale: 2 }).default("0"), // early withdrawal penalty
@@ -626,7 +681,7 @@ export const vaultRiskAssessments = pgTable("vault_risk_assessments", {
   protocolRisk: integer("protocol_risk").default(0),
   riskFactors: jsonb("risk_factors"), // detailed risk breakdown
   recommendations: jsonb("recommendations"), // risk mitigation suggestions
-  nextAssessmentDue: timestamp("next_assessment_due"),
+  nextAssessmentDue: timestamp("nextAssessmentDue"),
   assessedBy: varchar("assessed_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -804,6 +859,80 @@ export const proposalLikes = pgTable("proposal_likes", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+
+
+// Treasury Multi-Sig Transactions
+export const treasuryMultisigTransactions = pgTable("treasury_multisig_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  proposedBy: varchar("proposed_by").references(() => users.id).notNull(),
+  transactionType: varchar("transaction_type").notNull(), // withdrawal, disbursement, budget_allocation
+  amount: decimal("amount", { precision: 18, scale: 2 }).notNull(),
+  currency: varchar("currency").default("cUSD"),
+  recipient: varchar("recipient"), // wallet address or user ID
+  purpose: text("purpose").notNull(),
+  
+  // Multi-sig tracking
+  requiredSignatures: integer("required_signatures").notNull(),
+  currentSignatures: integer("current_signatures").default(0),
+  signers: jsonb("signers").default([]), // array of {userId, signedAt, signature}
+  
+  // Status
+  status: varchar("status").default("pending"), // pending, approved, rejected, executed, expired
+  approvedAt: timestamp("approved_at"),
+  executedAt: timestamp("executed_at"),
+  executionTxHash: varchar("execution_tx_hash"),
+  expiresAt: timestamp("expires_at").notNull(), // 7 days expiry
+  
+  // Metadata
+  metadata: jsonb("metadata"), // additional transaction details
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Treasury Budget Allocations
+export const treasuryBudgetAllocations = pgTable("treasury_budget_allocations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  category: varchar("category").notNull(), // operations, grants, development, marketing, etc.
+  allocatedAmount: decimal("allocated_amount", { precision: 18, scale: 2 }).notNull(),
+  spentAmount: decimal("spent_amount", { precision: 18, scale: 2 }).default("0"),
+  remainingAmount: decimal("remaining_amount", { precision: 18, scale: 2 }).notNull(),
+  period: varchar("period").notNull(), // monthly, quarterly, yearly
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  isActive: boolean("is_active").default(true),
+  createdBy: varchar("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Treasury Audit Log
+export const treasuryAuditLog = pgTable("treasury_audit_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  actorId: varchar("actor_id").references(() => users.id).notNull(),
+  action: varchar("action").notNull(), // withdrawal, deposit, budget_change, signer_added, signer_removed
+  amount: decimal("amount", { precision: 18, scale: 2 }),
+  previousBalance: decimal("previous_balance", { precision: 18, scale: 2 }),
+  newBalance: decimal("new_balance", { precision: 18, scale: 2 }),
+  category: varchar("category"), // budget category if applicable
+  reason: text("reason").notNull(),
+  multisigTxId: uuid("multisig_tx_id").references(() => treasuryMultisigTransactions.id),
+  transactionHash: varchar("transaction_hash"),
+  ipAddress: varchar("ip_address"),
+  metadata: jsonb("metadata"), // additional audit data
+  severity: varchar("severity").default("medium"), // low, medium, high, critical
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+});
+
+export type TreasuryMultisigTransaction = typeof treasuryMultisigTransactions.$inferSelect;
+export type InsertTreasuryMultisigTransaction = typeof treasuryMultisigTransactions.$inferInsert;
+export type TreasuryBudgetAllocation = typeof treasuryBudgetAllocations.$inferSelect;
+export type InsertTreasuryBudgetAllocation = typeof treasuryBudgetAllocations.$inferInsert;
+export type TreasuryAuditLog = typeof treasuryAuditLog.$inferSelect;
+export type InsertTreasuryAuditLog = typeof treasuryAuditLog.$inferInsert;
+
 // Comment Likes table
 export const commentLikes = pgTable("comment_likes", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -963,7 +1092,7 @@ export const poolWithdrawals = pgTable("pool_withdrawals", {
   netAmount: decimal("net_amount", { precision: 18, scale: 2 }),
   transactionHash: varchar("transaction_hash", { length: 255 }),
   status: varchar("status", { length: 50 }).default("pending"),
-  withdrawnAt: timestamp("withdrawn_at").defaultNow(),
+  withdrawnAt: timestamp("withdrawnAt").defaultNow(),
 });
 
 export const poolRebalances = pgTable("pool_rebalances", {
@@ -976,7 +1105,7 @@ export const poolRebalances = pgTable("pool_rebalances", {
   transactionHash: varchar("transaction_hash", { length: 255 }),
   reason: text("reason"),
   status: varchar("status", { length: 50 }).default("completed"),
-  rebalancedAt: timestamp("rebalanced_at").defaultNow(),
+  rebalancedAt: timestamp("rebalancedAt").defaultNow(),
 });
 
 export const poolPerformance = pgTable("pool_performance", {
@@ -993,7 +1122,7 @@ export const poolPerformance = pgTable("pool_performance", {
   ltcPrice: decimal("ltc_price", { precision: 18, scale: 2 }),
   volatility: decimal("volatility", { precision: 10, scale: 4 }),
   sharpeRatio: decimal("sharpe_ratio", { precision: 10, scale: 4 }),
-  snapshotAt: timestamp("snapshot_at").defaultNow(),
+  snapshotAt: timestamp("snapshotAt").defaultNow(),
 });
 
 // Phase 2: Portfolio Templates
@@ -1049,7 +1178,7 @@ export const poolSwapTransactions = pgTable("pool_swap_transactions", {
   transactionHash: varchar("transaction_hash", { length: 255 }),
   gasFee: decimal("gas_fee", { precision: 18, scale: 8 }),
   status: varchar("status", { length: 50 }).default("pending"),
-  swappedAt: timestamp("swapped_at").defaultNow(),
+  swappedAt: timestamp("swappedAt").defaultNow(),
 });
 
 // Pool Governance - Weighted Voting System
@@ -1083,7 +1212,7 @@ export const poolVotes = pgTable("pool_votes", {
   votingPower: decimal("voting_power", { precision: 18, scale: 8 }).notNull(),
   sharePercentage: decimal("share_percentage", { precision: 10, scale: 6 }),
   reason: text("reason"),
-  votedAt: timestamp("voted_at").defaultNow(),
+  votedAt: timestamp("votedAt").defaultNow(),
 });
 
 export const poolGovernanceSettings = pgTable("pool_governance_settings", {
@@ -1107,8 +1236,8 @@ export const poolVoteDelegations = pgTable("pool_vote_delegations", {
   delegateId: varchar("delegate_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
   delegatedShares: decimal("delegated_shares", { precision: 18, scale: 8 }).notNull(),
   isActive: boolean("is_active").default(true),
-  delegatedAt: timestamp("delegated_at").defaultNow(),
-  revokedAt: timestamp("revoked_at"),
+  delegatedAt: timestamp("delegatedAt").defaultNow(),
+  revokedAt: timestamp("revokedAt"),
 });
 
 // Add unique constraints to prevent duplicate likes (temporarily commented out for debugging)
@@ -1568,3 +1697,4 @@ export * from './escrowSchema';
 export * from './invoiceSchema';
 export * from './securityEnhancedSchema';
 export * from './financialEnhancedSchema';
+export * from './onboardingSchema';

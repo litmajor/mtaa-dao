@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Express, Router, Request, Response } from 'express';
 
 import EnhancedAgentWallet, { NetworkConfig, WalletManager } from '../agent_wallet';
 
@@ -9,6 +9,7 @@ import { fileURLToPath } from "url";
 import { dirname } from "path";
 import { notificationService } from '../notificationService';
 import { users } from '../../shared/schema';
+import { Logger } from '../logger';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -603,25 +604,225 @@ router.get('/tx-status/:txHash', async (req, res) => {
   }
 });
 
-// === LOCKED SAVINGS ENDPOINTS ===
+// === SAVINGS ACCOUNT ENDPOINTS (New Unified API) ===
+
+// GET /api/wallet/savings - Get all savings accounts for user
+router.get('/savings', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const savingsAccounts = await db
+      .select()
+      .from(lockedSavings)
+      .where(eq(lockedSavings.userId, userId))
+      .orderBy(desc(lockedSavings.createdAt));
+
+    // Calculate current values and interest
+    const enrichedSavings = savingsAccounts.map(saving => {
+      const now = new Date();
+      const unlocksAt = new Date(saving.unlocksAt);
+      const isMatured = now >= unlocksAt;
+      const daysRemaining = Math.max(0, Math.ceil((unlocksAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+      
+      // Calculate earned interest based on time elapsed
+      const lockedAt = new Date(saving.lockedAt);
+      const daysElapsed = Math.floor((now.getTime() - lockedAt.getTime()) / (1000 * 60 * 60 * 24));
+      const dailyRate = parseFloat(saving.interestRate) / 365;
+      const earnedInterest = parseFloat(saving.amount) * dailyRate * daysElapsed;
+      const currentValue = parseFloat(saving.amount) + earnedInterest;
+
+      return {
+        ...saving,
+        isMatured,
+        daysRemaining,
+        earnedInterest: earnedInterest.toFixed(2),
+        currentValue: currentValue.toFixed(2)
+      };
+    });
+
+    res.json({ savings: enrichedSavings });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    Logger.getLogger().error('Failed to fetch savings accounts:', err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// POST /api/wallet/savings/create - Create new savings account
+router.post('/savings/create', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { amount, lockPeriodDays } = req.body;
+    
+    if (!amount || parseFloat(amount) <= 0) {
+      return res.status(400).json({ error: 'Invalid amount' });
+    }
+
+    if (!lockPeriodDays || lockPeriodDays < 30) {
+      return res.status(400).json({ error: 'Lock period must be at least 30 days' });
+    }
+
+    // Calculate interest rate based on lock period
+    let interestRate = '0.08'; // 8% for 30 days
+    if (lockPeriodDays >= 365) interestRate = '0.15'; // 15% for 1 year
+    else if (lockPeriodDays >= 180) interestRate = '0.12'; // 12% for 6 months
+    else if (lockPeriodDays >= 90) interestRate = '0.10'; // 10% for 3 months
+
+    // Get or create default vault for user
+    let vault = await db.query.vaults.findFirst({
+      where: and(
+        eq(vaults.userId, userId),
+        eq(vaults.vaultType, 'savings')
+      )
+    });
+
+    if (!vault) {
+      const [newVault] = await db.insert(vaults).values({
+        userId,
+        name: 'Savings Vault',
+        currency: 'cUSD',
+        vaultType: 'savings',
+        isActive: true
+      }).returning();
+      vault = newVault;
+    }
+
+    const unlocksAt = new Date();
+    unlocksAt.setDate(unlocksAt.getDate() + Number(lockPeriodDays));
+
+    const [lockedSaving] = await db.insert(lockedSavings).values({
+      userId,
+      vaultId: vault.id,
+      amount: amount.toString(),
+      currency: 'cUSD',
+      lockPeriod: Number(lockPeriodDays),
+      interestRate,
+      unlocksAt,
+      status: 'locked'
+    }).returning();
+
+    res.json(lockedSaving);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    Logger.getLogger().error('Failed to create savings account:', err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// POST /api/wallet/savings/withdraw/:id - Withdraw from savings account
+router.post('/savings/withdraw/:id', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { id } = req.params;
+    const { force } = req.body;
+
+    const saving = await db.query.lockedSavings.findFirst({
+      where: and(
+        eq(lockedSavings.id, id),
+        eq(lockedSavings.userId, userId)
+      )
+    });
+
+    if (!saving) {
+      return res.status(404).json({ error: 'Savings account not found' });
+    }
+
+    if (saving.status === 'withdrawn') {
+      return res.status(400).json({ error: 'Already withdrawn' });
+    }
+
+    const now = new Date();
+    const unlocksAt = new Date(saving.unlocksAt);
+    const isMatured = now >= unlocksAt;
+
+    let penalty = 0;
+    if (force && !isMatured) {
+      // 10% penalty for early withdrawal
+      penalty = parseFloat(saving.amount) * 0.1;
+    }
+
+    // Calculate final amount with interest
+    const lockedAt = new Date(saving.lockedAt);
+    const daysElapsed = Math.floor((now.getTime() - lockedAt.getTime()) / (1000 * 60 * 60 * 24));
+    const dailyRate = parseFloat(saving.interestRate) / 365;
+    const earnedInterest = parseFloat(saving.amount) * dailyRate * daysElapsed;
+    const totalValue = parseFloat(saving.amount) + earnedInterest;
+    const finalAmount = totalValue - penalty;
+
+    await db.update(lockedSavings)
+      .set({
+        status: 'withdrawn',
+        penalty: penalty.toString(),
+        updatedAt: new Date()
+      })
+      .where(eq(lockedSavings.id, id));
+
+    res.json({
+      success: true,
+      finalAmount: finalAmount.toFixed(2),
+      earnedInterest: earnedInterest.toFixed(2),
+      penalty: penalty.toFixed(2),
+      isEarlyWithdrawal: force && !isMatured
+    });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    Logger.getLogger().error('Failed to withdraw savings:', err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// === LEGACY LOCKED SAVINGS ENDPOINTS (Deprecated - use /savings instead) ===
 
 // POST /api/wallet/locked-savings/create
 router.post('/locked-savings/create', async (req, res) => {
   try {
     const { userId, amount, currency, lockPeriod, interestRate } = req.body;
-    // Calculate unlock date
+    
+    // Get or create default vault
+    let vault = await db.query.vaults.findFirst({
+      where: and(
+        eq(vaults.userId, userId),
+        eq(vaults.vaultType, 'savings')
+      )
+    });
+
+    if (!vault) {
+      const [newVault] = await db.insert(vaults).values({
+        userId,
+        name: 'Savings Vault',
+        currency: currency || 'cUSD',
+        vaultType: 'savings',
+        isActive: true
+      }).returning();
+      vault = newVault;
+    }
+
     const unlocksAt = new Date();
     unlocksAt.setDate(unlocksAt.getDate() + Number(lockPeriod));
-    const lockedSaving = await db.insert(lockedSavings).values({
+    
+    const [lockedSaving] = await db.insert(lockedSavings).values({
       userId,
+      vaultId: vault.id,
       amount,
-      currency: currency || 'KES',
+      currency: currency || 'cUSD',
       lockPeriod: Number(lockPeriod),
       interestRate: interestRate || '0.05',
       unlocksAt,
-      vaultId: 'default-vault', // Provide a valid vaultId or get from req.body
+      status: 'locked'
     }).returning();
-    res.json(lockedSaving[0]);
+    
+    res.json(lockedSaving);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: errorMsg });
@@ -692,19 +893,32 @@ router.post('/locked-savings/withdraw/:id', async (req, res) => {
 // POST /api/wallet/savings-goals/create
 router.post('/savings-goals/create', async (req, res) => {
   try {
-    const { userId, title, description, targetAmount, targetDate, category, currency } = req.body;
-    const goal = await db.insert(savingsGoals).values({
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { title, description, targetAmount, targetDate, category, currency } = req.body;
+    
+    if (!title || !targetAmount || parseFloat(targetAmount) <= 0) {
+      return res.status(400).json({ error: 'Invalid goal parameters' });
+    }
+
+    const [goal] = await db.insert(savingsGoals).values({
       userId,
       title,
       description,
-      targetAmount,
+      targetAmount: targetAmount.toString(),
       targetDate: targetDate ? new Date(targetDate) : null,
       category: category || 'general',
-      currency: currency || 'KES',
+      currency: currency || 'cUSD',
+      currentAmount: '0'
     }).returning();
-    res.json(goal[0]);
+    
+    res.json(goal);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
+    Logger.getLogger().error('Failed to create savings goal:', err);
     res.status(500).json({ error: errorMsg });
   }
 });
@@ -712,15 +926,18 @@ router.post('/savings-goals/create', async (req, res) => {
 // GET /api/wallet/savings-goals/:userId
 router.get('/savings-goals/:userId', async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.user?.id || req.params.userId;
+    
     const goals = await db
       .select()
       .from(savingsGoals)
       .where(eq(savingsGoals.userId, userId))
       .orderBy(desc(savingsGoals.createdAt));
+    
     res.json(goals);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
+    Logger.getLogger().error('Failed to fetch savings goals:', err);
     res.status(500).json({ error: errorMsg });
   }
 });

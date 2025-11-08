@@ -83,6 +83,12 @@ import Subscribe from './pages/Subscribe';
 import CrossChainBridge from './pages/CrossChainBridge';
 import NFTMarketplace from './pages/NFTMarketplace';
 
+// Subscription Management
+import SubscriptionManagement from './pages/SubscriptionManagement';
+
+// MaonoVault Management
+import MaonoVaultManagement from "@/pages/MaonoVaultManagement";
+
 // Protected/Public wrappers (unchanged)
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -103,8 +109,7 @@ const DaoLayout = () => <Outlet />; // Can add shared UI here
 const WalletLayout = () => <Outlet />;
 
 function App() {
-  const { isAuthenticated, isLoading } = useAuth();
-  const user = useUser(); // Get user object to pass to MorioProvider
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) {
     return <PageLoading message="Loading Mtaa DAO..." />;
@@ -114,7 +119,7 @@ function App() {
     <HelmetProvider>
       <ThemeProvider>
         <TooltipProvider>
-          <MorioProvider user={user}>
+          <MorioProvider userId={user?.id}>
             <div className="min-h-screen bg-background text-foreground">
               <Helmet>
                 <title>{isAuthenticated ? "Dashboard | Mtaa DAO" : "Welcome | Mtaa DAO"}</title>
@@ -131,7 +136,7 @@ function App() {
 
               {/* Morio FAB for all authenticated users */}
               {isAuthenticated && user?.id && (
-                <MorioFAB userId={user.id} daoId={user.daoId ?? undefined} />
+                <MorioFAB userId={user.id} />
               )}
 
               <main id="main-content" className={isAuthenticated ? "pb-16 lg:pb-0" : ""} role="main">
