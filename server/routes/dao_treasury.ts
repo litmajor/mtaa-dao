@@ -1,4 +1,7 @@
 import express, { Request, Response } from 'express';
+import { db } from '../db';
+import { config, walletTransactions } from '../../shared/schema';
+import { sql, eq, and } from 'drizzle-orm';
 import EnhancedAgentWallet, { NetworkConfig, DaoTreasuryManager } from '../agent_wallet';
 import { isAuthenticated } from '../nextAuthMiddleware';
 import { storage } from '../storage';
@@ -131,6 +134,10 @@ router.post('/:daoId/automation/payout', isAuthenticated, async (req: Request, r
     // Use batchTransfer for payouts
     const results = await wallet.batchTransfer(payouts);
     res.json({ results });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+  }
+});
 
 // --- DAO Treasury: Advanced Snapshot & Report ---
 router.get('/:daoId/snapshot', isAuthenticated, async (req: Request, res: Response) => {
@@ -192,10 +199,6 @@ router.get('/:daoId/report', isAuthenticated, async (req: Request, res: Response
     const treasuryManager = new DaoTreasuryManager(wallet, dao.treasuryAddress, dao.allowedTokens || []);
     const report = await treasuryManager.generateTreasuryReport((period as any) || 'monthly');
     res.json(report);
-  } catch (err) {
-    res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
-  }
-});
   } catch (err) {
     res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
   }

@@ -4,7 +4,11 @@
  * Analyzes community growth, engagement, and health metrics
  */
 
+
 import type { AnalysisResponse, Risk } from '../types';
+import { db } from '../../../db';
+import { daoMemberships, userActivities } from '../../../../shared/schema';
+import { eq, and, sql, desc } from 'drizzle-orm';
 
 export class CommunityAnalyzer {
   /**
@@ -25,18 +29,93 @@ export class CommunityAnalyzer {
   }
 
   private async calculateMetrics(daoId: string, timeframe?: string) {
-    // Mock metrics - replace with actual database queries
+    // Calculate the time window
+    let since: Date | undefined = undefined;
+    if (timeframe === '30d' || !timeframe) {
+      since = new Date();
+      since.setDate(since.getDate() - 30);
+    } else if (timeframe === '7d') {
+      since = new Date();
+      since.setDate(since.getDate() - 7);
+    }
+
+    // Total members
+    const totalMembers = await db.select({ count: sql`count(*)` })
+      .from(daoMemberships)
+      .where(eq(daoMemberships.daoId, daoId));
+    const totalMembersCount = Number(totalMembers[0]?.count || 0);
+
+    // New members in timeframe
+    let newMembersCount = 0;
+    if (since) {
+      const newMembers = await db.select({ count: sql`count(*)` })
+        .from(daoMemberships)
+        .where(and(eq(daoMemberships.daoId, daoId), sql`${daoMemberships.joinedAt} >= ${since}`));
+      newMembersCount = Number(newMembers[0]?.count || 0);
+    }
+
+    // Active members: those with activity in userActivities in timeframe
+    let activeMembersCount = 0;
+    if (since) {
+      const activeMembers = await db.select({ userId: daoMemberships.userId })
+        .from(daoMemberships)
+        .where(eq(daoMemberships.daoId, daoId));
+      const userIds = activeMembers.map(m => m.userId);
+      if (userIds.length > 0) {
+        const actives = await db.select({ userId: userActivities.userId })
+          .from(userActivities)
+          .where(and(
+            sql`${userActivities.userId} = ANY(${userIds})`,
+            eq(userActivities.dao_id, daoId),
+            sql`${userActivities.createdAt} >= ${since}`
+          ));
+        activeMembersCount = new Set(actives.map(a => a.userId)).size;
+      }
+    }
+
+    // Retention rate: (active members / total members)
+    const retentionRate = totalMembersCount > 0 ? activeMembersCount / totalMembersCount : 0;
+
+    // Engagement score: proxy as (active members / total members)
+    const engagementScore = retentionRate;
+
+    // Average contribution per member: count 'contribution' activities
+    let avgContributionPerMember = 0;
+    if (totalMembersCount > 0) {
+      const contribs = await db.select({ count: sql`count(*)` })
+        .from(userActivities)
+        .where(and(eq(userActivities.dao_id, daoId), eq(userActivities.type, 'contribution')));
+      avgContributionPerMember = Number(contribs[0]?.count || 0) / totalMembersCount;
+    }
+
+    // Top contributors: number of members with >3 contributions
+    let topContributors = 0;
+    const contribCounts = await db.select({ userId: userActivities.userId, count: sql`count(*)` })
+      .from(userActivities)
+      .where(and(eq(userActivities.dao_id, daoId), eq(userActivities.type, 'contribution')))
+      .groupBy(userActivities.userId);
+    topContributors = contribCounts.filter(c => Number(c.count) > 3).length;
+
+    // Growth rate: new members / total members
+    const growthRate = totalMembersCount > 0 ? newMembersCount / totalMembersCount : 0;
+
+    // Average session time: not tracked, so use placeholder
+    const avgSessionTime = 12.5;
+
+    // Returning member rate: not tracked, so use placeholder
+    const returningMemberRate = 0.68;
+
     return {
-      totalMembers: 78,
-      activeMembers: 52,
-      newMembers: 12,
-      retentionRate: 0.85,
-      engagementScore: 0.72,
-      avgContributionPerMember: 320.51,
-      topContributors: 15,
-      growthRate: 0.18, // 18%
-      avgSessionTime: 12.5, // minutes
-      returningMemberRate: 0.68
+      totalMembers: totalMembersCount,
+      activeMembers: activeMembersCount,
+      newMembers: newMembersCount,
+      retentionRate,
+      engagementScore,
+      avgContributionPerMember,
+      topContributors,
+      growthRate,
+      avgSessionTime,
+      returningMemberRate
     };
   }
 

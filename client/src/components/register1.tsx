@@ -100,16 +100,25 @@ export default function ArchitectSetup() {
     setError('');
     setOtpLoading(true);
     try {
+      // Determine payload type
+      const isEmail = /\S+@\S+\.\S+/.test(emailOrPhone);
+      const isPhone = /^\+?[1-9]\d{1,14}$/.test(emailOrPhone);
+      const payload = isEmail
+        ? { email: emailOrPhone, otp }
+        : isPhone
+        ? { phone: emailOrPhone, otp }
+        : { emailOrPhone, otp };
       const resp = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ otp, emailOrPhone }),
+        body: JSON.stringify(payload),
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.message || 'OTP verification failed');
-      // Auto sign in after registration
-      localStorage.setItem('token', data.token);
-      window.location.href = '/';
+  // Auto sign in after registration
+  localStorage.setItem('accessToken', data.token);
+  localStorage.setItem('superuser', 'true');
+  window.location.href = '/superuser';
     } catch (err) {
       setError(
         typeof err === 'object' && err !== null && 'message' in err
@@ -120,6 +129,49 @@ export default function ArchitectSetup() {
       setOtpLoading(false);
     }
   };
+  // Resend OTP logic
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendFeedback, setResendFeedback] = useState<{ type: 'success' | 'error' | ''; message: string }>({ type: '', message: '' });
+
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0) return;
+    setResendLoading(true);
+    setResendFeedback({ type: '', message: '' });
+    setError('');
+    try {
+      const isEmail = /\S+@\S+\.\S+/.test(emailOrPhone);
+      const isPhone = /^\+?[1-9]\d{1,14}$/.test(emailOrPhone);
+      const payload = isEmail
+        ? { email: emailOrPhone }
+        : isPhone
+        ? { phone: emailOrPhone }
+        : { emailOrPhone };
+      const resp = await fetch('/api/auth/resend-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Failed to resend OTP');
+      setResendFeedback({ type: 'success', message: `OTP sent successfully to your ${isEmail ? 'email' : 'phone'}!` });
+      setResendCooldown(60);
+      setTimeout(() => setResendFeedback({ type: '', message: '' }), 5000);
+    } catch (err: any) {
+      setResendFeedback({ type: 'error', message: err.message || 'Failed to resend OTP. Please try again.' });
+      setTimeout(() => setResendFeedback({ type: '', message: '' }), 5000);
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
+  // Cooldown timer for resend OTP
+  React.useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
 
   // For admin login
   const handleAdminLogin = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -132,10 +184,20 @@ export default function ArchitectSetup() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: adminEmail, password: adminPassword }),
       });
-      const data = await resp.json();
+      let data;
+      const contentType = resp.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await resp.json();
+      } else {
+        // Not JSON, likely an error page or misconfigured backend
+        setError('Unexpected server response. Please try again or contact support.');
+        setAdminLoading(false);
+        return;
+      }
       if (!resp.ok) throw new Error(data.message || 'Admin login failed');
-      localStorage.setItem('superuser', 'true');
-      window.location.href = '/superuser';
+  localStorage.setItem('accessToken', data.accessToken || data.token);
+  localStorage.setItem('superuser', 'true');
+  window.location.href = '/superuser';
     } catch (err) {
       setError(
         typeof err === 'object' && err !== null && 'message' in err
@@ -279,6 +341,46 @@ export default function ArchitectSetup() {
                       onChange={e => setOtp(e.target.value)}
                       required
                     />
+                  </div>
+                  {/* Resend OTP Feedback */}
+                  {resendFeedback.message && (
+                    <div className={`mb-2 p-3 rounded-lg flex items-center animate-pulse backdrop-blur-sm ${
+                      resendFeedback.type === 'success'
+                        ? 'bg-green-500/20 border border-green-500/30 text-green-100'
+                        : 'bg-red-500/20 border border-red-500/30 text-red-100'
+                    }`}>
+                      {resendFeedback.type === 'success' ? (
+                        <Check className="w-5 h-5 mr-3 flex-shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
+                      )}
+                      <span className="text-sm">{resendFeedback.message}</span>
+                    </div>
+                  )}
+                  {/* Resend OTP Button */}
+                  <div className="flex items-center justify-center mb-2">
+                    <button
+                      type="button"
+                      onClick={handleResendOtp}
+                      disabled={resendLoading || resendCooldown > 0}
+                      className="text-sm text-purple-300 hover:text-purple-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {resendLoading ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-purple-300/30 border-t-purple-300 rounded-full animate-spin"></div>
+                          <span>Sending...</span>
+                        </>
+                      ) : resendCooldown > 0 ? (
+                        <>
+                          <span>Resend OTP in {resendCooldown}s</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4" />
+                          <span>Resend OTP</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                   <button
                     type="submit"

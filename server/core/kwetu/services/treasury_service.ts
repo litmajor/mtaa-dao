@@ -1,5 +1,5 @@
 import { db } from '../../../db';
-import { vaults, transactions } from '../../../../shared/schema';
+import { vaults, walletTransactions } from '../../../../shared/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 
 export class TreasuryService {
@@ -38,9 +38,10 @@ export class TreasuryService {
    */
   async getTransactions(daoId: string, limit: number = 10) {
     try {
-      const txs = await db.query.transactions.findMany({
-        where: eq(transactions.daoId, daoId),
-        orderBy: [desc(transactions.createdAt)],
+
+      const txs = await db.query.walletTransactions.findMany({
+        where: eq(walletTransactions.daoId, daoId),
+        orderBy: [desc(walletTransactions.createdAt)],
         limit
       });
 
@@ -66,17 +67,18 @@ export class TreasuryService {
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
       // Get all transactions from last 30 days
-      const recentTxs = await db.query.transactions.findMany({
+
+      const recentTxs = await db.query.walletTransactions.findMany({
         where: and(
-          eq(transactions.daoId, daoId),
-          sql`${transactions.createdAt} >= ${thirtyDaysAgo}`
+          eq(walletTransactions.daoId, daoId),
+          sql`${walletTransactions.createdAt} >= ${thirtyDaysAgo}`
         )
       });
 
       let totalInflow = 0;
       let totalOutflow = 0;
 
-      recentTxs.forEach(tx => {
+      recentTxs.forEach((tx: typeof walletTransactions.$inferSelect) => {
         const amount = parseFloat(tx.amount || '0');
         if (tx.type === 'deposit' || tx.type === 'contribution') {
           totalInflow += amount;

@@ -1,5 +1,5 @@
 import { db } from '../../../db';
-import { users, daoMembers } from '../../../../shared/schema';
+import { users, daoMemberships } from '../../../../shared/schema';
 import { eq, and, sql } from 'drizzle-orm';
 
 export class CommunityService {
@@ -7,14 +7,9 @@ export class CommunityService {
    * Get DAO member count from database
    */
   async getMemberCount(daoId: string) {
-    const db = (await import('../../../db')).default;
-    const { daoMembers } = await import('../../../../shared/schema');
-    const { eq, count } = await import('drizzle-orm');
-
-    const result = await db.select({ count: count() })
-      .from(daoMembers)
-      .where(eq(daoMembers.daoId, daoId));
-
+    const result = await db.select({ count: sql`count(*)` })
+      .from(daoMemberships)
+      .where(eq(daoMemberships.daoId, daoId));
     return result[0]?.count || 0;
   }
 
@@ -23,10 +18,10 @@ export class CommunityService {
    */
   async getMemberStats(userId: string, daoId: string) {
     try {
-      const member = await db.query.daoMembers.findFirst({
+      const member = await db.query.daoMemberships.findFirst({
         where: and(
-          eq(daoMembers.userId, userId),
-          eq(daoMembers.daoId, daoId)
+          eq(daoMemberships.userId, userId),
+          eq(daoMemberships.daoId, daoId)
         )
       });
 
@@ -61,11 +56,13 @@ export class CommunityService {
    */
   async getEngagementMetrics(daoId: string) {
     try {
-      const memberCount = await this.getMemberCount(daoId);
-
+      // The real memberCount is just a number, so mock active/total for now
+      const totalRaw = await this.getMemberCount(daoId);
+      const total = Number(totalRaw);
+      const active = Math.floor(total * 0.67); // mock 67% active
       return {
         engagementScore: 0.72,
-        activeRate: memberCount.active / memberCount.total,
+        activeRate: total > 0 ? active / total : 0,
         retentionRate: 0.85
       };
     } catch (error) {

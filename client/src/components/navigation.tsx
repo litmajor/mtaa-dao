@@ -122,7 +122,7 @@ export default function Navigation() {
         <div className="flex justify-between items-center h-16">
           {/* Logo Section */}
           <div className="flex items-center space-x-8">
-            <Link href="/" className="group">
+            <Link to="/" className="group">
               <AnimatedLogo 
                 variant="full" 
                 size="md"
@@ -159,7 +159,7 @@ export default function Navigation() {
                     </div>
                     <div className="p-2">
                       {dashboardItems.map((item) => (
-                        <Link key={item.href} href={item.href}>
+                        <Link key={item.href} to={item.href}>
                           <Button
                             variant="ghost"
                             className={`w-full justify-start px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg mb-1 ${
@@ -182,7 +182,7 @@ export default function Navigation() {
 
                 {/* Primary Navigation */}
                 {primaryNavItems.map((item) => (
-                  <Link key={item.href} href={item.href}>
+                  <Link key={item.href} to={item.href}>
                     <Button
                       variant="ghost"
                       className={`relative font-medium px-4 py-2 rounded-lg transition-all duration-300 group ${
@@ -218,7 +218,7 @@ export default function Navigation() {
                     <div className="px-4 pb-2">
                       <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">📊 Analytics & Reports</h4>
                       <div className="space-y-1">
-                        <Link href="/analytics">
+                        <Link to="/analytics">
                           <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
                             <span className="mr-2">📈</span>
                             Analytics Dashboard
@@ -232,7 +232,7 @@ export default function Navigation() {
                       <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">🏦 Vault Management</h4>
                       <div className="space-y-1">
                         {vaultItems.map((item) => (
-                          <Link key={item.href} href={item.href}>
+                          <Link key={item.href} to={item.href}>
                             <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
                               <span className="mr-2">{item.icon}</span>
                               {item.label}
@@ -247,14 +247,14 @@ export default function Navigation() {
                       <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">💳 Wallet Tools</h4>
                       <div className="space-y-1">
                         {walletItems.map((item) => (
-                          <Link key={item.href} href={item.href}>
+                          <Link key={item.href} to={item.href}>
                             <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
                               <span className="mr-2">{item.icon}</span>
                               {item.label}
                             </Button>
                           </Link>
                         ))}
-                        <Link href="/minipay">
+                        <Link to="/minipay">
                           <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
                             <span className="mr-2">📱</span>
                             MiniPay Demo
@@ -268,7 +268,7 @@ export default function Navigation() {
                       <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">🏛️ DAO Management</h4>
                       <div className="space-y-1">
                         {daoItems.map((item) => (
-                          <Link key={item.href} href={item.href}>
+                          <Link key={item.href} to={item.href}>
                             <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
                               <span className="mr-2">{item.icon}</span>
                               {item.label}
@@ -284,7 +284,7 @@ export default function Navigation() {
                         <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">👑 Administration</h4>
                         <div className="space-y-1">
                           {adminItems.map((item) => (
-                            <Link key={item.href} href={item.href}>
+                            <Link key={item.href} to={item.href}>
                               <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
                                 <span className="mr-2">{item.icon}</span>
                                 {item.label}
@@ -300,14 +300,14 @@ export default function Navigation() {
                       <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">🤝 Community & Growth</h4>
                       <div className="space-y-1">
                         {utilityItems.map((item) => (
-                          <Link key={item.href} href={item.href}>
+                          <Link key={item.href} to={item.href}>
                             <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
                               <span className="mr-2">{item.icon}</span>
                               {item.label}
                             </Button>
                           </Link>
                         ))}
-                        <Link href="/success-stories">
+                        <Link to="/success-stories">
                           <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
                             <span className="mr-2">⭐</span>
                             Success Stories
@@ -320,31 +320,31 @@ export default function Navigation() {
                     <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-700">
                       <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">📚 Resources</h4>
                       <div className="space-y-1">
-                        <Link href="/blog" className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">
+                        <Link to="/blog" className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">
                           <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
                             <span className="mr-2">📝</span>
                             Blog
                           </Button>
                         </Link>
-                        <Link href="/about" className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">
+                        <Link to="/about" className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">
                           <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
                             <span className="mr-2">ℹ️</span>
                             About
                           </Button>
                         </Link>
-                        <Link href="/help">
+                        <Link to="/help">
                           <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
                             <span className="mr-2">❓</span>
                             Help & Support
                           </Button>
                         </Link>
-                        <Link href="/faq">
+                        <Link to="/faq">
                           <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
                             <span className="mr-2">💡</span>
                             FAQ
                           </Button>
                         </Link>
-                        <Link href="/contact">
+                        <Link to="/contact">
                           <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
                             <span className="mr-2">📧</span>
                             Contact Us
@@ -453,7 +453,7 @@ export default function Navigation() {
               </>
             ) : (
               <div className="flex items-center space-x-3">
-                <Link href="/login">
+                <Link to="/login">
                   <Button
                     variant="outline"
                     className={`font-medium px-6 py-2 rounded-lg border-2 transition-all duration-300 ${
@@ -465,7 +465,7 @@ export default function Navigation() {
                     Login
                   </Button>
                 </Link>
-                <Link href="/register">
+                <Link to="/register">
                   <Button
                     variant="default"
                     className="font-medium px-6 py-2 rounded-lg bg-gradient-to-r from-mtaa-orange to-amber-500 text-white shadow-lg shadow-mtaa-orange/30 hover:shadow-mtaa-orange/50 hover:scale-105 transition-all duration-300"
@@ -483,7 +483,7 @@ export default function Navigation() {
       <div className="lg:hidden px-4 pb-4">
         <div className="flex flex-wrap gap-2">
           {isLoggedIn && [...dashboardItems, ...primaryNavItems].map((item) => (
-            <Link key={item.href} href={item.href}>
+            <Link key={item.href} to={item.href}>
               <Button
                 variant="ghost"
                 size="sm"

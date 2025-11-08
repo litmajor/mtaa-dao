@@ -15,7 +15,7 @@ router.get("/", authenticate, async (req, res) => {
     const user = await db.query.users.findFirst({
       where: eq(users.id, userId),
       columns: {
-        passwordHash: false, // Exclude sensitive data
+        password: false, // Exclude sensitive data
       },
     });
 
@@ -58,13 +58,11 @@ router.get("/", authenticate, async (req, res) => {
     if (recentActivities.length > 0) {
       let currentDate = new Date();
       currentDate.setHours(0, 0, 0, 0);
-      
       for (const activity of recentActivities) {
+        if (!activity.createdAt) continue;
         const activityDate = new Date(activity.createdAt);
         activityDate.setHours(0, 0, 0, 0);
-        
         const diffDays = Math.floor((currentDate.getTime() - activityDate.getTime()) / (1000 * 60 * 60 * 24));
-        
         if (diffDays === currentStreak) {
           currentStreak++;
         } else if (diffDays > currentStreak) {
@@ -75,7 +73,7 @@ router.get("/", authenticate, async (req, res) => {
 
     // Get user's vaults
     const userVaults = await db.query.vaults.findMany({
-      where: eq(vaults.ownerId, userId),
+      where: eq(vaults.userId, userId),
     });
 
     const totalBalance = userVaults.reduce((sum, vault) => 
@@ -95,7 +93,7 @@ router.get("/", authenticate, async (req, res) => {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
-        role: user.role,
+        roles: user.roles,
         joinedAt: user.createdAt,
         profilePicture: user.profileImageUrl,
       },
@@ -140,8 +138,7 @@ router.put("/", authenticate, async (req, res) => {
     if (!updated.length) {
       return res.status(404).json({ error: "User not found" });
     }
-
-    const { passwordHash, ...userWithoutPassword } = updated[0];
+    const { password, ...userWithoutPassword } = updated[0];
     res.json(userWithoutPassword);
   } catch (error) {
     console.error("Error updating profile:", error);
@@ -170,8 +167,7 @@ router.put("/update", authenticate, async (req, res) => {
     if (!updated.length) {
       return res.status(404).json({ error: "User not found" });
     }
-
-    const { passwordHash, ...userWithoutPassword } = updated[0];
+    const { password, ...userWithoutPassword } = updated[0];
     res.json({ 
       success: true,
       message: "Profile updated successfully",

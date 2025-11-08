@@ -25,10 +25,11 @@ interface ProfileData {
     id: string;
     firstName: string;
     lastName: string;
-    email: string;
+  email: string | null;
     role: string;
     joinedAt: string;
     profilePicture?: string | null;
+    profileImageUrl?: string | null;
   };
   contributionStats: {
     totalContributions: number;
@@ -125,7 +126,7 @@ export default function Profile() {
     }
   };
 
-  const safeUser = user || {};
+  const safeUser: Partial<ProfileData['user']> = user || {};
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
@@ -188,7 +189,7 @@ export default function Profile() {
                 <div className="relative">
                   <div className="absolute -inset-2 bg-gradient-to-r from-purple-600 to-emerald-600 rounded-full blur opacity-25 animate-pulse"></div>
                   <Avatar className="relative w-32 h-32 border-4 border-white/20 shadow-2xl">
-                    <AvatarImage src={safeUser.profileImageUrl ?? undefined} alt={safeUser.firstName || "User"} />
+                    <AvatarImage src={safeUser.profileImageUrl ?? safeUser.profilePicture ?? undefined} alt={safeUser.firstName || "User"} />
                     <AvatarFallback className="text-4xl font-bold bg-gradient-to-br from-purple-500 to-emerald-500 text-white">
                       {safeUser.firstName?.[0] || "U"}
                     </AvatarFallback>

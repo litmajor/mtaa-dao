@@ -19,6 +19,7 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 // Import new components for wallet features
 import TransactionHistory from '../components/wallet/TransactionHistory';
+import { apiGet, apiPost } from '@/lib/api';
 import RecurringPayments from '../components/wallet/RecurringPayments';
 import ExchangeRateWidget from '../components/wallet/ExchangeRateWidget';
 import RecurringPaymentsManager from '@/components/wallet/RecurringPaymentsManager';
@@ -62,15 +63,9 @@ const EnhancedWalletPage = () => {
     async function fetchWalletData() {
       try {
         // Native balance
-        const balanceRes = await fetch('/api/wallet/balance');
-        const balanceData = await balanceRes.json();
+        const balanceData = await apiGet('/api/wallet/balance');
         // Portfolio (tokens)
-        const portfolioRes = await fetch('/api/wallet/portfolio', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tokenAddresses: [] }) // Optionally pass token addresses
-        });
-        const portfolioData = await portfolioRes.json();
+        const portfolioData = await apiPost('/api/wallet/portfolio', { tokenAddresses: [] });
         // Compose vaults array for UI
         const vaultsArr = [
           {
@@ -91,8 +86,7 @@ const EnhancedWalletPage = () => {
         setVaults(vaultsArr);
         // Transactions: (for demo, fetch last 10 txs for native address)
         if (balanceData.address) {
-          const txStatusRes = await fetch(`/api/wallet/tx-status/${balanceData.address}`);
-          const txStatusData = await txStatusRes.json();
+          const txStatusData = await apiGet(`/api/wallet/tx-status/${balanceData.address}`);
           setTransactions(Array.isArray(txStatusData) ? txStatusData : []);
         } else {
           setTransactions([]);
@@ -109,9 +103,7 @@ const EnhancedWalletPage = () => {
       setAnalyticsLoading(true);
       setAnalyticsError('');
       try {
-        const res = await fetch('/api/wallet/analytics');
-        if (!res.ok) throw new Error('Failed to fetch analytics');
-        const data = await res.json();
+        const data = await apiGet('/api/wallet/analytics');
         setAnalytics(data);
       } catch (e: any) {
         setAnalyticsError(e.message);
@@ -243,12 +235,7 @@ const EnhancedWalletPage = () => {
   async function handleSendNative() {
     setActionLoading(true); setActionError('');
     try {
-      const res = await fetch('/api/wallet/send-native', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ toAddress: sendTo, amount: sendAmount })
-      });
-      if (!res.ok) throw new Error('Send failed');
+      await apiPost('/api/wallet/send-native', { toAddress: sendTo, amount: sendAmount });
       setSendAmount(''); setSendTo(''); setDepositOpen(false);
     } catch (e: any) {
       setActionError(e.message);
@@ -259,12 +246,7 @@ const EnhancedWalletPage = () => {
     setActionLoading(true); setActionError('');
     try {
       // For demo, treat deposit as send-native (or use /api/wallet/send-native)
-      const res = await fetch('/api/wallet/send-native', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ toAddress: sendTo, amount: depositAmount })
-      });
-      if (!res.ok) throw new Error('Deposit failed');
+      await apiPost('/api/wallet/send-native', { toAddress: sendTo, amount: depositAmount });
       setDepositAmount(''); setPaymentOpen(false);
     } catch (e: any) {
       setActionError(e.message);
@@ -275,12 +257,7 @@ const EnhancedWalletPage = () => {
     setActionLoading(true); setActionError('');
     try {
       // For demo, treat withdraw as send-native (or use /api/wallet/send-native)
-      const res = await fetch('/api/wallet/send-native', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ toAddress: sendTo, amount: withdrawAmount })
-      });
-      if (!res.ok) throw new Error('Withdraw failed');
+      await apiPost('/api/wallet/send-native', { toAddress: sendTo, amount: withdrawAmount });
       setWithdrawAmount(''); setWithdrawOpen(false);
     } catch (e: any) {
       setActionError(e.message);

@@ -1,6 +1,6 @@
 import express from 'express';
 import { db } from '../storage';
-import { tasks, taskHistory, users } from '../../shared/schema';
+import { tasks, taskHistory, users, daoMemberships } from '../../shared/schema';
 import { contributionGraph } from '../../shared/reputationSchema';
 import { eq, and, or, desc, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -358,7 +358,8 @@ router.post('/:taskId/verify', requireRole('admin', 'moderator'), async (req, re
       if (newAchievements.length > 0) {
         // Notify about new achievements
         const { notificationService } = await import('../notificationService');
-        await notificationService.sendNotification(task[0].claimerId, {
+        await notificationService.createNotification({
+          userId: task[0].claimerId,
           title: '🏆 New Achievement Unlocked!',
           message: `You've unlocked: ${newAchievements.join(', ')}`,
           type: 'achievement'

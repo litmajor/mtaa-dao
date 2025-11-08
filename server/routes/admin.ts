@@ -1,3 +1,4 @@
+
 import { Router } from 'express';
 import { db } from '../db';
 import { logger } from '../utils/logger';
@@ -25,6 +26,81 @@ const router = Router();
 // Middleware to ensure user is super_admin
 const requireSuperAdmin = requireRole('super_admin');
 
+
+// =====================================================
+// SUPERUSER/ADMIN AUTH ENDPOINTS
+// =====================================================
+
+
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+
+// Type guard for user record
+function isUser(obj: any): obj is { id: string; email: string; passwordHash: string; roles: string } {
+  return obj && typeof obj.id === 'string' && typeof obj.email === 'string' && typeof obj.passwordHash === 'string' && typeof obj.roles === 'string';
+}
+
+// POST /api/auth/admin-login
+
+router.post('/auth/admin-login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ message: 'Email and password required' });
+  }
+  try {
+    const userArr = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    const user = userArr[0];
+    if (!isUser(user) || (user.roles !== 'super_admin' && user.roles !== 'admin')) {
+      return res.status(401).json({ message: 'Invalid credentials or not an admin/superuser' });
+    }
+    if (!user.passwordHash) {
+      return res.status(401).json({ message: 'No password set for this user' });
+    }
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+    const token = jwt.sign({ id: user.id, role: user.roles }, process.env.JWT_SECRET || 'changeme', { expiresIn: '1d' });
+    res.json({ success: true, data: { user, accessToken: token } });
+  } catch (err) {
+    logger.error('Admin login error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/auth/superuser-register
+
+router.post('/auth/superuser-register', async (req, res) => {
+  const { email, password, firstName, lastName } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ message: 'Email and password required' });
+  }
+  try {
+    const existingArr = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    if (existingArr[0]) {
+      return res.status(409).json({ message: 'Email already registered' });
+    }
+    const hash = await bcrypt.hash(password, 10);
+    const [newUser] = await db.insert(users).values({
+      id: crypto.randomUUID(),
+      email,
+      password: hash,
+      firstName: firstName || '',
+      lastName: lastName || '',
+      roles: 'super_admin',
+      createdAt: new Date(),
+    }).returning();
+    if (!isUser(newUser)) {
+      return res.status(500).json({ message: 'User creation failed' });
+    }
+    const token = jwt.sign({ id: newUser.id, role: newUser.roles }, process.env.JWT_SECRET || 'changeme', { expiresIn: '1d' });
+    res.json({ success: true, data: { user: newUser, accessToken: token } });
+  } catch (err) {
+    logger.error('Superuser register error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // =====================================================
 // ANALYTICS & DASHBOARD
 // =====================================================
@@ -44,7 +120,7 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
       db.select({ count: sql<number>`count(*)` }).from(daos),
       db.select({ count: sql<number>`count(DISTINCT ${users.id})` }).from(users),
       db.select({ count: sql<number>`count(*)` }).from(subscriptions).where(eq(subscriptions.status, 'active')),
-      db.select({ count: sql<number>`count(*)` }).from(vaults).where(eq(vaults.status, 'active')),
+  db.select({ count: sql<number>`count(*)` }).from(vaults).where(eq(vaults.isActive, true)),
       db.select({ count: sql<number>`count(*)` }).from(vaultTransactions),
       db.select({ count: sql<number>`count(*)` }).from(tasks).where(eq(tasks.status, 'open')),
     ]);
@@ -67,7 +143,7 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
         id: daos.id,
         name: daos.name,
         createdAt: daos.createdAt,
-        plan: daos.subscriptionPlan,
+        plan: daos.plan,
       })
       .from(daos)
       .orderBy(desc(daos.createdAt))
@@ -119,7 +195,7 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
     try {
       await db.execute(sql`SELECT 1`);
     } catch (err) {
-      systemHealth.database = 'critical';
+  (systemHealth as any).database = 'critical';
     }
 
     // System info
@@ -149,7 +225,7 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
       .from(vaultTransactions)
       .where(eq(vaultTransactions.status, 'failed'));
     
-    if (failedTxCount[0].count > 10) {
+  if (failedTxCount[0].count > 10) {
       criticalAlerts.push({
         type: 'warning',
         message: `${failedTxCount[0].count} failed transactions detected`,
@@ -161,7 +237,7 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
     // System logs (last 10 activities)
     const recentActivities = await db
       .select({
-        activityType: userActivities.activityType,
+        activityType: userActivities.type,
         createdAt: userActivities.createdAt,
         userId: userActivities.userId,
       })
@@ -183,11 +259,11 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
     // TOKENOMICS DATA
     // ======================
     const totalVotingTokens = await db
-      .select({ total: sql<number>`COALESCE(SUM(CAST(${users.votingTokenBalance} AS NUMERIC)), 0)` })
+      .select({ total: sql<number>`COALESCE(SUM(CAST(${users.votingPower} AS NUMERIC)), 0)` })
       .from(users);
 
     const totalReferralRewards = await db
-      .select({ total: sql<number>`COALESCE(SUM(CAST(${referralRewards.amount} AS NUMERIC)), 0)` })
+      .select({ total: sql<number>`COALESCE(SUM(CAST(${referralRewards.rewardAmount} AS NUMERIC)), 0)` })
       .from(referralRewards);
 
     const tokenomics = {
@@ -202,14 +278,14 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
     // VESTING SCHEDULES
     // ======================
     const pendingVesting = await db
-      .select({ count: sql<number>`count(*)`, total: sql<number>`COALESCE(SUM(CAST(${referralRewards.amount} AS NUMERIC)), 0)` })
+      .select({ count: sql<number>`count(*)`, total: sql<number>`COALESCE(SUM(CAST(${referralRewards.rewardAmount} AS NUMERIC)), 0)` })
       .from(referralRewards)
-      .where(eq(referralRewards.status, 'pending'));
+      .where(eq(referralRewards.claimed, false));
 
     const claimedRewards = await db
-      .select({ count: sql<number>`count(*)`, total: sql<number>`COALESCE(SUM(CAST(${referralRewards.amount} AS NUMERIC)), 0)` })
+      .select({ count: sql<number>`count(*)`, total: sql<number>`COALESCE(SUM(CAST(${referralRewards.rewardAmount} AS NUMERIC)), 0)` })
       .from(referralRewards)
-      .where(eq(referralRewards.status, 'claimed'));
+      .where(eq(referralRewards.claimed, true));
 
     const vestingData = {
       pendingRewards: pendingVesting[0].count,
@@ -227,10 +303,10 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
         userId: users.id,
         email: users.email,
         username: users.username,
-        balance: users.votingTokenBalance,
+        balance: users.votingPower,
       })
       .from(users)
-      .orderBy(desc(users.votingTokenBalance))
+      .orderBy(desc(users.votingPower))
       .limit(10);
 
     const totalWalletVolume = await db
@@ -242,7 +318,7 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
 
     const walletAnalytics = {
       topHolders: topWalletHolders.map(holder => ({
-        user: holder.username || holder.email.split('@')[0],
+        user: holder.username || (holder.email || '').split('@')[0],
         balance: Number(holder.balance || 0),
       })),
       totalTransactionVolume: Number(totalWalletVolume[0].total),
@@ -267,7 +343,7 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
         const [memberCount, proposalCount, activityCount] = await Promise.all([
           db.select({ count: sql<number>`count(*)` }).from(daoMemberships).where(eq(daoMemberships.daoId, dao.id)),
           db.select({ count: sql<number>`count(*)` }).from(proposals).where(eq(proposals.daoId, dao.id)),
-          db.select({ count: sql<number>`count(*)` }).from(userActivities).where(eq(userActivities.daoId, dao.id)),
+          db.select({ count: sql<number>`count(*)` }).from(userActivities).where(eq(userActivities.dao_id, dao.id)),
         ]);
 
         return {
@@ -295,7 +371,7 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
         id: users.id,
         username: users.username,
         email: users.email,
-        votingTokenBalance: users.votingTokenBalance,
+        votingTokenBalance: users.votingPower,
       })
       .from(users)
       .orderBy(desc(users.votingTokenBalance))
@@ -329,7 +405,7 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
 
     const userRankings = {
       byVotingPower: topUsersByVotingPower.map(user => ({
-        name: user.username || user.email.split('@')[0],
+        name: user.username || (user.email || '').split('@')[0],
         votingPower: Number(user.votingTokenBalance || 0),
       })),
       byContributions: topContributors.map(c => ({

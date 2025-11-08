@@ -31,7 +31,7 @@ router.put("/password", authenticate, async (req, res) => {
     }
 
     // Verify current password
-    const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+  const isValid = await bcrypt.compare(currentPassword, user.password);
     if (!isValid) {
       return res.status(401).json({ error: "Current password is incorrect" });
     }
@@ -43,7 +43,7 @@ router.put("/password", authenticate, async (req, res) => {
     await db
       .update(users)
       .set({
-        passwordHash: hashedPassword,
+        password: hashedPassword,
         updatedAt: new Date(),
       })
       .where(eq(users.id, userId));
@@ -118,7 +118,7 @@ router.delete("/delete", authenticate, async (req, res) => {
     }
 
     // Verify password
-    const isValid = await bcrypt.compare(password, user.passwordHash);
+  const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) {
       return res.status(401).json({ error: "Incorrect password" });
     }
@@ -140,7 +140,7 @@ router.delete("/delete", authenticate, async (req, res) => {
 router.get("/sessions", authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
-    const currentSessionId = req.session?.id;
+  const currentSessionId = (req as any).session?.id;
 
     const userSessions = await db.query.sessions.findMany({
       where: eq(sessions.userId, userId),
@@ -160,7 +160,7 @@ router.get("/sessions", authenticate, async (req, res) => {
         id: s.id,
         deviceName,
         location: s.ipAddress || "Unknown Location",
-        lastActive: s.createdAt.toISOString(),
+  lastActive: s.createdAt?.toISOString(),
         current: s.id === currentSessionId,
       };
     }));
@@ -199,7 +199,7 @@ router.post("/export", authenticate, async (req, res) => {
     const user = await db.query.users.findFirst({
       where: eq(users.id, userId),
       columns: {
-        passwordHash: false,
+        password: false,
       },
     });
 

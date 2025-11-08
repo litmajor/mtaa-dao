@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiGet, apiPost } from '@/lib/api';
 import { useNavigate } from "react-router-dom";
 import { Plus, Users, DollarSign, TrendingUp, Settings, ArrowRight, Sparkles, Crown, Shield, Star, Zap, Globe, Heart, Trophy, Wallet, Eye, ChevronRight, Loader2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
@@ -23,7 +24,9 @@ interface DAO {
 }
 
 export default function EnhancedDAOs() {
-  const [activeTab, setActiveTab] = useState("joined");
+  const navigate = useNavigate();
+  const tabFromUrl = window.location.hash?.replace('#', '') || 'joined';
+  const [activeTab, setActiveTab] = useState(tabFromUrl);
   const [hoveredDao, setHoveredDao] = useState<number | null>(null);
   const [leavingDaoId, setLeavingDaoId] = useState<number | null>(null);
   const navigate = useNavigate();
@@ -34,21 +37,7 @@ export default function EnhancedDAOs() {
   const { data: daosData = [], isLoading, error } = useQuery<DAO[]>({
     queryKey: ["/api/daos"],
     queryFn: async () => {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch("/api/daos", {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        throw new Error("Failed to fetch DAOs");
-      }
-      
-      const data = await response.json();
-      
+      const data = await apiGet("/api/daos");
       // Add UI properties to each DAO
       return data.map((dao: any) => ({
         ...dao,
@@ -62,22 +51,8 @@ export default function EnhancedDAOs() {
   // Join DAO mutation
   const joinMutation = useMutation({
     mutationFn: async (daoId: number) => {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`/api/daos/${daoId}/join`, {
-        method: "POST",
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Failed to join DAO");
-      }
-      
-      return response.json();
+      const response = await apiPost(`/api/daos/${daoId}/join`, {});
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/daos"] });
@@ -98,22 +73,8 @@ export default function EnhancedDAOs() {
   // Leave DAO mutation
   const leaveMutation = useMutation({
     mutationFn: async (daoId: number) => {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`/api/daos/${daoId}/leave`, {
-        method: "POST",
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Failed to leave DAO");
-      }
-      
-      return response.json();
+      const response = await apiPost(`/api/daos/${daoId}/leave`, {});
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/daos"] });
@@ -400,13 +361,16 @@ export default function EnhancedDAOs() {
 
         {/* Enhanced tabs */}
         <div className="flex items-center gap-2 mb-8 p-1 bg-white dark:bg-gray-800 rounded-2xl shadow-lg w-fit">
-          {[
+          {[ 
             { key: "joined", label: `My DAOs (${joinedDAOs.length})`, icon: Shield },
             { key: "available", label: `Discover (${availableDAOs.length})`, icon: Eye }
           ].map(({ key, label, icon: Icon }) => (
             <button
               key={key}
-              onClick={() => setActiveTab(key)}
+              onClick={() => {
+                setActiveTab(key);
+                window.location.hash = key;
+              }}
               className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
                 activeTab === key
                   ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
