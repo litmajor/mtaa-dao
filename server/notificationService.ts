@@ -40,6 +40,11 @@ interface TelegramUser {
 type NotificationRecord = InferSelectModel<typeof notifications>;
 
 class NotificationService extends EventEmitter {
+
+  // Compatibility method for recurringPaymentService
+  async sendNotification(userId: string, notification: SystemNotification) {
+    return this.createNotification({ ...notification, userId });
+  }
   private subscribers = new Map<string, NotificationChannel>();
   private emailTransporter: nodemailer.Transporter;
   private telegramBot: TelegramBot | null = null;

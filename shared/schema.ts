@@ -80,6 +80,7 @@ export const taskTemplates = pgTable('task_templates', {
 export const taskTemplatesCreatedBy = taskTemplates.createdBy;
 import { relations } from "drizzle-orm";
 import { IsRestoringProvider } from "@tanstack/react-query";
+import MtaaDAOLanding from "@/pages/landing";
 
 // User storage table
 export const users = pgTable("users", {
@@ -101,6 +102,8 @@ export const users = pgTable("users", {
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   profilePicture: varchar("profile_picture"),
+  refferalCode: varchar("referral_code"),
+  referralRewards: varchar("referral_rewards"),
   // wallet address used in multiple server callsites
   walletAddress: varchar("wallet_address"),
   bio: text("bio"),
@@ -125,6 +128,8 @@ export const users = pgTable("users", {
   isBanned: boolean("is_banned").default(false),
   banReason: text("ban_reason"),
   isSuperUser: boolean("is_super_user").default(false), // for superuser dashboard access
+  votingTokenBalance: decimal("voting_token_balance", { precision: 10, scale: 2 }).default("0"), // Added for admin analytics compatibility
+  mtaaTokenBalance: decimal("mtaa_token_balance", { precision: 10, scale: 2 }).default("0"), // Added for admin analytics compatibility
   votingPower: decimal("voting_power", { precision: 10, scale: 2 }).default("1.0"), // for weighted voting
   telegramId: varchar("telegram_id"),
   telegramChatId: varchar("telegram_chat_id"),
@@ -135,8 +140,15 @@ export const users = pgTable("users", {
   walletIv: text("wallet_iv"),
   walletAuthTag: text("wallet_auth_tag"),
   hasBackedUpMnemonic: boolean("has_backed_up_mnemonic").default(false),
-  votingTokenBalance: decimal("voting_token_balance", { precision: 10, scale: 2 }).default("0"), // Added for admin analytics compatibility
+  voting_token_balance: decimal("voting_token_balance", { precision: 10, scale: 2 }).default("0"), // Added for admin analytics compatibility
   isActive: boolean("is_active").default(true), // Added for account enable/disable compatibility
+  // If you need legacy/alternate spellings, use different property names or comment out as needed:
+  // referralCodeLegacy: varchar("referralCode"),
+  // votingTokenBalanceLegacy: decimal("votingTokenBalance", { precision: 10, scale: 2 }),
+  // mtaaTokenBalanceLegacy: decimal("mtaaTokenBalance", { precision: 10, scale: 2 }),
+  // referralcodeLegacy: varFchar("referralcode"),
+  // votingtokenbalanceLegacy: decimal("votingtokenbalance", { precision: 10, scale: 2 }),
+  // mtaatokenbalanceLegacy: decimal("mtaatokenbalance", { precision: 10, scale: 2 }),
 });
 
 // User Activities table

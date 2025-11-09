@@ -13,7 +13,8 @@ import { TooltipProvider } from "./components/ui/tooltip";
 import AnnouncementsBanner from './components/AnnouncementsBanner';
 import { MorioProvider } from "@/components/MorioProvider"; // Added MorioProvider import
 import { useUser } from './pages/hooks/useUser';
-import Register1 from './components/register1';
+import Register1Raw from './components/register1';
+const Register1 = Register1Raw as React.ComponentType<{ adminMode?: boolean }>;
 
 // Lazy load heavy pages
 const CreateDaoLazy = lazy(() => import('./pages/create-dao'));

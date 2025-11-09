@@ -1,4 +1,3 @@
-
 import { db } from '../db';
 import { walletTransactions, vaultTransactions } from '../../shared/schema';
 import { eq, and, or, lt } from 'drizzle-orm';
@@ -8,7 +7,11 @@ import { notificationService } from '../notificationService';
 import { WebSocketService } from './WebSocketService';
 
 const logger = Logger.getLogger();
-const wsService = WebSocketService.getInstance();
+
+
+function getWsService(): WebSocketService {
+  return WebSocketService.getInstance();
+}
 
 interface TransactionRetryConfig {
   maxRetries: number;
@@ -103,7 +106,7 @@ export class TransactionMonitor {
           .set({ 
             status,
             updatedAt: new Date(),
-            metadata: { ...tx.metadata, receipt: receipt.toJSON() }
+            metadata: JSON.stringify({ ...tx.metadata, receipt: receipt.toJSON() })
           })
           .where(eq(walletTransactions.id, tx.id));
 
@@ -114,7 +117,7 @@ export class TransactionMonitor {
           
           // Send WebSocket notification for real-time updates
           if (tx.fromUserId) {
-            wsService.sendToUser(tx.fromUserId, {
+            this._sendToUser(tx.fromUserId, {
               type: 'TRANSACTION_CONFIRMED',
               data: {
                 transactionId: tx.id,
@@ -127,6 +130,7 @@ export class TransactionMonitor {
             
             // Also send persistent notification
             await notificationService.sendNotification(tx.fromUserId, {
+              userId: tx.fromUserId,
               type: 'transaction_success',
               title: 'Transaction Confirmed',
               message: `Your ${tx.currency} transfer of ${tx.amount} was successful`,
@@ -167,7 +171,7 @@ export class TransactionMonitor {
           .set({ 
             status,
             updatedAt: new Date(),
-            metadata: { ...tx.metadata, receipt: receipt.toJSON() }
+            metadata: JSON.stringify({ ...tx.metadata, receipt: receipt.toJSON() })
           })
           .where(eq(vaultTransactions.id, tx.id));
 
@@ -223,15 +227,14 @@ export class TransactionMonitor {
       .set({ 
         status: 'failed',
         updatedAt: new Date(),
-        metadata: { ...tx.metadata, failureReason: reason }
+        metadata: JSON.stringify({ ...tx.metadata, failureReason: reason })
       })
       .where(eq(table.id, tx.id));
 
     // Notify user via WebSocket (immediate) and notification (persistent)
     const userId = type === 'wallet' ? tx.fromUserId : tx.userId;
     if (userId && DEFAULT_RETRY_CONFIG.notifyOnFailure) {
-      // Immediate WebSocket alert
-      wsService.sendToUser(userId, {
+      this._sendToUser(userId, {
         type: 'TRANSACTION_FAILED',
         data: {
           transactionId: tx.id,
@@ -245,6 +248,7 @@ export class TransactionMonitor {
       
       // Persistent notification
       await notificationService.sendNotification(userId, {
+        userId,
         type: 'transaction_failed',
         title: 'Transaction Failed',
         message: `Your transaction failed: ${reason}. Please try again or contact support.`,
@@ -255,6 +259,17 @@ export class TransactionMonitor {
 
     // Remove from retry queue
     this.retryQueue.delete(tx.id);
+  }
+
+  private _sendToUser(userId: string, message: any) {
+    // If you have user socket mapping, emit to that user
+    const ws = getWsService();
+    if (typeof ws.sendToUser === 'function') {
+      ws.sendToUser(userId, message);
+    } else {
+      // fallback: log or handle as needed
+      logger.info(`[TransactionMonitor] Would send to user ${userId}:`, message);
+    }
   }
 }
 

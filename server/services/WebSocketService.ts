@@ -24,20 +24,34 @@ interface DaoClient {
   isAlive: boolean;
 }
 
+
 export class WebSocketService {
+  private static instance: WebSocketService | null = null;
+  private static server: HttpServer | null = null;
   private wss: WebSocketServer;
   private clients: Map<WebSocket, DaoClient> = new Map();
   private typingUsers: Map<string, Set<string>> = new Map();
   private onlineUsers: Map<string, Set<string>> = new Map();
   private heartbeatInterval!: NodeJS.Timeout;
 
-  constructor(server: HttpServer) {
+  private constructor(server: HttpServer) {
     this.wss = new WebSocketServer({ 
       server,
       path: '/ws/realtime' // Use specific path to avoid conflicts with Vite HMR
     });
+    WebSocketService.server = server;
     this.setupWebSocket();
     this.startHeartbeat();
+  }
+
+  public static getInstance(server?: HttpServer): WebSocketService {
+    if (!WebSocketService.instance) {
+      if (!server) {
+        throw new Error('WebSocketService not initialized: server required for first call');
+      }
+      WebSocketService.instance = new WebSocketService(server);
+    }
+    return WebSocketService.instance;
   }
 
   private setupWebSocket() {
