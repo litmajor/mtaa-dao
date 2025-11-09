@@ -123,7 +123,7 @@ export function ShortTermDaoExtension({
                     Extend for {Math.floor((originalDuration || 30) / Math.pow(2, extensionCount + 1))} more days at ₭500
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
-                    Each extension is half the previous duration
+                    Each extension is half the previous duration (Strategic Hybrid Model)
                   </p>
                 </div>
               </div>
