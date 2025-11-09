@@ -1,0 +1,129 @@
+🧭 MTAA DAO Documentation Structure (Living System Style)
+1. Welcome & Overview
+
+Goal: Give anyone the “why” in 60 seconds.
+
+🌍 What is MtaaDAO?
+Simple, human intro — “a decentralized community finance network built for African youth empowerment.”
+
+💡 Core Idea — “Solve real problems together. Fund your cause, grow your people.”
+
+🎯 Quick Start — “Create a DAO in 2 minutes.”
+
+Include:
+
+A short motion graphic or flow showing how funds flow:
+User → DAO → Action → Impact → Community → Trust → Growth
+
+2. Getting Started
+
+Goal: Step-by-step onboarding with live examples.
+
+👥 Create your first DAO
+
+Type selector (Short-Term / Subscription / Meta)
+
+Setup guide (images, tooltips)
+
+💰 Funding & Contributions
+
+Wallet setup (MiniPay, Valora, MetaMask)
+
+Deposits, withdrawals, transparency
+
+⚙️ Roles & Permissions
+
+Members, Admins, Treasurers
+
+Voting, proposals, transparency
+
+3. DAO Types
+
+Goal: Explain the tiers you envisioned.
+
+Type	Duration	Fee	Ideal Use	Upgrade Path
+Short-Term DAO	30 days	₭500	Wedding, funeral, event	Extend / Upgrade
+Collective DAO	Monthly	₭1,500	Savings, chama, community projects	Merge / MetaDAO
+MetaDAO	Continuous	Dynamic	Regional, strategic alliances	Federation Layer
+
+Each with:
+
+🎞️ Example scenario
+
+💡 When to use it
+
+⚙️ Lifecycle visual (creation → extension → merge)
+
+4. Financial Layer
+
+Goal: Build user confidence.
+
+🔐 Wallets & Security
+
+💸 Supported Tokens (CELO, cUSD, USDT upcoming)
+
+🧾 Transparent Ledger View
+
+💱 Conversion, Withdrawals, & Proof-of-Impact
+
+5. Governance & Trust
+
+Goal: Explain how decisions are made.
+
+🗳️ Voting System
+
+📊 Proposal Lifecycle
+
+🎖️ Reputation / Score System (optional)
+
+🧠 Smart DAO Rules (auto-expiry, extension limits, merge triggers)
+
+6. The Ecosystem Layer
+
+Goal: Explain long-term vision.
+
+🌱 MetaDAOs — how DAOs connect by region, cause, or partnership
+
+🕸️ DAO Networks — “Nairobi Creative Cluster,” “Agritech MetaDAO,” etc.
+
+🤝 Strategic Alliances & Impact Tracking
+
+💫 Cross-DAO economy (future idea)
+
+7. Developer & API Section
+
+Goal: Let technical people plug in.
+
+💻 SDK / API Overview
+
+🪙 Smart Contract References
+
+🧩 Embeddable Components (for external platforms)
+
+📡 Data endpoints for analytics / transparency
+
+8. Case Studies & Stories
+
+Goal: Show real outcomes.
+
+“How a youth group raised ₭20,000 for a funeral in 24 hours.”
+
+“How 5 DAOs merged to form the Nairobi MetaDAO.”
+
+Each story links to the live DAO page.
+
+9. FAQ + Troubleshooting
+
+Goal: Help users self-serve fast.
+
+“What happens when my DAO expires?”
+
+“Can I add members after creation?”
+
+“What if my wallet fails?”
+
+“Can DAOs merge if they’re from different counties?”
+
+10. Interactive Playground (🔥 Optional but Game-Changing)
+
+A mini sandbox where users can:
