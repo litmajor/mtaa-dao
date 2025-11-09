@@ -1,0 +1,587 @@
+
+---
+title: DeFi Integration
+description: Access decentralized finance protocols through MtaaDAO
+---
+
+# DeFi Integration
+
+Connect your DAO to leading DeFi protocols on Celo for lending, borrowing, swapping, and yield farming.
+
+---
+
+## Overview
+
+MtaaDAO integrates with major DeFi protocols to provide:
+
+- **Yield Generation**: Earn interest on idle treasury funds
+- **Liquidity Provision**: Provide liquidity and earn fees
+- **Token Swaps**: Exchange assets at best rates
+- **Lending/Borrowing**: Access capital without selling assets
+- **Staking**: Secure networks and earn rewards
+
+---
+
+## Supported Protocols
+
+### **Ubeswap** (DEX & Liquidity)
+
+Decentralized exchange built on Celo:
+
+```typescript
+// Swap tokens
+await swapTokens({
+  from: "cUSD",
+  to: "CELO",
+  amount: "100",
+  slippage: 0.5 // 0.5%
+});
+
+// Add liquidity
+await addLiquidity({
+  tokenA: "cUSD",
+  tokenB: "CELO",
+  amountA: "1000",
+  amountB: "500"
+});
+```
+
+**Features:**
+- Token swaps with minimal slippage
+- Liquidity pools with fee earnings
+- Farming rewards in UBE tokens
+- Auto-compounding vaults
+
+### **Mento** (Stable Assets)
+
+Celo's native stable asset protocol:
+
+```typescript
+// Mint stable assets
+await mintStable({
+  collateral: "CELO",
+  mint: "cUSD",
+  amount: "1000"
+});
+
+// Earn stability fees
+await provideLiquidity({
+  pool: "cUSD-cEUR",
+  amount: "5000"
+});
+```
+
+**Features:**
+- Mint cUSD, cEUR, cREAL with CELO collateral
+- Earn fees from stability mechanism
+- Low-risk yield (6-10% APY)
+
+### **Moola Market** (Lending)
+
+Lending and borrowing protocol:
+
+```typescript
+// Supply assets to earn interest
+await supply({
+  asset: "cUSD",
+  amount: "10000"
+});
+
+// Borrow against collateral
+await borrow({
+  collateral: "CELO",
+  borrow: "cUSD",
+  amount: "5000"
+});
+```
+
+**Features:**
+- Supply assets, earn interest
+- Borrow with overcollateralization
+- Variable and stable interest rates
+- Liquidation protection
+
+### **Beefy Finance** (Yield Optimizer)
+
+Auto-compounding yield optimizer:
+
+```typescript
+// Deposit into vault
+await beefyDeposit({
+  vault: "Ubeswap-cUSD-CELO",
+  amount: "1000"
+});
+```
+
+**Features:**
+- Auto-compound LP rewards
+- Gas-optimized strategies
+- 8-15% APY on stable pairs
+- One-click farming
+
+---
+
+## DeFi Strategies
+
+### **Conservative** (Low Risk, 6-10% APY)
+
+Ideal for risk-averse DAOs:
+
+```typescript
+const conservativeStrategy = {
+  protocols: [
+    { name: "Mento", allocation: 50%, apy: "8%" },
+    { name: "Beefy Stables", allocation: 30%, apy: "9%" },
+    { name: "Moola Supply", allocation: 20%, apy: "7%" }
+  ],
+  expectedAPY: "8.1%",
+  riskLevel: "low"
+};
+```
+
+**Best for:**
+- Large treasuries
+- Long-term holdings
+- Steady income needs
+
+### **Moderate** (Medium Risk, 10-20% APY)
+
+Balanced risk/reward:
+
+```typescript
+const moderateStrategy = {
+  protocols: [
+    { name: "Ubeswap LP", allocation: 40%, apy: "15%" },
+    { name: "Beefy Vaults", allocation: 35%, apy: "12%" },
+    { name: "Moola Supply", allocation: 25%, apy: "8%" }
+  ],
+  expectedAPY: "12.45%",
+  riskLevel: "medium"
+};
+```
+
+**Best for:**
+- Growth-focused DAOs
+- Medium-term horizons
+- Diversified portfolios
+
+### **Aggressive** (High Risk, 20%+ APY)
+
+Maximum yield potential:
+
+```typescript
+const aggressiveStrategy = {
+  protocols: [
+    { name: "Ubeswap Volatile Pairs", allocation: 50%, apy: "25%" },
+    { name: "Leverage Farming", allocation: 30%, apy: "35%" },
+    { name: "New Protocol Farms", allocation: 20%, apy: "50%" }
+  ],
+  expectedAPY: "31.5%",
+  riskLevel: "high"
+};
+```
+
+**Best for:**
+- Small, agile DAOs
+- High-risk tolerance
+- Active management
+
+---
+
+## Using DeFi in Your DAO
+
+### **Automated Strategies**
+
+MaonoVault can automatically deploy DeFi strategies:
+
+```typescript
+const vault = await createMaonoVault({
+  strategy: "moderate",
+  autoRebalance: true,
+  rebalanceFrequency: "weekly"
+});
+```
+
+**Vault handles:**
+- Protocol selection
+- Asset allocation
+- Reward harvesting
+- Gas optimization
+- Rebalancing
+
+### **Manual DeFi Operations**
+
+Advanced users can manage DeFi directly:
+
+1. **Navigate to DeFi Dashboard**
+2. **Select Protocol** (Ubeswap, Moola, etc.)
+3. **Choose Action** (Swap, Supply, Farm)
+4. **Enter Amount**
+5. **Review and Execute**
+
+### **Governance-Approved Strategies**
+
+For large allocations, require DAO approval:
+
+```typescript
+const proposal = await createProposal({
+  type: "defi_strategy",
+  title: "Deploy 50K cUSD to Ubeswap LP",
+  details: {
+    protocol: "Ubeswap",
+    action: "add_liquidity",
+    amount: "50000",
+    pair: "cUSD-CELO",
+    expectedAPY: "15%"
+  }
+});
+```
+
+---
+
+## Yield Optimization
+
+### **Auto-Compounding**
+
+Automatically reinvest rewards:
+
+```typescript
+const vault = {
+  autoCompound: true,
+  compoundFrequency: "daily", // or "weekly"
+  reinvestThreshold: "10" // Minimum to trigger compound
+};
+```
+
+**Benefits:**
+- Maximize compound interest
+- Save on gas fees (batched)
+- Hands-off management
+
+### **Rebalancing**
+
+Maintain target allocations:
+
+```typescript
+const rebalanceConfig = {
+  trigger: "threshold", // or "time"
+  threshold: 5, // Rebalance if >5% off target
+  frequency: "weekly",
+  minRebalance: "100" // Don't rebalance <$100 changes
+};
+```
+
+### **Harvest Optimization**
+
+Claim rewards at optimal times:
+
+```typescript
+const harvestConfig = {
+  minValue: "50", // Only harvest if >$50 value
+  gasLimit: "0.10", // Max gas as % of harvest
+  autoSell: true, // Convert rewards to base asset
+};
+```
+
+---
+
+## Risk Management
+
+### **Diversification**
+
+Never put all funds in one protocol:
+
+```typescript
+const riskLimits = {
+  maxPerProtocol: "30%", // Max 30% in any protocol
+  maxPerStrategy: "50%", // Max 50% in any strategy
+  minLiquidity: "20%", // Keep 20% liquid
+};
+```
+
+### **Smart Contract Risk**
+
+Protocols ranked by safety:
+
+| Protocol | Audit Status | TVL | Risk Rating |
+|----------|-------------|-----|-------------|
+| **Mento** | ✅ Audited | $50M+ | Low |
+| **Ubeswap** | ✅ Audited | $30M+ | Low-Medium |
+| **Moola** | ✅ Audited | $20M+ | Medium |
+| **Beefy** | ✅ Audited | $10M+ | Medium |
+
+### **Impermanent Loss Protection**
+
+For liquidity provision:
+
+```typescript
+const lpPosition = {
+  pair: "cUSD-CELO",
+  amount: "10000",
+  ilProtection: true, // Hedge against IL
+  exitStrategy: {
+    maxIL: "5%", // Exit if IL >5%
+    minAPY: "10%" // Exit if APY <10%
+  }
+};
+```
+
+---
+
+## Token Swaps
+
+### **Best Rate Routing**
+
+Automatically find best swap rates:
+
+```typescript
+await swap({
+  from: "cUSD",
+  to: "CELO",
+  amount: "1000",
+  routing: "auto" // Checks all DEXs
+});
+```
+
+### **Slippage Protection**
+
+Set maximum acceptable slippage:
+
+```typescript
+const swapConfig = {
+  slippage: 0.5, // 0.5% max
+  deadline: 20, // 20 minutes
+  priceImpact: 1.0 // Warn if >1% impact
+};
+```
+
+### **Limit Orders** (Coming Soon)
+
+Set target prices for swaps:
+
+```typescript
+const limitOrder = {
+  from: "cUSD",
+  to: "CELO",
+  amount: "1000",
+  targetPrice: "0.45", // Execute when CELO = $0.45
+  expiry: "7d"
+};
+```
+
+---
+
+## Liquidity Provision
+
+### **Add Liquidity**
+
+Become a liquidity provider:
+
+```typescript
+await addLiquidity({
+  pair: "cUSD-CELO",
+  amountA: "1000", // cUSD
+  amountB: "2222", // CELO (based on current ratio)
+  minLP: "990" // Minimum LP tokens to accept
+});
+```
+
+**Earn from:**
+- Trading fees (0.3% per swap)
+- Farming rewards (UBE tokens)
+- Protocol incentives
+
+### **Remove Liquidity**
+
+Withdraw your position:
+
+```typescript
+await removeLiquidity({
+  pair: "cUSD-CELO",
+  lpTokens: "100%", // or specific amount
+  minAmountA: "950", // Minimum cUSD
+  minAmountB: "2100" // Minimum CELO
+});
+```
+
+---
+
+## Lending & Borrowing
+
+### **Supply Assets**
+
+Lend assets to earn interest:
+
+```typescript
+await supply({
+  protocol: "Moola",
+  asset: "cUSD",
+  amount: "10000"
+});
+```
+
+**Current rates** (example):
+- cUSD: 7% APY
+- cEUR: 6.5% APY
+- CELO: 5% APY
+
+### **Borrow Assets**
+
+Borrow against collateral:
+
+```typescript
+await borrow({
+  protocol: "Moola",
+  collateral: "CELO",
+  collateralAmount: "10000",
+  borrow: "cUSD",
+  borrowAmount: "4000", // 40% LTV (safe)
+  interestType: "variable" // or "stable"
+});
+```
+
+**Loan-to-Value (LTV):**
+- Safe: <40%
+- Moderate: 40-60%
+- Risky: >60%
+- Liquidation: ~75%
+
+---
+
+## Analytics & Reporting
+
+### **DeFi Dashboard**
+
+Track all DeFi positions:
+- **Total Value Locked**: Assets across protocols
+- **Yield Earned**: Historical returns
+- **APY Tracking**: Current and projected yields
+- **Risk Score**: Portfolio risk level
+- **Gas Spent**: Total gas costs
+
+### **Performance Metrics**
+
+```typescript
+const metrics = {
+  totalInvested: "50000 cUSD",
+  currentValue: "53500 cUSD",
+  totalYield: "3500 cUSD",
+  realizedAPY: "14.2%",
+  unrealizedGains: "500 cUSD",
+  gasCosts: "50 cUSD"
+};
+```
+
+### **Transaction History**
+
+View all DeFi transactions:
+- Deposits
+- Withdrawals
+- Swaps
+- Harvests
+- Rebalances
+
+---
+
+## API Reference
+
+### Swap Tokens
+
+```typescript
+POST /api/defi/swap
+
+{
+  "from": "cUSD",
+  "to": "CELO",
+  "amount": "1000",
+  "slippage": 0.5
+}
+```
+
+### Add Liquidity
+
+```typescript
+POST /api/defi/add-liquidity
+
+{
+  "pair": "cUSD-CELO",
+  "amountA": "1000",
+  "amountB": "2222"
+}
+```
+
+### Supply to Lending
+
+```typescript
+POST /api/defi/supply
+
+{
+  "protocol": "Moola",
+  "asset": "cUSD",
+  "amount": "10000"
+}
+```
+
+---
+
+## Gas Optimization
+
+### **Batch Transactions**
+
+Combine multiple DeFi operations:
+
+```typescript
+const batch = [
+  { action: "harvest", protocol: "Ubeswap" },
+  { action: "compound", protocol: "Beefy" },
+  { action: "rebalance", target: "moderate" }
+];
+
+await executeBatch(batch); // Single transaction
+```
+
+**Gas savings**: Up to 60% vs individual transactions
+
+### **Gas Price Monitoring**
+
+Execute when gas is cheap:
+
+```typescript
+const gasStrategy = {
+  maxGasPrice: "1 gwei",
+  waitTime: "24h", // Max wait time
+  priority: "low" // or "medium", "high"
+};
+```
+
+---
+
+## Coming Soon
+
+- ✅ **Cross-Chain DeFi**: Access Ethereum/Polygon protocols
+- ✅ **Automated Yield Farming**: AI-optimized strategies
+- ✅ **Insurance Integration**: Protect against smart contract risk
+- ✅ **Leverage Trading**: Amplify returns (with caution)
+- ✅ **Options & Derivatives**: Advanced DeFi instruments
+
+---
+
+## Best Practices
+
+1. **Start small** - Test with small amounts first
+2. **Diversify** - Don't put everything in one protocol
+3. **Understand risks** - Know impermanent loss, smart contract risk
+4. **Monitor regularly** - Check positions weekly
+5. **Keep reserves** - Maintain liquid funds for emergencies
+6. **Use MaonoVault** - Automate if you're not DeFi-savvy
+
+---
+
+## Support
+
+Need help with DeFi?
+
+- **Documentation**: [docs.mtaadao.com](https://docs.mtaadao.com)
+- **DeFi Guide**: Step-by-step tutorials
+- **Discord**: Ask the community
+- **Email**: support@mtaadao.com
