@@ -39,6 +39,9 @@ const CreateDAOFlow = () => {
     description: '',
     logo: '🏛️',
     category: '',
+    regionalTags: [],
+    causeTags: [],
+    visibility: 'public', // public, private, regional
     // Step 2 - Governance
     governanceModel: '1-person-1-vote',
     quorum: 50,
@@ -50,7 +53,11 @@ const CreateDAOFlow = () => {
     depositRequired: false,
     // Step 4 - Members
     members: [],
-    inviteMessage: ''
+    inviteMessage: '',
+    // Social features
+    enableSocialReactions: true,
+    enableDiscovery: true,
+    featuredMessage: '' // Optional message for discovery feed
   });
 
   // Sync wallet address to founderWallet and initial member
@@ -83,14 +90,52 @@ const CreateDAOFlow = () => {
 
   const logoOptions = ['🏛️', '🌍', '🤝', '💎', '🚀', '⚡', '🌱', '🔥'];
   const categories = [
-    { value: 'savings', label: 'Savings Group' },
-    { value: 'investment', label: 'Investment Club' },
-    { value: 'social', label: 'Social Impact' },
-    { value: 'governance', label: 'Governance' },
-    { value: 'insurance', label: 'Insurance' },
-    { value: 'fundraiser', label: 'Fundraiser' },
-    { value: 'other', label: 'Other' },
-    { value: 'custom', label: 'Custom' }
+    { value: 'savings', label: 'Savings Group', emoji: '💰' },
+    { value: 'investment', label: 'Investment Club', emoji: '📈' },
+    { value: 'social', label: 'Social Impact', emoji: '🌍' },
+    { value: 'governance', label: 'Governance', emoji: '🏛️' },
+    { value: 'insurance', label: 'Insurance', emoji: '🛡️' },
+    { value: 'fundraiser', label: 'Fundraiser', emoji: '🎯' },
+    { value: 'funeral', label: 'Funeral Fund', emoji: '🕊️' },
+    { value: 'education', label: 'Education', emoji: '🎓' },
+    { value: 'youth', label: 'Youth Empowerment', emoji: '⚡' },
+    { value: 'women', label: "Women's Group", emoji: '👭' },
+    { value: 'other', label: 'Other', emoji: '✨' }
+  ];
+
+  // Regional tags for discovery
+  const regionalTags = [
+    { value: 'nairobi', label: 'Nairobi' },
+    { value: 'mombasa', label: 'Mombasa' },
+    { value: 'kisumu', label: 'Kisumu' },
+    { value: 'nakuru', label: 'Nakuru' },
+    { value: 'eldoret', label: 'Eldoret' },
+    { value: 'thika', label: 'Thika' },
+    { value: 'machakos', label: 'Machakos' },
+    { value: 'kakamega', label: 'Kakamega' },
+    { value: 'coastal', label: 'Coastal Region' },
+    { value: 'central', label: 'Central Region' },
+    { value: 'western', label: 'Western Region' },
+    { value: 'eastern', label: 'Eastern Region' },
+    { value: 'nyanza', label: 'Nyanza Region' },
+    { value: 'riftvalley', label: 'Rift Valley' },
+    { value: 'northeastern', label: 'North Eastern' }
+  ];
+
+  // Cause tags for social discovery
+  const causeTags = [
+    { value: 'youthempowerment', label: 'Youth Empowerment', emoji: '⚡' },
+    { value: 'funeralfund', label: 'Funeral Fund', emoji: '🕊️' },
+    { value: 'emergencyfund', label: 'Emergency Fund', emoji: '🚨' },
+    { value: 'education', label: 'Education', emoji: '🎓' },
+    { value: 'healthcare', label: 'Healthcare', emoji: '🏥' },
+    { value: 'housing', label: 'Housing', emoji: '🏠' },
+    { value: 'agriculture', label: 'Agriculture', emoji: '🌾' },
+    { value: 'smallbusiness', label: 'Small Business', emoji: '💼' },
+    { value: 'womenempowerment', label: 'Women Empowerment', emoji: '💪' },
+    { value: 'environmental', label: 'Environmental', emoji: '🌱' },
+    { value: 'community', label: 'Community Development', emoji: '🤝' },
+    { value: 'technology', label: 'Technology', emoji: '💻' }
   ];
 
   const governanceModels = [
@@ -120,6 +165,9 @@ const CreateDAOFlow = () => {
     description: string;
     logo: string;
     category: string;
+    regionalTags: string[];
+    causeTags: string[];
+    visibility: string;
     governanceModel: string;
     quorum: number;
     votingPeriod: string;
@@ -129,6 +177,9 @@ const CreateDAOFlow = () => {
     depositRequired: boolean;
     members: Member[];
     inviteMessage: string;
+    enableSocialReactions: boolean;
+    enableDiscovery: boolean;
+    featuredMessage: string;
     deployedAddress?: string;
   }
 
@@ -241,7 +292,7 @@ const CreateDAOFlow = () => {
 
         <div>
           <Label className="text-sm font-medium">Choose a Logo</Label>
-          <div className="flex gap-2 mt-2">
+          <div className="flex gap-2 mt-2 flex-wrap">
             {logoOptions.map(emoji => (
               <Button
                 key={emoji}
@@ -260,17 +311,185 @@ const CreateDAOFlow = () => {
         </div>
 
         <div>
-          <Label className="text-sm font-medium">Category</Label>
+          <Label className="text-sm font-medium">Category *</Label>
           <Select value={daoData.category} onValueChange={(value) => updateDaoData('category', value)}>
             <SelectTrigger className="mt-1">
               <SelectValue placeholder="What type of DAO is this?" />
             </SelectTrigger>
             <SelectContent>
               {categories.map(cat => (
-                <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+                <SelectItem key={cat.value} value={cat.value}>
+                  <span className="flex items-center gap-2">
+                    <span>{cat.emoji}</span>
+                    <span>{cat.label}</span>
+                  </span>
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
+        </div>
+
+        {/* Regional Tags */}
+        <div>
+          <Label className="text-sm font-medium">📍 Region (Select up to 2)</Label>
+          <p className="text-xs text-gray-500 mb-2">Help people discover your DAO by location</p>
+          <div className="flex flex-wrap gap-2 mt-2">
+            {regionalTags.map(tag => (
+              <Button
+                key={tag.value}
+                variant={daoData.regionalTags.includes(tag.value) ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  const current = daoData.regionalTags;
+                  if (current.includes(tag.value)) {
+                    updateDaoData('regionalTags', current.filter(t => t !== tag.value));
+                  } else if (current.length < 2) {
+                    updateDaoData('regionalTags', [...current, tag.value]);
+                  }
+                }}
+                className="text-xs"
+              >
+                {tag.label}
+              </Button>
+            ))}
+          </div>
+          {daoData.regionalTags.length > 0 && (
+            <div className="mt-2 flex gap-2 flex-wrap">
+              {daoData.regionalTags.map(tag => (
+                <Badge key={tag} variant="secondary">
+                  #{regionalTags.find(t => t.value === tag)?.label}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Cause Tags */}
+        <div>
+          <Label className="text-sm font-medium">🎯 Cause & Purpose (Select up to 3)</Label>
+          <p className="text-xs text-gray-500 mb-2">These help people find DAOs they care about</p>
+          <div className="flex flex-wrap gap-2 mt-2">
+            {causeTags.map(tag => (
+              <Button
+                key={tag.value}
+                variant={daoData.causeTags.includes(tag.value) ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  const current = daoData.causeTags;
+                  if (current.includes(tag.value)) {
+                    updateDaoData('causeTags', current.filter(t => t !== tag.value));
+                  } else if (current.length < 3) {
+                    updateDaoData('causeTags', [...current, tag.value]);
+                  }
+                }}
+                className="text-xs"
+              >
+                <span className="mr-1">{tag.emoji}</span>
+                {tag.label}
+              </Button>
+            ))}
+          </div>
+          {daoData.causeTags.length > 0 && (
+            <div className="mt-2 flex gap-2 flex-wrap">
+              {daoData.causeTags.map(tag => (
+                <Badge key={tag} variant="secondary" className="text-xs">
+                  {causeTags.find(t => t.value === tag)?.emoji} #{causeTags.find(t => t.value === tag)?.label}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Visibility Settings */}
+        <div>
+          <Label className="text-sm font-medium">🌍 Discovery & Visibility</Label>
+          <RadioGroup
+            value={daoData.visibility}
+            onValueChange={(value) => updateDaoData('visibility', value)}
+            className="mt-2 space-y-2"
+          >
+            <div className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-gray-50">
+              <RadioGroupItem value="public" id="public" className="mt-1" />
+              <div className="flex-1">
+                <Label htmlFor="public" className="font-medium cursor-pointer">
+                  🌐 Public - Discover Everywhere
+                </Label>
+                <p className="text-xs text-gray-500 mt-1">
+                  Appears in discovery feed, trending lists, and search results
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-gray-50">
+              <RadioGroupItem value="regional" id="regional" className="mt-1" />
+              <div className="flex-1">
+                <Label htmlFor="regional" className="font-medium cursor-pointer">
+                  📍 Regional Only
+                </Label>
+                <p className="text-xs text-gray-500 mt-1">
+                  Only visible in your region's discovery feed
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-gray-50">
+              <RadioGroupItem value="private" id="private" className="mt-1" />
+              <div className="flex-1">
+                <Label htmlFor="private" className="font-medium cursor-pointer">
+                  🔒 Private - Invite Only
+                </Label>
+                <p className="text-xs text-gray-500 mt-1">
+                  Not discoverable, members join via invite link only
+                </p>
+              </div>
+            </div>
+          </RadioGroup>
+        </div>
+
+        {/* Featured Message for Discovery */}
+        {daoData.visibility !== 'private' && (
+          <div>
+            <Label htmlFor="featured-message" className="text-sm font-medium">
+              ✨ Featured Message (Optional)
+            </Label>
+            <p className="text-xs text-gray-500 mb-2">
+              A short, inspiring message that appears when people discover your DAO
+            </p>
+            <Textarea
+              id="featured-message"
+              placeholder="e.g., 'Supporting our youth to build a better tomorrow 💪🏾' or 'Pole sana 🙏🏾 - We're here for each other'"
+              value={daoData.featuredMessage}
+              onChange={(e) => updateDaoData('featuredMessage', e.target.value)}
+              className="mt-1"
+              maxLength={100}
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              {daoData.featuredMessage.length}/100 characters
+            </p>
+          </div>
+        )}
+
+        {/* Social Features */}
+        <div className="space-y-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
+          <h4 className="font-medium text-sm">💬 Social Layer</h4>
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm">Enable Reactions & Support Notes</Label>
+              <p className="text-xs text-gray-500">Let people send "Pole sana 🙏🏾" or "Happy to support!"</p>
+            </div>
+            <Switch
+              checked={daoData.enableSocialReactions}
+              onCheckedChange={(checked) => updateDaoData('enableSocialReactions', checked)}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm">Join MetaDAO Network</Label>
+              <p className="text-xs text-gray-500">Auto-suggest joining regional or cause-based MetaDAOs</p>
+            </div>
+            <Switch
+              checked={daoData.enableDiscovery}
+              onCheckedChange={(checked) => updateDaoData('enableDiscovery', checked)}
+            />
+          </div>
         </div>
       </div>
     </div>
