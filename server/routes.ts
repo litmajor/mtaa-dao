@@ -46,6 +46,10 @@ import userSubscriptionRoutes from './routes/user-subscription';
 import revenueRoutes from './routes/revenue';
 // Import savings routes
 import savingsRoutes from './routes/savings';
+// Import blog, support, and success stories routes
+import blogRoutes from './routes/blog';
+import supportRoutes from './routes/support';
+import successStoriesRoutes from './routes/success-stories';
 
 
 // Import API handlers
@@ -340,4 +344,9 @@ export async function registerRoutes(app: Express) {
 
   // === ADMIN AI METRICS ROUTE ===
   app.use('/api/admin', adminAIMetricsRoutes);
+
+  // === BLOG, SUPPORT, AND SUCCESS STORIES ROUTES ===
+  app.use('/api/blog', blogRoutes);
+  app.use('/api/support', supportRoutes);
+  app.use('/api/success-stories', successStoriesRoutes);
 }
