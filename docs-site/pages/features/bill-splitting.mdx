@@ -1,0 +1,494 @@
+
+---
+title: Bill Splitting
+description: Split expenses easily among DAO members
+---
+
+# Bill Splitting
+
+Easily divide expenses among multiple people with automated payment collection and settlement.
+
+---
+
+## Overview
+
+Bill splitting allows you to:
+
+- **Divide costs** among group members
+- **Track who paid** and who owes
+- **Automate reminders** for pending payments
+- **Settle balances** with one-click payments
+
+Perfect for:
+- Shared DAO expenses
+- Group purchases
+- Event costs
+- Shared subscriptions
+
+---
+
+## How It Works
+
+### 1. **Create a Split Bill**
+
+```typescript
+const bill = {
+  title: "Team Lunch",
+  totalAmount: "100",
+  currency: "cUSD",
+  participants: [
+    "0x1234...", // Alice
+    "0x5678...", // Bob
+    "+254712345678", // Charlie (phone number)
+    "0x9abc..."  // David
+  ],
+  splitMethod: "equal" // or "custom", "percentage"
+};
+```
+
+### 2. **Split Methods**
+
+#### **Equal Split**
+
+Divide equally among all participants:
+
+```
+Total: 100 cUSD
+Participants: 4
+Each pays: 25 cUSD
+```
+
+#### **Custom Amounts**
+
+Specify exact amounts for each person:
+
+```typescript
+const customSplit = {
+  "Alice": "40",
+  "Bob": "30",
+  "Charlie": "20",
+  "David": "10"
+};
+```
+
+#### **Percentage Split**
+
+Distribute by percentage:
+
+```typescript
+const percentageSplit = {
+  "Alice": "40%",
+  "Bob": "30%",
+  "Charlie": "20%",
+  "David": "10%"
+};
+```
+
+#### **Share-Based Split**
+
+Divide by shares (useful for unequal contributions):
+
+```typescript
+const sharesSplit = {
+  "Alice": 2, // Gets 2/5 of the bill
+  "Bob": 2,   // Gets 2/5 of the bill
+  "Charlie": 1 // Gets 1/5 of the bill
+};
+```
+
+---
+
+## Creating a Bill Split
+
+### From DAO Dashboard
+
+1. Go to **Treasury** → **Expenses**
+2. Click **"Split Bill"**
+3. Enter bill details:
+   - Description
+   - Total amount
+   - Currency (cUSD, cEUR, CELO, etc.)
+4. Add participants:
+   - Enter wallet addresses or phone numbers
+   - Choose split method
+   - Assign amounts/percentages
+5. Review and create
+6. Participants receive payment requests
+
+### From Wallet
+
+1. Navigate to **Wallet** → **Split Bills**
+2. Click **"New Split"**
+3. Upload receipt (optional)
+4. Add participants and amounts
+5. Send payment requests
+
+---
+
+## Payment Collection
+
+### **Automatic Reminders**
+
+System sends reminders to participants:
+- **Immediate**: Upon bill creation
+- **3 days**: If unpaid
+- **7 days**: Final reminder
+
+### **Payment Methods**
+
+Participants can pay via:
+- **Direct wallet transfer**
+- **Phone number payment** (MiniPay)
+- **QR code scan**
+- **Payment link**
+
+### **Partial Payments**
+
+Allow participants to pay in installments:
+
+```typescript
+const bill = {
+  // ...
+  allowPartialPayments: true,
+  minimumPayment: "10" // Minimum per payment
+};
+```
+
+---
+
+## Settlement & Tracking
+
+### **Real-Time Balance**
+
+View who has paid and who owes:
+
+```
+Total: 100 cUSD
+
+✅ Alice: 25 cUSD (Paid)
+✅ Bob: 25 cUSD (Paid)
+⏳ Charlie: 25 cUSD (Pending)
+❌ David: 25 cUSD (Overdue)
+```
+
+### **Auto-Settlement**
+
+When all participants pay, funds are automatically:
+- Collected into a temporary escrow
+- Distributed to the original payer
+- Transaction recorded on-chain
+
+### **Dispute Resolution**
+
+If someone disagrees with the split:
+1. Open a dispute
+2. Provide reasoning
+3. Other participants vote
+4. Majority decision prevails
+
+---
+
+## Advanced Features
+
+### **Expense Categories**
+
+Tag bills for easy tracking:
+
+```typescript
+const bill = {
+  // ...
+  category: "food", // food, transport, utilities, entertainment
+  tags: ["team-building", "Q4-2025"]
+};
+```
+
+### **Receipt Upload**
+
+Attach receipts for transparency:
+
+```typescript
+const bill = {
+  // ...
+  receipt: {
+    file: receiptImage,
+    url: "ipfs://Qm..."
+  }
+};
+```
+
+### **Recurring Split Bills**
+
+For regular shared expenses:
+
+```typescript
+const recurringBill = {
+  title: "Monthly Office Rent",
+  amount: "1000",
+  participants: [...],
+  frequency: "monthly",
+  splitMethod: "equal"
+};
+```
+
+### **Multi-Currency Support**
+
+Split bills in different currencies:
+
+```typescript
+const multiCurrencyBill = {
+  totalAmount: "100",
+  baseCurrency: "cUSD",
+  allowCurrencyChoice: true, // Participants can pay in preferred currency
+  exchangeRate: "auto" // Uses oracle price feeds
+};
+```
+
+---
+
+## Group Expenses
+
+### **Expense Pools**
+
+Create shared expense pools for ongoing costs:
+
+```typescript
+const expensePool = {
+  name: "Team Activities Fund",
+  members: [...],
+  monthlyContribution: "50",
+  useCase: "Shared team expenses"
+};
+```
+
+### **Balance Tracking**
+
+See who has contributed more or less:
+
+```
+Alice: +150 cUSD (contributed more)
+Bob: -50 cUSD (owes the group)
+Charlie: 0 cUSD (balanced)
+```
+
+### **Settle Up**
+
+One-click settlement of group balances:
+
+```typescript
+// Bob owes Alice 50 cUSD and Charlie 25 cUSD
+// System calculates optimal payment path:
+Bob → Alice: 50 cUSD
+Bob → Charlie: 25 cUSD
+```
+
+---
+
+## Smart Split Features
+
+### **Tax Inclusion**
+
+Automatically include tax and tips:
+
+```typescript
+const bill = {
+  subtotal: "100",
+  tax: "10", // 10%
+  tip: "15", // 15%
+  total: "125" // Auto-calculated
+};
+```
+
+### **Itemized Splits**
+
+Split by individual items:
+
+```typescript
+const itemizedBill = {
+  items: [
+    { name: "Pizza", cost: "20", participants: ["Alice", "Bob"] },
+    { name: "Salad", cost: "15", participants: ["Alice", "Charlie"] },
+    { name: "Drinks", cost: "10", participants: ["all"] }
+  ]
+};
+```
+
+### **Fairness Calculator**
+
+System suggests fair splits based on:
+- Previous contribution history
+- Wallet balances
+- Payment reliability
+
+---
+
+## API Reference
+
+### Create Bill Split
+
+```typescript
+POST /api/wallet/split-bill
+
+{
+  "title": "Team Dinner",
+  "amount": "200",
+  "currency": "cUSD",
+  "participants": ["0x...", "+254..."],
+  "splitMethod": "equal",
+  "dueDate": "2025-12-15"
+}
+```
+
+### Get Bill Status
+
+```typescript
+GET /api/wallet/split-bills/:id
+
+Response: {
+  id: "split_123",
+  title: "Team Dinner",
+  total: "200",
+  paid: "150",
+  pending: "50",
+  participants: [
+    { address: "0x...", amount: "50", status: "paid" },
+    { address: "0x...", amount: "50", status: "pending" }
+  ]
+}
+```
+
+### Send Reminder
+
+```typescript
+POST /api/wallet/split-bills/:id/remind
+
+{
+  "participantId": "0x...",
+  "message": "Friendly reminder about team dinner split"
+}
+```
+
+---
+
+## Use Cases
+
+### **DAO Events**
+
+Split costs for DAO meetups:
+- Venue rental
+- Catering
+- Transportation
+- Swag production
+
+### **Shared Tools**
+
+Divide subscription costs:
+- Design software
+- Development tools
+- Cloud hosting
+- Analytics platforms
+
+### **Community Projects**
+
+Pool funds for initiatives:
+- Community gardens
+- Public art
+- Local infrastructure
+- Charity drives
+
+---
+
+## Best Practices
+
+1. **Clear descriptions** - Help participants understand what they're paying for
+2. **Attach receipts** - Increase transparency
+3. **Set due dates** - Encourage timely payments
+4. **Use categories** - Organize expenses for easy tracking
+5. **Regular settlements** - Don't let balances accumulate
+6. **Fair splits** - Consider individual circumstances
+
+---
+
+## Security Features
+
+### **Escrow Protection**
+
+Payments held in escrow until:
+- All participants pay
+- Dispute resolved
+- Timeout period expires
+
+### **Dispute Window**
+
+24-hour period to challenge:
+- Split amounts
+- Payment amounts
+- Participant list
+
+### **Privacy Options**
+
+```typescript
+const bill = {
+  // ...
+  privacy: "private", // Only participants see details
+  anonymousAmounts: true // Hide individual amounts
+};
+```
+
+---
+
+## Gas & Fees
+
+### **Costs** (Celo Network)
+
+- **Create Split**: ~$0.001
+- **Payment**: ~$0.001 per participant
+- **Settlement**: ~$0.002
+
+### **No Platform Fees**
+
+MtaaDAO doesn't charge for bill splitting - only gas costs apply.
+
+---
+
+## Troubleshooting
+
+### **Participant Won't Pay**
+
+1. Send manual reminder
+2. Allow partial payments
+3. Adjust split if agreed
+4. Use social pressure (visible status)
+5. Mark as bad debt and move on
+
+### **Wrong Amount**
+
+1. Cancel and recreate (if no payments yet)
+2. Adjust individual amounts
+3. Create adjustment bill
+4. Settle differences manually
+
+### **Payment Not Detected**
+
+- Check transaction hash
+- Verify correct wallet address
+- Allow up to 5 minutes for confirmation
+- Contact support if still not showing
+
+---
+
+## Coming Soon
+
+- ✅ **Receipt OCR**: Auto-extract amounts from photos
+- ✅ **Smart Suggestions**: AI-powered fair split recommendations
+- ✅ **Group Wallets**: Shared wallet for regular group expenses
+- ✅ **Expense Reports**: Generate PDF summaries
+
+---
+
+## Support
+
+Questions about bill splitting?
+
+- **Documentation**: [docs.mtaadao.com](https://docs.mtaadao.com)
+- **Discord**: Join our community
+- **Email**: support@mtaadao.com

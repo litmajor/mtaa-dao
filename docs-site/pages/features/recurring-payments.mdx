@@ -1,0 +1,357 @@
+
+---
+title: Recurring Payments
+description: Automate regular payments in your DAO
+---
+
+# Recurring Payments
+
+Automate regular payments for salaries, subscriptions, and scheduled disbursements in your DAO.
+
+---
+
+## Overview
+
+Recurring payments allow DAOs to set up automated, scheduled transactions that execute without manual intervention. Perfect for:
+
+- **Monthly salaries** for contributors
+- **Subscription payments** to service providers
+- **Regular donations** to partner organizations
+- **Automated treasury distributions**
+
+---
+
+## How It Works
+
+### 1. **Create a Recurring Payment**
+
+```typescript
+const recurringPayment = {
+  recipient: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+  amount: "1000",
+  token: "cUSD",
+  frequency: "monthly", // daily, weekly, biweekly, monthly, quarterly
+  startDate: "2025-12-01",
+  endDate: "2026-12-01", // Optional
+};
+```
+
+### 2. **Frequency Options**
+
+| Frequency | Execution |
+|-----------|-----------|
+| **Daily** | Every 24 hours |
+| **Weekly** | Every 7 days |
+| **Biweekly** | Every 14 days |
+| **Monthly** | Same day each month |
+| **Quarterly** | Every 3 months |
+| **Yearly** | Annual payment |
+
+### 3. **Payment Execution**
+
+Payments are executed automatically by the MtaaDAO payment processor:
+
+- **Grace Period**: 24-hour window for execution
+- **Retry Logic**: Up to 3 attempts if initial transaction fails
+- **Gas Optimization**: Batches multiple payments when possible
+- **Notifications**: Alerts sent before and after each payment
+
+---
+
+## Setting Up Recurring Payments
+
+### From DAO Treasury
+
+1. Navigate to **Treasury** → **Payments**
+2. Click **"New Recurring Payment"**
+3. Fill in payment details:
+   - Recipient address or phone number
+   - Amount and token
+   - Payment frequency
+   - Start and end dates
+4. Review and confirm
+5. Payment will execute automatically on schedule
+
+### From Personal Wallet
+
+1. Go to **Wallet** → **Recurring Payments**
+2. Click **"Add Scheduled Payment"**
+3. Configure payment:
+   - Select recipient
+   - Set amount and frequency
+   - Choose payment source (wallet or vault)
+4. Approve the setup transaction
+5. Payments will process automatically
+
+---
+
+## Payment Management
+
+### Pause/Resume Payments
+
+```typescript
+// Pause a recurring payment
+await pauseRecurringPayment(paymentId);
+
+// Resume a paused payment
+await resumeRecurringPayment(paymentId);
+```
+
+### Update Payment Details
+
+- **Amount**: Can be modified for future payments
+- **Frequency**: Change payment schedule
+- **Recipient**: Update receiving address
+- **Token**: Switch payment currency
+
+### Cancel Payments
+
+```typescript
+// Cancel a recurring payment
+await cancelRecurringPayment(paymentId);
+```
+
+**Note**: Cancellation takes effect immediately. No future payments will be processed.
+
+---
+
+## Smart Features
+
+### **Phone Number Payments**
+
+Send recurring payments using phone numbers:
+
+```typescript
+const payment = {
+  recipient: "+254712345678", // Kenya number
+  amount: "5000",
+  token: "cUSD",
+  frequency: "monthly"
+};
+```
+
+System automatically resolves phone number to wallet address via MiniPay registry.
+
+### **Auto-Adjust for Fees**
+
+Optionally deduct gas fees from payment amount:
+
+```typescript
+const payment = {
+  // ...
+  deductFeesFromAmount: true // Recipient gets amount minus gas
+};
+```
+
+### **Payment Notifications**
+
+Recipients receive notifications:
+- **24 hours before** payment (email/SMS)
+- **Upon successful** payment
+- **If payment fails** with reason
+
+---
+
+## Transaction History
+
+View all recurring payment activity:
+
+- **Upcoming Payments**: Scheduled future transactions
+- **Payment History**: All past executions
+- **Failed Payments**: Transactions that need attention
+- **Analytics**: Spending trends and patterns
+
+---
+
+## Security & Permissions
+
+### **Multi-Signature Support**
+
+For high-value recurring payments:
+- Requires multiple approvers
+- 2-of-3 or custom threshold
+- Cancel anytime with multi-sig approval
+
+### **Role-Based Access**
+
+| Role | Permissions |
+|------|-------------|
+| **Admin** | Create, modify, cancel any payment |
+| **Treasurer** | Create payments up to limit |
+| **Member** | View payment history |
+
+### **Spending Limits**
+
+Set maximum recurring payment amounts:
+
+```typescript
+const limits = {
+  dailyLimit: "1000 cUSD",
+  monthlyLimit: "10000 cUSD",
+  requiresApproval: "5000 cUSD" // Payments above this need manual approval
+};
+```
+
+---
+
+## API Reference
+
+### Create Recurring Payment
+
+```typescript
+POST /api/recurring-payments
+
+{
+  "recipient": "0x...",
+  "amount": "1000",
+  "token": "cUSD",
+  "frequency": "monthly",
+  "startDate": "2025-12-01",
+  "metadata": {
+    "description": "Monthly salary for developer"
+  }
+}
+```
+
+### List Recurring Payments
+
+```typescript
+GET /api/recurring-payments?status=active
+
+Response: {
+  payments: [
+    {
+      id: "rec_123",
+      recipient: "0x...",
+      amount: "1000",
+      frequency: "monthly",
+      nextPayment: "2025-12-01T00:00:00Z",
+      status: "active"
+    }
+  ]
+}
+```
+
+### Update Payment
+
+```typescript
+PUT /api/recurring-payments/:id
+
+{
+  "amount": "1500", // New amount
+  "frequency": "biweekly" // New frequency
+}
+```
+
+---
+
+## Use Cases
+
+### **DAO Salaries**
+
+Pay contributors automatically each month:
+
+```typescript
+const salaries = [
+  { recipient: "developer1", amount: "2000", role: "Developer" },
+  { recipient: "designer1", amount: "1500", role: "Designer" },
+  { recipient: "manager1", amount: "2500", role: "Project Manager" }
+];
+
+// Set up all salaries as recurring monthly payments
+```
+
+### **Subscription Services**
+
+Automate payments for tools and services:
+
+```typescript
+const subscriptions = [
+  { service: "Cloud Hosting", amount: "100", frequency: "monthly" },
+  { service: "Analytics", amount: "50", frequency: "monthly" },
+  { service: "Domain", amount: "15", frequency: "yearly" }
+];
+```
+
+### **Community Support**
+
+Regular donations to partner organizations:
+
+```typescript
+const donations = {
+  recipient: "charity_dao",
+  amount: "500",
+  frequency: "quarterly",
+  description: "Quarterly donation to local charity"
+};
+```
+
+---
+
+## Best Practices
+
+1. **Always set an end date** for fixed-term commitments
+2. **Monitor wallet balance** to ensure sufficient funds
+3. **Use notifications** to stay informed of payment status
+4. **Review payments monthly** to catch unnecessary subscriptions
+5. **Set spending limits** to prevent overspending
+6. **Use multi-sig** for high-value recurring payments
+
+---
+
+## Troubleshooting
+
+### **Payment Failed**
+
+**Causes:**
+- Insufficient balance in wallet/vault
+- Gas price too high
+- Network congestion
+
+**Solutions:**
+- Ensure adequate funds before next payment
+- System automatically retries up to 3 times
+- Adjust gas settings if needed
+
+### **Payment Not Executing**
+
+**Check:**
+- Payment status (active vs paused)
+- Wallet balance
+- Next scheduled payment date
+- Transaction history for errors
+
+---
+
+## Gas & Fees
+
+### **Gas Costs** (Celo Network)
+
+- **Setup**: ~$0.002
+- **Per Payment**: ~$0.001
+- **Cancellation**: ~$0.001
+
+### **Platform Fees**
+
+- **Free Tier**: 10 active recurring payments
+- **Premium**: Unlimited recurring payments
+- **Transaction Fee**: None (only gas costs)
+
+---
+
+## Coming Soon
+
+- ✅ **Auto-Renewal**: Automatically renew expired payments
+- ✅ **Payment Splitting**: Divide payments among multiple recipients
+- ✅ **Conditional Payments**: Execute based on triggers (price, date, event)
+- ✅ **Cross-Chain Payments**: Send payments across different blockchains
+
+---
+
+## Support
+
+Need help with recurring payments?
+
+- **Documentation**: [docs.mtaadao.com](https://docs.mtaadao.com)
+- **Discord**: Join our community
+- **Email**: support@mtaadao.com
