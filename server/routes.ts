@@ -34,6 +34,7 @@ import accountRoutes from './routes/account';
 import referralRewardsRoutes from './routes/referral-rewards';
 import proposalEngagementRoutes from './routes/proposal-engagement';
 import adminRoutes from './routes/admin';
+import adminAIMetricsRoutes from './routes/admin-ai-metrics';
 import announcementsRoutes from './routes/announcements';
 import investmentPoolsRoutes from './routes/investment-pools';
 import poolGovernanceRoutes from './routes/pool-governance';
@@ -336,4 +337,7 @@ export async function registerRoutes(app: Express) {
   // DAO Abuse Prevention routes
   const daoAbusePreventionRouter = await import('./routes/dao-abuse-prevention');
   app.use('/api/dao-abuse-prevention', daoAbusePreventionRouter.default);
+
+  // === ADMIN AI METRICS ROUTE ===
+  app.use('/api/admin', adminAIMetricsRoutes);
 }
