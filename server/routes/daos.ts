@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "../db";
-import { daos, daoMemberships, users } from "../../shared/schema";
+import { daos, daoMemberships, users, proposals } from "../../shared/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
 import { authenticate } from "../auth";
 
@@ -97,7 +97,23 @@ router.get("/", authenticate, async (req, res) => {
       return {
         id: dao.id,
         name: dao.name,
+        description: dao.description,
+        memberCount,
+        treasuryBalance: parseFloat(dao.treasuryBalance || '0'),
+        role: membership?.role || null,
+        isJoined: !!membership,
+        trending: growthRate > 15,
+        growthRate: parseFloat(growthRate.toFixed(1)),
+        recentActivity: activeProposals > 0 ? `${activeProposals} proposals active` : 'No recent activity',
+      };
+    });
 
+    res.json(enrichedDAOs);
+  } catch (error) {
+    console.error('Error fetching DAOs:', error);
+    res.status(500).json({ error: 'Failed to fetch DAOs' });
+  }
+});
 
 // Get DAO dashboard statistics
 router.get('/:daoId/dashboard-stats', async (req, res) => {
@@ -169,31 +185,6 @@ router.get('/:daoId/dashboard-stats', async (req, res) => {
   } catch (error) {
     console.error('Dashboard stats error:', error);
     res.status(500).json({ error: 'Failed to fetch dashboard stats' });
-  }
-});
-
-        description: dao.description,
-        memberCount,
-        treasuryBalance: parseFloat(dao.treasuryBalance || '0'),
-        role: membership?.role || null,
-        isJoined: !!membership,
-        trending: growthRate > 15,
-        growthRate: parseFloat(growthRate.toFixed(1)),
-        recentActivity: activeProposals > 0 ? `${activeProposals} proposals active` : 'No recent activity',
-      };
-    });
-
-    // Sort: user's DAOs first, then by member count
-    enrichedDAOs.sort((a, b) => {
-      if (a.isJoined && !b.isJoined) return -1;
-      if (!a.isJoined && b.isJoined) return 1;
-      return b.memberCount - a.memberCount;
-    });
-
-    res.json(enrichedDAOs);
-  } catch (error) {
-    console.error("Error fetching DAOs:", error);
-    res.status(500).json({ error: "Failed to fetch DAOs" });
   }
 });
 

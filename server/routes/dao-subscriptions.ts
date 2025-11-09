@@ -47,7 +47,27 @@ router.get('/:daoId/status', async (req, res) => {
     
     if (dao.length === 0) {
       return res.status(404).json({
+        success: false,
+        message: 'DAO not found'
+      });
+    }
 
+    const daoData = dao[0];
+    const currentPlan = daoData.subscriptionTier || 'free';
+    
+    res.json({
+      success: true,
+      daoId,
+      currentPlan,
+      planName: SUBSCRIPTION_PLANS[currentPlan]?.name || 'Free',
+      expiresAt: daoData.planExpiresAt,
+      status: daoData.planExpiresAt && new Date(daoData.planExpiresAt) < new Date() ? 'expired' : 'active'
+    });
+  } catch (error) {
+    console.error('Error fetching subscription status:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch subscription status' });
+  }
+});
 
 // DAO Tier Configuration
 const DAO_TIER_CONFIG = {
@@ -268,37 +288,6 @@ router.post('/:daoId/upgrade-to-collective', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to upgrade DAO',
-      error: error.message
-    });
-  }
-});
-
-        success: false,
-        message: 'DAO not found'
-      });
-    }
-    
-    const daoData = dao[0];
-    const currentPlan = daoData.plan || 'free';
-    const planDetails = SUBSCRIPTION_PLANS[currentPlan as keyof typeof SUBSCRIPTION_PLANS];
-    
-    res.json({
-      success: true,
-      subscription: {
-        daoId,
-        currentPlan,
-        planDetails,
-        billingStatus: daoData.billingStatus || 'active',
-        nextBillingDate: daoData.nextBillingDate,
-        createdAt: daoData.createdAt,
-        updatedAt: daoData.updatedAt
-      }
-    });
-    
-  } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get subscription status',
       error: error.message
     });
   }

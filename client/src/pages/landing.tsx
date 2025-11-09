@@ -1,7 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowRight, Users, Vote, Wallet, Target, TrendingUp, Shield, Globe, CheckCircle, Sparkles, Heart } from "lucide-react";
-import { Star } from "lucide-react";
+import { ArrowRight, Users, Vote, Wallet, Target, TrendingUp, Shield, Globe, CheckCircle, Sparkles, Heart, Star, Award, DollarSign } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Logo } from "@/components/ui/logo";
 import { Link } from 'wouter';
@@ -9,18 +8,6 @@ import { useQuery } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import PublicImpactFeed from '@/components/PublicImpactFeed';
 import DaoOfTheWeekBanner from '@/components/DaoOfTheWeekBanner';
-import { 
-  Users, 
-  Wallet, 
-  Vote, 
-  Shield, 
-  TrendingUp, 
-  Globe,
-  ArrowRight,
-  CheckCircle,
-  Star,
-  Award
-} from 'lucide-react';
 
 export default function MtaaDAOLanding() {
   const [isVisible, setIsVisible] = useState(false);
