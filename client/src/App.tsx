@@ -90,6 +90,13 @@ import SubscriptionManagement from './pages/SubscriptionManagement';
 // MaonoVault Management
 import MaonoVaultManagement from "@/pages/MaonoVaultManagement";
 
+// Import new page components
+const BlogPage = lazy(() => import('./pages/blog'));
+const BlogPostPage = lazy(() => import('./pages/blog-post'));
+const FAQCenter = lazy(() => import('./pages/faq-center'));
+const SupportPage = lazy(() => import('./pages/support'));
+const SubmitSuccessStory = lazy(() => import('./pages/success-stories/submit'));
+
 // Protected/Public wrappers (unchanged)
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -196,8 +203,11 @@ function App() {
                   <Route path="/nft-marketplace" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><NFTMarketplace /></Suspense></ProtectedRoute>} />
                   <Route path="/morio" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><MorioDemoLazy /></Suspense></ProtectedRoute>} />
                   {/* Blog routes */}
-                  <Route path="/blog" element={<Suspense fallback={<PageLoading />}>{React.createElement(lazy(() => import('./pages/blog')))}</Suspense>} />
-                  <Route path="/blog/:id" element={<Suspense fallback={<PageLoading />}>{React.createElement(lazy(() => import('./pages/blog-post')))}</Suspense>} />
+                  <Route path="/blog" element={<Suspense fallback={<PageLoading />}><BlogPage /></Suspense>} />
+                  <Route path="/blog/:id" element={<Suspense fallback={<PageLoading />}><BlogPostPage /></Suspense>} />
+                  <Route path="/faq" element={<Suspense fallback={<PageLoading />}><FAQCenter /></Suspense>} />
+                  <Route path="/support" element={<Suspense fallback={<PageLoading />}><SupportPage /></Suspense>} />
+                  <Route path="/success-stories/submit" element={<Suspense fallback={<PageLoading />}><SubmitSuccessStory /></Suspense>} />
                   {/* Nested DAO routes */}
                   <Route path="/dao" element={<ProtectedRoute><DaoLayout /></ProtectedRoute>}>
                     <Route path="settings" element={<DaoSettings />} />
