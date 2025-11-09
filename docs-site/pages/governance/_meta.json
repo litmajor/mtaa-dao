@@ -1,8 +1,6 @@
 {
   "index": "Overview",
-  "voting": "Voting System",
-  "proposals": "Creating Proposals",
-  "quorum": "Quorum & Execution",
-  "delegation": "Vote Delegation",
-  "trust-reputation": "Trust & Reputation"
+  "proposals": "Proposals & Types",
+  "voting-system": "Voting System",
+  "roles": "Roles & Permissions"
 }

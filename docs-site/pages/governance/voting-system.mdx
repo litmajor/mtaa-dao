@@ -1,0 +1,445 @@
+
+---
+title: Voting System
+description: Complete guide to MtaaDAO's multi-modal voting mechanisms
+---
+
+# Voting System
+
+MtaaDAO implements a sophisticated multi-modal voting system designed to ensure democratic participation while preventing power concentration.
+
+## Voting Models
+
+### 1. Quadratic Voting (Default for DAOs)
+
+Quadratic voting prevents whale dominance by using the square root of token holdings.
+
+```typescript
+// Voting power calculation
+const baseVotingPower = Math.sqrt(tokenBalance);
+const reputationMultiplier = getReputationMultiplier(reputationScore);
+const effectiveVotingPower = baseVotingPower * reputationMultiplier;
+```
+
+**Reputation Multipliers:**
+- **0-999 points**: 1x (100%)
+- **1,000-4,999 points**: 1.25x (125%)
+- **5,000-9,999 points**: 1.5x (150%)
+- **10,000+ points**: 2x (200%)
+
+**Vote Weight Cap**: Maximum 10% of total voting power to prevent single-voter dominance.
+
+### 2. Weighted Voting (Investment Pools)
+
+For investment pools, voting power equals share ownership - perfect for financial decisions.
+
+```typescript
+// Direct share-based voting
+votingPower = sharesOwned - sharesDelegatedAway + sharesDelegatedToYou;
+sharePercentage = (votingPower / totalSupply) * 100;
+```
+
+**Key Features:**
+- 1 share = 1 vote
+- Real-time voting power based on ownership
+- Supports partial delegation
+- No vote weight caps
+
+### 3. Poll Voting
+
+Simple one-person-one-vote system for community sentiment.
+
+**Features:**
+- Single or multiple choice
+- Anonymous voting option
+- Real-time results
+- No token requirements
+
+## Vote Types
+
+### Standard Votes
+
+```typescript
+enum VoteChoice {
+  YES = "yes",      // Support the proposal
+  NO = "no",        // Oppose the proposal
+  ABSTAIN = "abstain" // Counted for quorum but neutral
+}
+```
+
+### Emoji Voting
+
+Quick sentiment gathering with visual feedback:
+
+```typescript
+// Emoji vote options
+👍 = YES (Support)
+🤔 = MAYBE (Neutral/Abstain)
+👎 = NO (Oppose)
+```
+
+**Use Cases:**
+- Community polls
+- Quick feedback
+- Non-binding opinions
+- Anonymous sentiment
+
+## Quorum Requirements
+
+### Dynamic Quorum Calculation
+
+```typescript
+// Based on active members (active in last 30 days)
+const activeMembers = getMembersActiveInLast30Days();
+const quorumPercentage = dao.quorumPercentage || 20; // Default 20%
+const requiredQuorum = Math.ceil((activeMembers * quorumPercentage) / 100);
+```
+
+### Quorum Enforcement
+
+**CRITICAL**: All proposals must meet quorum before execution:
+
+1. **Vote Counting**: `totalVotes = yesVotes + noVotes + abstainVotes`
+2. **Quorum Check**: `totalVotes >= requiredQuorum`
+3. **Majority Check**: `yesVotes > noVotes` (simple majority)
+4. **Execution**: Only if both quorum AND majority are met
+
+**Failure Conditions:**
+- ❌ Quorum not met → Proposal fails
+- ❌ Majority not reached → Proposal fails
+- ✅ Both met → Proposal passes
+
+## Vote Delegation
+
+### How It Works
+
+Delegate your voting power to trusted community members:
+
+```typescript
+// Delegation scopes
+enum DelegationScope {
+  GLOBAL = "global",           // All proposals
+  CATEGORY = "category",       // Specific category only
+  PROPOSAL = "proposal"        // Single proposal
+}
+```
+
+### Delegation Limits
+
+**10% Cap**: No delegate can control more than 10% of total voting power.
+
+```typescript
+const maxDelegationPercentage = 10;
+const totalMembers = dao.memberCount;
+const maxDelegationsAllowed = Math.ceil((totalMembers * maxDelegationPercentage) / 100);
+```
+
+### Creating a Delegation
+
+```typescript
+// Delegate to community expert
+await createDelegation({
+  delegateId: "expert-user-id",
+  scope: "category",           // Only budget proposals
+  category: "budget",
+  isActive: true
+});
+```
+
+### Revoking Delegation
+
+```typescript
+// Revoke delegation at any time
+await revokeDelegation(delegationId);
+```
+
+## Voting Process
+
+### Step 1: Proposal Creation
+
+**Requirements:**
+- Minimum MTAA tokens: 100 MTAA
+- Minimum reputation: 1,000 points
+- Proposal fee: Sent to DAO treasury
+
+### Step 2: Voting Period
+
+**Timeline:**
+- Standard proposals: 7 days
+- Emergency proposals: 48 hours
+- Poll proposals: Configurable (1-30 days)
+
+### Step 3: Vote Casting
+
+```typescript
+// Cast your vote
+await castVote({
+  proposalId: "prop-123",
+  voteChoice: "yes",
+  reason: "This aligns with our community values",
+  isAnonymous: false
+});
+```
+
+**What Happens:**
+1. Your voting power is calculated
+2. Vote is recorded on-chain
+3. Proposal tallies are updated
+4. You cannot change your vote
+5. Delegation applied if configured
+
+### Step 4: Quorum Check
+
+After voting period ends:
+
+```typescript
+const result = await checkQuorum(proposalId);
+/*
+{
+  quorumMet: true,
+  participationRate: 45.2,
+  requiredQuorum: 20,
+  totalVotes: 452,
+  yesVotes: 320,
+  noVotes: 100,
+  abstainVotes: 32
+}
+*/
+```
+
+### Step 5: Execution
+
+**48-Hour Timelock** (Security Feature):
+
+```typescript
+// Proposals queued for execution after 48 hours
+const executionTime = voteEndTime + 48 hours;
+```
+
+**Why Timelock?**
+- Prevents immediate execution of malicious proposals
+- Allows community to review results
+- Time for emergency cancellation if needed
+- Minimum 24 hours enforced by smart contract
+
+## Security Features
+
+### Vote Weight Cap
+
+```typescript
+// Max 10% of total voting power per voter
+const cappedWeight = Math.min(
+  calculatedVotingPower,
+  totalSupply / 10
+);
+```
+
+### Delegation Cap
+
+```typescript
+// Max 10% of members can delegate to one person
+if (delegationsToUser >= maxDelegationsAllowed) {
+  throw new Error("Delegation cap exceeded");
+}
+```
+
+### Double-Voting Prevention
+
+```typescript
+// Check existing vote
+const existingVote = await getVote(proposalId, userId);
+if (existingVote) {
+  throw new Error("Already voted on this proposal");
+}
+```
+
+### Cooldown Periods
+
+**Proposal Creation**: Minimum time between proposals per user (default: 24 hours)
+
+```typescript
+const cooldownHours = 24;
+const lastProposal = await getLastProposal(userId);
+if (Date.now() - lastProposal.createdAt < cooldownHours * 3600000) {
+  throw new Error("Proposal cooldown active");
+}
+```
+
+## Vote History & Analytics
+
+### Individual Vote Record
+
+```typescript
+interface VoteRecord {
+  proposalId: string;
+  userId: string;
+  voteChoice: "yes" | "no" | "abstain";
+  votingPower: number;
+  sharePercentage?: number;
+  reason?: string;
+  votedAt: Date;
+  isAnonymous: boolean;
+}
+```
+
+### Participation Metrics
+
+Track voter engagement:
+
+```typescript
+// User voting statistics
+{
+  totalVotes: 145,
+  participationRate: 89.2, // % of proposals voted on
+  averageVotingPower: 1250.5,
+  delegationsReceived: 12,
+  delegationsMade: 2,
+  reputationEarned: 1450 // From voting
+}
+```
+
+## Voting Rewards
+
+### MTAA Token Rewards
+
+**Per Vote**: 10 MTAA tokens
+
+```typescript
+const VOTING_REWARD = 10 * 1e18; // 10 MTAA
+```
+
+**Early Voter Bonus**: +5 MTAA for voting in first 24 hours
+
+```typescript
+const EARLY_VOTER_BONUS = 5 * 1e18;
+```
+
+### Reputation Points
+
+**Per Vote**: Earn reputation for participation
+
+- Standard vote: +10 points
+- Early vote: +15 points
+- Delegated vote cast: +20 points
+
+## Best Practices
+
+### For Voters
+
+1. ✅ **Read the full proposal** before voting
+2. ✅ **Check quorum requirements** to ensure your vote counts
+3. ✅ **Vote early** to earn bonus rewards
+4. ✅ **Provide reasoning** to help community understand
+5. ✅ **Delegate wisely** when you can't participate
+
+### For Proposal Creators
+
+1. ✅ **Clear description** of what you're proposing
+2. ✅ **Realistic timelines** for implementation
+3. ✅ **Budget breakdown** for funding requests
+4. ✅ **Community discussion** before formal proposal
+5. ✅ **Follow-up communication** during voting period
+
+## Common Scenarios
+
+### Scenario 1: Low Turnout
+
+**Problem**: Only 15% participation, quorum is 20%
+
+**Solution**: 
+- Extend voting period
+- Send notifications to members
+- Discuss in community chat
+- Consider lowering quorum threshold
+
+### Scenario 2: Delegation Disputes
+
+**Problem**: Delegate voted against delegator's wishes
+
+**Solution**:
+- Revoke delegation immediately
+- Vote yourself on remaining time
+- Choose different delegate for future
+
+### Scenario 3: Close Vote
+
+**Problem**: 50.1% yes, 49.9% no
+
+**Solution**:
+- Proposal passes but barely
+- Consider compromise amendments
+- Re-propose with community feedback
+- Implement gradually with monitoring
+
+## Technical Integration
+
+### Frontend Example
+
+```typescript
+import { useVoting } from '@/hooks/useVoting';
+
+function ProposalVoting({ proposalId }) {
+  const { castVote, votingPower, hasVoted } = useVoting(proposalId);
+  
+  const handleVote = async (choice: "yes" | "no" | "abstain") => {
+    await castVote({
+      proposalId,
+      voteChoice: choice,
+      reason: document.getElementById('reason').value
+    });
+  };
+  
+  return (
+    <div>
+      <p>Your voting power: {votingPower.toFixed(2)}</p>
+      {!hasVoted ? (
+        <>
+          <button onClick={() => handleVote("yes")}>Vote Yes</button>
+          <button onClick={() => handleVote("no")}>Vote No</button>
+          <button onClick={() => handleVote("abstain")}>Abstain</button>
+        </>
+      ) : (
+        <p>You have already voted on this proposal</p>
+      )}
+    </div>
+  );
+}
+```
+
+### Backend API
+
+```typescript
+// POST /api/votes
+router.post('/api/votes', async (req, res) => {
+  const { proposalId, voteType, reason } = req.body;
+  const userId = req.user.id;
+  
+  // Calculate voting power
+  const votingPower = await calculateVotingPower(userId, proposalId);
+  
+  // Record vote
+  const vote = await db.insert(votes).values({
+    proposalId,
+    userId,
+    voteType,
+    votingPower: votingPower.toString(),
+    reason
+  });
+  
+  // Update proposal tallies
+  await updateProposalVotes(proposalId, voteType, votingPower);
+  
+  // Distribute rewards
+  await rewardVoting(userId);
+  
+  res.json({ success: true, vote });
+});
+```
+
+---
+
+**Related Documentation:**
+- [Proposals System](/governance/proposals)
+- [DAO Roles & Permissions](/governance/roles)
+- [MTAA Token & Rewards](/tokenomics/rewards)
+- [Treasury Management](/features/treasury)
