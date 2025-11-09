@@ -1,10 +1,14 @@
 {
   "index": "Home",
+  "about": "About",
   "getting-started": "Getting Started",
   "dao-types": "DAO Types",
   "use-cases": "Use Cases",
-  "pricing": "Pricing",
+  "features": "Features",
+  "ai-layer": "AI Layer",
+  "tokenomics": "Tokenomics",
   "governance": "Governance",
+  "pricing": "Pricing",
   "developer": "Developer API",
   "faq": "FAQ & Support"
 }
