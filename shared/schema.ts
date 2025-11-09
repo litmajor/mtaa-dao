@@ -200,10 +200,15 @@ export const daos = pgTable("daos", {
   isPublic: boolean("is_public").default(true), // legacy, keep for now
   memberCount: integer("member_count").default(1),
   treasuryBalance: decimal("treasury_balance", { precision: 10, scale: 2 }).default("0"),
-  plan: varchar("plan").default("free"), // free, premium
+  plan: varchar("plan").default("free"), // free, premium, short_term, collective
+  daoType: varchar("dao_type").default("standard"), // standard, short_term, collective, meta
   planExpiresAt: timestamp("plan_expires_at"),
   billingStatus: varchar("billing_status").default("active"),
   nextBillingDate: timestamp("next_billing_date"),
+  // Short-term DAO extension tracking
+  extensionCount: integer("extension_count").default(0), // 0, 1, or 2 max
+  originalDuration: integer("original_duration"), // in days (30, 60, 90)
+  currentExtensionDuration: integer("current_extension_duration"), // halved each time
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   imageUrl: varchar("image_url"),

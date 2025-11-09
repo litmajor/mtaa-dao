@@ -47,6 +47,157 @@ router.get('/:daoId/status', async (req, res) => {
     
     if (dao.length === 0) {
       return res.status(404).json({
+
+
+// Short-Term DAO Extension Plans
+const SHORT_TERM_EXTENSION_PRICING = {
+  base: 500, // KES 500 per extension
+  maxExtensions: 2,
+  upgradeToPremium: 1500 // KES 1,500/month for Collective DAO
+};
+
+// POST /api/dao-subscriptions/:daoId/extend - Extend short-term DAO
+router.post('/:daoId/extend', async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    
+    // Get DAO details
+    const [dao] = await db.select().from(daos).where(eq(daos.id, daoId));
+    
+    if (!dao) {
+      return res.status(404).json({
+        success: false,
+        message: 'DAO not found'
+      });
+    }
+    
+    // Check if it's a short-term DAO
+    if (dao.daoType !== 'short_term') {
+      return res.status(400).json({
+        success: false,
+        message: 'Only short-term DAOs can use extensions'
+      });
+    }
+    
+    // Check extension limit
+    if ((dao.extensionCount || 0) >= SHORT_TERM_EXTENSION_PRICING.maxExtensions) {
+      return res.status(400).json({
+        success: false,
+        message: 'Maximum extensions reached. Please upgrade to Collective DAO (₭1,500/month)',
+        upgradeRequired: true,
+        upgradePrice: SHORT_TERM_EXTENSION_PRICING.upgradeToPremium
+      });
+    }
+    
+    // Calculate new duration (half of previous)
+    const currentDuration = dao.currentExtensionDuration || dao.originalDuration || 30;
+    const newExtensionDuration = Math.floor(currentDuration / 2);
+    const newExpiryDate = new Date(dao.planExpiresAt || new Date());
+    newExpiryDate.setDate(newExpiryDate.getDate() + newExtensionDuration);
+    
+    // Process payment (KES 500)
+    // TODO: Integrate actual payment processing
+    
+    // Update DAO with extension
+    await db.update(daos)
+      .set({
+        extensionCount: (dao.extensionCount || 0) + 1,
+        currentExtensionDuration: newExtensionDuration,
+        planExpiresAt: newExpiryDate,
+        billingStatus: 'active',
+        updatedAt: new Date()
+      })
+      .where(eq(daos.id, daoId));
+    
+    // Create billing record
+    await db.insert(billingHistory).values({
+      daoId,
+      amount: SHORT_TERM_EXTENSION_PRICING.base.toString(),
+      currency: 'KES',
+      status: 'completed',
+      description: `Short-term DAO extension #${(dao.extensionCount || 0) + 1} (${newExtensionDuration} days)`
+    });
+    
+    const extensionsRemaining = SHORT_TERM_EXTENSION_PRICING.maxExtensions - (dao.extensionCount || 0) - 1;
+    
+    res.json({
+      success: true,
+      message: `DAO extended for ${newExtensionDuration} more days`,
+      extension: {
+        number: (dao.extensionCount || 0) + 1,
+        duration: newExtensionDuration,
+        expiresAt: newExpiryDate,
+        extensionsRemaining,
+        nextExtensionDuration: extensionsRemaining > 0 ? Math.floor(newExtensionDuration / 2) : null,
+        upgradeRecommended: extensionsRemaining === 0
+      }
+    });
+    
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to extend DAO',
+      error: error.message
+    });
+  }
+});
+
+// POST /api/dao-subscriptions/:daoId/upgrade-to-collective - Upgrade short-term to Collective
+router.post('/:daoId/upgrade-to-collective', async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const { paymentMethod } = req.body;
+    
+    const [dao] = await db.select().from(daos).where(eq(daos.id, daoId));
+    
+    if (!dao) {
+      return res.status(404).json({ success: false, message: 'DAO not found' });
+    }
+    
+    // Process upgrade payment (KES 1,500/month)
+    // TODO: Integrate actual payment processing
+    
+    await db.update(daos)
+      .set({
+        plan: 'premium',
+        daoType: 'collective',
+        billingStatus: 'active',
+        nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        extensionCount: null, // Reset extension tracking
+        originalDuration: null,
+        currentExtensionDuration: null,
+        updatedAt: new Date()
+      })
+      .where(eq(daos.id, daoId));
+    
+    await db.insert(billingHistory).values({
+      daoId,
+      amount: SHORT_TERM_EXTENSION_PRICING.upgradeToPremium.toString(),
+      currency: 'KES',
+      status: 'completed',
+      description: 'Upgraded from Short-term to Collective DAO'
+    });
+    
+    res.json({
+      success: true,
+      message: 'Successfully upgraded to Collective DAO',
+      subscription: {
+        plan: 'collective',
+        billingCycle: 'monthly',
+        amount: SHORT_TERM_EXTENSION_PRICING.upgradeToPremium,
+        nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      }
+    });
+    
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upgrade DAO',
+      error: error.message
+    });
+  }
+});
+
         success: false,
         message: 'DAO not found'
       });
