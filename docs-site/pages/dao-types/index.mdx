@@ -1,0 +1,159 @@
+
+# DAO Types Overview
+
+MtaaDAO offers flexible DAO structures to match your community's needs — from quick fundraisers to long-term organizations.
+
+import { DAOTypeComparison } from '../../components/DAOTypeComparison'
+
+<DAOTypeComparison />
+
+## Quick Comparison
+
+| Feature | Short-Term DAO | Collective DAO | MetaDAO (Future) |
+|---------|---------------|----------------|------------------|
+| **Setup Fee** | ₭500 one-time | ₭1,500/month | ₭2,000 one-time |
+| **Duration** | 30 days (+extensions) | Ongoing | Continuous |
+| **Members** | Unlimited | Unlimited | Multi-DAO |
+| **Extensions** | 2 max (15d, 7d) | N/A | N/A |
+| **Proposals** | Basic | Full governance | Cross-DAO |
+| **Vaults** | Single | Multiple | Federated |
+| **Best For** | Events, emergencies | Chamas, businesses | Regional alliances |
+
+## Extension Model: Strategic Hybrid
+
+### Short-Term DAO Extensions
+
+MtaaDAO uses a **Strategic Hybrid** approach:
+
+1. **First Extension**: ₭500 → +15 days (half duration)
+2. **Second Extension**: ₭500 → +7 days (half again)
+3. **After 2 Extensions**: Auto-upgrade to Collective or close
+
+**Why This Works**:
+- ✅ Maintains urgency
+- ✅ Fair revenue for platform
+- ✅ Natural evolution to long-term plans
+- ✅ Prevents ghost DAOs
+
+### Example Timeline
+
+```
+Day 0:  Create DAO (₭500, 30 days)
+Day 25: 1st Extension option (₭500, +15 days → expires Day 45)
+Day 40: 2nd Extension option (₭500, +7 days → expires Day 52)
+Day 52: Must upgrade to Collective (₭1,500/mo) or close
+```
+
+## Decision Framework
+
+### Choose Short-Term DAO If:
+- ✅ Clear end date (wedding, funeral, event)
+- ✅ Specific fundraising goal
+- ✅ Budget-conscious (₭500 vs ₭1,500)
+- ✅ Temporary team
+- ✅ One-time project
+
+### Choose Collective DAO If:
+- ✅ Ongoing operations (3+ months)
+- ✅ Regular meetings/contributions
+- ✅ Need full governance features
+- ✅ Growing membership
+- ✅ Multiple projects/vaults
+
+### Upgrade to MetaDAO (Phase 2) If:
+- ✅ Coordinating multiple DAOs
+- ✅ Regional representation
+- ✅ Strategic alliances
+- ✅ Cross-DAO proposals
+
+## Real-World Examples
+
+### Short-Term DAO Success Story
+> "We raised 50,000 KES for my sister's medical emergency in 21 days using a Short-Term DAO. Everyone could see exactly where the money went."  
+> — **Grace M., Nairobi**
+
+**DAO Type**: Short-Term  
+**Duration**: 21 days (no extension needed)  
+**Cost**: ₭500  
+**Result**: Goal achieved, DAO archived
+
+### Collective DAO Success Story
+> "Our savings chama has been running for 8 months now. We've disbursed 12 loans and everyone trusts the system."  
+> — **Kamau's Business Chama, Thika**
+
+**DAO Type**: Collective  
+**Duration**: 8 months (ongoing)  
+**Cost**: ₭12,000 total  
+**Result**: 12 proposals passed, 200,000 KES managed
+
+## Cost Analysis
+
+### 3-Month Comparison
+
+**Short-Term DAO Path**:
+- Month 1: ₭500 (30 days)
+- Extension 1: ₭500 (+15 days = Day 45)
+- Extension 2: ₭500 (+7 days = Day 52)
+- **Total**: ₭1,500 for ~52 days
+- **Must upgrade after this**
+
+**Collective DAO Path**:
+- Month 1: ₭1,500
+- Month 2: ₭1,500
+- Month 3: ₭1,500
+- **Total**: ₭4,500 for 90 days
+- **Can continue indefinitely**
+
+**Break-even**: ~52 days
+
+## Feature Breakdown
+
+### Available in All DAO Types
+✅ Transparent treasury  
+✅ Member invitations  
+✅ Basic proposals  
+✅ Transaction history  
+✅ Public archive
+
+### Collective DAO Only
+✅ Unlimited duration  
+✅ Multi-vault management  
+✅ Advanced governance  
+✅ Monthly performance reports  
+✅ Regional tagging  
+✅ Merge capabilities
+
+### MetaDAO Only (Future)
+✅ Multi-DAO coordination  
+✅ Cross-DAO proposals  
+✅ Regional representation  
+✅ Federated treasury  
+✅ Strategic alliances
+
+## Getting Started
+
+Ready to create your DAO?
+
+<div className="mt-8 flex gap-4">
+  <a 
+    href="/getting-started/create-dao" 
+    className="px-6 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 transition"
+  >
+    Create Short-Term DAO (₭500)
+  </a>
+  <a 
+    href="/getting-started/create-dao?type=collective" 
+    className="px-6 py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition"
+  >
+    Create Collective DAO (₭1,500/mo)
+  </a>
+</div>
+
+---
+
+## Next Steps
+
+- [Create Your First DAO →](/getting-started/create-dao)
+- [Understand DAO Lifecycle →](/dao-types/lifecycle)
+- [Short-Term DAO Details →](/dao-types/short-term)
+- [Collective DAO Details →](/dao-types/collective)
