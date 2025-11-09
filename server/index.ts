@@ -54,9 +54,9 @@ import crossChainRoutes from './routes/cross-chain';
 import jwt from 'jsonwebtoken';
 // Import NFT Marketplace routes
 import nftMarketplaceRouter from './routes/nft-marketplace';
-import walletRouter from './routes/wallet';
-import walletSetupRouter from './routes/wallet-setup';
-import paymentGatewayRouter from './routes/payment-gateway';
+import walletRoutes from './routes/wallet';
+import walletSetupRoutes from './routes/wallet-setup';
+import paymentGatewayRoutes from './routes/payment-gateway';
 // Import KYC routes
 import kycRouter from './routes/kyc';
 import referralRewardsRouter from './routes/referral-rewards';
@@ -94,7 +94,7 @@ const compressionMiddleware = compression({
   filter: (req: Request, res: Response) => {
     const contentType = res.getHeader('Content-Type') as string || '';
     // Don't compress already-compressed formats
-    if (contentType.includes('image/') || 
+    if (contentType.includes('image/') ||
         contentType.includes('video/') ||
         contentType.includes('application/zip') ||
         contentType.includes('application/pdf')) {
@@ -301,12 +301,12 @@ app.use((req, res, next) => {
     app.use('/api/nft-marketplace', nftMarketplaceRouter);
 
     // Wallet routes
-    app.use('/api/wallet', walletRouter);
-    app.use('/api/wallet-setup', walletSetupRouter);
+    app.use('/api/wallet', walletRoutes);
+    app.use('/api/wallet-setup', walletSetupRoutes);
     app.use('/api/wallet/recurring-payments', (await import('./routes/recurring-payments')).default);
     app.use('/api/wallet/vouchers', (await import('./routes/vouchers')).default);
     app.use('/api/wallet/phone', (await import('./routes/phone-payments')).default);
-    app.use('/api/payment-gateway', paymentGatewayRouter);
+    app.use('/api/payment-gateway', paymentGatewayRoutes);
     // Mount KYC routes
     app.use('/api/kyc', kycRouter);
 
@@ -408,7 +408,7 @@ app.use((req, res, next) => {
     recurringPaymentService.start();
 
     // Warm up gas price oracle cache
-    gasPriceOracle.getCurrentGasPrices().catch(err => 
+    gasPriceOracle.getCurrentGasPrices().catch(err =>
       console.warn('Failed to initialize gas price oracle:', err)
     );
 

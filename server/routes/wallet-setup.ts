@@ -762,3 +762,58 @@ router.post('/import-wallet', async (req, res) => {
 });
 
 export default router;
+import { Router } from 'express';
+import { db } from '../db';
+import { users } from '@shared/schema';
+import { eq } from 'drizzle-orm';
+import crypto from 'crypto';
+
+const router = Router();
+
+// Get backup status
+router.get('/backup-status/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, parseInt(userId))
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ isBackedUp: user.walletBackedUp || false });
+  } catch (error: any) {
+    console.error('Backup status check error:', error);
+    res.status(500).json({ error: 'Failed to check backup status' });
+  }
+});
+
+// Get backup data (encrypted)
+router.post('/get-backup-data', async (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, parseInt(userId))
+    });
+
+    if (!user || !user.encryptedPrivateKey) {
+      return res.status(404).json({ error: 'Wallet not found' });
+    }
+
+    // In production, you'd decrypt the private key here using the user's password
+    // For now, we'll return placeholder data
+    res.json({
+      mnemonic: user.recoveryPhrase || 'word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12',
+      privateKey: '0x' + '•'.repeat(64), // Masked for security
+      address: user.walletAddress
+    });
+  } catch (error: any) {
+    console.error('Get backup data error:', error);
+    res.status(500).json({ error: 'Failed to retrieve backup data' });
+  }
+});
+
+export default router;
