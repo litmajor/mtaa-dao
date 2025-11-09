@@ -97,6 +97,81 @@ router.get("/", authenticate, async (req, res) => {
       return {
         id: dao.id,
         name: dao.name,
+
+
+// Get DAO dashboard statistics
+router.get('/:daoId/dashboard-stats', async (req, res) => {
+  try {
+    const { daoId } = req.params;
+
+    const dao = await db.query.daos.findFirst({
+      where: eq(daos.id, daoId)
+    });
+
+    if (!dao) {
+      return res.status(404).json({ error: 'DAO not found' });
+    }
+
+    // Get member stats
+    const members = await db.query.daoMemberships.findMany({
+      where: and(
+        eq(daoMemberships.daoId, daoId),
+        eq(daoMemberships.status, 'approved')
+      )
+    });
+
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const newMembersThisWeek = members.filter(m => 
+      m.createdAt && new Date(m.createdAt) >= oneWeekAgo
+    ).length;
+
+    // Get active proposals
+    const activeProposals = await db.query.proposals.findMany({
+      where: and(
+        eq(proposals.daoId, daoId),
+        eq(proposals.status, 'active')
+      )
+    });
+
+    // Calculate days left
+    let daysLeft = 0;
+    let status: 'active' | 'expiring' | 'expired' = 'active';
+    
+    if (dao.planExpiresAt) {
+      const expiryDate = new Date(dao.planExpiresAt);
+      const now = new Date();
+      daysLeft = Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (daysLeft < 0) {
+        status = 'expired';
+        daysLeft = 0;
+      } else if (daysLeft <= 14) {
+        status = 'expiring';
+      }
+    }
+
+    // Calculate funding progress
+    const treasuryBalance = parseFloat(dao.treasuryBalance || '0');
+    const fundingGoal = 5000; // Default goal, can be customized per DAO
+    const fundingProgress = Math.min((treasuryBalance / fundingGoal) * 100, 100);
+
+    res.json({
+      totalMembers: members.length,
+      newMembersThisWeek,
+      activeProposals: activeProposals.length,
+      treasuryBalance: treasuryBalance.toString(),
+      fundingGoal: fundingGoal.toString(),
+      fundingProgress: Math.round(fundingProgress),
+      planExpiresAt: dao.planExpiresAt,
+      daysLeft,
+      status
+    });
+  } catch (error) {
+    console.error('Dashboard stats error:', error);
+    res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+  }
+});
+
         description: dao.description,
         memberCount,
         treasuryBalance: parseFloat(dao.treasuryBalance || '0'),
