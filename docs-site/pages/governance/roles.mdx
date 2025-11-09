@@ -1,0 +1,460 @@
+
+# Roles & Permissions
+
+MtaaDAO uses Role-Based Access Control (RBAC) to manage permissions and ensure secure governance. Different roles have different capabilities and access levels.
+
+## Role Hierarchy
+
+```
+Super Admin (Platform Level)
+    ↓
+DAO Owner (DAO Level)
+    ↓
+DAO Admin
+    ↓
+Moderator
+    ↓
+Elder (High Reputation)
+    ↓
+Member
+    ↓
+Contributor
+    ↓
+Guest
+```
+
+## Platform-Level Roles
+
+### Super Admin
+
+**Full platform access - manage all DAOs and users.**
+
+**Permissions:**
+- ✅ Create/delete any DAO
+- ✅ Manage all users
+- ✅ Access all analytics
+- ✅ Manage billing and subscriptions
+- ✅ Execute system-wide changes
+- ✅ Manage all vaults
+
+**Use Cases:**
+- Platform maintenance
+- Security incidents
+- Billing issues
+- System configuration
+
+**Assignment:**
+- Platform founders only
+- Cannot be self-assigned
+- Requires 2FA
+
+### Admin
+
+**Platform-level administrative access.**
+
+**Permissions:**
+- ✅ Create DAOs
+- ✅ Manage users (limited)
+- ✅ Access analytics
+- ❌ Manage billing
+- ✅ Execute proposals
+- ✅ Manage vaults
+
+### Moderator
+
+**Content and community moderation.**
+
+**Permissions:**
+- ✅ Create DAOs
+- ❌ Manage users
+- ✅ Access analytics
+- ❌ Manage billing
+- ❌ Execute proposals
+- ❌ Manage vaults
+
+**Typical Tasks:**
+- Review flagged content
+- Moderate proposals
+- Enforce community guidelines
+
+### User (Default)
+
+**Standard platform user.**
+
+**Permissions:**
+- ❌ Create DAOs (requires upgrade)
+- ❌ Manage users
+- ❌ Access analytics
+- ❌ Manage billing
+- ❌ Execute proposals
+- ❌ Manage vaults
+
+## DAO-Level Roles
+
+### Owner
+
+**Full control over a specific DAO.**
+
+**Permissions:**
+- ✅ Manage DAO members
+- ✅ Access analytics
+- ✅ Manage billing
+- ✅ Execute proposals
+- ✅ Manage vaults
+- ✅ Delete DAO
+- ✅ Transfer ownership
+
+**Responsibilities:**
+- Set DAO vision and goals
+- Manage treasury
+- Resolve disputes
+- Ensure compliance
+
+### DAO Admin
+
+**Administrative access to DAO operations.**
+
+**Permissions:**
+- ✅ Manage members
+- ✅ Access analytics
+- ❌ Manage billing
+- ✅ Execute proposals
+- ✅ Manage vaults
+- ❌ Delete DAO
+
+**Typical Tasks:**
+- Onboard new members
+- Review proposals
+- Manage day-to-day operations
+- Monitor treasury
+
+### Elder
+
+**High-reputation member with enhanced privileges.**
+
+**Permissions:**
+- ❌ Manage members
+- ✅ Access analytics (limited)
+- ❌ Manage billing
+- ❌ Execute proposals
+- ❌ Manage vaults
+- ✅ **Enhanced voting power (1.5x)**
+- ✅ **Priority in task assignment**
+
+**How to Become Elder:**
+- Reputation score > 1000
+- Active for >6 months
+- Completed >50 contributions
+- High approval rating
+
+### Member
+
+**Standard DAO participant.**
+
+**Permissions:**
+- ❌ Manage members
+- ❌ Access analytics
+- ❌ Manage billing
+- ❌ Execute proposals
+- ❌ Manage vaults
+- ✅ **Create proposals**
+- ✅ **Vote on proposals**
+- ✅ **Contribute to tasks**
+- ✅ **Access member-only content**
+
+### Contributor
+
+**Task-focused participant.**
+
+**Permissions:**
+- ❌ Manage members
+- ❌ Access analytics
+- ❌ Manage billing
+- ❌ Execute proposals
+- ❌ Manage vaults
+- ✅ **Create proposals**
+- ✅ **Vote on proposals**
+- ✅ **Claim and complete tasks**
+
+**Focus:**
+- Complete bounties
+- Build reputation
+- Earn rewards
+
+### Guest
+
+**Limited view-only access.**
+
+**Permissions:**
+- ❌ All management functions
+- ❌ Create proposals
+- ❌ Vote
+- ❌ Claim tasks
+- ✅ **View public proposals**
+- ✅ **View public analytics**
+
+## Permission Matrix
+
+| Action | Super Admin | DAO Owner | DAO Admin | Elder | Member | Contributor | Guest |
+|--------|-------------|-----------|-----------|-------|--------|-------------|-------|
+| Create DAO | ✅ | ✅* | ✅* | ❌ | ❌ | ❌ | ❌ |
+| Delete DAO | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Add Members | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Remove Members | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Create Proposals | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Vote | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Execute Proposals | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Manage Treasury | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Claim Tasks | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Access Analytics | ✅ | ✅ | ✅ | Partial | Partial | ❌ | Public Only |
+
+*Requires Core membership or payment
+
+## Role Assignment
+
+### Automatic Assignment
+
+```typescript
+// New user joins
+role = 'guest'
+
+// User joins DAO
+role = 'member'
+
+// User completes onboarding
+role = 'member' (confirmed)
+
+// User reaches 1000 reputation
+role = 'elder'
+```
+
+### Manual Assignment
+
+DAO Owners and Admins can assign roles:
+
+```typescript
+// Via API
+await fetch('/api/daos/dao-123/members/user-456/role', {
+  method: 'PUT',
+  body: JSON.stringify({ role: 'admin' })
+});
+
+// Via UI
+Settings → Members → Select User → Change Role
+```
+
+### Proposal-Based Assignment
+
+For democratic role changes:
+
+```typescript
+{
+  type: 'membership',
+  title: 'Promote Alice to Admin',
+  description: 'Alice has shown great leadership...',
+  action: 'change_role',
+  userId: 'user-123',
+  newRole: 'admin'
+}
+```
+
+## Custom Roles (Coming Soon)
+
+DAOs will be able to create custom roles:
+
+```typescript
+{
+  name: 'Treasurer',
+  permissions: [
+    'view_treasury',
+    'create_treasury_proposals',
+    'access_financial_reports'
+  ],
+  inheritFrom: 'member'
+}
+```
+
+## Voting Power by Role
+
+Roles affect voting power:
+
+| Role | Base Voting Power | Multiplier |
+|------|-------------------|------------|
+| Guest | 0 | 0x |
+| Contributor | 100 | 1x |
+| Member | 100 | 1x |
+| Elder | 150 | 1.5x |
+| DAO Admin | 200 | 2x |
+| DAO Owner | 300 | 3x |
+
+**Additional Factors:**
+- Reputation score: +0-50%
+- Contribution history: +0-25%
+- Stake amount: +0-100%
+
+**Example Calculation:**
+```typescript
+const votingPower = 
+  roleBasePower * 
+  (1 + reputationBonus + contributionBonus + stakeBonus);
+
+// Elder with high reputation
+votingPower = 150 * (1 + 0.5 + 0.25 + 0) = 262.5
+```
+
+## Security Features
+
+### Permission Checks
+
+All actions are validated:
+
+```typescript
+// Backend middleware
+export const requireDAORole = (...allowedRoles: string[]) => {
+  return async (req, res, next) => {
+    const userRole = await getUserRole(req.userId, req.params.daoId);
+    
+    if (!allowedRoles.includes(userRole)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+    
+    next();
+  };
+};
+
+// Usage
+router.delete('/daos/:daoId/members/:userId', 
+  requireDAORole('owner', 'admin'),
+  removeMemberHandler
+);
+```
+
+### Audit Logging
+
+All role changes are logged:
+
+```typescript
+{
+  timestamp: '2025-11-09T15:20:14Z',
+  action: 'role_change',
+  daoId: 'dao-123',
+  userId: 'user-456',
+  actor: 'admin-789',
+  oldRole: 'member',
+  newRole: 'admin',
+  reason: 'Promotion for outstanding contributions'
+}
+```
+
+### Multi-Factor Authentication
+
+Required for sensitive roles:
+
+- **Super Admin**: Always required
+- **DAO Owner**: Required for treasury operations
+- **DAO Admin**: Recommended
+
+## Role Transitions
+
+### Promotion Path
+
+```
+Guest
+  → Join DAO → Member
+  → 50 contributions → Contributor
+  → 1000 reputation → Elder
+  → Elected/Appointed → Admin
+  → Transfer ownership → Owner
+```
+
+### Demotion Scenarios
+
+Automatic demotion can occur:
+- **Inactivity**: No activity for 90 days
+- **Low Reputation**: Falls below threshold
+- **Rule Violations**: Community strikes
+- **Owner Decision**: Manual demotion
+
+```typescript
+// Automatic demotion
+if (daysSinceLastActivity > 90 && role === 'elder') {
+  demoteUser(userId, 'member');
+}
+```
+
+## Best Practices
+
+### For DAO Owners
+
+1. **Distribute Power**: Don't keep all admin roles
+2. **Promote Active Members**: Reward contribution
+3. **Document Decisions**: Explain role changes
+4. **Regular Reviews**: Audit roles quarterly
+5. **Emergency Succession**: Designate backup owners
+
+### For Admins
+
+1. **Follow Principle of Least Privilege**: Grant minimum necessary permissions
+2. **Transparent Actions**: Log and communicate changes
+3. **Respect Community**: Use powers judiciously
+4. **Support Members**: Help lower roles succeed
+
+### For Members
+
+1. **Understand Your Role**: Know your permissions
+2. **Build Reputation**: Contribute to earn promotion
+3. **Respect Hierarchy**: Follow proper channels
+4. **Stay Active**: Prevent automatic demotion
+5. **Propose Changes**: Use governance for role updates
+
+## API Reference
+
+### Get User Permissions
+
+```typescript
+GET /api/users/:userId/permissions?daoId=dao-123
+
+Response:
+{
+  globalRole: 'user',
+  daoRole: 'member',
+  permissions: {
+    canCreateDAO: false,
+    canManageUsers: false,
+    canAccessAnalytics: false,
+    canManageVaults: false,
+    canExecuteProposals: false
+  },
+  votingPower: 100
+}
+```
+
+### Change User Role
+
+```typescript
+PUT /api/daos/:daoId/members/:userId/role
+
+Body:
+{
+  role: 'admin',
+  reason: 'Promotion for leadership'
+}
+
+Response:
+{
+  success: true,
+  user: {
+    userId: 'user-123',
+    newRole: 'admin',
+    previousRole: 'member',
+    effectiveDate: '2025-11-09T15:20:14Z'
+  }
+}
+```
+
+## Learn More
+
+- [Creating Proposals](/governance/proposals)
+- [Voting System](/governance/voting)
+- [Trust & Reputation](/governance/trust-reputation)
+- [DAO Types](/dao-types)
