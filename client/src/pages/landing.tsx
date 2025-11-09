@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowRight, Users, Vote, Wallet, Target, Trophy, Zap, DollarSign, TrendingUp, Shield, Globe, CheckCircle, Sparkles, Heart } from "lucide-react";
+import { Star } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Logo } from "@/components/ui/logo";
 import { Link } from 'wouter';
@@ -116,6 +117,7 @@ export default function MtaaDAOLanding() {
         </div>
         <nav className="hidden md:flex space-x-6">
           <a href="#features" className="text-purple-200 hover:text-white transition">Features</a>
+          <a href="/success-stories" className="text-purple-200 hover:text-white transition">Success Stories</a>
           <a href="/pricing" className="text-purple-200 hover:text-white transition">Pricing</a>
           <a href="/whitepaper.html" target="_blank" className="text-purple-200 hover:text-white transition">Whitepaper</a>
         </nav>
@@ -159,14 +161,16 @@ export default function MtaaDAOLanding() {
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </a>
-              <Button
-                size="lg"
-                variant="outline"
-                className="border-2 border-white/30 text-white hover:bg-white/10 px-10 py-6 text-lg font-bold rounded-2xl backdrop-blur-sm transition-all"
-              >
-                <Heart className="mr-2 h-5 w-5" />
-                View Demo
-              </Button>
+              <a href="/success-stories">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="border-2 border-white/30 text-white hover:bg-white/10 px-10 py-6 text-lg font-bold rounded-2xl backdrop-blur-sm transition-all"
+                >
+                  <Star className="mr-2 h-5 w-5" />
+                  See Success Stories
+                </Button>
+              </a>
             </div>
 
             {/* Stats - Compact Grid */}
@@ -276,6 +280,7 @@ export default function MtaaDAOLanding() {
               <span className="font-bold">© 2025 Mtaa DAO</span>
             </div>
             <div className="flex gap-6 text-sm">
+              <a href="/success-stories" className="hover:text-white transition">Success Stories</a>
               <a href="/pricing" className="hover:text-white transition">Pricing</a>
               <a href="/whitepaper.html" target="_blank" className="hover:text-white transition">Whitepaper</a>
               <a href="/help" className="hover:text-white transition">Support</a>

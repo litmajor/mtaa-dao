@@ -29,7 +29,6 @@ export default function EnhancedDAOs() {
   const [activeTab, setActiveTab] = useState(tabFromUrl);
   const [hoveredDao, setHoveredDao] = useState<number | null>(null);
   const [leavingDaoId, setLeavingDaoId] = useState<number | null>(null);
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -226,7 +225,10 @@ export default function EnhancedDAOs() {
           </div>
           
           {dao.isJoined && (
-            <button className="p-2 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors duration-300 group">
+            <button
+              className="p-2 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors duration-300 group"
+              title="DAO Settings"
+            >
               <Settings className="w-4 h-4 text-gray-600 dark:text-gray-400 group-hover:rotate-90 transition-transform duration-300" />
             </button>
           )}

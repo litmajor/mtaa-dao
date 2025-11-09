@@ -330,6 +330,7 @@ const EnhancedWalletPage = () => {
     variant?: "default" | "outline" | "emerald" | "purple" | "glass";
     onClick?: React.MouseEventHandler<HTMLButtonElement>;
     disabled?: boolean;
+    size?: "sm" | "md" | "lg";
   };
 
   const Button: React.FC<ButtonProps> = ({ children, className = "", variant = "default", onClick, disabled = false }) => {

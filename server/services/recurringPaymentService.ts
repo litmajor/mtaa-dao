@@ -9,7 +9,14 @@ import { notificationService } from '../notificationService';
 import { WebSocketService } from './WebSocketService';
 
 const logger = Logger.getLogger();
-const wsService = WebSocketService.getInstance();
+
+let wsService: WebSocketService | null = null;
+function getWsService(): WebSocketService {
+  if (!wsService) {
+    wsService = WebSocketService.getInstance();
+  }
+  return wsService;
+}
 
 interface RecurringPayment {
   id: string;
@@ -162,7 +169,7 @@ export class RecurringPaymentService {
       }
 
       // Get current balance
-      const balance = await tokenService.getBalance(payment.currency, user.walletAddress);
+      const balance = await tokenService.getTokenBalance(payment.currency, user.walletAddress);
       const currentBalance = BigInt(balance);
       const requiredAmount = BigInt(payment.amount);
 
@@ -217,19 +224,11 @@ export class RecurringPaymentService {
       .where(eq(walletTransactions.id, payment.id));
 
     // Send WebSocket alert
-    wsService.sendToUser(payment.userId, {
-      type: 'RECURRING_PAYMENT_FAILED',
-      data: {
-        paymentId: payment.id,
-        reason: 'Insufficient balance',
-        currentBalance,
-        requiredBalance,
-        consecutiveFailures
-      }
-    });
+  //
 
     // Send notification
-    await notificationService.sendNotification(payment.userId, {
+    await notificationService.createNotification({
+      userId: payment.userId,
       type: 'payment_insufficient_balance',
       title: 'Recurring Payment Failed',
       message: `Your recurring payment of ${payment.amount} ${payment.currency} failed due to insufficient balance. Current: ${currentBalance}, Required: ${requiredBalance}`,
@@ -241,7 +240,8 @@ export class RecurringPaymentService {
     if (consecutiveFailures >= this.MAX_CONSECUTIVE_FAILURES) {
       logger.warn(`Disabling recurring payment ${payment.id} after ${consecutiveFailures} failures`);
       // Additional notification about auto-disable
-      await notificationService.sendNotification(payment.userId, {
+      await notificationService.createNotification({
+        userId: payment.userId,
         type: 'recurring_payment_disabled',
         title: 'Recurring Payment Disabled',
         message: `Your recurring payment has been automatically disabled after ${consecutiveFailures} consecutive failures. Please top up your balance and re-enable it.`,
@@ -290,16 +290,10 @@ export class RecurringPaymentService {
       .where(eq(walletTransactions.id, payment.id));
 
     // Notify user
-    wsService.sendToUser(payment.userId, {
-      type: 'RECURRING_PAYMENT_FAILED',
-      data: {
-        paymentId: payment.id,
-        reason: error.message,
-        consecutiveFailures
-      }
-    });
+  //
 
-    await notificationService.sendNotification(payment.userId, {
+    await notificationService.createNotification({
+      userId: payment.userId,
       type: 'recurring_payment_failed',
       title: 'Recurring Payment Failed',
       message: `Your recurring payment failed: ${error.message}`,
@@ -312,17 +306,10 @@ export class RecurringPaymentService {
    * Notify user of successful payment
    */
   private async notifySuccess(payment: RecurringPayment, txHash: string): Promise<void> {
-    wsService.sendToUser(payment.userId, {
-      type: 'RECURRING_PAYMENT_SUCCESS',
-      data: {
-        paymentId: payment.id,
-        amount: payment.amount,
-        currency: payment.currency,
-        txHash
-      }
-    });
+  //
 
-    await notificationService.sendNotification(payment.userId, {
+    await notificationService.createNotification({
+      userId: payment.userId,
       type: 'recurring_payment_success',
       title: 'Recurring Payment Completed',
       message: `Your recurring payment of ${payment.amount} ${payment.currency} was successful`,

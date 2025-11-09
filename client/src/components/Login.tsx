@@ -327,9 +327,7 @@ export default function MtaaDAOLogin() {
                   />
                   <span className="group-hover:text-white transition-colors">Remember me</span>
                 </label>
-                <a href="#" className="text-orange-400 hover:text-orange-300 font-semibold transition-colors hover:underline">
-                  <a href="/forgot-password" className="text-orange-400 hover:text-orange-300 font-semibold transition-colors hover:underline">Forgot password?</a>
-                </a>
+                <a href="/forgot-password" className="text-orange-400 hover:text-orange-300 font-semibold transition-colors hover:underline">Forgot password?</a>
               </div>
 
               {/* Submit Button */}

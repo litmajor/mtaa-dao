@@ -1,15 +1,16 @@
 import express, { Express, Router, Request, Response } from 'express';
+import { isAuthenticated } from '../auth';
 
 import EnhancedAgentWallet, { NetworkConfig, WalletManager } from '../agent_wallet';
 
 import { db } from '../storage';
-import { walletTransactions, contributions, paymentRequests, lockedSavings, savingsGoals, paymentReceipts } from '../../shared/schema';
+import { walletTransactions, contributions, paymentRequests, lockedSavings, savingsGoals, paymentReceipts, vaults } from '../../shared/schema';
 import { desc, eq, or, and, sql, gte } from 'drizzle-orm';
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 import { notificationService } from '../notificationService';
 import { users } from '../../shared/schema';
-import { Logger } from '../logger';
+import { Logger } from '../utils/logger';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -221,7 +222,7 @@ router.get('/analytics', async (req, res) => {
 });
 
 // GET /api/wallet/pending-payments - Get pending payments overview
-router.get('/pending-payments', async (req, res) => {
+router.get('/pending-payments', isAuthenticated, async (req, res) => {
   try {
     const { walletAddress, userId } = req.query;
 
@@ -277,7 +278,7 @@ router.get('/pending-payments', async (req, res) => {
 });
 
 // GET /api/wallet/balance-trends - Get balance trends over time
-router.get('/balance-trends', async (req, res) => {
+router.get('/balance-trends', isAuthenticated, async (req, res) => {
   try {
     const { walletAddress, period = 'weekly' } = req.query;
     if (!walletAddress) {
@@ -357,7 +358,7 @@ router.get('/network-info', async (req, res) => {
 });
 
 // GET /api/wallet/balance/:address?
-router.get('/balance/:address?', async (req, res) => {
+router.get('/balance/:address?', isAuthenticated, async (req, res) => {
   try {
     const address = req.params.address || wallet!.address; // Non-null assertion
     const balance = await wallet!.getBalanceEth(address); // Non-null assertion
@@ -369,7 +370,7 @@ router.get('/balance/:address?', async (req, res) => {
 });
 
 // GET /api/wallet/balance/celo
-router.get('/balance/celo', async (req, res) => {
+router.get('/balance/celo', isAuthenticated, async (req, res) => {
   try {
     const { user } = req.query;
     const address = user as string || wallet!.address;
@@ -382,7 +383,7 @@ router.get('/balance/celo', async (req, res) => {
 });
 
 // GET /api/wallet/balance/cusd
-router.get('/balance/cusd', async (req, res) => {
+router.get('/balance/cusd', isAuthenticated, async (req, res) => {
   try {
     const { user } = req.query;
     const address = user as string || wallet!.address;
@@ -397,7 +398,7 @@ router.get('/balance/cusd', async (req, res) => {
 });
 
 // GET /api/wallet/token-info/:tokenAddress
-router.get('/token-info/:tokenAddress', async (req, res) => {
+router.get('/token-info/:tokenAddress', isAuthenticated, async (req, res) => {
   try {
     const info = await wallet!.getTokenInfo(req.params.tokenAddress); // Non-null assertion
     res.json(info);
@@ -408,7 +409,7 @@ router.get('/token-info/:tokenAddress', async (req, res) => {
 });
 
 // POST /api/wallet/send-native
-router.post('/send-native', async (req, res) => {
+router.post('/send-native', isAuthenticated, async (req, res) => {
   try {
     const { toAddress, amount, userId } = req.body;
 
@@ -447,7 +448,7 @@ router.post('/send-native', async (req, res) => {
 });
 
 // POST /api/wallet/send-token
-router.post('/send-token', async (req, res) => {
+router.post('/send-token', isAuthenticated, async (req, res) => {
   try {
     const { tokenAddress, toAddress, amount, userId } = req.body;
     const result = await wallet!.sendTokenHuman(tokenAddress, toAddress, amount); // Non-null assertion
@@ -478,7 +479,7 @@ router.post('/send-token', async (req, res) => {
 });
 
 // POST /api/wallet/send-to-address - Direct wallet address transfer
-router.post('/send-to-address', async (req, res) => {
+router.post('/send-to-address', isAuthenticated, async (req, res) => {
   try {
     const { fromUserId, toAddress, amount, currency, description } = req.body;
 
@@ -529,7 +530,7 @@ router.post('/send-to-address', async (req, res) => {
 });
 
 // POST /api/wallet/approve-token
-router.post('/approve-token', async (req, res) => {
+router.post('/approve-token', isAuthenticated, async (req, res) => {
   try {
     const { tokenAddress, spender, amount } = req.body;
     const result = await wallet!.approveToken(tokenAddress, spender, amount); // Non-null assertion
@@ -541,7 +542,7 @@ router.post('/approve-token', async (req, res) => {
 });
 
 // GET /api/wallet/allowance/:tokenAddress/:spender
-router.get('/allowance/:tokenAddress/:spender', async (req, res) => {
+router.get('/allowance/:tokenAddress/:spender', isAuthenticated, async (req, res) => {
   try {
     const { tokenAddress, spender } = req.params;
     const allowance = await wallet!.getAllowance(tokenAddress, spender); // Non-null assertion
@@ -554,7 +555,7 @@ router.get('/allowance/:tokenAddress/:spender', async (req, res) => {
 
 
 // POST /api/wallet/portfolio (enhanced)
-router.post('/portfolio', async (req, res) => {
+router.post('/portfolio', isAuthenticated, async (req, res) => {
   try {
     if (!wallet) {
       return res.status(503).json({ error: 'Wallet service not available' });
@@ -570,7 +571,7 @@ router.post('/portfolio', async (req, res) => {
 });
 
 // POST /api/wallet/batch-transfer
-router.post('/batch-transfer', async (req, res) => {
+router.post('/batch-transfer', isAuthenticated, async (req, res) => {
   try {
     const { transfers } = req.body;
     const results = await wallet!.batchTransfer(transfers); // Non-null assertion
@@ -582,7 +583,7 @@ router.post('/batch-transfer', async (req, res) => {
 });
 
 // GET /api/wallet/analytics/tx-history
-router.get('/analytics/tx-history', async (req, res) => {
+router.get('/analytics/tx-history', isAuthenticated, async (req, res) => {
   try {
     const { limit } = req.query;
     const txs = await wallet!.getTransactionHistory(Number(limit) || 10); // Non-null assertion
@@ -594,7 +595,7 @@ router.get('/analytics/tx-history', async (req, res) => {
 });
 
 // GET /api/wallet/tx-status/:txHash
-router.get('/tx-status/:txHash', async (req, res) => {
+router.get('/tx-status/:txHash', isAuthenticated, async (req, res) => {
   try {
     const status = await wallet!.getTransactionStatus(req.params.txHash); // Non-null assertion
     res.json(status);
@@ -607,7 +608,7 @@ router.get('/tx-status/:txHash', async (req, res) => {
 // === SAVINGS ACCOUNT ENDPOINTS (New Unified API) ===
 
 // GET /api/wallet/savings - Get all savings accounts for user
-router.get('/savings', async (req, res) => {
+router.get('/savings', isAuthenticated, async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -628,9 +629,10 @@ router.get('/savings', async (req, res) => {
       const daysRemaining = Math.max(0, Math.ceil((unlocksAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
       
       // Calculate earned interest based on time elapsed
-      const lockedAt = new Date(saving.lockedAt);
-      const daysElapsed = Math.floor((now.getTime() - lockedAt.getTime()) / (1000 * 60 * 60 * 24));
-      const dailyRate = parseFloat(saving.interestRate) / 365;
+  const lockedAt = new Date(String(saving.lockedAt ?? ''));
+  const interestRateStr = String(saving.interestRate ?? '0');
+  const dailyRate = parseFloat(interestRateStr) / 365;
+  const daysElapsed = Math.floor((now.getTime() - lockedAt.getTime()) / (1000 * 60 * 60 * 24));
       const earnedInterest = parseFloat(saving.amount) * dailyRate * daysElapsed;
       const currentValue = parseFloat(saving.amount) + earnedInterest;
 
@@ -652,7 +654,7 @@ router.get('/savings', async (req, res) => {
 });
 
 // POST /api/wallet/savings/create - Create new savings account
-router.post('/savings/create', async (req, res) => {
+router.post('/savings/create', isAuthenticated, async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -717,7 +719,7 @@ router.post('/savings/create', async (req, res) => {
 });
 
 // POST /api/wallet/savings/withdraw/:id - Withdraw from savings account
-router.post('/savings/withdraw/:id', async (req, res) => {
+router.post('/savings/withdraw/:id', isAuthenticated, async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -753,9 +755,11 @@ router.post('/savings/withdraw/:id', async (req, res) => {
     }
 
     // Calculate final amount with interest
-    const lockedAt = new Date(saving.lockedAt);
-    const daysElapsed = Math.floor((now.getTime() - lockedAt.getTime()) / (1000 * 60 * 60 * 24));
-    const dailyRate = parseFloat(saving.interestRate) / 365;
+  const lockedAtStr = typeof (saving.lockedAt ?? '') === 'string' ? (saving.lockedAt ?? '') : (saving.lockedAt?.toISOString?.() || '');
+  const lockedAt = new Date(lockedAtStr);
+  const interestRateStr = typeof (saving.interestRate ?? '0') === 'string' ? (saving.interestRate ?? '0') : (saving.interestRate?.toString?.() || '0');
+  const dailyRate = parseFloat(interestRateStr) / 365;
+  const daysElapsed = Math.floor((now.getTime() - lockedAt.getTime()) / (1000 * 60 * 60 * 24));
     const earnedInterest = parseFloat(saving.amount) * dailyRate * daysElapsed;
     const totalValue = parseFloat(saving.amount) + earnedInterest;
     const finalAmount = totalValue - penalty;
@@ -785,7 +789,7 @@ router.post('/savings/withdraw/:id', async (req, res) => {
 // === LEGACY LOCKED SAVINGS ENDPOINTS (Deprecated - use /savings instead) ===
 
 // POST /api/wallet/locked-savings/create
-router.post('/locked-savings/create', async (req, res) => {
+router.post('/locked-savings/create', isAuthenticated, async (req, res) => {
   try {
     const { userId, amount, currency, lockPeriod, interestRate } = req.body;
     
@@ -830,7 +834,7 @@ router.post('/locked-savings/create', async (req, res) => {
 });
 
 // GET /api/wallet/locked-savings/:userId
-router.get('/locked-savings/:userId', async (req, res) => {
+router.get('/locked-savings/:userId', isAuthenticated, async (req, res) => {
   try {
     const { userId } = req.params;
     const savings = await db
@@ -846,7 +850,7 @@ router.get('/locked-savings/:userId', async (req, res) => {
 });
 
 // POST /api/wallet/locked-savings/withdraw/:id
-router.post('/locked-savings/withdraw/:id', async (req, res) => {
+router.post('/locked-savings/withdraw/:id', isAuthenticated, async (req, res) => {
   try {
     const { id } = req.params;
     const { isEarlyWithdrawal } = req.body;
@@ -891,7 +895,7 @@ router.post('/locked-savings/withdraw/:id', async (req, res) => {
 // === SAVINGS GOALS ENDPOINTS ===
 
 // POST /api/wallet/savings-goals/create
-router.post('/savings-goals/create', async (req, res) => {
+router.post('/savings-goals/create', isAuthenticated, async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -943,7 +947,44 @@ router.get('/savings-goals/:userId', async (req, res) => {
 });
 
 // POST /api/wallet/savings-goals/:id/contribute
-router.post('/savings-goals/:id/contribute', async (req, res) => {
+router.post('/savings-goals/:id/contribute', isAuthenticated, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount } = req.body;
+    
+    // Get current goal
+    const goal = await db
+      .select()
+      .from(savingsGoals)
+      .where(eq(savingsGoals.id, id))
+      .limit(1);
+      
+    if (!goal.length) {
+      return res.status(404).json({ error: 'Savings goal not found' });
+    }
+    
+    const currentGoal = goal[0];
+    const newAmount = parseFloat(currentGoal.currentAmount ?? '0') + parseFloat(amount);
+    const isCompleted = newAmount >= parseFloat(currentGoal.targetAmount);
+    
+    await db
+      .update(savingsGoals)
+      .set({ 
+        currentAmount: newAmount.toString(),
+        isCompleted,
+        updatedAt: new Date()
+      })
+      .where(eq(savingsGoals.id, id));
+      
+    res.json({ newAmount, isCompleted });
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// POST /api/wallet/payment-requests/create
+router.post('/payment-requests/create', isAuthenticated, async (req, res) => {
   try {
     const { id } = req.params;
     const { amount } = req.body;

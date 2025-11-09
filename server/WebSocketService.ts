@@ -15,12 +15,40 @@ interface TypingMessage {
 type WebSocketMessage = TypingMessage;
 
 export class WebSocketService {
+
+  private static _instance: WebSocketService | null = null;
+
+  // Singleton accessor for compatibility with transactionMonitor
+  static getInstance(): WebSocketService {
+    if (!WebSocketService._instance) {
+      throw new Error('WebSocketService instance not initialized. Please initialize with a SocketIOServer.');
+    }
+    return WebSocketService._instance;
+  }
+
+  static initialize(io: SocketIOServer) {
+    if (!WebSocketService._instance) {
+      WebSocketService._instance = new WebSocketService(io);
+    }
+    return WebSocketService._instance;
+  }
+
+  // Generic user message sender for compatibility with recurringPaymentService
+  public sendToUser(userId: string, message: any) {
+    // If you have user socket mapping, emit to that user
+    const socket = this.userSockets.get(userId);
+    if (socket) {
+      socket.emit('user_message', message);
+    } else {
+      logger.info(`[WebSocketService] Would send to user ${userId}:`, message);
+    }
+  }
   private io: SocketIOServer;
   private userSockets: Map<string, Socket> = new Map();
   private daoTypingUsers: Map<string, Set<string>> = new Map();
   private daoOnlineUsers: Map<string, Set<string>> = new Map();
 
-  constructor(io: SocketIOServer) {
+  private constructor(io: SocketIOServer) {
     this.io = io;
     this.setupConnectionHandlers();
   }

@@ -66,7 +66,6 @@ import { transactionMonitor } from './services/transactionMonitor';
 import { recurringPaymentService } from './services/recurringPaymentService';
 import { gasPriceOracle } from './services/gasPriceOracle';
 // Import example function for wallet demonstration
-import { enhancedExample } from './example-wallet';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 
@@ -144,7 +143,7 @@ app.use(activityTracker());
 
 // Initialize WebSocket service
 import { WebSocketService } from './services/WebSocketService';
-const webSocketService = new WebSocketService(server);
+const webSocketService = WebSocketService.getInstance(server);
 app.locals.webSocketService = webSocketService;
 
 // Store user socket connections
