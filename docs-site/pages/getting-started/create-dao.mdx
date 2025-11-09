@@ -1,0 +1,78 @@
+
+# Create Your First DAO
+
+Let's walk through creating your first DAO on MtaaDAO. It takes less than 2 minutes!
+
+## Step 1: Connect Your Wallet
+
+First, you'll need a Web3 wallet. We support:
+
+- **MiniPay** (Recommended for mobile users)
+- **Valora** (Built for Celo)
+- **MetaMask** (Most popular)
+
+```jsx
+import { WalletSetup } from '@/components/WalletSetup'
+
+<WalletSetup />
+```
+
+## Step 2: Choose Your DAO Type
+
+Select the type that matches your needs:
+
+import { DAOTypeComparison } from '../../components/DAOTypeComparison'
+
+<DAOTypeComparison />
+
+## Step 3: Configure Your DAO
+
+Fill in the basic details:
+
+- **DAO Name**: e.g., "Nairobi Youth Wedding Fund"
+- **Purpose**: Brief description (1-2 sentences)
+- **Target Amount**: How much you're raising (optional)
+- **Duration**: For Short-Term DAOs (30 days default)
+- **Contribution Amount**: Minimum per member
+
+## Step 4: Set Governance Rules
+
+Decide how decisions will be made:
+
+- **Voting Period**: How long votes stay open (default: 3 days)
+- **Quorum**: Minimum % of members needed to pass (default: 51%)
+- **Proposal Threshold**: Minimum contribution to create proposals
+
+## Step 5: Invite Members
+
+Add members by:
+
+- **Wallet Address**: If they already have a wallet
+- **Phone Number**: We'll send them an invite
+- **Username**: If they're already on MtaaDAO
+
+## Step 6: Fund Your DAO
+
+Make your first deposit to activate the DAO:
+
+```bash
+Minimum Initial Deposit:
+- Short-Term: 1,000 KES
+- Collective: 5,000 KES  
+- MetaDAO: 10,000 KES
+```
+
+## Step 7: Launch! 🚀
+
+Review everything and click **"Create DAO"**. Your community treasury is now live and transparent!
+
+---
+
+## What Happens Next?
+
+1. Members receive invites
+2. They connect wallets and contribute
+3. First proposal can be created when quorum is met
+4. Funds are managed transparently on-chain
+
+[Next: Set Up Your Wallet →](/getting-started/wallet-setup)

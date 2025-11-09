@@ -1,0 +1,118 @@
+
+import { motion } from 'framer-motion'
+import { Card, Cards } from '../components/Card'
+import { DAOTypeComparison } from '../components/DAOTypeComparison'
+
+# Welcome to MtaaDAO 🌍
+
+<motion.div 
+  initial={{ opacity: 0, y: 20 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ duration: 0.6 }}
+>
+
+## Decentralized Community Finance Built for Africa
+
+MtaaDAO is a platform where communities pool resources, make decisions together, and fund what matters — from weddings to startups, funerals to creative projects.
+
+**From Mtaa, For Mtaa.** Built by the people, for the people.
+
+</motion.div>
+
+---
+
+## 🎯 What Can You Do?
+
+<Cards>
+  <Card 
+    icon="👥" 
+    title="Create a DAO in 2 Minutes" 
+    href="/getting-started/create-dao"
+  >
+    Set up your community treasury with zero blockchain experience required.
+  </Card>
+  
+  <Card 
+    icon="💰" 
+    title="Raise Funds Transparently" 
+    href="/financial/wallets"
+  >
+    Every shilling is visible. No hidden fees. Full accountability.
+  </Card>
+  
+  <Card 
+    icon="🗳️" 
+    title="Vote & Govern Together" 
+    href="/governance/voting"
+  >
+    Democracy on-chain. Your voice, your vote, your power.
+  </Card>
+  
+  <Card 
+    icon="🌱" 
+    title="Join the MetaDAO Network" 
+    href="/ecosystem/metadaos"
+  >
+    Connect with other DAOs. Pool resources. Amplify impact.
+  </Card>
+</Cards>
+
+---
+
+## 📊 Choose Your DAO Type
+
+<DAOTypeComparison />
+
+---
+
+## 💡 Real Stories, Real Impact
+
+> "We raised 20,000 KES for my uncle's funeral in 24 hours. Everyone could see exactly where the money went."  
+> — **Jane K., Nairobi Youth Group**
+
+> "Five creative DAOs merged into one MetaDAO. Now we're funding documentaries together."  
+> — **Kofi M., Nairobi Creative Cluster**
+
+[Read More Success Stories →](/case-studies)
+
+---
+
+## 🚀 Quick Start
+
+```bash
+# 1. Connect your wallet (MiniPay, Valora, MetaMask)
+# 2. Choose DAO type (Short-Term, Collective, Meta)
+# 3. Set contribution amount
+# 4. Invite members
+# 5. Start raising funds!
+```
+
+<div className="mt-8 flex gap-4">
+  <a 
+    href="/getting-started" 
+    className="px-6 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 transition"
+  >
+    Create Your First DAO
+  </a>
+  <a 
+    href="/playground" 
+    className="px-6 py-3 border-2 border-orange-500 text-orange-500 rounded-lg font-semibold hover:bg-orange-50 transition"
+  >
+    Try Interactive Demo
+  </a>
+</div>
+
+---
+
+## 🧭 Explore the Docs
+
+Use the sidebar to navigate through:
+- **Getting Started** — Onboarding, wallet setup, first contribution
+- **DAO Types** — Short-Term, Collective, MetaDAOs
+- **Financial Layer** — Wallets, tokens, transparent ledgers
+- **Governance** — Voting, proposals, reputation
+- **Ecosystem** — MetaDAOs, networks, strategic alliances
+- **Developers** — API, smart contracts, SDK
+- **Case Studies** — Real-world success stories
+- **FAQ** — Quick answers to common questions
+
