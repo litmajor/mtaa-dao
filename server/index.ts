@@ -303,6 +303,7 @@ app.use((req, res, next) => {
     // Wallet routes
     app.use('/api/wallet', walletRoutes);
     app.use('/api/wallet-setup', walletSetupRoutes);
+    app.use('/api/wallet-setup', walletSetupRoutes); // This line is a duplicate and should be removed or modified if intended differently.
     app.use('/api/wallet/recurring-payments', (await import('./routes/recurring-payments')).default);
     app.use('/api/wallet/vouchers', (await import('./routes/vouchers')).default);
     app.use('/api/wallet/phone', (await import('./routes/phone-payments')).default);
@@ -317,6 +318,10 @@ app.use((req, res, next) => {
     // Import and mount invoice routes
     const invoiceRouter = (await import('./routes/invoices')).default;
     app.use('/api/invoices', invoiceRouter);
+
+    // Add proof of contribution routes
+    import proofOfContributionRoutes from './routes/proof-of-contribution';
+    app.use('/api/proof-of-contribution', proofOfContributionRoutes);
 
   // AI Analytics endpoints
   // Load authentication middleware dynamically (avoid top-level static import inside function scope)
