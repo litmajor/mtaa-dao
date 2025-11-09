@@ -1,0 +1,292 @@
+
+# KWETU - The Body (Community & Economic Layer)
+
+KWETU is the operational layer of MtaaDAO's AI system, managing DAO operations, treasury functions, and community interactions.
+
+## Core Services
+
+### 1. Treasury Service
+
+Manages DAO treasury operations and financial transactions.
+
+```typescript
+import { treasuryService } from '@/core/kwetu/services/treasury_service';
+
+// Get treasury balance
+const balance = await treasuryService.getBalance(daoId);
+
+// Process deposit
+const deposit = await treasuryService.processDeposit({
+  daoId,
+  userId,
+  amount: 5000,
+  currency: 'cUSD'
+});
+
+// Execute withdrawal
+const withdrawal = await treasuryService.executeWithdrawal({
+  daoId,
+  proposalId,
+  amount: 1000,
+  recipient: '0x...'
+});
+```
+
+**Features:**
+- Real-time balance tracking
+- Multi-currency support
+- Transaction history
+- Automated reconciliation
+
+### 2. Governance Service
+
+Handles proposal creation, voting, and execution.
+
+```typescript
+import { governanceService } from '@/core/kwetu/services/governance_service';
+
+// Get proposals
+const proposals = await governanceService.getProposals(daoId, 'active');
+
+// Get proposal details
+const proposal = await governanceService.getProposalById(proposalId);
+
+// Get voting power
+const power = await governanceService.getVotingPower(userId, daoId);
+```
+
+**Capabilities:**
+- Proposal lifecycle management
+- Vote tracking and tallying
+- Quorum validation
+- Execution scheduling
+
+### 3. Community Service
+
+Tracks member engagement and contributions.
+
+```typescript
+import { communityService } from '@/core/kwetu/services/community_service';
+
+// Get member statistics
+const stats = await communityService.getMemberStats(daoId);
+
+// Track contribution
+await communityService.recordContribution({
+  userId,
+  daoId,
+  type: 'task_completion',
+  value: 100
+});
+
+// Get leaderboard
+const leaders = await communityService.getLeaderboard(daoId);
+```
+
+**Metrics:**
+- Member count and growth
+- Contribution scores
+- Engagement rates
+- Retention analytics
+
+### 4. Onboarding Service
+
+Guides new users through DAO setup and participation.
+
+```typescript
+import { onboardingService } from '@/core/kwetu/services/onboarding_service';
+
+// Get onboarding status
+const status = await onboardingService.getOnboardingStatus(userId);
+
+// Complete onboarding step
+await onboardingService.completeStep(userId, stepId);
+
+// Reset onboarding
+await onboardingService.resetOnboarding(userId);
+```
+
+**Onboarding Steps:**
+1. Welcome & tour
+2. Wallet setup
+3. Profile creation
+4. First contribution
+5. Voting tutorial
+
+## Wallet & Vault Management
+
+### Personal Wallets
+
+```typescript
+// Create wallet
+await kwetu.createWallet(userId);
+
+// Get balance
+const balance = await kwetu.getWalletBalance(userId);
+
+// Transfer funds
+await kwetu.transfer({
+  from: userId,
+  to: recipientId,
+  amount: 100,
+  currency: 'cUSD'
+});
+```
+
+### DAO Vaults
+
+```typescript
+// Create vault
+await kwetu.createVault({
+  daoId,
+  name: 'Emergency Fund',
+  type: 'savings',
+  strategy: 'conservative'
+});
+
+// Deposit to vault
+await kwetu.depositToVault(vaultId, amount);
+
+// Withdraw from vault
+await kwetu.withdrawFromVault(vaultId, amount, proposalId);
+```
+
+## Payment Processing
+
+### M-Pesa Integration
+
+```typescript
+// Initiate M-Pesa deposit
+const payment = await kwetu.processMpesaDeposit({
+  phoneNumber: '+254712345678',
+  amount: 1000,
+  daoId
+});
+
+// Check payment status
+const status = await kwetu.checkMpesaStatus(paymentId);
+```
+
+### Phone Number Payments
+
+```typescript
+// Send money to phone number
+await kwetu.sendToPhone({
+  from: userId,
+  phoneNumber: '+254712345678',
+  amount: 500,
+  currency: 'KES'
+});
+```
+
+### Recurring Payments
+
+```typescript
+// Setup recurring payment
+await kwetu.createRecurringPayment({
+  userId,
+  amount: 1000,
+  frequency: 'monthly',
+  recipient: 'dao-123'
+});
+```
+
+## Task & Bounty Management
+
+```typescript
+// Create task
+await kwetu.createTask({
+  daoId,
+  title: 'Update documentation',
+  bounty: 500,
+  deadline: '2025-12-31'
+});
+
+// Claim task
+await kwetu.claimTask(taskId, userId);
+
+// Submit completion
+await kwetu.submitTaskCompletion(taskId, proofUrl);
+
+// Verify and release bounty
+await kwetu.verifyAndRelease(taskId);
+```
+
+## Data Flow
+
+```
+User Action
+    ↓
+MORIO (Interface) - Receives request
+    ↓
+NURU (Reasoning) - Validates and analyzes
+    ↓
+KWETU (Execution) - Performs operation
+    ↓
+Database/Blockchain - Updates state
+    ↓
+KWETU (Response) - Returns result
+    ↓
+MORIO - Notifies user
+```
+
+## Service Architecture
+
+```
+/server/core/kwetu/
+├── services/
+│   ├── treasury_service.ts      # Financial operations
+│   ├── governance_service.ts    # Proposals & voting
+│   ├── community_service.ts     # Member management
+│   └── onboarding_service.ts    # User onboarding
+└── index.ts                     # Service orchestrator
+```
+
+## Error Handling
+
+KWETU implements robust error handling:
+
+```typescript
+try {
+  await kwetu.executeWithdrawal(params);
+} catch (error) {
+  if (error.code === 'INSUFFICIENT_FUNDS') {
+    // Handle insufficient balance
+  } else if (error.code === 'UNAUTHORIZED') {
+    // Handle permission error
+  }
+}
+```
+
+## Performance Optimization
+
+- **Caching**: Redis for frequently accessed data
+- **Batch Processing**: Group similar operations
+- **Connection Pooling**: Efficient database connections
+- **Rate Limiting**: Prevent abuse
+
+## Security Features
+
+- **Input Validation**: Sanitize all user inputs
+- **Permission Checks**: Role-based access control
+- **Audit Logging**: Track all operations
+- **Encryption**: Sensitive data protection
+
+## API Endpoints
+
+All KWETU services are exposed via RESTful APIs:
+
+```
+POST   /api/treasury/deposit
+POST   /api/treasury/withdraw
+GET    /api/governance/proposals
+POST   /api/governance/vote
+GET    /api/community/stats
+POST   /api/onboarding/complete-step
+```
+
+## Learn More
+
+- [System Architecture](/ai-layer/architecture)
+- [Integration Guide](/ai-layer/integration)
+- [NURU Analytics](/ai-layer/nuru)

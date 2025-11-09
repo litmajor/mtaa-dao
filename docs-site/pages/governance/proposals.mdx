@@ -1,0 +1,418 @@
+
+# Creating Proposals
+
+Proposals are the primary mechanism for making decisions and allocating resources in MtaaDAO. Any member can create a proposal that the community votes on.
+
+## Proposal Types
+
+### 1. Treasury Proposals
+
+Request funds from the DAO treasury for specific purposes.
+
+```typescript
+{
+  type: 'treasury',
+  title: 'Marketing Campaign Q1 2026',
+  description: 'Allocate funds for social media and community events',
+  amount: 10000,
+  currency: 'cUSD',
+  recipient: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb'
+}
+```
+
+**Use Cases:**
+- Event funding
+- Marketing campaigns
+- Equipment purchases
+- Service payments
+- Emergency expenses
+
+### 2. Governance Proposals
+
+Change DAO settings, rules, or structure.
+
+```typescript
+{
+  type: 'governance',
+  title: 'Reduce Quorum to 40%',
+  description: 'Lower quorum requirement to improve proposal throughput',
+  changes: {
+    quorumPercentage: 40
+  }
+}
+```
+
+**Common Changes:**
+- Quorum requirements
+- Voting periods
+- Member permissions
+- Treasury limits
+- Proposal thresholds
+
+### 3. Membership Proposals
+
+Add or remove members, change roles.
+
+```typescript
+{
+  type: 'membership',
+  title: 'Add Sarah as Treasurer',
+  description: 'Sarah has financial experience and will manage treasury',
+  action: 'add',
+  userId: 'user-123',
+  role: 'treasurer'
+}
+```
+
+### 4. Poll Proposals
+
+Gauge community sentiment without binding actions.
+
+```typescript
+{
+  type: 'poll',
+  title: 'Preferred Event Date',
+  description: 'Which date works best for annual meetup?',
+  options: [
+    'January 15',
+    'January 22',
+    'February 5'
+  ]
+}
+```
+
+## Creating a Proposal
+
+### Via UI
+
+1. Navigate to **Proposals** page
+2. Click **"Create Proposal"** button
+3. Fill in the form:
+   - **Title**: Clear, concise description
+   - **Description**: Detailed explanation and justification
+   - **Type**: Select proposal type
+   - **Amount** (if treasury): Funding requested
+   - **Duration**: Voting period (default: 7 days)
+4. Review and submit
+
+### Via API
+
+```typescript
+const proposal = await fetch('/api/proposals', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    daoId: 'dao-123',
+    title: 'Community Event Funding',
+    description: 'Request 5,000 cUSD for annual community meetup...',
+    type: 'treasury',
+    amount: 5000,
+    currency: 'cUSD',
+    votingDuration: 7
+  })
+});
+```
+
+### Via Morio AI
+
+Simply chat with Morio:
+
+```
+You: "I want to create a proposal for community event funding"
+
+Morio: "I'll help you create a proposal. What's the title?"
+
+You: "Annual Community Meetup"
+
+Morio: "Great! How much funding do you need?"
+
+You: "5,000 cUSD"
+
+Morio: "Please provide a detailed description..."
+```
+
+## Proposal Lifecycle
+
+```
+Draft → Active → Voting → Passed/Rejected → Executed/Archived
+```
+
+### 1. Draft
+- Proposal created but not yet submitted
+- Can be edited or deleted
+- Not visible to other members
+
+### 2. Active
+- Submitted for community review
+- Members can discuss and ask questions
+- Cannot be modified
+
+### 3. Voting
+- Voting period begins
+- Members cast votes
+- Progress tracked in real-time
+
+### 4. Passed/Rejected
+- Voting period ends
+- Outcome determined by votes and quorum
+- **Passed**: Proposal approved by majority
+- **Rejected**: Proposal did not meet requirements
+
+### 5. Executed/Archived
+- **Executed**: Approved actions completed
+- **Archived**: Rejected proposals stored
+
+## Proposal Requirements
+
+### Minimum Requirements
+
+| Requirement | Value | Purpose |
+|-------------|-------|---------|
+| Title Length | 10-100 chars | Clarity |
+| Description | >100 chars | Justification |
+| Voting Period | 3-30 days | Adequate time |
+| Quorum | 20-60% | Community engagement |
+
+### Treasury Proposals
+
+Additional requirements:
+- **Budget Limit**: Cannot exceed 30% of treasury
+- **Justification**: Detailed breakdown of costs
+- **Timeline**: Expected completion date
+- **Impact**: Measurable success criteria
+
+### Good Proposal Example
+
+```markdown
+# Title: Q1 Marketing Campaign
+
+## Description
+This proposal requests 10,000 cUSD to fund our Q1 2026 marketing 
+campaign focused on growing our member base and community engagement.
+
+## Budget Breakdown
+- Social media ads: 4,000 cUSD
+- Community events: 3,000 cUSD
+- Content creation: 2,000 cUSD
+- Contingency: 1,000 cUSD
+
+## Timeline
+- January 1-15: Campaign planning
+- January 16-March 31: Campaign execution
+- April 1-15: Results analysis
+
+## Success Metrics
+- Increase members by 25% (from 200 to 250)
+- Host 3 community events
+- Achieve 10,000 social media impressions
+
+## Expected Impact
+Growing our community will increase treasury contributions, enhance 
+governance participation, and strengthen our ecosystem.
+```
+
+### Poor Proposal Example
+
+```markdown
+# Title: Need money
+
+## Description
+We should get some money for stuff we need to do.
+
+## Amount: 50,000 cUSD
+```
+
+**Issues:**
+- ❌ Vague title and description
+- ❌ No budget breakdown
+- ❌ No timeline or milestones
+- ❌ No success criteria
+- ❌ Amount too high (likely >30% of treasury)
+
+## Proposal Templates
+
+Use templates for common proposal types:
+
+### Event Funding Template
+
+```markdown
+# Title: [Event Name] Funding
+
+## Event Details
+- Date: [Date]
+- Location: [Location]
+- Expected Attendees: [Number]
+
+## Budget
+- Venue: [Amount]
+- Catering: [Amount]
+- Materials: [Amount]
+- Total: [Total Amount]
+
+## Impact
+[Expected community benefit]
+```
+
+### Developer Grant Template
+
+```markdown
+# Title: [Feature Name] Development
+
+## Feature Description
+[What will be built]
+
+## Technical Approach
+[How it will be implemented]
+
+## Timeline
+- Milestone 1: [Date] - [Deliverable]
+- Milestone 2: [Date] - [Deliverable]
+- Final: [Date] - [Deliverable]
+
+## Budget
+- Development: [Amount]
+- Testing: [Amount]
+- Documentation: [Amount]
+```
+
+## AI-Powered Proposal Assistance
+
+### Proposal Quality Scoring
+
+Morio AI evaluates proposals before submission:
+
+```typescript
+const score = await morio.scoreProposal(proposalDraft);
+```
+
+**Scoring Criteria:**
+- Clarity: 0-100
+- Completeness: 0-100
+- Feasibility: 0-100
+- Budget Compliance: Pass/Fail
+
+**Example Feedback:**
+```
+Clarity: 85/100 ✓
+Completeness: 60/100 ⚠️
+Feasibility: 90/100 ✓
+Budget: Pass ✓
+
+Suggestions:
+- Add specific success metrics
+- Include timeline with milestones
+- Provide more detail on budget allocation
+```
+
+### Risk Assessment
+
+AI automatically assesses proposal risks:
+
+```typescript
+const risk = await nuru.assessRisk(proposalId, daoId);
+```
+
+**Risk Factors:**
+- Budget compliance
+- Historical success rate
+- Community benefit
+- Implementation feasibility
+
+## Proposal Discussion
+
+### Comments
+
+Members can discuss proposals:
+
+```typescript
+await fetch(`/api/proposals/${proposalId}/comments`, {
+  method: 'POST',
+  body: JSON.stringify({
+    comment: 'Great idea! Have you considered...'
+  })
+});
+```
+
+### Questions & Answers
+
+Proposers should actively engage:
+
+```
+Member: "How will you measure success?"
+Proposer: "We'll track member growth weekly and report monthly"
+```
+
+## Proposal Analytics
+
+Track proposal performance:
+
+```typescript
+const analytics = await fetch(`/api/proposals/${proposalId}/analytics`);
+```
+
+**Metrics:**
+- View count
+- Comment count
+- Vote participation rate
+- Sentiment analysis
+- Similar past proposals
+
+## Best Practices
+
+### ✅ Do
+
+- **Be Specific**: Clear goals and deliverables
+- **Show Value**: Explain community benefit
+- **Include Numbers**: Budget, timeline, metrics
+- **Engage Early**: Discuss before formal submission
+- **Respond Promptly**: Answer questions quickly
+- **Be Realistic**: Achievable goals and budgets
+
+### ❌ Don't
+
+- **Be Vague**: Unclear or ambiguous requests
+- **Rush**: Submit without community feedback
+- **Overreach**: Unrealistic budgets or timelines
+- **Ignore Questions**: Fail to engage with community
+- **Duplicate**: Submit similar existing proposals
+- **Exceed Limits**: Request >30% of treasury
+
+## Proposal Execution
+
+### Automatic Execution
+
+Treasury proposals execute automatically upon approval:
+
+1. Voting period ends
+2. Proposal passes (majority + quorum)
+3. Smart contract transfers funds
+4. Proposer and members notified
+
+### Manual Execution
+
+Some proposals require manual action:
+
+- Governance changes by admin
+- Membership role updates
+- Policy implementations
+
+## Proposal History
+
+View all proposals:
+
+```typescript
+const proposals = await fetch('/api/proposals?daoId=dao-123&status=all');
+```
+
+**Filter Options:**
+- Status: active, passed, rejected, executed
+- Type: treasury, governance, membership, poll
+- Date range
+- Proposer
+
+## Learn More
+
+- [Voting System](/governance/voting)
+- [Quorum & Execution](/governance/quorum)
+- [Vote Delegation](/governance/delegation)
+- [Roles & Permissions](/governance/roles)

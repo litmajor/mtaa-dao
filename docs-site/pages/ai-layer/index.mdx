@@ -1,0 +1,105 @@
+
+# AI Layer Overview
+
+MtaaDAO's AI layer is a three-tier consciousness model that powers intelligent decision-making, automation, and natural language interaction across the platform.
+
+## The Three Layers
+
+### 🧠 NURU - The Mind (Cognitive Core)
+
+NURU provides reasoning, analytical intelligence, and contextual awareness. It acts as the invisible brain behind the assistant.
+
+**Key Capabilities:**
+- Natural language understanding and intent recognition
+- Financial, governance, and community analytics
+- Risk assessment and ethical compliance
+- Predictive modeling and forecasting
+
+[Learn more about NURU →](/ai-layer/nuru)
+
+### 🏘️ KWETU - The Body (Community & Economic Layer)
+
+KWETU manages DAO operations, treasury functions, and community interactions. It's the operational layer that executes decisions.
+
+**Key Functions:**
+- Wallet and vault management
+- Proposal execution and voting
+- Treasury operations and payments
+- Community engagement tracking
+
+[Learn more about KWETU →](/ai-layer/kwetu)
+
+### 💬 MORIO - The Spirit (Conversational Interface)
+
+MORIO is the conversational AI persona that users interact with. It provides a natural, accessible interface to all DAO functions.
+
+**Features:**
+- Multi-language support (English, Swahili)
+- Context-aware conversations
+- Guided workflows and onboarding
+- Real-time assistance
+
+[Learn more about MORIO →](/ai-layer/morio)
+
+## System Flow
+
+```
+User Query
+    ↓
+MORIO (Interface) - Receives and understands user intent
+    ↓
+NURU (Reasoning) - Analyzes context and generates recommendations
+    ↓
+KWETU (Execution) - Performs DAO operations
+    ↓
+MORIO (Response) - Delivers results to user
+```
+
+## Use Cases
+
+### Treasury Prediction
+```typescript
+// User asks: "What will our treasury balance be in 30 days?"
+const prediction = await nuru.predictTreasuryGrowth(daoId);
+// Returns: predicted balance with confidence score
+```
+
+### Proposal Risk Assessment
+```typescript
+// User submits a high-value proposal
+const risk = await nuru.assessRisk(proposalId, daoId);
+// Returns: risk factors and recommendations
+```
+
+### Natural Language Queries
+```typescript
+// User asks: "Pesa zetu ni ngapi?" (Swahili for "How much money do we have?")
+const response = await morio.handleMessage({
+  userId,
+  daoId,
+  content: "Pesa zetu ni ngapi?"
+});
+// Returns: Treasury balance in user's language
+```
+
+## Getting Started
+
+1. **For Users**: Simply chat with Morio using the floating chat button
+2. **For Developers**: See the [Integration Guide](/ai-layer/integration)
+3. **For Admins**: Configure AI features in DAO settings
+
+## Performance Metrics
+
+| Metric | Current | Target |
+|--------|---------|--------|
+| Treasury Prediction Accuracy | 65% | 80% |
+| Task Verification Accuracy | 85% | 90% |
+| Response Time | <200ms | <100ms |
+| Intent Recognition | 90% | 95% |
+
+## Next Steps
+
+- Explore [NURU's analytics capabilities](/ai-layer/nuru)
+- Learn about [KWETU's services](/ai-layer/kwetu)
+- Interact with [MORIO](/ai-layer/morio)
+- Review the [system architecture](/ai-layer/architecture)

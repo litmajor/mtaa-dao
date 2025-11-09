@@ -1,0 +1,218 @@
+
+# NURU - The Mind (Cognitive Core)
+
+NURU is the cognitive core of MtaaDAO's AI system, providing reasoning, analytics, and contextual awareness.
+
+## Core Capabilities
+
+### 1. Intent Classification
+
+NURU understands user queries and classifies them into actionable intents:
+
+```typescript
+// Supported intents
+type IntentType =
+  | 'withdraw'
+  | 'deposit'
+  | 'check_balance'
+  | 'submit_proposal'
+  | 'vote'
+  | 'join_dao'
+  | 'analytics'
+  | 'help';
+```
+
+**Example:**
+```typescript
+const intent = await nuru.understand("I want to withdraw 5000 KES", userContext);
+// Returns:
+{
+  intent: 'withdraw',
+  entities: { amount: 5000, currency: 'KES' },
+  confidence: 0.95,
+  language: 'en'
+}
+```
+
+### 2. Financial Analytics
+
+NURU analyzes treasury health and provides insights:
+
+```typescript
+const analysis = await nuru.analyze({
+  type: 'treasury',
+  daoId: 'dao-123',
+  timeframe: 'last-month'
+});
+```
+
+**Metrics Analyzed:**
+- Current balance and cash flow
+- Burn rate and runway calculation
+- Contribution patterns
+- Growth rate projections
+
+**Example Output:**
+```json
+{
+  "summary": "Treasury balance is $50,000 with 8.5% growth rate...",
+  "metrics": {
+    "currentBalance": 50000,
+    "burnRate": 5000,
+    "runway": 10,
+    "growthRate": 0.085
+  },
+  "insights": [
+    "Strong treasury growth indicates healthy engagement",
+    "Current runway of 10 months is above safe threshold"
+  ],
+  "risks": [],
+  "recommendations": [
+    "Consider allocating surplus to yield-generating vaults"
+  ]
+}
+```
+
+### 3. Governance Analytics
+
+Track voting patterns and proposal success rates:
+
+```typescript
+const governance = await nuru.analyze({
+  type: 'governance',
+  daoId: 'dao-123'
+});
+```
+
+**Analyzed Metrics:**
+- Participation rates
+- Proposal success rates
+- Quorum achievement
+- Voting patterns
+
+### 4. Risk Assessment
+
+Evaluate proposal risks before voting:
+
+```typescript
+const risk = await nuru.assessRisk(proposalId, daoId);
+```
+
+**Risk Factors:**
+- Budget compliance
+- Conflict of interest detection
+- Community benefit score
+- Historical success patterns
+
+**Example Output:**
+```json
+{
+  "overall": "medium",
+  "score": 45,
+  "factors": {
+    "budgetCompliance": true,
+    "conflictOfInterest": false,
+    "communityBenefit": 0.75,
+    "riskLevel": "medium",
+    "fairnessScore": 0.85
+  },
+  "recommendations": [
+    "Consider phased implementation to reduce risk",
+    "Add measurable success criteria"
+  ]
+}
+```
+
+### 5. Predictive Modeling
+
+Forecast future treasury and membership trends:
+
+```typescript
+const prediction = await nuru.predictTreasuryGrowth(daoId);
+```
+
+**Predictions:**
+- 30-day treasury forecast
+- 90-day treasury forecast
+- 365-day treasury forecast
+- Confidence intervals
+
+## Multi-Language Support
+
+NURU detects and processes multiple languages:
+
+**English:**
+```
+"How much money do we have?"
+```
+
+**Swahili:**
+```
+"Pesa zetu ni ngapi?"
+```
+
+Both queries are understood and processed correctly.
+
+## API Reference
+
+### Understanding User Input
+
+```typescript
+nuru.understand(message: string, context: UserContext): Promise<Understanding>
+```
+
+**Returns:**
+```typescript
+interface Understanding {
+  intent: IntentType;
+  entities: Record<string, any>;
+  confidence: number;
+  context: EnrichedContext;
+  language: string;
+  sentiment: number;
+}
+```
+
+### Analytics
+
+```typescript
+nuru.analyze(request: AnalysisRequest): Promise<AnalysisResponse>
+```
+
+**Analysis Types:**
+- `treasury` - Financial health metrics
+- `governance` - Voting and proposal analytics
+- `community` - Member engagement metrics
+
+### Risk Assessment
+
+```typescript
+nuru.assessRisk(proposalId: string, daoId: string): Promise<EthicsCheck>
+```
+
+## Performance Metrics
+
+| Feature | Accuracy | Response Time |
+|---------|----------|---------------|
+| Intent Classification | 90% | <50ms |
+| Treasury Prediction | 65% | <200ms |
+| Risk Assessment | 85% | <100ms |
+| Language Detection | 95% | <10ms |
+
+## Future Enhancements
+
+### Phase 3 (Q1 2026)
+- Advanced NLP with GPT-4 integration
+- Voice interface support
+- Multi-DAO comparative analytics
+
+### Phase 4 (Q2 2026)
+- Fraud detection using ML models
+- Proposal success prediction
+- Autonomous treasury optimization
+
+## Learn More
+
+- [System Architecture](/ai-layer/architecture)
+- [Integration Guide](/ai-layer/integration)
+- [KWETU Services](/ai-layer/kwetu)

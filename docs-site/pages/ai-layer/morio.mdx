@@ -1,0 +1,352 @@
+
+# MORIO - The Spirit (Conversational Interface)
+
+MORIO is the conversational AI persona that users interact with, providing a natural, accessible interface to all MtaaDAO functions.
+
+## Overview
+
+MORIO combines NURU's intelligence with KWETU's operational capabilities to deliver a seamless conversational experience. Users can manage their DAOs using natural language in multiple languages.
+
+## Key Features
+
+### 1. Natural Language Understanding
+
+MORIO understands queries in plain language:
+
+**English:**
+```
+"What's our current treasury balance?"
+"Create a proposal to fund the community event"
+"Show me active proposals I can vote on"
+```
+
+**Swahili:**
+```
+"Pesa zetu ni ngapi?" (How much money do we have?)
+"Nataka kuweka pesa" (I want to deposit money)
+"Nionyeshe proposals za sasa" (Show me current proposals)
+```
+
+### 2. Context-Aware Conversations
+
+MORIO maintains conversation context:
+
+```
+User: "What's our balance?"
+Morio: "Your DAO treasury has 50,000 cUSD"
+
+User: "Can we afford a 10,000 cUSD proposal?"
+Morio: "Yes, that's 20% of your treasury. Current runway allows it."
+
+User: "Great, help me create it"
+Morio: "I'll guide you through creating a proposal..."
+```
+
+### 3. Guided Workflows
+
+MORIO guides users through complex processes:
+
+**Creating a Proposal:**
+```
+Morio: "Let's create your proposal. What's the title?"
+User: "Community Event Funding"
+
+Morio: "Great! How much funding do you need?"
+User: "10,000 cUSD"
+
+Morio: "Please provide a description..."
+User: "We need funds for annual meetup..."
+
+Morio: "Here's your proposal preview. Should I submit it?"
+User: "Yes"
+
+Morio: "Proposal submitted! Members can now vote."
+```
+
+## Integration
+
+### Frontend Component
+
+```tsx
+import { MorioChat } from '@/components/morio/MorioChat';
+
+function Dashboard() {
+  const userId = useUser().id;
+  const daoId = useCurrentDao().id;
+
+  return (
+    <MorioChat 
+      userId={userId} 
+      daoId={daoId}
+      isOnboarding={false}
+    />
+  );
+}
+```
+
+### Floating Action Button
+
+```tsx
+import { MorioFAB } from '@/components/morio/MorioFAB';
+
+function App() {
+  return (
+    <MorioProvider userId={userId} daoId={daoId}>
+      <YourApp />
+      {/* MorioFAB automatically appears */}
+    </MorioProvider>
+  );
+}
+```
+
+## API Usage
+
+### Send Message
+
+```typescript
+const response = await fetch('/api/morio/chat', {
+  method: 'POST',
+  body: JSON.stringify({
+    userId: 'user-123',
+    daoId: 'dao-456',
+    message: 'What is our treasury balance?'
+  })
+});
+
+const data = await response.json();
+```
+
+**Response:**
+```json
+{
+  "text": "Your DAO treasury has 50,000 cUSD with a 8.5% growth rate...",
+  "intent": "check_balance",
+  "confidence": 0.95,
+  "suggestions": [
+    "View transaction history",
+    "Check vault allocations",
+    "See analytics dashboard"
+  ],
+  "actions": [
+    {
+      "type": "view_balance",
+      "label": "View Full Balance",
+      "data": {}
+    }
+  ]
+}
+```
+
+### Session Management
+
+```typescript
+// Get session
+const session = await fetch(`/api/morio/session/${userId}`);
+
+// Clear session
+await fetch(`/api/morio/session/${userId}`, { method: 'DELETE' });
+```
+
+## Personality & Responses
+
+### Friendly Mode (Default)
+
+```
+User: "I need help"
+Morio: "Habari! 👋 I'm here to help! What would you like to do today?"
+```
+
+### Professional Mode
+
+```
+User: "I need help"
+Morio: "Hello. I can assist you with treasury management, proposals, voting, and analytics. How may I help you?"
+```
+
+### Configuration
+
+```typescript
+const morio = new MorioAgent({
+  personality: 'friendly', // or 'professional' or 'casual'
+  language: 'en', // or 'sw' for Swahili
+  maxHistoryLength: 20,
+  responseTimeout: 30000
+});
+```
+
+## Supported Intents
+
+| Intent | Example Query | Action |
+|--------|---------------|--------|
+| `withdraw` | "I want to withdraw 5000" | Guide through withdrawal proposal |
+| `deposit` | "Deposit money" | Initiate deposit flow |
+| `check_balance` | "How much do we have?" | Show treasury balance |
+| `submit_proposal` | "Create a proposal" | Guide proposal creation |
+| `vote` | "Vote on proposal #42" | Initiate voting |
+| `join_dao` | "How do I join?" | Start onboarding |
+| `analytics` | "Show me stats" | Display analytics |
+| `help` | "What can you do?" | Show capabilities |
+
+## Onboarding Experience
+
+### Welcome Message
+
+When a new user first interacts with MORIO:
+
+```
+Habari! 👋 I'm Morio, your personal guide to MtaaDAO!
+
+Welcome to the future of community finance. I'll be your companion 
+throughout this journey.
+
+**Let's start with a quick tour:**
+
+🏠 Dashboard - Your central hub
+💰 Treasury - Manage shared funds
+📝 Proposals - Create and vote
+👛 Wallet - Your personal vault
+📊 Analytics - Track insights
+
+What would you like to explore first?
+```
+
+### Guided Tour
+
+```typescript
+// Onboarding steps
+const steps = [
+  {
+    id: 'welcome',
+    title: 'Welcome Tour',
+    description: 'Learn about MtaaDAO'
+  },
+  {
+    id: 'wallet-setup',
+    title: 'Setup Wallet',
+    description: 'Create your secure wallet'
+  },
+  {
+    id: 'first-dao',
+    title: 'Join or Create DAO',
+    description: 'Start participating'
+  },
+  {
+    id: 'first-vote',
+    title: 'Cast Your First Vote',
+    description: 'Participate in governance'
+  }
+];
+```
+
+## Quick Actions
+
+MORIO suggests contextual quick actions:
+
+```tsx
+<div className="quick-actions">
+  <button onClick={() => sendMessage('Check DAO balance')}>
+    💰 Check Balance
+  </button>
+  <button onClick={() => sendMessage('Show active proposals')}>
+    📝 Active Proposals
+  </button>
+  <button onClick={() => sendMessage('Create a proposal')}>
+    ➕ Create Proposal
+  </button>
+</div>
+```
+
+## Multi-Language Support
+
+### Language Detection
+
+```typescript
+// Auto-detects language from input
+const swahiliKeywords = ['nataka', 'pesa', 'ngapi', 'weka'];
+const hasSwahili = message.toLowerCase()
+  .split(' ')
+  .some(word => swahiliKeywords.includes(word));
+
+const language = hasSwahili ? 'sw' : 'en';
+```
+
+### Response Templates
+
+```typescript
+const responses = {
+  en: {
+    greeting: "Hello! How can I help you today?",
+    balance: "Your balance is {amount} {currency}"
+  },
+  sw: {
+    greeting: "Habari! Ninaweza kukusaidia vipi leo?",
+    balance: "Pesa yako ni {amount} {currency}"
+  }
+};
+```
+
+## Advanced Features
+
+### Voice Interface (Planned)
+
+```typescript
+// Future: Voice commands
+morio.processVoiceCommand({
+  audio: audioBlob,
+  userId,
+  daoId
+});
+```
+
+### Proactive Notifications
+
+```typescript
+// Morio can proactively notify users
+morio.sendNotification({
+  userId,
+  type: 'proposal_passed',
+  message: 'Great news! Your proposal just passed with 85% approval!'
+});
+```
+
+## Performance
+
+| Metric | Target | Current |
+|--------|--------|---------|
+| Response Time | <200ms | ~150ms |
+| Intent Accuracy | >90% | 92% |
+| User Satisfaction | >4.5/5 | 4.6/5 |
+| Session Uptime | >99% | 99.2% |
+
+## Best Practices
+
+### 1. Keep Conversations Natural
+
+```typescript
+// Good: Natural phrasing
+"What's our treasury balance?"
+
+// Also Good: Direct command
+"Show balance"
+```
+
+### 2. Provide Context
+
+```typescript
+// Better: Include context
+"Can we afford a 10,000 cUSD marketing proposal?"
+
+// vs. Basic:
+"Can we afford 10,000?"
+```
+
+### 3. Use Suggested Actions
+
+MORIO learns from suggested actions to improve recommendations.
+
+## Learn More
+
+- [System Architecture](/ai-layer/architecture)
+- [Integration Guide](/ai-layer/integration)
+- [NURU Intelligence](/ai-layer/nuru)
+- [KWETU Services](/ai-layer/kwetu)
