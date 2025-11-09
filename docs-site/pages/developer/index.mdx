@@ -1,0 +1,657 @@
+# Developer API Overview
+
+## Build on MtaaDAO Infrastructure
+
+Welcome, developers! Whether you're building integrations, custom frontends, or entirely new applications on top of MtaaDAO, our API gives you full programmatic access to the platform.
+
+---
+
+## Why Build on MtaaDAO?
+
+✅ **Battle-tested Infrastructure** - Handling millions in community funds  
+✅ **Multi-chain Support** - Celo, Polygon, and more  
+✅ **Mobile Money Integration** - M-Pesa, MTN, Airtel already integrated  
+✅ **AI-Powered** - Leverage Morio AI for proposals, analysis, moderation  
+✅ **Secure by Default** - Multi-sig, blockchain verification, audited contracts  
+✅ **African-First** - Built for low-bandwidth, mobile-first environments
+
+---
+
+## Quick Start
+
+### 1. Get API Credentials
+
+```bash
+# Register for API access
+curl -X POST https://api.mtaadao.com/v1/auth/register \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "email": "dev@yourapp.com",
+    "name": "Your App Name",
+    "purpose": "Integration description"
+  }'
+
+# Response includes your API key
+{
+  "apiKey": "mtaa_live_...",
+  "apiSecret": "sk_live_...",
+  "environment": "production"
+}
+```
+
+### 2. Make Your First Request
+
+```javascript
+const MtaaDAO = require('@mtaadao/sdk');
+
+const client = new MtaaDAO({
+  apiKey: 'mtaa_live_...',
+  apiSecret: 'sk_live_...'
+});
+
+// List user's DAOs
+const daos = await client.daos.list({
+  userId: 'user_123'
+});
+
+console.log(daos);
+```
+
+### 3. Test in Sandbox
+
+```javascript
+// Use test credentials for development
+const client = new MtaaDAO({
+  apiKey: 'mtaa_test_...',
+  environment: 'sandbox'
+});
+```
+
+---
+
+## Core Endpoints
+
+### Authentication
+
+```typescript
+POST /v1/auth/register     // Register new user
+POST /v1/auth/login        // Login with credentials
+POST /v1/auth/otp/send     // Send OTP to phone
+POST /v1/auth/otp/verify   // Verify OTP code
+GET  /v1/auth/session      // Get current session
+POST /v1/auth/logout       // End session
+```
+
+[Full authentication docs →](/developer/authentication)
+
+### DAOs
+
+```typescript
+GET    /v1/daos                  // List DAOs
+POST   /v1/daos                  // Create DAO
+GET    /v1/daos/:id              // Get DAO details
+PATCH  /v1/daos/:id              // Update DAO
+DELETE /v1/daos/:id              // Archive DAO
+POST   /v1/daos/:id/join         // Join DAO
+POST   /v1/daos/:id/leave        // Leave DAO
+GET    /v1/daos/:id/members      // List members
+GET    /v1/daos/:id/treasury     // Treasury stats
+```
+
+[Full DAO management docs →](/developer/daos)
+
+### Wallets & Transactions
+
+```typescript
+POST /v1/wallet/create           // Create wallet
+GET  /v1/wallet/balance          // Get balance
+POST /v1/wallet/send-native      // Send CELO/cUSD
+POST /v1/wallet/send-token       // Send ERC-20 tokens
+GET  /v1/wallet/transactions     // Transaction history
+POST /v1/wallet/recurring        // Set up recurring payments
+```
+
+[Full wallet API docs →](/developer/wallets)
+
+### Proposals
+
+```typescript
+GET    /v1/proposals                    // List proposals
+POST   /v1/proposals                    // Create proposal
+GET    /v1/proposals/:id                // Get proposal
+POST   /v1/proposals/:id/vote           // Cast vote
+POST   /v1/proposals/:id/execute        // Execute (if passed)
+GET    /v1/proposals/:id/votes          // Vote breakdown
+PATCH  /v1/proposals/:id                // Update (if draft)
+DELETE /v1/proposals/:id                // Cancel proposal
+```
+
+[Full proposals API docs →](/developer/proposals-api)
+
+### Governance
+
+```typescript
+GET  /v1/governance/:daoId/quorum       // Calculate quorum
+POST /v1/governance/delegate            // Delegate votes
+GET  /v1/governance/delegation/:userId  // Get delegation
+POST /v1/governance/proposal/execute    // Execute with quorum check
+```
+
+[Full governance docs →](/governance)
+
+---
+
+## SDK Installation
+
+### JavaScript/TypeScript
+
+```bash
+npm install @mtaadao/sdk
+# or
+yarn add @mtaadao/sdk
+```
+
+```typescript
+import { MtaaDAO } from '@mtaadao/sdk';
+
+const client = new MtaaDAO({
+  apiKey: process.env.MTAA_API_KEY,
+  apiSecret: process.env.MTAA_API_SECRET
+});
+
+// Create DAO
+const dao = await client.daos.create({
+  name: 'My Community DAO',
+  type: 'collective',
+  contributionAmount: '1000',
+  currency: 'KES'
+});
+
+// Create proposal
+const proposal = await client.proposals.create({
+  daoId: dao.id,
+  title: 'Fund community borehole',
+  description: 'Allocate ₭500,000 for water project',
+  budget: '500000',
+  type: 'grant_request'
+});
+
+// Vote on proposal
+await client.proposals.vote({
+  proposalId: proposal.id,
+  vote: 'yes',
+  votingPower: '100'
+});
+```
+
+### Python
+
+```bash
+pip install mtaadao
+```
+
+```python
+from mtaadao import MtaaDAO
+
+client = MtaaDAO(
+    api_key=os.environ['MTAA_API_KEY'],
+    api_secret=os.environ['MTAA_API_SECRET']
+)
+
+# Create DAO
+dao = client.daos.create({
+    'name': 'My Community DAO',
+    'type': 'collective',
+    'contributionAmount': '1000',
+    'currency': 'KES'
+})
+
+# List proposals
+proposals = client.proposals.list(dao_id=dao['id'])
+```
+
+### Go
+
+```bash
+go get github.com/mtaadao/go-sdk
+```
+
+```go
+import "github.com/mtaadao/go-sdk"
+
+client := mtaadao.NewClient(
+    os.Getenv("MTAA_API_KEY"),
+    os.Getenv("MTAA_API_SECRET"),
+)
+
+// Create DAO
+dao, err := client.DAOs.Create(&mtaadao.DAOCreateParams{
+    Name: "My Community DAO",
+    Type: "collective",
+    ContributionAmount: "1000",
+    Currency: "KES",
+})
+```
+
+---
+
+## Webhooks
+
+Subscribe to real-time events:
+
+```typescript
+POST /v1/webhooks/subscribe
+
+{
+  "url": "https://yourapp.com/webhooks/mtaadao",
+  "events": [
+    "dao.created",
+    "dao.member.joined",
+    "proposal.created",
+    "proposal.voted",
+    "proposal.executed",
+    "transaction.completed",
+    "transaction.failed"
+  ],
+  "secret": "your_webhook_secret"
+}
+```
+
+**Webhook payload example:**
+
+```json
+{
+  "event": "proposal.executed",
+  "timestamp": "2024-11-09T14:32:00Z",
+  "data": {
+    "proposalId": "prop_abc123",
+    "daoId": "dao_xyz789",
+    "title": "Fund community borehole",
+    "result": "passed",
+    "yesVotes": 45,
+    "noVotes": 5,
+    "executionTxHash": "0x..."
+  },
+  "signature": "sha256=..."
+}
+```
+
+[Full webhooks docs →](/developer/webhooks)
+
+---
+
+## Rate Limits
+
+| Tier | Requests/minute | Burst |
+|------|-----------------|-------|
+| Free | 60 | 100 |
+| Pro | 600 | 1,000 |
+| Enterprise | 6,000 | 10,000 |
+
+**Headers returned:**
+```
+X-RateLimit-Limit: 600
+X-RateLimit-Remaining: 573
+X-RateLimit-Reset: 1699546320
+```
+
+**Rate limit exceeded:**
+```json
+HTTP/1.1 429 Too Many Requests
+{
+  "error": "rate_limit_exceeded",
+  "message": "API rate limit exceeded. Resets in 42 seconds.",
+  "retryAfter": 42
+}
+```
+
+---
+
+## Error Handling
+
+### Error Response Format
+
+```json
+{
+  "error": {
+    "code": "insufficient_funds",
+    "message": "Treasury balance (₭5,000) is less than requested amount (₭10,000)",
+    "details": {
+      "treasuryBalance": "5000",
+      "requestedAmount": "10000",
+      "currency": "KES"
+    },
+    "requestId": "req_abc123"
+  }
+}
+```
+
+### Common Error Codes
+
+| Code | HTTP Status | Meaning |
+|------|-------------|---------|
+| `invalid_api_key` | 401 | API key missing or invalid |
+| `insufficient_permissions` | 403 | User lacks required role |
+| `dao_not_found` | 404 | DAO doesn't exist |
+| `insufficient_funds` | 400 | Treasury balance too low |
+| `quorum_not_met` | 400 | Not enough votes to pass |
+| `proposal_expired` | 400 | Voting period ended |
+| `rate_limit_exceeded` | 429 | Too many requests |
+| `internal_error` | 500 | Server error (contact support) |
+
+---
+
+## Best Practices
+
+### Security
+
+```typescript
+// ✅ Store credentials securely
+const apiKey = process.env.MTAA_API_KEY;  // From environment
+
+// ❌ Never hardcode credentials
+const apiKey = 'mtaa_live_abc123...';  // Don't do this!
+
+// ✅ Verify webhook signatures
+const isValid = verifyWebhookSignature(
+  payload,
+  signature,
+  webhookSecret
+);
+
+// ✅ Use HTTPS for webhooks
+webhookUrl: 'https://yourapp.com/webhook'  // Not http://
+```
+
+### Performance
+
+```typescript
+// ✅ Batch requests when possible
+const daos = await client.daos.list({ page: 1, perPage: 100 });
+
+// ❌ Avoid N+1 queries
+// Don't fetch DAOs one by one in a loop
+
+// ✅ Use pagination
+for await (const dao of client.daos.iterate()) {
+  // Automatically handles pagination
+  console.log(dao);
+}
+
+// ✅ Cache responses
+const cache = new Map();
+async function getDAO(id) {
+  if (!cache.has(id)) {
+    cache.set(id, await client.daos.get(id));
+  }
+  return cache.get(id);
+}
+```
+
+### Error Handling
+
+```typescript
+// ✅ Implement retries with exponential backoff
+async function retryRequest(fn, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (error.code === 'rate_limit_exceeded' && i < maxRetries - 1) {
+        await sleep(Math.pow(2, i) * 1000);  // 1s, 2s, 4s
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+// ✅ Handle specific errors
+try {
+  await client.proposals.execute({ proposalId: 'prop_123' });
+} catch (error) {
+  if (error.code === 'quorum_not_met') {
+    console.log('Not enough votes yet');
+  } else if (error.code === 'proposal_expired') {
+    console.log('Voting period ended');
+  } else {
+    throw error;  // Re-throw unexpected errors
+  }
+}
+```
+
+---
+
+## Code Examples
+
+### Create Funeral Fund DAO
+
+```typescript
+// Complete funeral fund setup
+async function createFuneralFund() {
+  // 1. Create DAO
+  const dao = await client.daos.create({
+    name: 'Eastlands Funeral Fund',
+    type: 'collective',
+    description: 'Supporting families in times of loss',
+    contributionAmount: '500',
+    contributionFrequency: 'monthly',
+    currency: 'KES',
+    quorumPercentage: 20,
+    votingPeriod: 24,  // hours
+    executionDelay: 2   // hours
+  });
+
+  // 2. Configure payout tiers
+  await client.daos.update({
+    daoId: dao.id,
+    customRules: {
+      payoutTiers: {
+        member: 30000,
+        parent: 20000,
+        spouse: 25000,
+        child: 15000
+      }
+    }
+  });
+
+  // 3. Create recurring contribution template
+  await client.proposals.createTemplate({
+    daoId: dao.id,
+    name: 'Funeral Claim',
+    type: 'grant_request',
+    defaultFields: {
+      votingPeriod: 24,
+      quorum: 20,
+      autoExecute: true
+    }
+  });
+
+  return dao;
+}
+```
+
+### Process Funeral Claim
+
+```typescript
+async function processFuneralClaim({
+  daoId,
+  memberId,
+  deceasedName,
+  relationship,
+  nextOfKin
+}) {
+  // 1. Get payout amount
+  const dao = await client.daos.get({ daoId });
+  const amount = dao.customRules.payoutTiers[relationship];
+
+  // 2. Create proposal
+  const proposal = await client.proposals.create({
+    daoId,
+    title: `Funeral Fund: ${deceasedName}`,
+    description: `Payout to ${nextOfKin} for ${relationship}'s funeral`,
+    budget: amount.toString(),
+    type: 'grant_request',
+    beneficiary: nextOfKin
+  });
+
+  // 3. AI verification
+  const verification = await client.ai.verifyProposal({
+    proposalId: proposal.id,
+    checkDuplicates: true,
+    checkEligibility: true
+  });
+
+  if (!verification.approved) {
+    throw new Error(`Verification failed: ${verification.reason}`);
+  }
+
+  // 4. Auto-vote from trusted elders (if configured)
+  const elders = await client.daos.getElders({ daoId });
+  for (const elder of elders) {
+    if (elder.autoVote) {
+      await client.proposals.vote({
+        proposalId: proposal.id,
+        userId: elder.id,
+        vote: 'yes'
+      });
+    }
+  }
+
+  return proposal;
+}
+```
+
+### Monitor Treasury Health
+
+```typescript
+async function monitorTreasury(daoId) {
+  // Get current balance
+  const treasury = await client.daos.getTreasury({ daoId });
+  
+  // Calculate monthly burn rate
+  const txs = await client.wallet.transactions({
+    daoId,
+    type: 'debit',
+    since: Date.now() - 30 * 24 * 60 * 60 * 1000  // Last 30 days
+  });
+  
+  const monthlyBurn = txs.reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
+  
+  // Months of runway
+  const runway = treasury.balance / (monthlyBurn / 30);
+  
+  // Alert if low
+  if (runway < 3) {
+    await client.notifications.send({
+      daoId,
+      title: '⚠️ Low Treasury Alert',
+      message: `Only ${runway.toFixed(1)} months of funds remaining`,
+      severity: 'high',
+      recipients: ['elders', 'admins']
+    });
+  }
+  
+  return {
+    balance: treasury.balance,
+    monthlyBurn,
+    runway,
+    status: runway >= 6 ? 'healthy' : runway >= 3 ? 'warning' : 'critical'
+  };
+}
+```
+
+---
+
+## Testing
+
+### Sandbox Environment
+
+```javascript
+// All sandbox data is isolated and can be reset
+const testClient = new MtaaDAO({
+  apiKey: 'mtaa_test_...',
+  environment: 'sandbox'
+});
+
+// Test M-Pesa integration (simulated)
+await testClient.wallet.sendMpesa({
+  phone: '+254700000000',  // Test number
+  amount: '1000',
+  reason: 'DAO contribution'
+});
+// Returns instant success in sandbox
+```
+
+### Test Credentials
+
+```
+API Key: mtaa_test_pk_abc123...
+API Secret: sk_test_xyz789...
+
+Test M-Pesa Numbers:
+- Success: +254700000000
+- Failure: +254700000001
+- Timeout: +254700000002
+
+Test Wallets:
+- Funded: 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb
+- Empty: 0x0000000000000000000000000000000000000000
+```
+
+---
+
+## Support & Resources
+
+### Documentation
+- [Full API Reference](https://api-docs.mtaadao.com)
+- [SDK GitHub Repos](https://github.com/mtaadao)
+- [Postman Collection](https://postman.mtaadao.com)
+- [OpenAPI Spec](https://api.mtaadao.com/openapi.json)
+
+### Community
+- 💬 [Developer Telegram](https://t.me/mtaadao_devs)
+- 🐛 [Report Issues](https://github.com/mtaadao/issues)
+- 💡 [Feature Requests](https://feedback.mtaadao.com)
+- 📧 **Developer Support:** dev@mtaadao.com
+
+### Status & Uptime
+- 📊 [System Status](https://status.mtaadao.com)
+- 🔔 [Subscribe to Incidents](https://status.mtaadao.com/subscribe)
+
+---
+
+## What to Build?
+
+Developers are building:
+- 🏦 **Alternative frontends** (web, mobile, desktop)
+- 📊 **Analytics dashboards** for DAOs
+- 🤖 **Telegram/WhatsApp bots** for DAO management
+- 💰 **Payment widgets** for websites
+- 📱 **Mobile apps** with offline-first support
+- 🔗 **Integrations** with accounting software
+- 🌾 **Sector-specific tools** (agritech, creative, etc.)
+
+**Show us what you built:** devrel@mtaadao.com  
+**Best projects get featured** in our showcase + potential grants!
+
+---
+
+## Ready to Build?
+
+<div className="mt-8 flex gap-4">
+  <a 
+    href="https://api-docs.mtaadao.com" 
+    className="px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition"
+  >
+    📚 Full API Docs
+  </a>
+  <a 
+    href="https://app.mtaadao.com/developers/register" 
+    className="px-6 py-3 border-2 border-purple-600 text-purple-600 dark:text-purple-400 rounded-lg font-semibold hover:bg-purple-50 dark:hover:bg-purple-900/20 transition"
+  >
+    🔑 Get API Keys
+  </a>
+</div>
+
+**Tunajenga pamoja!** (We're building together!)

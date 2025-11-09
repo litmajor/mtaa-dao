@@ -1,0 +1,10 @@
+{
+  "index": "API Overview",
+  "authentication": "Authentication",
+  "wallets": "Wallet API",
+  "transactions": "Transactions",
+  "proposals-api": "Proposals API",
+  "daos": "DAO Management",
+  "webhooks": "Webhooks",
+  "sdk": "SDK Reference"
+}
