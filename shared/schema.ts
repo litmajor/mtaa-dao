@@ -235,7 +235,7 @@ export const daos = pgTable("daos", {
 export const daoCreationTracker = pgTable('dao_creation_tracker', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: varchar('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  daoId: varchar('dao_id').notNull().references(() => daos.id, { onDelete: 'cascade' }),
+  daoId: uuid('dao_id').notNull().references(() => daos.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at').defaultNow(),
   verificationMethod: varchar('verification_method').notNull(),
   verificationData: jsonb('verification_data').default({}),
@@ -244,7 +244,7 @@ export const daoCreationTracker = pgTable('dao_creation_tracker', {
 
 export const daoSocialVerifications = pgTable('dao_social_verifications', {
   id: uuid('id').defaultRandom().primaryKey(),
-  daoId: varchar('dao_id').notNull().references(() => daos.id, { onDelete: 'cascade' }),
+  daoId: uuid('dao_id').notNull().references(() => daos.id, { onDelete: 'cascade' }),
   verifierUserId: varchar('verifier_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   verifiedAt: timestamp('verified_at').defaultNow(),
   verificationType: varchar('verification_type').default('member_invite'),
@@ -253,7 +253,7 @@ export const daoSocialVerifications = pgTable('dao_social_verifications', {
 
 export const daoIdentityNfts = pgTable('dao_identity_nfts', {
   id: uuid('id').defaultRandom().primaryKey(),
-  daoId: varchar('dao_id').notNull().unique().references(() => daos.id, { onDelete: 'cascade' }),
+  daoId: uuid('dao_id').notNull().unique().references(() => daos.id, { onDelete: 'cascade' }),
   nftTokenId: varchar('nft_token_id'),
   nftContractAddress: varchar('nft_contract_address'),
   mintedAt: timestamp('minted_at').defaultNow(),
