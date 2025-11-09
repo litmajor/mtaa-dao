@@ -1,0 +1,137 @@
+
+# Short-Term DAOs
+
+Short-Term DAOs are perfect for time-limited causes like weddings, funerals, emergencies, or one-off community projects.
+
+## Overview
+
+- **Setup Fee**: ₭500 (one-time)
+- **Initial Duration**: 30 days
+- **Best For**: Events, emergencies, fundraisers
+
+## Features
+
+✅ Simple setup (goal, duration, members, treasury)  
+✅ Shared wallet (multi-sig or smart contract)  
+✅ Transparent fund tracking & contributor list  
+✅ Expiry countdown and auto-lock on completion  
+✅ Strategic extension options
+
+## Extension Policy: Strategic Hybrid Model
+
+MtaaDAO uses a **Strategic Hybrid** approach that encourages timely completion while offering flexibility:
+
+### Extension Rules
+
+1. **First Extension** (₭500)
+   - Duration: 15 days (half of original)
+   - Cost: ₭500
+   - When: Available 5 days before expiry
+
+2. **Second Extension** (₭500)
+   - Duration: 7 days (half of first extension)
+   - Cost: ₭500
+   - Final extension allowed
+
+3. **After Two Extensions**
+   - Automatic upgrade to Collective DAO (₭1,500/month)
+   - OR close and archive DAO
+
+### Why This Works
+
+✅ **Keeps Urgency**: Diminishing returns on extensions encourage completion  
+✅ **Fair Revenue**: Platform earns proportionally to DAO longevity  
+✅ **Natural Evolution**: Drives conversion to long-term plans  
+✅ **Clean Platform**: No ghost DAOs lingering indefinitely
+
+## Lifecycle
+
+```
+Create DAO (₭500, 30 days)
+        ↓
+Collect Funds & Execute
+        ↓
+   [Nearing Expiry]
+        ↓
+┌──────────────────────────┐
+│  Extension Options:      │
+│  1️⃣ Extend (+15 days, ₭500)│
+│  2️⃣ Upgrade (₭1,500/mo)  │
+│  3️⃣ Close & Archive      │
+└──────────────────────────┘
+        ↓
+   [After 1st Extension]
+        ↓
+┌──────────────────────────┐
+│  Final Options:          │
+│  1️⃣ Extend (+7 days, ₭500) │
+│  2️⃣ Upgrade (₭1,500/mo)  │
+│  3️⃣ Close & Archive      │
+└──────────────────────────┘
+        ↓
+  [After 2nd Extension]
+        ↓
+    Auto-Upgrade to
+   Collective DAO or Close
+```
+
+## Example: Wedding Fundraiser
+
+**Initial Setup**: ₭500 for 30 days  
+**Goal**: Raise 50,000 KES  
+
+**Day 25**: Goal not met, need more time  
+→ **1st Extension**: +15 days for ₭500  
+
+**Day 40**: Almost there!  
+→ **2nd Extension**: +7 days for ₭500  
+
+**Day 47**: Goal achieved or must upgrade to Collective DAO
+
+**Total Investment**: ₭1,500 for 47 days  
+**Alternative**: Could have started with Collective DAO at ₭1,500/month
+
+## Technical Schema
+
+```typescript
+{
+  dao_id: "uuid",
+  type: "short_term",
+  name: "John & Mary Wedding Fund",
+  description: "Community support for our wedding",
+  goal_amount: 50000,
+  duration_days: 30,
+  created_at: "2025-01-01T00:00:00Z",
+  expires_at: "2025-01-31T23:59:59Z",
+  status: "active",
+  extensions_used: 0,
+  extensions_limit: 2,
+  extension_history: [
+    {
+      extended_at: "2025-01-26T10:00:00Z",
+      days_added: 15,
+      fee_paid: 500,
+      new_expiry: "2025-02-15T23:59:59Z"
+    }
+  ]
+}
+```
+
+## When to Choose Short-Term DAO
+
+✅ **Clear End Date**: Wedding, funeral, event  
+✅ **Specific Goal**: Known fundraising target  
+✅ **Temporary Team**: Group forms for this purpose only  
+✅ **Budget Conscious**: ₭500 upfront vs ₭1,500/month
+
+## When to Upgrade to Collective
+
+If you find yourself needing extensions, consider upgrading:
+
+- **Ongoing Needs**: Project continues beyond initial scope
+- **Regular Activity**: Monthly meetings, recurring contributions
+- **Full Features**: Need proposals, voting, advanced reporting
+- **Unlimited Duration**: No expiry pressure
+
+[Create a Short-Term DAO →](/getting-started/create-dao)  
+[Compare DAO Types →](/dao-types)
