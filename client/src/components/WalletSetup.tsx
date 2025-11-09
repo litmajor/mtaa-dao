@@ -7,7 +7,7 @@ import { Label } from './ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
-import { Wallet, Plus, Upload, Eye, EyeOff } from 'lucide-react';
+import { Wallet, Plus, Upload, Eye, EyeOff, Copy, Download, CheckCircle, Shield, AlertTriangle } from 'lucide-react';
 import { useToast } from './ui/use-toast';
 
 interface WalletSetupProps {
@@ -342,5 +342,9 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+export default WalletSetup;
   );
 }
