@@ -1,10 +1,26 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowRight, Users, Vote, Wallet, Target, Trophy, Zap, DollarSign, TrendingUp, Shield, Globe, CheckCircle, Sparkles, Heart } from "lucide-react";
+import { ArrowRight, Users, Vote, Wallet, Target, TrendingUp, Shield, Globe, CheckCircle, Sparkles, Heart } from "lucide-react";
 import { Star } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Logo } from "@/components/ui/logo";
 import { Link } from 'wouter';
+import { useQuery } from '@tanstack/react-query';
+import { Badge } from '@/components/ui/badge';
+import PublicImpactFeed from '@/components/PublicImpactFeed';
+import DaoOfTheWeekBanner from '@/components/DaoOfTheWeekBanner';
+import { 
+  Users, 
+  Wallet, 
+  Vote, 
+  Shield, 
+  TrendingUp, 
+  Globe,
+  ArrowRight,
+  CheckCircle,
+  Star,
+  Award
+} from 'lucide-react';
 
 export default function MtaaDAOLanding() {
   const [isVisible, setIsVisible] = useState(false);
@@ -131,7 +147,10 @@ export default function MtaaDAOLanding() {
       {/* Hero Section - Streamlined */}
       <div className="relative flex-1" id="hero">
         <div className="max-w-6xl mx-auto px-4 py-16 md:py-24">
-          <div className={`text-center transform transition-all duration-1000 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
+          {/* DAO of the Week Banner */}
+          <DaoOfTheWeekBanner />
+
+          <div className={`text-center transform transition-all duration-1000 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'} mt-8`}>
             {/* Main Headline */}
             <h1 className="text-5xl md:text-7xl font-black mb-6 leading-tight">
               <span className="block text-white">Govern </span>
@@ -189,6 +208,13 @@ export default function MtaaDAOLanding() {
           </div>
         </div>
       </div>
+
+      {/* Impact Stats Section */}
+      <section className="py-12 px-4">
+        <div className="max-w-7xl mx-auto">
+          <PublicImpactFeed />
+        </div>
+      </section>
 
       {/* Core Features - Simplified */}
       <div className="py-16 relative" id="features">
@@ -261,7 +287,7 @@ export default function MtaaDAOLanding() {
           <a href="/register">
             <Button
               size="lg"
-              className="bg-white text-purple-600 hover:bg-gray-100 px-12 py-6 text-2xl font-black rounded-2xl shadow-2xl transform hover:scale-105 transition-all"
+              className="bg-white text-purple-600 hover:bg-gray-100 px-12 py-6 text-2xl font-bold rounded-2xl shadow-2xl transform hover:scale-105 transition-all"
             >
               <Sparkles className="mr-3 h-6 w-6" />
               Start Your Journey
