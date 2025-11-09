@@ -51,6 +51,11 @@ import blogRoutes from './routes/blog';
 import supportRoutes from './routes/support';
 import successStoriesRoutes from './routes/success-stories';
 
+// Import Telegram and WhatsApp routes
+import telegramBotRoutes from './routes/telegram-bot';
+import telegramIntegrationRoutes from './routes/telegram-integration';
+import whatsappIntegrationRoutes from './routes/whatsapp-integration';
+
 
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
@@ -76,7 +81,7 @@ import {
 } from './api/dashboard';
 
 // Import Vault API handlers
-import { createVaultHandler, getUserVaultsHandler, getVaultHandler, depositToVaultHandler, withdrawFromVaultHandler, allocateToStrategyHandler, rebalanceVaultHandler, getVaultPortfolioHandler, getVaultPerformanceHandler, assessVaultRiskHandler, getVaultTransactionsHandler } from './api/vaults';
+import { createVaultHandler, getUserVaultsHandler, getVaultHandler, depositToVaultHandler, withdrawFromVaultHandler, allocateToVaultHandler, rebalanceVaultHandler, getVaultPortfolioHandler, getVaultPerformanceHandler, assessVaultRiskHandler, getVaultTransactionsHandler } from './api/vaults';
 import { getSupportedTokensHandler, getTokenPriceHandler } from './api/vaults';
 import { authorizeVaultAccess } from './api/authVault';
 
@@ -349,4 +354,9 @@ export async function registerRoutes(app: Express) {
   app.use('/api/blog', blogRoutes);
   app.use('/api/support', supportRoutes);
   app.use('/api/success-stories', successStoriesRoutes);
+
+  // === TELEGRAM AND WHATSAPP INTEGRATION ROUTES ===
+  app.use('/api/telegram-bot', telegramBotRoutes);
+  app.use('/api/telegram', telegramIntegrationRoutes);
+  app.use('/api/whatsapp', whatsappIntegrationRoutes);
 }

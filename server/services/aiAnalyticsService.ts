@@ -70,6 +70,15 @@ interface ImpactMetrics {
 }
 
 export class AIAnalyticsService {
+  // Exponential smoothing for better predictions
+  private exponentialSmoothing(data: number[], alpha: number = 0.3): number[] {
+    const smoothed = [data[0]];
+    for (let i = 1; i < data.length; i++) {
+      smoothed.push(alpha * data[i] + (1 - alpha) * smoothed[i - 1]);
+    }
+    return smoothed;
+  }
+
   // Simple linear regression for predictions
   private linearRegression(x: number[], y: number[]): { slope: number; intercept: number } {
     const n = x.length;
@@ -82,6 +91,54 @@ export class AIAnalyticsService {
     const intercept = (sumY - slope * sumX) / n;
 
     return { slope, intercept };
+  }
+
+  // Polynomial regression for better curve fitting
+  private polynomialRegression(x: number[], y: number[], degree: number = 2) {
+    // Simplified polynomial regression for degree 2
+    const n = x.length;
+    const sumX = x.reduce((a, b) => a + b, 0);
+    const sumY = y.reduce((a, b) => a + b, 0);
+    const sumX2 = x.reduce((acc, xi) => acc + xi * xi, 0);
+    const sumX3 = x.reduce((acc, xi) => acc + Math.pow(xi, 3), 0);
+    const sumX4 = x.reduce((acc, xi) => acc + Math.pow(xi, 4), 0);
+    const sumXY = x.reduce((acc, xi, i) => acc + xi * y[i], 0);
+    const sumX2Y = x.reduce((acc, xi, i) => acc + xi * xi * y[i], 0);
+
+    return { sumX, sumY, sumX2, sumX3, sumX4, sumXY, sumX2Y, n };
+  }
+
+  // Anomaly detection using z-score
+  private detectAnomalies(data: number[], threshold: number = 2.5): number[] {
+    const mean = data.reduce((a, b) => a + b, 0) / data.length;
+    const variance = data.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / data.length;
+    const stdDev = Math.sqrt(variance);
+    
+    return data.map((val, idx) => {
+      const zScore = Math.abs((val - mean) / stdDev);
+      return zScore > threshold ? idx : -1;
+    }).filter(idx => idx !== -1);
+  }
+
+  // Sentiment analysis on proposal descriptions
+  async analyzeSentiment(text: string): Promise<{ score: number; label: string }> {
+    const positiveWords = ['good', 'great', 'excellent', 'benefit', 'improve', 'growth', 'success', 'positive'];
+    const negativeWords = ['bad', 'poor', 'fail', 'risk', 'loss', 'negative', 'decline', 'problem'];
+    
+    const words = text.toLowerCase().split(/\s+/);
+    let score = 0;
+    
+    words.forEach(word => {
+      if (positiveWords.includes(word)) score += 1;
+      if (negativeWords.includes(word)) score -= 1;
+    });
+    
+    const normalized = score / words.length;
+    let label = 'neutral';
+    if (normalized > 0.05) label = 'positive';
+    if (normalized < -0.05) label = 'negative';
+    
+    return { score: normalized, label };
   }
 
   // Calculate confidence based on data variance

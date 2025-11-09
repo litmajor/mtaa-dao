@@ -15,5 +15,6 @@
   "defi-integration": "DeFi Integration",
   "investment-pools": "Investment Pools",
   "investment-pools-governance": "Pool Governance",
-  "task-marketplace": "Task Marketplace"
+  "task-marketplace": "Task Marketplace",
+  "bot-integrations": "Telegram & WhatsApp Bots"
 }
