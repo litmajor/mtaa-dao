@@ -325,7 +325,7 @@ app.use((req, res, next) => {
     app.use('/api/invoices', invoiceRouter);
 
     // Add proof of contribution routes
-    import proofOfContributionRoutes from './routes/proof-of-contribution';
+    const proofOfContributionRoutes = (await import('./routes/proof-of-contribution')).default;
     app.use('/api/proof-of-contribution', proofOfContributionRoutes);
 
   // AI Analytics endpoints

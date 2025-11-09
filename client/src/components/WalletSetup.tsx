@@ -344,7 +344,3 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
     </div>
   );
 }
-
-export default WalletSetup;
-  );
-}

@@ -1,7 +1,7 @@
 
 import express from 'express';
 import { db } from '../storage';
-import { contributions, userReputation, users, daos, contributionGraph, reputationBadges } from '../../shared/schema';
+import { contributions, userReputation, users, daos } from '../../shared/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { isAuthenticated } from '../auth';
 
