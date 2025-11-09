@@ -49,12 +49,87 @@ router.get('/:daoId/status', async (req, res) => {
       return res.status(404).json({
 
 
-// Short-Term DAO Extension Plans
-const SHORT_TERM_EXTENSION_PRICING = {
-  base: 500, // KES 500 per extension
-  maxExtensions: 2,
-  upgradeToPremium: 1500 // KES 1,500/month for Collective DAO
+// DAO Tier Configuration
+const DAO_TIER_CONFIG = {
+  free: {
+    maxMembers: 10,
+    maxTreasuryBalance: 1000, // KES
+    durationDays: 14,
+    canExtend: false,
+    features: ['basic_proposals', 'basic_voting', 'basic_treasury']
+  },
+  short_term: {
+    price: 500, // KES 500 one-time
+    maxExtensions: 2,
+    baseDuration: 30, // days
+    features: ['full_proposals', 'full_voting', 'treasury_disbursements', 'analytics']
+  },
+  collective: {
+    price: 1500, // KES 1,500/month
+    features: ['unlimited_members', 'advanced_governance', 'multi_vaults', 'priority_support']
+  }
 };
+
+// GET /api/dao-subscriptions/:daoId/check-limits - Check Free Tier limits
+router.get('/:daoId/check-limits', async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    
+    const [dao] = await db.select().from(daos).where(eq(daos.id, daoId));
+    
+    if (!dao) {
+      return res.status(404).json({ success: false, message: 'DAO not found' });
+    }
+    
+    if (dao.daoType !== 'free') {
+      return res.json({
+        success: true,
+        isFreeTier: false,
+        message: 'Not a free tier DAO'
+      });
+    }
+    
+    const limits = DAO_TIER_CONFIG.free;
+    const daysRemaining = dao.planExpiresAt 
+      ? Math.ceil((new Date(dao.planExpiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+      : limits.durationDays;
+    
+    const violations = [];
+    
+    if (dao.memberCount && dao.memberCount > limits.maxMembers) {
+      violations.push(`Member limit exceeded (${dao.memberCount}/${limits.maxMembers})`);
+    }
+    
+    if (parseFloat(dao.treasuryBalance || '0') > limits.maxTreasuryBalance) {
+      violations.push(`Treasury limit exceeded (₭${dao.treasuryBalance}/₭${limits.maxTreasuryBalance})`);
+    }
+    
+    if (daysRemaining <= 0) {
+      violations.push('Duration expired');
+    }
+    
+    return res.json({
+      success: true,
+      isFreeTier: true,
+      limits,
+      current: {
+        members: dao.memberCount || 0,
+        treasuryBalance: parseFloat(dao.treasuryBalance || '0'),
+        daysRemaining
+      },
+      violations,
+      upgradeRequired: violations.length > 0,
+      recommendedTier: violations.length > 0 ? 'short_term' : null
+    });
+    
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to check limits',
+      error: error.message
+    });
+  }
+});
 
 // POST /api/dao-subscriptions/:daoId/extend - Extend short-term DAO
 router.post('/:daoId/extend', async (req, res) => {
@@ -80,17 +155,17 @@ router.post('/:daoId/extend', async (req, res) => {
     }
     
     // Check extension limit
-    if ((dao.extensionCount || 0) >= SHORT_TERM_EXTENSION_PRICING.maxExtensions) {
+    if ((dao.extensionCount || 0) >= DAO_TIER_CONFIG.short_term.maxExtensions) {
       return res.status(400).json({
         success: false,
         message: 'Maximum extensions reached. Please upgrade to Collective DAO (₭1,500/month)',
         upgradeRequired: true,
-        upgradePrice: SHORT_TERM_EXTENSION_PRICING.upgradeToPremium
+        upgradePrice: DAO_TIER_CONFIG.collective.price
       });
     }
     
     // Calculate new duration (half of previous)
-    const currentDuration = dao.currentExtensionDuration || dao.originalDuration || 30;
+    const currentDuration = dao.currentExtensionDuration || dao.originalDuration || DAO_TIER_CONFIG.short_term.baseDuration;
     const newExtensionDuration = Math.floor(currentDuration / 2);
     const newExpiryDate = new Date(dao.planExpiresAt || new Date());
     newExpiryDate.setDate(newExpiryDate.getDate() + newExtensionDuration);
@@ -112,13 +187,13 @@ router.post('/:daoId/extend', async (req, res) => {
     // Create billing record
     await db.insert(billingHistory).values({
       daoId,
-      amount: SHORT_TERM_EXTENSION_PRICING.base.toString(),
+      amount: DAO_TIER_CONFIG.short_term.price.toString(),
       currency: 'KES',
       status: 'completed',
       description: `Short-term DAO extension #${(dao.extensionCount || 0) + 1} (${newExtensionDuration} days)`
     });
     
-    const extensionsRemaining = SHORT_TERM_EXTENSION_PRICING.maxExtensions - (dao.extensionCount || 0) - 1;
+    const extensionsRemaining = DAO_TIER_CONFIG.short_term.maxExtensions - (dao.extensionCount || 0) - 1;
     
     res.json({
       success: true,
@@ -172,7 +247,7 @@ router.post('/:daoId/upgrade-to-collective', async (req, res) => {
     
     await db.insert(billingHistory).values({
       daoId,
-      amount: SHORT_TERM_EXTENSION_PRICING.upgradeToPremium.toString(),
+      amount: DAO_TIER_CONFIG.collective.price.toString(),
       currency: 'KES',
       status: 'completed',
       description: 'Upgraded from Short-term to Collective DAO'
@@ -184,7 +259,7 @@ router.post('/:daoId/upgrade-to-collective', async (req, res) => {
       subscription: {
         plan: 'collective',
         billingCycle: 'monthly',
-        amount: SHORT_TERM_EXTENSION_PRICING.upgradeToPremium,
+        amount: DAO_TIER_CONFIG.collective.price,
         nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       }
     });

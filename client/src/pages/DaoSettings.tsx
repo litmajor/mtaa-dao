@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ShortTermDaoExtension } from '@/components/ShortTermDaoExtension';
+import { FreeTierLimitWarning } from '@/components/FreeTierLimitWarning';
 
 export default function DaoSettings({ daoName = "Your DAO" }) {
   // Platform-set constants
@@ -65,6 +66,14 @@ export default function DaoSettings({ daoName = "Your DAO" }) {
         {/* Main Card */}
         <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/20">
           <div className="space-y-6">
+            {/* Free Tier Warning Widget */}
+            {dao?.daoType === 'free' && (
+              <FreeTierLimitWarning
+                daoId={daoId}
+                onUpgrade={() => window.location.href = `/pricing?upgrade=${daoId}`}
+              />
+            )}
+            
             {/* Short-Term DAO Extension Widget */}
             {dao?.daoType === 'short_term' && (
               <ShortTermDaoExtension

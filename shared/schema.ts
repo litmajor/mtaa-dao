@@ -201,10 +201,17 @@ export const daos = pgTable("daos", {
   memberCount: integer("member_count").default(1),
   treasuryBalance: decimal("treasury_balance", { precision: 10, scale: 2 }).default("0"),
   plan: varchar("plan").default("free"), // free, premium, short_term, collective
-  daoType: varchar("dao_type").default("standard"), // standard, short_term, collective, meta
+  daoType: varchar("dao_type").default("free"), // free, short_term, collective, meta
   planExpiresAt: timestamp("plan_expires_at"),
   billingStatus: varchar("billing_status").default("active"),
   nextBillingDate: timestamp("next_billing_date"),
+  // Free tier limits
+  freeTierLimits: jsonb("free_tier_limits").default({
+    maxMembers: 10,
+    maxTreasuryBalance: 1000,
+    durationDays: 14,
+    canExtend: false
+  }),
   // Short-term DAO extension tracking
   extensionCount: integer("extension_count").default(0), // 0, 1, or 2 max
   originalDuration: integer("original_duration"), // in days (30, 60, 90)
