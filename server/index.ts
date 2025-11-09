@@ -292,6 +292,11 @@ app.use((req, res, next) => {
     app.use('/api/reputation', reputationRoutes); // Added reputation routes
     app.use('/api/cross-chain', crossChainRoutes);
     app.use('/api/morio', morioRoutes);
+    
+    // New feature routes
+    app.use('/api/dao-of-the-week', (await import('./routes/dao-of-the-week')).default);
+    app.use('/api/telegram-bot', (await import('./routes/telegram-bot')).default);
+    app.use('/api/public', (await import('./routes/public-stats')).default);
 
     // Blog routes
     const blogRoutes = (await import('./routes/blog')).default;
