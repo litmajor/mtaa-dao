@@ -274,6 +274,18 @@ What would you like to explore first?`;
               >
                 ⭐ Success Stories
               </button>
+              <button
+                onClick={() => handleSuggestion('What are vaults?')}
+                className="text-xs px-3 py-2 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+              >
+                🏦 Vaults Explained
+              </button>
+              <button
+                onClick={() => handleSuggestion('How to earn rewards?')}
+                className="text-xs px-3 py-2 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+              >
+                🎁 Earn Rewards
+              </button>
             </>
           ) : (
             <>
@@ -282,21 +294,51 @@ What would you like to explore first?`;
                 className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
                 data-testid="suggestion-balance"
               >
-                Check balance
+                💰 Check balance
               </button>
               <button
                 onClick={() => handleSuggestion('Show active proposals')}
                 className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
                 data-testid="suggestion-proposals"
               >
-                Active proposals
+                📝 Active proposals
               </button>
               <button
                 onClick={() => handleSuggestion('Treasury analytics')}
                 className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
                 data-testid="suggestion-analytics"
               >
-                Analytics
+                📊 Analytics
+              </button>
+              <button
+                onClick={() => handleSuggestion('Create a proposal')}
+                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+              >
+                ➕ New proposal
+              </button>
+              <button
+                onClick={() => handleSuggestion('My contribution score')}
+                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+              >
+                🏆 My score
+              </button>
+              <button
+                onClick={() => handleSuggestion('Recent transactions')}
+                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+              >
+                💸 Transactions
+              </button>
+              <button
+                onClick={() => handleSuggestion('Available tasks')}
+                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+              >
+                ✅ Tasks
+              </button>
+              <button
+                onClick={() => handleSuggestion('Investment pools')}
+                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+              >
+                🏊 Pools
               </button>
             </>
           )}

@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Bell, Moon, Sun, Settings, LogOut, ChevronDown, Sparkles } from "lucide-react";
+import { Bell, Moon, Sun, Settings, LogOut, ChevronDown, Sparkles, Brain } from "lucide-react";
 import { useAuth } from "@/pages/hooks/useAuth";
 import { useEffect, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
@@ -105,7 +105,7 @@ export default function Navigation() {
 
   const utilityItems = [
     { href: "/referrals", label: "Referrals", icon: "🤝" },
-    { href: "/leaderboard", label: "Leaderboard", icon: "🏆" },
+    { href: "/leaderboard", label: "Leaderleaderboard", icon: "🏆" },
     { href: "/pricing", label: "Pricing", icon: "💰" },
   ];
 
@@ -123,13 +123,13 @@ export default function Navigation() {
           {/* Logo Section */}
           <div className="flex items-center space-x-8">
             <Link to="/" className="group">
-              <AnimatedLogo 
-                variant="full" 
+              <AnimatedLogo
+                variant="full"
                 size="md"
                 className="hidden sm:flex"
               />
-              <AnimatedLogo 
-                variant="icon" 
+              <AnimatedLogo
+                variant="icon"
                 size="md"
                 className="sm:hidden"
               />
@@ -291,6 +291,30 @@ export default function Navigation() {
                               </Button>
                             </Link>
                           ))}
+                          {user?.roles === 'admin' || user?.roles === 'elder' ? (
+                            <Link to="/admin/users">
+                              <Button variant="ghost" className="w-full justify-start px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg">
+                                <span className="mr-2">👥</span>
+                                Manage Users
+                              </Button>
+                            </Link>
+                          ) : null}
+                          {user?.roles === 'super_admin' && (
+                            <>
+                              <Link to="/admin/settings">
+                                <Button variant="ghost" size="sm">
+                                  <Settings className="w-4 h-4 mr-2" />
+                                  Admin
+                                </Button>
+                              </Link>
+                              <Link to="/admin/ai-monitoring">
+                                <Button variant="ghost" size="sm">
+                                  <Brain className="w-4 h-4 mr-2" />
+                                  AI Monitor
+                                </Button>
+                              </Link>
+                            </>
+                          )}
                         </div>
                       </div>
                     )}
