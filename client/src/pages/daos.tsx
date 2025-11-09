@@ -267,11 +267,40 @@ export default function EnhancedDAOs() {
           </div>
         </div>
 
+        {/* Tags & Location */}
+        <div className="flex flex-wrap gap-1 mb-3">
+          {dao.regionalTags?.map((tag: string) => (
+            <Badge key={tag} variant="outline" className="text-xs bg-blue-50 dark:bg-blue-900">
+              📍 {tag}
+            </Badge>
+          ))}
+          {dao.causeTags?.slice(0, 2).map((tag: string) => (
+            <Badge key={tag} variant="outline" className="text-xs bg-purple-50 dark:bg-purple-900">
+              #{tag}
+            </Badge>
+          ))}
+        </div>
+
+        {/* Featured Message / Social Support */}
+        {dao.featuredMessage && (
+          <div className="mb-3 p-2 bg-gradient-to-r from-orange-50 to-pink-50 dark:from-orange-900 dark:to-pink-900 rounded-lg border border-orange-200 dark:border-orange-700">
+            <p className="text-xs italic text-gray-700 dark:text-gray-300">"{dao.featuredMessage}"</p>
+          </div>
+        )}
+
         {/* Recent activity */}
         <div className="flex items-center gap-2 mb-4 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
           <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
           <span className="text-xs text-gray-600 dark:text-gray-400">{dao.recentActivity}</span>
         </div>
+
+        {/* Social Reactions Preview */}
+        {dao.enableSocialReactions && dao.supportCount > 0 && (
+          <div className="mb-3 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+            <Heart className="w-3 h-3 text-red-500 fill-red-500" />
+            <span>{dao.supportCount} people showing support</span>
+          </div>
+        )}
 
         {/* Action buttons */}
         {dao.isJoined ? (
@@ -361,28 +390,59 @@ export default function EnhancedDAOs() {
           </button>
         </div>
 
-        {/* Enhanced tabs */}
-        <div className="flex items-center gap-2 mb-8 p-1 bg-white dark:bg-gray-800 rounded-2xl shadow-lg w-fit">
-          {[ 
-            { key: "joined", label: `My DAOs (${joinedDAOs.length})`, icon: Shield },
-            { key: "available", label: `Discover (${availableDAOs.length})`, icon: Eye }
-          ].map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              onClick={() => {
-                setActiveTab(key);
-                window.location.hash = key;
-              }}
-              className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
-                activeTab === key
-                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
-                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              {label}
-            </button>
-          ))}
+        {/* Enhanced tabs with discovery filters */}
+        <div className="space-y-4 mb-8">
+          <div className="flex items-center gap-2 p-1 bg-white dark:bg-gray-800 rounded-2xl shadow-lg w-fit">
+            {[ 
+              { key: "joined", label: `My DAOs (${joinedDAOs.length})`, icon: Shield },
+              { key: "available", label: `Discover (${availableDAOs.length})`, icon: Eye },
+              { key: "trending", label: "🔥 Trending", icon: TrendingUp },
+              { key: "regional", label: "📍 Regional", icon: Globe }
+            ].map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => {
+                  setActiveTab(key);
+                  window.location.hash = key;
+                }}
+                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
+                  activeTab === key
+                    ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Discovery Feed Filters - shown only on discover/trending/regional tabs */}
+          {(activeTab === 'available' || activeTab === 'trending' || activeTab === 'regional') && (
+            <div className="flex flex-wrap gap-2 items-center">
+              <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">Filter by:</span>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Trophy className="w-3 h-3" />
+                Top Fundraisers
+              </Button>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Users className="w-3 h-3" />
+                New This Week
+              </Button>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Heart className="w-3 h-3" />
+                #FuneralFund
+              </Button>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Zap className="w-3 h-3" />
+                #YouthEmpowerment
+              </Button>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Globe className="w-3 h-3" />
+                Nairobi
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* DAOs Grid */}
