@@ -61,6 +61,15 @@ args = "PORT=5000 npx tsx server/index.ts"
 task = "shell.exec"
 args = "npm run dev"
 
+[[workflows.workflow]]
+name = "Start Docs Site"
+author = 49565363
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd docs-site && npm install && npm run dev"
+
 [[ports]]
 localPort = 4000
 externalPort = 3000
@@ -69,10 +78,6 @@ exposeLocalhost = true
 [[ports]]
 localPort = 5000
 externalPort = 80
-
-[[ports]]
-localPort = 39777
-externalPort = 3001
 
 [[ports]]
 localPort = 45867
