@@ -3,13 +3,20 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Alert, AlertDescription } from '../ui/alert';
-import { Wallet, Shield, Sparkles, CheckCircle, Zap, QrCode, ArrowRight } from 'lucide-react';
+import { Wallet, Shield, Sparkles, CheckCircle, Zap, QrCode, ArrowRight, Link as LinkIcon } from 'lucide-react';
 import { useToast } from '../ui/use-toast';
 import SecureWalletManager from './SecureWalletManager';
 
 interface WalletConnectionManagerProps {
   userId?: string;
   onConnect?: (address: string, provider: string) => void;
+}
+
+// Extend Window interface for ethereum providers
+declare global {
+  interface Window {
+    ethereum?: any;
+  }
 }
 
 export default function WalletConnectionManager({ userId, onConnect }: WalletConnectionManagerProps) {
@@ -117,6 +124,25 @@ export default function WalletConnectionManager({ userId, onConnect }: WalletCon
     }
   };
 
+  const connectWalletConnect = async () => {
+    setConnecting(true);
+    setError('');
+    try {
+      // WalletConnect v2 integration placeholder
+      // In production, you'd use @walletconnect/web3-provider
+      toast({ 
+        title: 'WalletConnect', 
+        description: 'WalletConnect integration coming soon!',
+        variant: 'default'
+      });
+      setError('WalletConnect integration is in development. Please use MetaMask, Valora, or MiniPay for now.');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
   if (step === 'create') {
     return <SecureWalletManager userId={userId || ''} onWalletCreated={(data) => {
       toast({ title: 'Success!', description: 'Wallet created successfully' });
@@ -174,6 +200,16 @@ export default function WalletConnectionManager({ userId, onConnect }: WalletCon
             >
               <Sparkles className="h-5 w-5 mr-3" />
               {connecting ? 'Connecting...' : 'MiniPay'}
+            </Button>
+
+            <Button
+              onClick={connectWalletConnect}
+              disabled={connecting}
+              className="w-full border-2 border-blue-300 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-gray-800 dark:text-gray-200 font-semibold py-6 px-6 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-[1.02] transition-all"
+              variant="outline"
+            >
+              <LinkIcon className="h-5 w-5 mr-3" />
+              {connecting ? 'Connecting...' : 'WalletConnect'}
             </Button>
 
             <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">

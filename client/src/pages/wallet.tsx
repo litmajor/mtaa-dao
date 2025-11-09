@@ -32,7 +32,8 @@ import PhonePaymentModal from '@/components/wallet/PhonePaymentModal';
 import SplitBillModal from '@/components/wallet/SplitBillModal';
 import PaymentLinkModal from '@/components/wallet/PaymentLinkModal';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import WalletConnectionManager from '@/components/wallet/WalletConnectionManager'; // Import the new component
+import WalletConnectionManager from '@/components/wallet/WalletConnectionManager';
+import WalletBackupReminder from '@/components/wallet/WalletBackupReminder';
 
 
 const EnhancedWalletPage = () => {
@@ -126,6 +127,7 @@ const EnhancedWalletPage = () => {
           userId={user?.id}
           onConnect={(address, provider) => {
             console.log('Wallet connected:', address, provider);
+            // Refresh to load wallet data
             window.location.reload();
           }}
         />
@@ -385,6 +387,11 @@ const EnhancedWalletPage = () => {
       <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-gradient-to-br from-emerald-400/10 to-teal-400/10 rounded-full blur-3xl animate-pulse delay-500" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
+        {/* Backup Reminder */}
+        {isConnected && address && (
+          <WalletBackupReminder userId={user?.id} walletAddress={address} />
+        )}
+
         {/* Enhanced Header with Dashboard Navigation */}
         <div className="flex items-center justify-between mb-12">
           <div className="flex items-center space-x-4">
