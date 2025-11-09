@@ -32,6 +32,7 @@ import PhonePaymentModal from '@/components/wallet/PhonePaymentModal';
 import SplitBillModal from '@/components/wallet/SplitBillModal';
 import PaymentLinkModal from '@/components/wallet/PaymentLinkModal';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import WalletConnectionManager from '@/components/wallet/WalletConnectionManager'; // Import the new component
 
 
 const EnhancedWalletPage = () => {
@@ -120,106 +121,14 @@ const EnhancedWalletPage = () => {
   // Show wallet connection UI if not connected
   if (!isConnected) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 p-6 flex items-center justify-center">
-        <div className="w-full max-w-lg">
-          {/* Hero Section */}
-          <div className="text-center mb-8">
-            <div className="mx-auto w-20 h-20 bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl flex items-center justify-center mb-4 shadow-2xl">
-              <Wallet className="h-10 w-10 text-white" />
-            </div>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
-              MtaaDAO Wallet
-            </h1>
-            <p className="text-gray-600 dark:text-gray-300 text-lg">
-              Your gateway to decentralized finance
-            </p>
-          </div>
-
-          <Card className="backdrop-blur-xl bg-white/90 dark:bg-gray-800/90 shadow-2xl border-0">
-            <CardHeader className="text-center pb-4">
-              <CardTitle className="text-2xl">Connect Your Wallet</CardTitle>
-              <CardDescription className="text-base mt-2">
-                Choose your preferred wallet provider to get started
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4 px-8 pb-8">
-              {error && (
-                <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-300 text-sm">
-                  <strong>Error:</strong> {error}
-                </div>
-              )}
-
-              <div className="space-y-3">
-                <button
-                  onClick={connectMetaMask}
-                  disabled={isLoading}
-                  className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold py-4 px-6 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-[1.02] flex items-center justify-center gap-3"
-                  data-testid="button-connect-metamask"
-                >
-                  <Wallet className="h-5 w-5" />
-                  {isLoading ? "Connecting..." : "Connect MetaMask"}
-                </button>
-
-                <button
-                  onClick={connectValora}
-                  disabled={isLoading}
-                  className="w-full border-2 border-purple-300 dark:border-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/20 text-gray-800 dark:text-gray-200 font-semibold py-4 px-6 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 hover:shadow-lg transform hover:scale-[1.02] flex items-center justify-center gap-3"
-                  data-testid="button-connect-valora"
-                >
-                  <Shield className="h-5 w-5" />
-                  {isLoading ? "Connecting..." : "Connect Valora"}
-                </button>
-
-                <button
-                  onClick={connectMiniPay}
-                  disabled={isLoading}
-                  className="w-full border-2 border-indigo-300 dark:border-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-gray-800 dark:text-gray-200 font-semibold py-4 px-6 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 hover:shadow-lg transform hover:scale-[1.02] flex items-center justify-center gap-3"
-                  data-testid="button-connect-minipay"
-                >
-                  <Sparkles className="h-5 w-5" />
-                  {isLoading ? "Connecting..." : "Connect MiniPay"}
-                </button>
-              </div>
-
-              <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                <div className="flex items-start gap-3 text-sm text-gray-600 dark:text-gray-400">
-                  <Shield className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-medium text-gray-800 dark:text-gray-200">Secure Connection</p>
-                    <p className="mt-1">Your wallet stays in your control. We never access your private keys.</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="text-xs text-gray-500 dark:text-gray-400 text-center mt-4 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
-                <Zap className="h-4 w-4 inline mr-1" />
-                Make sure you're on the <strong>Celo network</strong>. We'll help you switch if needed.
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Features Grid */}
-          <div className="grid grid-cols-3 gap-4 mt-8">
-            <div className="text-center">
-              <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-xl flex items-center justify-center mx-auto mb-2">
-                <Shield className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-              </div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Secure</p>
-            </div>
-            <div className="text-center">
-              <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-xl flex items-center justify-center mx-auto mb-2">
-                <Zap className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-              </div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Fast</p>
-            </div>
-            <div className="text-center">
-              <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-xl flex items-center justify-center mx-auto mb-2">
-                <Star className="h-6 w-6 text-green-600 dark:text-green-400" />
-              </div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Easy</p>
-            </div>
-          </div>
-        </div>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 p-6">
+        <WalletConnectionManager
+          userId={user?.id}
+          onConnect={(address, provider) => {
+            console.log('Wallet connected:', address, provider);
+            window.location.reload();
+          }}
+        />
       </div>
     );
   }
