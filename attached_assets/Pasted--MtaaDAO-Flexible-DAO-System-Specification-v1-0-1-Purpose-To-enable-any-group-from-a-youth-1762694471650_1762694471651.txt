@@ -1,0 +1,155 @@
+🧩 MtaaDAO — Flexible DAO System Specification (v1.0)
+1. Purpose
+
+To enable any group — from a youth chama to a family cause — to easily create, manage, and complete a DAO with minimal friction and transparent funding.
+
+This system supports two core paths:
+
+Short-Term DAOs (₵500 one-time) — for short causes and events.
+
+Collective DAOs (₵1500/month) — for ongoing groups and community ventures.
+
+2. Core DAO Types
+🕊️ A. Short-Term DAO
+
+Purpose: For time-limited causes such as weddings, funerals, emergencies, or one-off projects.
+Fee: ₵500 (one-time setup).
+Duration: 30–90 days.
+
+Features:
+
+Simple setup (goal, duration, members, treasury).
+
+Shared wallet (multi-sig or smart contract).
+
+Transparent fund tracking & contributor list.
+
+Expiry countdown and auto-lock on completion.
+
+Optional extension or upgrade on expiry.
+
+Lifecycle:
+
+Create DAO → Collect Funds → Goal Achieved or Duration Ends
+     ↓
+Extend (₵300) | Upgrade (₵1500) | Close & Archive
+
+💼 B. Collective DAO
+
+Purpose: For long-term projects, chamas, businesses, or recurring initiatives.
+Fee: ₵1500/month (auto-renewable).
+Duration: Ongoing subscription.
+
+Features:
+
+Full DAO tools: proposals, voting, reporting, fund management.
+
+Ability to invite unlimited members.
+
+Monthly performance summary (income, votes, activity).
+
+Integration with regional filters (for future MetaDAO linking).
+
+Option to merge with others later.
+
+3. User Flow
+DAO Creation Flow
+
+User clicks “Create DAO.”
+
+Chooses type:
+
+Short-Term (₵500)
+
+Collective (₵1500/month)
+
+Fills form:
+
+DAO Name
+
+Description / Purpose
+
+Target Amount (optional)
+
+Duration (if short-term)
+
+Member List or Invite Links
+
+Confirms and pays fee.
+
+DAO is created instantly.
+
+Expiry & Upgrade Flow
+
+For Short-Term DAOs nearing expiry:
+
+System Reminder:
+
+“Your DAO will expire in 5 days. Would you like to extend or upgrade?”
+
+Options:
+
+🟢 Extend DAO (₵300) – adds 30 more days.
+
+🟣 Upgrade to Collective (₵1500) – keeps all history, converts DAO to full plan.
+
+🔘 Close DAO – disburse or return funds, archive DAO.
+
+Archived DAOs remain viewable in the public registry for transparency.
+
+4. Technical Schema
+{
+  "dao_id": "UUID",
+  "type": "short_term" | "collective",
+  "name": "string",
+  "description": "string",
+  "goal_amount": "number | null",
+  "duration_days": "int | null",
+  "created_at": "timestamp",
+  "expires_at": "timestamp | null",
+  "status": "active" | "expired" | "archived",
+  "members": ["wallet_address_1", "wallet_address_2"],
+  "region": {
+    "county": "string",
+    "subcounty": "string",
+    "ward": "string"
+  },
+  "fee_paid": "number",
+  "renewal_fee": "number | null"
+}
+
+5. Economic Model
+Tier	Fee	Duration	Features	Notes
+Short-Term DAO	₵500	1–3 months	Basic tools, auto-expiry	Extendable for ₵300
+Collective DAO	₵1500	Monthly	Full tools, proposals, reports	Auto-renew
+MetaDAO (Future)	₵2000	One-time setup	Cross-DAO coordination	Phase 2
+6. Regional & Tagging Support
+
+Each DAO can include optional region tags:
+
+County, Subcounty, Ward, or Constituency.
+
+Enables geographic filtering and local discoverability.
+
+Prepares foundation for MetaDAO clustering later.
+
+7. UX Notes
+
+Use friendly, conversational language in prompts:
+
+“Form your DAO today — quick, transparent, and secure.”
+“Your goal is complete! Keep it going or archive it?”
+
+Keep visuals simple and mobile-first (90% of Kenyan users will access via phone).
+
+One-tap payment flow (M-PESA/STK push).
+
+8. Future-Proofing
+
+This system easily expands later into:
+
+MetaDAOs: when several Collectives want to merge or form alliances.
+
+Grants / Partnerships: allow NGOs or counties to fund verified DAOs.
+
+DAO Reputation Graph: measure trust and success rates over time.
