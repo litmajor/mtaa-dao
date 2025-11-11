@@ -301,8 +301,11 @@ app.use((req, res, next) => {
     app.use('/api/morio', morioRoutes);
     app.use('/api/public-stats', publicStatsRoutes);
     app.use('/api/treasury-intelligence', treasuryIntelligenceRoutes);
-app.use('/api/analyzer', analyzerRoutes);
     app.use('/api/analyzer', analyzerRoutes);
+    
+    // Synchronizer agent routes
+    const synchronizerRoutes = (await import('./routes/synchronizer')).default;
+    app.use('/api/synchronizer', synchronizerRoutes);
 
     // New feature routes
     app.use('/api/dao-of-the-week', (await import('./routes/dao-of-the-week')).default);
