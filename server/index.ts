@@ -72,6 +72,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 import publicStatsRoutes from './routes/public-stats';
 import treasuryIntelligenceRoutes from './routes/treasury-intelligence';
 import analyzerRoutes from './routes/analyzer';
+import analyzerRoutes from './routes/analyzer';
 
 // Mount routes
 
@@ -300,6 +301,7 @@ app.use((req, res, next) => {
     app.use('/api/morio', morioRoutes);
     app.use('/api/public-stats', publicStatsRoutes);
     app.use('/api/treasury-intelligence', treasuryIntelligenceRoutes);
+app.use('/api/analyzer', analyzerRoutes);
     app.use('/api/analyzer', analyzerRoutes);
 
     // New feature routes

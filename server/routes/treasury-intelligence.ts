@@ -2,6 +2,8 @@
 import express, { Request, Response } from 'express';
 import { isAuthenticated } from '../nextAuthMiddleware';
 import { treasuryIntelligenceService } from '../services/treasuryIntelligenceService';
+import { analyzer } from '../agents/analyzer';
+import { aiAnalyticsService } from '../services/aiAnalyticsService';
 
 const router = express.Router();
 
@@ -77,6 +79,69 @@ router.post('/:daoId/apply-optimization', isAuthenticated, async (req: Request, 
       success: true, 
       message: 'Budget optimization proposal created - requires governance approval' 
     });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Fraud detection powered by ANALYZER agent
+router.get('/:daoId/fraud-detection', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { daoId } = req.params;
+    
+    const fraudAnalysis = await aiAnalyticsService.getFraudDetection(daoId);
+    
+    res.json({ success: true, data: fraudAnalysis });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Governance security analysis
+router.get('/:daoId/governance-analysis', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { daoId } = req.params;
+    
+    const governanceAnalysis = await aiAnalyticsService.getGovernanceAnalysis(daoId);
+    
+    res.json({ success: true, data: governanceAnalysis });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Treasury health analysis
+router.get('/:daoId/treasury-health', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { daoId } = req.params;
+    
+    const healthAnalysis = await aiAnalyticsService.getTreasuryHealthAnalysis(daoId);
+    
+    res.json({ success: true, data: healthAnalysis });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Member profile analysis
+router.get('/:daoId/member/:userId/profile', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { daoId, userId } = req.params;
+    
+    const profile = await analyzer.profileNode(userId, daoId);
+    
+    res.json({ success: true, data: profile });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// System health monitoring
+router.get('/system/health', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const healthReport = await analyzer.monitorSystemHealth();
+    
+    res.json({ success: true, data: healthReport });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

@@ -3,6 +3,7 @@ import { db } from '../db';
 import { daos, proposals, vaults, walletTransactions, contributions, users } from '../../shared/schema';
 import { eq, gte, lte, desc, and, sql } from 'drizzle-orm';
 import { subDays, subMonths } from 'date-fns';
+import { analyzer } from '../agents/analyzer';
 
 interface PredictionModel {
   treasuryGrowth: {
@@ -431,11 +432,20 @@ export class AIAnalyticsService {
   }
 
   async getComprehensiveAnalytics(daoId: string) {
-    const [treasuryPrediction, riskAssessment, portfolioOptimization, impactMetrics] = await Promise.all([
+    const [
+      treasuryPrediction, 
+      riskAssessment, 
+      portfolioOptimization, 
+      impactMetrics,
+      fraudAnalysis,
+      governanceAnalysis
+    ] = await Promise.all([
       this.predictTreasuryGrowth(daoId),
       this.assessRisk(daoId),
       this.optimizePortfolio(daoId),
-      this.measureImpact(daoId)
+      this.measureImpact(daoId),
+      analyzer.detectFraud(daoId),
+      analyzer.analyzeGovernance(daoId)
     ]);
 
     return {
@@ -443,8 +453,25 @@ export class AIAnalyticsService {
       risk: riskAssessment,
       portfolio: portfolioOptimization,
       impact: impactMetrics,
+      security: {
+        fraud: fraudAnalysis,
+        governance: governanceAnalysis,
+        threatLevel: Math.max(fraudAnalysis.threatLevel, governanceAnalysis.threatLevel)
+      },
       timestamp: new Date().toISOString()
     };
+  }
+
+  async getFraudDetection(daoId: string) {
+    return await analyzer.detectFraud(daoId);
+  }
+
+  async getGovernanceAnalysis(daoId: string) {
+    return await analyzer.analyzeGovernance(daoId);
+  }
+
+  async getTreasuryHealthAnalysis(daoId: string) {
+    return await analyzer.analyzeTreasuryHealth(daoId);
   }
 }
 
