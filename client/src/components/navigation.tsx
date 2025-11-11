@@ -1,6 +1,3 @@
-  // Example: check if user is in a DAO (replace with real logic if needed)
-  const isInDao = user?.daoId || (user?.daos && user.daos.length > 0);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -21,6 +18,7 @@ export default function Navigation() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Fetch notification count
   useEffect(() => {
@@ -67,6 +65,9 @@ export default function Navigation() {
 
   const isActive = (path: string) => location.pathname === path;
   const isLoggedIn = !!user;
+  
+  // Example: check if user is in a DAO (replace with real logic if needed)
+  const isInDao = user?.daoId || (user?.daos && user.daos.length > 0);
 
   // Organized navigation with dashboard categories
 
@@ -123,6 +124,7 @@ export default function Navigation() {
   ];
 
   return (
+    <>
     <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
       isScrolled
         ? 'bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-700/50 shadow-lg shadow-black/5'
@@ -409,7 +411,7 @@ export default function Navigation() {
                   </div>
                 </div>
               </div>
-            )}
+            </div>
           </div>
 
           {/* Right Section */}
@@ -533,7 +535,7 @@ export default function Navigation() {
             )}
           </div>
         </div>
-      </div>
+      </nav>
 
       {/* Mobile Menu Toggle - Hidden for now but can be expanded */}
       {/* Hamburger menu button */}
@@ -615,6 +617,6 @@ export default function Navigation() {
           </div>
         </div>
       )}
-    </nav>
+    </>
   );
 }
