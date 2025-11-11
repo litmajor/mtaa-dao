@@ -72,7 +72,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 import publicStatsRoutes from './routes/public-stats';
 import treasuryIntelligenceRoutes from './routes/treasury-intelligence';
 import analyzerRoutes from './routes/analyzer';
-import analyzerRoutes from './routes/analyzer';
+import defenderRoutes from './routes/defender'; // Added for defender routes
 
 // Mount routes
 
@@ -302,7 +302,8 @@ app.use((req, res, next) => {
     app.use('/api/public-stats', publicStatsRoutes);
     app.use('/api/treasury-intelligence', treasuryIntelligenceRoutes);
     app.use('/api/analyzer', analyzerRoutes);
-    
+    app.use('/api/defender', defenderRoutes); // Registered defender routes
+
     // Synchronizer agent routes
     const synchronizerRoutes = (await import('./routes/synchronizer')).default;
     app.use('/api/synchronizer', synchronizerRoutes);
@@ -322,7 +323,6 @@ app.use((req, res, next) => {
     // Wallet routes
     app.use('/api/wallet', walletRoutes);
     app.use('/api/wallet-setup', walletSetupRoutes);
-    app.use('/api/wallet-setup', walletSetupRoutes); // This line is a duplicate and should be removed or modified if intended differently.
     app.use('/api/wallet/recurring-payments', (await import('./routes/recurring-payments')).default);
     app.use('/api/wallet/vouchers', (await import('./routes/vouchers')).default);
     app.use('/api/wallet/phone', (await import('./routes/phone-payments')).default);
