@@ -127,7 +127,7 @@ function App() {
     <HelmetProvider>
       <ThemeProvider>
         <TooltipProvider>
-          <MorioProvider userId={user?.id}>
+          <MorioProvider userId={user?.id} daoId={user?.currentDaoId}>
             <div className="min-h-screen bg-background text-foreground">
               <Helmet>
                 <title>{isAuthenticated ? "Dashboard | Mtaa DAO" : "Welcome | Mtaa DAO"}</title>

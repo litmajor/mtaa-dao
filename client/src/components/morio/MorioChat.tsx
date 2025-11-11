@@ -33,11 +33,13 @@ interface ChatResponse {
 export function MorioChat({ 
   userId, 
   daoId, 
-  isOnboarding = false 
+  isOnboarding = false,
+  variant = 'full'
 }: { 
   userId: string; 
   daoId?: string;
   isOnboarding?: boolean;
+  variant?: 'full' | 'compact';
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');

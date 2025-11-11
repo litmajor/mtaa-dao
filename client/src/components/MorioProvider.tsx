@@ -1,36 +1,68 @@
 
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { MorioFAB } from './morio/MorioFAB';
 import { useLocation } from 'wouter';
 
-export function MorioProvider({ children, userId, daoId }: { 
-  children: React.ReactNode; 
-  userId?: string;
-  daoId?: string;
-}) {
-  const [location] = useLocation();
-  const [showOnboarding, setShowOnboarding] = useState(false);
+interface MorioContextType {
+  openMorio: (message?: string) => void;
+  closeMorio: () => void;
+  isOpen: boolean;
+}
 
+const MorioContext = createContext<MorioContextType | undefined>(undefined);
+
+export function useMorio() {
+  const context = useContext(MorioContext);
+  if (!context) {
+    throw new Error('useMorio must be used within MorioProvider');
+  }
+  return context;
+}
+
+interface MorioProviderProps {
+  children: ReactNode;
+  userId: string;
+  daoId?: string;
+}
+
+export function MorioProvider({ children, userId, daoId }: MorioProviderProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [initialMessage, setInitialMessage] = useState<string>();
+  const [location] = useLocation();
+
+  const openMorio = (message?: string) => {
+    setInitialMessage(message);
+    setIsOpen(true);
+  };
+
+  const closeMorio = () => {
+    setIsOpen(false);
+    setInitialMessage(undefined);
+  };
+
+  // Auto-show Morio on certain pages or first visit
   useEffect(() => {
-    // Show onboarding for new users or on specific pages
-    const isNewUser = !localStorage.getItem('morio-welcome-seen');
-    const isOnboardingPage = location === '/dashboard' || location === '/';
+    const hasSeenMorio = localStorage.getItem('morio-intro-seen');
+    const isLandingPage = location === '/';
     
-    if (isNewUser && isOnboardingPage) {
-      setShowOnboarding(true);
+    if (!hasSeenMorio && isLandingPage) {
+      setTimeout(() => {
+        openMorio('Welcome to MtaaDAO! How can I help you get started?');
+        localStorage.setItem('morio-intro-seen', 'true');
+      }, 3000);
     }
   }, [location]);
 
   return (
-    <>
+    <MorioContext.Provider value={{ openMorio, closeMorio, isOpen }}>
       {children}
       {userId && (
         <MorioFAB 
           userId={userId} 
-          daoId={daoId} 
-          showOnboarding={showOnboarding}
+          daoId={daoId}
+          showOnboarding={!localStorage.getItem('onboarding-complete')}
         />
       )}
-    </>
+    </MorioContext.Provider>
   );
 }
