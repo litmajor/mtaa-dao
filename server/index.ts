@@ -70,6 +70,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Import public stats routes
 import publicStatsRoutes from './routes/public-stats';
+import treasuryIntelligenceRoutes from './routes/treasury-intelligence';
+import analyzerRoutes from './routes/analyzer';
+
+// Mount routes
 
 const app = express();
 
@@ -295,6 +299,8 @@ app.use((req, res, next) => {
     app.use('/api/cross-chain', crossChainRoutes);
     app.use('/api/morio', morioRoutes);
     app.use('/api/public-stats', publicStatsRoutes);
+    app.use('/api/treasury-intelligence', treasuryIntelligenceRoutes);
+    app.use('/api/analyzer', analyzerRoutes);
 
     // New feature routes
     app.use('/api/dao-of-the-week', (await import('./routes/dao-of-the-week')).default);
