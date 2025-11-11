@@ -46,11 +46,24 @@ export default function Proposals() {
     navigate(`/proposals/${proposal.id}`);
   };
 
+
   if (proposalsLoading) {
     return <div className="p-8 text-center text-lg">Loading proposals...</div>;
   }
   if (proposalsError) {
     return <div className="p-8 text-center text-red-500">Failed to load proposals: {proposalsError.message}</div>;
+  }
+  if (!proposals || proposals.length === 0) {
+    return (
+      <div className="max-w-2xl mx-auto py-10 px-4 text-center">
+        <h2 className="text-2xl font-bold mb-4">No proposals yet</h2>
+        <p className="text-gray-600 mb-6">Be the first to create a proposal and help shape your DAO's future!</p>
+        <Button className="bg-gradient-mtaa text-white px-6 py-3 rounded-xl font-semibold hover:opacity-90">
+          <Plus className="mr-2 h-4 w-4" />
+          Create Proposal
+        </Button>
+      </div>
+    );
   }
 
   return (

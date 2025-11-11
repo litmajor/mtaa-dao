@@ -1,3 +1,6 @@
+  // Example: check if user is in a DAO (replace with real logic if needed)
+  const isInDao = user?.daoId || (user?.daos && user.daos.length > 0);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -66,6 +69,15 @@ export default function Navigation() {
   const isLoggedIn = !!user;
 
   // Organized navigation with dashboard categories
+
+  // Add quick access items
+  const quickAccessItems = [
+    { href: "/", label: "Home", icon: "🏠" },
+    { href: "/profile", label: "Profile", icon: "👤" },
+    { href: "/settings", label: "Settings", icon: "⚙️" },
+    { href: "/help", label: "Help", icon: "❓" },
+  ];
+
   const dashboardItems = [
     { href: "/dashboard", label: "Community Dashboard", icon: "🏛️", description: "DAO activities & proposals" },
     { href: "/vault-dashboard", label: "Vault Dashboard", icon: "🏦", description: "DeFi portfolio & governance" },
@@ -73,10 +85,11 @@ export default function Navigation() {
   ];
 
   const primaryNavItems = [
-    { href: "/proposals", label: "Proposals", icon: "📋" },
-    { href: "/tasks", label: "Tasks", icon: "🎯" },
-    { href: "/daos", label: "DAOs", icon: "🏛️" },
-    { href: "/rewards", label: "Rewards", icon: "🎁" },
+  // Only show Proposals if user is in a DAO
+  ...(isInDao ? [{ href: "/proposals", label: "Proposals", icon: "📋" }] : []),
+  { href: "/tasks", label: "Tasks", icon: "🎯" },
+  { href: "/daos", label: "DAOs", icon: "🏛️" },
+  { href: "/rewards", label: "Rewards", icon: "🎁" },
   ];
 
   const vaultItems = [
@@ -136,8 +149,25 @@ export default function Navigation() {
             </Link>
 
             {/* Navigation Items */}
-            {isLoggedIn && (
-              <div className="hidden lg:flex items-center space-x-1">
+            <div className="hidden lg:flex items-center space-x-1" role="menubar" aria-label="Main navigation">
+              {/* Quick Access */}
+              {quickAccessItems.map((item) => (
+                <Link key={item.href} to={item.href} tabIndex={0} aria-label={item.label}>
+                  <Button
+                    variant="ghost"
+                    className={`relative font-medium px-4 py-2 rounded-lg transition-all duration-300 group ${
+                      isActive(item.href)
+                        ? "text-mtaa-orange bg-mtaa-orange/10 shadow-md shadow-mtaa-orange/20"
+                        : "text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white hover:bg-gray-100/50 dark:hover:bg-gray-800/50"
+                    }`}
+                  >
+                    <span className="flex items-center space-x-2">
+                      <span className="text-sm">{item.icon}</span>
+                      <span>{item.label}</span>
+                    </span>
+                  </Button>
+                </Link>
+              ))}
                 {/* Dashboard Dropdown */}
                 <div className="relative group">
                   <Button
@@ -182,7 +212,7 @@ export default function Navigation() {
 
                 {/* Primary Navigation */}
                 {primaryNavItems.map((item) => (
-                  <Link key={item.href} to={item.href}>
+                  <Link key={item.href} to={item.href} tabIndex={0} aria-label={item.label}>
                     <Button
                       variant="ghost"
                       className={`relative font-medium px-4 py-2 rounded-lg transition-all duration-300 group ${
@@ -388,8 +418,10 @@ export default function Navigation() {
             <Button
               variant="ghost"
               size="sm"
+              aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
               onClick={toggleTheme}
               className="p-2 rounded-full text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-gray-100/50 dark:hover:bg-gray-800/50 transition-all duration-300"
+              tabIndex={0}
             >
               {theme === "light" ? (
                 <Moon className="w-5 h-5 hover:rotate-12 transition-transform duration-300" />
@@ -504,26 +536,85 @@ export default function Navigation() {
       </div>
 
       {/* Mobile Menu Toggle - Hidden for now but can be expanded */}
-      <div className="lg:hidden px-4 pb-4">
-        <div className="flex flex-wrap gap-2">
-          {isLoggedIn && [...dashboardItems, ...primaryNavItems].map((item) => (
-            <Link key={item.href} to={item.href}>
+      {/* Hamburger menu button */}
+      <div className="lg:hidden px-4 pb-2 flex justify-between items-center">
+        <AnimatedLogo variant="icon" size="md" />
+        <Button
+          variant="ghost"
+          aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          className="p-2 rounded-full"
+        >
+          <span className="sr-only">Toggle navigation</span>
+          <span>{mobileMenuOpen ? "✖️" : "☰"}</span>
+        </Button>
+      </div>
+
+      {/* Bottom Navigation Bar for Priority Items */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 flex justify-around items-center py-2 lg:hidden">
+        {[...quickAccessItems, ...dashboardItems, ...primaryNavItems.slice(0, 3)].map((item) => (
+          <Link key={item.href} to={item.href} tabIndex={0} aria-label={item.label}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`flex flex-col items-center justify-center px-2 py-1 rounded-lg ${
+                isActive(item.href)
+                  ? "text-mtaa-orange bg-mtaa-orange/10"
+                  : "text-gray-600 hover:text-gray-900 dark:text-gray-300"
+              }`}
+              aria-current={isActive(item.href) ? "page" : undefined}
+            >
+              <span className="text-lg">{item.icon}</span>
+              <span className="text-xs mt-1">{item.label}</span>
+            </Button>
+          </Link>
+        ))}
+      </div>
+
+      {/* Mobile Drawer Menu */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex flex-col"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white dark:bg-gray-900 w-full max-w-xs h-full shadow-xl p-6 overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <AnimatedLogo variant="icon" size="md" />
               <Button
                 variant="ghost"
-                size="sm"
-                className={`text-xs px-3 py-1 rounded-full ${
-                  isActive(item.href)
-                    ? "text-mtaa-orange bg-mtaa-orange/10"
-                    : "text-gray-600 hover:text-gray-900 dark:text-gray-300"
-                }`}
+                aria-label="Close menu"
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-2 rounded-full"
               >
-                <span className="mr-1">{item.icon}</span>
-                {item.label}
+                <span className="sr-only">Close navigation</span>
+                ✖️
               </Button>
-            </Link>
-          ))}
+            </div>
+            <nav role="navigation" aria-label="Mobile navigation">
+              <div className="flex flex-col gap-2">
+                {[...quickAccessItems, ...dashboardItems, ...primaryNavItems, ...vaultItems, ...walletItems, ...daoItems, ...utilityItems, ...adminItems].map((item) => (
+                  <Link key={item.href} to={item.href} tabIndex={0} aria-label={item.label} onClick={() => setMobileMenuOpen(false)}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={`w-full justify-start text-base px-3 py-2 rounded-lg ${
+                        isActive(item.href)
+                          ? "text-mtaa-orange bg-mtaa-orange/10"
+                          : "text-gray-600 hover:text-gray-900 dark:text-gray-300"
+                      }`}
+                      aria-current={isActive(item.href) ? "page" : undefined}
+                    >
+                      <span className="mr-2">{item.icon}</span>
+                      {item.label}
+                    </Button>
+                  </Link>
+                ))}
+              </div>
+            </nav>
+          </div>
         </div>
-      </div>
+      )}
     </nav>
   );
 }

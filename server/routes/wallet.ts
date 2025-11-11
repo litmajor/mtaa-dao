@@ -1492,6 +1492,25 @@ router.get('/exchange-rates', async (req, res) => {
 });
 
 // === ENHANCED MULTISIG ENDPOINTS ===
+// POST /api/wallet/create - Create a personal wallet (for any authenticated user)
+router.post('/create', isAuthenticated, async (req, res) => {
+  try {
+    const { userId, walletType = 'personal', name } = req.body;
+    // In production, deploy wallet contract or create DB record
+    const mockWallet = {
+      address: '0x' + Math.random().toString(16).substr(2, 40),
+      userId,
+      walletType,
+      name: name || 'Personal Wallet',
+      createdAt: new Date().toISOString()
+    };
+    // Optionally save to DB here
+    res.json(mockWallet);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
 
 // POST /api/wallet/multisig/create
 router.post('/multisig/create', requireRole('admin', 'elder'), async (req, res) => {

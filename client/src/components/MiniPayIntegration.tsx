@@ -184,16 +184,16 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
   }
 
   return (
-    <div className="w-full max-w-md mx-auto space-y-4">
+    <div className="w-full max-w-md mx-auto space-y-6">
       {/* Connection Status */}
-      <Card>
+      <Card className="bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 shadow">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100">
             <Smartphone className="h-5 w-5" />
             MiniPay Wallet
-            {isConnected && <Badge variant="secondary" className="bg-green-100 text-green-800">Connected</Badge>}
+            {isConnected && <Badge variant="secondary" className="bg-green-100 text-green-800 ml-2">Connected</Badge>}
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-gray-600 dark:text-gray-400">
             Secure mobile payments on Celo blockchain
           </CardDescription>
         </CardHeader>
@@ -202,32 +202,32 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
             <Button 
               onClick={connectMiniPay} 
               disabled={isLoading}
-              className="w-full"
+              className="w-full bg-blue-600 text-white font-semibold hover:bg-blue-700"
             >
               {isLoading ? 'Connecting...' : 'Connect MiniPay'}
             </Button>
           ) : (
             <div className="space-y-3">
-              <div className="p-3 bg-gray-50 rounded-lg">
-                <div className="text-sm text-gray-600">Wallet Address</div>
-                <div className="font-mono text-sm">{formatAddress(userAddress)}</div>
+              <div className="p-3 bg-gray-50 dark:bg-neutral-800 rounded-lg">
+                <div className="text-sm text-gray-600 dark:text-gray-400">Wallet Address</div>
+                <div className="font-mono text-sm text-gray-900 dark:text-gray-100">{formatAddress(userAddress)}</div>
                 {phoneNumber && (
                   <>
-                    <div className="text-sm text-gray-600 mt-2">Phone Number</div>
-                    <div className="font-mono text-sm">{phoneNumber}</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400 mt-2">Phone Number</div>
+                    <div className="font-mono text-sm text-gray-900 dark:text-gray-100">{phoneNumber}</div>
                   </>
                 )}
               </div>
 
               {/* Balances */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-blue-50 rounded-lg text-center">
-                  <div className="text-sm text-gray-600">CELO</div>
-                  <div className="font-semibold">{parseFloat(celoBalance).toFixed(4)}</div>
+                <div className="p-3 bg-blue-50 dark:bg-blue-900 rounded-lg text-center">
+                  <div className="text-sm text-gray-600 dark:text-gray-300">CELO</div>
+                  <div className="font-semibold text-gray-900 dark:text-gray-100">{parseFloat(celoBalance).toFixed(4)}</div>
                 </div>
-                <div className="p-3 bg-green-50 rounded-lg text-center">
-                  <div className="text-sm text-gray-600">cUSD</div>
-                  <div className="font-semibold">{parseFloat(cusdBalance).toFixed(2)}</div>
+                <div className="p-3 bg-green-50 dark:bg-green-900 rounded-lg text-center">
+                  <div className="text-sm text-gray-600 dark:text-gray-300">cUSD</div>
+                  <div className="font-semibold text-gray-900 dark:text-gray-100">{parseFloat(cusdBalance).toFixed(2)}</div>
                 </div>
               </div>
             </div>
@@ -237,9 +237,9 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
 
       {/* Send Payment */}
       {isConnected && (
-        <Card>
+        <Card className="bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 shadow">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100">
               <Send className="h-5 w-5" />
               Send Payment
             </CardTitle>
@@ -251,7 +251,7 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
                 variant={selectedCurrency === 'cUSD' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setSelectedCurrency('cUSD')}
-                className="flex-1"
+                className={`flex-1 ${selectedCurrency === 'cUSD' ? 'bg-green-600 text-white' : 'bg-gray-100 dark:bg-neutral-800 text-gray-900 dark:text-gray-100'}`}
               >
                 cUSD
               </Button>
@@ -259,7 +259,7 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
                 variant={selectedCurrency === 'CELO' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setSelectedCurrency('CELO')}
-                className="flex-1"
+                className={`flex-1 ${selectedCurrency === 'CELO' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-neutral-800 text-gray-900 dark:text-gray-100'}`}
               >
                 CELO
               </Button>
@@ -267,27 +267,29 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
 
             <div className="space-y-3">
               <div>
-                <label className="text-sm font-medium">Amount</label>
+                <label className="text-sm font-medium text-gray-900 dark:text-gray-100">Amount</label>
                 <Input
                   type="number"
                   placeholder="0.00"
                   value={sendAmount}
                   onChange={(e) => setSendAmount(e.target.value)}
+                  className="bg-gray-50 dark:bg-neutral-800 text-gray-900 dark:text-gray-100"
                 />
               </div>
 
               <div>
-                <label className="text-sm font-medium">Recipient Address</label>
+                <label className="text-sm font-medium text-gray-900 dark:text-gray-100">Recipient Address</label>
                 <Input
                   placeholder="0x..."
                   value={sendTo}
                   onChange={(e) => setSendTo(e.target.value)}
+                  className="bg-gray-50 dark:bg-neutral-800 text-gray-900 dark:text-gray-100"
                 />
               </div>
 
               {estimatedFee !== '0' && (
-                <div className="p-2 bg-gray-50 rounded text-sm">
-                  <span className="text-gray-600">Estimated Fee: </span>
+                <div className="p-2 bg-gray-50 dark:bg-neutral-800 rounded text-sm text-gray-900 dark:text-gray-100">
+                  <span className="text-gray-600 dark:text-gray-300">Estimated Fee: </span>
                   <span className="font-medium">{parseFloat(estimatedFee).toFixed(6)} CELO</span>
                 </div>
               )}
@@ -295,7 +297,7 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
               <Button
                 onClick={sendTransaction}
                 disabled={!sendAmount || !sendTo || isLoading}
-                className="w-full"
+                className="w-full bg-green-600 text-white font-semibold hover:bg-green-700 disabled:opacity-60"
               >
                 {isLoading ? 'Sending...' : `Send ${selectedCurrency}`}
               </Button>
@@ -305,31 +307,31 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
       )}
 
       {/* Features */}
-      <Card>
+      <Card className="bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 shadow">
         <CardHeader>
-          <CardTitle className="text-lg">MiniPay Features</CardTitle>
+          <CardTitle className="text-lg text-gray-900 dark:text-gray-100">MiniPay Features</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="flex items-center gap-2">
               <CheckCircle className="h-4 w-4 text-green-500" />
-              <span>cUSD Support</span>
+              <span className="text-gray-900 dark:text-gray-100">cUSD Support</span>
             </div>
             <div className="flex items-center gap-2">
               <CheckCircle className="h-4 w-4 text-green-500" />
-              <span>Mobile Payments</span>
+              <span className="text-gray-900 dark:text-gray-100">Mobile Payments</span>
             </div>
             <div className="flex items-center gap-2">
               <CheckCircle className="h-4 w-4 text-green-500" />
-              <span>Low Fees</span>
+              <span className="text-gray-900 dark:text-gray-100">Low Fees</span>
             </div>
             <div className="flex items-center gap-2">
               <CheckCircle className="h-4 w-4 text-green-500" />
-              <span>Fast Transfers</span>
+              <span className="text-gray-900 dark:text-gray-100">Fast Transfers</span>
             </div>
             <div className="flex items-center gap-2">
               <CheckCircle className="h-4 w-4 text-green-500" />
-              <span>CELO Support</span>
+              <span className="text-gray-900 dark:text-gray-100">CELO Support</span>
             </div>
           </div>
         </CardContent>
