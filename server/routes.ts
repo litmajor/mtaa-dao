@@ -82,6 +82,7 @@ import {
 
 // Import Vault API handlers
 import { createVaultHandler, getUserVaultsHandler, getVaultHandler, depositToVaultHandler, withdrawFromVaultHandler, allocateToVaultHandler, rebalanceVaultHandler, getVaultPortfolioHandler, getVaultPerformanceHandler, assessVaultRiskHandler, getVaultTransactionsHandler } from './api/vaults';
+import { allocateToStrategyHandler } from './api/vaults';
 import { getSupportedTokensHandler, getTokenPriceHandler } from './api/vaults';
 import { authorizeVaultAccess } from './api/authVault';
 

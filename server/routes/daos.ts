@@ -77,7 +77,7 @@ router.get("/", authenticate, async (req, res) => {
       SELECT 
         "daoId",
         COUNT(*) FILTER (WHERE "joinedAt" >= NOW() - INTERVAL '30 days') * 100.0 / NULLIF(COUNT(*), 0) as "growthRate"
-      FROM dao_members
+      FROM dao_memberships
       GROUP BY "daoId"
     `);
 

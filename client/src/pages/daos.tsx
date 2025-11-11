@@ -4,6 +4,8 @@ import { apiGet, apiPost } from '@/lib/api';
 import { useNavigate } from "react-router-dom";
 import { Plus, Users, DollarSign, TrendingUp, Settings, ArrowRight, Sparkles, Crown, Shield, Star, Zap, Globe, Heart, Trophy, Wallet, Eye, ChevronRight, Loader2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 type DaoRole = "elder" | "proposer" | "member" | null;
 
@@ -38,14 +40,35 @@ export default function EnhancedDAOs() {
     queryFn: async () => {
       const data = await apiGet("/api/daos");
       // Add UI properties to each DAO
-      return data.map((dao: any) => ({
-        ...dao,
-        gradient: dao.gradient || getGradientForTheme(dao.theme || 'purple'),
-        avatar: dao.avatar || getAvatarForCategory(dao.category),
-      }));
+      return Array.isArray(data) && data.length > 0
+        ? data.map((dao: any) => ({
+            ...dao,
+            gradient: dao.gradient || getGradientForTheme(dao.theme || 'purple'),
+            avatar: dao.avatar || getAvatarForCategory(dao.category),
+          }))
+        : [];
     },
     staleTime: 1 * 60 * 1000, // 1 minute
   });
+  // Fallback display if no DAOs
+  if (isLoading) {
+    return <div className="p-8 text-center text-lg">Loading DAOs...</div>;
+  }
+  if (error) {
+    return <div className="p-8 text-center text-red-500">Failed to load DAOs: {error.message}</div>;
+  }
+  if (!daosData || daosData.length === 0) {
+    return (
+      <div className="max-w-2xl mx-auto py-10 px-4 text-center">
+        <h2 className="text-2xl font-bold mb-4">No DAOs found</h2>
+        <p className="text-gray-600 mb-6">Create or join a DAO to get started with community governance!</p>
+        <Button className="bg-gradient-mtaa text-white px-6 py-3 rounded-xl font-semibold hover:opacity-90">
+          <Plus className="mr-2 h-4 w-4" />
+          Create DAO
+        </Button>
+      </div>
+    );
+  }
 
   // Join DAO mutation
   const joinMutation = useMutation({
