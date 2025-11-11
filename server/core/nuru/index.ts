@@ -12,6 +12,8 @@ import { GovernanceAnalyzer } from './analytics/governance_analyzer';
 import { CommunityAnalyzer } from './analytics/community_analyzer';
 import { RiskAssessor } from './ethics/risk_assessor';
 import type { UserContext, AnalysisRequest, ReasoningResponse } from './types';
+import { AgentCommunicator } from '../agent-framework/agent-communicator';
+import { MessageType } from '../agent-framework/message-bus';
 
 export class NuruCore {
   private intentClassifier: IntentClassifier;
@@ -20,6 +22,7 @@ export class NuruCore {
   private governanceAnalyzer: GovernanceAnalyzer;
   private communityAnalyzer: CommunityAnalyzer;
   private riskAssessor: RiskAssessor;
+  private communicator: AgentCommunicator;
 
   constructor() {
     this.intentClassifier = new IntentClassifier();
@@ -28,6 +31,43 @@ export class NuruCore {
     this.governanceAnalyzer = new GovernanceAnalyzer();
     this.communityAnalyzer = new CommunityAnalyzer();
     this.riskAssessor = new RiskAssessor();
+    this.communicator = new AgentCommunicator('NURU');
+    
+    this.setupMessageHandlers();
+  }
+
+  private setupMessageHandlers(): void {
+    this.communicator.subscribe([
+      MessageType.ANALYSIS_REQUEST,
+      MessageType.USER_QUERY,
+      MessageType.HEALTH_CHECK
+    ], this.handleMessage.bind(this));
+  }
+
+  private async handleMessage(message: any): Promise<void> {
+    try {
+      switch (message.type) {
+        case MessageType.ANALYSIS_REQUEST:
+          const analysis = await this.analyze(message.payload);
+          if (message.requiresResponse && message.correlationId) {
+            await this.communicator.respond(message.correlationId, analysis);
+          }
+          break;
+        case MessageType.USER_QUERY:
+          const understanding = await this.understand(message.payload.query, message.payload.context);
+          if (message.requiresResponse && message.correlationId) {
+            await this.communicator.respond(message.correlationId, understanding);
+          }
+          break;
+        case MessageType.HEALTH_CHECK:
+          if (message.requiresResponse && message.correlationId) {
+            await this.communicator.respond(message.correlationId, await this.healthCheck());
+          }
+          break;
+      }
+    } catch (error) {
+      console.error('NURU error handling message:', error);
+    }
   }
 
   /**

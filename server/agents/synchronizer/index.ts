@@ -19,6 +19,8 @@ import {
   SyncMetrics
 } from './types';
 import { Logger } from '../../utils/logger';
+import { AgentCommunicator } from '../../core/agent-framework/agent-communicator';
+import { MessageType } from '../../core/agent-framework/message-bus';
 
 const logger = new Logger('synchronizer-agent');
 
@@ -26,6 +28,7 @@ export class SynchronizerAgent extends BaseAgent {
   private vectorClock: VectorClock;
   private stateDiffer: StateDiffer;
   private recoveryManager: RecoveryManager;
+  private communicator: AgentCommunicator;
   private stateSnapshots: Map<string, StateSnapshot> = new Map();
   private syncMode: SyncMode = SyncMode.STEADY_BEAT;
   private agentStatus: AgentStatus = AgentStatus.ALIVE;
@@ -54,6 +57,9 @@ export class SynchronizerAgent extends BaseAgent {
     this.recoveryManager = new RecoveryManager();
     this.privateKey = this.generateKey();
     this.eventEmitter = new EventEmitter();
+    this.communicator = new AgentCommunicator(agentId);
+    
+    this.setupMessageHandlers();
 
     this.metrics = {
       syncLatency: [],
@@ -62,6 +68,49 @@ export class SynchronizerAgent extends BaseAgent {
       clusterDriftIndex: 0,
       commitIntegrityScore: 1.0
     };
+  }
+
+  private setupMessageHandlers(): void {
+    this.communicator.subscribe([
+      MessageType.STATE_SYNC,
+      MessageType.ROLLBACK_REQUEST,
+      MessageType.SYNC_BEAT,
+      MessageType.HEALTH_CHECK
+    ], this.handleMessage.bind(this));
+  }
+
+  private async handleMessage(message: any): Promise<void> {
+    try {
+      switch (message.type) {
+        case MessageType.STATE_SYNC:
+          const result = await this.synchronizeState(message.payload);
+          if (message.requiresResponse && message.correlationId) {
+            await this.communicator.respond(message.correlationId, result);
+          }
+          // Broadcast drift detection if inconsistencies found
+          if (!result.consistent) {
+            await this.communicator.broadcast(
+              MessageType.DRIFT_DETECTED,
+              { conflicts: result.conflicts, nodeId: message.payload.nodeId },
+              'high'
+            );
+          }
+          break;
+        case MessageType.ROLLBACK_REQUEST:
+          const success = await this.rollbackToCheckpoint(message.payload.checkpointId);
+          if (message.requiresResponse && message.correlationId) {
+            await this.communicator.respond(message.correlationId, { success });
+          }
+          break;
+        case MessageType.HEALTH_CHECK:
+          if (message.requiresResponse && message.correlationId) {
+            await this.communicator.respond(message.correlationId, this.getMetrics());
+          }
+          break;
+      }
+    } catch (error) {
+      logger.error('Error handling message', error);
+    }
   }
 
   private generateKey(): Buffer {

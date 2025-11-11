@@ -11,12 +11,15 @@ import { ResponseGenerator } from './api/response_generator';
 import { MorioSession, MorioResponse } from './types';
 import { OnboardingService } from '../../core/kwetu/services/onboarding_service';
 import type { ChatMessage, ChatResponse, MorioConfig } from './types';
+import { AgentCommunicator } from '../../core/agent-framework/agent-communicator';
+import { MessageType } from '../../core/agent-framework/message-bus';
 
 export class MorioAgent {
   private sessionManager: SessionManager;
   private responseGenerator: ResponseGenerator;
   private onboardingService: OnboardingService;
   private config: MorioConfig;
+  private communicator: AgentCommunicator;
 
   constructor(config?: Partial<MorioConfig>) {
     this.config = {
@@ -30,6 +33,37 @@ export class MorioAgent {
     this.sessionManager = new SessionManager();
     this.responseGenerator = new ResponseGenerator(this.config);
     this.onboardingService = new OnboardingService();
+    this.communicator = new AgentCommunicator('MORIO');
+    
+    this.setupMessageHandlers();
+  }
+
+  private setupMessageHandlers(): void {
+    this.communicator.subscribe([
+      MessageType.NOTIFICATION,
+      MessageType.HEALTH_CHECK
+    ], this.handleMessage.bind(this));
+  }
+
+  private async handleMessage(message: any): Promise<void> {
+    try {
+      switch (message.type) {
+        case MessageType.NOTIFICATION:
+          // Handle system notifications to relay to users
+          console.log('MORIO received notification:', message.payload);
+          break;
+        case MessageType.HEALTH_CHECK:
+          if (message.requiresResponse && message.correlationId) {
+            await this.communicator.respond(message.correlationId, {
+              status: 'healthy',
+              activeSessions: 'N/A' // Could track this
+            });
+          }
+          break;
+      }
+    } catch (error) {
+      console.error('MORIO error handling message:', error);
+    }
   }
 
   /**

@@ -1,0 +1,400 @@
+
+# Agent System Overview
+
+MtaaDAO's agent system consists of three core agents and an AI layer that work together to provide intelligent, automated, and secure DAO operations.
+
+## Core Agents
+
+### 1. ANALYZER (ANL-MTAA-001)
+
+**Purpose:** Financial intelligence, threat detection, and pattern recognition
+
+**Capabilities:**
+- Treasury health analysis
+- Fraud and anomaly detection
+- User behavior profiling
+- Proposal risk assessment
+- Voting pattern analysis
+
+**Communication:**
+- **Subscribes to:** `ANALYSIS_REQUEST`, `HEALTH_CHECK`
+- **Publishes:** `FRAUD_ALERT`, `ANOMALY_DETECTED`, `RISK_ASSESSMENT`
+- **Notifies:** DEFENDER (on threats), MORIO (on insights)
+
+**Key Methods:**
+```typescript
+// Analyze treasury health
+await analyzer.analyzeTreasuryHealth(daoId);
+
+// Detect fraud patterns
+await analyzer.detectFraud(daoId);
+
+// Profile user node
+await analyzer.profileNode(userId, daoId);
+
+// Analyze transaction
+await analyzer.analyzeTransaction(transaction);
+```
+
+**Example Usage:**
+```typescript
+import { analyzerAgent } from '@/agents/analyzer';
+
+// Get treasury health report
+const report = await analyzerAgent.analyzeTreasuryHealth('dao-123');
+
+if (report.threatLevel > ThreatLevel.MEDIUM) {
+  console.warn('Treasury health issues detected');
+  console.log('Findings:', report.findings);
+  console.log('Recommendations:', report.recommendations);
+}
+```
+
+### 2. DEFENDER (DEF-OBSIDIAN-001)
+
+**Purpose:** Active threat prevention, quarantine management, and ethical enforcement
+
+**Capabilities:**
+- Real-time threat detection
+- User quarantine/isolation
+- Ethical action review (via LUMEN module)
+- Behavioral analysis
+- Automated defense actions
+
+**Defense Modes:**
+- `SILENT_MONITOR`: Passive observation
+- `REACTIVE_DEFENSE`: Respond to threats
+- `ENGAGED_COMBAT`: Active threat mitigation
+- `ETHICAL_WAIT`: Awaiting ethical approval
+
+**Communication:**
+- **Subscribes to:** `THREAT_DETECTED`, `QUARANTINE_USER`, `RELEASE_USER`
+- **Publishes:** `DEFENSE_ACTION`, `QUARANTINE_USER`
+- **Notifies:** MORIO (on actions), KWETU (on user status changes)
+
+**Key Methods:**
+```typescript
+// Assess threat level
+const assessment = defender.assessThreat(behavior);
+
+// Execute defense action
+defender.executeDefenseAction(
+  ActionType.QUARANTINE,
+  'user-123',
+  ThreatLevel.HIGH,
+  'Suspicious voting pattern detected'
+);
+
+// Get system status
+const status = defender.getSystemStatus();
+```
+
+**Example Usage:**
+```typescript
+import { defenderAgent } from '@/agents/defender';
+
+// Monitor user behavior
+const behavior: AgentBehavior = {
+  agentId: 'user-123',
+  actionType: 'vote',
+  targetResource: 'proposal-456',
+  timestamp: new Date(),
+  maliciousScore: 0.8,
+  metadata: { rapid: true }
+};
+
+await defenderAgent.act(behavior);
+// Defender may quarantine user if threat is high
+```
+
+### 3. SYNCHRONIZER (SYNC-MTAA-001)
+
+**Purpose:** Distributed state synchronization and conflict resolution
+
+**Capabilities:**
+- Vector clock synchronization
+- State drift detection
+- Rollback recovery
+- Checkpoint management
+- Consensus building
+
+**Communication:**
+- **Subscribes to:** `STATE_SYNC`, `ROLLBACK_REQUEST`, `SYNC_BEAT`
+- **Publishes:** `DRIFT_DETECTED`, `CHECKPOINT_CREATED`
+- **Notifies:** All agents (on drift), MORIO (on rollback)
+
+**Key Methods:**
+```typescript
+// Generate heartbeat
+const beat = synchronizer.generateBeat();
+
+// Receive state from node
+synchronizer.receiveState(nodeId, stateData, version);
+
+// Detect drift
+const hasDrift = synchronizer.detectDrift();
+
+// Resolve conflicts
+const resolved = await synchronizer.resolveDrift();
+
+// Rollback to checkpoint
+await synchronizer.rollbackToCheckpoint(checkpointId);
+```
+
+**Example Usage:**
+```typescript
+import { synchronizerAgent } from '@/agents/synchronizer';
+
+// Sync state across nodes
+const result = await synchronizerAgent.synchronizeState({
+  nodeId: 'node-1',
+  timestamp: Date.now(),
+  data: currentState,
+  version: 2,
+  checksum: 'abc123'
+});
+
+if (!result.consistent) {
+  console.warn('State drift detected!');
+  console.log('Conflicts:', result.conflicts);
+  
+  // Resolve conflicts
+  const resolved = await synchronizerAgent.resolveDrift();
+}
+```
+
+## AI Layer
+
+### NURU - The Mind
+
+**Purpose:** Cognitive reasoning and analytical intelligence
+
+**Capabilities:**
+- Intent classification
+- Context management
+- Financial analytics
+- Governance analytics
+- Risk assessment
+
+**Communication:**
+- **Subscribes to:** `ANALYSIS_REQUEST`, `USER_QUERY`
+- **Publishes:** `ANALYSIS_RESPONSE`
+- **Collaborates with:** MORIO (for queries), ANALYZER (for data)
+
+### KWETU - The Body
+
+**Purpose:** DAO operations and execution layer
+
+**Capabilities:**
+- Treasury management
+- Governance execution
+- Community tracking
+- Onboarding flows
+
+**Communication:**
+- **Subscribes to:** `ACTION_REQUIRED`
+- **Executes:** DAO operations
+- **Collaborates with:** NURU (for decisions), MORIO (for user actions)
+
+### MORIO - The Spirit
+
+**Purpose:** Conversational interface and user interaction
+
+**Capabilities:**
+- Natural language understanding
+- Multi-language support
+- Session management
+- User guidance
+
+**Communication:**
+- **Subscribes to:** `NOTIFICATION`
+- **Publishes:** `USER_QUERY`, `ACTION_REQUIRED`
+- **Collaborates with:** NURU (understanding), KWETU (execution)
+
+## Agent Lifecycle
+
+### Initialization
+
+```typescript
+// 1. Create agent instance
+const agent = new AnalyzerAgent('ANL-MTAA-001');
+
+// 2. Initialize (sets up communicator and subscriptions)
+await agent.initialize();
+
+// 3. Agent is now active and listening for messages
+```
+
+### Processing
+
+```typescript
+// Agents process data through the `process()` method
+const result = await agent.process(inputData);
+
+// Metrics are automatically tracked
+const metrics = agent.getMetrics();
+// {
+//   tasksProcessed: 150,
+//   averageProcessingTime: 45,
+//   errorRate: 0.02,
+//   lastActive: Date
+// }
+```
+
+### Shutdown
+
+```typescript
+// Graceful shutdown
+await agent.shutdown();
+// - Unsubscribes from messages
+// - Completes pending tasks
+// - Saves state if needed
+```
+
+## Agent Collaboration Examples
+
+### Example 1: Fraud Detection Flow
+
+```typescript
+// User submits suspicious transaction
+// 1. ANALYZER detects anomaly
+const analysis = await analyzer.analyzeTransaction(tx);
+
+// 2. ANALYZER notifies DEFENDER
+if (analysis.threatLevel > ThreatLevel.MEDIUM) {
+  await analyzer.communicator.reportThreat({
+    type: 'transaction_anomaly',
+    transaction: tx,
+    severity: analysis.confidence
+  });
+}
+
+// 3. DEFENDER assesses and acts
+// (automatic via message subscription)
+
+// 4. MORIO notifies user
+// (automatic via DEFENDER notification)
+```
+
+### Example 2: State Sync Across Nodes
+
+```typescript
+// Node receives state update
+// 1. SYNCHRONIZER receives new state
+synchronizer.receiveState('node-2', newState, version);
+
+// 2. Detects drift
+const hasDrift = synchronizer.detectDrift();
+
+// 3. Broadcasts drift alert
+if (hasDrift) {
+  await synchronizer.communicator.broadcast(
+    MessageType.DRIFT_DETECTED,
+    { driftIndex: 0.6 }
+  );
+}
+
+// 4. Other agents respond
+// - ANALYZER: Logs pattern
+// - DEFENDER: Checks for manipulation
+// - MORIO: May notify admin
+```
+
+### Example 3: User Query Processing
+
+```typescript
+// User asks: "What's our treasury balance?"
+
+// 1. MORIO receives query
+const query = "What's our treasury balance?";
+
+// 2. MORIO → NURU: Understand intent
+const intent = await morio.communicator.requestFrom(
+  'NURU',
+  MessageType.USER_QUERY,
+  { query, context: userContext }
+);
+
+// 3. NURU → ANALYZER: Get treasury data
+const data = await nuru.communicator.requestAnalysis(
+  'treasury',
+  { daoId: userContext.daoId }
+);
+
+// 4. MORIO responds to user
+return {
+  text: `Your DAO has ${data.balance} cUSD`,
+  data: data
+};
+```
+
+## Metrics and Monitoring
+
+### Agent Health Checks
+
+```typescript
+// Check all agents
+const health = await Promise.all([
+  analyzer.getMetrics(),
+  defender.getSystemStatus(),
+  synchronizer.getMetrics()
+]);
+
+console.log('System Health:', health);
+```
+
+### Message Bus Statistics
+
+```typescript
+import { messageBus } from '@/core/agent-framework/message-bus';
+
+const stats = messageBus.getStats();
+// Track message throughput, subscriber count, etc.
+```
+
+## Best Practices
+
+### 1. Error Handling
+
+Always wrap agent operations in try-catch:
+
+```typescript
+try {
+  const result = await agent.process(data);
+} catch (error) {
+  console.error('Agent processing failed:', error);
+  // Implement fallback or retry logic
+}
+```
+
+### 2. Timeout Management
+
+Set reasonable timeouts for agent requests:
+
+```typescript
+const result = await communicator.requestFrom(
+  'AGENT-ID',
+  MessageType.REQUEST,
+  data,
+  5000  // 5 second timeout
+);
+```
+
+### 3. Resource Cleanup
+
+Always shutdown agents properly:
+
+```typescript
+process.on('SIGTERM', async () => {
+  await analyzer.shutdown();
+  await defender.shutdown();
+  await synchronizer.shutdown();
+  process.exit(0);
+});
+```
+
+## Next Steps
+
+- [Agent Communication Architecture](/developer/agent-communication)
+- [Building Custom Agents](/developer/custom-agents)
+- [AI Layer Integration](/ai-layer/architecture)

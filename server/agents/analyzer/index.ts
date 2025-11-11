@@ -14,12 +14,15 @@ import {
   Finding 
 } from './types';
 import { Logger } from '../../utils/logger';
+import { AgentCommunicator } from '../../core/agent-framework/agent-communicator';
+import { MessageType } from '../../core/agent-framework/message-bus';
 
 const logger = new Logger('analyzer-agent');
 
 export class AnalyzerAgent extends BaseAgent {
   private patternEngine: PatternEngine;
   private anomalyDetector: AnomalyDetector;
+  private communicator: AgentCommunicator;
 
   constructor(agentId: string = 'ANL-MTAA-001') {
     super({
@@ -38,6 +41,40 @@ export class AnalyzerAgent extends BaseAgent {
 
     this.patternEngine = new PatternEngine();
     this.anomalyDetector = new AnomalyDetector();
+    this.communicator = new AgentCommunicator(agentId);
+    
+    // Setup message subscriptions
+    this.setupMessageHandlers();
+  }
+
+  private setupMessageHandlers(): void {
+    this.communicator.subscribe([
+      MessageType.ANALYSIS_REQUEST,
+      MessageType.HEALTH_CHECK
+    ], this.handleMessage.bind(this));
+  }
+
+  private async handleMessage(message: any): Promise<void> {
+    try {
+      switch (message.type) {
+        case MessageType.ANALYSIS_REQUEST:
+          const result = await this.process(message.payload);
+          if (message.requiresResponse && message.correlationId) {
+            await this.communicator.respond(message.correlationId, result);
+          }
+          break;
+        case MessageType.HEALTH_CHECK:
+          if (message.requiresResponse && message.correlationId) {
+            await this.communicator.respond(message.correlationId, {
+              status: this.getStatus(),
+              metrics: this.getMetrics()
+            });
+          }
+          break;
+      }
+    } catch (error) {
+      logger.error('Error handling message', error);
+    }
   }
 
   async initialize(): Promise<void> {
@@ -82,6 +119,16 @@ export class AnalyzerAgent extends BaseAgent {
         confidence: anomaly.score
       });
       maxThreatLevel = this.getHigherThreatLevel(maxThreatLevel, findings[findings.length - 1].severity);
+      
+      // Notify DEFENDER if threat is significant
+      if (anomaly.score > 0.7) {
+        await this.communicator.reportThreat({
+          type: 'transaction_anomaly',
+          severity: anomaly.score,
+          transaction,
+          reasons: anomaly.reasons
+        });
+      }
     }
 
     // Pattern detection

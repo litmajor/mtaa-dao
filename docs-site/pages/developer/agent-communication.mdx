@@ -1,0 +1,491 @@
+
+# Agent Communication Architecture
+
+MtaaDAO uses a sophisticated message bus architecture to enable seamless communication between agents and the AI layer (NURU, KWETU, MORIO).
+
+## Overview
+
+All agents and AI components communicate through a centralized **Message Bus** that provides:
+- **Pub/Sub messaging** for broadcasts
+- **Request/Response** patterns for synchronous communication
+- **Priority queuing** for critical messages
+- **Message persistence** and history tracking
+- **Type-safe message contracts**
+
+## Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   Message Bus                       │
+│  (Pub/Sub, Request/Response, Priority Queue)       │
+└─────────────────────────────────────────────────────┘
+         ↑           ↑           ↑           ↑
+         │           │           │           │
+    ┌────┴────┐ ┌────┴────┐ ┌───┴────┐ ┌────┴────┐
+    │ANALYZER │ │DEFENDER │ │  SYNC  │ │  MORIO  │
+    └────┬────┘ └────┬────┘ └───┬────┘ └────┬────┘
+         │           │           │           │
+         └───────────┴───────────┴───────────┘
+                     ↓           ↓
+                 ┌───┴────┐ ┌───┴────┐
+                 │  NURU  │ │ KWETU  │
+                 └────────┘ └────────┘
+```
+
+## Message Types
+
+### Core Message Types
+
+```typescript
+enum MessageType {
+  // Analyzer Messages
+  FRAUD_ALERT = 'fraud_alert',
+  ANOMALY_DETECTED = 'anomaly_detected',
+  TREASURY_HEALTH = 'treasury_health',
+  RISK_ASSESSMENT = 'risk_assessment',
+  
+  // Synchronizer Messages
+  STATE_SYNC = 'state_sync',
+  DRIFT_DETECTED = 'drift_detected',
+  ROLLBACK_REQUEST = 'rollback_request',
+  CHECKPOINT_CREATED = 'checkpoint_created',
+  
+  // Defender Messages
+  THREAT_DETECTED = 'threat_detected',
+  QUARANTINE_USER = 'quarantine_user',
+  RELEASE_USER = 'release_user',
+  ETHICAL_REVIEW = 'ethical_review',
+  
+  // AI Layer Messages
+  ANALYSIS_REQUEST = 'analysis_request',
+  ANALYSIS_RESPONSE = 'analysis_response',
+  ACTION_REQUIRED = 'action_required',
+  NOTIFICATION = 'notification',
+  USER_QUERY = 'user_query',
+  
+  // System Messages
+  AGENT_ONLINE = 'agent_online',
+  AGENT_OFFLINE = 'agent_offline',
+  HEALTH_CHECK = 'health_check'
+}
+```
+
+### Message Structure
+
+```typescript
+interface AgentMessage {
+  id: string;                    // Unique message ID
+  from: string;                  // Sender agent ID
+  to: string | string[];         // Recipient(s) or 'broadcast'
+  type: MessageType;             // Message type
+  payload: any;                  // Message data
+  timestamp: Date;               // When sent
+  priority: MessagePriority;     // low | medium | high | critical
+  requiresResponse: boolean;     // Request/response pattern
+  correlationId?: string;        // For tracking req/res pairs
+  ttl?: number;                  // Time to live (ms)
+}
+```
+
+## Agent Communicator API
+
+Each agent uses an `AgentCommunicator` instance to interact with the message bus:
+
+### Initialization
+
+```typescript
+import { AgentCommunicator } from '@/core/agent-framework/agent-communicator';
+
+const communicator = new AgentCommunicator('AGENT-ID');
+```
+
+### Subscribe to Messages
+
+```typescript
+communicator.subscribe([
+  MessageType.THREAT_DETECTED,
+  MessageType.HEALTH_CHECK
+], async (message) => {
+  // Handle message
+  console.log('Received:', message.type, message.payload);
+});
+```
+
+### Send Messages
+
+```typescript
+// Send to specific agent
+await communicator.sendTo(
+  'ANL-MTAA-001',          // recipient
+  MessageType.ANALYSIS_REQUEST,
+  { transactionId: '123' }, // payload
+  'high'                    // priority
+);
+
+// Broadcast to all
+await communicator.broadcast(
+  MessageType.DRIFT_DETECTED,
+  { driftIndex: 0.75 },
+  'critical'
+);
+```
+
+### Request/Response Pattern
+
+```typescript
+// Request data from another agent
+const analysis = await communicator.requestFrom(
+  'ANL-MTAA-001',
+  MessageType.ANALYSIS_REQUEST,
+  { type: 'treasury', daoId: 'dao-123' },
+  5000  // timeout in ms
+);
+
+// Respond to a request
+if (message.requiresResponse && message.correlationId) {
+  await communicator.respond(
+    message.correlationId,
+    { status: 'complete', data: result }
+  );
+}
+```
+
+### Helper Methods
+
+```typescript
+// Notify AI layer
+await communicator.notifyAI('NURU', MessageType.USER_QUERY, {
+  query: 'What is our balance?',
+  userId: 'user-123'
+});
+
+// Request analysis
+const result = await communicator.requestAnalysis('treasury', {
+  daoId: 'dao-123',
+  timeframe: '30d'
+});
+
+// Report threat
+await communicator.reportThreat({
+  type: 'suspicious_transaction',
+  severity: 0.8,
+  details: { ... }
+});
+```
+
+## Communication Patterns
+
+### Pattern 1: Event Broadcasting
+
+When an event occurs that multiple agents need to know about:
+
+```typescript
+// ANALYZER detects anomaly
+await communicator.broadcast(
+  MessageType.ANOMALY_DETECTED,
+  {
+    type: 'transaction',
+    severity: 0.9,
+    transaction: txData
+  },
+  'high'
+);
+
+// DEFENDER receives and acts
+// SYNCHRONIZER receives and logs
+// MORIO receives and may notify user
+```
+
+### Pattern 2: Request/Response
+
+When an agent needs data from another:
+
+```typescript
+// MORIO asks NURU to analyze a query
+const understanding = await morioComm.requestFrom(
+  'NURU',
+  MessageType.USER_QUERY,
+  { query: 'Show me proposals', context: userContext }
+);
+
+// NURU processes and responds
+// MORIO receives response and continues
+```
+
+### Pattern 3: Workflow Coordination
+
+Complex multi-agent workflows:
+
+```typescript
+// 1. User query → MORIO
+const query = 'Create a proposal for 10k funding';
+
+// 2. MORIO → NURU: Understand intent
+const intent = await morio.communicator.requestFrom(
+  'NURU', MessageType.USER_QUERY, { query }
+);
+
+// 3. NURU → ANALYZER: Risk assessment
+const risk = await nuru.communicator.requestAnalysis(
+  'proposal_risk', { amount: 10000, daoId }
+);
+
+// 4. ANALYZER → DEFENDER: Check if safe
+if (risk.threatLevel > ThreatLevel.MEDIUM) {
+  await analyzer.communicator.reportThreat(risk);
+}
+
+// 5. If approved → KWETU: Execute
+const result = await morio.communicator.sendTo(
+  'KWETU', MessageType.ACTION_REQUIRED, {
+    service: 'governance',
+    method: 'createProposal',
+    params: proposalData
+  }
+);
+
+// 6. MORIO → User: Respond
+return { success: true, proposalId: result.id };
+```
+
+## Agent Integration Examples
+
+### ANALYZER Agent
+
+```typescript
+export class AnalyzerAgent extends BaseAgent {
+  private communicator: AgentCommunicator;
+
+  constructor(agentId: string) {
+    super({ id: agentId, ... });
+    this.communicator = new AgentCommunicator(agentId);
+    
+    this.communicator.subscribe([
+      MessageType.ANALYSIS_REQUEST
+    ], this.handleAnalysisRequest.bind(this));
+  }
+
+  private async handleAnalysisRequest(msg: AgentMessage) {
+    const result = await this.analyze(msg.payload);
+    
+    // Respond to requester
+    await this.communicator.respond(msg.correlationId!, result);
+    
+    // Alert DEFENDER if threat detected
+    if (result.threatLevel > ThreatLevel.MEDIUM) {
+      await this.communicator.reportThreat(result);
+    }
+  }
+}
+```
+
+### DEFENDER Agent
+
+```typescript
+export class DefenderAgent extends BaseAgent {
+  private communicator: AgentCommunicator;
+
+  constructor(agentId: string) {
+    super({ id: agentId, ... });
+    this.communicator = new AgentCommunicator(agentId);
+    
+    this.communicator.subscribe([
+      MessageType.THREAT_DETECTED
+    ], this.handleThreat.bind(this));
+  }
+
+  private async handleThreat(msg: AgentMessage) {
+    const threat = msg.payload;
+    const action = this.determineAction(threat);
+    
+    // Execute defense
+    await this.executeDefenseAction(action);
+    
+    // Notify MORIO to alert user
+    await this.communicator.notifyAI('MORIO', 
+      MessageType.NOTIFICATION, {
+        type: 'threat_mitigated',
+        details: action
+      }
+    );
+  }
+}
+```
+
+### NURU (AI Mind)
+
+```typescript
+export class NuruCore {
+  private communicator: AgentCommunicator;
+
+  constructor() {
+    this.communicator = new AgentCommunicator('NURU');
+    
+    this.communicator.subscribe([
+      MessageType.ANALYSIS_REQUEST,
+      MessageType.USER_QUERY
+    ], this.handleRequest.bind(this));
+  }
+
+  private async handleRequest(msg: AgentMessage) {
+    if (msg.type === MessageType.USER_QUERY) {
+      const understanding = await this.understand(
+        msg.payload.query,
+        msg.payload.context
+      );
+      await this.communicator.respond(
+        msg.correlationId!,
+        understanding
+      );
+    }
+  }
+}
+```
+
+## Message Bus Monitoring
+
+### Get Bus Statistics
+
+```typescript
+import { messageBus } from '@/core/agent-framework/message-bus';
+
+const stats = messageBus.getStats();
+// {
+//   totalMessages: 1523,
+//   subscriberCount: 12,
+//   pendingResponses: 3,
+//   messagesByType: {
+//     'fraud_alert': 45,
+//     'state_sync': 230,
+//     ...
+//   }
+// }
+```
+
+### View Message History
+
+```typescript
+const recentMessages = messageBus.getHistory(50);
+// Last 50 messages with full details
+```
+
+### Health Checks
+
+```typescript
+// Broadcast health check to all agents
+await communicator.broadcast(
+  MessageType.HEALTH_CHECK,
+  {},
+  'high'
+);
+
+// Each agent responds with their status
+```
+
+## Best Practices
+
+### 1. Always Handle Errors
+
+```typescript
+this.communicator.subscribe([...], async (msg) => {
+  try {
+    await this.handleMessage(msg);
+  } catch (error) {
+    console.error('Message handling failed:', error);
+    // Don't let one failure break the subscription
+  }
+});
+```
+
+### 2. Set Appropriate Priorities
+
+```typescript
+// Critical: System failures, security threats
+priority: 'critical'
+
+// High: User-facing actions, time-sensitive ops
+priority: 'high'
+
+// Medium: Regular operations (default)
+priority: 'medium'
+
+// Low: Logging, metrics collection
+priority: 'low'
+```
+
+### 3. Use Timeouts for Requests
+
+```typescript
+try {
+  const result = await communicator.requestFrom(
+    'AGENT-ID',
+    MessageType.SOME_REQUEST,
+    payload,
+    3000  // 3 second timeout
+  );
+} catch (error) {
+  // Handle timeout or failure
+  console.error('Request timed out');
+}
+```
+
+### 4. Clean Up Subscriptions
+
+```typescript
+class MyAgent {
+  async shutdown() {
+    // Unsubscribe from all messages
+    this.communicator.unsubscribe();
+  }
+}
+```
+
+## Testing
+
+### Mock Message Bus
+
+```typescript
+import { MessageBus } from '@/core/agent-framework/message-bus';
+
+const mockBus = new MessageBus();
+const agent = new MyAgent('TEST-001');
+agent.communicator.bus = mockBus;
+
+// Send test message
+await mockBus.publish({
+  id: 'test-1',
+  from: 'TESTER',
+  to: 'TEST-001',
+  type: MessageType.HEALTH_CHECK,
+  payload: {},
+  timestamp: new Date(),
+  priority: 'medium',
+  requiresResponse: false
+});
+```
+
+## Troubleshooting
+
+### Messages Not Delivered
+
+1. Check agent is subscribed to message type
+2. Verify recipient ID is correct
+3. Check message bus logs
+
+### Request Timeout
+
+1. Increase timeout value
+2. Check recipient agent is online
+3. Verify recipient handles message type
+
+### Memory Leaks
+
+1. Ensure agents unsubscribe on shutdown
+2. Monitor message history size (auto-limited to 1000)
+3. Clear old pending responses
+
+## Next Steps
+
+- [Learn about individual agents](/developer/agents)
+- [AI Layer integration](/ai-layer/architecture)
+- [Building custom agents](/developer/custom-agents)
