@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "web", "rust-stable"]
+modules = ["nodejs-20", "python-3.12", "web"]
 [agent]
 expertMode = true
 integrations = ["javascript_stripe:1.0.0"]
@@ -78,6 +78,10 @@ exposeLocalhost = true
 [[ports]]
 localPort = 5000
 externalPort = 80
+
+[[ports]]
+localPort = 39607
+externalPort = 3001
 
 [deployment]
 deploymentTarget = "autoscale"
