@@ -68,6 +68,8 @@ import { gasPriceOracle } from './services/gasPriceOracle';
 // Import example function for wallet demonstration
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+// Import public stats routes
+import publicStatsRoutes from './routes/public-stats';
 
 const app = express();
 
@@ -292,7 +294,8 @@ app.use((req, res, next) => {
     app.use('/api/reputation', reputationRoutes); // Added reputation routes
     app.use('/api/cross-chain', crossChainRoutes);
     app.use('/api/morio', morioRoutes);
-    
+    app.use('/api/public-stats', publicStatsRoutes);
+
     // New feature routes
     app.use('/api/dao-of-the-week', (await import('./routes/dao-of-the-week')).default);
     app.use('/api/telegram-bot', (await import('./routes/telegram-bot')).default);

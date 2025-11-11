@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Bell, Moon, Sun, Settings, LogOut, ChevronDown, Sparkles, Brain } from "lucide-react";
+import { Bell, Moon, Sun, Settings, LogOut, ChevronDown, Sparkles, Brain, Wallet } from "lucide-react";
 import { useAuth } from "@/pages/hooks/useAuth";
 import { useEffect, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
@@ -10,6 +10,7 @@ import { useTheme } from "@/components/theme-provider";
 import type { User } from "../../../shared/schema";
 import NotificationCenter from "./NotificationCenter";
 import { AnimatedLogo } from "@/components/ui/logo";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 export default function Navigation() {
   const { user } = useAuth() as { user?: User };
@@ -19,6 +20,7 @@ export default function Navigation() {
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(false); // Assuming darkMode state is managed here or should be
 
   // Fetch notification count
   useEffect(() => {
@@ -65,7 +67,7 @@ export default function Navigation() {
 
   const isActive = (path: string) => location.pathname === path;
   const isLoggedIn = !!user;
-  
+
   // Example: check if user is in a DAO (replace with real logic if needed)
   const isInDao = user?.daoId || (user?.daos && user.daos.length > 0);
 
@@ -108,7 +110,7 @@ export default function Navigation() {
     { href: "/dao/treasury", label: "DAO Treasury", icon: "💰" },
     { href: "/dao/contributors", label: "Contributors", icon: "👥" },
     { href: "/dao/disbursements", label: "Disbursements", icon: "💸" },
-    { href: "/dao/settings", label: "Settings", icon: "⚙️" },
+    { href: "/dao/settings", icon: "⚙️", label: "Settings" },
   ];
 
   const adminItems = user?.roles === "admin" || user?.roles === "elder" ? [
@@ -416,21 +418,49 @@ export default function Navigation() {
 
           {/* Right Section */}
           <div className="flex items-center space-x-3">
-            {/* Theme Toggle */}
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
-              onClick={toggleTheme}
-              className="p-2 rounded-full text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-gray-100/50 dark:hover:bg-gray-800/50 transition-all duration-300"
-              tabIndex={0}
-            >
-              {theme === "light" ? (
-                <Moon className="w-5 h-5 hover:rotate-12 transition-transform duration-300" />
-              ) : (
-                <Sun className="w-5 h-5 hover:rotate-12 transition-transform duration-300" />
+            {/* Theme Toggle and Wallet Address Display */}
+            <div className="flex items-center space-x-3">
+              {/* Wallet Address Display */}
+              {user?.walletAddress && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(user.walletAddress!);
+                        // You can add a toast notification here
+                      }}
+                      className="hidden md:flex items-center space-x-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                    >
+                      <Wallet className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                      <span className="text-xs font-mono text-gray-700 dark:text-gray-300">
+                        {user.walletAddress.slice(0, 6)}...{user.walletAddress.slice(-4)}
+                      </span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Click to copy address</TooltipContent>
+                </Tooltip>
               )}
-            </Button>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => {
+                      toggleTheme();
+                      setDarkMode(!darkMode); // Assuming toggleTheme also updates the theme state
+                    }}
+                    className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                    aria-label="Toggle dark mode"
+                  >
+                    {theme === "light" ? (
+                      <Moon className="w-4 h-4 text-gray-600" />
+                    ) : (
+                      <Sun className="w-4 h-4 text-yellow-500" />
+                    )}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Toggle {theme === "light" ? 'Dark' : 'Light'} Mode</TooltipContent>
+              </Tooltip>
+            </div>
 
             {isLoggedIn ? (
               <>
