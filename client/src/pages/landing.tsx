@@ -59,11 +59,35 @@ export default function MtaaDAOLanding() {
     }
   ];
 
+  const [platformStats, setPlatformStats] = useState({
+    members: "2K+",
+    daos: "500+",
+    tvl: "$300K+",
+    satisfaction: "85%+"
+  });
+
+  useEffect(() => {
+    async function fetchPlatformStats() {
+      try {
+        const data = await apiGet('/api/public-stats');
+        setPlatformStats({
+          members: formatNumber(data.totalUsers) + '+',
+          daos: formatNumber(data.totalDaos) + '+',
+          tvl: formatCurrency(data.totalTVL),
+          satisfaction: Math.round(data.satisfactionRate) + '%+'
+        });
+      } catch (err) {
+        console.error('Failed to fetch platform stats:', err);
+      }
+    }
+    fetchPlatformStats();
+  }, []);
+
   const stats = [
-    { number: "2K+", label: "Active Members", icon: Users },
-    { number: "500+", label: "DAOs Created", icon: Vote },
-    { number: "$300K+", label: "Total Value Locked", icon: DollarSign },
-    { number: "85%+", label: "Satisfaction", icon: TrendingUp }
+    { number: platformStats.members, label: "Active Members", icon: Users },
+    { number: platformStats.daos, label: "DAOs Created", icon: Vote },
+    { number: platformStats.tvl, label: "Total Value Locked", icon: DollarSign },
+    { number: platformStats.satisfaction, label: "Satisfaction", icon: TrendingUp }
   ];
 
   const testimonials = [
