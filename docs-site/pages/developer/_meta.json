@@ -8,3 +8,9 @@
   "webhooks": "Webhooks",
   "sdk": "SDK Reference"
 }
+{
+  "index": "Overview",
+  "agent-communication": "Agent Communication",
+  "agents": "Agent System",
+  "custom-agents": "Building Custom Agents"
+}

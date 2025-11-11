@@ -9,16 +9,49 @@ import type { KwetuOperation } from '../../../shared/morio-types';
 import { TreasuryService } from './services/treasury_service';
 import { GovernanceService } from './services/governance_service';
 import { CommunityService } from './services/community_service';
+import { AgentCommunicator } from '../agent-framework/agent-communicator';
+import { MessageType } from '../agent-framework/message-bus';
 
 export class KwetuCore {
   private treasuryService: TreasuryService;
   private governanceService: GovernanceService;
   private communityService: CommunityService;
+  private communicator: AgentCommunicator;
 
   constructor() {
     this.treasuryService = new TreasuryService();
     this.governanceService = new GovernanceService();
     this.communityService = new CommunityService();
+    this.communicator = new AgentCommunicator('KWETU');
+    
+    this.setupMessageHandlers();
+  }
+
+  private setupMessageHandlers(): void {
+    this.communicator.subscribe([
+      MessageType.ACTION_REQUIRED,
+      MessageType.HEALTH_CHECK
+    ], this.handleMessage.bind(this));
+  }
+
+  private async handleMessage(message: any): Promise<void> {
+    try {
+      switch (message.type) {
+        case MessageType.ACTION_REQUIRED:
+          const result = await this.execute(message.payload);
+          if (message.requiresResponse && message.correlationId) {
+            await this.communicator.respond(message.correlationId, result);
+          }
+          break;
+        case MessageType.HEALTH_CHECK:
+          if (message.requiresResponse && message.correlationId) {
+            await this.communicator.respond(message.correlationId, await this.healthCheck());
+          }
+          break;
+      }
+    } catch (error) {
+      console.error('KWETU error handling message:', error);
+    }
   }
 
   /**

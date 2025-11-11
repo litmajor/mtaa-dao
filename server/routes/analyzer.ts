@@ -1,4 +1,3 @@
-
 /**
  * Analyzer Agent API Routes
  */
@@ -38,7 +37,7 @@ router.get('/status', isAuthenticated, async (req, res) => {
 router.post('/analyze/transaction/:transactionId', isAuthenticated, async (req, res) => {
   try {
     const { transactionId } = req.params;
-    
+
     // Fetch transaction from database
     const transaction = await storage.db.query.walletTransactions.findFirst({
       where: (transactions, { eq }) => eq(transactions.id, transactionId)
@@ -99,24 +98,17 @@ router.post('/analyze/vault/:vaultId', isAuthenticated, async (req, res) => {
   }
 });
 
-export default router;
-import express, { Request, Response } from 'express';
-import { isAuthenticated } from '../nextAuthMiddleware';
-import { analyzer } from '../agents/analyzer';
-
-const router = express.Router();
-
 // Comprehensive DAO analysis
-router.get('/dao/:daoId/comprehensive', isAuthenticated, async (req: Request, res: Response) => {
+router.get('/dao/:daoId/comprehensive', isAuthenticated, async (req, res) => {
   try {
     const { daoId } = req.params;
-    
+
     const [treasury, governance, fraud] = await Promise.all([
-      analyzer.analyzeTreasuryHealth(daoId),
-      analyzer.analyzeGovernance(daoId),
-      analyzer.detectFraud(daoId)
+      analyzerAgent.analyzeTreasuryHealth(daoId),
+      analyzerAgent.analyzeGovernance(daoId),
+      analyzerAgent.detectFraud(daoId)
     ]);
-    
+
     res.json({
       success: true,
       data: {
@@ -131,31 +123,45 @@ router.get('/dao/:daoId/comprehensive', isAuthenticated, async (req: Request, re
       }
     });
   } catch (error: any) {
+    logger.error('Error performing comprehensive DAO analysis', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 // Node profiling
-router.get('/node/:userId', isAuthenticated, async (req: Request, res: Response) => {
+router.get('/node/:userId', isAuthenticated, async (req, res) => {
   try {
     const { userId } = req.params;
     const { daoId } = req.query;
-    
-    const profile = await analyzer.profileNode(userId, daoId as string);
-    
+
+    const profile = await analyzerAgent.profileNode(userId, daoId as string);
+
     res.json({ success: true, data: profile });
   } catch (error: any) {
+    logger.error('Error profiling node', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 // System monitoring
-router.get('/system/monitor', isAuthenticated, async (req: Request, res: Response) => {
+router.get('/system/monitor', isAuthenticated, async (req, res) => {
   try {
-    const healthReport = await analyzer.monitorSystemHealth();
-    
+    const healthReport = await analyzerAgent.monitorSystemHealth();
+
     res.json({ success: true, data: healthReport });
   } catch (error: any) {
+    logger.error('Error monitoring system health', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Analyzer metrics
+router.get('/metrics', isAuthenticated, async (req, res) => {
+  try {
+    const metrics = analyzerAgent.getMetrics();
+    res.json({ success: true, data: metrics });
+  } catch (error: any) {
+    logger.error('Error getting analyzer metrics', error);
     res.status(500).json({ error: error.message });
   }
 });

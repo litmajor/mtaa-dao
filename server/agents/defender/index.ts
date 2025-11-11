@@ -19,12 +19,15 @@ import {
   DefenderMetrics
 } from './types';
 import crypto from 'crypto';
+import { AgentCommunicator } from '../../core/agent-framework/agent-communicator';
+import { MessageType } from '../../core/agent-framework/message-bus';
 
 export class DefenderAgent extends BaseAgent {
   private mode: DefenseMode = DefenseMode.SILENT_MONITOR;
   private ethics: EthicsModule;
   private threatEngine: ThreatDetectionEngine;
   private quarantineManager: QuarantineManager;
+  private communicator: AgentCommunicator;
   
   // State tracking
   private trustScores: Map<string, number> = new Map();
@@ -51,6 +54,54 @@ export class DefenderAgent extends BaseAgent {
     this.ethics = new EthicsModule();
     this.threatEngine = new ThreatDetectionEngine();
     this.quarantineManager = new QuarantineManager();
+    this.communicator = new AgentCommunicator(agentId);
+    
+    this.setupMessageHandlers();
+  }
+
+  private setupMessageHandlers(): void {
+    this.communicator.subscribe([
+      MessageType.THREAT_DETECTED,
+      MessageType.QUARANTINE_USER,
+      MessageType.RELEASE_USER,
+      MessageType.HEALTH_CHECK
+    ], this.handleMessage.bind(this));
+  }
+
+  private async handleMessage(message: any): Promise<void> {
+    try {
+      switch (message.type) {
+        case MessageType.THREAT_DETECTED:
+          const behavior: AgentBehavior = {
+            agentId: message.payload.agentId || message.from,
+            actionType: message.payload.type || 'unknown',
+            targetResource: message.payload.transaction?.id || 'unknown',
+            timestamp: new Date(),
+            maliciousScore: message.payload.severity || 0.5,
+            metadata: message.payload
+          };
+          await this.act(behavior);
+          break;
+        case MessageType.QUARANTINE_USER:
+          this.executeDefenseAction(
+            ActionType.QUARANTINE,
+            message.payload.userId,
+            ThreatLevel.HIGH,
+            message.payload.reason
+          );
+          break;
+        case MessageType.RELEASE_USER:
+          // Implementation for releasing quarantined users
+          break;
+        case MessageType.HEALTH_CHECK:
+          if (message.requiresResponse && message.correlationId) {
+            await this.communicator.respond(message.correlationId, this.getSystemStatus());
+          }
+          break;
+      }
+    } catch (error) {
+      console.error('Error handling message:', error);
+    }
   }
 
   async initialize(): Promise<void> {
