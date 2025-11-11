@@ -1,4 +1,3 @@
-
 /**
  * ANALYZER Agent - Financial Intelligence & Threat Detection
  * Integrates with MtaaDAO ecosystem for real-time analysis
@@ -16,13 +15,43 @@ import {
 import { Logger } from '../../utils/logger';
 import { AgentCommunicator } from '../../core/agent-framework/agent-communicator';
 import { MessageType } from '../../core/agent-framework/message-bus';
+import { db } from '../../db';
+import { 
+  walletTransactions, 
+  proposals, 
+  votes, 
+  daoMemberships,
+  users,
+  vaults,
+  auditLogs
+} from '../../../shared/schema';
+import { eq, and, desc, sql, gte } from 'drizzle-orm';
+import { subDays, subHours } from 'date-fns';
 
 const logger = new Logger('analyzer-agent');
+
+export enum NodeStatus {
+  HEALTHY = 'healthy',
+  DEGRADED = 'degraded',
+  SUSPICIOUS = 'suspicious',
+  COMPROMISED = 'compromised',
+  OFFLINE = 'offline'
+}
+
+export interface NodeProfile {
+  nodeId: string;
+  status: NodeStatus;
+  trustScore: number;
+  anomalyCount: number;
+  lastActivity: Date;
+  metrics: Record<string, number>;
+}
 
 export class AnalyzerAgent extends BaseAgent {
   private patternEngine: PatternEngine;
   private anomalyDetector: AnomalyDetector;
   private communicator: AgentCommunicator;
+  private observationWindow: number = 30; // days
 
   constructor(agentId: string = 'ANL-MTAA-001') {
     super({
@@ -42,8 +71,7 @@ export class AnalyzerAgent extends BaseAgent {
     this.patternEngine = new PatternEngine();
     this.anomalyDetector = new AnomalyDetector();
     this.communicator = new AgentCommunicator(agentId);
-    
-    // Setup message subscriptions
+
     this.setupMessageHandlers();
   }
 
@@ -85,7 +113,7 @@ export class AnalyzerAgent extends BaseAgent {
 
   async process(data: any): Promise<AnalysisResult> {
     const startTime = Date.now();
-    
+
     try {
       const result = await this.analyze(data);
       this.updateMetrics(Date.now() - startTime, true);
@@ -108,7 +136,6 @@ export class AnalyzerAgent extends BaseAgent {
     const findings: Finding[] = [];
     let maxThreatLevel = ThreatLevel.MINIMAL;
 
-    // Anomaly detection
     const anomaly = this.anomalyDetector.detectTransactionAnomaly(transaction);
     if (anomaly.isAnomaly) {
       findings.push({
@@ -119,8 +146,7 @@ export class AnalyzerAgent extends BaseAgent {
         confidence: anomaly.score
       });
       maxThreatLevel = this.getHigherThreatLevel(maxThreatLevel, findings[findings.length - 1].severity);
-      
-      // Notify DEFENDER if threat is significant
+
       if (anomaly.score > 0.7) {
         await this.communicator.reportThreat({
           type: 'transaction_anomaly',
@@ -131,7 +157,6 @@ export class AnalyzerAgent extends BaseAgent {
       }
     }
 
-    // Pattern detection
     const patterns = this.patternEngine.detectPatterns({ transactions: [transaction] });
     patterns.forEach(match => {
       if (match.confidence > 0.6) {
@@ -162,7 +187,6 @@ export class AnalyzerAgent extends BaseAgent {
     const findings: Finding[] = [];
     let maxThreatLevel = ThreatLevel.MINIMAL;
 
-    // Voting anomaly detection
     const votingAnomaly = this.anomalyDetector.detectVotingAnomaly(votes);
     if (votingAnomaly.isAnomaly) {
       findings.push({
@@ -175,7 +199,6 @@ export class AnalyzerAgent extends BaseAgent {
       maxThreatLevel = ThreatLevel.MEDIUM;
     }
 
-    // Pattern detection for vote manipulation
     const patterns = this.patternEngine.detectPatterns({ votes, proposal });
     patterns.forEach(match => {
       if (match.confidence > 0.6) {
@@ -206,7 +229,6 @@ export class AnalyzerAgent extends BaseAgent {
     const findings: Finding[] = [];
     let maxThreatLevel = ThreatLevel.MINIMAL;
 
-    // Check for suspicious withdrawal patterns
     const patterns = this.patternEngine.detectPatterns({ transactions });
     patterns.forEach(match => {
       findings.push({
@@ -231,10 +253,281 @@ export class AnalyzerAgent extends BaseAgent {
     };
   }
 
+  async analyzeTreasuryHealth(daoId: string): Promise<AnalysisResult> {
+    const findings: Finding[] = [];
+    const recommendations: string[] = [];
+    let maxThreatLevel = ThreatLevel.MINIMAL;
+
+    const since = subDays(new Date(), this.observationWindow);
+    const transactions = await db.select()
+      .from(walletTransactions)
+      .where(and(
+        eq(walletTransactions.daoId, daoId),
+        gte(walletTransactions.createdAt, since)
+      ))
+      .orderBy(desc(walletTransactions.createdAt));
+
+    const anomalies = this.detectTransactionAnomalies(transactions);
+
+    for (const anomaly of anomalies) {
+      findings.push({
+        type: 'transaction_anomaly',
+        severity: anomaly.severity,
+        description: anomaly.description,
+        evidence: anomaly.evidence,
+        confidence: 0.8
+      });
+
+      if (anomaly.severity > maxThreatLevel) {
+        maxThreatLevel = anomaly.severity;
+      }
+    }
+
+    const withdrawals = transactions.filter(tx => 
+      tx.type === 'withdrawal' || tx.type === 'disbursement'
+    );
+
+    if (withdrawals.length > 0) {
+      const suspiciousWithdrawals = this.detectSuspiciousWithdrawals(withdrawals);
+
+      if (suspiciousWithdrawals.length > 0) {
+        findings.push({
+          type: 'suspicious_withdrawals',
+          severity: ThreatLevel.HIGH,
+          description: `Detected ${suspiciousWithdrawals.length} suspicious withdrawal patterns`,
+          evidence: suspiciousWithdrawals,
+          confidence: 0.85
+        });
+        maxThreatLevel = ThreatLevel.HIGH;
+        recommendations.push('Review recent large withdrawals for authorization');
+      }
+    }
+
+    const vaultHealth = await this.analyzeVaultHealth(daoId);
+    if (vaultHealth.threatLevel > ThreatLevel.LOW) {
+      findings.push({
+        type: 'vault_health',
+        severity: vaultHealth.threatLevel,
+        description: vaultHealth.description,
+        evidence: vaultHealth.data,
+        confidence: 0.9
+      });
+
+      if (vaultHealth.threatLevel > maxThreatLevel) {
+        maxThreatLevel = vaultHealth.threatLevel;
+      }
+      recommendations.push(...vaultHealth.recommendations);
+    }
+
+    return {
+      id: `RPT-${Date.now()}-${daoId}`,
+      type: AnalysisType.TRANSACTION,
+      timestamp: new Date(),
+      threatLevel: maxThreatLevel,
+      confidence: this.calculateConfidence(findings),
+      findings,
+      recommendations,
+      metadata: { daoId, affectedEntities: [daoId] }
+    };
+  }
+
+  async analyzeGovernance(daoId: string): Promise<AnalysisResult> {
+    const findings: Finding[] = [];
+    const recommendations: string[] = [];
+    let maxThreatLevel = ThreatLevel.MINIMAL;
+
+    const since = subDays(new Date(), this.observationWindow);
+
+    const recentProposals = await db.select()
+      .from(proposals)
+      .where(and(
+        eq(proposals.daoId, daoId),
+        gte(proposals.createdAt, since)
+      ));
+
+    for (const proposal of recentProposals) {
+      const proposalVotes = await db.select()
+        .from(votes)
+        .where(eq(votes.proposalId, proposal.id));
+
+      const votingAnomalies = this.detectVotingAnomalies(proposalVotes, proposal);
+
+      if (votingAnomalies.length > 0) {
+        findings.push({
+          type: 'voting_manipulation',
+          severity: ThreatLevel.HIGH,
+          description: `Suspicious voting patterns detected in proposal ${proposal.id}`,
+          evidence: votingAnomalies,
+          confidence: 0.8
+        });
+        maxThreatLevel = ThreatLevel.HIGH;
+        recommendations.push(`Review voting patterns for proposal: ${proposal.title}`);
+      }
+    }
+
+    const proposalsByUser: Record<string, number> = {};
+    recentProposals.forEach(p => {
+      if (p.userId) {
+        proposalsByUser[p.userId] = (proposalsByUser[p.userId] || 0) + 1;
+      }
+    });
+
+    const spammers = Object.entries(proposalsByUser).filter(([_, count]) => count > 5);
+    if (spammers.length > 0) {
+      findings.push({
+        type: 'proposal_spam',
+        severity: ThreatLevel.MEDIUM,
+        description: `Detected ${spammers.length} users creating excessive proposals`,
+        evidence: spammers,
+        confidence: 0.75
+      });
+      maxThreatLevel = Math.max(maxThreatLevel, ThreatLevel.MEDIUM);
+      recommendations.push('Consider implementing proposal rate limits');
+    }
+
+    return {
+      id: `RPT-GOV-${Date.now()}-${daoId}`,
+      type: AnalysisType.PROPOSAL,
+      timestamp: new Date(),
+      threatLevel: maxThreatLevel,
+      confidence: this.calculateConfidence(findings),
+      findings,
+      recommendations,
+      metadata: { daoId, affectedEntities: [daoId] }
+    };
+  }
+
+  async profileNode(userId: string, daoId?: string): Promise<NodeProfile> {
+    const metrics: Record<string, number> = {};
+    let anomalyCount = 0;
+
+    const since = subDays(new Date(), 30);
+
+    const userTransactions = await db.select()
+      .from(walletTransactions)
+      .where(and(
+        eq(walletTransactions.fromUserId, userId),
+        gte(walletTransactions.createdAt, since)
+      ));
+
+    metrics.transactionCount = userTransactions.length;
+    metrics.transactionVolume = userTransactions.reduce((sum, tx) => 
+      sum + parseFloat(tx.amount || '0'), 0
+    );
+
+    const suspiciousTx = userTransactions.filter(tx => {
+      const amount = parseFloat(tx.amount || '0');
+      return amount > 10000 || tx.status === 'failed';
+    });
+
+    anomalyCount += suspiciousTx.length;
+
+    const userVotes = await db.select()
+      .from(votes)
+      .where(and(
+        eq(votes.userId, userId),
+        daoId ? eq(votes.daoId, daoId) : sql`1=1`
+      ));
+
+    metrics.voteCount = userVotes.length;
+
+    let trustScore = 100;
+    trustScore -= (anomalyCount * 10);
+    if (metrics.transactionCount > 10) trustScore += 5;
+    if (metrics.voteCount > 5) trustScore += 5;
+    trustScore = Math.max(0, Math.min(100, trustScore));
+
+    let status = NodeStatus.HEALTHY;
+    if (trustScore < 30) status = NodeStatus.COMPROMISED;
+    else if (trustScore < 50) status = NodeStatus.SUSPICIOUS;
+    else if (trustScore < 70) status = NodeStatus.DEGRADED;
+
+    return {
+      nodeId: userId,
+      status,
+      trustScore,
+      anomalyCount,
+      lastActivity: userTransactions[0]?.createdAt || new Date(),
+      metrics
+    };
+  }
+
+  async detectFraud(daoId: string): Promise<AnalysisResult> {
+    const findings: Finding[] = [];
+    const recommendations: string[] = [];
+    let maxThreatLevel = ThreatLevel.MINIMAL;
+
+    const members = await db.select()
+      .from(daoMemberships)
+      .where(eq(daoMemberships.daoId, daoId));
+
+    for (const member of members) {
+      const profile = await this.profileNode(member.userId, daoId);
+
+      if (profile.status === NodeStatus.COMPROMISED || profile.status === NodeStatus.SUSPICIOUS) {
+        findings.push({
+          type: 'suspicious_member',
+          severity: profile.status === NodeStatus.COMPROMISED ? ThreatLevel.CRITICAL : ThreatLevel.HIGH,
+          description: `Member ${member.userId} flagged as ${profile.status}`,
+          evidence: profile,
+          confidence: 0.85
+        });
+        maxThreatLevel = ThreatLevel.HIGH;
+        recommendations.push(`Review member activity: ${member.userId}`);
+      }
+    }
+
+    return {
+      id: `RPT-FRAUD-${Date.now()}-${daoId}`,
+      type: AnalysisType.USER_BEHAVIOR,
+      timestamp: new Date(),
+      threatLevel: maxThreatLevel,
+      confidence: this.calculateConfidence(findings),
+      findings,
+      recommendations,
+      metadata: { daoId, affectedEntities: [daoId] }
+    };
+  }
+
+  async monitorSystemHealth(): Promise<AnalysisResult> {
+    const findings: Finding[] = [];
+    const recommendations: string[] = [];
+    let maxThreatLevel = ThreatLevel.MINIMAL;
+
+    const recentLogs = await db.select()
+      .from(auditLogs)
+      .where(gte(auditLogs.timestamp, subHours(new Date(), 1)))
+      .limit(100);
+
+    const errorLogs = recentLogs.filter(log => log.severity === 'error' || log.severity === 'critical');
+
+    if (errorLogs.length > 10) {
+      findings.push({
+        type: 'system_errors',
+        severity: ThreatLevel.MEDIUM,
+        description: `High error rate detected: ${errorLogs.length} errors in last hour`,
+        evidence: errorLogs.slice(0, 5),
+        confidence: 0.9
+      });
+      maxThreatLevel = ThreatLevel.MEDIUM;
+      recommendations.push('Investigate system errors and performance issues');
+    }
+
+    return {
+      id: `RPT-SYS-${Date.now()}`,
+      type: AnalysisType.PATTERN,
+      timestamp: new Date(),
+      threatLevel: maxThreatLevel,
+      confidence: this.calculateConfidence(findings),
+      findings,
+      recommendations,
+      metadata: { affectedEntities: ['system'] }
+    };
+  }
+
   // === Private Helper Methods ===
 
   private async analyze(data: any): Promise<AnalysisResult> {
-    // Generic analysis entry point
     if (data.transaction) {
       return this.analyzeTransaction(data.transaction);
     } else if (data.proposal && data.votes) {
@@ -242,7 +535,6 @@ export class AnalyzerAgent extends BaseAgent {
     } else if (data.vaultId && data.transactions) {
       return this.analyzeVault(data.vaultId, data.transactions);
     }
-
     throw new Error('Invalid analysis data provided');
   }
 
@@ -263,6 +555,11 @@ export class AnalyzerAgent extends BaseAgent {
     if (findings.length === 0) return 1.0;
     const avgConfidence = findings.reduce((sum, f) => sum + f.confidence, 0) / findings.length;
     return avgConfidence;
+  }
+
+  private calculateConfidence(findings: any[]): number {
+    if (findings.length === 0) return 1.0;
+    return 0.85;
   }
 
   private generateRecommendations(findings: Finding[]): string[] {
@@ -290,428 +587,10 @@ export class AnalyzerAgent extends BaseAgent {
 
     return recommendations;
   }
-}
-
-// Export singleton instance
-export const analyzerAgent = new AnalyzerAgent();
-/**
- * ANALYZER AGENT (ANL-ORACLE)
- * 
- * Advanced data analysis, threat pattern recognition, node profiling,
- * anomaly detection, and intelligence extraction system for MtaaDAO.
- */
-
-import { db } from '../../db';
-import { 
-  walletTransactions, 
-  proposals, 
-  votes, 
-  daos, 
-  daoMemberships,
-  users,
-  vaults,
-  auditLogs
-} from '../../../shared/schema';
-import { eq, and, desc, sql, gte, or } from 'drizzle-orm';
-import { subDays, subHours } from 'date-fns';
-
-export enum ThreatLevel {
-  MINIMAL = 1,
-  LOW = 2,
-  MEDIUM = 3,
-  HIGH = 4,
-  CRITICAL = 5
-}
-
-export enum NodeStatus {
-  HEALTHY = 'healthy',
-  DEGRADED = 'degraded',
-  SUSPICIOUS = 'suspicious',
-  COMPROMISED = 'compromised',
-  OFFLINE = 'offline'
-}
-
-export interface AnalysisResult {
-  reportId: string;
-  timestamp: Date;
-  threatLevel: ThreatLevel;
-  confidence: number;
-  findings: Finding[];
-  recommendations: string[];
-  affectedEntities: string[];
-}
-
-export interface Finding {
-  type: string;
-  severity: ThreatLevel;
-  description: string;
-  evidence: any;
-  timestamp: Date;
-}
-
-export interface NodeProfile {
-  nodeId: string;
-  status: NodeStatus;
-  trustScore: number;
-  anomalyCount: number;
-  lastActivity: Date;
-  metrics: Record<string, number>;
-}
-
-export class AnalyzerAgent {
-  private id: string;
-  private observationWindow: number = 30; // days
-
-  constructor(agentId: string = '001') {
-    this.id = `ANL-ORACLE-${agentId}`;
-    console.log(`Analyzer Agent ${this.id} initialized`);
-  }
-
-  /**
-   * Analyze treasury health and detect anomalies
-   */
-  async analyzeTreasuryHealth(daoId: string): Promise<AnalysisResult> {
-    const findings: Finding[] = [];
-    const recommendations: string[] = [];
-    let maxThreatLevel = ThreatLevel.MINIMAL;
-
-    // Get recent transactions
-    const since = subDays(new Date(), this.observationWindow);
-    const transactions = await db.select()
-      .from(walletTransactions)
-      .where(and(
-        eq(walletTransactions.daoId, daoId),
-        gte(walletTransactions.createdAt, since)
-      ))
-      .orderBy(desc(walletTransactions.createdAt));
-
-    // Analyze transaction patterns
-    const anomalies = this.detectTransactionAnomalies(transactions);
-    
-    for (const anomaly of anomalies) {
-      findings.push({
-        type: 'transaction_anomaly',
-        severity: anomaly.severity,
-        description: anomaly.description,
-        evidence: anomaly.evidence,
-        timestamp: new Date()
-      });
-      
-      if (anomaly.severity > maxThreatLevel) {
-        maxThreatLevel = anomaly.severity;
-      }
-    }
-
-    // Check for suspicious withdrawal patterns
-    const withdrawals = transactions.filter(tx => 
-      tx.type === 'withdrawal' || tx.type === 'disbursement'
-    );
-    
-    if (withdrawals.length > 0) {
-      const suspiciousWithdrawals = this.detectSuspiciousWithdrawals(withdrawals);
-      
-      if (suspiciousWithdrawals.length > 0) {
-        findings.push({
-          type: 'suspicious_withdrawals',
-          severity: ThreatLevel.HIGH,
-          description: `Detected ${suspiciousWithdrawals.length} suspicious withdrawal patterns`,
-          evidence: suspiciousWithdrawals,
-          timestamp: new Date()
-        });
-        maxThreatLevel = ThreatLevel.HIGH;
-        recommendations.push('Review recent large withdrawals for authorization');
-      }
-    }
-
-    // Analyze vault health
-    const vaultHealth = await this.analyzeVaultHealth(daoId);
-    if (vaultHealth.threatLevel > ThreatLevel.LOW) {
-      findings.push({
-        type: 'vault_health',
-        severity: vaultHealth.threatLevel,
-        description: vaultHealth.description,
-        evidence: vaultHealth.data,
-        timestamp: new Date()
-      });
-      
-      if (vaultHealth.threatLevel > maxThreatLevel) {
-        maxThreatLevel = vaultHealth.threatLevel;
-      }
-      recommendations.push(...vaultHealth.recommendations);
-    }
-
-    return {
-      reportId: `RPT-${Date.now()}-${daoId}`,
-      timestamp: new Date(),
-      threatLevel: maxThreatLevel,
-      confidence: this.calculateConfidence(findings),
-      findings,
-      recommendations,
-      affectedEntities: [daoId]
-    };
-  }
-
-  /**
-   * Analyze governance patterns and detect manipulation
-   */
-  async analyzeGovernance(daoId: string): Promise<AnalysisResult> {
-    const findings: Finding[] = [];
-    const recommendations: string[] = [];
-    let maxThreatLevel = ThreatLevel.MINIMAL;
-
-    const since = subDays(new Date(), this.observationWindow);
-
-    // Get recent proposals and votes
-    const recentProposals = await db.select()
-      .from(proposals)
-      .where(and(
-        eq(proposals.daoId, daoId),
-        gte(proposals.createdAt, since)
-      ));
-
-    // Detect voting anomalies
-    for (const proposal of recentProposals) {
-      const proposalVotes = await db.select()
-        .from(votes)
-        .where(eq(votes.proposalId, proposal.id));
-
-      const votingAnomalies = this.detectVotingAnomalies(proposalVotes, proposal);
-      
-      if (votingAnomalies.length > 0) {
-        findings.push({
-          type: 'voting_manipulation',
-          severity: ThreatLevel.HIGH,
-          description: `Suspicious voting patterns detected in proposal ${proposal.id}`,
-          evidence: votingAnomalies,
-          timestamp: new Date()
-        });
-        maxThreatLevel = ThreatLevel.HIGH;
-        recommendations.push(`Review voting patterns for proposal: ${proposal.title}`);
-      }
-    }
-
-    // Check for proposal spam
-    const proposalsByUser: Record<string, number> = {};
-    recentProposals.forEach(p => {
-      if (p.userId) {
-        proposalsByUser[p.userId] = (proposalsByUser[p.userId] || 0) + 1;
-      }
-    });
-
-    const spammers = Object.entries(proposalsByUser).filter(([_, count]) => count > 5);
-    if (spammers.length > 0) {
-      findings.push({
-        type: 'proposal_spam',
-        severity: ThreatLevel.MEDIUM,
-        description: `Detected ${spammers.length} users creating excessive proposals`,
-        evidence: spammers,
-        timestamp: new Date()
-      });
-      maxThreatLevel = Math.max(maxThreatLevel, ThreatLevel.MEDIUM);
-      recommendations.push('Consider implementing proposal rate limits');
-    }
-
-    return {
-      reportId: `RPT-GOV-${Date.now()}-${daoId}`,
-      timestamp: new Date(),
-      threatLevel: maxThreatLevel,
-      confidence: this.calculateConfidence(findings),
-      findings,
-      recommendations,
-      affectedEntities: [daoId]
-    };
-  }
-
-  /**
-   * Profile a user/member node
-   */
-  async profileNode(userId: string, daoId?: string): Promise<NodeProfile> {
-    const metrics: Record<string, number> = {};
-    let anomalyCount = 0;
-
-    // Get user activity
-    const since = subDays(new Date(), 30);
-    
-    const userTransactions = await db.select()
-      .from(walletTransactions)
-      .where(and(
-        eq(walletTransactions.fromUserId, userId),
-        gte(walletTransactions.createdAt, since)
-      ));
-
-    metrics.transactionCount = userTransactions.length;
-    metrics.transactionVolume = userTransactions.reduce((sum, tx) => 
-      sum + parseFloat(tx.amount || '0'), 0
-    );
-
-    // Check for suspicious transaction patterns
-    const suspiciousTx = userTransactions.filter(tx => {
-      const amount = parseFloat(tx.amount || '0');
-      return amount > 10000 || tx.status === 'failed';
-    });
-
-    anomalyCount += suspiciousTx.length;
-
-    // Get voting activity
-    const userVotes = await db.select()
-      .from(votes)
-      .where(and(
-        eq(votes.userId, userId),
-        daoId ? eq(votes.daoId, daoId) : sql`1=1`
-      ));
-
-    metrics.voteCount = userVotes.length;
-
-    // Calculate trust score (0-100)
-    let trustScore = 100;
-    
-    // Penalize for anomalies
-    trustScore -= (anomalyCount * 10);
-    
-    // Reward for consistent activity
-    if (metrics.transactionCount > 10) trustScore += 5;
-    if (metrics.voteCount > 5) trustScore += 5;
-    
-    trustScore = Math.max(0, Math.min(100, trustScore));
-
-    // Determine status
-    let status = NodeStatus.HEALTHY;
-    if (trustScore < 30) status = NodeStatus.COMPROMISED;
-    else if (trustScore < 50) status = NodeStatus.SUSPICIOUS;
-    else if (trustScore < 70) status = NodeStatus.DEGRADED;
-
-    return {
-      nodeId: userId,
-      status,
-      trustScore,
-      anomalyCount,
-      lastActivity: userTransactions[0]?.createdAt || new Date(),
-      metrics
-    };
-  }
-
-  /**
-   * Comprehensive fraud detection
-   */
-  async detectFraud(daoId: string): Promise<AnalysisResult> {
-    const findings: Finding[] = [];
-    const recommendations: string[] = [];
-    let maxThreatLevel = ThreatLevel.MINIMAL;
-
-    // Analyze member behavior
-    const members = await db.select()
-      .from(daoMemberships)
-      .where(eq(daoMemberships.daoId, daoId));
-
-    for (const member of members) {
-      const profile = await this.profileNode(member.userId, daoId);
-      
-      if (profile.status === NodeStatus.COMPROMISED || profile.status === NodeStatus.SUSPICIOUS) {
-        findings.push({
-          type: 'suspicious_member',
-          severity: profile.status === NodeStatus.COMPROMISED ? ThreatLevel.CRITICAL : ThreatLevel.HIGH,
-          description: `Member ${member.userId} flagged as ${profile.status}`,
-          evidence: profile,
-          timestamp: new Date()
-        });
-        maxThreatLevel = ThreatLevel.HIGH;
-        recommendations.push(`Review member activity: ${member.userId}`);
-      }
-    }
-
-    // Check for coordinated voting
-    const recentProposals = await db.select()
-      .from(proposals)
-      .where(eq(proposals.daoId, daoId))
-      .limit(10);
-
-    for (const proposal of recentProposals) {
-      const proposalVotes = await db.select()
-        .from(votes)
-        .where(eq(votes.proposalId, proposal.id));
-
-      const coordinationScore = this.detectCoordinatedVoting(proposalVotes);
-      
-      if (coordinationScore > 0.7) {
-        findings.push({
-          type: 'coordinated_voting',
-          severity: ThreatLevel.HIGH,
-          description: `Possible vote coordination detected (score: ${coordinationScore.toFixed(2)})`,
-          evidence: { proposalId: proposal.id, score: coordinationScore },
-          timestamp: new Date()
-        });
-        maxThreatLevel = ThreatLevel.HIGH;
-      }
-    }
-
-    return {
-      reportId: `RPT-FRAUD-${Date.now()}-${daoId}`,
-      timestamp: new Date(),
-      threatLevel: maxThreatLevel,
-      confidence: this.calculateConfidence(findings),
-      findings,
-      recommendations,
-      affectedEntities: [daoId]
-    };
-  }
-
-  /**
-   * Real-time monitoring of system health
-   */
-  async monitorSystemHealth(): Promise<AnalysisResult> {
-    const findings: Finding[] = [];
-    const recommendations: string[] = [];
-    let maxThreatLevel = ThreatLevel.MINIMAL;
-
-    // Check recent audit logs for errors
-    const recentLogs = await db.select()
-      .from(auditLogs)
-      .where(gte(auditLogs.timestamp, subHours(new Date(), 1)))
-      .limit(100);
-
-    const errorLogs = recentLogs.filter(log => log.severity === 'error' || log.severity === 'critical');
-    
-    if (errorLogs.length > 10) {
-      findings.push({
-        type: 'system_errors',
-        severity: ThreatLevel.MEDIUM,
-        description: `High error rate detected: ${errorLogs.length} errors in last hour`,
-        evidence: errorLogs.slice(0, 5),
-        timestamp: new Date()
-      });
-      maxThreatLevel = ThreatLevel.MEDIUM;
-      recommendations.push('Investigate system errors and performance issues');
-    }
-
-    // Check database health
-    const dbHealth = await this.checkDatabaseHealth();
-    if (!dbHealth.healthy) {
-      findings.push({
-        type: 'database_health',
-        severity: ThreatLevel.HIGH,
-        description: 'Database performance degradation detected',
-        evidence: dbHealth,
-        timestamp: new Date()
-      });
-      maxThreatLevel = ThreatLevel.HIGH;
-    }
-
-    return {
-      reportId: `RPT-SYS-${Date.now()}`,
-      timestamp: new Date(),
-      threatLevel: maxThreatLevel,
-      confidence: this.calculateConfidence(findings),
-      findings,
-      recommendations,
-      affectedEntities: ['system']
-    };
-  }
-
-  // ===== PRIVATE HELPER METHODS =====
 
   private detectTransactionAnomalies(transactions: any[]): any[] {
     const anomalies: any[] = [];
-    
+
     if (transactions.length === 0) return anomalies;
 
     const amounts = transactions.map(tx => parseFloat(tx.amount || '0'));
@@ -738,7 +617,6 @@ export class AnalyzerAgent {
   private detectSuspiciousWithdrawals(withdrawals: any[]): any[] {
     return withdrawals.filter(tx => {
       const amount = parseFloat(tx.amount || '0');
-      // Flag large withdrawals or multiple rapid withdrawals
       return amount > 5000 || tx.status === 'failed';
     });
   }
@@ -772,13 +650,12 @@ export class AnalyzerAgent {
 
   private detectVotingAnomalies(votes: any[], proposal: any): any[] {
     const anomalies: any[] = [];
-    
-    // Check for vote timing patterns (all votes within short period)
+
     if (votes.length > 0) {
       const voteTimes = votes.map(v => new Date(v.createdAt).getTime());
       const timeSpread = Math.max(...voteTimes) - Math.min(...voteTimes);
-      
-      if (votes.length > 10 && timeSpread < 60000) { // Less than 1 minute
+
+      if (votes.length > 10 && timeSpread < 60000) {
         anomalies.push({
           type: 'rapid_voting',
           description: 'Suspicious rapid voting pattern detected'
@@ -788,49 +665,6 @@ export class AnalyzerAgent {
 
     return anomalies;
   }
-
-  private detectCoordinatedVoting(votes: any[]): number {
-    if (votes.length < 5) return 0;
-
-    const voteTimes = votes.map(v => new Date(v.createdAt).getTime());
-    const timeSpread = Math.max(...voteTimes) - Math.min(...voteTimes);
-    
-    // Calculate coordination score (0-1)
-    // Lower time spread with more votes = higher coordination
-    const normalizedSpread = Math.min(timeSpread / (1000 * 60 * 60), 1); // Normalize to hours
-    const coordinationScore = (1 - normalizedSpread) * (Math.min(votes.length, 20) / 20);
-    
-    return coordinationScore;
-  }
-
-  private async checkDatabaseHealth(): Promise<any> {
-    try {
-      const startTime = Date.now();
-      await db.select().from(users).limit(1);
-      const queryTime = Date.now() - startTime;
-
-      return {
-        healthy: queryTime < 1000,
-        queryTime,
-        threshold: 1000
-      };
-    } catch (error) {
-      return {
-        healthy: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
-    }
-  }
-
-  private calculateConfidence(findings: Finding[]): number {
-    if (findings.length === 0) return 1.0;
-    
-    const severityWeights = findings.map(f => f.severity / ThreatLevel.CRITICAL);
-    const avgWeight = severityWeights.reduce((a, b) => a + b, 0) / severityWeights.length;
-    
-    return Math.min(0.5 + avgWeight * 0.5, 1.0);
-  }
 }
 
-// Export singleton instance
-export const analyzer = new AnalyzerAgent();
+export const analyzerAgent = new AnalyzerAgent();
