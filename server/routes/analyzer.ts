@@ -100,3 +100,64 @@ router.post('/analyze/vault/:vaultId', isAuthenticated, async (req, res) => {
 });
 
 export default router;
+import express, { Request, Response } from 'express';
+import { isAuthenticated } from '../nextAuthMiddleware';
+import { analyzer } from '../agents/analyzer';
+
+const router = express.Router();
+
+// Comprehensive DAO analysis
+router.get('/dao/:daoId/comprehensive', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { daoId } = req.params;
+    
+    const [treasury, governance, fraud] = await Promise.all([
+      analyzer.analyzeTreasuryHealth(daoId),
+      analyzer.analyzeGovernance(daoId),
+      analyzer.detectFraud(daoId)
+    ]);
+    
+    res.json({
+      success: true,
+      data: {
+        treasury,
+        governance,
+        fraud,
+        overallThreatLevel: Math.max(
+          treasury.threatLevel,
+          governance.threatLevel,
+          fraud.threatLevel
+        )
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Node profiling
+router.get('/node/:userId', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const { daoId } = req.query;
+    
+    const profile = await analyzer.profileNode(userId, daoId as string);
+    
+    res.json({ success: true, data: profile });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// System monitoring
+router.get('/system/monitor', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const healthReport = await analyzer.monitorSystemHealth();
+    
+    res.json({ success: true, data: healthReport });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+export default router;
