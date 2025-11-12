@@ -1,0 +1,47 @@
+ocs-site
+PS E:\repos\litmajor\mtaa-dao\docs-site> npm install
+PS E:\repos\litmajor\mtaa-dao\docs-site> ^C
+PS E:\repos\litmajor\mtaa-dao\docs-site> npm run dev
+
+> mtaadao-docs@1.0.0 dev
+> next dev -p 4001
+
+  ▲ Next.js 14.2.33
+  - Local:        http://localhost:4001
+
+ ✓ Starting...
+   automatically enabled Fast Refresh for 3 custom loaders   
+[nextra] Error loading pages\developer\_meta.json
+SyntaxError: Unexpected non-whitespace character after JSON at position 255 (line 11 column 1)
+ ✓ Ready in 35s
+[nextra] Error loading pages\developer\_meta.json
+SyntaxError: Unexpected non-whitespace character after JSON at position 255 (line 11 column 1)
+ ○ Compiling / ...
+[nextra] Error loading pages\developer\_meta.json
+SyntaxError: Unexpected non-whitespace character after JSON at position 255 (line 11 column 1)
+[nextra] Error loading pages\developer\_meta.json
+SyntaxError: Unexpected non-whitespace character after JSON at position 255 (line 11 column 1)
+[nextra] Error loading pages\developer\_meta.json
+SyntaxError: Unexpected non-whitespace character after JSON at position 255 (line 11 column 1)
+[nextra] Error loading pages\developer\_meta.json
+SyntaxError: Unexpected non-whitespace character after JSON at position 255 (line 11 column 1)
+[nextra] Error loading pages\developer\_meta.json
+SyntaxError: Unexpected non-whitespace character after JSON at position 255 (line 11 column 1)
+ ✓ Compiled / in 217s (2596 modules)
+[nextra] Error loading pages\developer\_meta.json
+SyntaxError: Unexpected non-whitespace character after JSON at position 255 (line 11 column 1)
+[nextra] Error loading pages\developer\_meta.json
+SyntaxError: Unexpected non-whitespace character after JSON at position 255 (line 11 column 1)
+[nextra] Error loading pages\developer\_meta.json
+SyntaxError: Unexpected non-whitespace character after JSON at position 255 (line 11 column 1)
+[nextra] Error loading pages\developer\_meta.json
+SyntaxError: Unexpected non-whitespace character after JSON at position 255 (line 11 column 1)
+[nextra] Error loading pages\developer\_meta.json
+SyntaxError: Unexpected non-whitespace character after JSON at position 255 (line 11 column 1)
+ ✓ Compiled in 22.2s (2596 modules)
+ GET / 200 in 260004ms
+ GET / 200 in 14594ms
+ GET / 200 in 3721ms
+ GET / 200 in 1174ms
+[nextra] Error loading pages\developer\_meta.json
+SyntaxError: Unexpected non-whitespace character after JSON at position 255 (line 11 column 1)
