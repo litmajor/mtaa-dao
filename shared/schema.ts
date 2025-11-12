@@ -1,4 +1,3 @@
-
 // Unique constraints for proposal_likes and comment_likes are enforced at the database level.
 // Add these to your migration or run manually:
 // ALTER TABLE proposal_likes ADD CONSTRAINT proposal_likes_unique UNIQUE (proposal_id, user_id);
@@ -149,6 +148,7 @@ export const users = pgTable("users", {
   // referralcodeLegacy: varFchar("referralcode"),
   // votingtokenbalanceLegacy: decimal("votingtokenbalance", { precision: 10, scale: 2 }),
   // mtaatokenbalanceLegacy: decimal("mtaatokenbalance", { precision: 10, scale: 2 }),
+  preferredCurrency: varchar("preferred_currency").default("cUSD"), // cUSD, cKES, cEUR, etc.
 });
 
 // User Contexts table for Nuru AI system
@@ -252,7 +252,7 @@ export const daos = pgTable("daos", {
   subscriptionPlan: varchar("subscription_plan").default("free"), // Added for admin analytics compatibility
   founderId: varchar("founder_id"), // Added for admin analytics compatibilitydings: boolean("token_holdings").default(false), // whether DAO requires token holdings for membership
   maxDelegationPercentage: integer("max_delegation_percentage").default(10), // CRITICAL: max % of votes a single delegate can hold to prevent centralization
-  
+
   // CRITICAL: Multi-sig treasury security
   treasuryMultisigEnabled: boolean("treasury_multisig_enabled").default(true),
   treasuryRequiredSignatures: integer("treasury_required_signatures").default(3), // minimum 3 signatures for withdrawals
@@ -916,19 +916,19 @@ export const treasuryMultisigTransactions = pgTable("treasury_multisig_transacti
   currency: varchar("currency").default("cUSD"),
   recipient: varchar("recipient"), // wallet address or user ID
   purpose: text("purpose").notNull(),
-  
+
   // Multi-sig tracking
   requiredSignatures: integer("required_signatures").notNull(),
   currentSignatures: integer("current_signatures").default(0),
   signers: jsonb("signers").default([]), // array of {userId, signedAt, signature}
-  
+
   // Status
   status: varchar("status").default("pending"), // pending, approved, rejected, executed, expired
   approvedAt: timestamp("approved_at"),
   executedAt: timestamp("executed_at"),
   executionTxHash: varchar("execution_tx_hash"),
   expiresAt: timestamp("expires_at").notNull(), // 7 days expiry
-  
+
   // Metadata
   metadata: jsonb("metadata"), // additional transaction details
   createdAt: timestamp("created_at").defaultNow(),
@@ -1123,7 +1123,7 @@ export const poolInvestments = pgTable("pool_investments", {
   paymentToken: varchar("payment_token", { length: 50 }),
   transactionHash: varchar("transaction_hash", { length: 255 }),
   status: varchar("status", { length: 50 }).default("pending"),
-  investedAt: timestamp("invested_at").defaultNow(),
+  investedAt: timestamp("investedAt").defaultNow(),
 });
 
 export const poolWithdrawals = pgTable("pool_withdrawals", {

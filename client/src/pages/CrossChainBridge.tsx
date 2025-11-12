@@ -24,7 +24,7 @@ const SUPPORTED_TOKENS: Record<string, string[]> = {
   'ethereum': ['ETH', 'USDC', 'USDT', 'DAI'],
   'polygon': ['MATIC', 'USDC', 'USDT'],
   'bsc': ['BNB', 'USDT', 'BUSD'],
-  'celo': ['CELO', 'cUSD', 'cEUR'],
+  'celo': ['CELO', 'cUSD', 'cEUR', 'cKES'],
   'tron': ['TRX', 'USDT'],
   'ton': ['TON', 'USDT'],
   'optimism': ['ETH', 'USDC'],
