@@ -23,6 +23,12 @@ interface DAO {
   growthRate: number;
   recentActivity: string;
   avatar: string;
+  // Added missing properties for UI rendering
+  regionalTags?: string[];
+  causeTags?: string[];
+  featuredMessage?: string;
+  enableSocialReactions?: boolean;
+  supportCount?: number;
 }
 
 export default function EnhancedDAOs() {
@@ -318,7 +324,7 @@ export default function EnhancedDAOs() {
         </div>
 
         {/* Social Reactions Preview */}
-        {dao.enableSocialReactions && dao.supportCount > 0 && (
+        {dao.enableSocialReactions && typeof dao.supportCount === 'number' && dao.supportCount > 0 && (
           <div className="mb-3 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
             <Heart className="w-3 h-3 text-red-500 fill-red-500" />
             <span>{dao.supportCount} people showing support</span>
@@ -508,7 +514,7 @@ export default function EnhancedDAOs() {
         )}
       </div>
 
-      <style jsx>{`
+  <style>{`
         @keyframes fadeInUp {
           from {
             opacity: 0;

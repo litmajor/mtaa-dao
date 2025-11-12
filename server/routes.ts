@@ -211,6 +211,9 @@ export async function registerRoutes(app: Express) {
   // Create vault
   app.post('/api/vaults', isAuthenticated, createVaultHandler);
 
+  // Allocate to vault (new endpoint)
+  app.post('/api/vaults/:vaultId/allocate', isAuthenticated, authorizeVaultAccess, allocateToVaultHandler);
+
   // Get user's vaults
   app.get('/api/vaults', isAuthenticated, getUserVaultsHandler);
 
@@ -220,7 +223,7 @@ export async function registerRoutes(app: Express) {
   // Vault operations
   app.post('/api/vaults/:vaultId/deposit', isAuthenticated, authorizeVaultAccess, depositToVaultHandler);
   app.post('/api/vaults/:vaultId/withdraw', isAuthenticated, authorizeVaultAccess, withdrawFromVaultHandler);
-  app.post('/api/vaults/:vaultId/allocate', isAuthenticated, authorizeVaultAccess, allocateToStrategyHandler);
+  app.post('/api/vaults/:vaultId/allocate', isAuthenticated, authorizeVaultAccess, allocateToVaultHandler);
   app.post('/api/vaults/:vaultId/rebalance', isAuthenticated, authorizeVaultAccess, rebalanceVaultHandler);
 
   // Vault analytics

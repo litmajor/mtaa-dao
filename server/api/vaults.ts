@@ -53,6 +53,36 @@ export async function createVaultHandler(req: Request, res: Response) {
   }
 }
 
+// Allocate to vault (generic allocation, not strategy-specific)
+export async function allocateToVaultHandler(req: Request, res: Response) {
+  try {
+    const userId = req.user?.claims?.id;
+    const { vaultId } = req.params;
+    const { tokenSymbol, amount, allocationNote } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    if (!vaultId || !tokenSymbol || !amount) {
+      return res.status(400).json({ error: 'Vault ID, token symbol, and amount are required' });
+    }
+
+    // Call a generic allocation method in vaultService (implement if missing)
+    const allocation = await vaultService.allocateToVault({
+      vaultId,
+      userId,
+      tokenSymbol,
+      amount,
+      allocationNote
+    });
+
+    res.json({ success: true, allocation });
+  } catch (error: any) {
+    console.error('Error allocating to vault:', error);
+    res.status(500).json({ error: error.message || 'Failed to allocate to vault' });
+  }
+}
+
 // Get user's vaults
 export async function getUserVaultsHandler(req: Request, res: Response) {
   try {

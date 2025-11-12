@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowRight, Users, Vote, Wallet, Target, TrendingUp, Shield, Globe, CheckCircle, Sparkles, Heart, Star, Award, DollarSign } from "lucide-react";
 import { useState, useEffect } from "react";
+import { apiGet } from '@/lib/api';
 import { Logo } from "@/components/ui/logo";
 import { Link } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
@@ -12,6 +13,12 @@ import DaoOfTheWeekBanner from '@/components/DaoOfTheWeekBanner';
 export default function MtaaDAOLanding() {
   const [isVisible, setIsVisible] = useState(false);
   const [scrollY, setScrollY] = useState(0);
+  const [platformStats, setPlatformStats] = useState({
+    members: '2K+',
+    daos: '500+',
+    tvl: '$300K+',
+    satisfaction: '85%+'
+  });
 
   useEffect(() => {
     setIsVisible(true);
@@ -24,7 +31,7 @@ export default function MtaaDAOLanding() {
     {
       icon: Sparkles,
       title: "AI Assistant",
-      description: "Chat in Swahili, English, or Pidgin. Morio handles everything.",
+      description: "Chat in English or Swahili. Morio handles everything.",
       gradient: "from-emerald-400 to-teal-500"
     },
     {
@@ -58,30 +65,6 @@ export default function MtaaDAOLanding() {
       gradient: "from-blue-400 to-cyan-500"
     }
   ];
-
-  const [platformStats, setPlatformStats] = useState({
-    members: "2K+",
-    daos: "500+",
-    tvl: "$300K+",
-    satisfaction: "85%+"
-  });
-
-  useEffect(() => {
-    async function fetchPlatformStats() {
-      try {
-        const data = await apiGet('/api/public-stats');
-        setPlatformStats({
-          members: formatNumber(data.totalUsers) + '+',
-          daos: formatNumber(data.totalDaos) + '+',
-          tvl: formatCurrency(data.totalTVL),
-          satisfaction: Math.round(data.satisfactionRate) + '%+'
-        });
-      } catch (err) {
-        console.error('Failed to fetch platform stats:', err);
-      }
-    }
-    fetchPlatformStats();
-  }, []);
 
   const stats = [
     { number: platformStats.members, label: "Active Members", icon: Users },

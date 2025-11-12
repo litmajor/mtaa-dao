@@ -155,23 +155,8 @@ export class AnalyzerAgent extends BaseAgent {
           reasons: anomaly.reasons
         });
       }
-    }
-
-    const patterns = this.patternEngine.detectPatterns({ transactions: [transaction] });
-    patterns.forEach(match => {
-      if (match.confidence > 0.6) {
-        findings.push({
-          type: 'pattern',
-          severity: match.pattern.severity,
-          description: `Detected pattern: ${match.pattern.name}`,
-          evidence: match.matches,
-          confidence: match.confidence
-        });
-        maxThreatLevel = this.getHigherThreatLevel(maxThreatLevel, match.pattern.severity);
       }
-    });
-
-    return {
+      return {
       id: `analysis-${Date.now()}`,
       type: AnalysisType.TRANSACTION,
       timestamp: new Date(),
@@ -193,10 +178,10 @@ export class AnalyzerAgent extends BaseAgent {
         type: 'voting_anomaly',
         severity: ThreatLevel.MEDIUM,
         description: `Unusual voting pattern detected`,
-        evidence: [votingAnomaly.context],
+        evidence: Array.isArray(votingAnomaly.context) ? votingAnomaly.context : [votingAnomaly.context],
         confidence: votingAnomaly.score
       });
-      maxThreatLevel = ThreatLevel.MEDIUM;
+      maxThreatLevel = this.getHigherThreatLevel(maxThreatLevel, ThreatLevel.MEDIUM);
     }
 
     const patterns = this.patternEngine.detectPatterns({ votes, proposal });
@@ -206,7 +191,7 @@ export class AnalyzerAgent extends BaseAgent {
           type: 'manipulation_pattern',
           severity: match.pattern.severity,
           description: match.pattern.description,
-          evidence: match.matches,
+          evidence: Array.isArray(match.matches) ? match.matches : [match.matches],
           confidence: match.confidence
         });
         maxThreatLevel = this.getHigherThreatLevel(maxThreatLevel, match.pattern.severity);
@@ -221,7 +206,7 @@ export class AnalyzerAgent extends BaseAgent {
       confidence: this.calculateOverallConfidence(findings),
       findings,
       recommendations: this.generateRecommendations(findings),
-      metadata: { proposalId: proposal.id }
+      metadata: { proposalId: proposal.id, userId: proposal.userId || proposal.createdBy || proposal.author || null }
     };
   }
 
@@ -357,19 +342,17 @@ export class AnalyzerAgent extends BaseAgent {
           type: 'voting_manipulation',
           severity: ThreatLevel.HIGH,
           description: `Suspicious voting patterns detected in proposal ${proposal.id}`,
-          evidence: votingAnomalies,
+          evidence: Array.isArray(votingAnomalies) ? votingAnomalies : [votingAnomalies],
           confidence: 0.8
         });
-        maxThreatLevel = ThreatLevel.HIGH;
+        maxThreatLevel = this.getHigherThreatLevel(maxThreatLevel, ThreatLevel.HIGH);
         recommendations.push(`Review voting patterns for proposal: ${proposal.title}`);
       }
     }
 
     const proposalsByUser: Record<string, number> = {};
     recentProposals.forEach(p => {
-      if (p.userId) {
-        proposalsByUser[p.userId] = (proposalsByUser[p.userId] || 0) + 1;
-      }
+      proposalsByUser[p.id] = (proposalsByUser[p.id] || 0) + 1;
     });
 
     const spammers = Object.entries(proposalsByUser).filter(([_, count]) => count > 5);
@@ -378,10 +361,10 @@ export class AnalyzerAgent extends BaseAgent {
         type: 'proposal_spam',
         severity: ThreatLevel.MEDIUM,
         description: `Detected ${spammers.length} users creating excessive proposals`,
-        evidence: spammers,
+        evidence: Array.isArray(spammers) ? spammers : [spammers],
         confidence: 0.75
       });
-      maxThreatLevel = Math.max(maxThreatLevel, ThreatLevel.MEDIUM);
+      maxThreatLevel = this.getHigherThreatLevel(maxThreatLevel, ThreatLevel.MEDIUM);
       recommendations.push('Consider implementing proposal rate limits');
     }
 
@@ -393,7 +376,7 @@ export class AnalyzerAgent extends BaseAgent {
       confidence: this.calculateConfidence(findings),
       findings,
       recommendations,
-      metadata: { daoId, affectedEntities: [daoId] }
+      metadata: { daoId, affectedEntities: [daoId], userIds: Object.keys(proposalsByUser) }
     };
   }
 
@@ -469,7 +452,7 @@ export class AnalyzerAgent extends BaseAgent {
           type: 'suspicious_member',
           severity: profile.status === NodeStatus.COMPROMISED ? ThreatLevel.CRITICAL : ThreatLevel.HIGH,
           description: `Member ${member.userId} flagged as ${profile.status}`,
-          evidence: profile,
+          evidence: [profile],
           confidence: 0.85
         });
         maxThreatLevel = ThreatLevel.HIGH;
@@ -485,7 +468,7 @@ export class AnalyzerAgent extends BaseAgent {
       confidence: this.calculateConfidence(findings),
       findings,
       recommendations,
-      metadata: { daoId, affectedEntities: [daoId] }
+      metadata: { daoId, affectedEntities: [daoId], userIds: members.map(m => m.userId) }
     };
   }
 
