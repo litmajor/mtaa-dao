@@ -55,22 +55,20 @@ export default function Navigation() {
   const isAdmin = user?.roles === "admin" || user?.roles === "elder";
 
   // Navigation items organized by category
-  const quickAccessItems = [
-    { href: "/", label: "Home", icon: "🏠" },
-    { href: "/profile", label: "Profile", icon: "👤" },
-  ];
-
-  const dashboardItems = [
-    { href: "/dashboard", label: "Community Dashboard", icon: "🏛️", description: "DAO activities & proposals" },
-    { href: "/vault-dashboard", label: "Vault Dashboard", icon: "🏦", description: "DeFi portfolio & governance" },
-    { href: "/wallet", label: "Wallet Dashboard", icon: "💳", description: "Personal finance management" },
-  ];
-
+  // Simplified primary navigation - most used items
   const primaryNavItems = [
-    ...(isInDao ? [{ href: "/proposals", label: "Proposals", icon: "📋" }] : []),
-    { href: "/tasks", label: "Tasks", icon: "🎯" },
-    { href: "/daos", label: "DAOs", icon: "🏛️" },
+    { href: "/dashboard", label: "Dashboard", icon: "🏠", mobile: true },
+    { href: "/wallet", label: "Wallet", icon: "💳", mobile: true },
+    { href: "/vault", label: "Vaults", icon: "🏦", mobile: true },
+    { href: "/daos", label: "DAOs", icon: "🏛️", mobile: true },
+    { href: "/tasks", label: "Tasks", icon: "🎯", mobile: false },
+  ];
+
+  const secondaryNavItems = [
+    { href: "/proposals", label: "Proposals", icon: "📋" },
     { href: "/rewards", label: "Rewards", icon: "🎁" },
+    { href: "/referrals", label: "Referrals", icon: "🤝" },
+    { href: "/investment-pools", label: "Invest", icon: "📈" },
   ];
 
   const vaultItems = [

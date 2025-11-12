@@ -9,7 +9,11 @@ const router = Router();
 // GET /api/daos - List all DAOs with user membership status
 router.get("/", authenticate, async (req, res) => {
   try {
-  const userId = (req.user as any).id;
+    const userId = (req.user as any)?.id || (req.user as any)?.claims?.id;
+    
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
 
     // Get all DAOs with member count and treasury balance
     const allDAOs = await db
