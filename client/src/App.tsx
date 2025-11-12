@@ -235,8 +235,8 @@ function App() {
                   <Route path="/admin/pools" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><PoolManagementLazy /></Suspense></ProtectedRoute>} />
                   <Route path="/admin/billing" element={<ProtectedRoute><AdminBillingDashboard /></ProtectedRoute>} />
                   <Route path="/admin/payments" element={<ProtectedRoute><PaymentReconciliation /></ProtectedRoute>} />
-                  <Route path="/superuser-login" element={<Register1 />} />
-                  <Route path="/admin-login" element={<Register1 adminMode={true} />} />
+                  <Route path="/superuser-login" element={<Register1Raw />} />
+                  <Route path="/admin-login" element={<Register1Raw adminMode={true} />} />
                   {/* Protected special routes */}
                   <Route path="/architect-setup" element={<ProtectedRoute><ArchitectSetupPage /></ProtectedRoute>} />
                   <Route path="/wallet-setup" element={<ProtectedRoute><WalletSetupPage /></ProtectedRoute>} />

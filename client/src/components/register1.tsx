@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, Mail, Lock, AlertCircle, UserPlus, Check, Phone, Send } from 'lucide-react';
-import { signIn } from '../lib/auth';
+import { useNavigate } from 'react-router-dom';
 
-export default function ArchitectSetup() {
+export default function ArchitectSetup({ adminMode: initialAdminMode = false }: { adminMode?: boolean }) {
+  const navigate = useNavigate(); // Added useNavigate
   const [emailOrPhone, setEmailOrPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -13,7 +14,7 @@ export default function ArchitectSetup() {
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
-  const [adminMode, setAdminMode] = useState(false);
+  const [adminMode, setAdminMode] = useState(initialAdminMode); // Use initialAdminMode prop
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminLoading, setAdminLoading] = useState(false);
@@ -115,10 +116,10 @@ export default function ArchitectSetup() {
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.message || 'OTP verification failed');
-  // Auto sign in after registration
-  localStorage.setItem('accessToken', data.token);
-  localStorage.setItem('superuser', 'true');
-  window.location.href = '/superuser';
+      // Auto sign in after registration
+      localStorage.setItem('accessToken', data.token);
+      localStorage.setItem('superuser', 'true');
+      window.location.href = '/superuser';
     } catch (err) {
       setError(
         typeof err === 'object' && err !== null && 'message' in err
@@ -195,9 +196,9 @@ export default function ArchitectSetup() {
         return;
       }
       if (!resp.ok) throw new Error(data.message || 'Admin login failed');
-  localStorage.setItem('accessToken', data.accessToken || data.token);
-  localStorage.setItem('superuser', 'true');
-  window.location.href = '/superuser';
+      localStorage.setItem('accessToken', data.accessToken || data.token);
+      localStorage.setItem('superuser', 'true');
+      navigate('/superuser'); // Use navigate instead of window.location.href
     } catch (err) {
       setError(
         typeof err === 'object' && err !== null && 'message' in err
@@ -398,8 +399,7 @@ export default function ArchitectSetup() {
                   </button>
                 </form>
               ) : (
-// ...existing code...
-                <>
+                <form onSubmit={handleSubmit} className="space-y-6">
                   {/* Email/Phone field */}
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-white/90">
@@ -452,7 +452,7 @@ export default function ArchitectSetup() {
                           </span>
                         </div>
                         <div className="w-full bg-white/10 rounded-full h-2">
-                          <div 
+                          <div
                             className={`h-2 rounded-full bg-gradient-to-r ${getPasswordStrengthColor()} transition-all duration-300`}
                             style={{ width: `${(passwordScore / 5) * 100}%` }}
                           ></div>
@@ -533,30 +533,28 @@ export default function ArchitectSetup() {
                   </div>
 
                   {/* Submit button */}
-                  <form onSubmit={handleSubmit} className="space-y-6">
-                    <button
-                      type="submit"
-                      disabled={isLoading}
-                      className="w-full bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 text-white py-3 rounded-xl font-semibold shadow-lg border-0 focus:ring-4 focus:ring-orange-400 dark:focus:ring-orange-600 transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                    >
-                      {isLoading ? (
-                        <div className="flex items-center justify-center">
-                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
-                          Sending OTP...
-                        </div>
-                      ) : (
-                        'Create Account'
-                      )}
-                    </button>
-                  </form>
-                </>
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 text-white py-3 rounded-xl font-semibold shadow-lg border-0 focus:ring-4 focus:ring-orange-400 dark:focus:ring-orange-600 transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                  >
+                    {isLoading ? (
+                      <div className="flex items-center justify-center">
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
+                        Sending OTP...
+                      </div>
+                    ) : (
+                      'Create Account'
+                    )}
+                  </button>
+                </form>
               )}
               {/* End of OTP Step */}
               {/* Sign in link */}
               <div className="mt-8 text-center">
                 <p className="text-white/80">
                   Already have an account?{' '}
-                  <a href="/login" className="text-mtaa-orange hover:text-mtaa-emerald font-semibold transition-colors">
+                  <a href={adminMode ? "/superuser-login" : "/login"} className="text-mtaa-orange hover:text-mtaa-emerald font-semibold transition-colors">
                     Sign in
                   </a>
                 </p>

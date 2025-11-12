@@ -92,6 +92,23 @@ export default function Referrals() {
     });
   };
 
+  const shareReferralLink = () => {
+    if (navigator.share) {
+      navigator.share({
+        title: 'Join Mtaa DAO',
+        text: `Join Mtaa DAO and earn rewards! Use my referral link: ${referralLink}`,
+        url: referralLink,
+      }).then(() => console.log('Successful share'))
+      .catch((error) => console.log('Error sharing:', error));
+    } else {
+      // Fallback for browsers that don't support the Web Share API
+      toast({
+        title: "Cannot Share",
+        description: "Your browser does not support the Web Share API. Please copy the link manually.",
+      });
+    }
+  };
+
   const getRankBadge = (rank: number) => {
     if (rank === 1) return <Crown className="w-5 h-5 text-yellow-400 drop-shadow-lg" />;
     if (rank === 2) return <Award className="w-5 h-5 text-gray-300 drop-shadow-lg" />;
@@ -185,7 +202,7 @@ export default function Referrals() {
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse"></div>
         <div className="absolute top-3/4 right-1/4 w-96 h-96 bg-emerald-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse delay-1000"></div>
         <div className="absolute bottom-1/4 left-1/2 w-96 h-96 bg-orange-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse delay-2000"></div>
-        
+
         {/* Floating particles */}
         <div className="absolute top-20 left-20 w-2 h-2 bg-white rounded-full animate-ping opacity-60"></div>
         <div className="absolute top-40 right-40 w-1 h-1 bg-emerald-400 rounded-full animate-ping opacity-60 delay-500"></div>
@@ -349,7 +366,7 @@ export default function Referrals() {
                       Your Referral Link
                     </h3>
                   </div>
-                  
+
                   <div className="space-y-6">
                     <div>
                       <Label htmlFor="referralCode" className="text-sm font-medium text-gray-300 mb-2 block">
@@ -370,23 +387,31 @@ export default function Referrals() {
                         </Button>
                       </div>
                     </div>
-                    
+
                     <div>
                       <Label htmlFor="referralLink" className="text-sm font-medium text-gray-300 mb-2 block">
                         Referral Link
                       </Label>
-                      <div className="flex space-x-3">
+                      <div className="flex items-center space-x-3">
                         <Input
                           id="referralLink"
                           value={referralLink}
                           readOnly
                           className="flex-1 bg-white/10 border-white/20 text-white placeholder-gray-400 backdrop-blur-sm"
                         />
-                        <Button 
-                          onClick={copyReferralLink} 
-                          className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg transform hover:scale-105 transition-all duration-200"
+                        <Button
+                          onClick={copyReferralLink}
+                          className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
                         >
-                          <Copy className="w-4 h-4" />
+                          <Copy className="w-4 h-4 mr-2" />
+                          Copy
+                        </Button>
+                        <Button
+                          onClick={shareReferralLink}
+                          className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
+                        >
+                          <Share2 className="w-4 h-4 mr-2" />
+                          Share
                         </Button>
                       </div>
                     </div>
@@ -419,7 +444,7 @@ export default function Referrals() {
                       How It Works
                     </h3>
                   </div>
-                  
+
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                     {[
                       {
@@ -472,7 +497,7 @@ export default function Referrals() {
                     Top Referrers
                   </h3>
                 </div>
-                
+
                 <div className="space-y-4">
                   {leaderboard.map((leader, index) => (
                     <div
@@ -486,7 +511,7 @@ export default function Referrals() {
                           ? 'bg-gradient-to-r from-yellow-400 to-orange-500' 
                           : 'bg-gradient-to-r from-purple-400 to-emerald-500'
                       }`}></div>
-                      
+
                       <div className={`relative flex items-center justify-between p-6 rounded-2xl transition-all duration-300 ${
                         index < 3 
                           ? "bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/30" 
@@ -503,7 +528,7 @@ export default function Referrals() {
                               #{leader.rank}
                             </span>
                           </div>
-                          
+
                           <div className="relative">
                             <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-emerald-600 rounded-full blur opacity-25"></div>
                             <Avatar className="relative w-14 h-14 border-2 border-white/20 shadow-lg">
@@ -512,7 +537,7 @@ export default function Referrals() {
                               </AvatarFallback>
                             </Avatar>
                           </div>
-                          
+
                           <div>
                             <p className="font-semibold text-lg text-white">{leader.name}</p>
                             <div className="flex items-center space-x-3 mt-1">
@@ -525,7 +550,7 @@ export default function Referrals() {
                             </div>
                           </div>
                         </div>
-                        
+
                         <div className="text-right">
                           <p className="font-bold text-2xl bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
                             ${leader.earnings.toFixed(0)}

@@ -70,33 +70,35 @@ router.get('/stats', isAuthenticated, async (req: Request, res: Response) => {
 // GET /api/referrals/leaderboard
 router.get('/leaderboard', async (req: Request, res: Response) => {
   try {
-    const leaderboard = await db.select({
-      userId: users.id,
-      name: users.name,
-      referralCount: sql<number>`COUNT(referred.id)`,
-      earnings: sql<number>`COALESCE(SUM(${walletTransactions.amount}), 0)`
-    })
-    .from(users)
-    .leftJoin(sql`users AS referred`, sql`referred.referred_by = ${users.id}`)
-    .leftJoin(walletTransactions, and(
-      eq(walletTransactions.toUserId, users.id),
-      eq(walletTransactions.type, 'referral_reward')
-    ))
-    .groupBy(users.id, users.name)
-    .orderBy(sql`COUNT(referred.id) DESC`)
-    .limit(50);
+    // Get all users with their referral counts
+    const usersWithReferrals = await db.execute(sql`
+      SELECT 
+        u.id,
+        COALESCE(u.first_name || ' ' || u.last_name, u.email, 'Anonymous') as name,
+        COUNT(DISTINCT r.id) as referral_count,
+        COALESCE(SUM(CAST(wt.amount AS DECIMAL)), 0) as total_earnings
+      FROM users u
+      LEFT JOIN users r ON r.referred_by = u.id AND r.is_banned = false
+      LEFT JOIN wallet_transactions wt ON wt.to_user_id = u.id AND wt.type = 'referral_reward'
+      WHERE u.is_banned = false
+      GROUP BY u.id, u.first_name, u.last_name, u.email
+      HAVING COUNT(DISTINCT r.id) > 0
+      ORDER BY referral_count DESC, total_earnings DESC
+      LIMIT 50
+    `);
 
-    const formattedLeaderboard = leaderboard.map((item, index) => ({
-      id: item.userId,
+    const formattedLeaderboard = usersWithReferrals.rows.map((item: any, index: number) => ({
+      id: item.id,
       name: item.name,
-      referrals: Number(item.referralCount),
-      earnings: Number(item.earnings),
+      referrals: Number(item.referral_count),
+      earnings: Number(item.total_earnings),
       rank: index + 1,
-      badge: getBadge(Number(item.referralCount))
+      badge: getBadge(Number(item.referral_count))
     }));
 
     res.json(formattedLeaderboard);
   } catch (error: any) {
+    console.error('Leaderboard error:', error);
     res.status(500).json({ error: error.message });
   }
 });

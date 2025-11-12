@@ -44,7 +44,7 @@ const VaultDashboard = () => {
           <Crown className="w-16 h-16 mx-auto mb-4 text-blue-600" />
           <h2 className="text-2xl font-bold mb-4">Connect Your Wallet</h2>
           <p className="text-gray-600 mb-6">Connect your wallet to access the Maono Vault dashboard</p>
-          <Button onClick={connectWallet} disabled={isConnecting}>
+          <Button onClick={connectMetaMask} disabled={isConnecting}>
             {isConnecting ? 'Connecting...' : 'Connect Wallet'}
           </Button>
         </Card>
