@@ -1,0 +1,57 @@
+
+> tsx watch server/index.ts
+
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  write
+ to custom object with { processEnv: myObject }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild      
+2025-11-13 01:34:08 [message-bus] info: Agent NURU subscribed to analysis_request, user_query, health_check, risk_assessment
+2025-11-13 01:34:08 [message-bus] info: Agent MORIO subscribed to notification, health_check
+2025-11-13 01:34:08 [message-bus] info: Agent KWETU subscribed to action_required, health_check
+2025-11-13 01:34:09 [message-bus] info: Agent ANL-MTAA-001 subscribed to analysis_request, health_check
+2025-11-13 01:34:38 [analyzer-agent] info: Initializing Analyzer Agent
+{
+  "agentId": "ANL-MTAA-001"
+}
+2025-11-13 01:34:38 [analyzer-agent] info: Analyzer Agent initialized successfully
+2025-11-13 01:34:38 [message-bus] info: Agent MTAA-001 subscribed to threat_detected, quarantine_user, release_user, health_check
+[DEF-OBSIDIAN-MTAA-001] Defender Agent initialized and active⚠️  REDIS_URL not configured. Using in-memory fallback store.
+2025-11-13 01:34:38 [api] info: ⏰ Weekly rewards distribution
+ job scheduled (Every Sunday at 00:00 UTC)
+2025-11-13 01:34:38 [api] info: 🤖 Setting up investment pools automation...
+2025-11-13 01:34:38 [api] info: ✅ Price recording job schedul
+ed (every 5 minutes)
+2025-11-13 01:34:38 [api] info: ✅ Performance tracking job sc
+heduled (every hour)
+2025-11-13 01:34:38 [api] info: ✅ Rebalancing check job sched
+uled (every 6 hours)
+2025-11-13 01:34:38 [api] info: ✅ Daily summary job scheduled
+ (midnight)
+2025-11-13 01:34:38 [api] info: 🚀 Investment pools automation is running!
+⏳ PostgreSQL connection attempt 1/5 failed, retrying in 2s...
+2025-11-13 01:34:39 [message-bus] info: Agent SYNC-MTAA-001 subscribed to state_sync, rollback_request, sync_beat, health_check
+2025-11-13 01:34:39 [synchronizer-agent] info: Initializing Synchronizer Agent
+{
+  "agentId": "SYNC-MTAA-001"
+}
+2025-11-13 01:34:39 [synchronizer-agent] info: Synchronizer Agent initialized successfully
+🚀 Starting blockchain integration services...
+Starting vault event indexer...
+2025-11-13 01:34:40 [vault-automation] info: 🚀 Starting Vault Automation Service...
+2025-11-13 01:34:40 [vault-automation] warn: ⚠️  NAV update a
+utomation skipped: MaonoVault contract not configured        
+2025-11-13 01:34:40 [vault-automation] info:    Deploy MaonoVault contract and set MAONO_CONTRACT_ADDRESS in .env to enable automation
+2025-11-13 01:34:40 [vault-automation] info: ✅ Vault Automati
+on Service started successfully
+2025-11-13 01:34:40 [vault-automation] info: Performance: automation_service_startup took 2ms
+{
+  "performance": true,
+  "operation": "automation_service_startup",
+  "duration": 2,
+  "scheduledTasks": 2,
+  "intervalMs": 30000
+}
+2025-11-13 01:34:40 [api] info: Starting transaction monitor...
+2025-11-13 01:34:40 [api] info: Starting recurring payment processor...
+Fatal server error: TypeError: gasPriceOracle.start is not a 
+function
+    at <anonymous> (E:\repos\litmajor\mtaa-dao\server\index.ts:431:20)
