@@ -425,18 +425,30 @@ app.use((req, res, next) => {
     // Start vault automation service
     vaultAutomationService.start();
 
-    // Start transaction monitoring with WebSocket support
+    // Start services
     transactionMonitor.start();
-
-    // Start recurring payment processor with balance validation
     recurringPaymentService.start();
+    gasPriceOracle.start();
 
-    // Warm up gas price oracle cache
-    gasPriceOracle.getCurrentGasPrices().catch(err =>
-      console.warn('Failed to initialize gas price oracle:', err)
-    );
+    // Initialize Elder Council
+    console.log('🏛️ Initializing Elder Council...');
+    try {
+      await eldScry.start();
+      console.log('✅ ELD-SCRY initialized');
 
-    logger.info('✅ All payment monitoring services started');
+      await eldKaizen.start();
+      console.log('✅ ELD-KAIZEN initialized');
+
+      await eldLumen.initialize();
+      console.log('✅ ELD-LUMEN initialized');
+
+      await coordinator.start();
+      console.log('✅ ARCH-MALTA Coordinator initialized');
+
+      console.log('🎉 Elder Council fully operational');
+    } catch (error) {
+      console.error('❌ Elder Council initialization failed:', error);
+    }
 
     // Start bridge relayer service
     bridgeRelayerService.start();

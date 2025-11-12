@@ -17,7 +17,7 @@ export default function Navigation() {
   const navigate = useNavigate();
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
-  
+
   const [isScrolled, setIsScrolled] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -473,7 +473,7 @@ export default function Navigation() {
                   ✖️
                 </Button>
               </div>
-              
+
               <div className="space-y-2">
                 {[...quickAccessItems, ...dashboardItems, ...primaryNavItems, ...vaultItems, ...walletItems, ...daoItems, ...adminItems, ...utilityItems, ...resourceItems].map((item) => (
                   <Link key={item.href} to={item.href} onClick={() => setMobileMenuOpen(false)}>
