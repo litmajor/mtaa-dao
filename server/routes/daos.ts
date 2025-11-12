@@ -76,7 +76,10 @@ router.get("/", authenticate, async (req, res) => {
     const growthRates = await db.execute(sql`
       SELECT 
         "daoId",
-        COUNT(*) FILTER (WHERE "joinedAt" >= NOW() - INTERVAL '30 days') * 100.0 / NULLIF(COUNT(*), 0) as "growthRate"
+        CASE 
+          WHEN COUNT(*) = 0 THEN 0
+          ELSE COUNT(*) FILTER (WHERE "joinedAt" >= NOW() - INTERVAL '30 days') * 100.0 / COUNT(*)
+        END as "growthRate"
       FROM dao_memberships
       GROUP BY "daoId"
     `);

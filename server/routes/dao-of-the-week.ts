@@ -23,7 +23,7 @@ router.get('/current', async (req, res) => {
         COUNT(DISTINCT v.id) as vote_count,
         (COUNT(DISTINCT p.id) * 3 + COUNT(DISTINCT v.id) * 2 + COUNT(DISTINCT dm.user_id)) as engagement_score
       FROM daos d
-      LEFT JOIN dao_members dm ON d.id = dm.dao_id
+      LEFT JOIN dao_memberships dm ON d.id = dm.dao_id
       LEFT JOIN proposals p ON d.id = p.dao_id AND p.created_at >= ${currentWeekStart.toISOString()}
       LEFT JOIN votes v ON p.id = v.proposal_id AND v.created_at >= ${currentWeekStart.toISOString()}
       WHERE d.status = 'active'
@@ -55,7 +55,7 @@ router.get('/history', async (req, res) => {
         COUNT(DISTINCT dm.user_id) as member_count,
         COUNT(DISTINCT p.id) as proposal_count
       FROM daos d
-      LEFT JOIN dao_members dm ON d.id = dm.dao_id
+      LEFT JOIN dao_memberships dm ON d.id = dm.dao_id
       LEFT JOIN proposals p ON d.id = p.dao_id
       WHERE d.status = 'active'
       GROUP BY d.id

@@ -3,7 +3,7 @@ import { db } from '../db';
 import { daos, proposals, vaults, walletTransactions, contributions, users } from '../../shared/schema';
 import { eq, gte, lte, desc, and, sql } from 'drizzle-orm';
 import { subDays, subMonths } from 'date-fns';
-import { analyzer } from '../agents/analyzer';
+import { analyzerAgent } from '../agents/analyzer';
 
 interface PredictionModel {
   treasuryGrowth: {
@@ -444,8 +444,8 @@ export class AIAnalyticsService {
       this.assessRisk(daoId),
       this.optimizePortfolio(daoId),
       this.measureImpact(daoId),
-      analyzer.detectFraud(daoId),
-      analyzer.analyzeGovernance(daoId)
+      analyzerAgent.detectFraud(daoId),
+      analyzerAgent.analyzeGovernance(daoId)
     ]);
 
     return {
@@ -456,22 +456,38 @@ export class AIAnalyticsService {
       security: {
         fraud: fraudAnalysis,
         governance: governanceAnalysis,
-        threatLevel: Math.max(fraudAnalysis.threatLevel, governanceAnalysis.threatLevel)
+        threatLevel: this.getMaxThreatLevel(fraudAnalysis.threatLevel, governanceAnalysis.threatLevel)
       },
       timestamp: new Date().toISOString()
     };
   }
 
+  private getMaxThreatLevel(level1: any, level2: any): any {
+    const threatLevelMap: Record<string, number> = {
+      'minimal': 0,
+      'low': 1,
+      'medium': 2,
+      'high': 3,
+      'critical': 4
+    };
+    
+    const val1 = threatLevelMap[String(level1)] ?? 0;
+    const val2 = threatLevelMap[String(level2)] ?? 0;
+    
+    // Return the higher threat level string
+    return val1 > val2 ? level1 : level2;
+  }
+
   async getFraudDetection(daoId: string) {
-    return await analyzer.detectFraud(daoId);
+    return await analyzerAgent.detectFraud(daoId);
   }
 
   async getGovernanceAnalysis(daoId: string) {
-    return await analyzer.analyzeGovernance(daoId);
+    return await analyzerAgent.analyzeGovernance(daoId);
   }
 
   async getTreasuryHealthAnalysis(daoId: string) {
-    return await analyzer.analyzeTreasuryHealth(daoId);
+    return await analyzerAgent.analyzeTreasuryHealth(daoId);
   }
 }
 

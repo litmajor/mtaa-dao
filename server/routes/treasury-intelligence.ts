@@ -2,7 +2,7 @@
 import express, { Request, Response } from 'express';
 import { isAuthenticated } from '../nextAuthMiddleware';
 import { treasuryIntelligenceService } from '../services/treasuryIntelligenceService';
-import { analyzer } from '../agents/analyzer';
+import { analyzerAgent } from '../agents/analyzer';
 import { aiAnalyticsService } from '../services/aiAnalyticsService';
 
 const router = express.Router();
@@ -128,7 +128,7 @@ router.get('/:daoId/member/:userId/profile', isAuthenticated, async (req: Reques
   try {
     const { daoId, userId } = req.params;
     
-    const profile = await analyzer.profileNode(userId, daoId);
+    const profile = await analyzerAgent.profileNode(userId, daoId);
     
     res.json({ success: true, data: profile });
   } catch (error: any) {
@@ -139,7 +139,7 @@ router.get('/:daoId/member/:userId/profile', isAuthenticated, async (req: Reques
 // System health monitoring
 router.get('/system/health', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const healthReport = await analyzer.monitorSystemHealth();
+    const healthReport = await analyzerAgent.monitorSystemHealth();
     
     res.json({ success: true, data: healthReport });
   } catch (error: any) {

@@ -3,6 +3,7 @@ import express, { Request, Response } from 'express';
 import { db } from '../db';
 import { users, walletTransactions } from '../../shared/schema';
 import { eq, and, sql } from 'drizzle-orm';
+import { isAuthenticated } from '../nextAuthMiddleware';
 
 const router = express.Router();
 
@@ -12,9 +13,9 @@ function generateReferralCode(userId: string): string {
 }
 
 // GET /api/referrals/stats
-router.get('/stats', async (req: Request, res: Response) => {
+router.get('/stats', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const userId = req.session?.userId;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
