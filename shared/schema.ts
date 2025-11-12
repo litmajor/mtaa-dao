@@ -151,6 +151,25 @@ export const users = pgTable("users", {
   // mtaatokenbalanceLegacy: decimal("mtaatokenbalance", { precision: 10, scale: 2 }),
 });
 
+// User Contexts table for Nuru AI system
+export const userContexts = pgTable("user_contexts", {
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  role: varchar("role").notNull(), // 'guest', 'member', 'admin', 'founder'
+  walletAddress: varchar("wallet_address"),
+  contributionScore: decimal("contribution_score", { precision: 10, scale: 2 }).default("0"),
+  lastInteraction: timestamp("last_interaction").defaultNow(),
+  context: jsonb("context").notNull(), // stores preferences, sessionData, recentActions
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  pk: {
+    columns: [table.userId, table.daoId],
+  },
+  daoIdIdx: index("user_contexts_dao_id_idx").on(table.daoId),
+  lastInteractionIdx: index("user_contexts_last_interaction_idx").on(table.lastInteraction),
+}));
+
 // User Activities table
 export const userActivities = pgTable('user_activities', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -1730,6 +1749,11 @@ export const insertVaultPerformanceSchema = createInsertSchema(vaultPerformance)
 export const insertVaultRiskAssessmentSchema = createInsertSchema(vaultRiskAssessments);
 export const insertVaultStrategyAllocationSchema = createInsertSchema(vaultStrategyAllocations);
 export const insertVaultGovernanceProposalSchema = createInsertSchema(vaultGovernanceProposals);
+
+// User Contexts types and schemas
+export type UserContext = typeof userContexts.$inferSelect;
+export type InsertUserContext = typeof userContexts.$inferInsert;
+export const insertUserContextSchema = createInsertSchema(userContexts);
 
 export * from './vestingSchema';
 export * from './messageReactionsSchema';
