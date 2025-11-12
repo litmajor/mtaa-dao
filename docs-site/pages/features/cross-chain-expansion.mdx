@@ -1,0 +1,254 @@
+
+# Cross-Chain Expansion: TRX, TON & Universal Swaps
+
+MtaaDAO now supports cross-chain operations across multiple blockchains including TRON (TRX) and TON, with seamless token swapping capabilities.
+
+## Supported Chains
+
+### Mainnets
+- **Celo** - Low-cost mobile-first blockchain
+- **Ethereum** - Leading smart contract platform
+- **Polygon** - High-speed, low-cost L2
+- **BNB Chain** - Fast and efficient DeFi hub
+- **Optimism** - Ethereum L2 with optimistic rollups
+- **Arbitrum** - Scalable Ethereum L2
+- **TRON (TRX)** - High-throughput blockchain (NEW)
+- **TON** - Telegram Open Network (NEW)
+
+### Testnets
+- Celo Alfajores
+- Polygon Mumbai
+- BSC Testnet
+- TRON Shasta
+- TON Testnet
+
+## Features
+
+### 1. Cross-Chain Bridging
+
+Transfer assets between any supported chains with minimal fees:
+
+```typescript
+// Bridge CELO to Ethereum
+const transfer = await apiPost('/api/cross-chain/transfer', {
+  sourceChain: 'celo',
+  destinationChain: 'ethereum',
+  tokenAddress: '0x...',
+  amount: '100',
+  destinationAddress: '0x...'
+});
+```
+
+### 2. Cross-Chain Swaps
+
+Swap tokens across different chains in a single transaction:
+
+```typescript
+// Swap CELO for TRX
+const quote = await apiPost('/api/cross-chain/swap/quote', {
+  fromChain: 'celo',
+  toChain: 'tron',
+  fromToken: 'CELO',
+  toToken: 'TRX',
+  fromAmount: '100',
+  slippageTolerance: 1.0
+});
+
+// Execute the swap
+const swap = await apiPost('/api/cross-chain/swap/execute', {
+  quote,
+  userAddress: '0x...'
+});
+```
+
+### 3. TRON Integration
+
+#### Supported Tokens
+- TRX (native)
+- USDT (TRC-20)
+- USDC (TRC-20)
+
+#### Features
+- Fast 3-second block times
+- Low transaction fees (~0.001 TRX)
+- High throughput (2000+ TPS)
+- Energy-based fee model
+
+#### Example: Bridge to TRON
+```typescript
+const bridgeToTron = await apiPost('/api/cross-chain/transfer', {
+  sourceChain: 'celo',
+  destinationChain: 'tron',
+  tokenAddress: 'cUSD_ADDRESS',
+  amount: '50',
+  destinationAddress: 'TAddress...'
+});
+```
+
+### 4. TON Integration
+
+#### Supported Tokens
+- TON (native)
+- USDT (Jetton)
+
+#### Features
+- Ultra-fast sharding architecture
+- Telegram ecosystem integration
+- Low fees (~0.003 TON)
+- Scalable to millions of TPS
+
+#### Example: Swap to TON
+```typescript
+const swapToTon = await apiPost('/api/cross-chain/swap/quote', {
+  fromChain: 'ethereum',
+  toChain: 'ton',
+  fromToken: 'ETH',
+  toToken: 'TON',
+  fromAmount: '1'
+});
+```
+
+## How It Works
+
+### Bridge Protocol Stack
+
+```
+┌─────────────────────────────────────┐
+│      User Initiates Transfer        │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│   Get Quote & Route Optimization    │
+│   - Price feeds from oracles        │
+│   - Best route calculation          │
+│   - Fee estimation                  │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│      Lock Assets on Source Chain    │
+│   - Smart contract escrow           │
+│   - Emit bridge event               │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│    Bridge Relayers (LayerZero/      │
+│    Axelar/Wormhole)                 │
+│   - Cross-chain message passing     │
+│   - Multi-sig validation            │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│   Mint/Release on Destination       │
+│   - Verify proof                    │
+│   - Execute swap if needed          │
+│   - Transfer to recipient           │
+└─────────────────────────────────────┘
+```
+
+### Security Features
+
+1. **Multi-Signature Validation** - Transfers require multiple relayer confirmations
+2. **Time-Locked Escrow** - Funds locked until destination confirmation
+3. **Proof Verification** - Cryptographic proofs validate cross-chain messages
+4. **Slippage Protection** - Maximum acceptable price movement
+5. **Gas Estimation** - Accurate fee calculation before execution
+
+## Swap Routing
+
+The system automatically finds the best route for your swap:
+
+```
+CELO → TRX
+├─ Direct Route (if pools exist)
+│  └─ CELO → Bridge → TRX
+│
+└─ Optimal Route (via intermediary)
+   └─ CELO → USDT → Bridge → TRX
+```
+
+## Fee Structure
+
+| Operation | Base Fee | Gas Cost | Total (est.) |
+|-----------|----------|----------|--------------|
+| Bridge Same Token | 0.1% | Chain-specific | 0.1% + gas |
+| Cross-Chain Swap | 0.3% | 2x gas | 0.3% + gas |
+| TRON Bridge | 0.1% | ~0.001 TRX | Very low |
+| TON Bridge | 0.1% | ~0.003 TON | Very low |
+
+## Usage Examples
+
+### Example 1: Emergency TRON Transfer
+```typescript
+// Fast, cheap transfer for emergencies
+const emergency = await apiPost('/api/cross-chain/transfer', {
+  sourceChain: 'celo',
+  destinationChain: 'tron',
+  tokenAddress: 'USDT_CELO',
+  amount: '100',
+  destinationAddress: 'TAddress...'
+});
+// Completes in ~30 seconds
+```
+
+### Example 2: Arbitrage Opportunity
+```typescript
+// Exploit price differences between chains
+const arbQuote = await apiPost('/api/cross-chain/swap/quote', {
+  fromChain: 'polygon',
+  toChain: 'bsc',
+  fromToken: 'USDT',
+  toToken: 'BUSD',
+  fromAmount: '10000'
+});
+
+if (arbQuote.priceImpact < 0.5) {
+  await apiPost('/api/cross-chain/swap/execute', {
+    quote: arbQuote,
+    userAddress: '0x...'
+  });
+}
+```
+
+### Example 3: Multi-Chain Vault
+```typescript
+// Create vault spanning multiple chains
+const vault = await apiPost('/api/cross-chain/vault', {
+  chains: ['celo', 'tron', 'ton'],
+  name: 'Global Yield Vault'
+});
+```
+
+## Roadmap
+
+### Phase 1: Core Infrastructure ✅
+- [x] LayerZero integration
+- [x] Basic bridge functionality
+- [x] TRON support
+- [x] TON support
+
+### Phase 2: Advanced Features (Q2 2025)
+- [ ] Automated market making
+- [ ] Cross-chain governance
+- [ ] Intent-based bridging
+- [ ] Gasless transactions
+
+### Phase 3: Enterprise (Q3 2025)
+- [ ] Institutional bridges
+- [ ] Compliance integrations
+- [ ] Advanced routing algorithms
+- [ ] Cross-chain credit
+
+## API Reference
+
+See the [Cross-Chain API Documentation](/developer/cross-chain-api) for complete endpoint details.
+
+## Support
+
+For cross-chain issues:
+- Discord: `#cross-chain-support`
+- Email: bridge@mtaadao.org
+- Status: https://status.mtaadao.org

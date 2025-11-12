@@ -9,7 +9,11 @@ export enum SupportedChain {
   BSC = 'bsc',
   BSC_TESTNET = 'bsc-testnet',
   OPTIMISM = 'optimism',
-  ARBITRUM = 'arbitrum'
+  ARBITRUM = 'arbitrum',
+  TRON = 'tron',
+  TRON_SHASTA = 'tron-shasta',
+  TON = 'ton',
+  TON_TESTNET = 'ton-testnet'
 }
 
 export interface ChainConfig {
@@ -110,6 +114,42 @@ export const CHAIN_CONFIGS: Record<SupportedChain, ChainConfig> = {
     blockExplorer: 'https://arbiscan.io',
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
     isTestnet: false
+  },
+  [SupportedChain.TRON]: {
+    chainId: 728126428,
+    name: 'TRON Mainnet',
+    symbol: 'TRX',
+    rpcUrl: process.env.TRON_RPC_URL || 'https://api.trongrid.io',
+    blockExplorer: 'https://tronscan.org',
+    nativeCurrency: { name: 'Tronix', symbol: 'TRX', decimals: 6 },
+    isTestnet: false
+  },
+  [SupportedChain.TRON_SHASTA]: {
+    chainId: 2494104990,
+    name: 'TRON Shasta Testnet',
+    symbol: 'TRX',
+    rpcUrl: process.env.TRON_SHASTA_RPC_URL || 'https://api.shasta.trongrid.io',
+    blockExplorer: 'https://shasta.tronscan.org',
+    nativeCurrency: { name: 'Tronix', symbol: 'TRX', decimals: 6 },
+    isTestnet: true
+  },
+  [SupportedChain.TON]: {
+    chainId: 0,
+    name: 'TON Mainnet',
+    symbol: 'TON',
+    rpcUrl: process.env.TON_RPC_URL || 'https://toncenter.com/api/v2/jsonRPC',
+    blockExplorer: 'https://tonscan.org',
+    nativeCurrency: { name: 'Toncoin', symbol: 'TON', decimals: 9 },
+    isTestnet: false
+  },
+  [SupportedChain.TON_TESTNET]: {
+    chainId: 1,
+    name: 'TON Testnet',
+    symbol: 'TON',
+    rpcUrl: process.env.TON_TESTNET_RPC_URL || 'https://testnet.toncenter.com/api/v2/jsonRPC',
+    blockExplorer: 'https://testnet.tonscan.org',
+    nativeCurrency: { name: 'Toncoin', symbol: 'TON', decimals: 9 },
+    isTestnet: true
   }
 };
 

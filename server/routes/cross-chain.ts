@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { crossChainService } from '../services/crossChainService';
 import { crossChainGovernanceService } from '../services/crossChainGovernanceService';
 import { bridgeRelayerService } from '../services/bridgeRelayerService';
+import { crossChainSwapService } from '../services/crossChainSwapService';
 import { asyncHandler } from '../middleware/errorHandler';
 import { isAuthenticated } from '../nextAuthMiddleware';
 import { z } from 'zod';
@@ -184,6 +185,68 @@ router.post('/vault', isAuthenticated, asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: { vaultId }
+  });
+}));
+
+// Get swap quote
+router.post('/swap/quote', isAuthenticated, asyncHandler(async (req, res) => {
+  const { 
+    fromChain, 
+    toChain, 
+    fromToken, 
+    toToken, 
+    fromAmount,
+    slippageTolerance 
+  } = req.body;
+
+  const quote = await crossChainSwapService.getSwapQuote(
+    fromChain,
+    toChain,
+    fromToken,
+    toToken,
+    fromAmount,
+    slippageTolerance
+  );
+
+  res.json({
+    success: true,
+    data: quote
+  });
+}));
+
+// Execute swap
+router.post('/swap/execute', isAuthenticated, asyncHandler(async (req, res) => {
+  const userId = (req.user as any)?.claims?.sub;
+  const { quote, userAddress } = req.body;
+
+  const execution = await crossChainSwapService.executeSwap(
+    userId,
+    quote,
+    userAddress
+  );
+
+  res.json({
+    success: true,
+    data: execution
+  });
+}));
+
+// Get swap status
+router.get('/swap/:swapId', isAuthenticated, asyncHandler(async (req, res) => {
+  const { swapId } = req.params;
+
+  const status = await crossChainSwapService.getSwapStatus(swapId);
+
+  if (!status) {
+    return res.status(404).json({
+      success: false,
+      message: 'Swap not found'
+    });
+  }
+
+  res.json({
+    success: true,
+    data: status
   });
 }));
 
