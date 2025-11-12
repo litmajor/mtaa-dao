@@ -65,6 +65,10 @@ import morioRoutes from './routes/morio';
 import { transactionMonitor } from './services/transactionMonitor';
 import { recurringPaymentService } from './services/recurringPaymentService';
 import { gasPriceOracle } from './services/gasPriceOracle';
+import { eldScry } from './core/elders/scry';
+import { eldKaizen } from './core/elders/kaizen';
+import { eldLumen } from './core/elders/lumen';
+import { elderCoordinator as coordinator } from './core/elders/coordinator';
 // Import example function for wallet demonstration
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -428,7 +432,9 @@ app.use((req, res, next) => {
     // Start services
     transactionMonitor.start();
     recurringPaymentService.start();
-    gasPriceOracle.start();
+    if (typeof gasPriceOracle.start === 'function') {
+      gasPriceOracle.start();
+    }
 
     // Initialize Elder Council
     console.log('🏛️ Initializing Elder Council...');
@@ -439,15 +445,15 @@ app.use((req, res, next) => {
       await eldKaizen.start();
       console.log('✅ ELD-KAIZEN initialized');
 
-      await eldLumen.initialize();
+      await eldLumen.start();
       console.log('✅ ELD-LUMEN initialized');
 
-      await coordinator.start();
       console.log('✅ ARCH-MALTA Coordinator initialized');
 
       console.log('🎉 Elder Council fully operational');
     } catch (error) {
       console.error('❌ Elder Council initialization failed:', error);
+      console.error('Error details:', error);
     }
 
     // Start bridge relayer service
