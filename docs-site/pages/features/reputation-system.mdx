@@ -1,0 +1,531 @@
+
+---
+title: Reputation System Guide
+description: Earn reputation, unlock benefits, and build credibility in MtaaDAO
+---
+
+# Reputation System Guide
+
+Build your on-chain credibility through contributions, governance, and community engagement.
+
+---
+
+## Overview
+
+The MtaaDAO Reputation System is a merit-based scoring system that:
+- ✅ Rewards valuable contributions
+- ✅ Unlocks advanced features
+- ✅ Increases governance influence
+- ✅ Builds verifiable on-chain credibility
+
+---
+
+## How Reputation Works
+
+### Reputation Score
+
+```typescript
+interface ReputationScore {
+  total: number;        // 0-10,000+
+  governance: number;   // Voting & proposals
+  contribution: number; // Tasks & work
+  community: number;    // Engagement & help
+  reliability: number;  // Consistency & trust
+}
+```
+
+**Example Profile**:
+```
+Alice's Reputation: 2,450 points
+
+Breakdown:
+├── Governance: 800 (32.7%)
+│   └── 45 votes, 8 proposals
+├── Contribution: 1,200 (49.0%)
+│   └── 23 tasks completed
+├── Community: 300 (12.2%)
+│   └── 120 helpful comments
+└── Reliability: 150 (6.1%)
+    └── 95% task success rate
+```
+
+---
+
+## Earning Reputation
+
+### 1. Governance Participation
+
+**Voting on Proposals**:
+```typescript
+const votingRewards = {
+  firstVote: 50,
+  regularVote: 25,
+  earlyVote: +10, // bonus for voting early
+  controversialVote: +5, // bonus for close votes
+  
+  streaks: {
+    7: "1.5x multiplier",
+    30: "2x multiplier",
+    90: "3x multiplier"
+  }
+};
+```
+
+**Creating Proposals**:
+```typescript
+const proposalRewards = {
+  created: 100,
+  passed: +200, // bonus if approved
+  highEngagement: +150, // 50+ participants
+  implemented: +300 // bonus when executed
+};
+```
+
+**Example**:
+```
+Alice creates proposal: +100 rep
+Proposal generates 60 votes: +150 rep (high engagement)
+Proposal passes: +200 rep
+Total: 450 reputation points
+```
+
+---
+
+### 2. Task Completion
+
+**Task Bounties**:
+```typescript
+const taskRewards = {
+  easy: 50,
+  medium: 150,
+  hard: 400,
+  expert: 1000,
+  
+  bonuses: {
+    earlyCompletion: "+25%",
+    highQuality: "+50%",
+    complexityBonus: "+100 points"
+  }
+};
+```
+
+**Quality Ratings**:
+```
+Task completed & reviewed:
+
+⭐⭐⭐⭐⭐ Excellent: 500 rep
+⭐⭐⭐⭐ Good: 400 rep
+⭐⭐⭐ Average: 300 rep
+⭐⭐ Below Average: 150 rep
+⭐ Poor: 50 rep
+```
+
+---
+
+### 3. Community Engagement
+
+**Helping Others**:
+```typescript
+const communityRewards = {
+  helpfulComment: 10,
+  bestAnswer: 50,
+  tutorialCreated: 200,
+  bugReport: 100,
+  featureIdea: 75,
+  
+  moderator: {
+    flagInappropriate: 25,
+    resolveDispute: 100,
+    welcomeNewMember: 15
+  }
+};
+```
+
+**Example**:
+```
+Bob answers 10 questions: +100 rep
+3 marked as "best answer": +150 rep
+Creates tutorial: +200 rep
+Total: 450 reputation points
+```
+
+---
+
+### 4. Reliability Metrics
+
+**Consistency Tracking**:
+```typescript
+interface ReliabilityMetrics {
+  taskCompletionRate: 95; // percentage
+  onTimeDelivery: 90;
+  proposalSuccessRate: 70;
+  votingParticipation: 85;
+  
+  penalties: {
+    missedDeadline: -50,
+    abandonedTask: -100,
+    inappropriateContent: -200
+  }
+}
+```
+
+**Reliability Score**:
+```
+Excellent (95%+): 2x reputation multiplier
+Good (80-94%): 1.5x multiplier
+Average (60-79%): 1x multiplier
+Poor (<60%): 0.5x multiplier
+```
+
+---
+
+## Reputation Tiers
+
+### Tier System
+
+```typescript
+const reputationTiers = {
+  newcomer: { min: 0, max: 99, color: "gray" },
+  member: { min: 100, max: 499, color: "blue" },
+  contributor: { min: 500, max: 1499, color: "green" },
+  expert: { min: 1500, max: 4999, color: "purple" },
+  leader: { min: 5000, max: 9999, color: "gold" },
+  legend: { min: 10000, max: Infinity, color: "diamond" }
+};
+```
+
+**Tier Progression**:
+```
+🟦 Newcomer (0-99)
+├── Join DAOs
+├── Vote on proposals
+└── Complete beginner tasks
+
+🔵 Member (100-499)
+├── Create proposals
+├── Claim medium tasks
+└── Earn 2x MTAA on challenges
+
+🟢 Contributor (500-1,499)
+├── Unlock expert tasks
+├── Become DAO elder
+└── Access premium features
+
+🟣 Expert (1,500-4,999)
+├── Mentor newcomers
+├── Influence major decisions
+└── Custom DAO templates
+
+🟡 Leader (5,000-9,999)
+├── Platform governance
+├── Revenue sharing (1%)
+└── Priority support
+
+💎 Legend (10,000+)
+├── Lifetime premium access
+├── Revenue sharing (5%)
+└── Advisory board seat
+```
+
+---
+
+## Benefits by Tier
+
+### Governance Power
+
+| Tier | Voting Multiplier | Proposal Creation | Quorum Reduction |
+|------|-------------------|-------------------|------------------|
+| Newcomer | 1x | ❌ No | 0% |
+| Member | 1.2x | ✅ Yes (1,000 MTAA) | -5% |
+| Contributor | 1.5x | ✅ Yes (500 MTAA) | -10% |
+| Expert | 2x | ✅ Yes (free) | -15% |
+| Leader | 3x | ✅ Yes (free) | -20% |
+| Legend | 5x | ✅ Yes (free) | -25% |
+
+---
+
+### Feature Access
+
+**Newcomer (0-99)**:
+- ✅ Basic wallet
+- ✅ Join public DAOs
+- ✅ Vote on proposals
+- ❌ No task claiming
+
+**Member (100-499)**:
+- ✅ All Newcomer features
+- ✅ Claim easy/medium tasks
+- ✅ Create proposals (with stake)
+- ✅ 1 personal vault
+- ❌ No DAO creation
+
+**Contributor (500-1,499)**:
+- ✅ All Member features
+- ✅ Claim hard tasks
+- ✅ Create free DAO
+- ✅ 3 personal vaults
+- ✅ Become DAO elder
+- ✅ Access analytics
+
+**Expert (1,500-4,999)**:
+- ✅ All Contributor features
+- ✅ Claim expert tasks
+- ✅ Create 5 DAOs
+- ✅ Unlimited vaults
+- ✅ Custom DAO branding
+- ✅ Mentorship program
+
+**Leader (5,000-9,999)**:
+- ✅ All Expert features
+- ✅ Platform governance
+- ✅ Revenue sharing (1%)
+- ✅ White-label DAOs
+- ✅ API access
+
+**Legend (10,000+)**:
+- ✅ All Leader features
+- ✅ Lifetime premium
+- ✅ Revenue sharing (5%)
+- ✅ Advisory board
+- ✅ Priority everything
+
+---
+
+## Reputation Decay
+
+### How Decay Works
+
+**Inactivity Penalty**:
+```typescript
+const decayRules = {
+  noActivity7Days: -0, // grace period
+  noActivity30Days: -5, // per day
+  noActivity90Days: -10, // per day
+  maxDecay: 50 // percentage of total
+};
+```
+
+**Example**:
+```
+Alice has 2,000 reputation
+Inactive for 45 days:
+
+Days 1-7: No decay (grace period)
+Days 8-30: -5/day × 23 days = -115 rep
+Days 31-45: -10/day × 15 days = -150 rep
+
+Total decay: -265 rep
+New score: 1,735 rep
+```
+
+**Preventing Decay**:
+- Vote on at least 1 proposal per week
+- Complete 1 task per month
+- Comment on proposals
+- Attend DAO meetings
+
+---
+
+## Reputation Recovery
+
+**Quick Recovery Actions**:
+```typescript
+const recoveryBoosts = {
+  completeTask: +150,
+  passProposal: +250,
+  helpNewMember: +50,
+  submitBugFix: +200,
+  
+  streakRecovery: {
+    "3 consecutive days active": "+100",
+    "7 consecutive days active": "+300",
+    "30 consecutive days active": "+1000"
+  }
+};
+```
+
+---
+
+## Reputation Verification
+
+### On-Chain Proof
+
+**Verifiable Credentials**:
+```typescript
+interface ReputationProof {
+  address: "0xUserAddress",
+  score: 2450,
+  tier: "Contributor",
+  achievements: [
+    "Completed 50 tasks",
+    "Created 10 proposals",
+    "Voted 100 times"
+  ],
+  verificationHash: "0xabc...def",
+  timestamp: "2025-01-15T10:30:00Z"
+}
+```
+
+**Share Your Reputation**:
+```
+https://mtaadao.com/reputation/0xAddress
+
+Shows:
+- Reputation score
+- Tier badge
+- Top achievements
+- Activity graph
+```
+
+---
+
+## Achievements System
+
+### Achievement Categories
+
+**Governance Achievements**:
+```
+🗳️ First Vote: Vote on your first proposal (+50 rep)
+📝 Proposal Creator: Create your first proposal (+100 rep)
+🎯 Proposal Master: 5 proposals passed (+500 rep)
+🔥 Voting Streak: Vote 30 days straight (+300 rep)
+```
+
+**Contribution Achievements**:
+```
+⚙️ Task Rookie: Complete 5 tasks (+100 rep)
+💪 Task Expert: Complete 50 tasks (+500 rep)
+🏆 Quality Work: 10 five-star reviews (+400 rep)
+⚡ Speed Demon: Complete task in <24h (+200 rep)
+```
+
+**Community Achievements**:
+```
+🤝 Helpful Member: 25 helpful comments (+150 rep)
+🎓 Mentor: Help 10 newcomers (+300 rep)
+🌟 Community Star: 100+ likes on content (+250 rep)
+🔧 Bug Hunter: Report 5 bugs (+200 rep)
+```
+
+**Special Achievements**:
+```
+👑 DAO Founder: Create a DAO (+500 rep)
+💎 Whale: Stake 10,000+ MTAA (+1000 rep)
+🌍 Ambassador: Refer 20 users (+800 rep)
+🎖️ OG: First 100 users (+2000 rep)
+```
+
+---
+
+## Reputation Leaderboard
+
+**Global Leaderboard**:
+```
+Top 10 Contributors (All-Time)
+
+Rank | Name    | Score  | Tier    | Streak
+-----|---------|--------|---------|-------
+  1  | Alice   | 15,240 | Legend  | 180d
+  2  | Bob     | 12,890 | Legend  | 145d
+  3  | Carol   | 9,450  | Leader  | 90d
+  4  | Dave    | 7,230  | Leader  | 60d
+  5  | Eve     | 6,100  | Leader  | 120d
+...
+```
+
+**DAO-Specific Leaderboard**:
+```
+Nairobi Tech DAO - Top Contributors
+
+1. Alice:  2,450 rep | 23 tasks, 45 votes
+2. Bob:    1,890 rep | 18 tasks, 52 votes
+3. Carol:  1,620 rep | 31 tasks, 28 votes
+```
+
+---
+
+## Reputation in Governance
+
+### Weighted Voting
+
+**Reputation Boost**:
+```typescript
+function calculateVotingPower(tokens: number, reputation: number) {
+  const baseVotes = Math.sqrt(tokens);
+  const repBonus = reputation / 100;
+  return baseVotes + repBonus;
+}
+
+// Example
+Alice: 10,000 tokens, 2,000 rep
+Base: √10,000 = 100 votes
+Bonus: 2,000 / 100 = 20 votes
+Total: 120 votes (+20% from reputation)
+```
+
+---
+
+## Anti-Gaming Mechanisms
+
+**Sybil Resistance**:
+```typescript
+const antiGaming = {
+  phoneVerification: true,
+  kycForHighRep: true, // >5,000 rep
+  cooldowns: {
+    taskClaiming: "1 hour",
+    proposalCreation: "24 hours",
+    votingFarms: "Detected & penalized"
+  },
+  
+  penalties: {
+    spamProposals: -500,
+    abandonedTasks: -200,
+    sockPuppets: "Account suspension"
+  }
+};
+```
+
+---
+
+## API Reference
+
+### Get Reputation Score
+```typescript
+GET /api/reputation/:address
+
+Response: {
+  total: 2450,
+  governance: 800,
+  contribution: 1200,
+  community: 300,
+  reliability: 150,
+  tier: "Contributor"
+}
+```
+
+### Get Achievements
+```typescript
+GET /api/reputation/achievements/:address
+
+Response: {
+  achievements: [
+    {
+      id: "first_vote",
+      name: "First Vote",
+      earnedAt: "2024-11-15",
+      reputation: 50
+    }
+  ]
+}
+```
+
+---
+
+## Support
+
+Questions about reputation?
+
+- **Discord**: #reputation channel
+- **Docs**: [docs.mtaadao.com/features/reputation](https://docs.mtaadao.com)
+- **Email**: support@mtaadao.com
