@@ -1,0 +1,566 @@
+
+---
+title: Vault Management Guide
+description: Complete guide to managing personal and community vaults in MtaaDAO
+---
+
+# Vault Management Guide
+
+A comprehensive guide to creating, managing, and optimizing vaults in the MtaaDAO ecosystem.
+
+---
+
+## Overview
+
+MtaaDAO vaults are smart contract-based systems that enable:
+- **Personal Savings**: Individual yield-generating accounts
+- **Community Treasuries**: DAO-managed shared funds
+- **Investment Pools**: Collective investment strategies
+- **Goal-Based Savings**: Automated savings for specific targets
+
+---
+
+## Vault Types Deep Dive
+
+### 1. Personal Vaults
+
+**Purpose**: Individual savings with professional DeFi management
+
+```typescript
+interface PersonalVault {
+  owner: string;
+  balance: number;
+  strategy: 'conservative' | 'moderate' | 'aggressive';
+  apr: number; // 8-15% typical
+  managementFee: 2; // percentage
+  performanceFee: 15; // percentage
+}
+```
+
+**Key Features**:
+- ✅ Complete ownership control
+- ✅ Automated yield optimization
+- ✅ Multiple currency support (cUSD, CELO, cEUR)
+- ✅ Instant deposits, 24-48h withdrawals for large amounts
+- ✅ Real-time NAV tracking
+
+**Best For**:
+- Emergency funds (conservative strategy)
+- Medium-term savings (moderate strategy)
+- Growth investments (aggressive strategy)
+
+---
+
+### 2. Community Vaults (DAO Treasuries)
+
+**Purpose**: Shared DAO funds with governance
+
+```typescript
+interface CommunityVault {
+  daoId: string;
+  totalMembers: number;
+  governance: 'multi-sig' | 'token-weighted' | 'one-member-one-vote';
+  withdrawalThreshold: number; // percentage for approval
+  strategy: 'conservative' | 'moderate';
+  proposalRequired: boolean;
+}
+```
+
+**Governance Models**:
+
+#### Multi-Signature (3-of-5)
+```
+Withdrawal requires:
+- 3 out of 5 designated signers
+- Typically: 2 elders + 1 admin + 2 members
+- Best for: Small DAOs (< 50 members)
+```
+
+#### Token-Weighted Voting
+```
+Withdrawal requires:
+- Governance proposal
+- 60% quorum
+- Voting power based on token holdings
+- Best for: Medium DAOs (50-500 members)
+```
+
+#### One Member One Vote
+```
+Withdrawal requires:
+- Simple majority (50%+1)
+- 48-hour voting period
+- Best for: Large DAOs (500+ members)
+```
+
+---
+
+### 3. Goal-Based Vaults
+
+**Purpose**: Automated savings for specific targets
+
+```typescript
+interface GoalVault {
+  goalName: string;
+  targetAmount: number;
+  currentAmount: number;
+  deadline: Date;
+  recurringDeposit?: {
+    amount: number;
+    frequency: 'weekly' | 'monthly';
+  };
+  autoWithdraw: boolean; // withdraw when goal reached
+}
+```
+
+**Example Goals**:
+- 🏠 Home down payment
+- 🎓 Education fund
+- 💍 Wedding savings
+- 🚗 Vehicle purchase
+- 🌍 Travel fund
+
+**Smart Features**:
+- Auto-calculate required monthly deposits
+- Progress tracking with visual indicators
+- Milestone celebrations (25%, 50%, 75%, 100%)
+- Automatic withdrawal on goal completion (optional)
+
+---
+
+## Creating a Vault
+
+### Step 1: Choose Vault Type
+
+Navigate to `/vault` and click "Create New Vault"
+
+```typescript
+// API call
+POST /api/vault/create
+{
+  "type": "personal" | "community" | "goal",
+  "currency": "cUSD" | "CELO" | "cEUR",
+  "strategy": "conservative" | "moderate" | "aggressive",
+  "initialDeposit": "1000"
+}
+```
+
+### Step 2: Configure Strategy
+
+**Conservative (8-10% APY)**
+- 80% stablecoins (Moola)
+- 20% low-risk LP tokens
+- Ideal for: Emergency funds, short-term savings
+
+**Moderate (10-15% APY)**
+- 50% stablecoins
+- 30% blue-chip LP tokens (Ubeswap CELO-cUSD)
+- 20% yield farming
+- Ideal for: Medium-term goals, retirement savings
+
+**Aggressive (15%+ APY)**
+- 30% stablecoins
+- 40% high-yield LP tokens
+- 30% leveraged yield farming
+- Ideal for: Long-term growth, risk-tolerant investors
+
+### Step 3: Set Up Governance (Community Vaults)
+
+```typescript
+// Community vault governance config
+{
+  "governanceModel": "multi-sig",
+  "signers": ["0xAddr1", "0xAddr2", "0xAddr3", "0xAddr4", "0xAddr5"],
+  "threshold": 3,
+  "proposalDuration": 168, // hours (7 days)
+  "quorumPercentage": 60
+}
+```
+
+### Step 4: Fund the Vault
+
+```typescript
+// Deposit funds
+POST /api/vault/deposit
+{
+  "vaultId": "vault_123",
+  "amount": "5000",
+  "currency": "cUSD"
+}
+
+// Response
+{
+  "sharesIssued": "5000",
+  "navPerShare": "1.00",
+  "transactionHash": "0xabc..."
+}
+```
+
+---
+
+## Managing Your Vault
+
+### Monitoring Performance
+
+**Dashboard Metrics**:
+```typescript
+interface VaultMetrics {
+  totalValue: number;
+  sharesOwned: number;
+  navPerShare: number;
+  totalProfit: number;
+  apr: number;
+  riskScore: 1-10;
+  
+  performance: {
+    daily: number;
+    weekly: number;
+    monthly: number;
+    yearly: number;
+  };
+  
+  allocation: {
+    moola: number; // percentage
+    ubeswap: number;
+    staking: number;
+    idle: number;
+  };
+}
+```
+
+**Real-Time Tracking**:
+```
+Current Value: $5,234.50
+Initial Deposit: $5,000.00
+Profit: $234.50 (+4.69%)
+APR: 12.5%
+Risk Score: 4/10 (Moderate)
+```
+
+### Rebalancing
+
+**Automatic Rebalancing**:
+- Happens daily at 00:00 UTC
+- Adjusts allocation based on market conditions
+- Maintains target risk profile
+
+**Manual Rebalancing** (Governance required for community vaults):
+```typescript
+POST /api/vault/rebalance
+{
+  "vaultId": "vault_123",
+  "newAllocation": {
+    "moola": 60,
+    "ubeswap": 30,
+    "staking": 10
+  }
+}
+```
+
+### Withdrawals
+
+**Personal Vault Withdrawal**:
+```typescript
+POST /api/vault/withdraw
+{
+  "vaultId": "vault_123",
+  "shares": "1000", // or "amount": "1000"
+  "currency": "cUSD"
+}
+```
+
+**Community Vault Withdrawal** (Requires Proposal):
+```typescript
+// Step 1: Create proposal
+POST /api/proposals/create
+{
+  "daoId": "dao_456",
+  "type": "treasury_withdrawal",
+  "amount": "10000",
+  "recipient": "0xRecipientAddress",
+  "reason": "Pay developers for Q1 2025"
+}
+
+// Step 2: Members vote
+POST /api/proposals/vote
+{
+  "proposalId": "prop_789",
+  "vote": "yes" | "no"
+}
+
+// Step 3: Auto-execute if approved
+// Withdrawal happens automatically after voting period
+```
+
+---
+
+## Fee Structure
+
+### Personal Vaults
+
+| Fee Type | Amount | Charged |
+|----------|--------|---------|
+| **Management Fee** | 2% annual | Quarterly |
+| **Performance Fee** | 15% of profits | On withdrawal |
+| **Deposit Fee** | Free | N/A |
+| **Withdrawal Fee** | Free | N/A |
+
+**Example Calculation**:
+```
+Initial Deposit: $10,000
+After 1 Year: $11,200 (12% yield)
+
+Management Fee: $10,000 × 2% = $200
+Performance Fee: $1,200 × 15% = $180
+Total Fees: $380
+
+Your Profit: $1,200 - $380 = $820
+Net APR: 8.2%
+```
+
+### Community Vaults
+
+| Fee Type | Amount | Notes |
+|----------|--------|-------|
+| **Management Fee** | 1.5% annual | Lower for communities |
+| **Performance Fee** | 10% of profits | Shared benefit |
+| **Proposal Fee** | 100 MTAA tokens | Prevents spam |
+
+---
+
+## Risk Management
+
+### Risk Assessment
+
+Every vault has a risk score (1-10):
+
+**Low Risk (1-3)**:
+- Conservative strategy
+- 90%+ stablecoins
+- Established protocols only
+- Minimal leverage
+
+**Medium Risk (4-7)**:
+- Moderate strategy
+- Mix of stablecoins and LP tokens
+- Diversified protocols
+- Limited leverage
+
+**High Risk (8-10)**:
+- Aggressive strategy
+- High-yield opportunities
+- Newer protocols
+- Leveraged positions
+
+### Automated Safety Features
+
+**Circuit Breakers**:
+```typescript
+interface CircuitBreaker {
+  maxDailyLoss: 5; // percentage
+  maxWeeklyLoss: 10;
+  autoSwitchToConservative: true;
+  pauseDeposits: boolean;
+}
+```
+
+**Example Scenario**:
+```
+Market crash detected:
+1. Vault loses 4% in one day
+2. Circuit breaker activates
+3. Auto-switch to conservative strategy
+4. Move 90% to stablecoins
+5. Pause new deposits
+6. Notify all vault holders
+```
+
+### Insurance (Coming Soon)
+
+```typescript
+interface VaultInsurance {
+  provider: "Nexus Mutual" | "Bridge Mutual";
+  coverage: number; // up to 100% of vault value
+  premium: 3; // percentage annual
+  claimProcess: "automated" | "manual";
+}
+```
+
+---
+
+## Advanced Features
+
+### Vault Sharing (Personal Vaults)
+
+Share vault performance with friends/family:
+
+```typescript
+POST /api/vault/share
+{
+  "vaultId": "vault_123",
+  "shareWith": "friend@email.com",
+  "permissions": "view" | "deposit" | "withdraw"
+}
+```
+
+**Use Cases**:
+- Family savings account
+- Joint investment with partner
+- Accountability partner for savings goals
+
+### Vault Cloning
+
+Clone a high-performing vault:
+
+```typescript
+POST /api/vault/clone
+{
+  "sourceVaultId": "vault_456",
+  "initialDeposit": "2000"
+}
+```
+
+Creates a new vault with identical strategy and settings.
+
+### Multi-Currency Vaults (Beta)
+
+```typescript
+interface MultiCurrencyVault {
+  currencies: ["cUSD", "CELO", "cEUR"];
+  autoRebalance: true;
+  targetAllocation: {
+    cUSD: 40,
+    CELO: 40,
+    cEUR: 20
+  };
+}
+```
+
+---
+
+## Best Practices
+
+### 1. Diversification Strategy
+
+**Recommended Allocation**:
+```
+Total Assets: $20,000
+
+Emergency Fund (Conservative): $5,000 (25%)
+Short-Term Goals (Moderate): $8,000 (40%)
+Long-Term Growth (Aggressive): $7,000 (35%)
+```
+
+### 2. Regular Reviews
+
+- **Weekly**: Check performance dashboard
+- **Monthly**: Review strategy effectiveness
+- **Quarterly**: Rebalance if needed
+- **Annually**: Assess overall financial goals
+
+### 3. Compound Growth
+
+```typescript
+// Auto-reinvest profits
+POST /api/vault/settings
+{
+  "vaultId": "vault_123",
+  "autoCompound": true,
+  "compoundFrequency": "daily"
+}
+```
+
+**Compounding Impact**:
+```
+$10,000 @ 12% APR for 5 years:
+
+Without compounding: $16,000
+With daily compounding: $18,194
+
+Difference: $2,194 (13.7% more)
+```
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+**1. Withdrawal Delayed**
+
+**Cause**: Large withdrawal requires liquidity rebalancing  
+**Solution**: Wait 24-48 hours or withdraw in smaller amounts
+
+**2. Lower APY Than Expected**
+
+**Cause**: Market conditions, gas fees, rebalancing costs  
+**Solution**: Check vault activity log, consider different strategy
+
+**3. Proposal Rejection**
+
+**Cause**: Insufficient quorum, unclear proposal details  
+**Solution**: Engage community, provide detailed justification
+
+---
+
+## API Reference
+
+### Create Vault
+```typescript
+POST /api/vault/create
+{
+  "type": "personal",
+  "currency": "cUSD",
+  "strategy": "moderate",
+  "initialDeposit": "1000"
+}
+```
+
+### Get Vault Details
+```typescript
+GET /api/vault/:id
+
+Response: {
+  vaultId: "vault_123",
+  owner: "0xAddr",
+  balance: "5234.50",
+  navPerShare: "1.0469",
+  apr: 12.5,
+  riskScore: 4
+}
+```
+
+### Deposit
+```typescript
+POST /api/vault/deposit
+{
+  "vaultId": "vault_123",
+  "amount": "500"
+}
+```
+
+### Withdraw
+```typescript
+POST /api/vault/withdraw
+{
+  "vaultId": "vault_123",
+  "shares": "100"
+}
+```
+
+---
+
+## Support
+
+Need help with vault management?
+
+- **Documentation**: [docs.mtaadao.com/features/vaults](https://docs.mtaadao.com)
+- **Discord**: #vault-help channel
+- **Email**: vaults@mtaadao.com
+
+---
+
+**Next Steps**:
+- [DeFi Strategies Explained](/features/defi-integration)
+- [Vault vs Wallet Comparison](/features/wallets-vs-vaults)
+- [Community Treasury Management](/governance/proposals)
