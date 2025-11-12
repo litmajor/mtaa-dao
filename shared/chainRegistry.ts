@@ -1,4 +1,3 @@
-
 import { ethers } from 'ethers';
 
 export enum SupportedChain {
@@ -6,6 +5,9 @@ export enum SupportedChain {
   CELO_ALFAJORES = 'celo-alfajores',
   ETHEREUM = 'ethereum',
   POLYGON = 'polygon',
+  POLYGON_MUMBAI = 'polygon-mumbai',
+  BSC = 'bsc',
+  BSC_TESTNET = 'bsc-testnet',
   OPTIMISM = 'optimism',
   ARBITRUM = 'arbitrum'
 }
@@ -63,6 +65,33 @@ export const CHAIN_CONFIGS: Record<SupportedChain, ChainConfig> = {
     blockExplorer: 'https://polygonscan.com',
     nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
     isTestnet: false
+  },
+  [SupportedChain.POLYGON_MUMBAI]: {
+    chainId: 80001,
+    name: 'Polygon Mumbai Testnet',
+    symbol: 'MATIC',
+    rpcUrl: process.env.POLYGON_MUMBAI_RPC_URL || 'https://rpc-mumbai.maticvigil.com',
+    blockExplorer: 'https://mumbai.polygonscan.com',
+    nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
+    isTestnet: true
+  },
+  [SupportedChain.BSC]: {
+    chainId: 56,
+    name: 'BNB Smart Chain Mainnet',
+    symbol: 'BNB',
+    rpcUrl: process.env.BSC_RPC_URL || 'https://bsc-dataseed.binance.org',
+    blockExplorer: 'https://bscscan.com',
+    nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+    isTestnet: false
+  },
+  [SupportedChain.BSC_TESTNET]: {
+    chainId: 97,
+    name: 'BSC Testnet',
+    symbol: 'BNB',
+    rpcUrl: process.env.BSC_TESTNET_RPC_URL || 'https://data-seed-prebsc-1-s1.binance.org:8545',
+    blockExplorer: 'https://testnet.bscscan.com',
+    nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+    isTestnet: true
   },
   [SupportedChain.OPTIMISM]: {
     chainId: 10,
