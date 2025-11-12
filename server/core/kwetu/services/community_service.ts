@@ -1,77 +1,138 @@
 import { db } from '../../../db';
-import { users, daoMemberships } from '../../../../shared/schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { users, daoMemberships, proposals, votes, userActivities } from '../../../../shared/schema';
+import { eq, and, sql, gte, inArray } from 'drizzle-orm';
 
 export class CommunityService {
   /**
    * Get DAO member count from database
    */
-  async getMemberCount(daoId: string) {
+  async getMemberCount(daoId: string): Promise<number> {
     const result = await db.select({ count: sql`count(*)` })
       .from(daoMemberships)
       .where(eq(daoMemberships.daoId, daoId));
-    return result[0]?.count || 0;
+    return Number(result[0]?.count || 0);
   }
 
   /**
    * Get member stats from database
    */
   async getMemberStats(userId: string, daoId: string) {
-    try {
-      const member = await db.query.daoMemberships.findFirst({
-        where: and(
-          eq(daoMemberships.userId, userId),
-          eq(daoMemberships.daoId, daoId)
-        )
-      });
+    const member = await db.select()
+      .from(daoMemberships)
+      .where(and(
+        eq(daoMemberships.userId, userId),
+        eq(daoMemberships.daoId, daoId)
+      ))
+      .limit(1);
 
-      if (!member) {
-        return {
-          contributionScore: 0,
-          proposalsSubmitted: 0,
-          votesParticipated: 0,
-          joinedAt: new Date()
-        };
-      }
-
-      return {
-        contributionScore: 320, // TODO: Calculate from actual contributions
-        proposalsSubmitted: 3,   // TODO: Count from proposals table
-        votesParticipated: 15,   // TODO: Count from votes table
-        joinedAt: member.joinedAt || new Date()
-      };
-    } catch (error) {
-      console.error('Member stats error:', error);
-      return {
-        contributionScore: 320,
-        proposalsSubmitted: 3,
-        votesParticipated: 15,
-        joinedAt: new Date()
-      };
+    if (member.length === 0) {
+      throw new Error(`Membership not found for user ${userId} in DAO ${daoId}`);
     }
+
+    const joinedAt = member[0].joinedAt || new Date();
+
+    // Calculate contribution score: number of contributions * 100 (arbitrary weighting)
+    const contributions = await db.select({ count: sql`count(*)` })
+      .from(userActivities)
+      .where(and(
+        eq(userActivities.userId, userId),
+        eq(userActivities.dao_id, daoId),
+        eq(userActivities.type, 'contribution')
+      ));
+    const contributionCount = Number(contributions[0]?.count || 0);
+    const contributionScore = contributionCount * 100;
+
+    // Proposals submitted: count proposals where proposerId = userId
+    const submittedProposals = await db.select({ count: sql`count(*)` })
+      .from(proposals)
+      .where(and(
+        eq(proposals.daoId, daoId),
+        eq(proposals.proposerId, userId)
+      ));
+    const proposalsSubmitted = Number(submittedProposals[0]?.count || 0);
+
+    // Fetch user info
+    const userInfo = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+    // Votes participated: count votes where userId = voterId (assuming votes.userId)
+    const participatedVotes = await db.select({ count: sql`count(*)` })
+      .from(votes)
+      .where(and(
+        eq(votes.daoId, daoId),
+        eq(votes.userId, userId)
+      ));
+    const votesParticipated = Number(participatedVotes[0]?.count || 0);
+
+    return {
+      contributionScore,
+      proposalsSubmitted,
+      votesParticipated,
+      joinedAt,
+      user: userInfo[0] || null
+    };
   }
 
   /**
    * Get DAO engagement metrics
    */
   async getEngagementMetrics(daoId: string) {
-    try {
-      // The real memberCount is just a number, so mock active/total for now
-      const totalRaw = await this.getMemberCount(daoId);
-      const total = Number(totalRaw);
-      const active = Math.floor(total * 0.67); // mock 67% active
-      return {
-        engagementScore: 0.72,
-        activeRate: total > 0 ? active / total : 0,
-        retentionRate: 0.85
-      };
-    } catch (error) {
-      console.error('Engagement metrics error:', error);
-      return {
-        engagementScore: 0.72,
-        activeRate: 0.67,
-        retentionRate: 0.85
-      };
+    const totalMembers = await this.getMemberCount(daoId);
+
+    // Calculate active members: unique users with activity in last 30 days
+    const since = new Date();
+    since.setDate(since.getDate() - 30);
+
+    // Get all member userIds
+    const members = await db.select({ userId: daoMemberships.userId })
+      .from(daoMemberships)
+      .where(eq(daoMemberships.daoId, daoId));
+    const userIds = members.map(m => m.userId);
+
+    let activeMembers = 0;
+    if (userIds.length > 0) {
+      const actives = await db.selectDistinct({ userId: userActivities.userId })
+        .from(userActivities)
+        .where(and(
+          inArray(userActivities.userId, userIds),
+          eq(userActivities.dao_id, daoId),
+          gte(userActivities.createdAt, since)
+        ));
+      activeMembers = actives.length;
     }
+
+    const activeRate = totalMembers > 0 ? activeMembers / totalMembers : 0;
+    const engagementScore = activeRate; // Proxy
+
+    // Retention rate: active this period / active prior period
+    let retentionRate = 0.85; // Default/fallback
+    const priorSince = new Date(since);
+    priorSince.setDate(priorSince.getDate() - 30);
+
+    const priorActives = await db.selectDistinct({ userId: userActivities.userId })
+      .from(userActivities)
+      .where(and(
+        inArray(userActivities.userId, userIds),
+        eq(userActivities.dao_id, daoId),
+        gte(userActivities.createdAt, priorSince),
+        sql`${userActivities.createdAt} < ${since}`
+      ));
+    const priorActiveCount = priorActives.length;
+
+    if (priorActiveCount > 0) {
+      const returning = await db.selectDistinct({ userId: userActivities.userId })
+        .from(userActivities)
+        .where(and(
+          inArray(userActivities.userId, priorActives.map(a => a.userId)),
+          eq(userActivities.dao_id, daoId),
+          gte(userActivities.createdAt, since)
+        ));
+      retentionRate = returning.length / priorActiveCount;
+    }
+
+    return {
+      engagementScore,
+      activeRate,
+      retentionRate
+    };
   }
 }

@@ -1,96 +1,108 @@
 import { db } from '../../../db';
-import { proposals, votes } from '../../../../shared/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { proposals, votes, voteDelegations, userActivities } from '../../../../shared/schema';
+import { eq, and, desc, sql } from 'drizzle-orm';
 
 export class GovernanceService {
   /**
    * Get DAO proposals from database
    */
-  async getProposals(daoId: string, status?: string) {
-    try {
-      let query = db.query.proposals.findMany({
-        where: eq(proposals.daoId, daoId),
-        orderBy: [desc(proposals.createdAt)]
-      });
+  async getProposals(daoId: string, status?: string, limit: number = 50, offset: number = 0) {
+    const where = status
+      ? and(eq(proposals.daoId, daoId), eq(proposals.status, status))
+      : eq(proposals.daoId, daoId);
 
-      const allProposals = await query;
+    const proposalQuery = db.select()
+      .from(proposals)
+      .where(where)
+      .orderBy(desc(proposals.createdAt))
+      .limit(limit)
+      .offset(offset);
 
-      // Filter by status if provided
-      const filtered = status
-        ? allProposals.filter(p => p.status === status)
-        : allProposals;
+    const proposalsList = await proposalQuery;
 
-      return {
-        proposals: filtered,
-        total: filtered.length
-      };
-    } catch (error) {
-      console.error('Proposals fetch error:', error);
-      return {
-        proposals: [],
-        total: 0
-      };
-    }
+    // Get total count for pagination
+    const totalQuery = await db.select({ count: sql`count(*)` })
+      .from(proposals)
+      .where(where);
+
+    const total = Number(totalQuery[0]?.count || 0);
+
+    return {
+      proposals: proposalsList,
+      total
+    };
   }
 
   /**
    * Get proposal by ID with vote counts
    */
   async getProposalById(proposalId: string) {
-    try {
-      const proposal = await db.query.proposals.findFirst({
-        where: eq(proposals.id, proposalId)
-      });
+    const proposalData = await db.select()
+      .from(proposals)
+      .where(eq(proposals.id, proposalId))
+      .limit(1);
 
-      if (!proposal) {
-        throw new Error('Proposal not found');
-      }
-
-      // Get vote counts
-      const proposalVotes = await db.query.votes.findMany({
-        where: eq(votes.proposalId, proposalId)
-      });
-
-      const votesFor = proposalVotes.filter(v => v.vote === 'for').length;
-      const votesAgainst = proposalVotes.filter(v => v.vote === 'against').length;
-
-      return {
-        ...proposal,
-        votesFor,
-        votesAgainst,
-        totalVotes: proposalVotes.length
-      };
-    } catch (error) {
-      console.error('Proposal fetch error:', error);
-      return {
-        id: proposalId,
-        title: 'Proposal not found',
-        status: 'unknown',
-        votesFor: 0,
-        votesAgainst: 0
-      };
+    if (proposalData.length === 0) {
+      throw new Error(`Proposal ${proposalId} not found`);
     }
+
+    const proposal = proposalData[0];
+
+    // Get aggregated vote counts
+    const voteCounts = await db.select({
+      votesFor: sql<number>`SUM(CASE WHEN ${votes.voteType} = 'for' THEN 1 ELSE 0 END)`,
+      votesAgainst: sql<number>`SUM(CASE WHEN ${votes.voteType} = 'against' THEN 1 ELSE 0 END)`,
+      votesAbstain: sql<number>`SUM(CASE WHEN ${votes.voteType} = 'abstain' THEN 1 ELSE 0 END)`,
+      totalVotes: sql<number>`COUNT(*)`
+    }).from(votes).where(eq(votes.proposalId, proposalId));
+
+    return {
+      ...proposal,
+      votesFor: Number(voteCounts[0]?.votesFor || 0),
+      votesAgainst: Number(voteCounts[0]?.votesAgainst || 0),
+      votesAbstain: Number(voteCounts[0]?.votesAbstain || 0),
+      totalVotes: Number(voteCounts[0]?.totalVotes || 0)
+    };
   }
 
   /**
    * Get user's voting power
    */
   async getVotingPower(userId: string, daoId: string) {
-    try {
-      // For now, voting power = 100 (base)
-      // TODO: Implement contribution-based voting power
-      return {
-        power: 100,
-        delegated: 0,
-        total: 100
-      };
-    } catch (error) {
-      console.error('Voting power error:', error);
-      return {
-        power: 100,
-        delegated: 0,
-        total: 100
-      };
-    }
+    // Base power: from contributions (e.g., count * 10)
+    const contributions = await db.select({ count: sql`count(*)` })
+      .from(userActivities)
+      .where(and(
+        eq(userActivities.userId, userId),
+        eq(userActivities.dao_id, daoId),
+        eq(userActivities.type, 'contribution')
+      ));
+    const basePower = Number(contributions[0]?.count || 0) * 10;
+
+    // Delegated: count of delegations to this user
+    const delegatedIn = await db.select({ count: sql`count(*)` })
+      .from(voteDelegations)
+      .where(and(
+        eq(voteDelegations.daoId, daoId),
+        eq(voteDelegations.delegateId, userId)
+      ));
+    const delegated = Number(delegatedIn[0]?.count || 0);
+
+    // Delegated out: count of delegations from this user
+    const delegatedOut = await db.select({ count: sql`count(*)` })
+      .from(voteDelegations)
+      .where(and(
+        eq(voteDelegations.daoId, daoId),
+        eq(voteDelegations.delegatorId, userId)
+      ));
+    const delegatedAway = Number(delegatedOut[0]?.count || 0);
+
+    const total = basePower + delegated - delegatedAway;
+
+    return {
+      power: basePower,
+      delegated: delegated - delegatedAway,
+      total
+    };
   }
 }

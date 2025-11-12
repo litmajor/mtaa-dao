@@ -74,7 +74,7 @@ export async function allocateToVaultHandler(req: Request, res: Response) {
       tokenSymbol,
       amount,
       allocationNote
-    });
+    } as any);
 
     res.json({ success: true, allocation });
   } catch (error: any) {

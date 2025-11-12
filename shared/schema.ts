@@ -355,6 +355,7 @@ export const proposals = pgTable("proposals", {
   allowMultipleChoices: boolean("allow_multiple_choices").default(false),
   proposer: varchar("proposer").references(() => users.id).notNull(),
   proposerId: varchar("proposer_id").references(() => users.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(), // alias for proposerId for analyzer compatibility
   daoId: uuid("dao_id").references(() => daos.id).notNull(),
   status: varchar("status").default("active"), // draft, active, passed, failed, executed, expired
   voteStartTime: timestamp("vote_start_time").defaultNow(),

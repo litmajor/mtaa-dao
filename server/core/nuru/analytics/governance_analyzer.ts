@@ -4,11 +4,10 @@
  * Analyzes voting patterns, proposal success rates, and governance health
  */
 
-
 import type { AnalysisResponse, Risk } from '../types';
 import { db } from '../../../db';
-import { proposals, votes, voteDelegations } from '../../../../shared/schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { proposals, votes, voteDelegations, daoMemberships } from '../../../../shared/schema';
+import { eq, and, sql, gte, count, countDistinct } from 'drizzle-orm';
 
 export class GovernanceAnalyzer {
   /**
@@ -31,70 +30,101 @@ export class GovernanceAnalyzer {
   private async calculateMetrics(daoId: string, timeframe?: string) {
     // Calculate the time window
     let since: Date | undefined = undefined;
-    if (timeframe === '30d' || !timeframe) {
-      since = new Date();
-      since.setDate(since.getDate() - 30);
-    } else if (timeframe === '7d') {
-      since = new Date();
-      since.setDate(since.getDate() - 7);
+    if (timeframe === 'all') {
+      // No time filter
+    } else {
+      const days = this.parseTimeframeDays(timeframe);
+      if (days > 0) {
+        since = new Date();
+        since.setDate(since.getDate() - days);
+      } else {
+        // Default to 30 days
+        since = new Date();
+        since.setDate(since.getDate() - 30);
+      }
     }
 
-    // Proposals
-    let proposalWhere: any = eq(proposals.daoId, daoId);
-    if (since) {
-      proposalWhere = and(proposalWhere, sql`${proposals.createdAt} >= ${since}`);
-    }
-    const allProposals = await db.select().from(proposals).where(proposalWhere);
-    const totalProposals = allProposals.length;
-    const activeProposals = allProposals.filter(p => p.status === 'active').length;
-    const passedProposals = allProposals.filter(p => p.status === 'passed').length;
-    const failedProposals = allProposals.filter(p => p.status === 'failed').length;
+    // Total members (for normalization)
+    const totalMembersQuery = await db.select({ count: sql`count(*)` })
+      .from(daoMemberships)
+      .where(eq(daoMemberships.daoId, daoId));
+    const totalMembers = Number(totalMembersQuery[0]?.count || 0);
 
-    // Votes
-    let voteWhere: any = eq(votes.daoId, daoId);
-    if (since) {
-      voteWhere = and(voteWhere, sql`${votes.createdAt} >= ${since}`);
-    }
-    const allVotes = await db.select().from(votes).where(voteWhere);
-    const uniqueVoters = new Set(allVotes.map(v => v.userId)).size;
+    // Base where clauses
+    const proposalWhere = since
+      ? and(eq(proposals.daoId, daoId), gte(proposals.createdAt, since))
+      : eq(proposals.daoId, daoId);
+    const voteWhere = since
+      ? and(eq(votes.daoId, daoId), gte(votes.createdAt, since))
+      : eq(votes.daoId, daoId);
+    const delegationWhere = since
+      ? and(eq(voteDelegations.daoId, daoId), gte(voteDelegations.createdAt, since))
+      : eq(voteDelegations.daoId, daoId);
 
-    // Participation rate: average % of members voting per proposal
+    // Proposal counts using aggregates
+    const proposalCounts = await db.select({
+      total: count(proposals.id),
+      active: sql<number>`SUM(CASE WHEN ${proposals.status} = 'active' THEN 1 ELSE 0 END)`,
+      passed: sql<number>`SUM(CASE WHEN ${proposals.status} = 'passed' THEN 1 ELSE 0 END)`,
+      failed: sql<number>`SUM(CASE WHEN ${proposals.status} = 'failed' THEN 1 ELSE 0 END)`,
+    }).from(proposals).where(proposalWhere);
+
+    const totalProposals = Number(proposalCounts[0]?.total || 0);
+    const activeProposals = Number(proposalCounts[0]?.active || 0);
+    const passedProposals = Number(proposalCounts[0]?.passed || 0);
+    const failedProposals = Number(proposalCounts[0]?.failed || 0);
+
+    // Unique voters
+    const uniqueVotersQuery = await db.select({ count: countDistinct(votes.userId) })
+      .from(votes)
+      .where(voteWhere);
+    const uniqueVoters = Number(uniqueVotersQuery[0]?.count || 0);
+
+    // Avg participation rate: avg (unique voters per proposal / total members)
     let avgParticipationRate = 0;
-    if (totalProposals > 0) {
-      const proposalVoteCounts = allProposals.map(p => allVotes.filter(v => v.proposalId === p.id).length);
-      avgParticipationRate = proposalVoteCounts.reduce((a, b) => a + b, 0) / (totalProposals * (proposalVoteCounts.length > 0 ? 1 : 1));
-      // If you want to normalize by member count, you can fetch member count here
+    if (totalProposals > 0 && totalMembers > 0) {
+      // Fetch all proposals to get IDs (for large sets, consider subqueries)
+      const propIds = await db.select({ id: proposals.id })
+        .from(proposals)
+        .where(proposalWhere);
+      let totalParticipation = 0;
+      for (const prop of propIds) {
+        const votersPerProp = await db.select({ count: countDistinct(votes.userId) })
+          .from(votes)
+          .where(eq(votes.proposalId, prop.id));
+        totalParticipation += Number(votersPerProp[0]?.count || 0) / totalMembers;
+      }
+      avgParticipationRate = totalParticipation / totalProposals;
     }
 
-    // Quorum: average quorum achieved (using yesVotes+noVotes+abstainVotes/quorumRequired)
+    // Avg quorum: avg ( (yes+no+abstain) / quorumRequired )
     let avgQuorum = 0;
     if (totalProposals > 0) {
-      avgQuorum = allProposals.reduce((sum, p) => {
-        const totalVotes = (p.yesVotes || 0) + (p.noVotes || 0) + (p.abstainVotes || 0);
-        return sum + (p.quorumRequired ? totalVotes / p.quorumRequired : 0);
-      }, 0) / totalProposals;
+      const quorumData = await db.select({
+        quorumAchieved: sql<number>`(COALESCE(${proposals.yesVotes}, 0) + COALESCE(${proposals.noVotes}, 0) + COALESCE(${proposals.abstainVotes}, 0)) / NULLIF(${proposals.quorumRequired}, 0)`
+      }).from(proposals).where(proposalWhere);
+      const validQuorums = quorumData.filter(q => q.quorumAchieved !== null).map(q => q.quorumAchieved || 0);
+      avgQuorum = validQuorums.length > 0 ? validQuorums.reduce((a, b) => a + b, 0) / validQuorums.length : 0;
     }
 
     // Proposal success rate
     const proposalSuccessRate = totalProposals > 0 ? passedProposals / totalProposals : 0;
 
-    // Average voting time (in days)
+    // Average voting time (in days), only for proposals with start and end times
     let avgVotingTime = 0;
-    if (totalProposals > 0) {
-      avgVotingTime = allProposals.reduce((sum, p) => {
-        if (p.voteStartTime && p.voteEndTime) {
-          const start = new Date(p.voteStartTime).getTime();
-          const end = new Date(p.voteEndTime).getTime();
-          return sum + (end - start) / (1000 * 60 * 60 * 24);
-        }
-        return sum;
-      }, 0) / totalProposals;
+    const votingTimes = await db.select({
+      duration: sql<number>`EXTRACT(EPOCH FROM (${proposals.voteEndTime} - ${proposals.voteStartTime})) / 86400`
+    }).from(proposals).where(and(proposalWhere, sql`${proposals.voteStartTime} IS NOT NULL AND ${proposals.voteEndTime} IS NOT NULL`));
+    const validTimes = votingTimes.map(v => v.duration || 0).filter(d => d > 0);
+    if (validTimes.length > 0) {
+      avgVotingTime = validTimes.reduce((a, b) => a + b, 0) / validTimes.length;
     }
 
-    // Delegated votes
-    let delegatedVotes = 0;
-    const delegations = await db.select().from(voteDelegations).where(eq(voteDelegations.daoId, daoId));
-    delegatedVotes = delegations.length;
+    // Delegated votes: count (time-filtered if applicable)
+    const delegatedVotesQuery = await db.select({ count: count(voteDelegations.id) })
+      .from(voteDelegations)
+      .where(delegationWhere);
+    const delegatedVotes = Number(delegatedVotesQuery[0]?.count || 0);
 
     return {
       totalProposals,
@@ -108,6 +138,15 @@ export class GovernanceAnalyzer {
       uniqueVoters,
       delegatedVotes
     };
+  }
+
+  private parseTimeframeDays(timeframe?: string): number {
+    if (!timeframe) return 30;
+    if (timeframe === '7d') return 7;
+    if (timeframe === '30d') return 30;
+    if (timeframe === '90d') return 90;
+    const match = timeframe.match(/^(\d+)d$/);
+    return match ? parseInt(match[1], 10) : 0;
   }
 
   private generateSummary(metrics: Record<string, number>): string {

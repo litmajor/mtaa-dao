@@ -206,7 +206,7 @@ export class AnalyzerAgent extends BaseAgent {
       confidence: this.calculateOverallConfidence(findings),
       findings,
       recommendations: this.generateRecommendations(findings),
-      metadata: { proposalId: proposal.id, userId: proposal.userId || proposal.createdBy || proposal.author || null }
+      metadata: { proposalId: proposal.id, userId: proposal.userId }
     };
   }
 
@@ -352,7 +352,9 @@ export class AnalyzerAgent extends BaseAgent {
 
     const proposalsByUser: Record<string, number> = {};
     recentProposals.forEach(p => {
-      proposalsByUser[p.id] = (proposalsByUser[p.id] || 0) + 1;
+      if (p.userId) {
+        proposalsByUser[p.userId] = (proposalsByUser[p.userId] || 0) + 1;
+      }
     });
 
     const spammers = Object.entries(proposalsByUser).filter(([_, count]) => count > 5);
