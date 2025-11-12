@@ -146,6 +146,28 @@ router.get('/relayer/status', asyncHandler(async (req, res) => {
   });
 }));
 
+// Get bridge analytics
+router.get('/analytics', asyncHandler(async (req, res) => {
+  const { timeframe = 'day' } = req.query;
+  const { bridgeMonitoringService } = await import('../services/bridgeMonitoringService');
+  
+  const analytics = await bridgeMonitoringService.getBridgeAnalytics(
+    timeframe as 'day' | 'week' | 'month'
+  );
+  
+  const feesCollected = await bridgeMonitoringService.calculateFeesCollected(
+    timeframe as 'day' | 'week' | 'month'
+  );
+
+  res.json({
+    success: true,
+    data: {
+      analytics,
+      feesCollected
+    }
+  });
+}));
+
 }));
 
 // Create cross-chain vault
