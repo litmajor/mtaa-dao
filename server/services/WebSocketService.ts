@@ -26,6 +26,17 @@ interface DaoClient {
 
 
 export class WebSocketService {
+  // Send a message to a specific user by userId
+  public sendToUser(userId: string, message: any) {
+    for (const client of this.clients.values()) {
+      if (client.userId === userId && client.ws.readyState === WebSocket.OPEN) {
+        client.ws.send(JSON.stringify(message));
+        return;
+      }
+    }
+    // fallback: log or handle as needed
+    logger.info(`[WebSocketService] No active socket for user ${userId}. Message:`, message);
+  }
   private static instance: WebSocketService | null = null;
   private static server: HttpServer | null = null;
   private wss: WebSocketServer;

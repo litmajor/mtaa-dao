@@ -612,6 +612,7 @@ export const walletTransactions = pgTable("wallet_transactions", {
   transactionHash: varchar("transaction_hash"),
   description: text("description"),
   disbursementId: varchar("disbursement_id"),
+  metadata: jsonb("metadata"), // Added for transaction monitor compatibility
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -1638,6 +1639,21 @@ export const userChallenges = pgTable('user_challenges', {
 });
 
 // Add proposals table if not exists
+// DAO Invites table
+export const daoInvites = pgTable('dao_invites', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  dao_id: uuid('dao_id').references(() => daos.id).notNull(),
+  inviter_id: varchar('inviter_id').references(() => users.id).notNull(),
+  token: varchar('token', { length: 64 }).notNull().unique(),
+  expires_at: timestamp('expires_at').notNull(),
+  used: boolean('used').default(false),
+  accepted_by: varchar('accepted_by').references(() => users.id),
+  accepted_at: timestamp('accepted_at'),
+  revoked: boolean('revoked').default(false),
+  revoked_at: timestamp('revoked_at'),
+  revoked_by: varchar('revoked_by').references(() => users.id),
+  created_at: timestamp('created_at').defaultNow(),
+});
 
 // Add users table reference if not exists
 
