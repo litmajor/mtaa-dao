@@ -110,6 +110,22 @@ export const TOKEN_REGISTRY: Record<string, TokenInfo> = {
     riskLevel: 'low'
   },
 
+  cKES: {
+    symbol: 'cKES',
+    name: 'Celo Kenyan Shilling',
+    address: {
+      mainnet: '0x456a3D042C0DbD3db53D5489e98dFb038553B0d0',
+      testnet: '0x456a3D042C0DbD3db53D5489e98dFb038553B0d0'
+    },
+    decimals: 18,
+    category: 'stablecoin',
+    isActive: true,
+    logoUrl: '/tokens/ckes.png',
+    description: 'Celo Kenyan Shilling stablecoin pegged to KES - the yin to cUSD yang for East African markets',
+    priceApi: 'coingecko:celo-kenyan-shilling',
+    riskLevel: 'low'
+  },
+
   USDT: {
     symbol: 'USDT',
     name: 'Tether USD',
@@ -318,6 +334,7 @@ export const SupportedTokenEnum = {
   CELO: 'CELO',
   cUSD: 'cUSD',
   cEUR: 'cEUR',
+  cKES: 'cKES',
   USDT: 'USDT',
   USDC: 'USDC',
   BTC: 'BTC',

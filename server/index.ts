@@ -51,6 +51,7 @@ import stripeStatusRoutes from './routes/stripe-status';
 import referralsRoutes from './routes/referrals';
 import eventsRoutes from './routes/events';
 import crossChainRoutes from './routes/cross-chain';
+import userPreferencesRoutes from './routes/user-preferences';
 import jwt from 'jsonwebtoken';
 // Import NFT Marketplace routes
 import nftMarketplaceRouter from './routes/nft-marketplace';
@@ -302,6 +303,7 @@ app.use((req, res, next) => {
     app.use('/api/proposals', pollProposalsRouter);
     app.use('/api/reputation', reputationRoutes); // Added reputation routes
     app.use('/api/cross-chain', crossChainRoutes);
+app.use('/api/user/preferences', userPreferencesRoutes);
     app.use('/api/morio', morioRoutes);
     app.use('/api/public-stats', publicStatsRoutes);
     app.use('/api/treasury-intelligence', treasuryIntelligenceRoutes);

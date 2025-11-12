@@ -5,6 +5,7 @@ import { Logger } from '../utils/logger';
 import { AppError } from '../middleware/errorHandler';
 import { db } from '../db';
 import { crossChainTransfers } from '../../shared/schema';
+import { synchronizerAgent } from '../agents/synchronizer';
 
 export interface SwapQuote {
   fromChain: SupportedChain;
@@ -143,20 +144,67 @@ export class CrossChainSwapService {
     userAddress: string
   ): Promise<void> {
     try {
+      // Sync state to Synchronizer before bridging
+      synchronizerAgent.receiveState(`swap_${swapId}`, {
+        swapId,
+        status: 'initiated',
+        fromChain: quote.fromChain,
+        toChain: quote.toChain,
+        fromToken: quote.fromToken,
+        toToken: quote.toToken,
+        amount: quote.fromAmount,
+        timestamp: Date.now()
+      }, 1);
+
       // Step 1: Bridge tokens from source chain
       await this.updateSwapStatus(swapId, 'bridging');
       const bridgeTxHash = await this.bridgeTokens(quote, userAddress);
+
+      // Sync bridging state
+      synchronizerAgent.receiveState(`swap_${swapId}`, {
+        swapId,
+        status: 'bridging',
+        bridgeTxHash,
+        timestamp: Date.now()
+      }, 2);
 
       // Step 2: Execute swap on destination chain
       await this.updateSwapStatus(swapId, 'swapping', bridgeTxHash);
       const swapTxHash = await this.executeDestinationSwap(quote, userAddress);
 
+      // Sync swapping state
+      synchronizerAgent.receiveState(`swap_${swapId}`, {
+        swapId,
+        status: 'swapping',
+        bridgeTxHash,
+        swapTxHash,
+        timestamp: Date.now()
+      }, 3);
+
       // Step 3: Complete swap
       await this.updateSwapStatus(swapId, 'completed', bridgeTxHash, swapTxHash);
+
+      // Final state sync
+      synchronizerAgent.receiveState(`swap_${swapId}`, {
+        swapId,
+        status: 'completed',
+        bridgeTxHash,
+        swapTxHash,
+        completedAt: Date.now()
+      }, 4);
 
       this.logger.info(`Swap ${swapId} completed successfully`);
     } catch (error) {
       this.logger.error(`Swap ${swapId} processing failed:`, error);
+      
+      // Sync failure state
+      synchronizerAgent.receiveState(`swap_${swapId}`, {
+        swapId,
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: Date.now()
+      }, 99);
+      
       await this.updateSwapStatus(swapId, 'failed');
     }
   }
@@ -226,7 +274,9 @@ export class CrossChainSwapService {
       'TON': 2.5,
       'USDC': 1,
       'USDT': 1,
-      'cUSD': 1
+      'cUSD': 1,
+      'cKES': 0.0077, // 1 KES ≈ 0.0077 USD (130 KES = 1 USD)
+      'cEUR': 1.09 // 1 EUR ≈ 1.09 USD
     };
 
     return mockPrices[token] || 1;
