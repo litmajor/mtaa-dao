@@ -33,12 +33,20 @@ export default function MtaaDashboard() {
   const [contributionStats, setContributionStats] = useState<ContributionStats | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [darkMode, setDarkMode] = useState<boolean>(localStorage.theme === 'dark');
+  const [darkMode, setDarkMode] = useState<boolean>(true);
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', darkMode);
-    localStorage.theme = darkMode ? 'dark' : 'light';
-  }, [darkMode]);
+    document.documentElement.classList.add('dark');
+    localStorage.theme = 'dark';
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      setMousePosition({ x: e.clientX, y: e.clientY });
+    };
+    
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
 
   // Fetch user's DAOs first
   async function fetchUserDaos() {
@@ -248,21 +256,40 @@ export default function MtaaDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {renderDashboard()}
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-orange-950 to-slate-950 relative overflow-hidden">
+      {/* Minimal Cursor Dot */}
+      <div 
+        className="fixed pointer-events-none z-50 w-2 h-2 bg-orange-500/60 rounded-full transition-all duration-200"
+        style={{
+          left: mousePosition.x - 4,
+          top: mousePosition.y - 4,
+          transform: `translate3d(0, 0, 0) scale(${mousePosition.x > 0 ? 1 : 0})`
+        }}
+      />
+
+      {/* Subtle Background */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-gradient-to-br from-orange-600/10 to-transparent rounded-full blur-3xl"></div>
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:100px_100px]" />
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-orange-500/30 to-transparent"></div>
+      </div>
+
+      <div className="relative z-10">
+        {renderDashboard()}
+      </div>
     </div>
   );
 }
 
 function StatCard({ title, value, icon, color }: { title: string; value: string | number; icon: React.ReactNode; color: string }) {
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className={`w-10 h-10 rounded-lg bg-gradient-to-r ${color} flex items-center justify-center text-white mb-2`}>
+    <Card className="bg-slate-900/80 backdrop-blur-lg border border-slate-800/50 hover:border-orange-500/30 transition-all duration-500">
+      <CardContent className="p-6">
+        <div className={`w-12 h-12 rounded-xl bg-gradient-to-r ${color} flex items-center justify-center text-white mb-3 shadow-lg`}>
           {icon}
         </div>
-        <p className="text-2xl font-bold">{value}</p>
-        <p className="text-sm text-gray-600 dark:text-gray-400">{title}</p>
+        <p className="text-3xl font-bold text-white mb-1">{value}</p>
+        <p className="text-sm text-slate-400 uppercase tracking-wide">{title}</p>
       </CardContent>
     </Card>
   );

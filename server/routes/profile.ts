@@ -182,5 +182,32 @@ router.put("/update", authenticate, async (req, res) => {
   }
 });
 
-export default router;
+// GET user contributions
+router.get('/contributions', async (req, res) => {
+  try {
+    const userId = (req as any).userId;
 
+    const contributions = await db
+      .select({
+        id: sql`CAST(${contributions.id} AS TEXT)`,
+        daoId: contributions.daoId,
+        amount: contributions.amount,
+        contributionType: contributions.contributionType,
+        createdAt: contributions.createdAt,
+      })
+      .from(contributions)
+      .where(eq(contributions.userId, userId))
+      .orderBy(desc(contributions.createdAt))
+      .limit(50);
+
+    res.json({ 
+      success: true,
+      contributions
+    });
+  } catch (error) {
+    console.error('Error fetching contributions:', error);
+    res.status(500).json({ error: 'Failed to fetch contributions' });
+  }
+});
+
+export default router;
