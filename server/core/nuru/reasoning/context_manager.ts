@@ -8,7 +8,6 @@
 import type { UserContext, Intent, Message } from '../types';
 import { v4 as uuidv4 } from 'uuid'; // Assume uuid package is installed for unique IDs
 import { db } from '../../../db'; // Import db for potential persistence
-import { userContexts } from '../../../../shared/schema'; // Assume a schema table for userContexts (JSON stored)
 
 export class ContextManager {
   private contextStore: Map<string, UserContext>; // In-memory cache

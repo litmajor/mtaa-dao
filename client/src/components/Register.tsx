@@ -342,90 +342,54 @@ export default function StunningRegister() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 relative overflow-hidden">
-      {/* Animated background */}
-      <div className="fixed inset-0">
-        {/* Floating orbs */}
-        <div 
-          className="absolute w-96 h-96 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full mix-blend-multiply filter blur-xl opacity-30 animate-pulse"
-          style={{
-            top: '10%',
-            left: '10%',
-            transform: `translate(${mousePosition.x * 0.02}px, ${mousePosition.y * 0.02}px)`,
-            transition: 'transform 0.3s ease-out'
-          }}
-        />
-        <div 
-          className="absolute w-96 h-96 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full mix-blend-multiply filter blur-xl opacity-30 animate-pulse"
-          style={{
-            top: '60%',
-            right: '10%',
-            transform: `translate(${mousePosition.x * -0.02}px, ${mousePosition.y * -0.02}px)`,
-            transition: 'transform 0.3s ease-out',
-            animationDelay: '2s'
-          }}
-        />
-        <div 
-          className="absolute w-96 h-96 bg-gradient-to-r from-teal-500 to-green-500 rounded-full mix-blend-multiply filter blur-xl opacity-30 animate-pulse"
-          style={{
-            bottom: '10%',
-            left: '50%',
-            transform: `translate(${mousePosition.x * 0.01}px, ${mousePosition.y * 0.01}px)`,
-            transition: 'transform 0.3s ease-out',
-            animationDelay: '4s'
-          }}
-        />
-        
-        {/* Floating particles */}
-        {[...Array(20)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-2 h-2 bg-white rounded-full opacity-20 animate-pulse"
-            style={{
-              top: `${Math.random() * 100}%`,
-              left: `${Math.random() * 100}%`,
-              animationDelay: `${Math.random() * 5}s`,
-              animationDuration: `${2 + Math.random() * 3}s`
-            }}
-          />
-        ))}
-      </div>
+    <div className="min-h-screen bg-slate-950 relative overflow-hidden">
+      {/* Minimalist grid background */}
+      <div 
+        className="fixed inset-0 opacity-5"
+        style={{
+          backgroundImage: 'linear-gradient(0deg, transparent 24%, rgba(255, 255, 255, 0.05) 25%, rgba(255, 255, 255, 0.05) 26%, transparent 27%, transparent 74%, rgba(255, 255, 255, 0.05) 75%, rgba(255, 255, 255, 0.05) 76%, transparent 77%, transparent), linear-gradient(90deg, transparent 24%, rgba(255, 255, 255, 0.05) 25%, rgba(255, 255, 255, 0.05) 26%, transparent 27%, transparent 74%, rgba(255, 255, 255, 0.05) 75%, rgba(255, 255, 255, 0.05) 76%, transparent 77%, transparent)',
+          backgroundSize: '50px 50px'
+        }}
+      />
+      
+      {/* Subtle accent line */}
+      <div className="fixed top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-orange-500/50 to-transparent" />
 
       {/* Main content */}
       <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
         <div className="w-full max-w-md">
           {/* Scrollable container */}
-          <div className="max-h-[95vh] overflow-y-auto scrollbar-thin scrollbar-thumb-purple-500/50 scrollbar-track-transparent hover:scrollbar-thumb-purple-400/70 pr-2">
+          <div className="max-h-[95vh] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-600/50 scrollbar-track-transparent hover:scrollbar-thumb-slate-500/70 pr-2">
             
             {/* Success animation */}
             {step === 'success' && (
-              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-                <div className="bg-white/10 backdrop-blur-md rounded-3xl p-8 text-center border border-white/20">
-                  <div className="w-20 h-20 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+                <div className="bg-slate-900/90 backdrop-blur-md rounded-lg p-8 text-center border border-slate-700">
+                  <div className="w-20 h-20 bg-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
                     <Check className="w-10 h-10 text-white" />
                   </div>
                   <h3 className="text-2xl font-bold text-white mb-2">Welcome aboard! 🎉</h3>
-                  <p className="text-white/80">Your account has been created successfully</p>
+                  <p className="text-slate-400">Your account has been created successfully</p>
                 </div>
               </div>
             )}
 
             {/* Main card */}
-            <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-3xl shadow-2xl p-8 transition-all duration-500 hover:shadow-3xl hover:bg-white/15 mb-4">
+            <div className="bg-slate-900/40 backdrop-blur-md border border-slate-700/50 rounded-lg shadow-lg p-8 transition-all duration-500 hover:shadow-xl hover:bg-slate-900/50 mb-4">
               {/* Header with animated logo */}
               <div className="text-center mb-8">
                 <div className="mb-6 flex justify-center">
                   <div className="relative">
                     <HeroLogo variant="icon" size="lg" forceTheme="dark" />
-                    <div className="absolute -top-2 -right-2 w-8 h-8 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full flex items-center justify-center animate-bounce">
+                    <div className="absolute -top-2 -right-2 w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
                       <Zap className="w-4 h-4 text-white" />
                     </div>
                   </div>
                 </div>
-                <h2 className="text-4xl font-bold bg-gradient-to-r from-white via-purple-200 to-pink-200 bg-clip-text text-transparent mb-3">
-                  Join the Future
+                <h2 className="text-4xl font-bold text-white mb-3">
+                  Create Account
                 </h2>
-                <p className="text-white/80 text-lg">Choose how you'd like to sign up</p>
+                <p className="text-slate-400 text-lg">Choose how you'd like to sign up</p>
               </div>
 
               {/* Registration method buttons */}
@@ -438,7 +402,7 @@ export default function StunningRegister() {
                       setMethod('email'); 
                       setStep('email'); 
                     }}
-                    className="w-full flex items-center justify-center py-4 px-6 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-white transition-all duration-300 transform hover:scale-105 backdrop-blur-sm group"
+                    className="w-full flex items-center justify-center py-4 px-6 bg-slate-800/50 hover:bg-slate-700/50 border border-slate-600 rounded-lg text-white transition-all duration-300 transform hover:scale-105 backdrop-blur-sm group"
                   >
                     <Mail className="w-6 h-6 mr-3 transition-transform duration-300 group-hover:scale-110" />
                     <span className="font-medium">Continue with Email</span>
@@ -451,7 +415,7 @@ export default function StunningRegister() {
                       setMethod('phone'); 
                       setStep('phone'); 
                     }}
-                    className="w-full flex items-center justify-center py-4 px-6 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-white transition-all duration-300 transform hover:scale-105 backdrop-blur-sm group"
+                    className="w-full flex items-center justify-center py-4 px-6 bg-slate-800/50 hover:bg-slate-700/50 border border-slate-600 rounded-lg text-white transition-all duration-300 transform hover:scale-105 backdrop-blur-sm group"
                   >
                     <Phone className="w-6 h-6 mr-3 transition-transform duration-300 group-hover:scale-110" />
                     <span className="font-medium">Continue with Phone</span>
@@ -460,7 +424,7 @@ export default function StunningRegister() {
                   <button
                     type="button"
                     onClick={handleGoogleRegister}
-                    className="w-full flex items-center justify-center py-4 px-6 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-white transition-all duration-300 transform hover:scale-105 backdrop-blur-sm group"
+                    className="w-full flex items-center justify-center py-4 px-6 bg-slate-800/50 hover:bg-slate-700/50 border border-slate-600 rounded-lg text-white transition-all duration-300 transform hover:scale-105 backdrop-blur-sm group"
                   >
                     <div className="w-6 h-6 mr-3 transition-transform duration-300 group-hover:scale-110">
                       <svg viewBox="0 0 24 24" fill="currentColor">
@@ -475,7 +439,7 @@ export default function StunningRegister() {
 
                   <button
                     type="button"
-                    className="w-full flex items-center justify-center py-4 px-6 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-white transition-all duration-300 transform hover:scale-105 backdrop-blur-sm group"
+                    className="w-full flex items-center justify-center py-4 px-6 bg-slate-800/50 hover:bg-slate-700/50 border border-slate-600 rounded-lg text-white transition-all duration-300 transform hover:scale-105 backdrop-blur-sm group"
                   >
                     <Send className="w-6 h-6 mr-3 transition-transform duration-300 group-hover:scale-110" />
                     <span className="font-medium">Continue with Telegram</span>
@@ -493,7 +457,7 @@ export default function StunningRegister() {
                       setMethod('');
                       resetForm();
                     }}
-                    className="flex items-center text-white/70 hover:text-white transition-colors"
+                    className="flex items-center text-slate-400 hover:text-white transition-colors"
                   >
                     <ArrowLeft className="w-4 h-4 mr-2" />
                     Back to methods
@@ -501,12 +465,12 @@ export default function StunningRegister() {
                   
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-white/70">Progress</span>
-                      <span className="text-sm text-white/70">{step === 'email' || step === 'phone' ? '1' : step === 'password' ? '2' : '3'}/3</span>
+                      <span className="text-sm text-slate-400">Progress</span>
+                      <span className="text-sm text-slate-400">{step === 'email' || step === 'phone' ? '1' : step === 'password' ? '2' : '3'}/3</span>
                     </div>
-                    <div className="w-full bg-white/10 rounded-full h-2">
+                    <div className="w-full bg-slate-800/50 rounded-full h-2">
                       <div 
-                        className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500"
+                        className="h-2 rounded-full bg-orange-500 transition-all duration-500"
                         style={{ width: step === 'otp' ? '100%' : step === 'password' ? '66%' : '33%' }}
                       />
                     </div>
@@ -516,7 +480,7 @@ export default function StunningRegister() {
 
               {/* Error message */}
               {error && (
-                <div className="mb-6 p-4 bg-red-500/20 border border-red-500/30 rounded-2xl flex items-center text-red-100 animate-pulse backdrop-blur-sm">
+                <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center text-red-200 backdrop-blur-sm">
                   <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
                   <span className="text-sm">{error}</span>
                 </div>
@@ -526,12 +490,12 @@ export default function StunningRegister() {
               {step === 'email' && (
                 <form onSubmit={(e) => { e.preventDefault(); setStep('password'); }} className="space-y-6">
                   <div className="space-y-2">
-                    <label className="block text-sm font-medium text-white/90">Email</label>
+                    <label className="block text-sm font-medium text-slate-200">Email</label>
                     <div className="relative group">
-                      <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
+                      <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-500 w-5 h-5" />
                       <input
                         type="email"
-                        className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15"
+                        className="w-full pl-12 pr-4 py-4 bg-slate-800/50 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-slate-800/70"
                         placeholder="Enter your email address"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
@@ -541,9 +505,8 @@ export default function StunningRegister() {
                   </div>
                   <button
                     type="submit"
-                    className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-red-600 text-white py-4 rounded-2xl font-semibold shadow-2xl hover:from-purple-700 hover:via-pink-700 hover:to-red-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:scale-105 group"
+                    className="w-full bg-orange-600 hover:bg-orange-700 text-white py-4 rounded-lg font-semibold shadow-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:scale-105 group"
                   >
-                    <div className="absolute inset-0 bg-gradient-to-r from-purple-400 via-pink-400 to-red-400 opacity-0 group-hover:opacity-20 transition-opacity duration-300 rounded-2xl"></div>
                     Continue
                   </button>
                 </form>
@@ -553,14 +516,14 @@ export default function StunningRegister() {
               {step === 'phone' && (
                 <form onSubmit={(e) => { e.preventDefault(); setStep('password'); }} className="space-y-6">
                   <div className="space-y-2">
-                    <label className="block text-sm font-medium text-white/90">Phone Number</label>
+                    <label className="block text-sm font-medium text-slate-200">Phone Number</label>
                     <div className="flex gap-2">
                       {/* Country Code Selector */}
                       <div className="relative">
                         <button
                           type="button"
                           onClick={() => setShowCountryDropdown(!showCountryDropdown)}
-                          className="h-full px-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white flex items-center gap-2 hover:bg-white/15 transition-all duration-300 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-purple-500 min-w-[120px]"
+                          className="h-full px-4 py-4 bg-slate-800/50 border border-slate-600 rounded-lg text-white flex items-center gap-2 hover:bg-slate-800/70 transition-all duration-300 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-orange-500 min-w-[120px]"
                         >
                           <span className="text-xl">{countryCodes[countryCode]?.flag || '🌍'}</span>
                           <span className="text-sm font-medium">{countryCode}</span>
@@ -571,7 +534,7 @@ export default function StunningRegister() {
                         
                         {/* Country Code Dropdown */}
                         {showCountryDropdown && (
-                          <div className="absolute top-full left-0 mt-2 w-64 max-h-64 overflow-y-auto bg-gray-900/95 backdrop-blur-md border border-purple-500/30 rounded-2xl shadow-2xl z-50 scrollbar-thin scrollbar-thumb-purple-500/50 scrollbar-track-gray-800/50">
+                          <div className="absolute top-full left-0 mt-2 w-64 max-h-64 overflow-y-auto bg-slate-800/95 backdrop-blur-md border border-slate-600 rounded-lg shadow-lg z-50 scrollbar-thin scrollbar-thumb-slate-600/50 scrollbar-track-slate-700/50">
                             {Object.entries(countryCodes).map(([code, info]) => (
                               <button
                                 key={code}
@@ -580,13 +543,13 @@ export default function StunningRegister() {
                                   setCountryCode(code);
                                   setShowCountryDropdown(false);
                                 }}
-                                className={`w-full px-4 py-3 text-left flex items-center gap-3 hover:bg-purple-600/30 transition-colors ${
-                                  countryCode === code ? 'bg-purple-600/40' : ''
+                                className={`w-full px-4 py-3 text-left flex items-center gap-3 hover:bg-orange-600/20 transition-colors ${
+                                  countryCode === code ? 'bg-orange-600/30' : ''
                                 }`}
                               >
                                 <span className="text-xl">{info.flag}</span>
                                 <span className="text-sm text-white flex-1">{info.name}</span>
-                                <span className="text-sm text-purple-200 font-mono">{code}</span>
+                                <span className="text-sm text-orange-300 font-mono">{code}</span>
                               </button>
                             ))}
                           </div>
@@ -595,10 +558,10 @@ export default function StunningRegister() {
                       
                       {/* Phone Number Input */}
                       <div className="relative group flex-1">
-                        <Phone className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5 z-10" />
+                        <Phone className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-500 w-5 h-5 z-10" />
                         <input
                           type="tel"
-                          className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15"
+                          className="w-full pl-12 pr-4 py-4 bg-slate-800/50 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-slate-800/70"
                           placeholder="712345678"
                           value={phoneNumber}
                           onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))}
@@ -609,26 +572,25 @@ export default function StunningRegister() {
                     
                     {/* Validation Messages */}
                     {countryInfo && phoneNumber && validatePhoneNumber(phoneNumber) && (
-                      <div className="mt-2 text-xs text-green-300 flex items-center bg-green-500/10 px-3 py-2 rounded-xl border border-green-400/30">
+                      <div className="mt-2 text-xs text-green-300 flex items-center bg-green-500/10 px-3 py-2 rounded-lg border border-green-400/30">
                         <Check className="w-4 h-4 mr-2" />
                         <span>Valid number from {countryInfo.name}: <strong>{phone}</strong></span>
                       </div>
                     )}
                     {phoneNumber && !validatePhoneNumber(phoneNumber) && (
-                      <div className="mt-2 text-xs text-yellow-300 bg-yellow-500/10 px-3 py-2 rounded-xl border border-yellow-400/30">
+                      <div className="mt-2 text-xs text-yellow-300 bg-yellow-500/10 px-3 py-2 rounded-lg border border-yellow-400/30">
                         Phone number should be 7-15 digits
                       </div>
                     )}
-                    <div className="mt-2 text-xs text-white/60">
+                    <div className="mt-2 text-xs text-slate-400">
                       Select your country code and enter your phone number
                     </div>
                   </div>
                   <button
                     type="submit"
                     disabled={!phoneNumber || !validatePhoneNumber(phoneNumber)}
-                    className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-red-600 text-white py-4 rounded-2xl font-semibold shadow-2xl hover:from-purple-700 hover:via-pink-700 hover:to-red-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:scale-105 group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                    className="w-full bg-orange-600 hover:bg-orange-700 text-white py-4 rounded-lg font-semibold shadow-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:scale-105 group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                   >
-                    <div className="absolute inset-0 bg-gradient-to-r from-purple-400 via-pink-400 to-red-400 opacity-0 group-hover:opacity-20 transition-opacity duration-300 rounded-2xl"></div>
                     Continue
                   </button>
                 </form>
@@ -639,18 +601,18 @@ export default function StunningRegister() {
                 <form onSubmit={handleSubmit} className="space-y-6">
                   {/* Display selected method info */}
                   <div className="space-y-2">
-                    <label className="block text-sm font-medium text-white/90">
+                    <label className="block text-sm font-medium text-slate-200">
                       {method === 'email' ? 'Email' : 'Phone Number'}
                     </label>
                     <div className="relative group">
                       {method === 'email' ? (
-                        <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
+                        <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-500 w-5 h-5" />
                       ) : (
-                        <Phone className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
+                        <Phone className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-500 w-5 h-5" />
                       )}
                       <input
                         type={method === 'email' ? 'email' : 'tel'}
-                        className="w-full pl-12 pr-4 py-4 bg-white/5 border border-white/10 rounded-2xl text-white/70 cursor-not-allowed"
+                        className="w-full pl-12 pr-4 py-4 bg-slate-800/30 border border-slate-700 rounded-lg text-slate-500 cursor-not-allowed"
                         value={method === 'email' ? email : phone}
                         disabled
                         readOnly
@@ -667,14 +629,14 @@ export default function StunningRegister() {
 
                   {/* Password field */}
                   <div className="space-y-2">
-                    <label className="block text-sm font-medium text-white/90">
+                    <label className="block text-sm font-medium text-slate-200">
                       Password
                     </label>
                     <div className="relative group">
-                      <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
+                      <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-500 w-5 h-5" />
                       <input
                         type={showPassword ? 'text' : 'password'}
-                        className="w-full pl-12 pr-12 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15"
+                        className="w-full pl-12 pr-12 py-4 bg-slate-800/50 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-slate-800/70"
                         placeholder="Create a strong password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
@@ -682,7 +644,7 @@ export default function StunningRegister() {
                       />
                       <button
                         type="button"
-                        className="absolute right-4 top-1/2 transform -translate-y-1/2 text-white/50 hover:text-white transition-colors"
+                        className="absolute right-4 top-1/2 transform -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
                         onClick={() => setShowPassword(!showPassword)}
                       >
                         {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -693,14 +655,14 @@ export default function StunningRegister() {
                     {password && (
                       <div className="space-y-3 mt-4">
                         <div className="flex items-center justify-between">
-                          <span className="text-sm text-white/70">Password strength:</span>
+                          <span className="text-sm text-slate-400">Password strength:</span>
                           <span className={`text-sm font-bold ${passwordScore <= 2 ? 'text-red-300' : passwordScore <= 3 ? 'text-yellow-300' : 'text-green-300'}`}>
                             {getPasswordStrengthText()}
                           </span>
                         </div>
-                        <div className="w-full bg-white/10 rounded-full h-3">
+                        <div className="w-full bg-slate-800/50 rounded-full h-3">
                           <div 
-                            className={`h-3 rounded-full bg-gradient-to-r ${getPasswordStrengthColor()} transition-all duration-500 shadow-lg`}
+                            className={`h-3 rounded-full bg-orange-500 transition-all duration-500 shadow-lg`}
                             style={{ width: `${(passwordScore / 5) * 100}%` }}
                           />
                         </div>
@@ -713,10 +675,10 @@ export default function StunningRegister() {
                             { check: passwordChecks.special, text: 'Special char' }
                           ].map((item, index) => (
                             <div key={index} className="flex items-center text-xs">
-                              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center mr-2 transition-all duration-300 ${item.check ? 'bg-green-500 border-green-500' : 'border-white/30'}`}>
+                              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center mr-2 transition-all duration-300 ${item.check ? 'bg-green-500 border-green-500' : 'border-slate-600'}`}>
                                 {item.check && <Check className="w-2 h-2 text-white" />}
                               </div>
-                              <span className={`transition-colors duration-300 ${item.check ? 'text-green-300' : 'text-white/50'}`}>
+                              <span className={`transition-colors duration-300 ${item.check ? 'text-green-300' : 'text-slate-500'}`}>
                                 {item.text}
                               </span>
                             </div>
@@ -728,14 +690,14 @@ export default function StunningRegister() {
 
                   {/* Confirm Password field */}
                   <div className="space-y-2">
-                    <label className="block text-sm font-medium text-white/90">
+                    <label className="block text-sm font-medium text-slate-200">
                       Confirm Password
                     </label>
                     <div className="relative group">
-                      <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
+                      <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-500 w-5 h-5" />
                       <input
                           type={showConfirmPassword ? 'text' : 'password'}
-                          className="w-full pl-12 pr-12 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15"
+                          className="w-full pl-12 pr-12 py-4 bg-slate-800/50 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-slate-800/70"
                           placeholder="Confirm your password"
                           title="Confirm your password"
                           value={confirmPassword}
@@ -744,7 +706,7 @@ export default function StunningRegister() {
                         />
                       <button
                         type="button"
-                        className="absolute right-4 top-1/2 transform -translate-y-1/2 text-white/50 hover:text-white transition-colors"
+                        className="absolute right-4 top-1/2 transform -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                       >
                         {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -765,22 +727,22 @@ export default function StunningRegister() {
                   </div>
 
                   {/* Terms and conditions */}
-                  <div className="flex items-start space-x-3 p-4 bg-white/5 rounded-2xl border border-white/10">
+                  <div className="flex items-start space-x-3 p-4 bg-slate-800/30 rounded-lg border border-slate-700">
                     <input
                       type="checkbox"
                       id="terms"
-                      className="mt-1 w-5 h-5 text-purple-600 bg-white/10 border border-white/20 rounded focus:ring-purple-500 focus:ring-2"
+                      className="mt-1 w-5 h-5 text-orange-600 bg-slate-800/50 border border-slate-600 rounded focus:ring-orange-500 focus:ring-2"
                       required
                       title="Agree to Terms and Privacy Policy"
                       placeholder="Agree to Terms and Privacy Policy"
                     />
-                    <label htmlFor="terms" className="text-sm text-white/80 leading-relaxed">
+                    <label htmlFor="terms" className="text-sm text-slate-300 leading-relaxed">
                       I agree to the{' '}
-                      <a href="#" className="text-purple-300 hover:text-purple-200 transition-colors underline">
+                      <a href="#" className="text-orange-400 hover:text-orange-300 transition-colors underline">
                         Terms of Service
                       </a>{' '}
                       and{' '}
-                      <a href="#" className="text-purple-300 hover:text-purple-200 transition-colors underline">
+                      <a href="#" className="text-orange-400 hover:text-orange-300 transition-colors underline">
                         Privacy Policy
                       </a>
                     </label>
@@ -790,12 +752,11 @@ export default function StunningRegister() {
                   <button
                     type="submit"
                     disabled={isLoading}
-                    className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-red-600 text-white py-4 rounded-2xl font-semibold shadow-2xl hover:from-purple-700 hover:via-pink-700 hover:to-red-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none relative overflow-hidden group"
+                    className="w-full bg-orange-600 hover:bg-orange-700 text-white py-4 rounded-lg font-semibold shadow-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none relative overflow-hidden group"
                   >
-                    <div className="absolute inset-0 bg-gradient-to-r from-purple-400 via-pink-400 to-red-400 opacity-0 group-hover:opacity-20 transition-opacity duration-300 rounded-2xl"></div>
                     {isLoading ? (
                       <div className="flex items-center justify-center">
-                        <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin mr-3"></div>
+                        <div className="w-6 h-6 border-2 border-orange-200 border-t-white rounded-full animate-spin mr-3"></div>
                         Creating Magic...
                       </div>
                     ) : (
@@ -812,14 +773,14 @@ export default function StunningRegister() {
               {step === 'otp' && (
                 <form onSubmit={handleVerifyOtp} className="space-y-6">
                   <div className="space-y-2">
-                    <label className="block text-sm font-medium text-white/90">
+                    <label className="block text-sm font-medium text-slate-200">
                       Enter OTP
                     </label>
                     <div className="relative group">
-                      <Shield className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/50 w-5 h-5" />
+                      <Shield className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-500 w-5 h-5" />
                       <input
                           type="text"
-                          className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-white/15 text-center text-2xl tracking-widest font-mono"
+                          className="w-full pl-12 pr-4 py-4 bg-slate-800/50 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-slate-800/70 text-center text-2xl tracking-widest font-mono"
                           placeholder="000000"
                           title="OTP input"
                           value={otp}
@@ -828,17 +789,17 @@ export default function StunningRegister() {
                           required
                         />
                     </div>
-                    <p className="text-white/60 text-sm text-center">
+                    <p className="text-slate-400 text-sm text-center">
                       A verification code has been sent to {method === 'email' ? email : phone}
                     </p>
                   </div>
 
                   {/* Resend OTP Feedback */}
                   {resendFeedback.message && (
-                    <div className={`p-4 rounded-2xl flex items-center animate-pulse backdrop-blur-sm ${
+                    <div className={`p-4 rounded-lg flex items-center backdrop-blur-sm ${
                       resendFeedback.type === 'success' 
-                        ? 'bg-green-500/20 border border-green-500/30 text-green-100' 
-                        : 'bg-red-500/20 border border-red-500/30 text-red-100'
+                        ? 'bg-green-500/10 border border-green-500/30 text-green-200' 
+                        : 'bg-red-500/10 border border-red-500/30 text-red-200'
                     }`}>
                       {resendFeedback.type === 'success' ? (
                         <Check className="w-5 h-5 mr-3 flex-shrink-0" />
@@ -855,11 +816,11 @@ export default function StunningRegister() {
                       type="button"
                       onClick={handleResendOtp}
                       disabled={resendLoading || resendCooldown > 0}
-                      className="text-sm text-purple-300 hover:text-purple-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      className="text-sm text-orange-400 hover:text-orange-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
                       {resendLoading ? (
                         <>
-                          <div className="w-4 h-4 border-2 border-purple-300/30 border-t-purple-300 rounded-full animate-spin"></div>
+                          <div className="w-4 h-4 border-2 border-orange-400/30 border-t-orange-400 rounded-full animate-spin"></div>
                           <span>Sending...</span>
                         </>
                       ) : resendCooldown > 0 ? (
@@ -878,12 +839,11 @@ export default function StunningRegister() {
                   <button
                     type="submit"
                     disabled={otpLoading || otp.length !== 6}
-                    className="w-full bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 text-white py-4 rounded-2xl font-semibold shadow-2xl hover:from-green-700 hover:via-emerald-700 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none relative overflow-hidden group"
+                    className="w-full bg-green-600 hover:bg-green-700 text-white py-4 rounded-lg font-semibold shadow-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none relative overflow-hidden group"
                   >
-                    <div className="absolute inset-0 bg-gradient-to-r from-green-400 via-emerald-400 to-teal-400 opacity-0 group-hover:opacity-20 transition-opacity duration-300 rounded-2xl"></div>
                     {otpLoading ? (
                       <div className="flex items-center justify-center">
-                        <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin mr-3"></div>
+                        <div className="w-6 h-6 border-2 border-green-200 border-t-white rounded-full animate-spin mr-3"></div>
                         Verifying...
                       </div>
                     ) : (
@@ -899,11 +859,11 @@ export default function StunningRegister() {
 
             {/* Sign in link */}
             <div className="mt-8 text-center">
-              <p className="text-white/80">
+              <p className="text-slate-400">
                 Already have an account?{' '}
-                <a href="/login" className="text-purple-300 hover:text-purple-200 font-semibold transition-colors relative group">
+                <a href="/login" className="text-orange-400 hover:text-orange-300 font-semibold transition-colors relative group">
                   Sign in
-                  <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-purple-300 transition-all duration-300 group-hover:w-full"></span>
+                  <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-orange-400 transition-all duration-300 group-hover:w-full"></span>
                 </a>
               </p>
             </div>
