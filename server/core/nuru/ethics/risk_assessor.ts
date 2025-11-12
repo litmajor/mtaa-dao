@@ -5,20 +5,27 @@
  */
 
 import type { EthicsCheck } from '../types';
+import { db } from '../../../db';
+import { proposals, vaults, daoMemberships, userActivities } from '../../../../shared/schema';
+import { eq, and, sql, gte } from 'drizzle-orm';
 
 export class RiskAssessor {
   /**
    * Assess risks and ethical compliance for a proposal
    */
   async assess(proposalId: string, daoId: string): Promise<EthicsCheck> {
-    // TODO: Implement actual proposal and DAO data fetching
-    // For now, returning structured assessment
-    
-    const budgetCheck = await this.checkBudgetCompliance(proposalId, daoId);
-    const conflictCheck = await this.checkConflictOfInterest(proposalId);
-    const benefitScore = await this.assessCommunityBenefit(proposalId);
-    const riskLevel = await this.calculateRiskLevel(proposalId);
-    const fairnessScore = await this.assessFairness(proposalId);
+    // Fetch proposal data
+    const proposalData = await db.select().from(proposals).where(and(eq(proposals.id, proposalId), eq(proposals.daoId, daoId))).limit(1);
+    const proposal = proposalData[0];
+    if (!proposal) {
+      throw new Error(`Proposal ${proposalId} not found in DAO ${daoId}`);
+    }
+
+    const budgetCheck = await this.checkBudgetCompliance(proposal, daoId);
+    const conflictCheck = await this.checkConflictOfInterest(proposal);
+    const benefitScore = await this.assessCommunityBenefit(proposal);
+    const riskLevel = await this.calculateRiskLevel(proposal);
+    const fairnessScore = await this.assessFairness(proposal);
     
     const checks = {
       budgetCompliance: budgetCheck,
@@ -36,36 +43,96 @@ export class RiskAssessor {
     };
   }
 
-  private async checkBudgetCompliance(proposalId: string, daoId: string): Promise<boolean> {
-    // Check if proposal amount is within budget limits
-    // Mock: 80% chance of compliance
-    return Math.random() > 0.2;
+  private async checkBudgetCompliance(proposal: typeof proposals.$inferSelect, daoId: string): Promise<boolean> {
+    // Fetch current treasury balance from vaults
+    const daoVaults = await db.select({ balance: vaults.balance }).from(vaults).where(eq(vaults.daoId, daoId));
+    const currentBalance = daoVaults.reduce((sum, v) => sum + parseFloat(v.balance || '0'), 0);
+
+    // Get proposal amount from metadata if available
+    let proposalAmount = 0;
+    if (proposal.metadata && typeof proposal.metadata === 'object' && 'amount' in proposal.metadata && proposal.metadata.amount != null) {
+      proposalAmount = parseFloat(String((proposal.metadata as any).amount));
+    }
+    const budgetThreshold = 0.1; // 10% of treasury
+    return proposalAmount <= currentBalance * budgetThreshold;
   }
 
-  private async checkConflictOfInterest(proposalId: string): Promise<boolean> {
-    // Check if proposer has conflict of interest
-    // Mock: 90% no conflict
-    return Math.random() < 0.9;
+  private async checkConflictOfInterest(proposal: typeof proposals.$inferSelect): Promise<boolean> {
+    // Use proposerId; check if proposer is admin or has recent activities that might conflict
+    if (!proposal.proposerId) return false; // No conflict if no proposer
+
+    const membership = await db.select({ role: daoMemberships.role })
+      .from(daoMemberships)
+      .where(and(eq(daoMemberships.userId, proposal.proposerId), eq(daoMemberships.daoId, proposal.daoId)))
+      .limit(1);
+
+    const userRole = membership[0]?.role || 'member';
+    const hasConflict = ['admin', 'core'].includes(userRole); // Example roles that might have conflict
+
+    // Additional check: if proposer has >5 contributions in last 30d, potential self-interest
+    const since = new Date();
+    since.setDate(since.getDate() - 30);
+    const recentContribs = await db.select({ count: sql`count(*)` })
+      .from(userActivities)
+      .where(and(
+        eq(userActivities.userId, proposal.proposerId),
+        eq(userActivities.dao_id, proposal.daoId),
+        eq(userActivities.type, 'contribution'),
+        gte(userActivities.createdAt, since)
+      ));
+    const contribCount = Number(recentContribs[0]?.count || 0);
+
+    return hasConflict || contribCount > 5;
   }
 
-  private async assessCommunityBenefit(proposalId: string): Promise<number> {
-    // Score how much the proposal benefits the community (0-1)
-    // Mock: Random between 0.5 and 1.0
-    return 0.5 + Math.random() * 0.5;
+  private async assessCommunityBenefit(proposal: typeof proposals.$inferSelect): Promise<number> {
+    // Simple heuristic: keyword score in description (0-1)
+    // Keywords: community, benefit, all members, shared, etc.
+    const description = (proposal.description || '').toLowerCase();
+    const keywords = ['community', 'benefit', 'members', 'shared', 'public', 'growth', 'engagement'];
+    const matches = keywords.filter(k => description.includes(k)).length;
+    const score = matches / keywords.length;
+
+    // Bonus: if proposalType is 'community' or similar, +0.2
+    if (proposal.proposalType === 'community') {
+      return Math.min(1, score + 0.2);
+    }
+    return score;
   }
 
-  private async calculateRiskLevel(proposalId: string): Promise<'low' | 'medium' | 'high'> {
-    // Calculate overall risk level
-    const risk = Math.random();
-    if (risk < 0.6) return 'low';
-    if (risk < 0.85) return 'medium';
-    return 'high';
+  private async calculateRiskLevel(proposal: typeof proposals.$inferSelect): Promise<'low' | 'medium' | 'high'> {
+    // Based on amount relative to treasury, proposalType, and other factors
+    let proposalAmount = 0;
+    if (proposal.metadata && typeof proposal.metadata === 'object' && 'amount' in proposal.metadata && proposal.metadata.amount != null) {
+      proposalAmount = parseFloat(String((proposal.metadata as any).amount));
+    }
+
+  // Fetch treasury for relative risk
+  const daoVaults = await db.select({ balance: vaults.balance }).from(vaults).where(eq(vaults.daoId, proposal.daoId));
+  const currentBalance = daoVaults.reduce((sum, v) => sum + parseFloat(v.balance || '0'), 0);
+  const amountRatio = currentBalance > 0 ? proposalAmount / currentBalance : 0;
+
+  if (amountRatio > 0.2 || proposal.proposalType === 'high_risk') return 'high';
+  if (amountRatio > 0.05) return 'medium';
+  return 'low';
   }
 
-  private async assessFairness(proposalId: string): Promise<number> {
-    // Assess fairness of proposal distribution/impact (0-1)
-    // Mock: Random between 0.6 and 1.0
-    return 0.6 + Math.random() * 0.4;
+  private async assessFairness(proposal: typeof proposals.$inferSelect): Promise<number> {
+    // Heuristic: check for words indicating fairness/equity in description
+    const description = (proposal.description || '').toLowerCase();
+    const positiveKeywords = ['fair', 'equitable', 'inclusive', 'diverse', 'equal'];
+    const negativeKeywords = ['exclusive', 'favor', 'specific', 'individual'];
+    const posMatches = positiveKeywords.filter(k => description.includes(k)).length;
+    const negMatches = negativeKeywords.filter(k => description.includes(k)).length;
+    
+    let score = (posMatches - negMatches) / (positiveKeywords.length);
+    score = Math.max(0, Math.min(1, score + 0.5)); // Normalize to 0-1, bias positive
+
+    // If targets all members, higher score
+    if (description.includes('all members')) {
+      score += 0.2;
+    }
+    return Math.min(1, score);
   }
 
   private generateRecommendations(checks: EthicsCheck['checks']): string[] {

@@ -16,6 +16,10 @@ export interface AgentConfig {
   name: string;
   version: string;
   capabilities: string[];
+  agentStatus?: string;
+  syncMode?: string;
+  sequenceNumber?: number;
+  trustedAgents?: string[];
 }
 
 export interface AgentMetrics {
@@ -25,11 +29,16 @@ export interface AgentMetrics {
   lastActive: Date;
 }
 
+
 export abstract class BaseAgent {
   protected config: AgentConfig;
   protected status: AgentStatus;
   protected metrics: AgentMetrics;
   protected startTime: Date;
+  public agentStatus?: string;
+  public syncMode?: string;
+  public sequenceNumber?: number;
+  public trustedAgents?: Set<string>;
 
   constructor(config: AgentConfig) {
     this.config = config;
@@ -41,6 +50,10 @@ export abstract class BaseAgent {
       errorRate: 0,
       lastActive: new Date()
     };
+    if (config.agentStatus) this.agentStatus = config.agentStatus;
+    if (config.syncMode) this.syncMode = config.syncMode;
+    if (config.sequenceNumber !== undefined) this.sequenceNumber = config.sequenceNumber;
+    if (config.trustedAgents) this.trustedAgents = new Set(config.trustedAgents);
   }
 
   abstract initialize(): Promise<void>;

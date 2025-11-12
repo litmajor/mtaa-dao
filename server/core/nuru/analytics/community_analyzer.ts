@@ -4,11 +4,10 @@
  * Analyzes community growth, engagement, and health metrics
  */
 
-
 import type { AnalysisResponse, Risk } from '../types';
 import { db } from '../../../db';
 import { daoMemberships, userActivities } from '../../../../shared/schema';
-import { eq, and, sql, desc } from 'drizzle-orm';
+import { eq, and, sql, desc, gte, inArray } from 'drizzle-orm';
 
 export class CommunityAnalyzer {
   /**
@@ -31,46 +30,68 @@ export class CommunityAnalyzer {
   private async calculateMetrics(daoId: string, timeframe?: string) {
     // Calculate the time window
     let since: Date | undefined = undefined;
-    if (timeframe === '30d' || !timeframe) {
-      since = new Date();
-      since.setDate(since.getDate() - 30);
-    } else if (timeframe === '7d') {
-      since = new Date();
-      since.setDate(since.getDate() - 7);
+    if (timeframe === 'all') {
+      // No time filter for 'all'
+    } else {
+      const days = this.parseTimeframeDays(timeframe);
+      if (days > 0) {
+        since = new Date();
+        since.setDate(since.getDate() - days);
+      } else {
+        // Default to 30 days if invalid or unspecified
+        since = new Date();
+        since.setDate(since.getDate() - 30);
+      }
     }
 
-    // Total members
+    // Total members (lifetime)
     const totalMembers = await db.select({ count: sql`count(*)` })
       .from(daoMemberships)
       .where(eq(daoMemberships.daoId, daoId));
     const totalMembersCount = Number(totalMembers[0]?.count || 0);
 
-    // New members in timeframe
-    let newMembersCount = 0;
+    // New members in timeframe (or all if no timeframe)
+    let newMembers;
     if (since) {
-      const newMembers = await db.select({ count: sql`count(*)` })
+      newMembers = await db.select({ count: sql`count(*)` })
         .from(daoMemberships)
-        .where(and(eq(daoMemberships.daoId, daoId), sql`${daoMemberships.joinedAt} >= ${since}`));
-      newMembersCount = Number(newMembers[0]?.count || 0);
+        .where(and(eq(daoMemberships.daoId, daoId), gte(daoMemberships.joinedAt, since)));
+    } else {
+      newMembers = await db.select({ count: sql`count(*)` })
+        .from(daoMemberships)
+        .where(and(eq(daoMemberships.daoId, daoId)));
     }
+    const newMembersCount = Number(newMembers[0]?.count || 0);
 
-    // Active members: those with activity in userActivities in timeframe
+    // All member userIds (for filtering activities)
+    const allMembers = await db.select({ userId: daoMemberships.userId })
+      .from(daoMemberships)
+      .where(eq(daoMemberships.daoId, daoId));
+    const allMemberUserIds = allMembers.map(m => m.userId);
+
+    // Active members: unique users with activity in timeframe (or all time if no timeframe)
     let activeMembersCount = 0;
-    if (since) {
-      const activeMembers = await db.select({ userId: daoMemberships.userId })
-        .from(daoMemberships)
-        .where(eq(daoMemberships.daoId, daoId));
-      const userIds = activeMembers.map(m => m.userId);
-      if (userIds.length > 0) {
-        const actives = await db.select({ userId: userActivities.userId })
+    if (allMemberUserIds.length > 0) {
+      let actives;
+      if (since) {
+        actives = await db
+          .selectDistinct({ userId: userActivities.userId })
           .from(userActivities)
           .where(and(
-            sql`${userActivities.userId} = ANY(${userIds})`,
+            inArray(userActivities.userId, allMemberUserIds),
             eq(userActivities.dao_id, daoId),
-            sql`${userActivities.createdAt} >= ${since}`
+            gte(userActivities.createdAt, since)
           ));
-        activeMembersCount = new Set(actives.map(a => a.userId)).size;
+      } else {
+        actives = await db
+          .selectDistinct({ userId: userActivities.userId })
+          .from(userActivities)
+          .where(and(
+            inArray(userActivities.userId, allMemberUserIds),
+            eq(userActivities.dao_id, daoId)
+          ));
       }
+      activeMembersCount = actives.length;
     }
 
     // Retention rate: (active members / total members)
@@ -79,31 +100,92 @@ export class CommunityAnalyzer {
     // Engagement score: proxy as (active members / total members)
     const engagementScore = retentionRate;
 
-    // Average contribution per member: count 'contribution' activities
+    // Average contribution per member: count 'contribution' activities in timeframe (or all)
     let avgContributionPerMember = 0;
     if (totalMembersCount > 0) {
-      const contribs = await db.select({ count: sql`count(*)` })
-        .from(userActivities)
-        .where(and(eq(userActivities.dao_id, daoId), eq(userActivities.type, 'contribution')));
+      let contribs;
+      if (since) {
+        contribs = await db.select({ count: sql`count(*)` })
+          .from(userActivities)
+          .where(and(
+            eq(userActivities.dao_id, daoId),
+            eq(userActivities.type, 'contribution'),
+            gte(userActivities.createdAt, since)
+          ));
+      } else {
+        contribs = await db.select({ count: sql`count(*)` })
+          .from(userActivities)
+          .where(and(
+            eq(userActivities.dao_id, daoId),
+            eq(userActivities.type, 'contribution')
+          ));
+      }
       avgContributionPerMember = Number(contribs[0]?.count || 0) / totalMembersCount;
     }
 
-    // Top contributors: number of members with >3 contributions
+    // Top contributors: number of members with >3 contributions in timeframe (or all)
     let topContributors = 0;
-    const contribCounts = await db.select({ userId: userActivities.userId, count: sql`count(*)` })
+    let contribCountsQuery = db.select({ userId: userActivities.userId, count: sql`count(*)` })
       .from(userActivities)
       .where(and(eq(userActivities.dao_id, daoId), eq(userActivities.type, 'contribution')))
-      .groupBy(userActivities.userId);
-    topContributors = contribCounts.filter(c => Number(c.count) > 3).length;
+      .groupBy(userActivities.userId)
+      .having(sql`count(*) > 3`);
+    if (since) {
+      contribCountsQuery = db.select({ userId: userActivities.userId, count: sql`count(*)` })
+        .from(userActivities)
+        .where(and(
+          eq(userActivities.dao_id, daoId),
+          eq(userActivities.type, 'contribution'),
+          gte(userActivities.createdAt, since)
+        ))
+        .groupBy(userActivities.userId)
+        .having(sql`count(*) > 3`);
+    }
+    const contribCounts = await contribCountsQuery;
+    topContributors = contribCounts.length;
 
     // Growth rate: new members / total members
     const growthRate = totalMembersCount > 0 ? newMembersCount / totalMembersCount : 0;
 
-    // Average session time: not tracked, so use placeholder
-    const avgSessionTime = 12.5;
+    // Average session time: not tracked, so use placeholder (or implement if data available)
+    const avgSessionTime = 12.5; // Placeholder; consider adding session tracking in schema
 
-    // Returning member rate: not tracked, so use placeholder
-    const returningMemberRate = 0.68;
+    // Returning member rate: calculate if timeframe set, else placeholder
+    let returningMemberRate = 0.68; // Default placeholder
+    if (since) {
+      // To calculate properly, need a prior period. Here, assume prior same length.
+      const periodDays = this.parseTimeframeDays(timeframe);
+      if (periodDays > 0) {
+        const priorSince = new Date(since);
+        priorSince.setDate(priorSince.getDate() - periodDays);
+        
+        // Users active in prior period
+        const priorActives = await db
+          .selectDistinct({ userId: userActivities.userId })
+          .from(userActivities)
+          .where(and(
+            inArray(userActivities.userId, allMemberUserIds),
+            eq(userActivities.dao_id, daoId),
+            gte(userActivities.createdAt, priorSince),
+            sql`${userActivities.createdAt} < ${since}`
+          ));
+        const priorActiveCount = priorActives.length;
+
+        if (priorActiveCount > 0) {
+          // Users active in both periods
+          const returningQuery = await db
+            .selectDistinct({ userId: userActivities.userId })
+            .from(userActivities)
+            .where(and(
+              inArray(userActivities.userId, priorActives.map(a => a.userId)),
+              eq(userActivities.dao_id, daoId),
+              gte(userActivities.createdAt, since)
+            ));
+          const returningCount = returningQuery.length;
+          returningMemberRate = returningCount / priorActiveCount;
+        }
+      }
+    }
 
     return {
       totalMembers: totalMembersCount,
@@ -117,6 +199,16 @@ export class CommunityAnalyzer {
       avgSessionTime,
       returningMemberRate
     };
+  }
+
+  private parseTimeframeDays(timeframe?: string): number {
+    if (!timeframe) return 30;
+    if (timeframe === '7d') return 7;
+    if (timeframe === '30d') return 30;
+    if (timeframe === '90d') return 90;
+    // Add more as needed
+    const match = timeframe.match(/^(\d+)d$/);
+    return match ? parseInt(match[1], 10) : 0;
   }
 
   private generateSummary(metrics: Record<string, number>): string {
@@ -142,8 +234,7 @@ export class CommunityAnalyzer {
       insights.push('Strong growth rate demonstrates community appeal');
     }
     
-    const activeRatio = metrics.activeMembers / metrics.totalMembers;
-    if (activeRatio > 0.6) {
+    if (metrics.activeMembers / metrics.totalMembers > 0.6) {
       insights.push('High active member ratio shows healthy community participation');
     }
     
@@ -184,8 +275,7 @@ export class CommunityAnalyzer {
       });
     }
     
-    const activeRatio = metrics.activeMembers / metrics.totalMembers;
-    if (activeRatio < 0.3) {
+    if (metrics.activeMembers / metrics.totalMembers < 0.3) {
       risks.push({
         level: 'medium',
         category: 'participation',

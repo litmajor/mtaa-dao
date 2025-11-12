@@ -57,7 +57,7 @@ export type IntentType =
   | 'vote'
   | 'check_proposal'
   | 'join_dao'
-  | 'onboard'
+  | 'onboarding'
   | 'help'
   | 'analytics'
   | 'community_stats'
