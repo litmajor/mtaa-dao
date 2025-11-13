@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useWallet } from './hooks/useWallet';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,7 +12,7 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -26,41 +27,38 @@ import {
   Trash2,
   Upload,
   Copy,
-  ExternalLink
+  Info,
+  HelpCircle
 } from 'lucide-react';
+
+const MINIMUM_QUORUM = 20; // 20% minimum quorum
 
 const CreateDAOFlow = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [isDeploying, setIsDeploying] = useState(false);
   const { address: walletAddress, isConnected } = useWallet();
   const [daoData, setDaoData] = useState<DaoData>({
-    // Step 1 - Basic Info
     name: '',
     description: '',
     logo: '🏛️',
     category: '',
     regionalTags: [],
     causeTags: [],
-    visibility: 'public', // public, private, regional
-    // Step 2 - Governance
+    visibility: 'public',
     governanceModel: '1-person-1-vote',
     quorum: 50,
     votingPeriod: '7d',
     founderWallet: '',
-    // Step 3 - Treasury
     treasuryType: 'cusd',
     initialFunding: '',
     depositRequired: false,
-    // Step 4 - Members
     members: [],
     inviteMessage: '',
-    // Social features
     enableSocialReactions: true,
     enableDiscovery: true,
-    featuredMessage: '' // Optional message for discovery feed
+    featuredMessage: ''
   });
 
-  // Sync wallet address to founderWallet and initial member
   useEffect(() => {
     if (walletAddress) {
       setDaoData(prev => ({
@@ -69,9 +67,7 @@ const CreateDAOFlow = () => {
         members: prev.members.length === 0
           ? [{ address: walletAddress, role: 'governor', name: 'You (Founder)' }]
           : prev.members.map((m, i) =>
-              i === 0
-                ? { ...(m as Member), address: walletAddress }
-                : m as Member
+              i === 0 ? { ...(m as Member), address: walletAddress } : m as Member
             )
       }));
     }
@@ -88,69 +84,65 @@ const CreateDAOFlow = () => {
     { id: 6, title: 'Success', icon: CheckCircle }
   ];
 
-  const logoOptions = ['🏛️', '🌍', '🤝', '💎', '🚀', '⚡', '🌱', '🔥'];
+  const logoOptions = ['🏛️', '🌍', '🤝', '💎', '🚀', '⚡', '🌱', '🔥', '💰'];
+  
   const categories = [
-    { value: 'savings', label: 'Savings Group', emoji: '💰' },
-    { value: 'investment', label: 'Investment Club', emoji: '📈' },
-    { value: 'social', label: 'Social Impact', emoji: '🌍' },
-    { value: 'governance', label: 'Governance', emoji: '🏛️' },
-    { value: 'insurance', label: 'Insurance', emoji: '🛡️' },
-    { value: 'fundraiser', label: 'Fundraiser', emoji: '🎯' },
-    { value: 'funeral', label: 'Funeral Fund', emoji: '🕊️' },
-    { value: 'education', label: 'Education', emoji: '🎓' },
-    { value: 'youth', label: 'Youth Empowerment', emoji: '⚡' },
-    { value: 'women', label: "Women's Group", emoji: '👭' },
-    { value: 'other', label: 'Other', emoji: '✨' }
+    { value: 'savings', label: 'Savings Group', emoji: '💰', description: 'Regular savings and collective financial growth' },
+    { value: 'chama', label: 'Chama', emoji: '🤝', description: 'Traditional community savings and investment group' },
+    { value: 'investment', label: 'Investment Club', emoji: '📈', description: 'Pool funds for investment opportunities' },
+    { value: 'social', label: 'Social Impact', emoji: '🌍', description: 'Community welfare and social causes' },
+    { value: 'governance', label: 'Governance', emoji: '🏛️', description: 'Decision-making and community leadership' },
+    { value: 'funeral', label: 'Funeral Fund', emoji: '🕊️', description: 'Support members during bereavement' },
+    { value: 'education', label: 'Education', emoji: '🎓', description: 'Scholarship and learning initiatives' },
+    { value: 'youth', label: 'Youth Empowerment', emoji: '⚡', description: 'Youth development and mentorship' },
+    { value: 'women', label: "Women's Group", emoji: '👭', description: "Women's economic empowerment" },
+    { value: 'other', label: 'Other', emoji: '✨', description: 'Custom community purpose' }
   ];
 
-  // Regional tags for discovery
   const regionalTags = [
     { value: 'nairobi', label: 'Nairobi' },
     { value: 'mombasa', label: 'Mombasa' },
     { value: 'kisumu', label: 'Kisumu' },
     { value: 'nakuru', label: 'Nakuru' },
-    { value: 'eldoret', label: 'Eldoret' },
-    { value: 'thika', label: 'Thika' },
-    { value: 'machakos', label: 'Machakos' },
-    { value: 'kakamega', label: 'Kakamega' },
-    { value: 'coastal', label: 'Coastal Region' },
-    { value: 'central', label: 'Central Region' },
-    { value: 'western', label: 'Western Region' },
-    { value: 'eastern', label: 'Eastern Region' },
-    { value: 'nyanza', label: 'Nyanza Region' },
-    { value: 'riftvalley', label: 'Rift Valley' },
-    { value: 'northeastern', label: 'North Eastern' }
+    { value: 'eldoret', label: 'Eldoret' }
   ];
 
-  // Cause tags for social discovery
   const causeTags = [
     { value: 'youthempowerment', label: 'Youth Empowerment', emoji: '⚡' },
     { value: 'funeralfund', label: 'Funeral Fund', emoji: '🕊️' },
-    { value: 'emergencyfund', label: 'Emergency Fund', emoji: '🚨' },
     { value: 'education', label: 'Education', emoji: '🎓' },
     { value: 'healthcare', label: 'Healthcare', emoji: '🏥' },
-    { value: 'housing', label: 'Housing', emoji: '🏠' },
     { value: 'agriculture', label: 'Agriculture', emoji: '🌾' },
-    { value: 'smallbusiness', label: 'Small Business', emoji: '💼' },
-    { value: 'womenempowerment', label: 'Women Empowerment', emoji: '💪' },
-    { value: 'environmental', label: 'Environmental', emoji: '🌱' },
-    { value: 'community', label: 'Community Development', emoji: '🤝' },
-    { value: 'technology', label: 'Technology', emoji: '💻' }
+    { value: 'smallbusiness', label: 'Small Business', emoji: '💼' }
   ];
 
   const governanceModels = [
-    { value: '1-person-1-vote', label: '1 Person = 1 Vote', desc: 'Democratic voting where each member has equal say' },
-    { value: 'weighted-stake', label: 'Weighted by Stake', desc: 'Voting power based on treasury contribution' },
-    { value: 'delegated', label: 'Delegated Voting', desc: 'Members can delegate their votes to others' }
+    { 
+      value: '1-person-1-vote', 
+      label: '1 Person = 1 Vote', 
+      desc: 'Every member has equal voting power regardless of contribution',
+      best_for: 'Community groups, social DAOs'
+    },
+    { 
+      value: 'weighted-stake', 
+      label: 'Weighted by Stake', 
+      desc: 'Voting power proportional to treasury contribution',
+      best_for: 'Investment clubs, business ventures'
+    },
+    { 
+      value: 'delegated', 
+      label: 'Delegated Voting', 
+      desc: 'Members can delegate their votes to trusted representatives',
+      best_for: 'Large DAOs, governance-focused groups'
+    }
   ];
 
   const treasuryTypes = [
-    { value: 'cusd', label: 'cUSD Vault', desc: 'Simple stable treasury in Celo Dollars' },
-    { value: 'dual', label: 'CELO + cUSD Dual', desc: 'Mixed treasury with growth potential' },
+    { value: 'cusd', label: 'cUSD Vault', desc: 'Simple stable treasury in Celo Dollars (USD-pegged)' },
+    { value: 'dual', label: 'CELO + cUSD Dual', desc: 'Mixed treasury with growth potential and stability' },
     { value: 'custom', label: 'Custom Stablecoin', desc: 'USDT, DAI or other tokens (coming soon)' }
   ];
 
-  // Map roles to what is actually in the codebase
   const roleTypes = ['member', 'moderator', 'treasurer', 'governor'];
 
   interface Member {
@@ -158,6 +150,7 @@ const CreateDAOFlow = () => {
     role: string;
     name: string;
     id?: number;
+    isPeerInvite?: boolean; // New field for peer system
   }
 
   interface DaoData {
@@ -199,7 +192,12 @@ const CreateDAOFlow = () => {
     if (newMember.address.trim()) {
       setDaoData(prev => ({
         ...prev,
-        members: [...prev.members, { ...newMember, role: newMember.role.toLowerCase(), id: Date.now() }]
+        members: [...prev.members, { 
+          ...newMember, 
+          role: newMember.role.toLowerCase(), 
+          id: Date.now(),
+          isPeerInvite: true // Mark as peer invite
+        }]
       }));
       setNewMember({ address: '', role: 'member', name: '' });
     }
@@ -212,7 +210,6 @@ const CreateDAOFlow = () => {
     }));
   };
 
-  // Real DAO deployment logic
   const deployDAO = async () => {
     setIsDeploying(true);
     try {
@@ -222,7 +219,6 @@ const CreateDAOFlow = () => {
         return;
       }
 
-      // Check DAO creation eligibility
       const eligibilityCheck = await fetch('/api/dao-abuse-prevention/check-eligibility', {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
@@ -233,11 +229,13 @@ const CreateDAOFlow = () => {
         setIsDeploying(false);
         return;
       }
+
       const response = await fetch('/api/dao-deploy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...daoData, founderWallet: walletAddress, members: daoData.members })
       });
+      
       const result = await response.json();
       if (response.ok && result.daoAddress) {
         setDaoData(prev => ({ ...prev, deployedAddress: result.daoAddress }));
@@ -246,7 +244,8 @@ const CreateDAOFlow = () => {
         throw new Error(result.error || 'Deployment failed');
       }
     } catch (err) {
-      // Handle error (show toast, etc.)
+      console.error('Deployment error:', err);
+      alert('Failed to deploy DAO. Please try again.');
     }
     setIsDeploying(false);
   };
@@ -259,17 +258,31 @@ const CreateDAOFlow = () => {
     if (currentStep > 1) setCurrentStep(currentStep - 1);
   };
 
+  const InfoTooltip = ({ text }: { text: string }) => (
+    <Tooltip>
+      <TooltipTrigger>
+        <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 ml-1" />
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        <p className="text-xs">{text}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+
   // Step 1 - Basic Info
   const renderBasicInfo = () => (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Let's create your DAO</h2>
-        <p className="text-gray-600">Start with the basics - what's your community about?</p>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Let's create your DAO</h2>
+        <p className="text-gray-600 dark:text-gray-400">Start with the basics - what's your community about?</p>
       </div>
 
       <div className="space-y-4">
         <div>
-          <Label htmlFor="dao-name" className="text-sm font-medium">DAO Name *</Label>
+          <div className="flex items-center">
+            <Label htmlFor="dao-name" className="text-sm font-medium">DAO Name *</Label>
+            <InfoTooltip text="This is the public name of your DAO that everyone will see" />
+          </div>
           <Input
             id="dao-name"
             placeholder="e.g., Kilifi Savings Group"
@@ -304,14 +317,14 @@ const CreateDAOFlow = () => {
                 {emoji}
               </Button>
             ))}
-            <Button variant="outline" size="sm" className="w-12 h-12">
-              <Upload className="w-4 h-4" />
-            </Button>
           </div>
         </div>
 
         <div>
-          <Label className="text-sm font-medium">Category *</Label>
+          <div className="flex items-center">
+            <Label className="text-sm font-medium">Category *</Label>
+            <InfoTooltip text="Choose the category that best describes your DAO's primary purpose" />
+          </div>
           <Select value={daoData.category} onValueChange={(value) => updateDaoData('category', value)}>
             <SelectTrigger className="mt-1">
               <SelectValue placeholder="What type of DAO is this?" />
@@ -319,20 +332,24 @@ const CreateDAOFlow = () => {
             <SelectContent>
               {categories.map(cat => (
                 <SelectItem key={cat.value} value={cat.value}>
-                  <span className="flex items-center gap-2">
+                  <div className="flex items-start gap-2">
                     <span>{cat.emoji}</span>
-                    <span>{cat.label}</span>
-                  </span>
+                    <div>
+                      <div className="font-medium">{cat.label}</div>
+                      <div className="text-xs text-gray-500">{cat.description}</div>
+                    </div>
+                  </div>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
 
-        {/* Regional Tags */}
         <div>
-          <Label className="text-sm font-medium">📍 Region (Select up to 2)</Label>
-          <p className="text-xs text-gray-500 mb-2">Help people discover your DAO by location</p>
+          <div className="flex items-center">
+            <Label className="text-sm font-medium">📍 Region (Select up to 2)</Label>
+            <InfoTooltip text="Help people in your region discover your DAO" />
+          </div>
           <div className="flex flex-wrap gap-2 mt-2">
             {regionalTags.map(tag => (
               <Button
@@ -353,21 +370,13 @@ const CreateDAOFlow = () => {
               </Button>
             ))}
           </div>
-          {daoData.regionalTags.length > 0 && (
-            <div className="mt-2 flex gap-2 flex-wrap">
-              {daoData.regionalTags.map(tag => (
-                <Badge key={tag} variant="secondary">
-                  #{regionalTags.find(t => t.value === tag)?.label}
-                </Badge>
-              ))}
-            </div>
-          )}
         </div>
 
-        {/* Cause Tags */}
         <div>
-          <Label className="text-sm font-medium">🎯 Cause & Purpose (Select up to 3)</Label>
-          <p className="text-xs text-gray-500 mb-2">These help people find DAOs they care about</p>
+          <div className="flex items-center">
+            <Label className="text-sm font-medium">🎯 Cause & Purpose (Select up to 3)</Label>
+            <InfoTooltip text="Tags help people find DAOs that align with their interests" />
+          </div>
           <div className="flex flex-wrap gap-2 mt-2">
             {causeTags.map(tag => (
               <Button
@@ -389,107 +398,52 @@ const CreateDAOFlow = () => {
               </Button>
             ))}
           </div>
-          {daoData.causeTags.length > 0 && (
-            <div className="mt-2 flex gap-2 flex-wrap">
-              {daoData.causeTags.map(tag => (
-                <Badge key={tag} variant="secondary" className="text-xs">
-                  {causeTags.find(t => t.value === tag)?.emoji} #{causeTags.find(t => t.value === tag)?.label}
-                </Badge>
-              ))}
-            </div>
-          )}
         </div>
 
-        {/* Visibility Settings */}
         <div>
-          <Label className="text-sm font-medium">🌍 Discovery & Visibility</Label>
+          <div className="flex items-center">
+            <Label className="text-sm font-medium">🌍 Discovery & Visibility</Label>
+            <InfoTooltip text="Control who can find and join your DAO" />
+          </div>
           <RadioGroup
             value={daoData.visibility}
             onValueChange={(value) => updateDaoData('visibility', value)}
             className="mt-2 space-y-2"
           >
-            <div className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-gray-50">
+            <div className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
               <RadioGroupItem value="public" id="public" className="mt-1" />
               <div className="flex-1">
                 <Label htmlFor="public" className="font-medium cursor-pointer">
                   🌐 Public - Discover Everywhere
                 </Label>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Appears in discovery feed, trending lists, and search results
                 </p>
               </div>
             </div>
-            <div className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-gray-50">
+            <div className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
               <RadioGroupItem value="regional" id="regional" className="mt-1" />
               <div className="flex-1">
                 <Label htmlFor="regional" className="font-medium cursor-pointer">
                   📍 Regional Only
                 </Label>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Only visible in your region's discovery feed
                 </p>
               </div>
             </div>
-            <div className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-gray-50">
+            <div className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
               <RadioGroupItem value="private" id="private" className="mt-1" />
               <div className="flex-1">
                 <Label htmlFor="private" className="font-medium cursor-pointer">
                   🔒 Private - Invite Only
                 </Label>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Not discoverable, members join via invite link only
                 </p>
               </div>
             </div>
           </RadioGroup>
-        </div>
-
-        {/* Featured Message for Discovery */}
-        {daoData.visibility !== 'private' && (
-          <div>
-            <Label htmlFor="featured-message" className="text-sm font-medium">
-              ✨ Featured Message (Optional)
-            </Label>
-            <p className="text-xs text-gray-500 mb-2">
-              A short, inspiring message that appears when people discover your DAO
-            </p>
-            <Textarea
-              id="featured-message"
-              placeholder="e.g., 'Supporting our youth to build a better tomorrow 💪🏾' or 'Pole sana 🙏🏾 - We're here for each other'"
-              value={daoData.featuredMessage}
-              onChange={(e) => updateDaoData('featuredMessage', e.target.value)}
-              className="mt-1"
-              maxLength={100}
-            />
-            <p className="text-xs text-gray-400 mt-1">
-              {daoData.featuredMessage.length}/100 characters
-            </p>
-          </div>
-        )}
-
-        {/* Social Features */}
-        <div className="space-y-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <h4 className="font-medium text-sm">💬 Social Layer</h4>
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-sm">Enable Reactions & Support Notes</Label>
-              <p className="text-xs text-gray-500">Let people send "Pole sana 🙏🏾" or "Happy to support!"</p>
-            </div>
-            <Switch
-              checked={daoData.enableSocialReactions}
-              onCheckedChange={(checked) => updateDaoData('enableSocialReactions', checked)}
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-sm">Join MetaDAO Network</Label>
-              <p className="text-xs text-gray-500">Auto-suggest joining regional or cause-based MetaDAOs</p>
-            </div>
-            <Switch
-              checked={daoData.enableDiscovery}
-              onCheckedChange={(checked) => updateDaoData('enableDiscovery', checked)}
-            />
-          </div>
         </div>
       </div>
     </div>
@@ -499,26 +453,30 @@ const CreateDAOFlow = () => {
   const renderGovernance = () => (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Governance Setup</h2>
-        <p className="text-gray-600">How will your DAO make decisions?</p>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Governance Setup</h2>
+        <p className="text-gray-600 dark:text-gray-400">How will your DAO make decisions?</p>
       </div>
 
       <div className="space-y-6">
         <div>
-          <Label className="text-sm font-medium mb-3 block">Governance Model</Label>
+          <div className="flex items-center mb-3">
+            <Label className="text-sm font-medium">Governance Model</Label>
+            <InfoTooltip text="This determines how voting power is distributed among members" />
+          </div>
           <RadioGroup
             value={daoData.governanceModel}
             onValueChange={(value) => updateDaoData('governanceModel', value)}
             className="space-y-3"
           >
             {governanceModels.map(model => (
-              <div key={model.value} className="flex items-start space-x-3">
+              <div key={model.value} className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
                 <RadioGroupItem value={model.value} id={model.value} className="mt-1" />
                 <div className="flex-1">
                   <Label htmlFor={model.value} className="font-medium cursor-pointer">
                     {model.label}
                   </Label>
-                  <p className="text-sm text-gray-500 mt-1">{model.desc}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{model.desc}</p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Best for: {model.best_for}</p>
                 </div>
               </div>
             ))}
@@ -526,20 +484,38 @@ const CreateDAOFlow = () => {
         </div>
 
         <div>
-          <Label className="text-sm font-medium">Quorum Threshold: {daoData.quorum}%</Label>
-          <p className="text-xs text-gray-500 mb-2">Minimum participation needed for votes to pass</p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <Label className="text-sm font-medium">Quorum Threshold: {daoData.quorum}%</Label>
+              <InfoTooltip text="Minimum percentage of members who must vote for a proposal to pass. Cannot be below 20% to ensure democratic participation" />
+            </div>
+            {daoData.quorum < MINIMUM_QUORUM && (
+              <Badge variant="destructive" className="text-xs">Below minimum</Badge>
+            )}
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+            Minimum participation needed for votes to pass (min: {MINIMUM_QUORUM}%)
+          </p>
           <Slider
             value={[daoData.quorum]}
-            onValueChange={([value]) => updateDaoData('quorum', value)}
-            min={10}
+            onValueChange={([value]) => updateDaoData('quorum', Math.max(value, MINIMUM_QUORUM))}
+            min={MINIMUM_QUORUM}
             max={100}
             step={5}
             className="mt-2"
           />
+          {daoData.quorum === MINIMUM_QUORUM && (
+            <p className="text-xs text-orange-600 dark:text-orange-400 mt-2">
+              ⚠️ This is the minimum allowed quorum for democratic governance
+            </p>
+          )}
         </div>
 
         <div>
-          <Label className="text-sm font-medium">Voting Period</Label>
+          <div className="flex items-center">
+            <Label className="text-sm font-medium">Voting Period</Label>
+            <InfoTooltip text="How long members have to vote on proposals" />
+          </div>
           <Select value={daoData.votingPeriod} onValueChange={(value) => updateDaoData('votingPeriod', value)}>
             <SelectTrigger className="mt-1">
               <SelectValue />
@@ -547,20 +523,10 @@ const CreateDAOFlow = () => {
             <SelectContent>
               <SelectItem value="24h">24 hours</SelectItem>
               <SelectItem value="3d">3 days</SelectItem>
-              <SelectItem value="7d">7 days</SelectItem>
-              <SelectItem value="custom">Custom</SelectItem>
+              <SelectItem value="7d">7 days (Recommended)</SelectItem>
+              <SelectItem value="14d">14 days</SelectItem>
             </SelectContent>
           </Select>
-        </div>
-
-        <div>
-          <Label className="text-sm font-medium">Founder Wallet</Label>
-          <div className="flex items-center gap-2 mt-1">
-            <Badge variant="secondary" className="font-mono text-sm">
-              {daoData.founderWallet}
-            </Badge>
-            <Badge variant="outline" className="text-green-600 border-green-200">Connected</Badge>
-          </div>
         </div>
       </div>
     </div>
@@ -570,20 +536,23 @@ const CreateDAOFlow = () => {
   const renderTreasury = () => (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Treasury Setup</h2>
-        <p className="text-gray-600">Configure your DAO's financial foundation</p>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Treasury Setup</h2>
+        <p className="text-gray-600 dark:text-gray-400">Configure your DAO's financial foundation</p>
       </div>
 
       <div className="space-y-6">
         <div>
-          <Label className="text-sm font-medium mb-3 block">Treasury Type</Label>
+          <div className="flex items-center mb-3">
+            <Label className="text-sm font-medium">Treasury Type</Label>
+            <InfoTooltip text="Choose how your DAO will store and manage funds" />
+          </div>
           <div className="space-y-3">
             {treasuryTypes.map(treasury => (
               <Card
                 key={treasury.value}
                 className={`cursor-pointer transition-all ${
                   daoData.treasuryType === treasury.value 
-                    ? 'border-teal-500 bg-teal-50' 
+                    ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/30' 
                     : 'hover:border-gray-300'
                 }`}
                 onClick={() => updateDaoData('treasuryType', treasury.value)}
@@ -601,7 +570,7 @@ const CreateDAOFlow = () => {
                     </div>
                     <div>
                       <h3 className="font-medium">{treasury.label}</h3>
-                      <p className="text-sm text-gray-500">{treasury.desc}</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">{treasury.desc}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -611,7 +580,10 @@ const CreateDAOFlow = () => {
         </div>
 
         <div>
-          <Label htmlFor="initial-funding" className="text-sm font-medium">Initial Funding (Optional)</Label>
+          <div className="flex items-center">
+            <Label htmlFor="initial-funding" className="text-sm font-medium">Initial Funding (Optional)</Label>
+            <InfoTooltip text="You can add funds to the treasury now or later" />
+          </div>
           <div className="relative mt-1">
             <Input
               id="initial-funding"
@@ -627,10 +599,10 @@ const CreateDAOFlow = () => {
           </div>
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between p-4 border rounded-lg">
           <div>
             <Label className="text-sm font-medium">Require Member Deposits</Label>
-            <p className="text-xs text-gray-500">Members must deposit to join</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Members must deposit to join</p>
           </div>
           <Switch
             checked={daoData.depositRequired}
@@ -641,13 +613,27 @@ const CreateDAOFlow = () => {
     </div>
   );
 
-  // Step 4 - Members
+  // Step 4 - Members (with Peer Invite System)
   const renderMembers = () => (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Add Members</h2>
-        <p className="text-gray-600">Invite your community to join the DAO</p>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Add Members</h2>
+        <p className="text-gray-600 dark:text-gray-400">Invite your community to join the DAO</p>
       </div>
+
+      <Card className="bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800">
+        <CardContent className="pt-4">
+          <div className="flex items-start gap-3">
+            <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+            <div className="flex-1">
+              <h4 className="font-medium text-blue-900 dark:text-blue-100">Peer Invite System</h4>
+              <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                Members you add now will receive peer invite links. They can use these to onboard others, creating a trusted network effect. Each invite is tracked for accountability.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -667,7 +653,10 @@ const CreateDAOFlow = () => {
               />
             </div>
             <div>
-              <Label className="text-sm">Wallet / Phone / Email</Label>
+              <div className="flex items-center">
+                <Label className="text-sm">Wallet / Phone / Email</Label>
+                <InfoTooltip text="Enter wallet address, phone number (+254...), or email" />
+              </div>
               <Input
                 placeholder="0x... or +254... or email"
                 value={newMember.address}
@@ -675,14 +664,19 @@ const CreateDAOFlow = () => {
               />
             </div>
             <div>
-              <Label className="text-sm">Role</Label>
+              <div className="flex items-center">
+                <Label className="text-sm">Role</Label>
+                <InfoTooltip text="Member: basic rights | Moderator: can moderate | Treasurer: financial access | Governor: full control" />
+              </div>
               <Select value={newMember.role} onValueChange={(value) => setNewMember(prev => ({ ...prev, role: value }))}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {roleTypes.map(role => (
-                    <SelectItem key={role} value={role}>{role}</SelectItem>
+                    <SelectItem key={role} value={role}>
+                      {role.charAt(0).toUpperCase() + role.slice(1)}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -690,7 +684,7 @@ const CreateDAOFlow = () => {
           </div>
           <Button onClick={addMember} className="w-full">
             <Plus className="w-4 h-4 mr-2" />
-            Add Member
+            Add Member (Will receive peer invite)
           </Button>
         </CardContent>
       </Card>
@@ -703,24 +697,29 @@ const CreateDAOFlow = () => {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center">
-                      <Users className="w-4 h-4 text-teal-600" />
+                    <div className="w-8 h-8 bg-teal-100 dark:bg-teal-900 rounded-full flex items-center justify-center">
+                      <Users className="w-4 h-4 text-teal-600 dark:text-teal-400" />
                     </div>
                     <div>
                       <p className="font-medium">{member.name || 'Anonymous'}</p>
-                      <p className="text-sm text-gray-500 font-mono">{member.address}</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 font-mono">{member.address}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant={member.role === 'governor' ? 'default' : 'secondary'}>
                       {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
                     </Badge>
+                    {member.isPeerInvite && (
+                      <Badge variant="outline" className="text-xs">
+                        Peer Invite
+                      </Badge>
+                    )}
                     {index > 0 && (
                       <Button
                         size="sm"
                         variant="ghost"
                         onClick={() => removeMember(index)}
-                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -732,17 +731,6 @@ const CreateDAOFlow = () => {
           ))}
         </div>
       </div>
-
-      <div>
-        <Label htmlFor="invite-message" className="text-sm font-medium">Invitation Message (Optional)</Label>
-        <Textarea
-          id="invite-message"
-          placeholder="Hey! You're invited to join our DAO..."
-          value={daoData.inviteMessage}
-          onChange={(e) => updateDaoData('inviteMessage', e.target.value)}
-          className="mt-1"
-        />
-      </div>
     </div>
   );
 
@@ -750,12 +738,11 @@ const CreateDAOFlow = () => {
   const renderPreview = () => (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Review Your DAO</h2>
-        <p className="text-gray-600">Everything looks good? Time to deploy!</p>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Review Your DAO</h2>
+        <p className="text-gray-600 dark:text-gray-400">Everything looks good? Time to deploy!</p>
       </div>
 
       <div className="grid gap-6">
-        {/* Basic Info */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
@@ -771,14 +758,15 @@ const CreateDAOFlow = () => {
               <div className="text-2xl">{daoData.logo}</div>
               <div>
                 <h3 className="font-semibold text-lg">{daoData.name || 'Unnamed DAO'}</h3>
-                <Badge variant="outline">{categories.find(c => c.value === daoData.category)?.label || 'No category'}</Badge>
+                <Badge variant="outline">
+                  {categories.find(c => c.value === daoData.category)?.label || 'No category'}
+                </Badge>
               </div>
             </div>
-            <p className="text-gray-600">{daoData.description || 'No description provided'}</p>
+            <p className="text-gray-600 dark:text-gray-400">{daoData.description || 'No description provided'}</p>
           </CardContent>
         </Card>
 
-        {/* Governance */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
@@ -792,52 +780,23 @@ const CreateDAOFlow = () => {
           <CardContent className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
               <div>
-                <Label className="text-xs text-gray-500">MODEL</Label>
+                <Label className="text-xs text-gray-500 dark:text-gray-400">MODEL</Label>
                 <p className="font-medium">
                   {governanceModels.find(g => g.value === daoData.governanceModel)?.label}
                 </p>
               </div>
               <div>
-                <Label className="text-xs text-gray-500">QUORUM</Label>
+                <Label className="text-xs text-gray-500 dark:text-gray-400">QUORUM</Label>
                 <p className="font-medium">{daoData.quorum}%</p>
               </div>
               <div>
-                <Label className="text-xs text-gray-500">VOTING PERIOD</Label>
+                <Label className="text-xs text-gray-500 dark:text-gray-400">VOTING PERIOD</Label>
                 <p className="font-medium">{daoData.votingPeriod}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Treasury */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Wallet className="w-5 h-5" />
-              Treasury
-            </CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => setCurrentStep(3)}>
-              Edit
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">
-                  {treasuryTypes.find(t => t.value === daoData.treasuryType)?.label}
-                </p>
-                <p className="text-sm text-gray-500">
-                  Initial: {daoData.initialFunding || '0'} {daoData.treasuryType === 'cusd' ? 'cUSD' : 'CELO'}
-                </p>
-              </div>
-              {daoData.depositRequired && (
-                <Badge variant="secondary">Deposits Required</Badge>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Members */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
@@ -852,27 +811,32 @@ const CreateDAOFlow = () => {
             <div className="space-y-2">
               {daoData.members.slice(0, 3).map((member, index) => (
                 <div key={index} className="flex items-center justify-between text-sm">
-                  <span className="font-mono">{member.address}</span>
-                  <Badge variant={member.role === 'governor' ? 'default' : 'secondary'} className="text-xs">
-                    {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
-                  </Badge>
+                  <span className="font-mono">{member.address.slice(0, 20)}...</span>
+                  <div className="flex gap-2">
+                    <Badge variant={member.role === 'governor' ? 'default' : 'secondary'} className="text-xs">
+                      {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
+                    </Badge>
+                    {member.isPeerInvite && (
+                      <Badge variant="outline" className="text-xs">Peer</Badge>
+                    )}
+                  </div>
                 </div>
               ))}
               {daoData.members.length > 3 && (
-                <p className="text-sm text-gray-500">+ {daoData.members.length - 3} more members</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">+ {daoData.members.length - 3} more members</p>
               )}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <div className="bg-gradient-to-r from-teal-50 to-orange-50 p-6 rounded-lg border border-teal-200">
+      <div className="bg-gradient-to-r from-teal-50 to-orange-50 dark:from-teal-950/30 dark:to-orange-950/30 p-6 rounded-lg border border-teal-200 dark:border-teal-800">
         <div className="flex items-center gap-3 mb-4">
-          <Rocket className="w-6 h-6 text-teal-600" />
-          <h3 className="text-lg font-semibold text-gray-900">Ready to Launch!</h3>
+          <Rocket className="w-6 h-6 text-teal-600 dark:text-teal-400" />
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Ready to Launch!</h3>
         </div>
-        <p className="text-gray-600 mb-4">
-          Your DAO will be deployed to the Celo blockchain. This action cannot be undone.
+        <p className="text-gray-600 dark:text-gray-400 mb-4">
+          Your DAO will be deployed to the blockchain. This action cannot be undone.
         </p>
         <Button 
           onClick={deployDAO}
@@ -909,9 +873,9 @@ const CreateDAOFlow = () => {
         </div>
       </div>
 
-      <Card className="text-left dark:bg-gray-900">
+      <Card className="text-left">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 dark:text-white">
+          <CardTitle className="flex items-center gap-2">
             {daoData.logo}
             {daoData.name}
           </CardTitle>
@@ -920,7 +884,7 @@ const CreateDAOFlow = () => {
           <div>
             <Label className="text-xs text-gray-500 dark:text-gray-400">DAO ADDRESS</Label>
             <div className="flex items-center gap-2 mt-1">
-              <code className="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded text-sm font-mono dark:text-white">
+              <code className="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded text-sm font-mono flex-1">
                 {daoData.deployedAddress || '0x8f2e...A4D9'}
               </code>
               <Button size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(daoData.deployedAddress || '')}>
@@ -930,53 +894,30 @@ const CreateDAOFlow = () => {
           </div>
           
           <div>
-            <Label className="text-xs text-gray-500 dark:text-gray-400">INVITE LINK</Label>
-            <div className="flex items-center gap-2 mt-1">
-              {/** Deep referral link generation */}
-              {(() => {
-                const daoId = daoData.deployedAddress || '8f2e...A4D9';
-                const inviterId = daoData.founderWallet || '0xFounder';
-                // Simulate a verification token (should be generated by backend)
-                const verificationToken = btoa(`${daoId}:${inviterId}:${Date.now()}`);
-                const inviteUrl = `https://mtaa.dao/invite/${daoId}?ref=${inviterId}&token=${verificationToken}`;
-                return (
-                  <>
-                    <code className="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded text-sm flex-1 dark:text-white">
-                      {inviteUrl}
-                    </code>
-                    <Button size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(inviteUrl)}>
-                      <Copy className="w-4 h-4" />
-                    </Button>
-                  </>
-                );
-              })()}
-            </div>
+            <Label className="text-xs text-gray-500 dark:text-gray-400">PEER INVITE LINKS</Label>
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 mb-2">
+              Each founding member will receive a unique peer invite link to onboard others
+            </p>
+            <Badge variant="secondary" className="text-xs">
+              {daoData.members.filter(m => m.isPeerInvite).length} peer invites generated
+            </Badge>
           </div>
         </CardContent>
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Button className="bg-primary-600 hover:bg-primary-700 text-white" onClick={() => window.location.href = '/dashboard'}>
+        <Button onClick={() => window.location.href = '/dashboard'}>
           <Settings className="w-4 h-4 mr-2" />
           Go to Dashboard
         </Button>
         <Button variant="outline" onClick={() => window.location.href = `/dao/${daoData.deployedAddress}/invite`}>
           <Users className="w-4 h-4 mr-2" />
-          Invite Members
+          Manage Invites
         </Button>
         <Button variant="outline" onClick={() => window.location.href = `/dao/${daoData.deployedAddress}/fund`}>
           <Wallet className="w-4 h-4 mr-2" />
           Fund Treasury
         </Button>
-      </div>
-
-      <div className="bg-primary-50 dark:bg-gray-800 border border-primary-200 dark:border-gray-700 rounded-lg p-4">
-        <h3 className="font-medium text-primary-900 dark:text-white mb-2">Next Steps:</h3>
-        <ul className="text-sm text-primary-700 dark:text-gray-400 space-y-1">
-          <li>• Share the invite link with your community</li>
-          <li>• Fund your treasury to begin operations</li>
-          <li>• Create your first proposal to get started</li>
-        </ul>
       </div>
     </div>
   );
@@ -994,9 +935,8 @@ const CreateDAOFlow = () => {
   };
 
   return (
-  <div className="min-h-screen bg-primary-50 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 py-8">
       <div className="max-w-4xl mx-auto px-4">
-        {/* Progress Steps */}
         {currentStep < 6 && (
           <div className="mb-8">
             <div className="flex items-center justify-between overflow-x-auto">
@@ -1011,21 +951,21 @@ const CreateDAOFlow = () => {
                       isActive 
                         ? 'border-teal-500 bg-teal-500 text-white' 
                         : isCompleted 
-                          ? 'border-teal-500 bg-teal-100 text-teal-600'
-                          : 'border-gray-300 bg-white text-gray-400'
+                          ? 'border-teal-500 bg-teal-100 dark:bg-teal-900 text-teal-600 dark:text-teal-400'
+                          : 'border-gray-300 bg-white dark:bg-slate-800 text-gray-400'
                     }`}>
                       <Icon className="w-5 h-5" />
                     </div>
                     <div className="ml-2 hidden sm:block">
                       <p className={`text-sm font-medium whitespace-nowrap ${
-                        isActive || isCompleted ? 'text-teal-600' : 'text-gray-500'
+                        isActive || isCompleted ? 'text-teal-600 dark:text-teal-400' : 'text-gray-500 dark:text-gray-400'
                       }`}>
                         {step.title}
                       </p>
                     </div>
                     {index < steps.length - 2 && (
                       <div className={`w-12 sm:w-20 h-1 mx-4 transition-all ${
-                        currentStep > step.id ? 'bg-teal-500' : 'bg-gray-200'
+                        currentStep > step.id ? 'bg-teal-500' : 'bg-gray-200 dark:bg-gray-700'
                       }`} />
                     )}
                   </div>
@@ -1035,14 +975,12 @@ const CreateDAOFlow = () => {
           </div>
         )}
 
-        {/* Main Content */}
-        <Card className="mb-8">
+        <Card className="mb-8 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
           <CardContent className="p-8">
             {renderStepContent()}
           </CardContent>
         </Card>
 
-        {/* Navigation */}
         {currentStep < 6 && (
           <div className="flex justify-between">
             <Button
@@ -1060,6 +998,7 @@ const CreateDAOFlow = () => {
                 onClick={nextStep}
                 disabled={
                   (currentStep === 1 && !daoData.name.trim()) ||
+                  (currentStep === 2 && daoData.quorum < MINIMUM_QUORUM) ||
                   (currentStep === 3 && !daoData.treasuryType)
                 }
                 className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700"
@@ -1068,13 +1007,12 @@ const CreateDAOFlow = () => {
                 <ChevronRight className="w-4 h-4" />
               </Button>
             ) : (
-              <div /> // Empty div for spacing in preview step
+              <div />
             )}
           </div>
         )}
 
-        {/* Footer */}
-        <div className="text-center mt-12 text-sm text-gray-500">
+        <div className="text-center mt-12 text-sm text-gray-500 dark:text-gray-400">
           <p>Powered by Celo • Secured by blockchain • Built for communities</p>
         </div>
       </div>
