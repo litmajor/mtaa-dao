@@ -1,0 +1,266 @@
+/**
+ * Theme CSS Variables - MtaaDAO Design System
+ * Generated from design tokens
+ * Use these CSS variables for dynamic theming
+ */
+
+/* Light Mode (Default) */
+:root {
+  /* Color Palette */
+  --color-orange-light: #FFE4D1;
+  --color-orange-base: #FF7F3F;
+  --color-orange-dark: #E56D2E;
+  --color-orange-darker: #B8531B;
+
+  --color-purple-light: #F3E8FF;
+  --color-purple-base: #8B5FBF;
+  --color-purple-dark: #7343A8;
+  --color-purple-darker: #563170;
+
+  --color-emerald-light: #D1FAE5;
+  --color-emerald-base: #10B981;
+  --color-emerald-dark: #059669;
+  --color-emerald-darker: #047857;
+
+  --color-red-light: #FEE2E2;
+  --color-red-base: #EF4444;
+  --color-red-dark: #DC2626;
+  --color-red-darker: #991B1B;
+
+  --color-amber-light: #FEF3C7;
+  --color-amber-base: #F59E0B;
+  --color-amber-dark: #D97706;
+  --color-amber-darker: #92400E;
+
+  --color-blue-light: #DBEAFE;
+  --color-blue-base: #3B82F6;
+  --color-blue-dark: #1D4ED8;
+  --color-blue-darker: #1E40AF;
+
+  --color-gray-light: #F3F4F6;
+  --color-gray-base: #6B7280;
+  --color-gray-dark: #374151;
+  --color-gray-darker: #111827;
+
+  --color-slate-light: #F1F5F9;
+  --color-slate-base: #64748B;
+  --color-slate-dark: #334155;
+  --color-slate-darker: #0F172A;
+
+  --color-teal-light: #CCFBF1;
+  --color-teal-base: #14B8A6;
+  --color-teal-dark: #0D9488;
+  --color-teal-darker: #134E4A;
+
+  --color-cyan-light: #CFFAFE;
+  --color-cyan-base: #06B6D4;
+  --color-cyan-dark: #0891B2;
+  --color-cyan-darker: #164E63;
+
+  --color-rose-light: #FFE4E6;
+  --color-rose-base: #F43F5E;
+  --color-rose-dark: #E11D48;
+  --color-rose-darker: #831843;
+
+  --color-lime-light: #ECFCCF;
+  --color-lime-base: #84CC16;
+  --color-lime-dark: #65A30D;
+  --color-lime-darker: #422006;
+
+  --color-black: #000000;
+  --color-white: #FFFFFF;
+
+  /* Semantic Colors */
+  --color-success: #10B981;
+  --color-error: #EF4444;
+  --color-warning: #F59E0B;
+  --color-info: #3B82F6;
+  --color-pending: #F59E0B;
+  --color-approved: #10B981;
+  --color-rejected: #EF4444;
+  --color-disabled: #9CA3AF;
+
+  /* Semantic Light Mode */
+  --semantic-background: #FFFFFF;
+  --semantic-foreground: #0F172A;
+  --semantic-card: #FFFFFF;
+  --semantic-card-foreground: #0F172A;
+  --semantic-popover: #FFFFFF;
+  --semantic-popover-foreground: #0F172A;
+  --semantic-primary: #FF7F3F;
+  --semantic-primary-foreground: #FFFFFF;
+  --semantic-secondary: #8B5FBF;
+  --semantic-secondary-foreground: #FFFFFF;
+  --semantic-muted: #F3F4F6;
+  --semantic-muted-foreground: #6B7280;
+  --semantic-accent: #14B8A6;
+  --semantic-accent-foreground: #FFFFFF;
+  --semantic-destructive: #EF4444;
+  --semantic-destructive-foreground: #FFFFFF;
+  --semantic-border: #F3F4F6;
+  --semantic-input: #F3F4F6;
+  --semantic-ring: #FF7F3F;
+
+  /* Typography */
+  --font-family-sans: system-ui, -apple-system, sans-serif;
+  --font-family-serif: ui-serif, Georgia, Cambria, serif;
+  --font-family-mono: ui-monospace, SFMono-Regular, Courier, monospace;
+
+  --font-size-caption: clamp(0.6875rem, 1.5vw, 0.8125rem);
+  --font-size-xs: clamp(0.75rem, 1.75vw, 0.875rem);
+  --font-size-sm: clamp(0.8125rem, 2vw, 0.9375rem);
+  --font-size-base: clamp(0.875rem, 2.2vw, 1rem);
+  --font-size-lg: clamp(1rem, 2.5vw, 1.125rem);
+  --font-size-xl: clamp(1.125rem, 2.75vw, 1.25rem);
+  --font-size-2xl: clamp(1.25rem, 3.5vw, 1.5rem);
+  --font-size-3xl: clamp(1.5rem, 4vw, 2rem);
+  --font-size-4xl: clamp(1.875rem, 4.5vw, 2.5rem);
+
+  --font-weight-thin: 100;
+  --font-weight-extralight: 200;
+  --font-weight-light: 300;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+  --font-weight-black: 900;
+
+  --line-height-tight: 1.2;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.6;
+  --line-height-loose: 1.75;
+
+  /* Spacing */
+  --space-0: 0px;
+  --space-0-5: 2px;
+  --space-0-75: 3px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 20px;
+  --space-2xl: 24px;
+  --space-3xl: 28px;
+  --space-4xl: 32px;
+  --space-5xl: 36px;
+  --space-6xl: 40px;
+  --space-7xl: 48px;
+  --space-8xl: 56px;
+  --space-9xl: 64px;
+
+  /* Container Padding */
+  --container-padding-mobile: 1rem;
+  --container-padding-tablet: 1.5rem;
+  --container-padding-desktop: 2rem;
+  --container-padding-wide: 2.5rem;
+
+  /* Sizing */
+  --size-touch-sm: 40px;
+  --size-touch-md: 44px;
+  --size-touch-lg: 48px;
+
+  --size-icon-sm: 16px;
+  --size-icon-md: 24px;
+  --size-icon-lg: 32px;
+  --size-icon-xl: 48px;
+
+  --size-btn-sm: 32px;
+  --size-btn-md: 40px;
+  --size-btn-lg: 48px;
+
+  /* Animations */
+  --animation-duration-shortest: 100ms;
+  --animation-duration-shorter: 150ms;
+  --animation-duration-short: 200ms;
+  --animation-duration-standard: 300ms;
+  --animation-duration-complex: 375ms;
+
+  --animation-easing-linear: linear;
+  --animation-easing-in: cubic-bezier(0.4, 0, 1, 1);
+  --animation-easing-out: cubic-bezier(0, 0, 0.2, 1);
+  --animation-easing-inout: cubic-bezier(0.4, 0, 0.2, 1);
+  --animation-easing-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+  /* Borders & Radius */
+  --border-radius-sm: 2px;
+  --border-radius-md: 4px;
+  --border-radius-lg: 8px;
+  --border-radius-xl: 12px;
+  --border-radius-full: 9999px;
+
+  --border-width-thin: 1px;
+  --border-width-base: 1px;
+  --border-width-thick: 2px;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+
+  /* Z-Index */
+  --z-hide: -1;
+  --z-auto: auto;
+  --z-base: 0;
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-fixed: 1030;
+  --z-modal-backdrop: 1040;
+  --z-modal: 1050;
+  --z-popover: 1060;
+  --z-tooltip: 1070;
+  --z-notification: 1080;
+}
+
+/* Dark Mode */
+.dark {
+  --semantic-background: #0F172A;
+  --semantic-foreground: #E2E8F0;
+  --semantic-card: #1E293B;
+  --semantic-card-foreground: #E2E8F0;
+  --semantic-popover: #1E293B;
+  --semantic-popover-foreground: #E2E8F0;
+  --semantic-primary: #FF7F3F;
+  --semantic-primary-foreground: #FFFFFF;
+  --semantic-secondary: #8B5FBF;
+  --semantic-secondary-foreground: #FFFFFF;
+  --semantic-muted: #334155;
+  --semantic-muted-foreground: #94A3B8;
+  --semantic-accent: #14B8A6;
+  --semantic-accent-foreground: #FFFFFF;
+  --semantic-destructive: #EF4444;
+  --semantic-destructive-foreground: #FFFFFF;
+  --semantic-border: #334155;
+  --semantic-input: #334155;
+  --semantic-ring: #FF7F3F;
+}
+
+/* High Contrast Mode */
+.high-contrast {
+  --semantic-background: #000000;
+  --semantic-foreground: #FFFFFF;
+  --semantic-card: #000000;
+  --semantic-card-foreground: #FFFFFF;
+  --semantic-muted: #333333;
+  --semantic-muted-foreground: #CCCCCC;
+  --semantic-border: #FFFFFF;
+  --semantic-input: #333333;
+  --semantic-primary: #FFFF00;
+  --semantic-primary-foreground: #000000;
+  --semantic-secondary: #FFFFFF;
+  --semantic-secondary-foreground: #000000;
+  --semantic-accent: #00FFFF;
+  --semantic-accent-foreground: #000000;
+}
+
+/* Breakpoints - for media query helpers */
+:root {
+  --breakpoint-xs: 320px;
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --breakpoint-2xl: 1536px;
+}
