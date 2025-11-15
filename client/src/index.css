@@ -1,3 +1,6 @@
+/* Import design system theme variables */
+@import './styles/theme-variables.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
