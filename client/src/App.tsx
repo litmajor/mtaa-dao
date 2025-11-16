@@ -49,6 +49,10 @@ const AnnouncementsManagementLazy = lazy(() => import('./pages/admin/Announcemen
 const PoolManagementLazy = lazy(() => import('./pages/admin/PoolManagement'));
 const InvestmentPoolsLazy = lazy(() => import('./pages/investment-pools'));
 const InvestmentPoolDetailLazy = lazy(() => import('./pages/investment-pool-detail'));
+// Import new page components for Investment Pools
+const PoolDiscovery = lazy(() => import('./pages/investment-pools/discovery'));
+const PoolMarketplace = lazy(() => import('./pages/investment-pools/marketplace'));
+
 
 // Non-lazy (lighter) pages
 import Landing from './pages/landing';
@@ -112,11 +116,11 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 const SuperuserRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading, user } = useAuth();
   if (isLoading) return <PageLoading message="Verifying authentication..." />;
-  
+
   // Check if user is logged in and has superuser flag, or check localStorage
-  const isSuperuser = user?.isSuperUser || user?.role === 'super_admin' || 
+  const isSuperuser = user?.isSuperUser || user?.role === 'super_admin' ||
                       user?.role === 'admin' || localStorage.getItem('superuser') === 'true';
-  
+
   if (!isAuthenticated && !isSuperuser) return <Navigate to="/superuser-login" />;
   return <>{children}</>;
 };
@@ -219,7 +223,9 @@ function App() {
                   <Route path="/rewards" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><RewardsHubLazy /></Suspense></ProtectedRoute>} />
                   <Route path="/my-rewards" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><MyRewardsLazy /></Suspense></ProtectedRoute>} />
                   <Route path="/investment-pools" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><InvestmentPoolsLazy /></Suspense></ProtectedRoute>} />
+                  <Route path="/investment-pools/discover" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><PoolDiscovery /></Suspense></ProtectedRoute>} />
                   <Route path="/investment-pools/:id" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><InvestmentPoolDetailLazy /></Suspense></ProtectedRoute>} />
+                  <Route path="/investment-pools/:id/marketplace" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><PoolMarketplace /></Suspense></ProtectedRoute>} />
                   <Route path="/nft-marketplace" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><NFTMarketplace /></Suspense></ProtectedRoute>} />
                   <Route path="/morio" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><MorioDemoLazy /></Suspense></ProtectedRoute>} />
                   {/* Blog routes */}
