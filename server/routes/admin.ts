@@ -61,7 +61,30 @@ router.post('/auth/admin-login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
     const token = jwt.sign({ id: user.id, role: user.roles }, process.env.JWT_SECRET || 'changeme', { expiresIn: '1d' });
-    res.json({ success: true, data: { user, accessToken: token } });
+    
+    // Return user object with superuser flag
+    const responseUser = {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName || '',
+      lastName: user.lastName || '',
+      phone: user.phone || null,
+      role: user.roles,
+      isSuperUser: user.roles === 'super_admin',
+      isAdmin: user.roles === 'admin' || user.roles === 'super_admin',
+      walletAddress: user.walletAddress || null,
+      isEmailVerified: user.emailVerified || false,
+      isPhoneVerified: user.phoneVerified || false,
+      profilePicture: user.profileImageUrl || null,
+    };
+    
+    res.json({ 
+      success: true, 
+      data: { 
+        user: responseUser, 
+        accessToken: token,
+      } 
+    });
   } catch (err) {
     logger.error('Admin login error:', err);
     res.status(500).json({ message: 'Server error' });

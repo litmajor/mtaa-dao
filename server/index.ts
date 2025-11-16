@@ -70,6 +70,7 @@ import { eldScry } from './core/elders/scry';
 import { eldKaizen } from './core/elders/kaizen';
 import { eldLumen } from './core/elders/lumen';
 import { elderCoordinator as coordinator } from './core/elders/coordinator';
+import { initializeGatewayAgent } from './core/agents/gateway/initialize';
 // Import example function for wallet demonstration
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -85,6 +86,25 @@ const app = express();
 
 // Setup process error handlers
 setupProcessErrorHandlers();
+
+// Add global handler for unhandled promise rejections from blockchain services
+process.on('unhandledRejection', (reason: Error | string, promise: Promise<any>) => {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  
+  // Check if it's a known blockchain timeout error - these are non-critical
+  if (message.includes('TIMEOUT') || message.includes('timeout') || 
+      message.includes('JsonRpcProvider failed') || message.includes('network')) {
+    logger.warn(`⚠️ Blockchain RPC timeout (non-critical): ${message}`);
+    logger.warn('   Continuing server operation - blockchain features may be degraded');
+    return;  // Don't crash, just log and continue
+  }
+  
+  // For other unhandled rejections, log and continue
+  logger.error('Unhandled Promise Rejection:', {
+    reason: message,
+    stack: reason instanceof Error ? reason.stack : undefined
+  });
+});
 
 // Initialize Socket.IO
 // Note: 'server' variable is used here but not defined in the provided snippet. Assuming it's to be defined by `createServer`.
@@ -425,17 +445,70 @@ app.use('/api/user/preferences', userPreferencesRoutes);
     // Start blockchain automation services
     console.log('🚀 Starting blockchain integration services...');
 
-    // Start vault event indexing
-    vaultEventIndexer.start();
+    // Start vault event indexing with error handling
+    try {
+      vaultEventIndexer.start().catch(err => {
+        logger.error('⚠️ Vault event indexer failed to start:', err.message);
+        // Don't crash the server, just log the error
+      });
+    } catch (error) {
+      logger.error('Error starting vault event indexer:', error);
+    }
 
-    // Start vault automation service
-    vaultAutomationService.start();
+    // Start vault automation service with error handling
+    try {
+      if (typeof vaultAutomationService.start === 'function') {
+        const result = vaultAutomationService.start();
+        if (result && typeof result.catch === 'function') {
+          result.catch(err => {
+            logger.error('⚠️ Vault automation service failed to start:', err.message);
+          });
+        }
+      }
+    } catch (error) {
+      logger.error('Error starting vault automation service:', error);
+    }
 
-    // Start services
-    transactionMonitor.start();
-    recurringPaymentService.start();
-    if (typeof gasPriceOracle.start === 'function') {
-      gasPriceOracle.start();
+    // Start transaction monitor with error handling
+    try {
+      if (typeof transactionMonitor.start === 'function') {
+        const result = transactionMonitor.start();
+        if (result && typeof result.catch === 'function') {
+          result.catch(err => {
+            logger.error('⚠️ Transaction monitor failed to start:', err.message);
+          });
+        }
+      }
+    } catch (error) {
+      logger.error('Error starting transaction monitor:', error);
+    }
+
+    // Start recurring payment service with error handling
+    try {
+      if (typeof recurringPaymentService.start === 'function') {
+        const result = recurringPaymentService.start();
+        if (result && typeof result.catch === 'function') {
+          result.catch(err => {
+            logger.error('⚠️ Recurring payment service failed to start:', err.message);
+          });
+        }
+      }
+    } catch (error) {
+      logger.error('Error starting recurring payment service:', error);
+    }
+
+    // Start gas price oracle with error handling
+    try {
+      if (typeof gasPriceOracle.start === 'function') {
+        const result = gasPriceOracle.start();
+        if (result && typeof result.catch === 'function') {
+          result.catch(err => {
+            logger.error('⚠️ Gas price oracle failed to start:', err.message);
+          });
+        }
+      }
+    } catch (error) {
+      logger.error('Error starting gas price oracle:', error);
     }
 
     // Initialize Elder Council
@@ -456,6 +529,32 @@ app.use('/api/user/preferences', userPreferencesRoutes);
     } catch (error) {
       console.error('❌ Elder Council initialization failed:', error);
       console.error('Error details:', error);
+    }
+
+    // Initialize Gateway Agent
+    console.log('🌐 Initializing Gateway Agent...');
+    try {
+      const gatewayService = await initializeGatewayAgent(
+        undefined, // Use default config
+        coordinator, // Pass coordinator for integration
+        undefined // Use default adapter config
+      );
+      console.log('✅ Gateway Agent initialized');
+      console.log('✅ Gateway adapters ready: Chainlink, Uniswap, CoinGecko, Moola, Beefyfi, Blockchain');
+
+      // Mount Gateway Agent routes now that service is initialized
+      try {
+        const { createGatewayRoutes } = await import('./routes/gateway');
+        const gatewayRoutes = createGatewayRoutes(gatewayService);
+        app.use('/api/gateway', gatewayRoutes);
+        console.log('✅ Gateway Agent API routes mounted at /api/gateway');
+      } catch (routeError) {
+        console.warn('⚠️ Failed to mount Gateway Agent routes:', (routeError as Error).message);
+      }
+    } catch (error) {
+      console.error('⚠️ Gateway Agent initialization failed:', error);
+      console.error('   Gateway features will be unavailable, but server will continue');
+      // Don't crash the server if Gateway fails
     }
 
     // Start bridge relayer service

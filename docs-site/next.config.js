@@ -11,7 +11,30 @@ const withNextra = require('nextra')({
 
 module.exports = withNextra({
   reactStrictMode: true,
+  swcMinify: true,
+  compress: true,
+  poweredByHeader: false,
   images: {
     domains: ['mtaadao.com'],
+    formats: ['image/avif', 'image/webp'],
   },
+  // Optimize for fast page loads
+  onDemandEntries: {
+    maxInactiveAge: 60 * 1000,
+    pagesBufferLength: 5,
+  },
+  // Headers for caching
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=3600, stale-while-revalidate=86400'
+          }
+        ]
+      }
+    ]
+  }
 })

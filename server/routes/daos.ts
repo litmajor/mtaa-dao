@@ -49,11 +49,11 @@ router.get("/", authenticate, async (req, res) => {
     // Get recent activity counts for each DAO (proposals)
     const activityCounts = await db.execute(sql`
       SELECT 
-        "daoId",
+        "dao_id" as "daoId",
         COUNT(*) as "activeProposals"
       FROM proposals
       WHERE status = 'active'
-      GROUP BY "daoId"
+      GROUP BY "dao_id"
     `);
 
     // Map activity counts

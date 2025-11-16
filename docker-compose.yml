@@ -1,91 +1,205 @@
-
+version: "3.9"
 
 services:
   api:
     build:
       context: .
-      dockerfile: Dockerfile.backend
+      dockerfile: DockerFile.backend
     container_name: mtaadao-api
+    restart: always
+    env_file: .env.production
     expose:
       - "4000"
     environment:
       PORT: 4000
       NODE_ENV: production
-      DATABASE_URL: postgres://postgres:postgres@db:5432/mtaadao
+      DATABASE_URL: postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
       REDIS_URL: redis://redis:6379
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - mtaadao-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
 
   frontend:
     build:
       context: .
-      dockerfile: Dockerfile.frontend
+      dockerfile: DockerFile.frontend
     container_name: mtaadao-frontend
+    restart: always
     expose:
       - "80"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    networks:
+      - mtaadao-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
 
   nginx:
     image: nginx:alpine
     container_name: mtaadao-nginx
+    restart: always
     ports:
       - "80:80"
+      - "443:443"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
     depends_on:
       - frontend
       - api
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - mtaadao-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
 
   db:
-    image: postgres:15
+    image: postgres:16
     container_name: mtaadao-db
-    ports:
-      - "5432:5432"
+    restart: always
+    expose:
+      - "5432"
     environment:
-      POSTGRES_DB: mtaadao
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - mtaadao-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
 
   redis:
-    image: redis:7
+    image: redis:7-alpine
     container_name: mtaadao-redis
-    ports:
-      - "6379:6379"
+    restart: always
+    expose:
+      - "6379"
+    volumes:
+      - redis-data:/data
+      - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - mtaadao-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
 
   pgadmin:
     image: dpage/pgadmin4
     container_name: mtaadao-pgadmin
-    ports:
-      - "5050:80"
+    restart: always
+    expose:
+      - "80"
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@mtaadao.org
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@mtaadao.org}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "True"
+      PGADMIN_CONFIG_COOKIE_DEFAULT_SECURE: "True"
+      PGADMIN_CONFIG_COOKIE_DEFAULT_SAMESITE: "Lax"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    networks:
+      - mtaadao-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
 
   prometheus:
-    image: prom/prometheus
-    container_name: prometheus
+    image: prom/prometheus:latest
+    container_name: mtaadao-prometheus
+    restart: always
+    expose:
+      - "9090"
     volumes:
-       - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml
-    ports:
-      - "9090:9090"
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+    networks:
+      - mtaadao-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
 
   grafana:
-    image: grafana/grafana
-    container_name: grafana
-    ports:
-      - "3000:3000"
+    image: grafana/grafana:latest
+    container_name: mtaadao-grafana
+    restart: always
+    expose:
+      - "3000"
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_INSTALL_PLUGINS: "grafana-piechart-panel"
+      GF_USERS_ALLOW_SIGN_UP: "false"
     depends_on:
       - prometheus
+    networks:
+      - mtaadao-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
 
 volumes:
   pgdata:
+  redis-data:
   grafana-data:
+  prometheus-data:
+
+networks:
+  mtaadao-network:
+    driver: bridge
 

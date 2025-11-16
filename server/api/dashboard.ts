@@ -9,7 +9,7 @@ import { eq, and, desc, count, sql } from 'drizzle-orm';
  */
 export async function getDashboardStatsHandler(req: Request, res: Response) {
   try {
-    const userId = (req.user as any)?.userId;
+    const userId = (req.user as any)?.id || (req.user as any)?.userId;
     
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -91,7 +91,7 @@ export async function getDashboardStatsHandler(req: Request, res: Response) {
  */
 export async function getDashboardProposalsHandler(req: Request, res: Response) {
   try {
-    const userId = (req.user as any)?.userId;
+    const userId = (req.user as any)?.id || (req.user as any)?.userId;
     
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -174,7 +174,7 @@ export async function getDashboardProposalsHandler(req: Request, res: Response) 
  */
 export async function getDashboardVaultsHandler(req: Request, res: Response) {
   try {
-    const userId = (req.user as any)?.userId;
+    const userId = (req.user as any)?.id || (req.user as any)?.userId;
     
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -207,7 +207,7 @@ export async function getDashboardVaultsHandler(req: Request, res: Response) {
  */
 export async function getDashboardContributionsHandler(req: Request, res: Response) {
   try {
-    const userId = (req.user as any)?.userId;
+    const userId = (req.user as any)?.id || (req.user as any)?.userId;
     
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -272,7 +272,7 @@ export async function getDashboardContributionsHandler(req: Request, res: Respon
  */
 export async function getDashboardMembersHandler(req: Request, res: Response) {
   try {
-    const userId = (req.user as any)?.userId;
+    const userId = (req.user as any)?.id || (req.user as any)?.userId;
     
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -338,7 +338,7 @@ export async function getDashboardMembersHandler(req: Request, res: Response) {
  */
 export async function getDashboardTasksHandler(req: Request, res: Response) {
   try {
-    const userId = (req.user as any)?.userId;
+    const userId = (req.user as any)?.id || (req.user as any)?.userId;
     
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });

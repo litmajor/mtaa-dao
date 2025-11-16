@@ -363,4 +363,16 @@ export async function registerRoutes(app: Express) {
   app.use('/api/telegram-bot', telegramBotRoutes);
   app.use('/api/telegram', telegramIntegrationRoutes);
   app.use('/api/whatsapp', whatsappIntegrationRoutes);
+
+  // === GATEWAY AGENT API ===
+  // Gateway Agent is initialized asynchronously in server/index.ts
+  // Dynamically import routes to avoid circular dependencies during app bootstrap
+  try {
+    // Note: Gateway routes are optionally mounted after Gateway Agent initialization
+    // This prevents import errors during the initial registerRoutes() call
+    // The routes will be properly mounted once the service is initialized
+    console.log('ℹ️  Gateway Agent routes will be mounted asynchronously after service initialization');
+  } catch (error) {
+    console.warn('⚠️  Gateway Agent service initialization deferred');
+  }
 }

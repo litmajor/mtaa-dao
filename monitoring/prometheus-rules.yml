@@ -1,0 +1,86 @@
+groups:
+  - name: mtaadao-api
+    interval: 30s
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected (instance {{ $labels.instance }})"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API latency detected (instance {{ $labels.instance }})"
+          description: "95th percentile latency is {{ $value }}s (threshold: 1s)"
+
+      - alert: ContainerMemoryUsageHigh
+        expr: (sum(container_memory_working_set_bytes) BY (pod_name) / sum(container_spec_memory_limit_bytes) BY (pod_name)) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected (pod {{ $labels.pod_name }})"
+
+  - name: database
+    interval: 30s
+    rules:
+      - alert: PostgresConnectionsHigh
+        expr: pg_stat_activity_count > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High PostgreSQL connections (instance {{ $labels.instance }})"
+
+      - alert: PostgresDiskSpaceLow
+        expr: pg_database_size_bytes / 1024 / 1024 / 1024 > 80
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL database size critical (instance {{ $labels.instance }})"
+
+  - name: redis
+    interval: 30s
+    rules:
+      - alert: RedisConnectionsHigh
+        expr: redis_connected_clients > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Redis connections (instance {{ $labels.instance }})"
+
+      - alert: RedisMemoryUsageHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Redis memory usage (instance {{ $labels.instance }})"
+
+  - name: infrastructure
+    interval: 30s
+    rules:
+      - alert: ContainerDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container is down (instance {{ $labels.instance }})"
+
+      - alert: DiskSpaceLow
+        expr: node_filesystem_avail_bytes{fstype=~"ext4|xfs"} / node_filesystem_size_bytes < 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk space is low (instance {{ $labels.instance }})"

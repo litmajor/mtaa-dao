@@ -7,6 +7,9 @@
 
 import { PerformanceTracker, type PerformanceMetrics } from './performance-tracker';
 import { OptimizationEngine, type OptimizationRecommendation } from './optimization-engine';
+import { db } from '../../../db';
+import { daos } from '../../../../shared/schema';
+import { eq } from 'drizzle-orm';
 
 export interface EldKaizenConfig {
   updateInterval: number; // milliseconds
@@ -107,30 +110,40 @@ export class EldKaizenElder {
     try {
       this.status.status = 'analyzing';
 
-      // For now, analyze a default DAO - in production, iterate over all registered DAOs
-      const daoId = 'default-dao'; // This should come from a registry
+      // Fetch all active DAOs from the database
+      const activeDaos = await db.select().from(daos).where(eq(daos.isArchived, false));
       
-      // Collect metrics
-      const metrics = await this.performanceTracker.collectMetrics(daoId);
-      this.status.daoMetrics.set(daoId, metrics);
-
-      // Generate recommendations
-      const recommendation = this.optimizationEngine.generateRecommendation(metrics);
-      this.status.recommendations.set(daoId, recommendation);
-
-      this.status.lastAnalysis = new Date();
-
-      // Log key findings
-      this.logAnalysisResults(daoId, metrics, recommendation);
-
-      // Broadcast recommendation to other agents
-      await this.broadcastRecommendations(daoId, recommendation);
-
-      // Auto-apply optimizations if enabled
-      if (this.config.autoApplyOptimizations && recommendation.priorityRanking.length > 0) {
-        await this.applyOptimizations(daoId, recommendation);
+      if (activeDaos.length === 0) {
+        console.warn('⚠️ ELD-KAIZEN: No active DAOs found to analyze');
+        this.status.lastAnalysis = new Date();
+        return;
       }
 
+      // Analyze each DAO
+      for (const dao of activeDaos) {
+        const daoId = dao.id;
+        
+        // Collect metrics
+        const metrics = await this.performanceTracker.collectMetrics(daoId);
+        this.status.daoMetrics.set(daoId, metrics);
+
+        // Generate recommendations
+        const recommendation = this.optimizationEngine.generateRecommendation(metrics);
+        this.status.recommendations.set(daoId, recommendation);
+
+        // Log key findings
+        this.logAnalysisResults(daoId, metrics, recommendation);
+
+        // Broadcast recommendation to other agents
+        await this.broadcastRecommendations(daoId, recommendation);
+
+        // Auto-apply optimizations if enabled
+        if (this.config.autoApplyOptimizations && recommendation.priorityRanking.length > 0) {
+          await this.applyOptimizations(daoId, recommendation);
+        }
+      }
+
+      this.status.lastAnalysis = new Date();
       this.status.status = 'idle';
     } catch (error) {
       console.error(`[${this.name}] Error during analysis:`, error);

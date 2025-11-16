@@ -342,7 +342,7 @@ export default function StunningRegister() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-orange-950 to-slate-950 relative overflow-hidden flex flex-col items-center justify-center p-4">
       {/* Minimalist grid background */}
       <div 
         className="fixed inset-0 opacity-5"
@@ -355,9 +355,16 @@ export default function StunningRegister() {
       {/* Subtle accent line */}
       <div className="fixed top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-orange-500/50 to-transparent" />
 
+      {/* MTAA DAO Logo - only show on method selection step */}
+      {step === 'method' && (
+        <div className="relative z-10 mb-8 flex justify-center">
+          <img src="/mtaa_dao_logos/icon_dark_md.png" alt="MTAA DAO" className="h-16 w-16 object-contain" />
+        </div>
+      )}
+
       {/* Main content */}
-      <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
-        <div className="w-full max-w-md">
+      <div className="relative z-10 w-full max-w-md">
+        <div className="w-full">
           {/* Scrollable container */}
           <div className="max-h-[95vh] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-600/50 scrollbar-track-transparent hover:scrollbar-thumb-slate-500/70 pr-2">
             
@@ -376,16 +383,18 @@ export default function StunningRegister() {
 
             {/* Main card */}
             <div className="bg-slate-900/40 backdrop-blur-md border border-slate-700/50 rounded-lg shadow-lg p-8 transition-all duration-500 hover:shadow-xl hover:bg-slate-900/50 mb-4">
-              {/* Header with animated logo */}
+              {/* Header - show logo only for non-method steps */}
               <div className="text-center mb-8">
-                <div className="mb-6 flex justify-center">
-                  <div className="relative">
-                    <HeroLogo variant="icon" size="lg" forceTheme="dark" />
-                    <div className="absolute -top-2 -right-2 w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-                      <Zap className="w-4 h-4 text-white" />
+                {step !== 'method' && (
+                  <div className="mb-6 flex justify-center">
+                    <div className="relative">
+                      <HeroLogo variant="icon" size="lg" forceTheme="dark" />
+                      <div className="absolute -top-2 -right-2 w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
+                        <Zap className="w-4 h-4 text-white" />
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
                 <h2 className="text-4xl font-bold text-white mb-3">
                   Create Account
                 </h2>

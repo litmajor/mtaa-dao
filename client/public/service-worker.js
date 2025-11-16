@@ -8,7 +8,7 @@ const STATIC_ASSETS = [
   '/index.html',
   '/src/main.tsx',
   '/src/index.css',
-  '/MtaaDAO_Full_BrandAssets/mtaa_dao_logo_512x512.png'
+  '/mtaa_dao_logos/icon_dark_banner.png'
 ];
 
 // Install event - cache static assets

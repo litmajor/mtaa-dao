@@ -6,6 +6,7 @@ import "./index.css";
 import { ToastProvider } from "./components/ui/ToastProvider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HelmetProvider } from "react-helmet-async";
+import AppLoading from "./components/ui/app-loading";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -17,14 +18,19 @@ const queryClient = new QueryClient({
     },
   },
 });
-createRoot(document.getElementById("root")!).render(
-  <HelmetProvider>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <ToastProvider>
-          <App />
-        </ToastProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
-  </HelmetProvider>
-);
+
+const root = document.getElementById("root");
+
+if (root) {
+  createRoot(root).render(
+    <HelmetProvider>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <ToastProvider>
+            <App />
+          </ToastProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </HelmetProvider>
+  );
+}
