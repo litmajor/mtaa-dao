@@ -34,6 +34,9 @@ import PaymentLinkModal from '@/components/wallet/PaymentLinkModal';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import WalletConnectionManager from '@/components/wallet/WalletConnectionManager';
 import WalletBackupReminder from '@/components/wallet/WalletBackupReminder';
+import BackupWalletModal from '@/components/wallet/BackupWalletModal';
+import TokenSwapModal from '@/components/wallet/TokenSwapModal';
+import StakingModal from '@/components/wallet/StakingModal';
 
 
 const EnhancedWalletPage = () => {
@@ -280,6 +283,12 @@ const EnhancedWalletPage = () => {
     );
   }
 
+  // Enhanced Features Menu State
+  const [showFeaturesMenu, setShowFeaturesMenu] = useState(false);
+  const [showBackupModal, setShowBackupModal] = useState(false);
+  const [showStakingModal, setShowStakingModal] = useState(false);
+  const [showSwapModal, setShowSwapModal] = useState(false);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 relative overflow-hidden">
       {/* Connected Wallet Header */}
@@ -477,74 +486,74 @@ const EnhancedWalletPage = () => {
             </div>
           </CustomCard>
 
-          {/* Quick Actions Card */}
+          {/* Enhanced Features Card */}
           <CustomCard className="bg-gradient-to-br from-white/90 to-gray-50/90 p-8">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-gray-900">Quick Actions</h3>
+              <h3 className="text-xl font-bold text-gray-900">Wallet Features</h3>
               <Zap className="w-6 h-6 text-yellow-500" />
             </div>
-            <div className="space-y-4">
-              <Button variant="emerald" className="w-full py-4 text-lg">
-                <Send className="mr-2 h-5 w-5" />
-                Send to Friend
-              </Button>
-              <Button variant="purple" className="w-full py-4 text-lg" onClick={() => setPaymentOpen(true)}>
-                <Download className="mr-2 h-5 w-5" />
-                Deposit Funds
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full py-4 text-lg"
-                onClick={() => setPaymentRequestOpen(true)}
-              >
-                <QrCode className="mr-2 h-5 w-5" />
-                Request Payment
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full py-4 text-lg"
-                onClick={() => setPhonePaymentOpen(true)}
-              >
-                <User className="mr-2 h-5 w-5" />
-                Pay by Phone
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full py-4 text-lg"
-                onClick={() => setSplitBillOpen(true)}
-              >
-                <Users className="mr-2 h-5 w-5" />
-                Split Bill
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full py-4 text-lg"
-                onClick={() => setPaymentLinkOpen(true)}
-              >
-                <Share2 className="mr-2 h-5 w-5" />
-                Payment Link
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full py-4 text-lg"
-                onClick={() => setRecurringPaymentOpen(true)}
-              >
-                <Repeat className="mr-2 h-5 w-5" />
-                Set Recurring
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full py-4 text-lg"
-                onClick={() => {
-                  const personalVault = vaults?.find(v => v.type === 'personal');
-                  setSelectedVault(personalVault);
-                  setWithdrawOpen(true);
-                }}
-                disabled={!vaults?.some(v => v.type === 'personal')}
-              >
-                <ArrowUpRight className="mr-2 h-5 w-5" />
-                Withdraw
-              </Button>
+            <div className="space-y-3">
+              {/* Primary Actions */}
+              <div className="pb-3 border-b">
+                <p className="text-xs font-semibold text-gray-500 mb-2">PAYMENTS</p>
+                <Button variant="emerald" className="w-full py-3" onClick={() => setDepositOpen(true)}>
+                  <Send className="mr-2 h-4 w-4" />
+                  Send Money
+                </Button>
+              </div>
+
+              {/* Social Payments */}
+              <div className="pb-3 border-b">
+                <p className="text-xs font-semibold text-gray-500 mb-2">SOCIAL</p>
+                <div className="space-y-2">
+                  <Button variant="outline" className="w-full py-2 text-sm" onClick={() => setPhonePaymentOpen(true)}>
+                    <User className="mr-2 h-4 w-4" />
+                    Pay by Phone
+                  </Button>
+                  <Button variant="outline" className="w-full py-2 text-sm" onClick={() => setSplitBillOpen(true)}>
+                    <Users className="mr-2 h-4 w-4" />
+                    Split Bill
+                  </Button>
+                  <Button variant="outline" className="w-full py-2 text-sm" onClick={() => setPaymentRequestOpen(true)}>
+                    <QrCode className="mr-2 h-4 w-4" />
+                    Request Payment
+                  </Button>
+                </div>
+              </div>
+
+              {/* Advanced Features */}
+              <div className="pb-3 border-b">
+                <p className="text-xs font-semibold text-gray-500 mb-2">ADVANCED</p>
+                <div className="space-y-2">
+                  <Button variant="outline" className="w-full py-2 text-sm" onClick={() => setShowSwapModal(true)}>
+                    <Repeat className="mr-2 h-4 w-4" />
+                    Swap Tokens
+                  </Button>
+                  <Button variant="outline" className="w-full py-2 text-sm" onClick={() => setShowStakingModal(true)}>
+                    <TrendingUp className="mr-2 h-4 w-4" />
+                    Stake & Earn
+                  </Button>
+                  <Button variant="outline" className="w-full py-2 text-sm" onClick={() => window.location.href = '/vault-dashboard'}>
+                    <Shield className="mr-2 h-4 w-4" />
+                    Vaults
+                  </Button>
+                </div>
+              </div>
+
+              {/* Security */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 mb-2">SECURITY</p>
+                <div className="space-y-2">
+                  <Button variant="outline" className="w-full py-2 text-sm border-yellow-300 text-yellow-700 hover:bg-yellow-50" onClick={() => setShowBackupModal(true)}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Backup Wallet
+                  </Button>
+                  <Button variant="outline" className="w-full py-2 text-sm" onClick={() => setRecurringPaymentOpen(true)}>
+                    <Repeat className="mr-2 h-4 w-4" />
+                    Recurring Payments
+                  </Button>
+                </div>
+              </div>
             </div>
           </CustomCard>
         </div>
@@ -726,6 +735,19 @@ const EnhancedWalletPage = () => {
             isOpen={paymentLinkOpen}
             onClose={() => setPaymentLinkOpen(false)}
             userAddress={address}
+          />
+          <BackupWalletModal
+            isOpen={showBackupModal}
+            onClose={() => setShowBackupModal(false)}
+            userAddress={address}
+          />
+          <TokenSwapModal
+            isOpen={showSwapModal}
+            onClose={() => setShowSwapModal(false)}
+          />
+          <StakingModal
+            isOpen={showStakingModal}
+            onClose={() => setShowStakingModal(false)}
           />
         </>
       )}
