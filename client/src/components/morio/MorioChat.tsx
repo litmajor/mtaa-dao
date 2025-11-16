@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiRequest } from '@/lib/queryClient';
+import { MorioElderInsights } from './MorioElderInsights';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -184,6 +185,13 @@ What would you like to explore first?`;
           Morio AI Assistant
         </CardTitle>
       </CardHeader>
+
+      {/* Elder Insights Panel */}
+      {daoId && variant === 'full' && (
+        <div className="border-b p-3 bg-gray-50 dark:bg-gray-800">
+          <MorioElderInsights userId={userId} daoId={daoId} />
+        </div>
+      )}
 
       <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((message, index) => (
