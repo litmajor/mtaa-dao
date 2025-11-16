@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { Settings, LogOut, Calendar, TrendingUp, Users, Award, Crown, Star, Sparkles, Target, Trophy, Zap, Gift, Loader2 } from "lucide-react";
+import { Settings, LogOut, Calendar, TrendingUp, Users, Award, Crown, Star, Zap, Target, Trophy } from "lucide-react";
 import { useAuth } from "./hooks/useAuth";
 
 interface ContributionData {
@@ -25,7 +25,7 @@ interface ProfileData {
     id: string;
     firstName: string;
     lastName: string;
-  email: string | null;
+    email: string | null;
     role: string;
     joinedAt: string;
     profilePicture?: string | null;
@@ -45,7 +45,6 @@ export default function Profile() {
   const navigate = useNavigate();
   const { user: authUser, logout } = useAuth();
 
-  // Fetch profile data from API
   const { data: profileData, isLoading, error } = useQuery<ProfileData>({
     queryKey: ["/api/profile"],
     queryFn: async () => {
@@ -57,33 +56,28 @@ export default function Profile() {
         },
         credentials: 'include',
       });
-      
+
       if (!response.ok) {
         throw new Error("Failed to fetch profile data");
       }
-      
+
       return response.json();
     },
     enabled: !!authUser,
-    staleTime: 1 * 60 * 1000, // 1 minute
+    staleTime: 1 * 60 * 1000,
   });
 
   const user = profileData?.user || authUser;
   const contributionStats = profileData?.contributionStats || { totalContributions: 0, monthlyContributions: 0, currentStreak: 0 };
   const contributions = profileData?.contributions || [];
-  const vaults = profileData?.vaults || [];
   const votingTokenBalance = profileData?.votingTokenBalance || 0;
-
-  const totalBalance = vaults?.reduce((sum, vault) =>
-    sum + parseFloat(vault.balance || "0"), 0
-  ) || 0;
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-white animate-spin mx-auto mb-4" />
-          <p className="text-white text-lg">Loading profile...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <p className="mt-4 text-muted-foreground">Loading profile...</p>
         </div>
       </div>
     );
@@ -91,9 +85,9 @@ export default function Profile() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="text-center text-white">
-          <p className="text-lg mb-4">Failed to load profile data</p>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-lg mb-4 text-destructive">Failed to load profile data</p>
           <Button onClick={() => navigate(0)}>Retry</Button>
         </div>
       </div>
@@ -103,334 +97,235 @@ export default function Profile() {
   const getRoleBadge = (role: string) => {
     switch (role) {
       case "elder":
-        return (
-          <div className="px-4 py-2 rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 text-white shadow-lg font-semibold flex items-center space-x-2">
-            <Crown className="w-4 h-4" />
-            <span>Elder</span>
-          </div>
-        );
+        return <Badge className="bg-gradient-to-r from-yellow-500 to-orange-600"><Crown className="w-3 h-3 mr-1" />Elder</Badge>;
       case "proposer":
-        return (
-          <div className="px-4 py-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-lg font-semibold flex items-center space-x-2">
-            <Star className="w-4 h-4" />
-            <span>Proposer</span>
-          </div>
-        );
+        return <Badge className="bg-gradient-to-r from-purple-500 to-pink-600"><Star className="w-3 h-3 mr-1" />Proposer</Badge>;
       default:
-        return (
-          <div className="px-4 py-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg font-semibold flex items-center space-x-2">
-            <Users className="w-4 h-4" />
-            <span>Member</span>
-          </div>
-        );
+        return <Badge className="bg-gradient-to-r from-emerald-500 to-teal-600"><Users className="w-3 h-3 mr-1" />Member</Badge>;
     }
   };
 
   const safeUser: Partial<ProfileData['user']> = user || {};
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
-      {/* Animated Background Elements */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse"></div>
-        <div className="absolute top-3/4 right-1/4 w-96 h-96 bg-emerald-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse delay-1000"></div>
-        <div className="absolute bottom-1/4 left-1/2 w-96 h-96 bg-orange-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse delay-2000"></div>
-        
-        {/* Floating particles */}
-        <div className="absolute top-20 left-20 w-2 h-2 bg-white rounded-full animate-ping opacity-60"></div>
-        <div className="absolute top-40 right-40 w-1 h-1 bg-emerald-400 rounded-full animate-ping opacity-60 delay-500"></div>
-        <div className="absolute bottom-40 left-40 w-1.5 h-1.5 bg-purple-400 rounded-full animate-ping opacity-60 delay-1000"></div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 relative z-10">
-        {/* Header with Glassmorphism */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 mb-16">
-          <div className="relative">
-            <div className="absolute -inset-1 bg-gradient-to-r from-purple-600 to-emerald-600 rounded-lg blur opacity-25 animate-pulse"></div>
-            <div className="relative backdrop-blur-sm bg-white/10 rounded-xl p-6 border border-white/20 shadow-2xl">
-              <div className="flex items-center space-x-4">
-                <div className="p-3 bg-gradient-to-r from-purple-500 to-emerald-500 rounded-xl shadow-lg">
-                  <Sparkles className="w-8 h-8 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-4xl font-bold bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent mb-2">
-                    Profile
-                  </h1>
-                  <p className="text-gray-300 text-lg">Manage your account and view your community activity</p>
-                </div>
-              </div>
-            </div>
+    <div className="min-h-screen bg-background">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
+          <div>
+            <h1 className="text-3xl font-bold">Profile</h1>
+            <p className="text-muted-foreground">Manage your account and view your activity</p>
           </div>
-          
-          <div className="flex items-center space-x-4">
-            <Button 
-              className="bg-white/10 border-white/20 text-white hover:bg-white/20 backdrop-blur-sm shadow-lg transform hover:scale-105 transition-all duration-200"
-              onClick={() => navigate('/settings')}
-            >
+
+          <div className="flex items-center space-x-3">
+            <Button variant="outline" onClick={() => navigate('/settings')}>
               <Settings className="mr-2 h-4 w-4" />
               Settings
             </Button>
-            <Button
-              className="bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white shadow-lg transform hover:scale-105 transition-all duration-200"
-              onClick={() => logout()}
-            >
+            <Button variant="destructive" onClick={() => logout()}>
               <LogOut className="mr-2 h-4 w-4" />
               Logout
             </Button>
           </div>
         </div>
 
-        {/* Profile Header with Enhanced Design */}
-        <div className="relative group mb-16">
-          <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-emerald-600 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-300"></div>
-          <div className="relative backdrop-blur-sm bg-white/10 rounded-2xl border border-white/20 shadow-2xl overflow-hidden">
-            <div className="p-8 bg-gradient-to-r from-purple-500/10 to-emerald-500/10">
-              <div className="flex items-center space-x-8">
-                <div className="relative">
-                  <div className="absolute -inset-2 bg-gradient-to-r from-purple-600 to-emerald-600 rounded-full blur opacity-25 animate-pulse"></div>
-                  <Avatar className="relative w-32 h-32 border-4 border-white/20 shadow-2xl">
-                    <AvatarImage src={safeUser.profileImageUrl ?? safeUser.profilePicture ?? undefined} alt={safeUser.firstName || "User"} />
-                    <AvatarFallback className="text-4xl font-bold bg-gradient-to-br from-purple-500 to-emerald-500 text-white">
-                      {safeUser.firstName?.[0] || "U"}
-                    </AvatarFallback>
-                  </Avatar>
+        {/* Profile Header Card */}
+        <Card className="mb-8">
+          <CardContent className="p-6">
+            <div className="flex items-center space-x-6">
+              <Avatar className="w-24 h-24 border-4 border-primary/20">
+                <AvatarImage src={safeUser.profileImageUrl ?? safeUser.profilePicture ?? undefined} alt={safeUser.firstName || "User"} />
+                <AvatarFallback className="text-2xl font-bold bg-primary text-primary-foreground">
+                  {safeUser.firstName?.[0] || "U"}
+                </AvatarFallback>
+              </Avatar>
+
+              <div className="flex-1">
+                <div className="flex items-center space-x-4 mb-2">
+                  <h2 className="text-2xl font-bold">
+                    {safeUser.firstName} {safeUser.lastName}
+                  </h2>
+                  {getRoleBadge(safeUser.role || "member")}
                 </div>
-                
-                <div className="flex-1">
-                  <div className="flex items-center space-x-6 mb-4">
-                    <h2 className="text-4xl font-bold bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
-                      {safeUser.firstName} {safeUser.lastName}
-                    </h2>
-                    {getRoleBadge(safeUser.role || "member")}
+
+                <p className="text-muted-foreground mb-4">{safeUser.email}</p>
+
+                <div className="flex items-center space-x-6 text-sm text-muted-foreground">
+                  <div className="flex items-center space-x-2">
+                    <Calendar className="w-4 h-4" />
+                    <span>Joined {new Date(safeUser.joinedAt || Date.now()).toLocaleDateString()}</span>
                   </div>
-                  
-                  <p className="text-gray-300 text-lg mb-6">{safeUser.email}</p>
-                  
-                  <div className="flex items-center space-x-8 text-gray-300">
-                    <div className="flex items-center space-x-2">
-                      <div className="p-2 bg-gradient-to-r from-purple-500 to-emerald-500 rounded-lg">
-                        <Calendar className="w-5 h-5 text-white" />
-                      </div>
-                      <span className="font-medium">
-                        Joined {new Date(safeUser.joinedAt || Date.now()).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <div className="p-2 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-lg">
-                        <Award className="w-5 h-5 text-white" />
-                      </div>
-                      <span className="font-medium">Rank #7</span>
-                    </div>
+                  <div className="flex items-center space-x-2">
+                    <Award className="w-4 h-4" />
+                    <span>Rank #7</span>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+          </CardContent>
+        </Card>
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Contributions</CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">${contributionStats?.totalContributions?.toFixed(2) || "0.00"}</div>
+              <p className="text-xs text-muted-foreground mt-1">All time</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Monthly Contributions</CardTitle>
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">${contributionStats?.monthlyContributions?.toFixed(2) || "0.00"}</div>
+              <p className="text-xs text-muted-foreground mt-1">This month</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Day Streak</CardTitle>
+              <Target className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{contributionStats?.currentStreak || 0}</div>
+              <p className="text-xs text-muted-foreground mt-1">Days in a row</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Voting Tokens</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{votingTokenBalance}</div>
+              <p className="text-xs text-muted-foreground mt-1">Available to use</p>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Stats Grid with Enhanced Design */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
-          {[
-            {
-              icon: TrendingUp,
-              value: `$${contributionStats?.totalContributions?.toFixed(2) || "0.00"}`,
-              label: "Total Contributions",
-              color: "from-yellow-500 to-orange-600",
-              bgColor: "from-yellow-500/20 to-orange-600/20",
-              badge: "Total",
-              badgeColor: "from-yellow-400 to-orange-500"
-            },
-            {
-              icon: Calendar,
-              value: `$${contributionStats?.monthlyContributions?.toFixed(2) || "0.00"}`,
-              label: "Monthly Contributions",
-              color: "from-emerald-500 to-teal-600",
-              bgColor: "from-emerald-500/20 to-teal-600/20",
-              badge: "This Month",
-              badgeColor: "from-emerald-400 to-teal-500"
-            },
-            {
-              icon: Target,
-              value: contributionStats?.currentStreak || 0,
-              label: "Day Streak",
-              color: "from-purple-500 to-pink-600",
-              bgColor: "from-purple-500/20 to-pink-600/20",
-              badge: "Streak",
-              badgeColor: "from-purple-400 to-pink-500"
-            },
-            {
-              icon: Users,
-              value: votingTokenBalance.toString(),
-              label: "Your voting token balance",
-              color: "from-blue-500 to-indigo-600",
-              bgColor: "from-blue-500/20 to-indigo-600/20",
-              badge: "Vote Tokens",
-              badgeColor: "from-blue-400 to-indigo-500"
-            }
-          ].map((stat, index) => (
-            <div key={index} className="group relative transform transition-all duration-300 hover:scale-105">
-              <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-emerald-600 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-300"></div>
-              <div className="relative backdrop-blur-sm bg-white/10 rounded-2xl p-8 border border-white/20 shadow-2xl">
-                <div className="flex items-center justify-between mb-4">
-                  <div className={`w-14 h-14 bg-gradient-to-r ${stat.bgColor} rounded-2xl flex items-center justify-center shadow-lg`}>
-                    <stat.icon className={`w-7 h-7 bg-gradient-to-r ${stat.color} bg-clip-text text-transparent`} />
-                  </div>
-                  <div className={`px-3 py-1 rounded-full bg-gradient-to-r ${stat.badgeColor} text-white text-xs font-semibold shadow-lg`}>
-                    {stat.badge}
-                  </div>
-                </div>
-                <h3 className="text-3xl font-bold bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent mb-2">
-                  {stat.value}
-                </h3>
-                <p className="text-gray-300 text-sm font-medium">{stat.label}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Points Table with Enhanced Design */}
-        <div className="relative group mb-16">
-          <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-emerald-600 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-300"></div>
-          <div className="relative backdrop-blur-sm bg-white/10 rounded-2xl border border-white/20 shadow-2xl overflow-hidden">
-            <div className="p-6 bg-gradient-to-r from-purple-500/10 to-emerald-500/10">
-              <div className="flex items-center space-x-3 mb-6">
-                <div className="p-2 bg-gradient-to-r from-purple-500 to-emerald-500 rounded-lg">
-                  <Trophy className="w-5 h-5 text-white" />
-                </div>
-                <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
-                  How to Earn MsiaMo Points
-                </h2>
-              </div>
-              
-              <div className="overflow-hidden rounded-xl">
-                <table className="w-full">
-                  <thead className="bg-gradient-to-r from-purple-500/20 to-emerald-500/20 backdrop-blur-sm">
-                    <tr>
-                      <th className="py-4 px-6 text-left text-white font-semibold">Action</th>
-                      <th className="py-4 px-6 text-left text-white font-semibold">Points</th>
+        {/* Points Table */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Trophy className="w-5 h-5" />
+              How to Earn MsiaMo Points
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b">
+                    <th className="py-3 px-4 text-left font-semibold">Action</th>
+                    <th className="py-3 px-4 text-left font-semibold">Points</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    { action: "Active voting", points: "+10" },
+                    { action: "Referring a new member", points: "+25" },
+                    { action: "Leading a successful proposal", points: "+50" },
+                    { action: "Elder/role participation (per day)", points: "+5" }
+                  ].map((row, index) => (
+                    <tr key={index} className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-4">{row.action}</td>
+                      <td className="py-3 px-4">
+                        <Badge variant="secondary">{row.points}</Badge>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/10">
-                    {[
-                      { action: "Active voting", points: "+10" },
-                      { action: "Referring a new member", points: "+25" },
-                      { action: "Leading a successful proposal", points: "+50" },
-                      { action: "Elder/role participation (per day)", points: "+5" }
-                    ].map((row, index) => (
-                      <tr key={index} className="hover:bg-white/5 transition-colors">
-                        <td className="py-4 px-6 text-gray-300">{row.action}</td>
-                        <td className="py-4 px-6">
-                          <span className="px-3 py-1 bg-gradient-to-r from-emerald-400 to-teal-500 text-white rounded-full text-sm font-semibold">
-                            {row.points}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
         {/* Activity and Achievements */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Recent Activity */}
-          <div className="relative group">
-            <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-emerald-600 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-300"></div>
-            <div className="relative backdrop-blur-sm bg-white/10 rounded-2xl border border-white/20 shadow-2xl overflow-hidden">
-              <div className="p-6 bg-gradient-to-r from-purple-500/10 to-emerald-500/10">
-                <div className="flex items-center space-x-3 mb-6">
-                  <div className="p-2 bg-gradient-to-r from-purple-500 to-emerald-500 rounded-lg">
-                    <Zap className="w-5 h-5 text-white" />
-                  </div>
-                  <h3 className="text-2xl font-bold bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
-                    Recent Activity
-                  </h3>
-                </div>
-                
-                <div className="space-y-4">
-                  {contributions?.slice(0, 5).map((contribution) => (
-                    <div key={contribution.id} className="group relative">
-                      <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-400 to-teal-500 rounded-xl blur opacity-0 group-hover:opacity-25 transition duration-300"></div>
-                      <div className="relative flex items-center space-x-4 p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-all duration-300">
-                        <div className="w-12 h-12 bg-gradient-to-r from-emerald-500/20 to-teal-500/20 rounded-full flex items-center justify-center">
-                          <TrendingUp className="w-6 h-6 text-emerald-400" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-medium text-white">
-                            Contributed to {contribution.purpose || "General"} Fund
-                          </p>
-                          <p className="text-sm text-gray-400">
-                            {new Date(contribution.createdAt).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-emerald-400">
-                            +${parseFloat(contribution.amount).toFixed(2)}
-                          </p>
-                          <p className="text-sm text-gray-400">{contribution.currency}</p>
-                        </div>
-                      </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Zap className="w-5 h-5" />
+                Recent Activity
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {contributions?.slice(0, 5).map((contribution) => (
+                  <div key={contribution.id} className="flex items-center space-x-4 p-3 bg-muted/50 rounded-lg">
+                    <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+                      <TrendingUp className="w-5 h-5 text-primary" />
                     </div>
-                  ))}
-                </div>
+                    <div className="flex-1">
+                      <p className="font-medium">
+                        Contributed to {contribution.purpose || "General"} Fund
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {new Date(contribution.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-primary">
+                        +${parseFloat(contribution.amount).toFixed(2)}
+                      </p>
+                      <p className="text-sm text-muted-foreground">{contribution.currency}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
           {/* Achievements */}
-          <div className="relative group">
-            <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-emerald-600 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-300"></div>
-            <div className="relative backdrop-blur-sm bg-white/10 rounded-2xl border border-white/20 shadow-2xl overflow-hidden">
-              <div className="p-6 bg-gradient-to-r from-purple-500/10 to-emerald-500/10">
-                <div className="flex items-center space-x-3 mb-6">
-                  <div className="p-2 bg-gradient-to-r from-purple-500 to-emerald-500 rounded-lg">
-                    <Award className="w-5 h-5 text-white" />
-                  </div>
-                  <h3 className="text-2xl font-bold bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
-                    Achievements
-                  </h3>
-                </div>
-                
-                <div className="space-y-4">
-                  {[
-                    {
-                      title: "Elder Status",
-                      description: "Achieved high contribution ranking",
-                      icon: Crown,
-                      color: "from-yellow-500 to-orange-600"
-                    },
-                    {
-                      title: "Consistent Contributor",
-                      description: "14-day contribution streak",
-                      icon: TrendingUp,
-                      color: "from-emerald-500 to-teal-600"
-                    },
-                    {
-                      title: "Community Builder",
-                      description: "Active participant in governance",
-                      icon: Users,
-                      color: "from-purple-500 to-pink-600"
-                    }
-                  ].map((achievement, index) => (
-                    <div key={index} className="group relative">
-                      <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-400 to-emerald-500 rounded-xl blur opacity-0 group-hover:opacity-25 transition duration-300"></div>
-                      <div className="relative flex items-center space-x-4 p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-all duration-300">
-                        <div className={`w-12 h-12 bg-gradient-to-r ${achievement.color} rounded-full flex items-center justify-center shadow-lg`}>
-                          <achievement.icon className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-white">{achievement.title}</p>
-                          <p className="text-sm text-gray-400">{achievement.description}</p>
-                        </div>
-                      </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Award className="w-5 h-5" />
+                Achievements
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {[
+                  {
+                    title: "Elder Status",
+                    description: "Achieved high contribution ranking",
+                    icon: Crown,
+                  },
+                  {
+                    title: "Consistent Contributor",
+                    description: "14-day contribution streak",
+                    icon: TrendingUp,
+                  },
+                  {
+                    title: "Community Builder",
+                    description: "Active participant in governance",
+                    icon: Users,
+                  }
+                ].map((achievement, index) => (
+                  <div key={index} className="flex items-center space-x-4 p-3 bg-muted/50 rounded-lg">
+                    <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+                      <achievement.icon className="w-5 h-5 text-primary" />
                     </div>
-                  ))}
-                </div>
+                    <div>
+                      <p className="font-medium">{achievement.title}</p>
+                      <p className="text-sm text-muted-foreground">{achievement.description}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
