@@ -1,0 +1,84 @@
+Perfect. Those three rules are solid. Here are a few more critical ones:
+
+## Additional UX Rules:
+
+**4. No empty states without action**
+- Bad: "No proposals yet" 
+- Good: "No decisions yet. [Create the first one]"
+- Never show users an empty screen without telling them what to do next
+
+**5. Money always shows in local currency first**
+- Bad: "0.5 ETH"
+- Good: "$1,247 (0.5 ETH)" or just "$1,247"
+- Most people don't think in crypto units
+
+**6. Errors must explain what to DO, not what went wrong**
+- Bad: "Transaction failed: insufficient gas"
+- Good: "Not enough money for fees. Add $2 more."
+- Technical errors scare users away
+
+**7. Every number needs context**
+- Bad: "APY: 12.5%"
+- Good: "Your $100 becomes $112.50 in one year"
+- Show what it means for THEM, not abstract percentages
+
+**8. One primary action per screen**
+- Bad: [Deposit] [Withdraw] [Transfer] [Swap] [Stake]
+- Good: [Add Money] ... (other actions in menu)
+- Don't overwhelm with choices
+
+**9. Celebrate wins, hide losses**
+- Show: "You earned $23 this week! 🎉"
+- Don't show: "Market crashed -15% today"
+- Keep it positive; power users can dig for details
+
+**10. Mobile thumb-friendly tap targets**
+- All buttons minimum 48x48px
+- Primary actions at bottom of screen (easy to reach)
+- No tiny links or small text
+
+**11. Progressive disclosure**
+- Show basics first, "See more" for details
+- Don't dump all information at once
+- Let users discover features gradually
+
+**12. Trust before commitment**
+- Let them explore without creating account
+- Show example groups/success stories first
+- Ask for money/permissions LAST, not first
+
+---
+
+## Your Complete UX Rulebook:
+
+```
+1. Users see 20%, superusers see 100%
+2. Replace ALL technical terms
+3. Keep UI simple (one thing per screen)
+4. No empty states without actions
+5. Local currency first, always
+6. Errors tell users WHAT TO DO
+7. Every number needs context
+8. One primary action per screen
+9. Celebrate wins, hide losses
+10. Mobile thumb-friendly (48px+ buttons)
+11. Progressive disclosure (basics → details)
+12. Trust before commitment (explore → sign up → deposit)
+```
+
+---
+
+## Implementation Checklist:
+
+**For EVERY screen you build, ask:**
+- [ ] Can my mom understand this without my help?
+- [ ] Is there exactly ONE obvious thing to do?
+- [ ] Are technical terms replaced with plain language?
+- [ ] If something is empty, is there a clear action?
+- [ ] Are amounts in local currency (KES/USD)?
+- [ ] Can I tap all buttons with my thumb easily?
+- [ ] Does this screen make the user feel smart and safe?
+
+---
+
+**Do these rules + your 3 make sense? Should I add/remove anything?**
