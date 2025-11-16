@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -49,7 +48,7 @@ export default function MaonoVaultManagement() {
   const [showDeposit, setShowDeposit] = useState(false);
   const [showWithdraw, setShowWithdraw] = useState(false);
 
-  const { data: userVaults, isLoading } = useQuery({
+  const { data: userVaults, isLoading, refetch } = useQuery<VaultData[]>({
     queryKey: ['/api/vaults/user'],
     queryFn: async () => {
       const res = await fetch('/api/vaults/user', {
@@ -90,17 +89,20 @@ export default function MaonoVaultManagement() {
     }
   };
 
+  const handleVaultCreated = (vaultId: string) => {
+    toast({
+      title: "Vault Created!",
+      description: `Your vault has been successfully created. ID: ${vaultId}`
+    });
+    setShowCreateWizard(false);
+    refetch(); // Refetch vaults to show the newly created one
+  };
+
   if (showCreateWizard) {
     return (
       <VaultCreationWizard
         onClose={() => setShowCreateWizard(false)}
-        onSuccess={(vaultId) => {
-          toast({
-            title: "Vault Created!",
-            description: `Your vault has been successfully created. ID: ${vaultId}`
-          });
-          setShowCreateWizard(false);
-        }}
+        onSuccess={handleVaultCreated}
       />
     );
   }
@@ -199,14 +201,14 @@ export default function MaonoVaultManagement() {
                 <p className="mt-4 text-gray-600">Loading vaults...</p>
               </div>
             ) : !userVaults || userVaults.length === 0 ? (
-              <Card className="bg-white/80 backdrop-blur-xl border-white/20">
-                <CardContent className="py-12 text-center">
+              <Card className="bg-white/80 backdrop-blur-xl text-center py-12">
+                <CardContent>
                   <Wallet className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-                  <h3 className="text-lg font-semibold mb-2">No Vaults Yet</h3>
-                  <p className="text-gray-600 mb-4">Create your first vault to start investing</p>
-                  <Button onClick={() => setShowCreateWizard(true)}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create Vault
+                  <h3 className="text-xl font-bold mb-2">No Vaults Yet</h3>
+                  <p className="text-gray-600 mb-6">Create your first vault to start saving and earning yields!</p>
+                  <Button onClick={() => setShowCreateWizard(true)} className="bg-gradient-to-r from-blue-600 to-purple-600">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create Your First Vault
                   </Button>
                 </CardContent>
               </Card>
