@@ -29,48 +29,54 @@ export default function MtaaDAOLanding() {
 
   const coreFeatures = [
     {
-      icon: Sparkles,
-      title: "AI Assistant",
-      description: "Chat in English or Swahili. Morio handles everything.",
-      gradient: "from-emerald-400 to-teal-500"
-    },
-    {
       icon: DollarSign,
-      title: "M-Pesa Integration",
-      description: "Deposit and withdraw using mobile money instantly.",
+      title: "Save Together",
+      description: "Pool money with friends. Everyone sees where it goes.",
       gradient: "from-green-400 to-emerald-500"
     },
     {
-      icon: Wallet,
-      title: "Smart Vaults",
-      description: "Earn 6-12% APY on community savings automatically.",
-      gradient: "from-amber-400 to-orange-500"
-    },
-    {
       icon: Vote,
-      title: "Democratic Governance",
-      description: "Token-weighted voting with gasless transactions.",
-      gradient: "from-rose-400 to-pink-500"
-    },
-    {
-      icon: Shield,
-      title: "Fraud Detection",
-      description: "AI-powered security with 95%+ accuracy.",
-      gradient: "from-red-400 to-pink-500"
-    },
-    {
-      icon: Globe,
-      title: "Multi-Channel Access",
-      description: "Web, Telegram, WhatsApp, USSD, and voice.",
+      title: "Decide Together",
+      description: "Vote on how to spend or invest group funds. Everyone has a say.",
       gradient: "from-blue-400 to-cyan-500"
+    },
+    {
+      icon: TrendingUp,
+      title: "Grow Together",
+      description: "Earn 8-12% yearly. Better than any bank.",
+      gradient: "from-amber-400 to-orange-500"
+    }
+  ];
+
+  const youthImpact = [
+    {
+      icon: Users,
+      title: "Start With Nothing",
+      description: "No bank account needed. Start with just KES 100.",
+      stat: "60M+ unbanked youth can join",
+      gradient: "from-purple-400 to-pink-500"
+    },
+    {
+      icon: Target,
+      title: "Build Your Future",
+      description: "Save for school fees, start a business, or invest together.",
+      stat: "70% of users are under 30",
+      gradient: "from-emerald-400 to-teal-500"
+    },
+    {
+      icon: Heart,
+      title: "Learn & Earn",
+      description: "Get paid to participate. Build your financial reputation.",
+      stat: "Average KES 5,000/month extra income",
+      gradient: "from-orange-400 to-red-500"
     }
   ];
 
   const stats = [
-    { number: platformStats.members, label: "Active Members", icon: Users },
-    { number: platformStats.daos, label: "DAOs Created", icon: Vote },
-    { number: platformStats.tvl, label: "Total Value Locked", icon: DollarSign },
-    { number: platformStats.satisfaction, label: "Satisfaction", icon: TrendingUp }
+    { number: platformStats.members, label: "People Using Mtaa", icon: Users },
+    { number: platformStats.daos, label: "Groups Started", icon: Vote },
+    { number: platformStats.tvl, label: "Money Saved Together", icon: DollarSign },
+    { number: platformStats.satisfaction, label: "Happy Users", icon: TrendingUp }
   ];
 
   const testimonials = [
@@ -147,20 +153,32 @@ export default function MtaaDAOLanding() {
           <div className={`text-center transform transition-all duration-1000 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'} mt-8`}>
             {/* Main Headline */}
             <h1 className="text-5xl md:text-7xl font-black mb-6 leading-tight">
-              <span className="block text-white">Govern </span>
+              <span className="block text-white">Save Money </span>
               <span className="bg-gradient-to-r from-orange-400 via-pink-500 to-purple-500 bg-clip-text text-transparent">
-                Together
-              </span>
-              <span className="text-white">, Grow </span>
-              <span className="bg-gradient-to-r from-purple-400 via-blue-500 to-cyan-500 bg-clip-text text-transparent">
-                Together
+                With Your Friends
               </span>
             </h1>
 
-            <p className="text-lg md:text-xl text-purple-100 max-w-3xl mx-auto mb-10 leading-relaxed">
-              The world's first <span className="font-bold text-cyan-300">AI-powered DAO platform</span> for African communities. 
-              Combining <span className="font-bold text-emerald-300">blockchain, AI, and mobile money</span> for transparent governance.
+            <p className="text-lg md:text-2xl text-purple-100 max-w-3xl mx-auto mb-10 leading-relaxed font-semibold">
+              Pool money together. Make decisions as a group.<br/>
+              <span className="text-emerald-300">Earn 8-12% yearly</span> - all from your phone.
             </p>
+
+            {/* Quick Stats */}
+            <div className="flex flex-wrap justify-center gap-6 mb-10 text-white">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-green-400" />
+                <span>2,000+ people saving together</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-green-400" />
+                <span>KES 30M saved so far</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-green-400" />
+                <span>85% would recommend</span>
+              </div>
+            </div>
 
             {/* CTA Buttons */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
@@ -169,19 +187,17 @@ export default function MtaaDAOLanding() {
                   size="lg"
                   className="bg-gradient-to-r from-orange-500 to-pink-600 hover:from-orange-600 hover:to-pink-700 text-white px-10 py-6 text-lg font-bold rounded-2xl shadow-2xl transform hover:scale-105 transition-all"
                 >
-                  <Sparkles className="mr-2 h-5 w-5" />
-                  Launch Your Community
+                  Start Your Group (Free)
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </a>
-              <a href="/success-stories">
+              <a href="#how-it-works">
                 <Button
                   size="lg"
                   variant="outline"
                   className="border-2 border-white/30 text-white hover:bg-white/10 px-10 py-6 text-lg font-bold rounded-2xl backdrop-blur-sm transition-all"
                 >
-                  <Star className="mr-2 h-5 w-5" />
-                  See Success Stories
+                  See How It Works
                 </Button>
               </a>
             </div>
@@ -210,19 +226,19 @@ export default function MtaaDAOLanding() {
         </div>
       </section>
 
-      {/* Core Features - Simplified */}
-      <div className="py-16 relative" id="features">
+      {/* How It Works - Simple 4 Steps */}
+      <div className="py-16 relative" id="how-it-works">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-12">
             <h2 className="text-4xl md:text-5xl font-black text-white mb-4">
-              Everything You Need
+              How Mtaa Works
             </h2>
             <p className="text-xl text-purple-200">
-              Transparent governance, financial growth, and community coordination
+              Four simple steps to start saving and growing together
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
             {coreFeatures.map((feature, index) => {
               const Icon = feature.icon;
               return (
@@ -237,6 +253,60 @@ export default function MtaaDAOLanding() {
                 </Card>
               );
             })}
+          </div>
+        </div>
+      </div>
+
+      {/* Youth Impact Section */}
+      <div className="py-16 bg-gradient-to-r from-purple-900/50 to-pink-900/50 backdrop-blur-sm" id="youth-impact">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="text-center mb-12">
+            <h2 className="text-4xl md:text-5xl font-black text-white mb-4">
+              Built For Young People
+            </h2>
+            <p className="text-xl text-purple-200">
+              No bank account? No problem. Start building your financial future today.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {youthImpact.map((impact, index) => {
+              const Icon = impact.icon;
+              return (
+                <Card key={index} className="group bg-white/10 backdrop-blur-sm border-white/20 hover:border-white/40 hover:scale-105 transition-all duration-300">
+                  <CardContent className="p-6 text-center">
+                    <div className={`w-16 h-16 bg-gradient-to-br ${impact.gradient} rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl group-hover:scale-110 transition-transform`}>
+                      <Icon className="h-8 w-8 text-white" />
+                    </div>
+                    <h3 className="text-lg font-bold text-white mb-2">{impact.title}</h3>
+                    <p className="text-purple-200 text-sm mb-3">{impact.description}</p>
+                    <div className="text-emerald-400 font-bold text-sm">{impact.stat}</div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {/* Youth Success Stories */}
+          <div className="mt-12 bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10">
+            <h3 className="text-2xl font-bold text-white mb-6 text-center">Young People Making It Happen</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="text-center">
+                <div className="text-4xl mb-2">🎓</div>
+                <div className="text-white font-bold mb-1">Sarah, 22</div>
+                <div className="text-purple-200 text-sm">Saved KES 180K for university in 8 months with friends</div>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl mb-2">💼</div>
+                <div className="text-white font-bold mb-1">Kevin, 19</div>
+                <div className="text-purple-200 text-sm">Started phone repair business with group savings</div>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl mb-2">🏠</div>
+                <div className="text-white font-bold mb-1">Grace, 25</div>
+                <div className="text-purple-200 text-sm">Pooled rent deposit with 4 friends, moved to better place</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -273,18 +343,20 @@ export default function MtaaDAOLanding() {
       <div className="py-24 bg-gradient-to-br from-orange-500 via-pink-600 to-purple-700 relative">
         <div className="max-w-4xl mx-auto px-4 text-center">
           <h2 className="text-5xl md:text-6xl font-black text-white mb-6">
-            Ready to Build the Future?
+            Ready to Start Saving Together?
           </h2>
-          <p className="text-xl text-white/90 mb-10 leading-relaxed">
-            Join thousands of communities transforming their governance and financial growth
+          <p className="text-xl text-white/90 mb-4 leading-relaxed">
+            Free to start. No hidden fees.
+          </p>
+          <p className="text-lg text-white/80 mb-10">
+            Join 2,000+ groups already growing their money
           </p>
           <a href="/register">
             <Button
               size="lg"
               className="bg-white text-purple-600 hover:bg-gray-100 px-12 py-6 text-2xl font-bold rounded-2xl shadow-2xl transform hover:scale-105 transition-all"
             >
-              <Sparkles className="mr-3 h-6 w-6" />
-              Start Your Journey
+              Create Your Group Now
               <ArrowRight className="ml-3 h-6 w-6" />
             </Button>
           </a>
