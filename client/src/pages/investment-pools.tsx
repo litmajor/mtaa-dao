@@ -36,9 +36,9 @@ export default function InvestmentPools() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">💎 Investment Pools</h1>
+          <h1 className="text-4xl font-bold text-white mb-2">💰 Invest Together</h1>
           <p className="text-white/70 text-lg">
-            Pool funds and invest in top cryptocurrencies together
+            Join with friends to invest in Bitcoin, Ethereum, and more
           </p>
         </div>
 
@@ -49,24 +49,24 @@ export default function InvestmentPools() {
               <PieChart className="w-12 h-12 text-purple-400 flex-shrink-0" />
               <div>
                 <h3 className="text-xl font-bold text-white mb-2">
-                  Crypto Chama - Group Investment Made Easy
+                  How It Works
                 </h3>
                 <p className="text-white/80 mb-4">
-                  Invest together with friends or your DAO in Bitcoin, Ethereum, and other top cryptocurrencies.
-                  Each investment gives you shares representing your portion of the pool.
+                  Put your money in with your friends. We buy Bitcoin and Ethereum for you. 
+                  Watch your investment grow together. Share the profits fairly.
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="bg-white/10 rounded-lg p-3">
-                    <div className="text-2xl font-bold text-white">50/50</div>
-                    <div className="text-sm text-white/70">BTC/ETH Split</div>
+                    <div className="text-2xl font-bold text-white">KES 1,000</div>
+                    <div className="text-sm text-white/70">Start with just</div>
                   </div>
                   <div className="bg-white/10 rounded-lg p-3">
-                    <div className="text-2xl font-bold text-white">$10</div>
-                    <div className="text-sm text-white/70">Minimum Investment</div>
+                    <div className="text-2xl font-bold text-white">15%+</div>
+                    <div className="text-sm text-white/70">Average yearly return</div>
                   </div>
                   <div className="bg-white/10 rounded-lg p-3">
-                    <div className="text-2xl font-bold text-white">2%</div>
-                    <div className="text-sm text-white/70">Performance Fee</div>
+                    <div className="text-2xl font-bold text-white">Safe</div>
+                    <div className="text-sm text-white/70">Protected by blockchain</div>
                   </div>
                 </div>
               </div>
@@ -92,13 +92,13 @@ export default function InvestmentPools() {
           <Card className="bg-white/10 border-white/20">
             <CardContent className="py-12 text-center">
               <Wallet className="w-16 h-16 text-white/50 mx-auto mb-4" />
-              <h3 className="text-xl font-bold text-white mb-2">No Investment Pools Yet</h3>
+              <h3 className="text-xl font-bold text-white mb-2">No Investment Groups Yet</h3>
               <p className="text-white/70 mb-4">
-                Be the first to create a multi-asset investment pool
+                Start the first investment group and invite your friends
               </p>
               <Button className="bg-purple-600 hover:bg-purple-700">
                 <Plus className="w-4 h-4 mr-2" />
-                Create Pool
+                Start Investment Group
               </Button>
             </CardContent>
           </Card>
