@@ -73,10 +73,10 @@ export default function MtaaDAOLanding() {
   ];
 
   const stats = [
-    { number: platformStats.members, label: "People Using Mtaa", icon: Users },
-    { number: platformStats.daos, label: "Groups Started", icon: Vote },
-    { number: platformStats.tvl, label: "Money Saved Together", icon: DollarSign },
-    { number: platformStats.satisfaction, label: "Happy Users", icon: TrendingUp }
+    { number: platformStats.members, label: "People Saving", icon: Users },
+    { number: platformStats.daos, label: "Active Groups", icon: Vote },
+    { number: platformStats.tvl, label: "Money Growing", icon: DollarSign },
+    { number: platformStats.satisfaction, label: "Would Recommend", icon: TrendingUp }
   ];
 
   const testimonials = [
@@ -153,15 +153,19 @@ export default function MtaaDAOLanding() {
           <div className={`text-center transform transition-all duration-1000 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'} mt-8`}>
             {/* Main Headline */}
             <h1 className="text-5xl md:text-7xl font-black mb-6 leading-tight">
-              <span className="block text-white">Save Money </span>
+              <span className="block text-white">Save & Grow Money </span>
               <span className="bg-gradient-to-r from-orange-400 via-pink-500 to-purple-500 bg-clip-text text-transparent">
                 With Your Friends
               </span>
             </h1>
 
-            <p className="text-lg md:text-2xl text-purple-100 max-w-3xl mx-auto mb-10 leading-relaxed font-semibold">
-              Pool money together. Make decisions as a group.<br/>
-              <span className="text-emerald-300">Earn 8-12% yearly</span> - all from your phone.
+            <p className="text-xl md:text-3xl text-purple-100 max-w-3xl mx-auto mb-4 leading-relaxed font-semibold">
+              Your KES 10,000 becomes KES 11,200 in one year
+            </p>
+            
+            <p className="text-lg md:text-xl text-purple-200 max-w-2xl mx-auto mb-10 leading-relaxed">
+              Pool money together. Everyone sees where it goes.<br/>
+              Make decisions as a group - all from your phone.
             </p>
 
             {/* Quick Stats */}
@@ -182,22 +186,22 @@ export default function MtaaDAOLanding() {
 
             {/* CTA Buttons */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
-              <a href="/register">
+              <a href="/register" className="w-full sm:w-auto">
                 <Button
                   size="lg"
-                  className="bg-gradient-to-r from-orange-500 to-pink-600 hover:from-orange-600 hover:to-pink-700 text-white px-10 py-6 text-lg font-bold rounded-2xl shadow-2xl transform hover:scale-105 transition-all"
+                  className="w-full sm:w-auto bg-gradient-to-r from-orange-500 to-pink-600 hover:from-orange-600 hover:to-pink-700 text-white px-12 py-7 text-xl font-bold rounded-2xl shadow-2xl transform hover:scale-105 transition-all min-h-[56px]"
                 >
-                  Start Your Group (Free)
-                  <ArrowRight className="ml-2 h-5 w-5" />
+                  Start Saving (Free)
+                  <ArrowRight className="ml-2 h-6 w-6" />
                 </Button>
               </a>
-              <a href="#how-it-works">
+              <a href="#how-it-works" className="w-full sm:w-auto">
                 <Button
                   size="lg"
                   variant="outline"
-                  className="border-2 border-white/30 text-white hover:bg-white/10 px-10 py-6 text-lg font-bold rounded-2xl backdrop-blur-sm transition-all"
+                  className="w-full sm:w-auto border-2 border-white/30 text-white hover:bg-white/10 px-12 py-7 text-xl font-bold rounded-2xl backdrop-blur-sm transition-all min-h-[56px]"
                 >
-                  See How It Works
+                  How It Works
                 </Button>
               </a>
             </div>
