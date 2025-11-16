@@ -112,6 +112,17 @@ export default function Navigation() {
     { href: "/contact", label: "Contact Us", icon: "📧" },
   ];
 
+  const dashboardItems = [
+    { href: "/dashboard", label: "Overview", description: "Your main account snapshot", icon: "📊" },
+    { href: "/dashboard/analytics", label: "Analytics", description: "In-depth performance metrics", icon: "📈" },
+    { href: "/dashboard/reports", label: "Reports", description: "Generate custom reports", icon: "📄" },
+  ];
+
+  const quickAccessItems = [
+    { href: "/dashboard", label: "Dashboard", icon: "🏠" },
+    { href: "/wallet", label: "Wallet", icon: "💳" },
+  ];
+
   return (
     <>
       {/* Main Navigation */}

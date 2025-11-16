@@ -130,12 +130,19 @@ export default function VaultOverview() {
               </h1>
               <p className="text-gray-600 text-lg">Manage all your vaults in one place</p>
             </div>
-            <Link to="/vault">
-              <Button className="bg-gradient-to-r from-blue-600 to-purple-600">
-                <Plus className="mr-2 h-5 w-5" />
-                Create New Vault
-              </Button>
-            </Link>
+            <div className="flex gap-2">
+              <Link to="/vault">
+                <Button className="bg-gradient-to-r from-blue-600 to-purple-600">
+                  <Plus className="mr-2 h-5 w-5" />
+                  Create Vault
+                </Button>
+              </Link>
+              <Link to="/dashboard">
+                <Button variant="outline">
+                  Back to Dashboard
+                </Button>
+              </Link>
+            </div>
           </div>
 
           {/* Stats Grid */}
