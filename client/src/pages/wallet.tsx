@@ -119,18 +119,20 @@ const EnhancedWalletPage = () => {
 
   const totalBalance = vaults?.reduce((sum, vault) => sum + parseFloat((vault.balance || '0').replace(/,/g, '')), 0) || 0;
 
-  // Show wallet connection UI if not connected
+  // Show wallet setup/connection UI if not connected
   if (!isConnected) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 p-6">
-        <WalletConnectionManager
-          userId={user?.id}
-          onConnect={(address, provider) => {
-            console.log('Wallet connected:', address, provider);
-            // Refresh to load wallet data
-            window.location.reload();
-          }}
-        />
+        <div className="max-w-7xl mx-auto">
+          <WalletConnectionManager
+            userId={user?.id}
+            onConnect={(address, provider) => {
+              console.log('Wallet connected:', address, provider);
+              // Refresh to load wallet data
+              window.location.reload();
+            }}
+          />
+        </div>
       </div>
     );
   }

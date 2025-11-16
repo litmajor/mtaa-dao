@@ -63,6 +63,8 @@ import kycRouter from './routes/kyc';
 import referralRewardsRouter from './routes/referral-rewards';
 import economyRouter from './routes/economy';
 import morioRoutes from './routes/morio';
+import morioDataHubRoutes from './routes/morio-data-hub';
+import morioElderInsightsRoutes from './routes/morio-elder-insights';
 import { transactionMonitor } from './services/transactionMonitor';
 import { recurringPaymentService } from './services/recurringPaymentService';
 import { gasPriceOracle } from './services/gasPriceOracle';
@@ -90,15 +92,15 @@ setupProcessErrorHandlers();
 // Add global handler for unhandled promise rejections from blockchain services
 process.on('unhandledRejection', (reason: Error | string, promise: Promise<any>) => {
   const message = reason instanceof Error ? reason.message : String(reason);
-  
+
   // Check if it's a known blockchain timeout error - these are non-critical
-  if (message.includes('TIMEOUT') || message.includes('timeout') || 
+  if (message.includes('TIMEOUT') || message.includes('timeout') ||
       message.includes('JsonRpcProvider failed') || message.includes('network')) {
     logger.warn(`⚠️ Blockchain RPC timeout (non-critical): ${message}`);
     logger.warn('   Continuing server operation - blockchain features may be degraded');
     return;  // Don't crash, just log and continue
   }
-  
+
   // For other unhandled rejections, log and continue
   logger.error('Unhandled Promise Rejection:', {
     reason: message,
@@ -323,8 +325,10 @@ app.use((req, res, next) => {
     app.use('/api/proposals', pollProposalsRouter);
     app.use('/api/reputation', reputationRoutes); // Added reputation routes
     app.use('/api/cross-chain', crossChainRoutes);
-app.use('/api/user/preferences', userPreferencesRoutes);
+    app.use('/api/user/preferences', userPreferencesRoutes);
     app.use('/api/morio', morioRoutes);
+    app.use('/api/morio', morioDataHubRoutes);
+    app.use('/api/morio', morioElderInsightsRoutes);
     app.use('/api/public-stats', publicStatsRoutes);
     app.use('/api/treasury-intelligence', treasuryIntelligenceRoutes);
     app.use('/api/analyzer', analyzerRoutes);
@@ -368,10 +372,10 @@ app.use('/api/user/preferences', userPreferencesRoutes);
     const proofOfContributionRoutes = (await import('./routes/proof-of-contribution')).default;
     app.use('/api/proof-of-contribution', proofOfContributionRoutes);
 
-  // AI Analytics endpoints
-  // Load authentication middleware dynamically (avoid top-level static import inside function scope)
-  const { isAuthenticated } = await import('./auth'); // Dynamically imported
-  app.get('/api/ai-analytics/:daoId', isAuthenticated, async (req: Request, res: Response) => {
+    // AI Analytics endpoints
+    // Load authentication middleware dynamically (avoid top-level static import inside function scope)
+    const { isAuthenticated } = await import('./auth'); // Dynamically imported
+    app.get('/api/ai-analytics/:daoId', isAuthenticated, async (req: Request, res: Response) => {
       try {
         const { aiAnalyticsService } = await import('./services/aiAnalyticsService');
         const analytics = await aiAnalyticsService.getComprehensiveAnalytics(req.params.daoId);
