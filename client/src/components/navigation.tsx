@@ -11,6 +11,7 @@ import type { User } from "../../../shared/schema";
 import NotificationCenter from "./NotificationCenter";
 import { AnimatedLogo } from "@/components/ui/logo";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import DaoSwitcher from './DaoSwitcher';
 
 export default function Navigation() {
   const { user } = useAuth() as { user?: User };
@@ -125,12 +126,17 @@ export default function Navigation() {
 
   return (
     <>
+      {/* Mobile DAO Switcher - Shows on small screens */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 p-2">
+        <DaoSwitcher />
+      </div>
+
       {/* Main Navigation */}
       <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
         isScrolled
           ? 'bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-700/50 shadow-lg'
           : 'bg-white dark:bg-gray-900 border-b border-gray-100/50 dark:border-gray-800/50'
-      }`}>
+      } lg:mt-0 mt-16`}>
         <div className="absolute inset-0 bg-gradient-to-r from-transparent via-mtaa-orange/5 to-transparent opacity-50" />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
