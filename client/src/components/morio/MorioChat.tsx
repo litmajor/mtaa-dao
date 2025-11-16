@@ -178,22 +178,30 @@ What would you like to explore first?`;
   }, [isOnboarding, onboardingSession]);
 
   return (
-    <Card className="h-[600px] flex flex-col" data-testid="morio-chat">
-      <CardHeader className="border-b">
-        <CardTitle className="flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-purple-500" />
-          Morio AI Assistant
+    <Card className="h-[600px] flex flex-col overflow-hidden" data-testid="morio-chat">
+      {/* WhatsApp-style Header */}
+      <CardHeader className="bg-[#075E54] dark:bg-[#1F2C34] text-white p-3 border-none">
+        <CardTitle className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-white/20 dark:bg-white/10 rounded-full flex items-center justify-center">
+            <Sparkles className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <div className="text-base font-medium text-white">Morio AI Assistant</div>
+            <div className="text-xs text-white/70 dark:text-white/60">Online - AI Powered</div>
+          </div>
         </CardTitle>
       </CardHeader>
 
       {/* Elder Insights Panel */}
       {daoId && variant === 'full' && (
-        <div className="border-b p-3 bg-gray-50 dark:bg-gray-800">
+        <div className="border-b p-3 bg-[#F0F2F5] dark:bg-[#1F2C34]">
           <MorioElderInsights userId={userId} daoId={daoId} />
         </div>
       )}
 
-      <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* WhatsApp-style Messages Area */}
+      <CardContent className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#E5DDD5] dark:bg-[#0B141A]" 
+        style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23D9D9D9\' fill-opacity=\'0.05\'%3E%3Cpath d=\'M0 0h50v50H0zm50 50h50v50H50z\'/%3E%3C/g%3E%3C/svg%3E")'}}>
         {messages.map((message, index) => (
           <div
             key={index}
@@ -201,15 +209,15 @@ What would you like to explore first?`;
             data-testid={`message-${message.role}`}
           >
             <div
-              className={`max-w-[80%] rounded-lg px-4 py-2 ${
+              className={`max-w-[75%] rounded-lg px-3 py-2 shadow-sm ${
                 message.role === 'user'
-                  ? 'bg-purple-600 text-white'
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100'
+                  ? 'bg-[#DCF8C6] dark:bg-[#005C4B] text-gray-900 dark:text-white rounded-br-none'
+                  : 'bg-white dark:bg-[#1F2C34] text-gray-900 dark:text-gray-100 rounded-bl-none'
               }`}
             >
-              <p className="whitespace-pre-wrap">{message.content}</p>
-              <p className="text-xs opacity-70 mt-1">
-                {message.timestamp.toLocaleTimeString()}
+              <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+              <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1 text-right">
+                {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </p>
             </div>
           </div>
@@ -217,8 +225,8 @@ What would you like to explore first?`;
 
         {sendMessage.isPending && (
           <div className="flex justify-start">
-            <div className="bg-gray-100 dark:bg-gray-800 rounded-lg px-4 py-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
+            <div className="bg-white dark:bg-[#1F2C34] rounded-lg rounded-bl-none px-4 py-2 shadow-sm">
+              <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
             </div>
           </div>
         )}
@@ -226,73 +234,76 @@ What would you like to explore first?`;
         <div ref={messagesEndRef} />
       </CardContent>
 
-      <div className="border-t p-4">
-        <form onSubmit={handleSubmit} className="flex gap-2">
+      {/* WhatsApp-style Input Area */}
+      <div className="bg-[#F0F2F5] dark:bg-[#1F2C34] p-3 border-t border-gray-200 dark:border-gray-700">
+        <form onSubmit={handleSubmit} className="flex gap-2 items-center">
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask Morio anything..."
+            placeholder="Type a message..."
             disabled={sendMessage.isPending}
             data-testid="chat-input"
+            className="flex-1 rounded-full bg-white dark:bg-[#2A3942] border-none focus-visible:ring-1 focus-visible:ring-[#25D366]"
           />
           <Button 
             type="submit" 
             disabled={!input.trim() || sendMessage.isPending}
             data-testid="send-button"
+            className="bg-[#25D366] hover:bg-[#20BD5C] rounded-full w-10 h-10 p-0 flex items-center justify-center"
           >
-            <Send className="w-4 h-4" />
+            <Send className="w-4 h-4 text-white" />
           </Button>
         </form>
 
-        {/* Quick suggestions */}
-        <div className="flex flex-wrap gap-2 mt-2">
+        {/* Quick suggestions - WhatsApp style */}
+        <div className="flex flex-wrap gap-1.5 mt-2">
           {isOnboarding ? (
             <>
               <button
                 onClick={() => handleSuggestion('Take the full tour')}
-                className="text-xs px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-full hover:shadow-lg transition-all"
+                className="text-xs px-3 py-1.5 bg-white dark:bg-[#2A3942] border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-full hover-elevate shadow-sm"
               >
                 🎯 Start Tour
               </button>
               <button
                 onClick={() => handleSuggestion('Setup my wallet')}
-                className="text-xs px-3 py-2 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full hover:bg-purple-200 dark:hover:bg-purple-900/50"
+                className="text-xs px-3 py-1.5 bg-white dark:bg-[#2A3942] border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-full hover-elevate shadow-sm"
               >
                 👛 Setup Wallet
               </button>
               <button
                 onClick={() => handleSuggestion('Create my first DAO')}
-                className="text-xs px-3 py-2 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="text-xs px-3 py-1.5 bg-white dark:bg-[#2A3942] border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-full hover-elevate shadow-sm"
               >
                 🏗️ Create DAO
               </button>
               <button
                 onClick={() => handleSuggestion('How do I vote?')}
-                className="text-xs px-3 py-2 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="text-xs px-3 py-1.5 bg-white dark:bg-[#2A3942] border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-full hover-elevate shadow-sm"
               >
                 🗳️ Voting Guide
               </button>
               <button
                 onClick={() => handleSuggestion('Explain treasury management')}
-                className="text-xs px-3 py-2 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="text-xs px-3 py-1.5 bg-white dark:bg-[#2A3942] border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-full hover-elevate shadow-sm"
               >
                 💰 Treasury Basics
               </button>
               <button
                 onClick={() => handleSuggestion('Show me success stories')}
-                className="text-xs px-3 py-2 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="text-xs px-3 py-1.5 bg-white dark:bg-[#2A3942] border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-full hover-elevate shadow-sm"
               >
                 ⭐ Success Stories
               </button>
               <button
                 onClick={() => handleSuggestion('What are vaults?')}
-                className="text-xs px-3 py-2 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="text-xs px-3 py-1.5 bg-white dark:bg-[#2A3942] border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-full hover-elevate shadow-sm"
               >
                 🏦 Vaults Explained
               </button>
               <button
                 onClick={() => handleSuggestion('How to earn rewards?')}
-                className="text-xs px-3 py-2 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="text-xs px-3 py-1.5 bg-white dark:bg-[#2A3942] border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-full hover-elevate shadow-sm"
               >
                 🎁 Earn Rewards
               </button>
@@ -301,52 +312,52 @@ What would you like to explore first?`;
             <>
               <button
                 onClick={() => handleSuggestion('Check DAO balance')}
-                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="text-xs px-2.5 py-1 bg-white dark:bg-[#2A3942] border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-full hover-elevate shadow-sm"
                 data-testid="suggestion-balance"
               >
                 💰 Check balance
               </button>
               <button
                 onClick={() => handleSuggestion('Show active proposals')}
-                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="text-xs px-2.5 py-1 bg-white dark:bg-[#2A3942] border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-full hover-elevate shadow-sm"
                 data-testid="suggestion-proposals"
               >
                 📝 Active proposals
               </button>
               <button
                 onClick={() => handleSuggestion('Treasury analytics')}
-                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="text-xs px-2.5 py-1 bg-white dark:bg-[#2A3942] border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-full hover-elevate shadow-sm"
                 data-testid="suggestion-analytics"
               >
                 📊 Analytics
               </button>
               <button
                 onClick={() => handleSuggestion('Create a proposal')}
-                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="text-xs px-2.5 py-1 bg-white dark:bg-[#2A3942] border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-full hover-elevate shadow-sm"
               >
                 ➕ New proposal
               </button>
               <button
                 onClick={() => handleSuggestion('My contribution score')}
-                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="text-xs px-2.5 py-1 bg-white dark:bg-[#2A3942] border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-full hover-elevate shadow-sm"
               >
                 🏆 My score
               </button>
               <button
                 onClick={() => handleSuggestion('Recent transactions')}
-                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="text-xs px-2.5 py-1 bg-white dark:bg-[#2A3942] border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-full hover-elevate shadow-sm"
               >
                 💸 Transactions
               </button>
               <button
                 onClick={() => handleSuggestion('Available tasks')}
-                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="text-xs px-2.5 py-1 bg-white dark:bg-[#2A3942] border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-full hover-elevate shadow-sm"
               >
                 ✅ Tasks
               </button>
               <button
                 onClick={() => handleSuggestion('Investment pools')}
-                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="text-xs px-2.5 py-1 bg-white dark:bg-[#2A3942] border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-full hover-elevate shadow-sm"
               >
                 🏊 Pools
               </button>

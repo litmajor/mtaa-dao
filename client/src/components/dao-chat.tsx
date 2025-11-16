@@ -310,54 +310,55 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
   }
 
   return (
-    <Card className="border border-gray-200 shadow-sm h-[600px] flex flex-col">
-      <CardHeader className="pb-3 border-b border-gray-100">
+    <Card className="border-none shadow-md h-[600px] flex flex-col overflow-hidden">
+      {/* WhatsApp-style Header */}
+      <CardHeader className="pb-3 bg-[#075E54] dark:bg-[#1F2C34] text-white border-none">
         <CardTitle className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <MessageSquare className="w-5 h-5 text-mtaa-purple" />
-            <span className="text-lg">{daoName} Chat</span>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Badge variant="secondary" className="flex items-center space-x-1 cursor-pointer">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span>{onlineUsers.length} online</span>
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <div className="text-sm">
-                    <p className="font-medium mb-1">Online Users:</p>
-                    {onlineUsers.length > 0 ? (
-                      onlineUsers.map(user => <p key={user}>{user}</p>)
-                    ) : (
-                      <p>No users online</p>
-                    )}
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-white/20 dark:bg-white/10 rounded-full flex items-center justify-center">
+              <MessageSquare className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="text-base font-medium text-white">{daoName} Chat</div>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex items-center space-x-1.5 cursor-pointer">
+                      <div className="w-2 h-2 bg-[#25D366] dark:bg-green-500 rounded-full animate-pulse"></div>
+                      <span className="text-xs text-white/80 dark:text-white/70">{onlineUsers.length} online</span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <div className="text-sm">
+                      <p className="font-medium mb-1">Online Users:</p>
+                      {onlineUsers.length > 0 ? (
+                        onlineUsers.map(user => <p key={user}>{user}</p>)
+                      ) : (
+                        <p>No users online</p>
+                      )}
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1">
             <Button
               variant="ghost"
-              size="sm"
+              size="icon"
               onClick={() => setShowSearch(!showSearch)}
-              className="h-8 w-8 p-0"
+              className="h-9 w-9 text-white hover:bg-white/10 dark:hover:bg-white/5"
             >
               <Search className="w-4 h-4" />
             </Button>
             <Button
               variant="ghost"
-              size="sm"
+              size="icon"
               onClick={() => setSoundEnabled(!soundEnabled)}
-              className="h-8 w-8 p-0"
+              className="h-9 w-9 text-white hover:bg-white/10 dark:hover:bg-white/5"
             >
               {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
             </Button>
-            <Badge variant="secondary" className="flex items-center space-x-1">
-              <Hash className="w-3 h-3" />
-              <span>{filteredMessages.length}</span>
-            </Badge>
           </div>
         </CardTitle>
         
@@ -394,8 +395,9 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
         )}
       </CardHeader>
 
-      {/* Messages Container */}
-      <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* Messages Container - WhatsApp style */}
+      <CardContent className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#E5DDD5] dark:bg-[#0B141A]"
+        style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23D9D9D9\' fill-opacity=\'0.05\'%3E%3Cpath d=\'M0 0h50v50H0zm50 50h50v50H50z\'/%3E%3C/g%3E%3C/svg%3E")'}}>
         {isLoading ? (
           <div className="space-y-4">
             {[1, 2, 3].map((i) => (
@@ -409,8 +411,8 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
             ))}
           </div>
         ) : messages.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
-            <MessageSquare className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+          <div className="text-center py-8 text-gray-600 dark:text-gray-400">
+            <MessageSquare className="w-12 h-12 mx-auto mb-3 text-gray-400" />
             <p className="text-lg font-medium">No messages yet</p>
             <p className="text-sm">Start the conversation!</p>
           </div>
@@ -580,12 +582,12 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
                     </div>
                   ) : (
                     <>
-                      {/* Message Content */}
+                      {/* Message Content - WhatsApp style */}
                       <div
-                        className={`inline-block px-3 py-2 rounded-lg text-sm max-w-xs ${
+                        className={`inline-block px-3 py-2 shadow-sm text-sm max-w-xs ${
                           isCurrentUser
-                            ? "bg-gradient-mtaa text-white"
-                            : "bg-gray-100 text-gray-800"
+                            ? "bg-[#DCF8C6] dark:bg-[#005C4B] text-gray-900 dark:text-white rounded-lg rounded-br-none"
+                            : "bg-white dark:bg-[#1F2C34] text-gray-900 dark:text-gray-100 rounded-lg rounded-bl-none"
                         }`}
                       >
                         {message.messageType === 'image' && message.attachment ? (
@@ -656,19 +658,19 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
         <div ref={messagesEndRef} />
       </CardContent>
 
-      {/* Message Input */}
-      <div className="border-t border-gray-100 p-4">
+      {/* Message Input - WhatsApp style */}
+      <div className="bg-[#F0F2F5] dark:bg-[#1F2C34] p-3 border-t border-gray-200 dark:border-gray-700">
         {/* File Preview */}
         {selectedFile && (
-          <div className="mb-3 p-3 bg-gray-50 rounded-lg border">
+          <div className="mb-2 p-2 bg-white dark:bg-[#2A3942] rounded-lg shadow-sm">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 {selectedFile.type.startsWith('image/') ? 
-                  <FileImage className="w-4 h-4 text-blue-500" /> : 
+                  <FileImage className="w-4 h-4 text-[#25D366]" /> : 
                   <File className="w-4 h-4 text-gray-500" />
                 }
-                <span className="text-sm text-gray-700">{selectedFile.name}</span>
-                <span className="text-xs text-gray-500">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
+                <span className="text-sm text-gray-700 dark:text-gray-200">{selectedFile.name}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
               </div>
               <Button
                 variant="ghost"
@@ -682,17 +684,17 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
           </div>
         )}
         
-        <div className="flex space-x-2">
-          <div className="flex space-x-1">
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1">
             {/* File Upload */}
             <Button
               variant="ghost"
-              size="sm"
+              size="icon"
               onClick={() => fileInputRef.current?.click()}
-              className="h-10 w-10 p-0"
+              className="h-10 w-10 p-0 text-gray-600 dark:text-gray-300 hover:bg-white/50 dark:hover:bg-white/10 rounded-full"
               title="Attach file"
             >
-              <Paperclip className="w-4 h-4" />
+              <Paperclip className="w-5 h-5" />
             </Button>
             <input
               ref={fileInputRef}
@@ -707,11 +709,11 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
               <PopoverTrigger asChild>
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="h-10 w-10 p-0"
+                  size="icon"
+                  className="h-10 w-10 p-0 text-gray-600 dark:text-gray-300 hover:bg-white/50 dark:hover:bg-white/10 rounded-full"
                   title="Add emoji"
                 >
-                  <Smile className="w-4 h-4" />
+                  <Smile className="w-5 h-5" />
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-2">
@@ -738,14 +740,14 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyPress={handleKeyPress}
             disabled={isSubmitting}
-            className="flex-1 focus:border-mtaa-purple focus:ring-mtaa-purple"
+            className="flex-1 rounded-full bg-white dark:bg-[#2A3942] border-none focus-visible:ring-1 focus-visible:ring-[#25D366]"
           />
           <Button
             onClick={handleSendMessage}
             disabled={(!newMessage.trim() && !selectedFile) || isSubmitting}
-            className="bg-gradient-mtaa text-white hover:opacity-90 px-4"
+            className="bg-[#25D366] hover:bg-[#20BD5C] rounded-full w-10 h-10 p-0 flex items-center justify-center"
           >
-            {selectedFile ? <Paperclip className="w-4 h-4" /> : <Send className="w-4 h-4" />}
+            {selectedFile ? <Paperclip className="w-4 h-4 text-white" /> : <Send className="w-4 h-4 text-white" />}
           </Button>
         </div>
       </div>
