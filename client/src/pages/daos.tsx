@@ -6,6 +6,7 @@ import { Plus, Users, DollarSign, TrendingUp, Settings, ArrowRight, Sparkles, Cr
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/hooks/use-auth"; // Assuming useAuth is available
 
 type DaoRole = "elder" | "proposer" | "member" | null;
 
@@ -56,25 +57,14 @@ export default function EnhancedDAOs() {
     },
     staleTime: 1 * 60 * 1000, // 1 minute
   });
-  // Fallback display if no DAOs
-  if (isLoading) {
-    return <div className="p-8 text-center text-lg">Loading DAOs...</div>;
-  }
-  if (error) {
-    return <div className="p-8 text-center text-red-500">Failed to load DAOs: {error.message}</div>;
-  }
-  if (!daosData || daosData.length === 0) {
-    return (
-      <div className="max-w-2xl mx-auto py-10 px-4 text-center">
-        <h2 className="text-2xl font-bold mb-4">No DAOs found</h2>
-        <p className="text-gray-600 mb-6">Create or join a DAO to get started with community governance!</p>
-        <Button className="bg-gradient-mtaa text-white px-6 py-3 rounded-xl font-semibold hover:opacity-90">
-          <Plus className="mr-2 h-4 w-4" />
-          Create DAO
-        </Button>
-      </div>
-    );
-  }
+
+  // Determine current view based on user's groups
+  const joinedDAOs = daosData.filter(dao => dao.isJoined);
+  const availableDAOs = daosData.filter(dao => !dao.isJoined);
+  const hasNoGroups = joinedDAOs.length === 0;
+  // If user has no groups, default to 'available' (discover) tab; otherwise, use the activeTab state.
+  const currentView = hasNoGroups ? 'available' : activeTab;
+
 
   // Join DAO mutation
   const joinMutation = useMutation({
@@ -149,12 +139,9 @@ export default function EnhancedDAOs() {
     return avatars[category || 'development'] || "🏛️";
   }
 
-  const joinedDAOs = daosData.filter(dao => dao.isJoined);
-  const availableDAOs = daosData.filter(dao => !dao.isJoined);
-
   const getRoleBadge = (role: "elder" | "proposer" | "member" | null, theme: string) => {
     if (!role) return null;
-    
+
     const roleConfig = {
       elder: { icon: Crown, label: "Elder", color: "from-yellow-400 to-orange-500" },
       proposer: { icon: Zap, label: "Proposer", color: "from-purple-400 to-pink-500" },
@@ -227,7 +214,7 @@ export default function EnhancedDAOs() {
     >
       {/* Animated background gradient */}
       <div className={`absolute inset-0 bg-gradient-to-br ${dao.gradient} opacity-5 group-hover:opacity-10 transition-opacity duration-500`} />
-      
+
       {/* Trending indicator */}
       {dao.trending && (
         <div className="absolute top-3 right-3 z-10">
@@ -252,7 +239,7 @@ export default function EnhancedDAOs() {
               {getRoleBadge(dao.role, dao.theme)}
             </div>
           </div>
-          
+
           {dao.isJoined && (
             <button
               className="p-2 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors duration-300 group"
@@ -276,7 +263,7 @@ export default function EnhancedDAOs() {
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400">Members</p>
           </div>
-          
+
           <div className="text-center group/stat">
             <div className="flex items-center justify-center gap-1 mb-1">
               <Wallet className={`w-4 h-4 text-green-500 group-hover/stat:scale-110 transition-transform duration-300`} />
@@ -286,7 +273,7 @@ export default function EnhancedDAOs() {
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400">Treasury</p>
           </div>
-          
+
           <div className="text-center group/stat">
             <div className="flex items-center justify-center gap-1 mb-1">
               <TrendingUp className={`w-4 h-4 text-purple-500 group-hover/stat:scale-110 transition-transform duration-300`} />
@@ -405,7 +392,7 @@ export default function EnhancedDAOs() {
               <span>Your money is protected by smart contracts</span>
             </div>
           </div>
-          
+
           <button 
             onClick={() => navigate('/create-dao')}
             className="group relative overflow-hidden bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 text-white px-8 py-4 rounded-2xl font-semibold shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
@@ -435,7 +422,7 @@ export default function EnhancedDAOs() {
                   window.location.hash = key;
                 }}
                 className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
-                  activeTab === key
+                  currentView === key // Use currentView for conditional styling
                     ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
@@ -447,7 +434,7 @@ export default function EnhancedDAOs() {
           </div>
 
           {/* Discovery Feed Filters - shown only on discover/trending/regional tabs */}
-          {(activeTab === 'available' || activeTab === 'trending' || activeTab === 'regional') && (
+          {(currentView === 'available' || currentView === 'trending' || currentView === 'regional') && (
             <div className="flex flex-wrap gap-2 items-center">
               <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">Filter by:</span>
               <Button variant="outline" size="sm" className="gap-2">
@@ -476,13 +463,13 @@ export default function EnhancedDAOs() {
 
         {/* DAOs Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {(activeTab === "joined" ? joinedDAOs : availableDAOs).map((dao, index) => (
+          {(currentView === "joined" ? joinedDAOs : availableDAOs).map((dao, index) => (
             <DAOCard key={dao.id} dao={dao} index={index} />
           ))}
         </div>
 
         {/* Enhanced empty state */}
-        {(activeTab === "joined" ? joinedDAOs : availableDAOs).length === 0 && (
+        {(currentView === "joined" ? joinedDAOs : availableDAOs).length === 0 && (
           <div className="text-center py-16">
             <div className="relative mb-8">
               <div className="w-24 h-24 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-2xl">
@@ -490,23 +477,23 @@ export default function EnhancedDAOs() {
               </div>
               <div className="absolute inset-0 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full opacity-20 animate-ping"></div>
             </div>
-            
+
             <h3 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-3">
-              {activeTab === "joined" ? "No DAOs joined yet" : "No DAOs available"}
+              {currentView === "joined" ? "No DAOs joined yet" : "No DAOs available"}
             </h3>
             <p className="text-gray-600 dark:text-gray-400 text-lg mb-8 max-w-md mx-auto">
-              {activeTab === "joined" 
+              {currentView === "joined" 
                 ? "Join your first DAO to start participating in revolutionary community governance"
                 : "Check back soon for new innovative communities to join"
               }
             </p>
             <button 
-              onClick={() => activeTab === "joined" ? setActiveTab("available") : navigate('/create-dao')}
+              onClick={() => currentView === "joined" ? setActiveTab("available") : navigate('/create-dao')}
               className="bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 text-white px-8 py-4 rounded-2xl font-semibold shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300 group"
             >
               <div className="flex items-center gap-2">
                 <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
-                {activeTab === "joined" ? "Discover DAOs" : "Create DAO"}
+                {currentView === "joined" ? "Discover DAOs" : "Create DAO"}
                 <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" />
               </div>
             </button>
@@ -525,25 +512,25 @@ export default function EnhancedDAOs() {
             transform: translateY(0);
           }
         }
-        
+
         @keyframes blob {
           0%, 100% { transform: translate(0, 0) scale(1); }
           33% { transform: translate(30px, -50px) scale(1.1); }
           66% { transform: translate(-20px, 20px) scale(0.9); }
         }
-        
+
         .animate-blob {
           animation: blob 7s infinite;
         }
-        
+
         .animation-delay-2000 {
           animation-delay: 2s;
         }
-        
+
         .animation-delay-4000 {
           animation-delay: 4s;
         }
-        
+
         .line-clamp-2 {
           display: -webkit-box;
           -webkit-line-clamp: 2;
