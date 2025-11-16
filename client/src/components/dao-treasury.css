@@ -1,11 +1,13 @@
 /* dao-treasury.css - Follows Mtaa DAO styling conventions */
 
 .dao-treasury-container {
-  @apply bg-gradient-mtaa-soft p-6 rounded-lg shadow-md;
+  background: var(--mtaa-gradient-soft);
+  @apply p-6 rounded-lg shadow-md;
 }
 
 .dao-treasury-header {
-  @apply text-2xl font-bold text-mtaa-orange mb-4;
+  color: var(--mtaa-orange);
+  @apply text-2xl font-bold mb-4;
 }
 
 .dao-treasury-section {
@@ -13,15 +15,17 @@
 }
 
 .dao-treasury-card {
-  @apply bg-card p-4 rounded-lg shadow hover-lift mb-4;
+  @apply bg-card p-4 rounded-lg shadow mb-4;
 }
 
 .dao-treasury-balance {
-  @apply text-lg font-semibold text-mtaa-emerald;
+  color: var(--mtaa-emerald);
+  @apply text-lg font-semibold;
 }
 
 .dao-treasury-token {
-  @apply flex items-center gap-2 text-mtaa-purple;
+  color: var(--mtaa-purple);
+  @apply flex items-center gap-2;
 }
 
 .dao-treasury-actions {
@@ -29,11 +33,13 @@
 }
 
 .dao-treasury-table {
-  @apply w-full border border-mtaa-orange rounded-lg overflow-hidden;
+  border-color: var(--mtaa-orange);
+  @apply w-full border rounded-lg overflow-hidden;
 }
 
 .dao-treasury-table th {
-  @apply bg-mtaa-orange text-primary-foreground p-2;
+  background-color: var(--mtaa-orange);
+  @apply text-primary-foreground p-2;
 }
 
 .dao-treasury-table td {
@@ -41,10 +47,23 @@
 }
 
 .dao-treasury-report {
-  @apply bg-mtaa-gold text-mtaa-terra p-2 rounded;
+  background-color: var(--mtaa-gold);
+  color: var(--mtaa-terra);
+  @apply p-2 rounded;
 }
 
 /* Animation for new items */
 .dao-treasury-slide-in {
-  @apply slide-in;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
