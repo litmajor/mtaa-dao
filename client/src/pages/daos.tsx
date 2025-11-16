@@ -395,14 +395,14 @@ export default function EnhancedDAOs() {
         <div className="flex items-center justify-between mb-12">
           <div className="space-y-2">
             <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 bg-clip-text text-transparent mb-2">
-              DAOs
+              👥 My Groups
             </h1>
             <p className="text-gray-600 dark:text-gray-400 text-lg">
-              Shape the future of community governance
+              Save together, invest together, grow together
             </p>
             <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-              <Globe className="w-4 h-4" />
-              <span>Powered by blockchain technology</span>
+              <Shield className="w-4 h-4" />
+              <span>Your money is protected by smart contracts</span>
             </div>
           </div>
           
@@ -413,7 +413,7 @@ export default function EnhancedDAOs() {
             <div className="absolute inset-0 bg-gradient-to-r from-orange-500 via-pink-600 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
             <div className="relative flex items-center gap-2">
               <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
-              Create DAO
+              Start a Group
               <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
             </div>
           </button>
@@ -423,10 +423,10 @@ export default function EnhancedDAOs() {
         <div className="space-y-4 mb-8">
           <div className="flex items-center gap-2 p-1 bg-white dark:bg-gray-800 rounded-2xl shadow-lg w-fit">
             {[ 
-              { key: "joined", label: `My DAOs (${joinedDAOs.length})`, icon: Shield },
-              { key: "available", label: `Discover (${availableDAOs.length})`, icon: Eye },
-              { key: "trending", label: "🔥 Trending", icon: TrendingUp },
-              { key: "regional", label: "📍 Regional", icon: Globe }
+              { key: "joined", label: `👥 My Groups (${joinedDAOs.length})`, icon: Shield },
+              { key: "available", label: `🔍 Discover Groups (${availableDAOs.length})`, icon: Eye },
+              { key: "trending", label: "🔥 Popular", icon: TrendingUp },
+              { key: "regional", label: "📍 Near Me", icon: Globe }
             ].map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
