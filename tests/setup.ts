@@ -1,5 +1,6 @@
 
 import { beforeAll, afterAll, afterEach } from '@jest/globals';
+import '@testing-library/jest-dom';
 
 // Test database setup
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/mtaadao_test';

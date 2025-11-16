@@ -10,25 +10,25 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/attached_assets/mtaa_dao_logos/icon_dark_sm.png",
+      "src": "/mtaa_dao_logos/icon_dark_sm.png",
       "sizes": "64x64",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/attached_assets/mtaa_dao_logos/icon_dark_md.png",
+      "src": "/mtaa_dao_logos/icon_dark_md.png",
       "sizes": "128x128",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/attached_assets/mtaa_dao_logos/icon_dark_lg.png",
+      "src": "/mtaa_dao_logos/icon_dark_lg.png",
       "sizes": "256x256",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/attached_assets/mtaa_dao_logos/icon_dark_banner.png",
+      "src": "/mtaa_dao_logos/icon_dark_banner.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"

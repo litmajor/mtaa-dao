@@ -133,6 +133,7 @@ export const users = pgTable("users", {
   telegramId: varchar("telegram_id"),
   telegramChatId: varchar("telegram_chat_id"),
   telegramUsername: varchar("telegram_username"),
+  preferredCurrency: varchar("preferred_currency").default("USD"), // User's preferred currency for display
   // Encrypted wallet storage fields
   encryptedWallet: text("encrypted_wallet"),
   walletSalt: text("wallet_salt"),
@@ -224,13 +225,6 @@ export const daos = pgTable("daos", {
   planExpiresAt: timestamp("plan_expires_at"),
   billingStatus: varchar("billing_status").default("active"),
   nextBillingDate: timestamp("next_billing_date"),
-  // Free tier limits
-  freeTierLimits: jsonb("free_tier_limits").default({
-    maxMembers: 10,
-    maxTreasuryBalance: 1000,
-    durationDays: 14,
-    canExtend: false
-  }),
   // Short-term DAO extension tracking
   extensionCount: integer("extension_count").default(0), // 0, 1, or 2 max
   originalDuration: integer("original_duration"), // in days (30, 60, 90)
@@ -248,15 +242,13 @@ export const daos = pgTable("daos", {
   votingPeriod: integer("voting_period").default(72), // voting period in hours
   executionDelay: integer("execution_delay").default(24), // execution delay in hours
   tokenHoldings: boolean("token_holdings").default(false), // whether DAO requires token holdings for membership
-  status: varchar("status").default("active"), // Added for admin analytics compatibility
-  subscriptionPlan: varchar("subscription_plan").default("free"), // Added for admin analytics compatibility
-  founderId: varchar("founder_id"), // Added for admin analytics compatibilitydings: boolean("token_holdings").default(false), // whether DAO requires token holdings for membership
-  maxDelegationPercentage: integer("max_delegation_percentage").default(10), // CRITICAL: max % of votes a single delegate can hold to prevent centralization
-
-  // CRITICAL: Multi-sig treasury security
-  treasuryMultisigEnabled: boolean("treasury_multisig_enabled").default(true),
-  treasuryRequiredSignatures: integer("treasury_required_signatures").default(3), // minimum 3 signatures for withdrawals
-  treasurySigners: jsonb("treasury_signers").default([]), // array of elder/admin user IDs
+  status: varchar("status").default("active"), // Active, archived, suspended
+  subscriptionPlan: varchar("subscription_plan").default("free"), // Subscription plan type
+  founderId: varchar("founder_id"), // Founder/primary contact ID
+  maxDelegationPercentage: integer("max_delegation_percentage").default(10), // max % of votes a single delegate can hold
+  treasuryMultisigEnabled: boolean("treasury_multisig_enabled").default(true), // Multi-sig security
+  treasuryRequiredSignatures: integer("treasury_required_signatures").default(3), // minimum signatures for withdrawals
+  treasurySigners: jsonb("treasury_signers").default([]), // array of signer user IDs
   treasuryWithdrawalThreshold: decimal("treasury_withdrawal_threshold", { precision: 18, scale: 2 }).default("1000.00"), // $1K threshold
   treasuryDailyLimit: decimal("treasury_daily_limit", { precision: 18, scale: 2 }).default("10000.00"), // daily spending cap
   treasuryMonthlyBudget: decimal("treasury_monthly_budget", { precision: 18, scale: 2 }) // optional monthly budget limit

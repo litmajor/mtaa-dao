@@ -44,7 +44,7 @@ class DEXIntegrationService {
   }
 
   /**
-   * Initialize blockchain provider
+   * Initialize blockchain provider with timeout protection
    */
   private initializeProvider(): void {
     try {
@@ -54,10 +54,12 @@ class DEXIntegrationService {
         return;
       }
 
+      // Create provider with timeout and network detection disabled to prevent long hangs
       this.provider = new ethers.JsonRpcProvider(rpcUrl, undefined, {
-        staticNetwork: true,
+        staticNetwork: true,  // Prevent automatic network detection (which causes timeouts)
         batchMaxCount: 1,
         pollingInterval: 12000,
+        timeout: 5000,  // 5 second timeout for individual requests
       });
 
       // Initialize wallet if private key is provided (for automated swaps)
@@ -68,6 +70,8 @@ class DEXIntegrationService {
       }
     } catch (error) {
       logger.error('Error initializing DEX provider:', error);
+      // Don't throw - just log and continue without DEX integration
+      this.provider = null;
     }
   }
 

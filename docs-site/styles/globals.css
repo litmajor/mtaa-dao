@@ -3,6 +3,32 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Loading skeleton to show something while page loads */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Show loading state while page is blank */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, #fff 0%, #fef5f0 100%);
+  z-index: 9999;
+  opacity: 1;
+  transition: opacity 0.3s ease-out;
+  pointer-events: none;
+}
+
+/* Hide loading background once content appears */
+body.page-loaded::before {
+  opacity: 0;
+  pointer-events: none;
+}
+
 :root {
   --mtaa-orange: #FF7F3F;
   --mtaa-gold: #F5A623;

@@ -52,11 +52,11 @@ export function Logo({
     banner: "h-12"
   };
 
-  // Use transparent logo (no background) for all themes
+  // Use correct logo paths from mtaa_dao_logos folder
   const getLogoPath = (type: "icon" | "full") => {
-    // For now, just use the transparent logo for icons
     if (type === "icon") {
-      return "/mtaa_dao_logo_transparent.png";
+      // Use dark icon for all themes as it's the primary branding
+      return `/mtaa_dao_logos/icon_dark_${size}.png`;
     }
     // For full logo, use themed version
     const themeStr = effectiveTheme === "dark" ? "dark" : "light";

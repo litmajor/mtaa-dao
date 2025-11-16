@@ -82,6 +82,7 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     strictPort: false,
+    middlewareMode: false,
     hmr: {
       clientPort: 443,
     },
@@ -89,12 +90,27 @@ export default defineConfig({
       "/api": {
         target: "http://localhost:5000",
         changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
       },
+    },
+    // Optimize development server performance
+    watch: {
+      // Ignore node_modules to prevent excessive recompilation
+      ignored: ['**/node_modules/**', '**/.git/**', '**/dist/**'],
     },
   },
   optimizeDeps: {
-    include: ['react', 'react-dom', 'react-router-dom'],
-    exclude: [],
+    include: [
+      'react', 
+      'react-dom', 
+      'react-router-dom',
+      '@tanstack/react-query',
+      'react-helmet-async',
+      'recharts',
+      'lucide-react',
+    ],
+    // Force pre-bundling of heavy dependencies
+    force: true,
   },
 });
 

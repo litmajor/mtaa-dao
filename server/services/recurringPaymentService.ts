@@ -48,11 +48,18 @@ export class RecurringPaymentService {
     
     // Check for due payments every 5 minutes
     this.processingInterval = setInterval(() => {
-      this.processDuePayments();
+      this.processDuePayments().catch((err) => {
+        // Log error but don't crash - errors are already logged in processDuePayments
+        if (err.message && (err.message.includes('TIMEOUT') || err.message.includes('timeout'))) {
+          logger.warn(`⚠️ RPC timeout in recurring payments: ${err.message}`);
+        }
+      });
     }, 5 * 60 * 1000);
 
-    // Initial run
-    this.processDuePayments();
+    // Initial run wrapped in promise handler
+    this.processDuePayments().catch((err) => {
+      logger.warn('Error in initial recurring payment check:', err.message);
+    });
   }
 
   /**

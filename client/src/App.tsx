@@ -5,14 +5,18 @@ import { Helmet } from 'react-helmet-async';
 import { useAuth } from './pages/hooks/useAuth';
 import { PageLoading } from './components/ui/page-loading';
 import { SkipLink } from './components/ui/skip-link';
-import Navigation from './components/navigation';
-import { MorioFAB } from './components/morio/MorioFAB';
-import { MobileNav } from './components/mobile-nav';
 import { ThemeProvider } from "./components/theme-provider";
 import { TooltipProvider } from "./components/ui/tooltip";
-import AnnouncementsBanner from './components/AnnouncementsBanner';
 import { MorioProvider } from "@/components/MorioProvider"; // Added MorioProvider import
 import { useUser } from './pages/hooks/useUser';
+import { AuthProvider } from './contexts/auth-context';
+import { NavigationProvider } from './contexts/navigation-context';
+
+// Lazy load heavy components that are only shown to authenticated users
+const Navigation = lazy(() => import('./components/navigation'));
+const MorioFAB = lazy(() => import('./components/morio/MorioFAB').then(m => ({ default: m.MorioFAB })));
+const MobileNav = lazy(() => import('./components/mobile-nav').then(m => ({ default: m.MobileNav })));
+const AnnouncementsBanner = lazy(() => import('./components/AnnouncementsBanner'));
 import Register1Raw from './components/register1';
 const Register1 = Register1Raw as React.ComponentType<{ adminMode?: boolean }>;
 
@@ -105,6 +109,18 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
+const SuperuserRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, isLoading, user } = useAuth();
+  if (isLoading) return <PageLoading message="Verifying authentication..." />;
+  
+  // Check if user is logged in and has superuser flag, or check localStorage
+  const isSuperuser = user?.isSuperUser || user?.role === 'super_admin' || 
+                      user?.role === 'admin' || localStorage.getItem('superuser') === 'true';
+  
+  if (!isAuthenticated && !isSuperuser) return <Navigate to="/superuser-login" />;
+  return <>{children}</>;
+};
+
 const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
   if (isLoading) return <PageLoading message="Loading Mtaa DAO..." />;
@@ -125,10 +141,12 @@ function App() {
 
   return (
     <HelmetProvider>
-      <ThemeProvider>
-        <TooltipProvider>
-          <MorioProvider userId={user?.id} daoId={user?.currentDaoId}>
-            <div className="min-h-screen bg-background text-foreground">
+      <AuthProvider>
+        <NavigationProvider>
+          <ThemeProvider>
+            <TooltipProvider>
+              <MorioProvider userId={user?.id} daoId={user?.currentDaoId}>
+                <div className="min-h-screen bg-background text-foreground">
               <Helmet>
                 <title>{isAuthenticated ? "Dashboard | Mtaa DAO" : "Welcome | Mtaa DAO"}</title>
                 <meta name="description" content="Mtaa DAO — decentralized community finance platform" />
@@ -138,13 +156,15 @@ function App() {
 
               <SkipLink />
 
-              <AnnouncementsBanner />
+              {isAuthenticated && <Suspense fallback={null}><AnnouncementsBanner /></Suspense>}
 
-              {isAuthenticated && <Navigation />}
+              {isAuthenticated && <Suspense fallback={null}><Navigation /></Suspense>}
 
               {/* Morio FAB for all authenticated users */}
               {isAuthenticated && user?.id && (
-                <MorioFAB userId={user.id} />
+                <Suspense fallback={null}>
+                  <MorioFAB userId={user.id} />
+                </Suspense>
               )}
 
               <main id="main-content" className={isAuthenticated ? "pb-16 lg:pb-0" : ""} role="main">
@@ -226,7 +246,7 @@ function App() {
                     <Route path="dao-treasury" element={<DaoTreasury />} />
                   </Route>
                   {/* Admin routes */}
-                  <Route path="/superuser" element={<ProtectedRoute><SuperUserDashboard /></ProtectedRoute>} />
+                  <Route path="/superuser" element={<SuperuserRoute><SuperUserDashboard /></SuperuserRoute>} />
                   <Route path="/admin/users" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><UserManagementLazy /></Suspense></ProtectedRoute>} />
                   <Route path="/admin/daos" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><DaoModerationLazy /></Suspense></ProtectedRoute>} />
                   <Route path="/admin/settings" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><SystemSettingsLazy /></Suspense></ProtectedRoute>} />
@@ -252,11 +272,13 @@ function App() {
                 </Routes>
               </main>
 
-              {isAuthenticated && <MobileNav />}
+              {isAuthenticated && <Suspense fallback={null}><MobileNav /></Suspense>}
             </div>
           </MorioProvider>
-        </TooltipProvider>
-      </ThemeProvider>
+            </TooltipProvider>
+          </ThemeProvider>
+        </NavigationProvider>
+      </AuthProvider>
     </HelmetProvider>
   );
 }

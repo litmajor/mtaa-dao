@@ -148,7 +148,7 @@ export default function MtaaDAOLogin() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-orange-950 to-slate-950 flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-orange-950 to-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden">
       {/* Minimal Cursor Dot */}
       <div 
         className="fixed pointer-events-none z-50 w-2 h-2 bg-orange-500/60 rounded-full transition-all duration-200"
@@ -171,6 +171,11 @@ export default function MtaaDAOLogin() {
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-orange-500/30 to-transparent"></div>
       </div>
 
+      {/* MTAA DAO Logo */}
+      <div className={`relative z-10 mb-12 transform transition-all duration-1000 ${isVisible ? 'translate-y-0 opacity-100' : '-translate-y-10 opacity-0'} flex justify-center`}>
+        <img src="/mtaa_dao_logos/icon_dark_lg.png" alt="MTAA DAO" className="h-24 w-24 object-contain" />
+      </div>
+
       {/* Main Content */}
       <div className={`relative z-10 w-full max-w-md transform transition-all duration-1000 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
         {/* Minimalist Login Card */}
@@ -178,11 +183,6 @@ export default function MtaaDAOLogin() {
           <div className="bg-slate-900/80 backdrop-blur-lg rounded-2xl shadow-xl border border-slate-800/50 p-8 hover:border-orange-500/30 transition-all duration-500">
             {/* Header */}
             <div className="text-center mb-8">
-              {/* Logo */}
-              <div className="mb-6 flex justify-center">
-                <HeroLogo variant="icon" size="lg" forceTheme="dark" />
-              </div>
-              
               <h1 className="text-3xl font-bold text-white mb-2">
                 Welcome Back
               </h1>
