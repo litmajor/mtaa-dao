@@ -29,22 +29,46 @@ export default function MtaaDAOLanding() {
 
   const coreFeatures = [
     {
-      icon: DollarSign,
-      title: "Save Together",
-      description: "Pool money with friends. Everyone sees where it goes.",
-      gradient: "from-green-400 to-emerald-500"
-    },
-    {
-      icon: Vote,
-      title: "Decide Together",
-      description: "Vote on how to spend or invest group funds. Everyone has a say.",
-      gradient: "from-blue-400 to-cyan-500"
+      icon: Wallet,
+      title: "Personal Wallet",
+      description: "Send & receive money instantly. Support for CELO, cUSD, cEUR & more.",
+      gradient: "from-blue-400 to-cyan-500",
+      path: "/wallet"
     },
     {
       icon: TrendingUp,
-      title: "Grow Together",
-      description: "Earn 8-12% yearly. Better than any bank.",
-      gradient: "from-amber-400 to-orange-500"
+      title: "Smart Vaults",
+      description: "Professional DeFi management. Earn 8-15% APY on your savings.",
+      gradient: "from-green-400 to-emerald-500",
+      path: "/vault"
+    },
+    {
+      icon: Users,
+      title: "Community DAOs",
+      description: "Pool resources, vote on decisions, transparent treasury management.",
+      gradient: "from-purple-400 to-pink-500",
+      path: "/daos"
+    },
+    {
+      icon: Target,
+      title: "Goal-Based Savings",
+      description: "Set targets, lock funds, earn bonus interest. Build your future.",
+      gradient: "from-amber-400 to-orange-500",
+      path: "/wallet#locked-savings"
+    },
+    {
+      icon: Vote,
+      title: "Governance & Voting",
+      description: "Every decision is transparent. Your voice, your vote, your power.",
+      gradient: "from-indigo-400 to-blue-500",
+      path: "/proposals"
+    },
+    {
+      icon: Shield,
+      title: "Multi-Signature Security",
+      description: "Enterprise-grade security for group funds. Multiple approvals required.",
+      gradient: "from-red-400 to-pink-500",
+      path: "/dao/treasury"
     }
   ];
 
@@ -153,19 +177,19 @@ export default function MtaaDAOLanding() {
           <div className={`text-center transform transition-all duration-1000 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'} mt-8`}>
             {/* Main Headline */}
             <h1 className="text-5xl md:text-7xl font-black mb-6 leading-tight">
-              <span className="block text-white">Save & Grow Money </span>
+              <span className="block text-white">Your Complete </span>
               <span className="bg-gradient-to-r from-orange-400 via-pink-500 to-purple-500 bg-clip-text text-transparent">
-                With Your Friends
+                Financial Operating System
               </span>
             </h1>
 
             <p className="text-xl md:text-3xl text-purple-100 max-w-3xl mx-auto mb-4 leading-relaxed font-semibold">
-              Your KES 10,000 becomes KES 11,200 in one year
+              Wallet • Savings • Investments • Community Governance
             </p>
             
             <p className="text-lg md:text-xl text-purple-200 max-w-2xl mx-auto mb-10 leading-relaxed">
-              Pool money together. Everyone sees where it goes.<br/>
-              Make decisions as a group - all from your phone.
+              From daily transactions to earning 8-12% yields on savings,<br/>
+              to pooling resources with your community - all in one platform.
             </p>
 
             {/* Quick Stats */}
@@ -230,15 +254,15 @@ export default function MtaaDAOLanding() {
         </div>
       </section>
 
-      {/* How It Works - Simple 4 Steps */}
-      <div className="py-16 relative" id="how-it-works">
-        <div className="max-w-6xl mx-auto px-4">
+      {/* Platform Capabilities */}
+      <div className="py-16 relative" id="features">
+        <div className="max-w-7xl mx-auto px-4">
           <div className="text-center mb-12">
             <h2 className="text-4xl md:text-5xl font-black text-white mb-4">
-              How Mtaa Works
+              Everything You Need in One Platform
             </h2>
             <p className="text-xl text-purple-200">
-              Four simple steps to start saving and growing together
+              From everyday transactions to professional wealth management
             </p>
           </div>
 
@@ -246,17 +270,156 @@ export default function MtaaDAOLanding() {
             {coreFeatures.map((feature, index) => {
               const Icon = feature.icon;
               return (
-                <Card key={index} className="group bg-white/10 backdrop-blur-sm border-white/20 hover:border-white/40 hover:scale-105 transition-all duration-300">
-                  <CardContent className="p-6 text-center">
-                    <div className={`w-16 h-16 bg-gradient-to-br ${feature.gradient} rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl group-hover:scale-110 transition-transform`}>
-                      <Icon className="h-8 w-8 text-white" />
-                    </div>
-                    <h3 className="text-lg font-bold text-white mb-2">{feature.title}</h3>
-                    <p className="text-purple-200 text-sm">{feature.description}</p>
-                  </CardContent>
-                </Card>
+                <a key={index} href={feature.path}>
+                  <Card className="group bg-white/10 backdrop-blur-sm border-white/20 hover:border-white/40 hover:scale-105 transition-all duration-300 h-full cursor-pointer">
+                    <CardContent className="p-6">
+                      <div className={`w-16 h-16 bg-gradient-to-br ${feature.gradient} rounded-2xl flex items-center justify-center mb-4 shadow-xl group-hover:scale-110 transition-transform`}>
+                        <Icon className="h-8 w-8 text-white" />
+                      </div>
+                      <h3 className="text-lg font-bold text-white mb-2">{feature.title}</h3>
+                      <p className="text-purple-200 text-sm">{feature.description}</p>
+                      <div className="mt-4 flex items-center text-sm text-orange-400 group-hover:text-orange-300">
+                        Learn more <ArrowRight className="ml-1 w-4 h-4" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </a>
               );
             })}
+          </div>
+
+          {/* Financial Journey */}
+          <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10">
+            <h3 className="text-2xl font-bold text-white mb-6 text-center">Your Complete Financial Journey</h3>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="text-center">
+                <div className="text-4xl mb-2">💰</div>
+                <div className="text-white font-bold mb-1">1. Start</div>
+                <div className="text-purple-200 text-sm">Get your wallet. Send/receive instantly.</div>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl mb-2">📈</div>
+                <div className="text-white font-bold mb-1">2. Grow</div>
+                <div className="text-purple-200 text-sm">Move savings to vaults. Earn 8-15% APY.</div>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl mb-2">🤝</div>
+                <div className="text-white font-bold mb-1">3. Collaborate</div>
+                <div className="text-purple-200 text-sm">Join or create DAOs. Pool resources.</div>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl mb-2">🎯</div>
+                <div className="text-white font-bold mb-1">4. Achieve</div>
+                <div className="text-purple-200 text-sm">Reach goals together. Build wealth.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Wallet & Vault Power */}
+      <div className="py-16 bg-gradient-to-r from-slate-900/50 to-blue-900/50 backdrop-blur-sm">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="text-center mb-12">
+            <h2 className="text-4xl md:text-5xl font-black text-white mb-4">
+              Powerful Tools, Simple Experience
+            </h2>
+            <p className="text-xl text-purple-200">
+              Professional-grade features that anyone can use
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+            {/* Personal Wallet */}
+            <Card className="bg-white/10 backdrop-blur-sm border-white/20">
+              <CardContent className="p-8">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-cyan-500 rounded-xl flex items-center justify-center">
+                    <Wallet className="w-6 h-6 text-white" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-white">Personal Wallet</h3>
+                </div>
+                <p className="text-purple-200 mb-4">Your daily financial hub</p>
+                <ul className="space-y-2 text-white text-sm mb-6">
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                    <span>Send to phone numbers (no crypto knowledge needed)</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                    <span>Multiple currencies: CELO, cUSD, cEUR, cREAL</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                    <span>Instant transactions (~$0.001 fee)</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                    <span>Bill splitting & payment requests</span>
+                  </li>
+                </ul>
+                <a href="/wallet">
+                  <Button className="w-full bg-blue-600 hover:bg-blue-700">
+                    Explore Wallet <ArrowRight className="ml-2 w-4 h-4" />
+                  </Button>
+                </a>
+              </CardContent>
+            </Card>
+
+            {/* Smart Vaults */}
+            <Card className="bg-white/10 backdrop-blur-sm border-white/20">
+              <CardContent className="p-8">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-green-400 to-emerald-500 rounded-xl flex items-center justify-center">
+                    <TrendingUp className="w-6 h-6 text-white" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-white">Smart Vaults</h3>
+                </div>
+                <p className="text-purple-200 mb-4">Professional yield management</p>
+                <ul className="space-y-2 text-white text-sm mb-6">
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                    <span>Automated DeFi strategies (8-15% APY)</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                    <span>Goal-based savings with time locks</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                    <span>Real-time performance tracking</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                    <span>Risk-adjusted strategies (conservative to aggressive)</span>
+                  </li>
+                </ul>
+                <a href="/vault">
+                  <Button className="w-full bg-green-600 hover:bg-green-700">
+                    Explore Vaults <ArrowRight className="ml-2 w-4 h-4" />
+                  </Button>
+                </a>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Quick Comparison */}
+          <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10">
+            <h4 className="text-lg font-bold text-white mb-4 text-center">Choose What Fits Your Needs</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+              <div>
+                <div className="text-blue-400 font-bold mb-1">Daily Spending</div>
+                <div className="text-purple-200 text-sm">Use your Personal Wallet</div>
+              </div>
+              <div>
+                <div className="text-green-400 font-bold mb-1">Growing Savings</div>
+                <div className="text-purple-200 text-sm">Move to Smart Vaults</div>
+              </div>
+              <div>
+                <div className="text-purple-400 font-bold mb-1">Community Funds</div>
+                <div className="text-purple-200 text-sm">Create a DAO Treasury</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
