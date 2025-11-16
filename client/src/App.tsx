@@ -65,7 +65,9 @@ import BatchTransfer from './components/batch-transfer';
 import Multisig from './components/multisig';
 import DaoTreasury from './components/dao-treasury';
 import ArchitectSetupPage from './pages/architect-setup';
-import PricingPage from './pages/PricingPage';
+import PricingPage from './pages/pricing';
+import SubscriptionPage from './pages/subscription';
+import TransactionLimitsPage from './pages/transaction-limits';
 import AdminBillingDashboard from './pages/AdminBillingDashboard';
 import ReputationLeaderboard from './pages/ReputationLeaderboard';
 import ReputationDashboard from "./pages/ReputationDashboard";
@@ -218,6 +220,8 @@ function App() {
                   <Route path="/daos" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><DAOsLazy /></Suspense></ProtectedRoute>} />
                   <Route path="/referrals" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><ReferralsLazy /></Suspense></ProtectedRoute>} />
                   <Route path="/settings" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><SettingsLazy /></Suspense></ProtectedRoute>} />
+                  <Route path="/subscription" element={<ProtectedRoute><SubscriptionPage /></ProtectedRoute>} />
+                  <Route path="/transaction-limits" element={<TransactionLimitsPage />} />
                   <Route path="/analytics" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><AnalyticsPageLazy /></Suspense></ProtectedRoute>} />
                   <Route path="/tasks" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><TaskBountyBoardPageLazy /></Suspense></ProtectedRoute>} />
                   <Route path="/rewards" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><RewardsHubLazy /></Suspense></ProtectedRoute>} />

@@ -1,9 +1,9 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserRole } from './navigation-context';
 
 /**
  * Authentication Context
- * Manages user login/logout and session state
+ * Manages user login/logout and session state with localStorage persistence
  */
 
 export interface AuthUser {
@@ -27,6 +27,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const AUTH_STORAGE_KEY = 'mtaa_dao_auth_user';
+
 /**
  * Mock users for demonstration
  */
@@ -37,7 +39,6 @@ const MOCK_USERS: Record<string, AuthUser & { password: string }> = {
     email: 'admin@example.com',
     password: 'admin123',
     role: 'admin',
-    avatar: '👨‍💼',
   },
   'manager@example.com': {
     id: '2',
@@ -45,7 +46,6 @@ const MOCK_USERS: Record<string, AuthUser & { password: string }> = {
     email: 'manager@example.com',
     password: 'manager123',
     role: 'manager',
-    avatar: '👨‍💼',
   },
   'user@example.com': {
     id: '3',
@@ -53,7 +53,6 @@ const MOCK_USERS: Record<string, AuthUser & { password: string }> = {
     email: 'user@example.com',
     password: 'user123',
     role: 'user',
-    avatar: '👤',
   },
   'viewer@example.com': {
     id: '4',
@@ -61,23 +60,29 @@ const MOCK_USERS: Record<string, AuthUser & { password: string }> = {
     email: 'viewer@example.com',
     password: 'viewer123',
     role: 'viewer',
-    avatar: '👁️',
   },
 };
 
 /**
- * Authentication Provider
+ * Authentication Provider with localStorage persistence
  */
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<AuthUser | null>({
-    id: '1',
-    name: 'John Doe',
-    email: 'admin@example.com',
-    role: 'admin',
-    avatar: '👨‍💼',
-  });
-  const [isLoading, setIsLoading] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const storedUser = localStorage.getItem(AUTH_STORAGE_KEY);
+      if (storedUser) {
+        setUser(JSON.parse(storedUser));
+      }
+    } catch (error) {
+      console.error('Failed to load user from localStorage:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   /**
    * Login with email and password
@@ -98,6 +103,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const { password: _, ...userWithoutPassword } = mockUser;
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(userWithoutPassword));
     setUser(userWithoutPassword);
     setIsLoading(false);
   };
@@ -106,6 +112,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * Logout
    */
   const logout = (): void => {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
     setUser(null);
     setError(null);
   };
@@ -115,10 +122,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    */
   const switchRole = (role: UserRole): void => {
     if (user) {
-      setUser({
+      const updatedUser = {
         ...user,
         role,
-      });
+      };
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
+      setUser(updatedUser);
     }
   };
 
