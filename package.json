@@ -23,6 +23,8 @@
   },
   "dependencies": {
     "@babel/preset-typescript": "^7.27.1",
+    "@floating-ui/dom": "^1.7.4",
+    "@floating-ui/react": "^0.27.16",
     "@headlessui/react": "^2.2.4",
     "@hookform/resolvers": "^3.10.0",
     "@jridgewell/trace-mapping": "^0.3.25",
