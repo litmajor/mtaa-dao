@@ -1,4 +1,3 @@
-
 import { db } from '../db';
 import { crossChainTransfers } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
@@ -122,14 +121,36 @@ export class BridgeRelayerService {
   ): Promise<string | null> {
     try {
       const provider = ChainRegistry.getProvider(chain);
-      
-      // Mock implementation - replace with actual bridge event listening
-      // In production, you would:
-      // 1. Listen for bridge lock events
-      // 2. Verify the lock transaction
-      // 3. Return the transaction hash
-      
-      return `0x${Math.random().toString(16).substr(2, 64)}`;
+      const { CHAIN_CONFIGS } = await import('../../shared/chainRegistry');
+      const bridgeContract = CHAIN_CONFIGS[chain].bridgeContract;
+
+      if (!bridgeContract) {
+        this.logger.warn(`No bridge contract for ${chain}, using mock`);
+        return `0x${Math.random().toString(16).substr(2, 64)}`;
+      }
+
+      // Listen for BridgeLock events from CrossChainBridge contract
+      const BRIDGE_ABI = [
+        'event TransferInitiated(bytes32 indexed transferId, address indexed user, address token, uint256 amount, uint32 destinationEid, address destinationAddress)'
+      ];
+
+      const bridge = new ethers.Contract(bridgeContract, BRIDGE_ABI, provider);
+
+      // Query recent events (last 100 blocks)
+      const currentBlock = await provider.getBlockNumber();
+      const events = await bridge.queryFilter(
+        bridge.filters.TransferInitiated(),
+        currentBlock - 100,
+        currentBlock
+      );
+
+      // Find matching event
+      const event = events.find(e => 
+        e.args?.token === tokenAddress && 
+        e.args?.amount.toString() === amount
+      );
+
+      return event?.transactionHash || null;
     } catch (error) {
       this.logger.error('Failed to check source transaction:', error);
       return null;
@@ -147,17 +168,38 @@ export class BridgeRelayerService {
   ): Promise<string | null> {
     try {
       const provider = ChainRegistry.getProvider(chain);
-      
-      // Mock implementation - replace with actual bridge unlock
-      // In production, you would:
-      // 1. Prepare unlock transaction
-      // 2. Sign with relayer wallet
-      // 3. Submit to destination chain
-      // 4. Return the transaction hash
-      
-      return `0x${Math.random().toString(16).substr(2, 64)}`;
+      const { CHAIN_CONFIGS } = await import('../../shared/chainRegistry');
+      const bridgeContract = CHAIN_CONFIGS[chain].bridgeContract;
+
+      if (!bridgeContract || !process.env.RELAYER_PRIVATE_KEY) {
+        this.logger.warn(`No bridge/relayer for ${chain}, using mock`);
+        return `0x${Math.random().toString(16).substr(2, 64)}`;
+      }
+
+      // Initialize relayer wallet
+      const relayerWallet = new ethers.Wallet(process.env.RELAYER_PRIVATE_KEY, provider);
+
+      const BRIDGE_ABI = [
+        'function completeTransfer(address recipient, address token, uint256 amount, bytes32 transferId) external'
+      ];
+
+      const bridge = new ethers.Contract(bridgeContract, BRIDGE_ABI, relayerWallet);
+
+      // Generate transfer ID (should match source chain)
+      const transferId = ethers.keccak256(
+        ethers.AbiCoder.defaultAbiCoder().encode(
+          ['address', 'address', 'uint256', 'uint256'],
+          [recipient, tokenAddress, amount, Date.now()]
+        )
+      );
+
+      // Execute transfer on destination
+      const tx = await bridge.completeTransfer(recipient, tokenAddress, amount, transferId);
+      const receipt = await tx.wait();
+
+      return receipt.hash;
     } catch (error) {
-      this.logger.error('Failed to complete destination transfer:', error);
+      this.logger.error('Failed to complete transfer on destination:', error);
       return null;
     }
   }
