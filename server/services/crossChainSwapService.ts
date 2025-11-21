@@ -111,11 +111,7 @@ export class CrossChainSwapService {
         tokenAddress: quote.fromToken,
         amount: quote.fromAmount,
         destinationAddress: userAddress,
-        status: 'pending',
-        metadata: {
-          swapQuote: quote,
-          type: 'cross-chain-swap'
-        }
+        status: 'pending'
       }).returning();
 
       const swapExecution: SwapExecution = {
@@ -579,6 +575,59 @@ export class CrossChainSwapService {
       this.logger.error('Failed to get swap status:', error);
       return null;
     }
+  }
+
+  /**
+   * Get Wormhole chain ID for bridge protocol
+   */
+  private getWormholeChainId(chain: SupportedChain): number {
+    const wormholeIds: Record<string, number> = {
+      'ethereum': 2,
+      'polygon': 5,
+      'bsc': 4,
+      'celo': 14,
+      'arbitrum': 23,
+      'optimism': 24,
+      'ton': 30,
+      'tron': 25
+    };
+    return wormholeIds[chain] || 0;
+  }
+
+  /**
+   * Get LayerZero chain ID for bridge protocol
+   */
+  private getLayerZeroChainId(chain: SupportedChain): number {
+    const lzIds: Record<string, number> = {
+      'ethereum': 101,
+      'polygon': 109,
+      'bsc': 102,
+      'celo': 125,
+      'arbitrum': 110,
+      'optimism': 111,
+      'avalanche': 106,
+      'fantom': 112
+    };
+    return lzIds[chain] || 0;
+  }
+
+  /**
+   * Get 1Inch chain ID for DEX aggregator
+   */
+  private get1InchChainId(chain: SupportedChain): number {
+    const oneInchIds: Record<string, number> = {
+      'ethereum': 1,
+      'polygon': 137,
+      'bsc': 56,
+      'celo': 42220,
+      'arbitrum': 42161,
+      'optimism': 10,
+      'avalanche': 43114,
+      'fantom': 250,
+      'ton': 0,
+      'tron': 0
+    };
+    return oneInchIds[chain] || 1;
   }
 }
 
