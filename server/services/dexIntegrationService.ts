@@ -87,18 +87,18 @@ class DEXIntegrationService {
     try {
       // Get current prices from Gateway Agent (primary) or fallback to priceOracle
       let fromPrice, toPrice;
-      
+
       try {
         const { getGatewayAgentService } = await import('../core/agents/gateway/service');
         const gatewayService = getGatewayAgentService();
-        
+
         if (gatewayService.isHealthy()) {
           const priceRequest = await gatewayService.requestPrices([fromAsset, toAsset], ['celo']);
           const prices = priceRequest?.payload?.data || [];
-          
+
           fromPrice = prices.find((p: any) => p.asset?.symbol === fromAsset);
           toPrice = prices.find((p: any) => p.asset?.symbol === toAsset);
-          
+
           logger.info(`📊 Gateway prices: ${fromAsset}=$${fromPrice?.value}, ${toAsset}=$${toPrice?.value}`);
         }
       } catch (gatewayError) {
@@ -124,7 +124,7 @@ class DEXIntegrationService {
       // Calculate estimated output based on current market prices
       const fromValueUsd = amountIn * fromPriceValue;
       const estimatedAmountOut = fromValueUsd / toPriceValue;
-      
+
       // Calculate exchange rate
       const exchangeRate = toPriceValue / fromPriceValue;
 
@@ -194,7 +194,7 @@ class DEXIntegrationService {
   /**
    * Simulate swap (fallback when wallet not configured)
    */
-  private simulateSwap(quote: SwapQuote, dex: string): SwapResult {
+  private async simulateSwap(quote: SwapQuote, dex: string): SwapResult {
     const simulatedTxHash = '0x' + Array.from({length: 64}, () => 
       Math.floor(Math.random() * 16).toString(16)
     ).join('');
@@ -232,12 +232,12 @@ class DEXIntegrationService {
     ];
 
     const router = new ethers.Contract(routerAddress, ROUTER_ABI, this.wallet);
-    
+
     // Get token addresses from TokenRegistry
     const { TokenRegistry } = await import('../../shared/tokenRegistry');
     const fromToken = TokenRegistry.getToken(quote.fromAsset as any);
     const toToken = TokenRegistry.getToken(quote.toAsset as any);
-    
+
     if (!fromToken || !toToken) {
       throw new Error('Token not found in registry');
     }
@@ -254,7 +254,7 @@ class DEXIntegrationService {
     const amountIn = ethers.parseUnits(quote.amountIn.toString(), fromToken.decimals);
     const estimatedOut = ethers.parseUnits(quote.estimatedAmountOut.toString(), toToken.decimals);
     const amountOutMin = (estimatedOut * BigInt(Math.floor((1 - slippageTolerance / 100) * 10000))) / BigInt(10000);
-    
+
     const path = [fromAddress, toAddress];
     const deadline = Math.floor(Date.now() / 1000) + 1200; // 20 minutes
 
@@ -279,7 +279,7 @@ class DEXIntegrationService {
   }
 
         const result = await this.executeRealSwap(quote, slippageTolerance, dex);
-        
+
         logger.info(`✅ Swap completed: ${result.transactionHash}`);
         return result;
       } catch (error) {
@@ -389,13 +389,13 @@ class DEXIntegrationService {
     if (!this.wallet || !this.provider) {
       throw new Error('Wallet not initialized');
     }
-    
+
     try {
       const routerAddress = this.DEX_ROUTERS[quote.dex as keyof typeof this.DEX_ROUTERS];
       if (!routerAddress) throw new Error(`Unknown DEX: ${quote.dex}`);
-      
+
       const router = new ethers.Contract(routerAddress, ROUTER_ABI, this.wallet);
-      
+
       // Build swap parameters
       const amountIn = ethers.parseUnits(quote.amountIn.toString(), 18);
       const estimatedOut = ethers.parseUnits(quote.estimatedAmountOut.toString(), 18);
@@ -403,26 +403,26 @@ class DEXIntegrationService {
       const path = [quote.tokenIn, quote.tokenOut];
       const to = this.wallet.address;
       const deadline = Math.floor(Date.now() / 1000) + 300; // 5 minutes
-      
+
       // Approve token spending first
       const tokenContract = new ethers.Contract(quote.tokenIn, ERC20_ABI, this.wallet);
       const approveTx = await tokenContract.approve(routerAddress, amountIn);
       await approveTx.wait();
-      
+
       // Estimate gas
       const gasEstimate = await router.swapExactTokensForTokens.estimateGas(
         amountIn, amountOutMin, path, to, deadline
       );
-      
+
       // Execute swap with 20% gas buffer
       const gasPrice = (await this.provider.getFeeData()).gasPrice!;
       const tx = await router.swapExactTokensForTokens(
         amountIn, amountOutMin, path, to, deadline,
         { gasLimit: (gasEstimate * BigInt(120)) / BigInt(100), gasPrice }
       );
-      
+
       const receipt = await tx.wait();
-      
+
       // Update database
       await db.insert(dexTransactions).values({
         dex: quote.dex,
@@ -435,7 +435,7 @@ class DEXIntegrationService {
         status: 'completed',
         gasUsed: receipt.gasUsed.toString()
       });
-      
+
       // Emit event
       await this.emitEvent('swap_executed', {
         dex: quote.dex,
@@ -443,7 +443,7 @@ class DEXIntegrationService {
         tokenOut: quote.tokenOut,
         txHash: receipt.hash
       });
-      
+
       return {
         success: true,
         amountOut: quote.estimatedAmountOut,
@@ -461,4 +461,3 @@ export const dexService = new DEXIntegrationService();
 
 // Export types for use in other modules
 export type { SwapQuote, SwapResult };
-

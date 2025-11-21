@@ -116,8 +116,9 @@ export default function SubscriptionManagement() {
   if (isLoading) return <div className="p-8">Loading...</div>;
 
   const pricing = {
-    free: { amount: 0, currency: 'KES' },
-    premium: { amount: 1500, currency: 'KES' }
+    community: { amount: 0, currency: 'KES' },
+    growth: { amount: 300, currency: 'KES' },
+    professional: { amount: 1200, currency: 'KES' }
   };
 
   return (
