@@ -32,7 +32,6 @@ export async function sendCUSD(to: string, amount: string | bigint): Promise<str
 }
 
 // --- Configuration ---
-const Maono_CONTRACT_ADDRESS = process.env.MAONO_CONTRACT_ADDRESS || ""; // Set in env
 const PROVIDER_URL = process.env.RPC_URL || "https://alfajores-forno.celo-testnet.org";
 
 // --- Use tokenService provider and signer to avoid duplication ---
@@ -48,23 +47,27 @@ function isContractConfigured(): boolean {
 }
 
 // --- MaonoVault Contract (ERC4626) ---
-const Maono_CONTRACT_ADDRESS = process.env.MAONO_CONTRACT_ADDRESS || "";
+// Contract addresses for Celo Alfajores testnet
+const MAONO_VAULT_ADDRESS = process.env.MAONO_VAULT_ADDRESS || '0x0000000000000000000000000000000000000000';
+const MAONO_CONTRACT_ADDRESS = process.env.MAONO_CONTRACT_ADDRESS || '0x0000000000000000000000000000000000000000';
+const MTAA_TOKEN_ADDRESS = process.env.MTAA_TOKEN_ADDRESS || '0x0000000000000000000000000000000000000000';
+const GOVERNANCE_ADDRESS = process.env.GOVERNANCE_ADDRESS || '0x0000000000000000000000000000000000000000';
 
 // Lazy initialization function for MaonoVault contract
 function getMaonoVaultContract(): ethers.Contract {
-  if (!Maono_CONTRACT_ADDRESS || Maono_CONTRACT_ADDRESS === "") {
+  if (!MAONO_CONTRACT_ADDRESS || MAONO_CONTRACT_ADDRESS === "") {
     throw new Error(
       "MAONO_CONTRACT_ADDRESS is not configured. " +
       "Please set it in your .env file or deploy the MaonoVault contract first."
     );
   }
 
-  if (!ethers.isAddress(Maono_CONTRACT_ADDRESS)) {
-    throw new Error(`Invalid MAONO_CONTRACT_ADDRESS: "${Maono_CONTRACT_ADDRESS}"`);
+  if (!ethers.isAddress(MAONO_CONTRACT_ADDRESS)) {
+    throw new Error(`Invalid MAONO_CONTRACT_ADDRESS: "${MAONO_CONTRACT_ADDRESS}"`);
   }
 
   return new ethers.Contract(
-    Maono_CONTRACT_ADDRESS,
+    MAONO_CONTRACT_ADDRESS,
     MaonoVaultArtifact.abi,
     signer || provider
   );
@@ -86,9 +89,9 @@ export const MaonoVaultService = {
     const maonoVault = getMaonoVaultContract();
 
     // Verify contract exists on chain
-    const code = await provider.getCode(Maono_CONTRACT_ADDRESS);
+    const code = await provider.getCode(MAONO_CONTRACT_ADDRESS);
     if (code === "0x") {
-      throw new Error(`No contract found at address ${Maono_CONTRACT_ADDRESS}. Please verify the contract is deployed.`);
+      throw new Error(`No contract found at address ${MAONO_CONTRACT_ADDRESS}. Please verify the contract is deployed.`);
     }
 
     return maonoVault.previewNAV();
@@ -130,7 +133,7 @@ export const MaonoVaultService = {
     const queryEventsWithRetry = async (fromBlock: number, toBlock: number, retryCount = 0): Promise<any[]> => {
       try {
         console.log(`[Event Query] Fetching events from block ${fromBlock} to ${toBlock}`);
-        const events = await maonoVault.queryFilter(
+        const events = await getMaonoVaultContract().queryFilter(
           "*", // All events
           fromBlock,
           toBlock

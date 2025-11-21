@@ -288,7 +288,7 @@ export class VaultService {
     }
   }
 
-  // Queue rebalance request for admin approval (mock)
+  // Queue rebalance request for admin approval
   private async queueRebalanceRequest(vaultId: string, userId: string): Promise<void> {
     Logger.getLogger().info(`Rebalance request queued for admin approval: vault ${vaultId}, user ${userId}`);
     // Create record in vault_rebalance_queue table
@@ -313,12 +313,18 @@ export class VaultService {
       expiresAt
     });
     
-    // Send notification to DAO governance team
-    const emailService = new EmailService();
-    await emailService.sendEmail({
-      to: process.env.GOVERNANCE_EMAIL || 'governance@mtaa-dao.com',
-      subject: `Vault Rebalance Request #${queueRecord.id}`,
-      html: `<p>New rebalance request pending approval. <a href="${process.env.ADMIN_URL}/rebalance/${queueRecord.id}">Review</a></p>`
+    // Send notification to DAO governance team via notification service
+    await notificationService.createNotification({
+      userId: 'system',
+      type: 'governance',
+      title: `Vault Rebalance Request #${queueRecord.id}`,
+      message: `New rebalance request pending approval for vault ${vaultId}`,
+      metadata: {
+        queueId: queueRecord.id,
+        vaultId,
+        userId,
+        expiresAt: queueRecord.expiresAt
+      }
     });
   }
   // Allocate funds to a vault (handler integration)

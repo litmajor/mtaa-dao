@@ -13,9 +13,15 @@ import { z } from 'zod';
 
 const logger = Logger.getLogger();
 
-// Get private key from environment or generate a development one
-const PRIVATE_KEY = process.env.PRIVATE_KEY || '0x' + '1'.repeat(64);
-const NETWORK = NetworkConfig.CELO_ALFAJORES;
+// Get private key from environment - required for production
+const PRIVATE_KEY = process.env.PRIVATE_KEY;
+const NETWORK = process.env.NODE_ENV === 'production' 
+  ? NetworkConfig.CELO_MAINNET 
+  : NetworkConfig.CELO_ALFAJORES;
+
+if (!PRIVATE_KEY && process.env.NODE_ENV === 'production') {
+  logger.error('CRITICAL: PRIVATE_KEY not set in production environment');
+}
 
 // Only initialize wallet if we have a valid private key
 let wallet: EnhancedAgentWallet | null = null;

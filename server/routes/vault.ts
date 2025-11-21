@@ -65,12 +65,8 @@ router.post('/deposit', asyncHandler(async (req, res) => {
       amount: validatedData.amount,
     });
 
-    // Simulate blockchain transaction hash for demo
-    const txHash = `0x${Math.random().toString(16).substring(2, 66)}`;
-
     res.json({
       success: true,
-      txHash,
       transaction: result,
       message: 'Deposit completed successfully'
     });
@@ -101,12 +97,8 @@ router.post('/withdraw', asyncHandler(async (req, res) => {
       amount: validatedData.amount,
     });
 
-    // Simulate blockchain transaction hash for demo
-    const txHash = `0x${Math.random().toString(16).substring(2, 66)}`;
-
     res.json({
       success: true,
-      txHash,
       transaction: result,
       message: 'Withdrawal completed successfully'
     });
@@ -123,17 +115,11 @@ router.post('/approve', asyncHandler(async (req, res) => {
   const validatedData = approveSchema.parse(req.body);
   
   try {
-    // For demo purposes, simulate approval transaction
-    // In real implementation, this would interact with the blockchain
-    const txHash = `0x${Math.random().toString(16).substring(2, 66)}`;
-    
-    // Simulate processing delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
+    // Token approval is handled client-side via wallet interaction
+    // This endpoint validates the approval parameters
     res.json({
       success: true,
-      txHash,
-      message: 'Approval transaction submitted'
+      message: 'Approval parameters validated. Please confirm in your wallet.'
     });
   } catch (error) {
     logger.error('Approval failed:', error);
@@ -152,15 +138,14 @@ router.get('/performance', asyncHandler(async (req, res) => {
   }
 
   try {
-    // For demo, return mock performance data
-    const mockData = {
-      apy: '8.5',
-      totalReturn: '12.3',
-      period: period || '7d',
-      data: generateMockChartData(period as string),
-    };
-
-    res.json(mockData);
+    // Get real performance data from vault service
+    const performance = await vaultService.getVaultPerformanceHistory(vault as string);
+    
+    res.json({
+      success: true,
+      performance,
+      period: period || '7d'
+    });
   } catch (error) {
     logger.error('Failed to get vault performance:', error);
     res.status(500).json({ error: 'Failed to fetch performance data' });
@@ -462,24 +447,5 @@ router.get('/transactions', asyncHandler(async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch transactions' });
   }
 }));
-
-// Helper function to generate mock chart data
-function generateMockChartData(period: string) {
-  const points = period === '24h' ? 24 : period === '7d' ? 7 : 30;
-  const data = [];
-  let value = 1000;
-  
-  for (let i = 0; i < points; i++) {
-    const change = (Math.random() - 0.5) * 20;
-    value += change;
-    data.push({
-      timestamp: new Date(Date.now() - (points - i) * (period === '24h' ? 3600000 : 86400000)).toISOString(),
-      value: Math.max(value, 900),
-      apy: 8.5 + (Math.random() - 0.5) * 2,
-    });
-  }
-  
-  return data;
-}
 
 export default router;
