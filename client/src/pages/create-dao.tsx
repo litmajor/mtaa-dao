@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useWallet } from './hooks/useWallet';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,14 +12,14 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { 
-  ChevronLeft, 
-  ChevronRight, 
-  Users, 
-  Shield, 
-  Wallet, 
-  Settings, 
-  Eye, 
+import {
+  ChevronLeft,
+  ChevronRight,
+  Users,
+  Shield,
+  Wallet,
+  Settings,
+  Eye,
   Rocket,
   CheckCircle,
   Plus,
@@ -30,6 +29,7 @@ import {
   Info,
   HelpCircle
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 
 const MINIMUM_QUORUM = 20; // 20% minimum quorum
 
@@ -76,39 +76,101 @@ const CreateDAOFlow = () => {
   const [newMember, setNewMember] = useState({ address: '', role: 'member', name: '' });
   const [selectedElders, setSelectedElders] = useState<string[]>([]); // NEW: Track elder selections
 
-  // DAO Type Options
+  // DAO Type Options with subscription tier gating
   const daoTypeOptions = [
     {
-      id: 'shortTerm' as const,
+      id: 'free',
+      label: 'Free Community DAO',
+      icon: '🆓',
+      duration: '30 days (testing)',
+      description: 'Test DAO features with basic limits',
+      examples: ['Small group', 'Test project'],
+      requiresGovernance: false,
+      defaultTreasuryType: 'cusd',
+      requiredTier: 'free', // Available to all tiers
+      badge: 'FREE'
+    },
+    {
+      id: 'shortTerm',
       label: 'Short-Term Fund',
       icon: '⏱️',
       duration: '3-6 months',
       description: 'Quick rotating funds, burial support, harambee',
       examples: ['Merry-go-round', 'Burial fund', 'Event contribution'],
       requiresGovernance: false,
-      defaultTreasuryType: 'cusd'
+      defaultTreasuryType: 'cusd',
+      requiredTier: 'growth', // Requires Growth or higher
+      badge: 'GROWTH+'
     },
     {
-      id: 'collective' as const,
+      id: 'collective',
       label: 'Collective / Savings Group',
       icon: '🤝',
       duration: 'Ongoing',
       description: 'Regular savings, investment clubs, cooperatives',
       examples: ['Savings group', 'Table banking', 'Traders coop'],
       requiresGovernance: true,
-      defaultTreasuryType: 'cusd'
+      defaultTreasuryType: 'cusd',
+      requiredTier: 'professional', // Requires Professional or higher
+      badge: 'PRO+'
     },
     {
-      id: 'governance' as const,
+      id: 'governance',
       label: 'Governance DAO',
       icon: '🏛️',
       duration: 'Ongoing',
       description: 'Community leadership, major decisions',
       examples: ['Community council', 'District leadership'],
       requiresGovernance: true,
-      defaultTreasuryType: 'dual'
+      defaultTreasuryType: 'dual',
+      requiredTier: 'professional',
+      badge: 'PRO+'
+    },
+    {
+      id: 'meta',
+      label: 'MetaDAO Network',
+      icon: '🌐',
+      duration: 'Continuous',
+      description: 'Multi-DAO coordination and regional networks',
+      examples: ['Regional alliance', 'DAO federation'],
+      requiresGovernance: true,
+      defaultTreasuryType: 'dual',
+      requiredTier: 'enterprise', // Enterprise only
+      badge: 'ENTERPRISE'
     }
   ];
+
+  // Filter DAO types based on user's subscription tier
+  const getAvailableDaoTypes = (userTier: string) => {
+    const tierHierarchy = ['free', 'growth', 'professional', 'enterprise'];
+    const userTierIndex = tierHierarchy.indexOf(userTier);
+
+    return daoTypeOptions.filter(option => {
+      const requiredTierIndex = tierHierarchy.indexOf(option.requiredTier);
+      return userTierIndex >= requiredTierIndex;
+    });
+  };
+
+  // Get user's current subscription tier (you'll need to fetch this)
+  // NOTE: This requires React Query to be set up in your project.
+  // If you don't have it, you'll need to replace this with a state management solution
+  // or a direct API call within useEffect.
+  const { data: userSubscription } = useQuery({
+    queryKey: ['/api/user/subscription'],
+    queryFn: async () => {
+      const response = await fetch('/api/user/subscription', {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (!response.ok) throw new Error('Failed to fetch subscription');
+      return response.json();
+    },
+    enabled: isConnected, // Only fetch if wallet is connected
+    staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+    gcTime: 1000 * 60 * 10, // Garbage collect after 10 minutes
+  });
+
+  const userTier = userSubscription?.tier || 'free';
+  const availableDaoTypes = getAvailableDaoTypes(userTier);
 
   const steps = [
     { id: 1, title: 'DAO Type', icon: Settings }, // NEW: Step 1
@@ -122,7 +184,7 @@ const CreateDAOFlow = () => {
   ];
 
   const logoOptions = ['🏛️', '🌍', '🤝', '💎', '🚀', '⚡', '🌱', '🔥', '💰'];
-  
+
   // Dynamic categories based on DAO type
   const getCategoriesForType = (type?: string) => {
     const categoriesByType: Record<string, typeof categories> = {
@@ -149,10 +211,22 @@ const CreateDAOFlow = () => {
         { value: 'health', label: 'Health Initiative', emoji: '🏥', description: 'Community health' },
         { value: 'environment', label: 'Environment Fund', emoji: '🌱', description: 'Environmental conservation' },
         { value: 'youth', label: 'Youth Empowerment', emoji: '⚡', description: 'Youth development' }
+      ],
+      free: [ // Categories for Free DAO type
+        { value: 'general', label: 'General Community', emoji: '👥', description: 'Open community for any purpose' },
+        { value: 'project', label: 'Project Group', emoji: '🚀', description: 'For specific short-term projects' },
+        { value: 'learning', label: 'Learning Circle', emoji: '📚', description: 'For study groups or skill sharing' },
+        { value: 'social', label: 'Social Gathering', emoji: '🎉', description: 'Organize events or meetups' },
+      ],
+      meta: [ // Categories for MetaDAO type
+        { value: 'regional-network', label: 'Regional Network', emoji: '📍', description: 'Coordinating DAOs within a region' },
+        { value: 'federation', label: 'DAO Federation', emoji: '🔗', description: 'Connecting multiple DAOs for shared goals' },
+        { value: 'ecosystem', label: 'Ecosystem Hub', emoji: '🌐', description: 'Central point for DAO ecosystem development' },
+        { value: 'protocol-dao', label: 'Protocol DAO', emoji: '⚙️', description: 'DAO governing a decentralized protocol' },
       ]
     };
-    
-    // Default to collective if type not specified
+
+    // Default to collective if type not specified or if type has no specific categories
     return categoriesByType[type || 'collective'] || categoriesByType['collective'];
   };
 
@@ -187,21 +261,21 @@ const CreateDAOFlow = () => {
   ];
 
   const governanceModels = [
-    { 
-      value: '1-person-1-vote', 
-      label: '1 Person = 1 Vote', 
+    {
+      value: '1-person-1-vote',
+      label: '1 Person = 1 Vote',
       desc: 'Every member has equal voting power regardless of contribution',
       best_for: 'Community groups, social DAOs'
     },
-    { 
-      value: 'weighted-stake', 
-      label: 'Weighted by Stake', 
+    {
+      value: 'weighted-stake',
+      label: 'Weighted by Stake',
       desc: 'Voting power proportional to treasury contribution',
       best_for: 'Investment clubs, business ventures'
     },
-    { 
-      value: 'delegated', 
-      label: 'Delegated Voting', 
+    {
+      value: 'delegated',
+      label: 'Delegated Voting',
       desc: 'Members can delegate their votes to trusted representatives',
       best_for: 'Large DAOs, governance-focused groups'
     }
@@ -227,9 +301,17 @@ const CreateDAOFlow = () => {
         { value: 'cusd', label: 'cUSD Vault', desc: 'Stable treasury for governance funds' },
         { value: 'dual', label: 'CELO + cUSD Dual', desc: 'Mixed treasury with growth potential' },
         { value: 'custom', label: 'Custom Stablecoin', desc: 'USDT, DAI or other tokens (coming soon)' }
+      ],
+      free: [ // Treasury options for Free DAO type
+        { value: 'cusd', label: 'cUSD Vault', desc: 'Standard stablecoin treasury' }
+      ],
+      meta: [ // Treasury options for MetaDAO type
+        { value: 'dual', label: 'CELO + cUSD Dual', desc: 'Robust treasury for network operations' },
+        { value: 'custom', label: 'Custom Stablecoin', desc: 'Flexible treasury for specific needs' }
       ]
     };
-    
+
+    // Fallback to collective if type not found or specific options not defined
     return optionsByType[type || 'collective'] || optionsByType['collective'];
   };
 
@@ -264,7 +346,7 @@ const CreateDAOFlow = () => {
     enableDiscovery: boolean;
     featuredMessage: string;
     deployedAddress?: string;
-    daoType?: 'shortTerm' | 'collective' | 'governance';
+    daoType?: 'free' | 'shortTerm' | 'collective' | 'governance' | 'meta'; // Updated to include new types
     duration?: number;
   }
 
@@ -284,9 +366,9 @@ const CreateDAOFlow = () => {
     if (newMember.address.trim()) {
       setDaoData(prev => ({
         ...prev,
-        members: [...prev.members, { 
-          ...newMember, 
-          role: newMember.role.toLowerCase(), 
+        members: [...prev.members, {
+          ...newMember,
+          role: newMember.role.toLowerCase(),
           id: Date.now(),
           isPeerInvite: true // Mark as peer invite
         }]
@@ -345,7 +427,7 @@ const CreateDAOFlow = () => {
           selectedElders: selectedElders
         })
       });
-      
+
       const result = await response.json();
       if (response.ok && result.daoAddress) {
         setDaoData(prev => ({ ...prev, deployedAddress: result.daoAddress }));
@@ -383,13 +465,13 @@ const CreateDAOFlow = () => {
         return;
       }
     }
-    
+
     // For short-term DAOs, skip governance step
     if (currentStep === 4 && daoData.daoType === 'shortTerm') {
       setCurrentStep(5);  // Skip to Treasury
       return;
     }
-    
+
     if (currentStep < 8) setCurrentStep(currentStep + 1);
   };
 
@@ -422,7 +504,7 @@ const CreateDAOFlow = () => {
       </div>
 
       <div className="grid gap-4">
-        {daoTypeOptions.map(type => (
+        {availableDaoTypes.map(type => (
           <Card
             key={type.id}
             className={`cursor-pointer transition-all ${
@@ -444,7 +526,9 @@ const CreateDAOFlow = () => {
                 <div className="flex-1">
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">{type.label}</h3>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{type.description}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">⏱️ Duration: {type.duration}</p>
+                  {type.duration && (
+                    <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">⏱️ Duration: {type.duration}</p>
+                  )}
                   <div className="flex flex-wrap gap-1 mt-2">
                     {type.examples.map(ex => (
                       <Badge key={ex} variant="outline" className="text-xs">
@@ -457,6 +541,11 @@ const CreateDAOFlow = () => {
                   <CheckCircle className="w-6 h-6 text-teal-500 flex-shrink-0" />
                 )}
               </div>
+              {type.badge && (
+                <Badge className="absolute top-3 right-3 text-xs" variant={type.id === 'free' ? 'default' : 'secondary'}>
+                  {type.badge}
+                </Badge>
+              )}
             </CardContent>
           </Card>
         ))}
@@ -644,19 +733,21 @@ const CreateDAOFlow = () => {
     </div>
   );
 
-  // Step 2 - Select Elders
+  // Step 3 - Select Elders
   const renderElderSelection = () => {
     // Get members excluding founder for elder selection
     const selectableMembers = daoData.members.filter(m => m.address !== walletAddress);
-    const minElders = daoData.category === 'short-term' ? 2 : 2;
-    const maxElders = daoData.category === 'short-term' ? 3 : 5;
+    const minElders = daoData.daoType === 'shortTerm' || daoData.daoType === 'free' ? 1 : 2; // Adjusted min for shortTerm/free
+    const maxElders = daoData.daoType === 'shortTerm' || daoData.daoType === 'free' ? 3 : 5; // Adjusted max for shortTerm/free
     const isElderValid = selectedElders.length >= minElders && selectedElders.length <= maxElders;
 
     return (
       <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Select Elders</h2>
-          <p className="text-gray-600 dark:text-gray-400">Choose 2-5 trusted members to be elders who can approve withdrawals and manage the DAO</p>
+          <p className="text-gray-600 dark:text-gray-400">
+            Choose {minElders}-{maxElders} trusted members to be elders who can approve withdrawals and manage the DAO
+          </p>
         </div>
 
         <Card className="bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800">
@@ -764,7 +855,7 @@ const CreateDAOFlow = () => {
     );
   };
 
-  // Step 3 - Governance
+  // Step 4 - Governance
   const renderGovernance = () => (
     <div className="space-y-6">
       <div>
@@ -847,7 +938,7 @@ const CreateDAOFlow = () => {
     </div>
   );
 
-  // Step 3 - Treasury
+  // Step 5 - Treasury
   const renderTreasury = () => (
     <div className="space-y-6">
       <div>
@@ -862,12 +953,12 @@ const CreateDAOFlow = () => {
             <InfoTooltip text="Choose how your DAO will store and manage funds" />
           </div>
           <div className="space-y-3">
-            {treasuryTypes.map(treasury => (
+            {getTreasuryOptionsForType(daoData.daoType).map(treasury => (
               <Card
                 key={treasury.value}
                 className={`cursor-pointer transition-all ${
-                  daoData.treasuryType === treasury.value 
-                    ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/30' 
+                  daoData.treasuryType === treasury.value
+                    ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/30'
                     : 'hover:border-gray-300'
                 }`}
                 onClick={() => updateDaoData('treasuryType', treasury.value)}
@@ -875,8 +966,8 @@ const CreateDAOFlow = () => {
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
                     <div className={`w-4 h-4 rounded-full border-2 ${
-                      daoData.treasuryType === treasury.value 
-                        ? 'bg-teal-500 border-teal-500' 
+                      daoData.treasuryType === treasury.value
+                        ? 'bg-teal-500 border-teal-500'
                         : 'border-gray-300'
                     }`}>
                       {daoData.treasuryType === treasury.value && (
@@ -910,8 +1001,8 @@ const CreateDAOFlow = () => {
                 <Card
                   key={option.value}
                   className={`cursor-pointer transition-all ${
-                    daoData.duration === option.value 
-                      ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/30' 
+                    daoData.duration === option.value
+                      ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/30'
                       : 'hover:border-gray-300'
                   }`}
                   onClick={() => updateDaoData('duration', option.value)}
@@ -919,8 +1010,8 @@ const CreateDAOFlow = () => {
                   <CardContent className="p-4">
                     <div className="flex items-center gap-3">
                       <div className={`w-4 h-4 rounded-full border-2 ${
-                        daoData.duration === option.value 
-                          ? 'bg-teal-500 border-teal-500' 
+                        daoData.duration === option.value
+                          ? 'bg-teal-500 border-teal-500'
                           : 'border-gray-300'
                       }`}>
                         {daoData.duration === option.value && (
@@ -973,7 +1064,7 @@ const CreateDAOFlow = () => {
     </div>
   );
 
-  // Step 4 - Members (with Peer Invite System)
+  // Step 6 - Members (with Peer Invite System)
   const renderMembers = () => (
     <div className="space-y-6">
       <div>
@@ -1094,7 +1185,7 @@ const CreateDAOFlow = () => {
     </div>
   );
 
-  // Step 5 - Preview
+  // Step 7 - Preview
   const renderPreview = () => (
     <div className="space-y-6">
       <div>
@@ -1139,7 +1230,7 @@ const CreateDAOFlow = () => {
               <Wallet className="w-5 h-5" />
               Treasury Configuration
             </CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => setCurrentStep(daoData.daoType === 'shortTerm' ? 5 : 5)}>
+            <Button variant="ghost" size="sm" onClick={() => setCurrentStep(5)}>
               Edit
             </Button>
           </CardHeader>
@@ -1160,7 +1251,7 @@ const CreateDAOFlow = () => {
               <div>
                 <Label className="text-xs text-gray-500 dark:text-gray-400">INITIAL FUNDING</Label>
                 <p className="font-medium">
-                  {daoData.initialFunding && daoData.initialFunding > 0 
+                  {daoData.initialFunding && parseFloat(daoData.initialFunding) > 0
                     ? `${daoData.initialFunding} ${daoData.treasuryType === 'cusd' ? 'cUSD' : daoData.treasuryType === 'dual' ? 'CELO' : 'USD'}`
                     : 'None'}
                 </p>
@@ -1174,7 +1265,7 @@ const CreateDAOFlow = () => {
         </Card>
 
         {/* Governance Section - only for non-shortTerm DAOs */}
-        {daoData.daoType !== 'shortTerm' && (
+        {daoData.daoType !== 'shortTerm' && daoData.daoType !== 'free' && ( // Exclude 'free' and 'shortTerm'
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2">
@@ -1247,7 +1338,7 @@ const CreateDAOFlow = () => {
         <p className="text-gray-600 dark:text-gray-400 mb-4">
           Your DAO will be deployed to the blockchain. This action cannot be undone.
         </p>
-        <Button 
+        <Button
           onClick={deployDAO}
           disabled={isDeploying}
           className="w-full bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white py-3"
@@ -1269,7 +1360,7 @@ const CreateDAOFlow = () => {
     </div>
   );
 
-  // Step 6 - Success
+  // Step 8 - Success
   const renderSuccess = () => (
     <div className="text-center space-y-8">
       <div className="space-y-4">
@@ -1301,7 +1392,7 @@ const CreateDAOFlow = () => {
               </Button>
             </div>
           </div>
-          
+
           <div>
             <Label className="text-xs text-gray-500 dark:text-gray-400">PEER INVITE LINKS</Label>
             <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 mb-2">
@@ -1333,7 +1424,7 @@ const CreateDAOFlow = () => {
 
   const renderStepContent = () => {
     switch (currentStep) {
-      case 1: return renderDaoTypeSelection(); // NEW: DAO type step
+      case 1: return renderDaoTypeSelection();
       case 2: return renderBasicInfo();
       case 3: return renderElderSelection();
       case 4: return renderGovernance();
@@ -1355,13 +1446,13 @@ const CreateDAOFlow = () => {
                 const Icon = step.icon;
                 const isActive = currentStep === step.id;
                 const isCompleted = currentStep > step.id;
-                
+
                 return (
                   <div key={step.id} className="flex items-center flex-shrink-0">
                     <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 transition-all ${
-                      isActive 
-                        ? 'border-teal-500 bg-teal-500 text-white' 
-                        : isCompleted 
+                      isActive
+                        ? 'border-teal-500 bg-teal-500 text-white'
+                        : isCompleted
                           ? 'border-teal-500 bg-teal-100 dark:bg-teal-900 text-teal-600 dark:text-teal-400'
                           : 'border-gray-300 bg-white dark:bg-slate-800 text-gray-400'
                     }`}>
@@ -1410,8 +1501,8 @@ const CreateDAOFlow = () => {
                 disabled={
                   (currentStep === 1 && !daoData.daoType) ||
                   (currentStep === 2 && !daoData.name.trim()) ||
-                  (currentStep === 3 && selectedElders.length < 2) ||
-                  (currentStep === 4 && daoData.daoType !== 'shortTerm' && daoData.quorum < MINIMUM_QUORUM) ||
+                  (currentStep === 3 && selectedElders.length < (daoData.daoType === 'shortTerm' || daoData.daoType === 'free' ? 1 : 2)) || // Adjusted validation based on minElders
+                  (currentStep === 4 && daoData.daoType !== 'shortTerm' && daoData.daoType !== 'free' && daoData.quorum < MINIMUM_QUORUM) || // Governance validation for relevant types
                   (currentStep === 5 && !daoData.treasuryType) ||
                   (currentStep === 6 && daoData.members.length < 2)
                 }

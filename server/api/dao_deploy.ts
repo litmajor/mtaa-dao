@@ -42,6 +42,35 @@ export async function daoDeployHandler(req: Request, res: Response) {
     if (!founderWallet || !isAddress(founderWallet)) {
       logger.error(`Invalid founder wallet: ${founderWallet}`);
       return res.status(400).json({ error: 'Invalid founder wallet address' });
+
+// Validate user can create this DAO type based on subscription
+const tierPermissions = {
+  free: ['free'],
+  growth: ['free', 'shortTerm', 'short_term'],
+  professional: ['free', 'shortTerm', 'short_term', 'collective', 'governance'],
+  enterprise: ['free', 'shortTerm', 'short_term', 'collective', 'governance', 'meta']
+};
+
+// Get user's subscription tier
+const userProfile = await db.query.users.findFirst({
+  where: eq(users.id, founderWallet)
+});
+
+const userTier = userProfile?.subscriptionTier || 'free';
+const allowedTypes = tierPermissions[userTier as keyof typeof tierPermissions] || ['free'];
+
+if (!allowedTypes.includes(daoData.daoType)) {
+  logger.error(`User ${founderWallet} attempted to create ${daoData.daoType} DAO without proper tier (has: ${userTier})`);
+  return res.status(403).json({ 
+    error: 'Insufficient subscription tier',
+    message: `${daoData.daoType} DAOs require ${Object.keys(tierPermissions).find(k => tierPermissions[k as keyof typeof tierPermissions].includes(daoData.daoType))} tier or higher`,
+    currentTier: userTier,
+    requiredTier: Object.keys(tierPermissions).find(k => tierPermissions[k as keyof typeof tierPermissions].includes(daoData.daoType))
+  });
+}
+
+logger.info(`User ${founderWallet} validated for ${daoData.daoType} DAO creation (tier: ${userTier})`);
+
     }
 
     // CRITICAL: Validate elders
