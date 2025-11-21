@@ -1,5 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useWallet } from './hooks/useWallet';
+import { useFormPersistence } from './hooks/useFormPersistence';
+import { useStepValidation } from './hooks/useStepValidation';
+import { ErrorAlert } from '@/components/ErrorAlert';
+import { CharacterCounter } from '@/components/CharacterCounter';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,7 +41,8 @@ const CreateDAOFlow = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [isDeploying, setIsDeploying] = useState(false);
   const { address: walletAddress, isConnected } = useWallet();
-  const [daoData, setDaoData] = useState<DaoData>({
+  
+  const initialDaoData: DaoData = useMemo(() => ({
     name: '',
     description: '',
     logo: '🏛️',
@@ -56,8 +61,12 @@ const CreateDAOFlow = () => {
     inviteMessage: '',
     enableSocialReactions: true,
     enableDiscovery: true,
-    featuredMessage: ''
-  });
+    featuredMessage: '',
+    selectedElders: []
+  }), []);
+
+  const { data: daoData, setData: setDaoData, lastSaved, clearDraft } = useFormPersistence(initialDaoData);
+  const { isValid: isStepValid, errors: validationErrors } = useStepValidation(currentStep, daoData);
 
   useEffect(() => {
     if (walletAddress) {
@@ -74,7 +83,26 @@ const CreateDAOFlow = () => {
   }, [walletAddress]);
 
   const [newMember, setNewMember] = useState({ address: '', role: 'member', name: '' });
-  const [selectedElders, setSelectedElders] = useState<string[]>([]); // NEW: Track elder selections
+
+  // Input sanitization helper
+  const sanitizeInput = useCallback((input: string, maxLength: number = 500): string => {
+    return input
+      .replace(/<[^>]*>/g, '') // Remove HTML tags
+      .replace(/[<>]/g, '') // Remove remaining < >
+      .substring(0, maxLength)
+      .trim();
+  }, []);
+
+  // Validate wallet/phone/email address
+  const validateAddress = useCallback((address: string): boolean => {
+    // Wallet address (0x...)
+    if (/^0x[a-fA-F0-9]{40}$/.test(address)) return true;
+    // Phone number (+254...)
+    if (/^\+\d{10,15}$/.test(address)) return true;
+    // Email
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) return true;
+    return false;
+  }, []);
 
   // DAO Type Options with subscription tier gating
   const daoTypeOptions = [
@@ -346,8 +374,9 @@ const CreateDAOFlow = () => {
     enableDiscovery: boolean;
     featuredMessage: string;
     deployedAddress?: string;
-    daoType?: 'free' | 'shortTerm' | 'collective' | 'governance' | 'meta'; // Updated to include new types
+    daoType?: 'free' | 'shortTerm' | 'collective' | 'governance' | 'meta';
     duration?: number;
+    selectedElders: string[]; // NEW: Track selected elders
   }
 
   interface NewMember {
@@ -358,31 +387,56 @@ const CreateDAOFlow = () => {
 
   type UpdateDaoDataKey = keyof DaoData;
 
-  const updateDaoData = (key: UpdateDaoDataKey, value: DaoData[UpdateDaoDataKey]) => {
-    setDaoData(prev => ({ ...prev, [key]: value }));
-  };
-
-  const addMember = () => {
-    if (newMember.address.trim()) {
-      setDaoData(prev => ({
-        ...prev,
-        members: [...prev.members, {
-          ...newMember,
-          role: newMember.role.toLowerCase(),
-          id: Date.now(),
-          isPeerInvite: true // Mark as peer invite
-        }]
-      }));
-      setNewMember({ address: '', role: 'member', name: '' });
+  const updateDaoData = useCallback((key: UpdateDaoDataKey, value: DaoData[UpdateDaoDataKey]) => {
+    // Sanitize string inputs
+    let sanitizedValue = value;
+    if (typeof value === 'string' && (key === 'name' || key === 'description')) {
+      sanitizedValue = sanitizeInput(value as string, key === 'name' ? 100 : 500);
     }
-  };
+    setDaoData(prev => ({ ...prev, [key]: sanitizedValue }));
+  }, [sanitizeInput, setDaoData]);
 
-  const removeMember = (index: number) => {
+  const addMember = useCallback(() => {
+    const trimmedAddress = newMember.address.trim();
+    
+    if (!trimmedAddress) {
+      alert('Please enter a wallet address, phone number, or email');
+      return;
+    }
+
+    if (!validateAddress(trimmedAddress)) {
+      alert('Invalid address format. Use wallet (0x...), phone (+254...), or email');
+      return;
+    }
+
+    // Check for duplicates
+    if (daoData.members.some(m => m.address === trimmedAddress)) {
+      alert('This member has already been added');
+      return;
+    }
+
     setDaoData(prev => ({
       ...prev,
-      members: prev.members.filter((_, i) => i !== index)
+      members: [...prev.members, {
+        address: trimmedAddress,
+        name: sanitizeInput(newMember.name, 100),
+        role: newMember.role.toLowerCase(),
+        id: Date.now(),
+        isPeerInvite: true
+      }]
     }));
-  };
+    setNewMember({ address: '', role: 'member', name: '' });
+  }, [newMember, daoData.members, validateAddress, sanitizeInput, setDaoData]);
+
+  const removeMember = useCallback((index: number) => {
+    const memberToRemove = daoData.members[index];
+    setDaoData(prev => ({
+      ...prev,
+      members: prev.members.filter((_, i) => i !== index),
+      // Remove from elders if selected
+      selectedElders: prev.selectedElders.filter(e => e !== memberToRemove.address)
+    }));
+  }, [daoData.members, setDaoData]);
 
   const deployDAO = async () => {
     setIsDeploying(true);
@@ -414,8 +468,8 @@ const CreateDAOFlow = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           daoData: {
-            name: daoData.name,
-            description: daoData.description,
+            name: sanitizeInput(daoData.name, 100),
+            description: sanitizeInput(daoData.description, 500),
             daoType: daoData.daoType,
             category: daoData.category,
             treasuryType: daoData.treasuryType,
@@ -424,7 +478,7 @@ const CreateDAOFlow = () => {
           },
           founderWallet: walletAddress,
           invitedMembers: invitedMembers,
-          selectedElders: selectedElders
+          selectedElders: daoData.selectedElders
         })
       });
 
@@ -442,28 +496,10 @@ const CreateDAOFlow = () => {
     setIsDeploying(false);
   };
 
-  const nextStep = () => {
-    // Validate current step before proceeding
-    if (currentStep === 1) {
-      // DAO type validation
-      if (!daoData.daoType) {
-        alert('Please select a DAO type to continue');
-        return;
-      }
-    } else if (currentStep === 2) {
-      // Basic Info validation
-      if (!daoData.name.trim()) {
-        alert('Please enter a DAO name');
-        return;
-      }
-    } else if (currentStep === 3) {
-      // Elder selection validation
-      const minElders = 2;
-      const maxElders = 5;
-      if (selectedElders.length < minElders || selectedElders.length > maxElders) {
-        alert(`Please select ${minElders}-${maxElders} elders to continue`);
-        return;
-      }
+  const nextStep = useCallback(() => {
+    // Validate using hook
+    if (!isStepValid) {
+      return; // Errors will be shown via ErrorAlert
     }
 
     // For short-term DAOs, skip governance step
@@ -473,7 +509,7 @@ const CreateDAOFlow = () => {
     }
 
     if (currentStep < 8) setCurrentStep(currentStep + 1);
-  };
+  }, [currentStep, isStepValid, daoData.daoType]);
 
   const prevStep = () => {
     // For short-term DAOs, skip governance step when going back
@@ -573,7 +609,9 @@ const CreateDAOFlow = () => {
             value={daoData.name}
             onChange={(e) => updateDaoData('name', e.target.value)}
             className="mt-1"
+            maxLength={100}
           />
+          <CharacterCounter current={daoData.name.length} max={100} min={3} />
         </div>
 
         <div>
@@ -584,7 +622,9 @@ const CreateDAOFlow = () => {
             value={daoData.description}
             onChange={(e) => updateDaoData('description', e.target.value)}
             className="mt-1 min-h-[100px]"
+            maxLength={500}
           />
+          <CharacterCounter current={daoData.description.length} max={500} min={20} />
         </div>
 
         <div>
@@ -737,9 +777,9 @@ const CreateDAOFlow = () => {
   const renderElderSelection = () => {
     // Get members excluding founder for elder selection
     const selectableMembers = daoData.members.filter(m => m.address !== walletAddress);
-    const minElders = daoData.daoType === 'shortTerm' || daoData.daoType === 'free' ? 1 : 2; // Adjusted min for shortTerm/free
-    const maxElders = daoData.daoType === 'shortTerm' || daoData.daoType === 'free' ? 3 : 5; // Adjusted max for shortTerm/free
-    const isElderValid = selectedElders.length >= minElders && selectedElders.length <= maxElders;
+    const minElders = daoData.daoType === 'shortTerm' || daoData.daoType === 'free' ? 1 : 2;
+    const maxElders = daoData.daoType === 'shortTerm' || daoData.daoType === 'free' ? 3 : 5;
+    const isElderValid = daoData.selectedElders.length >= minElders && daoData.selectedElders.length <= maxElders;
 
     return (
       <div className="space-y-6">
@@ -778,7 +818,7 @@ const CreateDAOFlow = () => {
             <div className="flex items-center justify-between">
               <Label className="text-sm font-medium">Select Additional Elders</Label>
               <Badge variant={isElderValid ? 'default' : 'destructive'} className="text-xs">
-                {selectedElders.length}/{minElders}-{maxElders}
+                {daoData.selectedElders.length}/{minElders}-{maxElders}
               </Badge>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -799,11 +839,14 @@ const CreateDAOFlow = () => {
               {selectableMembers.map((member) => (
                 <Card key={member.address} className="cursor-pointer hover:shadow-md transition-shadow"
                   onClick={() => {
-                    if (selectedElders.includes(member.address)) {
-                      setSelectedElders(selectedElders.filter(a => a !== member.address));
-                    } else if (selectedElders.length < maxElders) {
-                      setSelectedElders([...selectedElders, member.address]);
-                    }
+                    setDaoData(prev => {
+                      const newElders = prev.selectedElders.includes(member.address)
+                        ? prev.selectedElders.filter(a => a !== member.address)
+                        : prev.selectedElders.length < maxElders
+                          ? [...prev.selectedElders, member.address]
+                          : prev.selectedElders;
+                      return { ...prev, selectedElders: newElders };
+                    });
                   }}>
                   <CardContent className="p-4">
                     <div className="flex items-center gap-3">
@@ -811,10 +854,11 @@ const CreateDAOFlow = () => {
                         <input
                           type="checkbox"
                           title={`Select ${member.name || 'this member'} as elder`}
-                          checked={selectedElders.includes(member.address)}
+                          checked={daoData.selectedElders.includes(member.address)}
                           onChange={() => {}}
-                          disabled={!selectedElders.includes(member.address) && selectedElders.length >= maxElders}
+                          disabled={!daoData.selectedElders.includes(member.address) && daoData.selectedElders.length >= maxElders}
                           className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500 cursor-pointer"
+                          aria-label={`Select ${member.name || 'member'} as elder`}
                         />
                       </div>
                       <div className="flex-1">
@@ -844,7 +888,7 @@ const CreateDAOFlow = () => {
                     Select {minElders}-{maxElders} elders to continue
                   </p>
                   <p className="text-sm text-red-700 dark:text-red-300 mt-1">
-                    Currently selected: {selectedElders.length}
+                    Currently selected: {daoData.selectedElders.length}
                   </p>
                 </div>
               </div>
@@ -1479,33 +1523,48 @@ const CreateDAOFlow = () => {
 
         <Card className="mb-8 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
           <CardContent className="p-8">
+            {/* Auto-save indicator */}
+            {lastSaved && (
+              <div className="text-xs text-gray-500 mb-4 flex items-center gap-2">
+                <CheckCircle className="w-3 h-3 text-green-600" />
+                Draft auto-saved at {lastSaved.toLocaleTimeString()}
+              </div>
+            )}
+            
+            {/* Validation errors */}
+            <ErrorAlert errors={validationErrors} />
+            
             {renderStepContent()}
           </CardContent>
         </Card>
 
         {currentStep < 8 && (
-          <div className="flex justify-between">
-            <Button
-              variant="outline"
-              onClick={prevStep}
-              disabled={currentStep === 1}
-              className="flex items-center gap-2"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              Back
-            </Button>
+          <div className="flex justify-between items-center">
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={prevStep}
+                disabled={currentStep === 1}
+                className="flex items-center gap-2"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Back
+              </Button>
+              {currentStep === 1 && lastSaved && (
+                <Button
+                  variant="ghost"
+                  onClick={clearDraft}
+                  className="text-xs"
+                >
+                  Clear Draft
+                </Button>
+              )}
+            </div>
 
             {currentStep < 7 ? (
               <Button
                 onClick={nextStep}
-                disabled={
-                  (currentStep === 1 && !daoData.daoType) ||
-                  (currentStep === 2 && !daoData.name.trim()) ||
-                  (currentStep === 3 && selectedElders.length < (daoData.daoType === 'shortTerm' || daoData.daoType === 'free' ? 1 : 2)) || // Adjusted validation based on minElders
-                  (currentStep === 4 && daoData.daoType !== 'shortTerm' && daoData.daoType !== 'free' && daoData.quorum < MINIMUM_QUORUM) || // Governance validation for relevant types
-                  (currentStep === 5 && !daoData.treasuryType) ||
-                  (currentStep === 6 && daoData.members.length < 2)
-                }
+                disabled={!isStepValid}
                 className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700"
               >
                 Continue
