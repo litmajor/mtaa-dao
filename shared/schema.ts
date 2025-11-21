@@ -280,7 +280,7 @@ export const daos = pgTable("daos", {
   treasuryWithdrawalThreshold: decimal("treasury_withdrawal_threshold", { precision: 18, scale: 2 }).default("1000.00"), // $1K threshold
   treasuryDailyLimit: decimal("treasury_daily_limit", { precision: 18, scale: 2 }).default("10000.00"), // daily spending cap
   treasuryMonthlyBudget: decimal("treasury_monthly_budget", { precision: 18, scale: 2 }), // optional monthly budget limit
-  
+
   // Withdrawal and duration configuration
   withdrawalMode: varchar("withdrawal_mode").default("multisig"), // direct, multisig, rotation
   durationModel: varchar("duration_model").default("time"), // time, rotation, ongoing
@@ -599,7 +599,7 @@ export const daoMemberships = pgTable("dao_memberships", {
   isElder: boolean("is_elder").default(false), // for elder members with special privileges
   isAdmin: boolean("is_admin").default(false), // for DAO admins with full control
   lastActive: timestamp("last_active").defaultNow(), // for quorum calculations
-  
+
   // Withdrawal permissions
   canInitiateWithdrawal: boolean("can_initiate_withdrawal").default(false),
   canApproveWithdrawal: boolean("can_approve_withdrawal").default(false),
@@ -836,6 +836,27 @@ export const vaultRiskAssessments = pgTable("vault_risk_assessments", {
   assessedBy: varchar("assessed_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// Pending Transactions table for queue management
+export const pendingTransactions = pgTable("pending_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  vaultId: uuid("vault_id").references(() => vaults.id),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  transactionType: varchar("transaction_type").notNull(), // deposit, withdrawal, rebalance
+  amount: decimal("amount", { precision: 18, scale: 8 }),
+  tokenSymbol: varchar("token_symbol"),
+  status: varchar("status").default("pending"), // pending, processing, completed, failed
+  retryCount: integer("retry_count").default(0),
+  maxRetries: integer("max_retries").default(5),
+  txHash: varchar("tx_hash"),
+  errorMessage: text("error_message"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type PendingTransaction = typeof pendingTransactions.$inferSelect;
+export type InsertPendingTransaction = typeof pendingTransactions.$inferInsert;
 
 // Phase 3: DAO Vault Governance table
 export const vaultGovernanceProposals = pgTable("vault_governance_proposals", {
@@ -2335,10 +2356,6 @@ export const insertUserFollowSchema = createInsertSchema(userFollows);
 export const insertActivityFeedSchema = createInsertSchema(activityFeed);
 export const insertApiKeySchema = createInsertSchema(apiKeys);
 export const insertFileUploadSchema = createInsertSchema(fileUploads);
-
-
-
-
 
 
 // Notifications table
