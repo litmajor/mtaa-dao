@@ -39,7 +39,7 @@ const PROVIDER_URL = process.env.RPC_URL || "https://alfajores-forno.celo-testne
 const provider = tokenService.provider;
 const signer = tokenService.signer;
 
-// Helper to check if contract is deployed and valid
+// Helper to check if contract is configured (address is set and valid)
 function isContractConfigured(): boolean {
   if (!Maono_CONTRACT_ADDRESS || Maono_CONTRACT_ADDRESS === "" || Maono_CONTRACT_ADDRESS === "0x1234567890123456789012345678901234567890") {
     return false;
@@ -47,53 +47,73 @@ function isContractConfigured(): boolean {
   return ethers.isAddress(Maono_CONTRACT_ADDRESS);
 }
 
-// --- Contract Instances ---
-const maonoVault = new ethers.Contract(
-  Maono_CONTRACT_ADDRESS,
-  MaonoVaultArtifact.abi,
-  signer || provider
-);
+// --- MaonoVault Contract (ERC4626) ---
+const Maono_CONTRACT_ADDRESS = process.env.MAONO_CONTRACT_ADDRESS || "";
+
+// Lazy initialization function for MaonoVault contract
+function getMaonoVaultContract(): ethers.Contract {
+  if (!Maono_CONTRACT_ADDRESS || Maono_CONTRACT_ADDRESS === "") {
+    throw new Error(
+      "MAONO_CONTRACT_ADDRESS is not configured. " +
+      "Please set it in your .env file or deploy the MaonoVault contract first."
+    );
+  }
+
+  if (!ethers.isAddress(Maono_CONTRACT_ADDRESS)) {
+    throw new Error(`Invalid MAONO_CONTRACT_ADDRESS: "${Maono_CONTRACT_ADDRESS}"`);
+  }
+
+  return new ethers.Contract(
+    Maono_CONTRACT_ADDRESS,
+    MaonoVaultArtifact.abi,
+    signer || provider
+  );
+}
 
 // Enhanced token service access
 export { tokenService };
 
 // --- Service Methods ---
 export const MaonoVaultService = {
-  contract: maonoVault,
+  get contract() {
+    return getMaonoVaultContract();
+  },
   provider,
   signer,
   isConfigured: isContractConfigured,
 
   async getNAV() {
-    if (!isContractConfigured()) {
-      throw new Error("MaonoVault contract not configured. Please deploy the contract and set MAONO_CONTRACT_ADDRESS in .env");
-    }
-    
+    const maonoVault = getMaonoVaultContract();
+
     // Verify contract exists on chain
     const code = await provider.getCode(Maono_CONTRACT_ADDRESS);
     if (code === "0x") {
       throw new Error(`No contract found at address ${Maono_CONTRACT_ADDRESS}. Please verify the contract is deployed.`);
     }
-    
+
     return maonoVault.previewNAV();
   },
 
   async deposit(amount: bigint, userAddress: string) {
+    const maonoVault = getMaonoVaultContract();
     // User must approve the vault to spend their cUSD before calling this
     return maonoVault.deposit(amount, userAddress);
   },
 
   async withdraw(amount: bigint, userAddress: string) {
+    const maonoVault = getMaonoVaultContract();
     return maonoVault.withdraw(amount, userAddress, userAddress);
   },
 
   async updateNAV(newNav: bigint) {
     if (!signer) throw new Error("No manager signer configured");
+    const maonoVault = getMaonoVaultContract();
     return maonoVault.updateNAV(newNav);
   },
 
   async distributePerformanceFee(profit: bigint) {
     if (!signer) throw new Error("No manager signer configured");
+    const maonoVault = getMaonoVaultContract();
     return maonoVault.distributePerformanceFee(profit);
   },
 
@@ -106,7 +126,7 @@ export const MaonoVaultService = {
       baseDelay: 2000, // 2s initial delay
       maxDelay: 30000, // 30s max delay
     };
-    
+
     const queryEventsWithRetry = async (fromBlock: number, toBlock: number, retryCount = 0): Promise<any[]> => {
       try {
         console.log(`[Event Query] Fetching events from block ${fromBlock} to ${toBlock}`);
@@ -120,20 +140,20 @@ export const MaonoVaultService = {
         const isBlockOutOfRange = error.message?.includes('block') && error.message?.includes('range');
         const isTimeout = error.code === 'TIMEOUT' || error.message?.includes('timeout');
         const isRateLimit = error.code === 'RATE_LIMIT' || error.status === 429;
-        
+
         if ((isBlockOutOfRange || isTimeout || isRateLimit) && retryCount < RETRY_CONFIG.maxRetries) {
           // Exponential backoff: delay = min(baseDelay * 2^retryCount, maxDelay)
           const delay = Math.min(
             RETRY_CONFIG.baseDelay * Math.pow(2, retryCount),
             RETRY_CONFIG.maxDelay
           );
-          console.warn(`[Event Query] Retry ${retryCount + 1}/${RETRY_CONFIG.maxRetries} after ${delay}ms`, 
+          console.warn(`[Event Query] Retry ${retryCount + 1}/${RETRY_CONFIG.maxRetries} after ${delay}ms`,
             { errorMsg: error.message });
-          
+
           await new Promise(resolve => setTimeout(resolve, delay));
           return queryEventsWithRetry(fromBlock, toBlock, retryCount + 1);
         }
-        
+
         // Log error but don't throw - continue polling
         if (!error.message?.includes('filter')) {
           console.error('[Event Query] Error:', error.message);
@@ -141,23 +161,23 @@ export const MaonoVaultService = {
         return [];
       }
     };
-    
+
     const pollEvents = async () => {
       try {
         const currentBlock = await provider.getBlockNumber();
-        
+
         if (currentBlock > lastProcessedBlock) {
           // Limit query to safe block range (max 1000 blocks)
           const fromBlock = Math.max(lastProcessedBlock + 1, currentBlock - MAX_BLOCK_RANGE);
           const toBlock = currentBlock;
-          
+
           const events = await queryEventsWithRetry(fromBlock, toBlock);
-          
+
           for (const event of events) {
             try {
               const eventName = event.eventName || event.fragment?.name;
               if (!eventName) continue;
-              
+
               // Parse event based on type
               callback({
                 type: eventName,
@@ -170,7 +190,7 @@ export const MaonoVaultService = {
               console.error('Error processing event:', err);
             }
           }
-          
+
           lastProcessedBlock = currentBlock;
         }
       } catch (error: any) {
@@ -180,10 +200,10 @@ export const MaonoVaultService = {
         }
       }
     };
-    
+
     // Poll every 15 seconds
     setInterval(pollEvents, 15000);
-    
+
     // Initial poll
     pollEvents();
   },
