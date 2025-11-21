@@ -2,7 +2,7 @@
 import { ethers } from 'ethers';
 import { TOKEN_REGISTRY, TokenInfo, TokenRegistry, YIELD_STRATEGIES } from '../../shared/tokenRegistry';
 import { db } from '../db';
-import { users, governanceProposals } from '../../shared/schema';
+import { users, vaultGovernanceProposals } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 
 // Enhanced ERC20 ABI with additional functions for Phase 3
@@ -482,7 +482,7 @@ export class TokenService {
 
     // Create governance proposal in database
     const [proposal] = await db
-      .insert(governanceProposals)
+      .insert(vaultGovernanceProposals)
       .values({
         id: crypto.randomUUID(),
         title: `Add ${tokenInfo.symbol} (${tokenInfo.name}) to Treasury`,
