@@ -17,6 +17,7 @@ import { priceOracle } from '../services/priceOracle';
 import { performanceTrackingService } from '../services/performanceTrackingService';
 import { rebalancingService } from '../services/rebalancingService';
 import { triggerManualRebalance, triggerManualSnapshot } from '../jobs/investmentPoolsAutomation';
+import { investmentPoolPricingService } from '../services/investmentPoolPricingService';
 
 const router = Router();
 
@@ -184,6 +185,9 @@ router.post('/:id/invest', async (req, res) => {
 
     const sharePriceAtInvestment = Number(pool.sharePrice);
 
+    // Calculate fees based on DAO tier
+    const feeCalculation = await investmentPoolPricingService.calculateInvestmentFees(id, amountUsd);
+
     // Record investment
     const [investment] = await db
       .insert(poolInvestments)
@@ -194,9 +198,15 @@ router.post('/:id/invest', async (req, res) => {
         sharesMinted: sharesMinted.toString(),
         sharePriceAtInvestment: sharePriceAtInvestment.toString(),
         paymentToken,
-        status: 'completed', // In Phase 1, we assume instant completion
+        status: 'completed',
       })
       .returning();
+
+    // Record revenue
+    await investmentPoolPricingService.recordPoolRevenue(id, 'investment', {
+      platformFee: feeCalculation.platformFee,
+      tier: feeCalculation.tier,
+    });
 
     // Update pool TVL and supply
     const newTVL = currentTVL + amountUsd;
@@ -296,10 +306,26 @@ router.post('/:id/withdraw', async (req, res) => {
     const sharePriceAtWithdrawal = Number(pool.sharePrice);
     const withdrawalValue = shares * sharePriceAtWithdrawal;
 
-    // Calculate fee
-    const feeRate = Number(pool.performanceFee) / 10000; // basis points to decimal
-    const feeCharged = withdrawalValue * feeRate;
-    const netAmount = withdrawalValue - feeCharged;
+    // Get user's initial investment for profit calculation
+    const totalInvested = userInvestments.reduce(
+      (sum, inv) => sum + Number(inv.investmentAmountUsd),
+      0
+    );
+    const userSharesInvested = userInvestments.reduce(
+      (sum, inv) => sum + Number(inv.sharesMinted),
+      0
+    );
+    const avgCostBasis = userSharesInvested > 0 ? totalInvested / userSharesInvested : 0;
+    const initialInvestment = shares * avgCostBasis;
+
+    // Calculate tiered fees
+    const feeCalculation = await investmentPoolPricingService.calculateWithdrawalFees(
+      id,
+      withdrawalValue,
+      initialInvestment
+    );
+
+    const netAmount = feeCalculation.netAmount;
 
     // Record withdrawal
     const [withdrawal] = await db
@@ -310,11 +336,18 @@ router.post('/:id/withdraw', async (req, res) => {
         sharesBurned: shares.toString(),
         withdrawalValueUsd: withdrawalValue.toString(),
         sharePriceAtWithdrawal: sharePriceAtWithdrawal.toString(),
-        feeCharged: feeCharged.toString(),
+        feeCharged: feeCalculation.totalFees.toString(),
         netAmount: netAmount.toString(),
-        status: 'completed', // In Phase 1, we assume instant completion
+        status: 'completed',
       })
       .returning();
+
+    // Record revenue
+    await investmentPoolPricingService.recordPoolRevenue(id, 'withdrawal', {
+      platformFee: feeCalculation.platformFee,
+      performanceFee: feeCalculation.performanceFee,
+      tier: feeCalculation.tier,
+    });
 
     // Update pool TVL and supply
     const newTVL = currentTVL - withdrawalValue;
