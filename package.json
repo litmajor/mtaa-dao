@@ -5,6 +5,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "tsx watch server/index.ts",
+    "scan:production": "tsx scripts/production-cleanup-scan.ts",
     "build:frontend": "vite build",
     "build:backend": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=server/dist",
     "build": "npm run build:frontend && npm run build:backend",
