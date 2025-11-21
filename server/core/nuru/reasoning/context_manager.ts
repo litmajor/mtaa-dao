@@ -8,6 +8,7 @@
 import type { UserContext, Intent, Message } from '../types';
 import { v4 as uuidv4 } from 'uuid'; // Assume uuid package is installed for unique IDs
 import { db } from '../../../db'; // Import db for potential persistence
+import { eq } from 'drizzle-orm';
 
 export class ContextManager {
   private contextStore: Map<string, UserContext>; // In-memory cache
@@ -220,11 +221,12 @@ export class ContextManager {
   getContext(userId: string): UserContext | undefined {
     let context = this.contextStore.get(userId);
     if (!context) {
-      // Fetch from DB
-      const dbContext = db.select().from(userContexts).where(eq(userContexts.userId, userId)).limit(1);
-      if (dbContext.length > 0) {
-        context = dbContext[0].context as UserContext; // Assume JSON column
-        this.contextStore.set(userId, context);
+      // Fetch from DB if available (userContexts table optional for now)
+      try {
+        // NOTE: userContexts table not yet implemented, return undefined for now
+        // Future: implement persistence layer for contexts
+      } catch (error) {
+        console.error('Failed to fetch context from DB:', error);
       }
     }
     return context;

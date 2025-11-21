@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/pages/hooks/useAuth';
 import { AlertCircle, CheckCircle, Shield, TrendingUp, ArrowRight, Plus } from 'lucide-react';
 
 interface EthicsQuickStatus {

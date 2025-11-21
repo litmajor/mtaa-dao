@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { MessageCircle, Send, Edit, Trash2, Heart, HeartHandshake } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { MessageCircle, Send, Edit, Trash2, Heart, AlertCircle, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 interface Comment {
@@ -16,7 +17,8 @@ interface Comment {
   userAvatar?: string;
   createdAt: string;
   updatedAt?: string;
-  likes?: number;
+  isEdited?: boolean;
+  likesCount?: number;
   userLiked?: boolean;
 }
 
@@ -31,16 +33,25 @@ export default function ProposalComments({ proposalId, daoId, currentUserId }: P
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   // Fetch comments
-  const { data: commentsData, isLoading, error } = useQuery({
+  const { data: commentsData, isLoading, error: fetchError, refetch } = useQuery({
     queryKey: [`/api/proposals/${proposalId}/comments`],
     queryFn: async () => {
-      const res = await fetch(`/api/proposals/${proposalId}/comments`);
-      if (!res.ok) throw new Error("Failed to fetch comments");
-      return res.json();
+      try {
+        const res = await fetch(`/api/proposals/${proposalId}/comments`);
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: Failed to fetch comments`);
+        }
+        return res.json();
+      } catch (err) {
+        throw new Error(err instanceof Error ? err.message : 'Failed to fetch comments');
+      }
     },
+    retry: 2,
+    retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 
   const comments = commentsData?.comments || [];
@@ -53,15 +64,20 @@ export default function ProposalComments({ proposalId, daoId, currentUserId }: P
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
       });
-      if (!res.ok) throw new Error("Failed to create comment");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to create comment");
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/proposals/${proposalId}/comments`] });
       setNewComment("");
       setIsSubmitting(false);
+      setError(null);
     },
-    onError: () => {
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Failed to create comment");
       setIsSubmitting(false);
     },
   });
@@ -74,13 +90,20 @@ export default function ProposalComments({ proposalId, daoId, currentUserId }: P
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
       });
-      if (!res.ok) throw new Error("Failed to update comment");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to update comment");
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/proposals/${proposalId}/comments`] });
       setEditingCommentId(null);
       setEditContent("");
+      setError(null);
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Failed to update comment");
     },
   });
 
@@ -90,10 +113,17 @@ export default function ProposalComments({ proposalId, daoId, currentUserId }: P
       const res = await fetch(`/api/comments/${commentId}`, {
         method: "DELETE",
       });
-      if (!res.ok) throw new Error("Failed to delete comment");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to delete comment");
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/proposals/${proposalId}/comments`] });
+      setError(null);
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Failed to delete comment");
     },
   });
 
@@ -105,16 +135,24 @@ export default function ProposalComments({ proposalId, daoId, currentUserId }: P
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ daoId }),
       });
-      if (!res.ok) throw new Error("Failed to toggle like");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to toggle like");
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/proposals/${proposalId}/comments`] });
+      setError(null);
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Failed to toggle like");
     },
   });
 
   const handleSubmitComment = () => {
     if (!newComment.trim()) return;
+    setError(null);
     setIsSubmitting(true);
     createCommentMutation.mutate(newComment);
   };
@@ -122,21 +160,29 @@ export default function ProposalComments({ proposalId, daoId, currentUserId }: P
   const handleEditComment = (comment: Comment) => {
     setEditingCommentId(comment.id);
     setEditContent(comment.content);
+    setError(null);
   };
 
   const handleUpdateComment = (commentId: string) => {
     if (!editContent.trim()) return;
+    setError(null);
     updateCommentMutation.mutate({ commentId, content: editContent });
   };
 
   const handleDeleteComment = (commentId: string) => {
     if (confirm("Are you sure you want to delete this comment?")) {
+      setError(null);
       deleteCommentMutation.mutate(commentId);
     }
   };
 
   const handleLikeComment = (commentId: string) => {
+    setError(null);
     likeCommentMutation.mutate(commentId);
+  };
+
+  const handleDismissError = () => {
+    setError(null);
   };
 
   if (isLoading) {
@@ -159,6 +205,30 @@ export default function ProposalComments({ proposalId, daoId, currentUserId }: P
     );
   }
 
+  if (fetchError) {
+    return (
+      <Card className="border border-red-200 shadow-sm bg-red-50">
+        <CardContent className="p-6">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              <p>Failed to load comments</p>
+              <p className="text-xs mt-1">{fetchError instanceof Error ? fetchError.message : 'Unknown error'}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => refetch()}
+                className="mt-3"
+              >
+                Retry
+              </Button>
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="border border-gray-200 shadow-sm">
       <CardHeader className="pb-3">
@@ -168,6 +238,26 @@ export default function ProposalComments({ proposalId, daoId, currentUserId }: P
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Error Alert */}
+        {error && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              <div className="flex items-start justify-between">
+                <p>{error}</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDismissError}
+                  className="ml-2 h-6 w-6 p-0"
+                >
+                  ✕
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Add Comment */}
         {currentUserId && (
           <div className="space-y-3">
@@ -176,15 +266,25 @@ export default function ProposalComments({ proposalId, daoId, currentUserId }: P
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
               className="min-h-[100px] resize-none border-gray-300 focus:border-mtaa-purple focus:ring-mtaa-purple"
+              disabled={isSubmitting}
             />
             <div className="flex justify-end">
               <Button
                 onClick={handleSubmitComment}
-                disabled={!newComment.trim() || isSubmitting}
+                disabled={!newComment.trim() || isSubmitting || createCommentMutation.isPending}
                 className="bg-gradient-mtaa text-white hover:opacity-90 px-6"
               >
-                <Send className="w-4 h-4 mr-2" />
-                {isSubmitting ? "Posting..." : "Post Comment"}
+                {isSubmitting || createCommentMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Posting...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4 mr-2" />
+                    Post Comment
+                  </>
+                )}
               </Button>
             </div>
           </div>
@@ -218,7 +318,7 @@ export default function ProposalComments({ proposalId, daoId, currentUserId }: P
                         <span className="text-xs text-gray-500">
                           {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
                         </span>
-                        {comment.updatedAt && comment.updatedAt !== comment.createdAt && (
+                        {comment.isEdited && (
                           <Badge variant="secondary" className="text-xs">
                             Edited
                           </Badge>
@@ -231,7 +331,9 @@ export default function ProposalComments({ proposalId, daoId, currentUserId }: P
                             variant="ghost"
                             size="sm"
                             onClick={() => handleEditComment(comment)}
+                            disabled={editingCommentId === comment.id || updateCommentMutation.isPending}
                             className="h-8 w-8 p-0 text-gray-500 hover:text-gray-700"
+                            title="Edit comment"
                           >
                             <Edit className="w-4 h-4" />
                           </Button>
@@ -239,9 +341,15 @@ export default function ProposalComments({ proposalId, daoId, currentUserId }: P
                             variant="ghost"
                             size="sm"
                             onClick={() => handleDeleteComment(comment.id)}
+                            disabled={deleteCommentMutation.isPending}
                             className="h-8 w-8 p-0 text-gray-500 hover:text-red-600"
+                            title="Delete comment"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            {deleteCommentMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
                           </Button>
                         </div>
                       )}
@@ -253,6 +361,7 @@ export default function ProposalComments({ proposalId, daoId, currentUserId }: P
                           value={editContent}
                           onChange={(e) => setEditContent(e.target.value)}
                           className="min-h-[80px] resize-none"
+                          disabled={updateCommentMutation.isPending}
                         />
                         <div className="flex justify-end space-x-2">
                           <Button
@@ -262,22 +371,30 @@ export default function ProposalComments({ proposalId, daoId, currentUserId }: P
                               setEditingCommentId(null);
                               setEditContent("");
                             }}
+                            disabled={updateCommentMutation.isPending}
                           >
                             Cancel
                           </Button>
                           <Button
                             size="sm"
                             onClick={() => handleUpdateComment(comment.id)}
-                            disabled={!editContent.trim()}
+                            disabled={!editContent.trim() || updateCommentMutation.isPending}
                             className="bg-mtaa-purple text-white"
                           >
-                            Save
+                            {updateCommentMutation.isPending ? (
+                              <>
+                                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                Saving...
+                              </>
+                            ) : (
+                              'Save'
+                            )}
                           </Button>
                         </div>
                       </div>
                     ) : (
                       <>
-                        <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
+                        <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap break-words">
                           {comment.content}
                         </p>
                         
@@ -287,14 +404,20 @@ export default function ProposalComments({ proposalId, daoId, currentUserId }: P
                             variant="ghost"
                             size="sm"
                             onClick={() => handleLikeComment(comment.id)}
+                            disabled={likeCommentMutation.isPending}
                             className={`h-8 px-3 text-xs ${
                               comment.userLiked
                                 ? "text-red-500 hover:text-red-600"
                                 : "text-gray-500 hover:text-red-500"
                             }`}
+                            title={comment.userLiked ? "Unlike comment" : "Like comment"}
                           >
-                            <Heart className={`w-4 h-4 mr-1 ${comment.userLiked ? "fill-current" : ""}`} />
-                            {comment.likes || 0}
+                            {likeCommentMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                            ) : (
+                              <Heart className={`w-4 h-4 mr-1 ${comment.userLiked ? "fill-current" : ""}`} />
+                            )}
+                            {comment.likesCount || 0}
                           </Button>
                         </div>
                       </>

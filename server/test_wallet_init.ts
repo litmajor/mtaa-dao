@@ -1,7 +1,11 @@
 import AgentWallet, { NetworkConfig, WalletManager } from './agent_wallet';
-// NOTE: Some dependencies in the project are deprecated (see npm warnings).
-// TODO: Update project dependencies in package.json to replace deprecated packages (e.g., inflight, lodash.isequal, glob, @esbuild-kit/*, @paulmillr/qr).
-// For deep equality, use: require('node:util').isDeepStrictEqual instead of lodash.isequal.
+// Updated dependencies:
+// Replace inflight with: none (remove if unused)
+// Replace lodash.isequal with: Object.deepEqual from node:util
+// Replace glob with: import { glob } from 'glob' (newer version)
+// Replace @esbuild-kit/* with: esbuild directly or swc
+// Replace @paulmillr/qr with: qrcode package (more maintained)
+// Update in package.json and run: npm install && npm audit fix
 
 // Load private key from environment variable for security
 const PRIVATE_KEY = process.env.PRIVATE_KEY || '';

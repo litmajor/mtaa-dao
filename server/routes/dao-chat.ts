@@ -7,31 +7,70 @@ import { daoMessages, users, daos, messageReactions, messageAttachments } from '
 import { eq, desc, and, like, inArray, sql } from 'drizzle-orm';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
 
 const router = Router();
 
-// File upload configuration
+// File upload configuration with enhanced validation
 const storage = multer.diskStorage({
-  destination: 'uploads/',
+  destination: (req, file, cb) => {
+    // Create uploads directory if it doesn't exist
+    const uploadDir = 'uploads/';
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(sanitizedName));
   }
 });
 
+// Enhanced file filter with security checks
+const fileFilter = (req: any, file: any, cb: any) => {
+  // Allowed MIME types
+  const allowedMimes = {
+    'image/jpeg': ['.jpg', '.jpeg'],
+    'image/png': ['.png'],
+    'image/gif': ['.gif'],
+    'image/webp': ['.webp'],
+    'application/pdf': ['.pdf'],
+    'application/msword': ['.doc'],
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+    'application/vnd.ms-excel': ['.xls'],
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+    'text/plain': ['.txt'],
+    'text/csv': ['.csv'],
+  };
+
+  const ext = path.extname(file.originalname).toLowerCase();
+  const mimeType = file.mimetype.toLowerCase();
+
+  // Check if MIME type is allowed
+  const isAllowedMime = mimeType in allowedMimes;
+  const isValidExt = isAllowedMime && (allowedMimes as any)[mimeType].includes(ext);
+
+  if (!isAllowedMime || !isValidExt) {
+    return cb(new Error(`Invalid file type. Allowed types: ${Object.keys(allowedMimes).join(', ')}`));
+  }
+
+  // Check file extension doesn't contain executable extensions
+  const dangerousExts = ['.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar', '.zip', '.rar', '.7z'];
+  if (dangerousExts.includes(ext.toLowerCase())) {
+    return cb(new Error('Executable files are not allowed'));
+  }
+
+  cb(null, true);
+};
+
 const upload = multer({ 
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx|txt/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
-    
-    if (mimetype && extname) {
-      return cb(null, true);
-    } else {
-      cb(new Error('Invalid file type'));
-    }
+  fileFilter,
+  limits: { 
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+    files: 1 // Only allow single file upload
   }
 });
 
@@ -167,28 +206,82 @@ router.post('/dao/:daoId/messages', async (req, res) => {
   }
 });
 
-// File upload endpoint
+// File upload endpoint with enhanced validation and database persistence
 router.post('/dao/:daoId/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
+
+    const { daoId } = req.params;
+    const userId = req.user?.claims?.sub;
     
-    const fileData = {
-      fileName: req.file.originalname,
-      fileSize: req.file.size,
-      fileType: req.file.mimetype,
-      url: `/uploads/${req.file.filename}`
-    };
-    
-    res.json(fileData);
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Verify DAO membership (optional - if needed for access control)
+    // const daoMember = await db.select().from(daos).where(eq(daos.id, daoId)).limit(1);
+    // if (!daoMember.length) {
+    //   return res.status(403).json({ error: 'Access denied: Not a member of this DAO' });
+    // }
+
+    // Validate file wasn't modified by middleware
+    if (!req.file.mimetype || !req.file.size || req.file.size === 0) {
+      return res.status(400).json({ error: 'Invalid file data' });
+    }
+
+    // Additional size check (backup to multer limit)
+    if (req.file.size > 10 * 1024 * 1024) {
+      return res.status(413).json({ error: 'File exceeds maximum size of 10MB' });
+    }
+
+    // Store attachment metadata in database
+    const [attachment] = await db
+      .insert(messageAttachments)
+      .values({
+        messageId: null, // Will be linked when message is created
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        fileType: req.file.mimetype,
+        filePath: `/uploads/${req.file.filename}`,
+        uploadedBy: userId,
+      })
+      .returning();
+
+    logger.info(`File uploaded: ${req.file.originalname} (${req.file.size} bytes) by user ${userId}`);
+
+    res.json({
+      success: true,
+      file: {
+        id: attachment.id,
+        name: attachment.fileName,
+        size: attachment.fileSize,
+        type: attachment.fileType,
+        url: attachment.filePath,
+        uploadedAt: attachment.uploadedAt,
+      },
+    });
   } catch (error) {
-    console.error('Error uploading file:', error);
+    // Handle multer-specific errors
+    if (error instanceof Error) {
+      if (error.message.includes('LIMIT_FILE_SIZE')) {
+        return res.status(413).json({ error: 'File exceeds maximum size of 10MB' });
+      }
+      if (error.message.includes('LIMIT_FILE_COUNT')) {
+        return res.status(400).json({ error: 'Only one file can be uploaded at a time' });
+      }
+      if (error.message.includes('Invalid file type') || error.message.includes('Executable')) {
+        return res.status(400).json({ error: error.message });
+      }
+    }
+    
+    logger.error('Error uploading file:', error);
     res.status(500).json({ error: 'Failed to upload file' });
   }
 });
 
-// Add/Toggle reaction to message
+// Add/Toggle reaction to message (POST - adds or removes reaction)
 router.post('/messages/:messageId/reactions', async (req, res) => {
   try {
     const { messageId } = req.params;
@@ -199,8 +292,19 @@ router.post('/messages/:messageId/reactions', async (req, res) => {
       return res.status(401).json({ error: 'Authentication required' });
     }
     
-    if (!emoji || typeof emoji !== 'string') {
-      return res.status(400).json({ error: 'Emoji is required' });
+    if (!emoji || typeof emoji !== 'string' || emoji.trim().length === 0) {
+      return res.status(400).json({ error: 'Valid emoji is required' });
+    }
+
+    // Validate message exists
+    const message = await db
+      .select({ id: daoMessages.id })
+      .from(daoMessages)
+      .where(eq(daoMessages.id, messageId))
+      .limit(1);
+
+    if (!message.length) {
+      return res.status(404).json({ error: 'Message not found' });
     }
     
     // Check if user already reacted with this emoji
@@ -222,7 +326,14 @@ router.post('/messages/:messageId/reactions', async (req, res) => {
         .delete(messageReactions)
         .where(eq(messageReactions.id, existingReaction[0].id));
       
-      res.json({ success: true, action: 'removed', emoji });
+      logger.info(`User ${userId} removed reaction ${emoji} from message ${messageId}`);
+      
+      res.json({ 
+        success: true, 
+        action: 'removed', 
+        emoji,
+        message: 'Reaction removed'
+      });
     } else {
       // Add reaction
       const [newReaction] = await db
@@ -234,37 +345,67 @@ router.post('/messages/:messageId/reactions', async (req, res) => {
         })
         .returning();
       
-      res.json({ success: true, action: 'added', emoji, reaction: newReaction });
+      logger.info(`User ${userId} added reaction ${emoji} to message ${messageId}`);
+      
+      res.json({ 
+        success: true, 
+        action: 'added', 
+        emoji,
+        reactionId: newReaction.id,
+        message: 'Reaction added'
+      });
     }
   } catch (error) {
-    console.error('Error toggling reaction:', error);
+    logger.error('Error toggling reaction:', error);
     res.status(500).json({ error: 'Failed to toggle reaction' });
   }
 });
 
-// Remove reaction from message
+// Remove reaction from message (DELETE - explicit removal)
 router.delete('/messages/:messageId/reactions/:emoji', async (req, res) => {
   try {
-    const { messageId, emoji } = req.params;
+    const { messageId, emoji: encodedEmoji } = req.params;
     const userId = req.user?.claims?.sub;
     
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    
-    await db
-      .delete(messageReactions)
+
+    const emoji = decodeURIComponent(encodedEmoji);
+
+    if (!emoji || emoji.trim().length === 0) {
+      return res.status(400).json({ error: 'Valid emoji is required' });
+    }
+
+    // Find and delete the reaction
+    const reaction = await db
+      .select()
+      .from(messageReactions)
       .where(
         and(
           eq(messageReactions.messageId, messageId),
           eq(messageReactions.userId, userId),
-          eq(messageReactions.emoji, decodeURIComponent(emoji))
+          eq(messageReactions.emoji, emoji)
         )
-      );
+      )
+      .limit(1);
+
+    if (!reaction.length) {
+      return res.status(404).json({ error: 'Reaction not found' });
+    }
+
+    await db
+      .delete(messageReactions)
+      .where(eq(messageReactions.id, reaction[0].id));
+
+    logger.info(`User ${userId} deleted reaction ${emoji} from message ${messageId}`);
     
-    res.json({ success: true });
+    res.json({ 
+      success: true,
+      message: 'Reaction removed'
+    });
   } catch (error) {
-    console.error('Error removing reaction:', error);
+    logger.error('Error removing reaction:', error);
     res.status(500).json({ error: 'Failed to remove reaction' });
   }
 });
@@ -391,6 +532,52 @@ router.get('/dao/:daoId/presence', async (req, res) => {
   } catch (error) {
     logger.error('Error fetching presence:', error);
     res.status(500).json({ error: 'Failed to fetch presence' });
+  }
+});
+
+// Delete attachment
+router.delete('/attachments/:attachmentId', async (req, res) => {
+  try {
+    const { attachmentId } = req.params;
+    const userId = req.user?.claims?.sub;
+    
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Get attachment to check ownership
+    const attachment = await db
+      .select()
+      .from(messageAttachments)
+      .where(eq(messageAttachments.id, attachmentId))
+      .limit(1);
+
+    if (!attachment.length) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+
+    // Only allow deletion by uploader or admin
+    if (attachment[0].uploadedBy !== userId) {
+      return res.status(403).json({ error: 'Not authorized to delete this attachment' });
+    }
+
+    // Delete file from disk
+    const filePath = path.join('uploads/', attachment[0].fileName);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    // Delete database record
+    await db
+      .delete(messageAttachments)
+      .where(eq(messageAttachments.id, attachmentId));
+
+    logger.info(`Attachment ${attachmentId} deleted by user ${userId}`);
+
+    res.json({ success: true, message: 'Attachment deleted' });
+  } catch (error) {
+    logger.error('Error deleting attachment:', error);
+    res.status(500).json({ error: 'Failed to delete attachment' });
   }
 });
 

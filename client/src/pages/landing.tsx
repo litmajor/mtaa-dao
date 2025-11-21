@@ -15,8 +15,8 @@ export default function MtaaDAOLanding() {
   const [scrollY, setScrollY] = useState(0);
   const [platformStats, setPlatformStats] = useState({
     members: '2K+',
-    daos: '500+',
-    tvl: '$300K+',
+    daos: '150',
+    tvl: '$100K+',
     satisfaction: '85%+'
   });
 
@@ -37,7 +37,7 @@ export default function MtaaDAOLanding() {
     },
     {
       icon: TrendingUp,
-      title: "Smart Vaults",
+      title: "Smart Vaults/Group investments",
       description: "Professional DeFi management. Earn 8-15% APY on your savings.",
       gradient: "from-green-400 to-emerald-500",
       path: "/vault"
@@ -305,7 +305,7 @@ export default function MtaaDAOLanding() {
               <div className="text-center">
                 <div className="text-4xl mb-2">🤝</div>
                 <div className="text-white font-bold mb-1">3. Collaborate</div>
-                <div className="text-purple-200 text-sm">Join or create DAOs. Pool resources.</div>
+                <div className="text-purple-200 text-sm">Join or create DAO. Pool resources.</div>
               </div>
               <div className="text-center">
                 <div className="text-4xl mb-2">🎯</div>
@@ -516,7 +516,7 @@ export default function MtaaDAOLanding() {
             Free to start. No hidden fees.
           </p>
           <p className="text-lg text-white/80 mb-10">
-            Join 2,000+ groups already growing their money
+            Join 500+ groups already growing their money
           </p>
           <a href="/register">
             <Button

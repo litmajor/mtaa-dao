@@ -120,6 +120,64 @@ export const corsConfig = {
   credentials: true,
 };
 
+// ========================================
+// FEATURE FLAGS FOR PROGRESSIVE RELEASES
+// ========================================
+// These control which features are visible to users
+// Update via .env.phases file during each phase release
+
+export const featureFlags = {
+  // ========================================
+  // PHASE 1: CORE PLATFORM (Dec 1 - Jan 15)
+  // ========================================
+  daos: process.env.FEATURE_DAOS === "true",
+  governance: process.env.FEATURE_GOVERNANCE === "true",
+  treasury: process.env.FEATURE_TREASURY === "true",
+  members: process.env.FEATURE_MEMBERS === "true",
+  proposals: process.env.FEATURE_PROPOSALS === "true",
+  voting: process.env.FEATURE_VOTING === "true",
+  wallet: process.env.FEATURE_WALLET === "true",
+  tasks: process.env.FEATURE_TASKS === "true",
+  referrals: process.env.FEATURE_REFERRALS === "true",
+
+  // ========================================
+  // PHASE 2: CAPITAL FEATURES (Jan 15 - Mar 1)
+  // ========================================
+  lockedSavings: process.env.FEATURE_LOCKED_SAVINGS === "true",
+  investmentPools: process.env.FEATURE_INVESTMENT_POOLS === "true",
+  vaultYield: process.env.FEATURE_VAULT_YIELD === "true",
+
+  // ========================================
+  // PHASE 3: AI & ANALYTICS (Mar 1 - Apr 15)
+  // ========================================
+  aiAssistant: process.env.FEATURE_AI_ASSISTANT === "true",
+  analytics: process.env.FEATURE_ADVANCED_ANALYTICS === "true",
+  predictions: process.env.FEATURE_PREDICTIONS === "true",
+
+  // ========================================
+  // PHASE 4: GOVERNANCE EVOLUTION (Apr 15 - Jun 1)
+  // ========================================
+  elderCouncil: process.env.FEATURE_ELDER_COUNCIL === "true",
+  escrow: process.env.FEATURE_ESCROW === "true",
+
+  // ========================================
+  // PHASE 5: MULTI-CHAIN & SCALE (Jun 1 - Aug 1)
+  // ========================================
+  multiChain: process.env.FEATURE_MULTI_CHAIN === "true",
+  crossChain: process.env.FEATURE_CROSS_CHAIN === "true",
+
+  // ========================================
+  // FUTURE FEATURES
+  // ========================================
+  nftMarketplace: process.env.FEATURE_NFT_MARKETPLACE === "true",
+  advancedGovernance: process.env.FEATURE_ADVANCED_GOVERNANCE === "true",
+  defiIntegration: process.env.FEATURE_DeFi_INTEGRATION === "true",
+};
+
+// Beta testing flag
+export const betaAccessEnabled = process.env.ENABLE_BETA_ACCESS === "true";
+export const betaTesterGroup = process.env.BETA_TESTER_GROUP || "dev";
+
 export const config = {
   // Server Configuration
   PORT: process.env.PORT || 5000,

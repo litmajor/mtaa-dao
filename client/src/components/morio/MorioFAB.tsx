@@ -38,6 +38,11 @@ export function MorioFAB({ userId, daoId, showOnboarding = false, variant = 'ful
   // Fetch system health for real-time status
   const { data: health } = useQuery<SystemHealth>({
     queryKey: ['/api/morio/health'],
+    queryFn: async () => {
+      const res = await fetch('/api/morio/health');
+      if (!res.ok) throw new Error('Failed to fetch health');
+      return res.json();
+    },
     refetchInterval: 10000
   });
 
@@ -91,6 +96,8 @@ export function MorioFAB({ userId, daoId, showOnboarding = false, variant = 'ful
               </div>
               <button
                 onClick={() => setShowWelcome(false)}
+                title="Close welcome message"
+                aria-label="Close welcome message"
                 className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
               >
                 <X className="w-4 h-4" />

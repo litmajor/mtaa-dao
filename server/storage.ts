@@ -1262,43 +1262,317 @@ export const getDaoAnalytics = (daoId: string) => storage.getDaoAnalytics(daoId)
 
 // Export the storage instance for use in other modules
 
-// --- Proposal Comments & Likes Stubs ---
-// --- DAO Message Stubs ---
-export async function createDaoMessage(message: any): Promise<any> {
-  throw new Error('createDaoMessage not implemented');
+// --- Proposal Comments & Likes Implementation ---
+
+/**
+ * Create a new comment on a proposal
+ */
+export async function createProposalComment(comment: InsertProposalComment): Promise<ProposalComment> {
+  const [result] = await db.insert(proposalComments).values({
+    ...comment,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }).returning();
+  
+  if (!result) {
+    throw new Error('Failed to create proposal comment');
+  }
+  
+  return result;
 }
-export async function getDaoMessages(daoId: string): Promise<any[]> {
-  throw new Error('getDaoMessages not implemented');
+
+/**
+ * Get all comments for a specific proposal (with pagination)
+ */
+export async function getProposalComments(
+  proposalId: string,
+  limit: number = 50,
+  offset: number = 0
+): Promise<ProposalComment[]> {
+  const comments = await db
+    .select()
+    .from(proposalComments)
+    .where(eq(proposalComments.proposalId, proposalId as any))
+    .orderBy(desc(proposalComments.createdAt))
+    .limit(limit)
+    .offset(offset);
+  
+  return comments;
 }
-export async function updateDaoMessage(messageId: string, data: any): Promise<any> {
-  throw new Error('updateDaoMessage not implemented');
+
+/**
+ * Update a proposal comment (only content and edited flag)
+ */
+export async function updateProposalComment(
+  commentId: string,
+  data: { content: string }
+): Promise<ProposalComment> {
+  const [result] = await db
+    .update(proposalComments)
+    .set({
+      content: data.content,
+      isEdited: true,
+      updatedAt: new Date(),
+    })
+    .where(eq(proposalComments.id, commentId as any))
+    .returning();
+  
+  if (!result) {
+    throw new Error('Proposal comment not found');
+  }
+  
+  return result;
 }
-export async function deleteDaoMessage(messageId: string): Promise<any> {
-  throw new Error('deleteDaoMessage not implemented');
+
+/**
+ * Delete a proposal comment
+ */
+export async function deleteProposalComment(commentId: string): Promise<boolean> {
+  const result = await db
+    .delete(proposalComments)
+    .where(eq(proposalComments.id, commentId as any));
+  
+  return (result.rowCount ?? 0) > 0;
 }
-export async function createProposalComment(comment: any): Promise<any> {
-  throw new Error('createProposalComment not implemented');
+
+/**
+ * Toggle a like on a proposal (add or remove)
+ */
+export async function toggleProposalLike(
+  proposalId: string,
+  userId: string,
+  daoId?: string
+): Promise<{ liked: boolean; likesCount: number }> {
+  // Check if like already exists
+  const [existingLike] = await db
+    .select()
+    .from(proposalLikes)
+    .where(
+      and(
+        eq(proposalLikes.proposalId, proposalId as any),
+        eq(proposalLikes.userId, userId)
+      )
+    );
+  
+  if (existingLike) {
+    // Remove the like
+    await db
+      .delete(proposalLikes)
+      .where(eq(proposalLikes.id, existingLike.id));
+    
+    // Get updated count
+    const [countResult] = await db
+      .select({ count: sql`count(*)` })
+      .from(proposalLikes)
+      .where(eq(proposalLikes.proposalId, proposalId as any));
+    
+    const likesCount = Number(countResult?.count ?? 0);
+    return { liked: false, likesCount };
+  } else {
+    // Add the like
+    const [tempDao] = await db.select().from(daos).limit(1);
+    const effectiveDaoId = daoId || (tempDao?.id as string);
+    
+    await db.insert(proposalLikes).values({
+      proposalId: proposalId as any,
+      userId,
+      daoId: effectiveDaoId as any,
+      createdAt: new Date(),
+    } as any);
+    
+    // Get updated count
+    const [countResult] = await db
+      .select({ count: sql`count(*)` })
+      .from(proposalLikes)
+      .where(eq(proposalLikes.proposalId, proposalId as any));
+    
+    const likesCount = Number(countResult?.count ?? 0);
+    return { liked: true, likesCount };
+  }
 }
-export async function getProposalComments(proposalId: string): Promise<any[]> {
-  throw new Error('getProposalComments not implemented');
+
+/**
+ * Get all likes for a proposal
+ */
+export async function getProposalLikes(proposalId: string): Promise<ProposalLike[]> {
+  const likes = await db
+    .select()
+    .from(proposalLikes)
+    .where(eq(proposalLikes.proposalId, proposalId as any))
+    .orderBy(desc(proposalLikes.createdAt));
+  
+  return likes;
 }
-export async function updateProposalComment(commentId: string, data: any): Promise<any> {
-  throw new Error('updateProposalComment not implemented');
+
+/**
+ * Toggle a like on a comment (add or remove)
+ */
+export async function toggleCommentLike(
+  commentId: string,
+  userId: string,
+  daoId?: string
+): Promise<{ liked: boolean; likesCount: number }> {
+  // Check if like already exists
+  const [existingLike] = await db
+    .select()
+    .from(commentLikes)
+    .where(
+      and(
+        eq(commentLikes.commentId, commentId as any),
+        eq(commentLikes.userId, userId)
+      )
+    );
+  
+  if (existingLike) {
+    // Remove the like
+    await db
+      .delete(commentLikes)
+      .where(eq(commentLikes.id, existingLike.id));
+    
+    // Get updated count
+    const [countResult] = await db
+      .select({ count: sql`count(*)` })
+      .from(commentLikes)
+      .where(eq(commentLikes.commentId, commentId as any));
+    
+    const likesCount = Number(countResult?.count ?? 0);
+    
+    // Update comment's denormalized count
+    await db
+      .update(proposalComments)
+      .set({ likesCount })
+      .where(eq(proposalComments.id, commentId as any));
+    
+    return { liked: false, likesCount };
+  } else {
+    // Add the like
+    const [tempDao] = await db.select().from(daos).limit(1);
+    const effectiveDaoId = daoId || (tempDao?.id as string);
+    
+    await db.insert(commentLikes).values({
+      commentId: commentId as any,
+      userId,
+      daoId: effectiveDaoId as any,
+      createdAt: new Date(),
+    } as any);
+    
+    // Get updated count
+    const [countResult] = await db
+      .select({ count: sql`count(*)` })
+      .from(commentLikes)
+      .where(eq(commentLikes.commentId, commentId as any));
+    
+    const likesCount = Number(countResult?.count ?? 0);
+    
+    // Update comment's denormalized count
+    await db
+      .update(proposalComments)
+      .set({ likesCount })
+      .where(eq(proposalComments.id, commentId as any));
+    
+    return { liked: true, likesCount };
+  }
 }
-export async function deleteProposalComment(commentId: string): Promise<any> {
-  throw new Error('deleteProposalComment not implemented');
+
+/**
+ * Get all likes for a comment
+ */
+export async function getCommentLikes(commentId: string): Promise<CommentLike[]> {
+  const likes = await db
+    .select()
+    .from(commentLikes)
+    .where(eq(commentLikes.commentId, commentId as any))
+    .orderBy(desc(commentLikes.createdAt));
+  
+  return likes;
 }
-export async function toggleProposalLike(proposalId: string, userId: string): Promise<any> {
-  throw new Error('toggleProposalLike not implemented');
+
+// --- DAO Message Implementation ---
+
+/**
+ * Create a new DAO message
+ */
+export async function createDaoMessage(message: InsertDaoMessage): Promise<DaoMessage> {
+  const [result] = await db.insert(daoMessages).values({
+    ...message,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }).returning();
+  
+  if (!result) {
+    throw new Error('Failed to create DAO message');
+  }
+  
+  return result;
 }
-export async function getProposalLikes(proposalId: string): Promise<any[]> {
-  throw new Error('getProposalLikes not implemented');
+
+/**
+ * Get all messages for a DAO (with pagination and sorting)
+ */
+export async function getDaoMessages(
+  daoId: string,
+  limit: number = 100,
+  offset: number = 0
+): Promise<DaoMessage[]> {
+  const messages = await db
+    .select()
+    .from(daoMessages)
+    .where(eq(daoMessages.daoId, daoId as any))
+    .orderBy(desc(daoMessages.createdAt))
+    .limit(limit)
+    .offset(offset);
+  
+  return messages;
 }
-export async function toggleCommentLike(commentId: string, userId: string): Promise<any> {
-  throw new Error('toggleCommentLike not implemented');
+
+/**
+ * Update a DAO message (content and pinning)
+ */
+export async function updateDaoMessage(
+  messageId: string,
+  data: { content?: string; isPinned?: boolean; pinnedBy?: string }
+): Promise<DaoMessage> {
+  const updateData: any = {
+    updatedAt: new Date(),
+  };
+  
+  if (data.content !== undefined) {
+    updateData.content = data.content;
+  }
+  
+  if (data.isPinned !== undefined) {
+    updateData.isPinned = data.isPinned;
+    if (data.isPinned) {
+      updateData.pinnedAt = new Date();
+      updateData.pinnedBy = data.pinnedBy;
+    } else {
+      updateData.pinnedAt = null;
+      updateData.pinnedBy = null;
+    }
+  }
+  
+  const [result] = await db
+    .update(daoMessages)
+    .set(updateData)
+    .where(eq(daoMessages.id, messageId as any))
+    .returning();
+  
+  if (!result) {
+    throw new Error('DAO message not found');
+  }
+  
+  return result;
 }
-export async function getCommentLikes(commentId: string): Promise<any[]> {
-  throw new Error('getCommentLikes not implemented');
+
+/**
+ * Delete a DAO message
+ */
+export async function deleteDaoMessage(messageId: string): Promise<boolean> {
+  const result = await db
+    .delete(daoMessages)
+    .where(eq(daoMessages.id, messageId as any));
+  
+  return (result.rowCount ?? 0) > 0;
 }
 
 export default storage;

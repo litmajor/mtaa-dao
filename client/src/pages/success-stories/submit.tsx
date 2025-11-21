@@ -7,13 +7,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Upload, TrendingUp, Users, DollarSign, Calendar, CheckCircle } from 'lucide-react';
-import { useUser } from '@/hooks/useUser';
+import { useAuth } from '@/pages/hooks/useAuth';
 import { useMutation } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { useLocation } from 'wouter';
 
 export default function SubmitSuccessStory() {
-  const { user } = useUser();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [formData, setFormData] = useState({

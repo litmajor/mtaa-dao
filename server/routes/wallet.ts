@@ -1693,12 +1693,37 @@ router.get('/receipts/:id/download', async (req, res) => {
       return res.status(404).json({ error: 'Receipt not found' });
     }
 
-    // Generate PDF (placeholder - implement with pdfkit or similar)
+    // Implement actual PDF generation
+    const PDFDocument = require('pdfkit');
+    const doc = new PDFDocument();
+    
+    // Set response headers
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=receipt-${receipt.receiptNumber}.pdf`);
-
-    // TODO: Implement actual PDF generation
-    res.send('PDF generation coming soon');
+    
+    // Pipe to response
+    doc.pipe(res);
+    
+    // Add content
+    doc.fontSize(20).text(`MTAA Receipt #${receipt.receiptNumber}`, 100, 100);
+    doc.fontSize(12).text(`Date: ${new Date().toLocaleDateString()}`, 100, 150);
+    doc.text(`Amount: $${receipt.amount}`, 100, 180);
+    doc.text(`Status: ${receipt.status}`, 100, 210);
+    doc.text(`Transaction Hash: ${receipt.transactionHash}`, 100, 240);
+    
+    // Add line items if available
+    let y = 300;
+    if (receipt.items?.length) {
+      doc.fontSize(14).text('Items:', 100, y);
+      y += 30;
+      receipt.items.forEach((item: any) => {
+        doc.fontSize(11).text(`- ${item.description}: $${item.amount}`, 120, y);
+        y += 20;
+      });
+    }
+    
+    doc.fontSize(10).text('Thank you for your transaction!', 100, y + 30);
+    doc.end();
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: errorMsg });

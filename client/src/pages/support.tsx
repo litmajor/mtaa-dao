@@ -8,16 +8,16 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { MessageCircle, Mail, Phone, Clock, CheckCircle, Sparkles } from 'lucide-react';
 import { MorioChat } from '@/components/morio/MorioChat';
-import { useUser } from '@/hooks/useUser';
+import { useAuth } from '@/pages/hooks/useAuth';
 import { useMutation } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 
 export default function SupportPage() {
-  const { user } = useUser();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [showMorio, setShowMorio] = useState(false);
   const [formData, setFormData] = useState({
-    name: user?.username || '',
+    name: user?.name || user?.username || '',
     email: user?.email || '',
     category: 'general',
     priority: 'normal',

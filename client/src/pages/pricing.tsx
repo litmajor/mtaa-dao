@@ -2,7 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Check, Sparkles, Zap, Shield, Users } from "lucide-react";
-import { useNavigate } from "wouter";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/auth-context";
 
 const plans = [
@@ -54,7 +54,7 @@ const plans = [
 ];
 
 export default function PricingPage() {
-  const [_, navigate] = useNavigate();
+  const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
 
   const handleSelectPlan = (planName: string) => {
