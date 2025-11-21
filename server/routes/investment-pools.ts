@@ -307,7 +307,7 @@ router.post('/:id/withdraw', async (req, res) => {
     const withdrawalValue = shares * sharePriceAtWithdrawal;
 
     // Get user's initial investment for profit calculation
-    const totalInvested = userInvestments.reduce(
+    const userTotalInvested = userInvestments.reduce(
       (sum, inv) => sum + Number(inv.investmentAmountUsd),
       0
     );
@@ -315,7 +315,7 @@ router.post('/:id/withdraw', async (req, res) => {
       (sum, inv) => sum + Number(inv.sharesMinted),
       0
     );
-    const avgCostBasis = userSharesInvested > 0 ? totalInvested / userSharesInvested : 0;
+    const avgCostBasis = userSharesInvested > 0 ? userTotalInvested / userSharesInvested : 0;
     const initialInvestment = shares * avgCostBasis;
 
     // Calculate tiered fees
@@ -326,6 +326,7 @@ router.post('/:id/withdraw', async (req, res) => {
     );
 
     const netAmount = feeCalculation.netAmount;
+    const feeCharged = feeCalculation.totalFees;
 
     // Record withdrawal
     const [withdrawal] = await db
