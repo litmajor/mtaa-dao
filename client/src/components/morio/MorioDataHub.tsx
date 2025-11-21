@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/pages/hooks/useAuth';
 import { BarChart3, TrendingUp, AlertCircle, Info, Filter, Download, Eye, EyeOff } from 'lucide-react';
 
 interface DataPoint {

@@ -74,18 +74,88 @@ const CreateDAOFlow = () => {
   }, [walletAddress]);
 
   const [newMember, setNewMember] = useState({ address: '', role: 'member', name: '' });
+  const [selectedElders, setSelectedElders] = useState<string[]>([]); // NEW: Track elder selections
+
+  // DAO Type Options
+  const daoTypeOptions = [
+    {
+      id: 'shortTerm' as const,
+      label: 'Short-Term Fund',
+      icon: '⏱️',
+      duration: '3-6 months',
+      description: 'Quick rotating funds, burial support, harambee',
+      examples: ['Merry-go-round', 'Burial fund', 'Event contribution'],
+      requiresGovernance: false,
+      defaultTreasuryType: 'cusd'
+    },
+    {
+      id: 'collective' as const,
+      label: 'Collective / Savings Group',
+      icon: '🤝',
+      duration: 'Ongoing',
+      description: 'Regular savings, investment clubs, cooperatives',
+      examples: ['Savings group', 'Table banking', 'Traders coop'],
+      requiresGovernance: true,
+      defaultTreasuryType: 'cusd'
+    },
+    {
+      id: 'governance' as const,
+      label: 'Governance DAO',
+      icon: '🏛️',
+      duration: 'Ongoing',
+      description: 'Community leadership, major decisions',
+      examples: ['Community council', 'District leadership'],
+      requiresGovernance: true,
+      defaultTreasuryType: 'dual'
+    }
+  ];
 
   const steps = [
-    { id: 1, title: 'Basic Info', icon: Settings },
-    { id: 2, title: 'Governance', icon: Shield },
-    { id: 3, title: 'Treasury', icon: Wallet },
-    { id: 4, title: 'Members', icon: Users },
-    { id: 5, title: 'Preview', icon: Eye },
-    { id: 6, title: 'Success', icon: CheckCircle }
+    { id: 1, title: 'DAO Type', icon: Settings }, // NEW: Step 1
+    { id: 2, title: 'Basic Info', icon: Settings },
+    { id: 3, title: 'Select Elders', icon: Shield },
+    { id: 4, title: 'Governance', icon: Shield },
+    { id: 5, title: 'Treasury', icon: Wallet },
+    { id: 6, title: 'Members', icon: Users },
+    { id: 7, title: 'Preview', icon: Eye },
+    { id: 8, title: 'Success', icon: CheckCircle }
   ];
 
   const logoOptions = ['🏛️', '🌍', '🤝', '💎', '🚀', '⚡', '🌱', '🔥', '💰'];
   
+  // Dynamic categories based on DAO type
+  const getCategoriesForType = (type?: string) => {
+    const categoriesByType: Record<string, typeof categories> = {
+      shortTerm: [
+        { value: 'merry-go-round', label: 'Merry-Go-Round', emoji: '🎡', description: 'Rotating savings group' },
+        { value: 'harambee', label: 'Harambee Fund', emoji: '🙌', description: 'Community contribution event' },
+        { value: 'burial', label: 'Burial/Bereavement', emoji: '🕊️', description: 'Support in loss' },
+        { value: 'event', label: 'Event Fund', emoji: '🎉', description: 'Wedding, graduation, etc.' },
+        { value: 'emergency', label: 'Emergency Relief', emoji: '🆘', description: 'Quick response fund' },
+        { value: 'harvest', label: 'Harvest Pool', emoji: '🌾', description: 'Agricultural sharing' }
+      ],
+      collective: [
+        { value: 'savings', label: 'Savings Group', emoji: '💰', description: 'Regular savings with growth' },
+        { value: 'table-banking', label: 'Table Banking', emoji: '🏦', description: 'Microfinance circle' },
+        { value: 'investment', label: 'Investment Club', emoji: '📈', description: 'Pool for investments' },
+        { value: 'traders-coop', label: 'Traders Cooperative', emoji: '🛍️', description: 'Market vendors' },
+        { value: 'farmers-union', label: 'Farmers Union', emoji: '🚜', description: 'Agricultural collective' },
+        { value: 'labor-group', label: 'Labor Group', emoji: '👷', description: 'Communal work' }
+      ],
+      governance: [
+        { value: 'community-council', label: 'Community Council', emoji: '🏛️', description: 'Decision making body' },
+        { value: 'social-impact', label: 'Social Impact', emoji: '🌍', description: 'Community welfare' },
+        { value: 'education', label: 'Education Fund', emoji: '🎓', description: 'Scholarships and learning' },
+        { value: 'health', label: 'Health Initiative', emoji: '🏥', description: 'Community health' },
+        { value: 'environment', label: 'Environment Fund', emoji: '🌱', description: 'Environmental conservation' },
+        { value: 'youth', label: 'Youth Empowerment', emoji: '⚡', description: 'Youth development' }
+      ]
+    };
+    
+    // Default to collective if type not specified
+    return categoriesByType[type || 'collective'] || categoriesByType['collective'];
+  };
+
   const categories = [
     { value: 'savings', label: 'Savings Group', emoji: '💰', description: 'Regular savings and collective financial growth' },
     { value: 'chama', label: 'Chama', emoji: '🤝', description: 'Traditional community savings and investment group' },
@@ -143,6 +213,26 @@ const CreateDAOFlow = () => {
     { value: 'custom', label: 'Custom Stablecoin', desc: 'USDT, DAI or other tokens (coming soon)' }
   ];
 
+  // Dynamic treasury options based on DAO type
+  const getTreasuryOptionsForType = (type?: string) => {
+    const optionsByType: Record<string, typeof treasuryTypes> = {
+      shortTerm: [
+        { value: 'cusd', label: 'cUSD Vault', desc: 'Simple stable treasury in Celo Dollars' }
+      ],
+      collective: [
+        { value: 'cusd', label: 'cUSD Vault', desc: 'Stable treasury for regular savings' },
+        { value: 'dual', label: 'CELO + cUSD Dual', desc: 'Mixed treasury with growth potential' }
+      ],
+      governance: [
+        { value: 'cusd', label: 'cUSD Vault', desc: 'Stable treasury for governance funds' },
+        { value: 'dual', label: 'CELO + cUSD Dual', desc: 'Mixed treasury with growth potential' },
+        { value: 'custom', label: 'Custom Stablecoin', desc: 'USDT, DAI or other tokens (coming soon)' }
+      ]
+    };
+    
+    return optionsByType[type || 'collective'] || optionsByType['collective'];
+  };
+
   const roleTypes = ['member', 'moderator', 'treasurer', 'governor'];
 
   interface Member {
@@ -174,6 +264,8 @@ const CreateDAOFlow = () => {
     enableDiscovery: boolean;
     featuredMessage: string;
     deployedAddress?: string;
+    daoType?: 'shortTerm' | 'collective' | 'governance';
+    duration?: number;
   }
 
   interface NewMember {
@@ -230,16 +322,34 @@ const CreateDAOFlow = () => {
         return;
       }
 
+      // Extract invited members (exclude founder)
+      const invitedMembers = daoData.members
+        .filter(m => m.address !== walletAddress)
+        .map(m => m.address);
+
       const response = await fetch('/api/dao-deploy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...daoData, founderWallet: walletAddress, members: daoData.members })
+        body: JSON.stringify({
+          daoData: {
+            name: daoData.name,
+            description: daoData.description,
+            daoType: daoData.daoType,
+            category: daoData.category,
+            treasuryType: daoData.treasuryType,
+            durationDays: daoData.duration,
+            rotationFrequency: daoData.daoType === 'shortTerm' ? 'monthly' : undefined
+          },
+          founderWallet: walletAddress,
+          invitedMembers: invitedMembers,
+          selectedElders: selectedElders
+        })
       });
       
       const result = await response.json();
       if (response.ok && result.daoAddress) {
         setDaoData(prev => ({ ...prev, deployedAddress: result.daoAddress }));
-        setCurrentStep(6);
+        setCurrentStep(8);
       } else {
         throw new Error(result.error || 'Deployment failed');
       }
@@ -251,10 +361,44 @@ const CreateDAOFlow = () => {
   };
 
   const nextStep = () => {
-    if (currentStep < 6) setCurrentStep(currentStep + 1);
+    // Validate current step before proceeding
+    if (currentStep === 1) {
+      // DAO type validation
+      if (!daoData.daoType) {
+        alert('Please select a DAO type to continue');
+        return;
+      }
+    } else if (currentStep === 2) {
+      // Basic Info validation
+      if (!daoData.name.trim()) {
+        alert('Please enter a DAO name');
+        return;
+      }
+    } else if (currentStep === 3) {
+      // Elder selection validation
+      const minElders = 2;
+      const maxElders = 5;
+      if (selectedElders.length < minElders || selectedElders.length > maxElders) {
+        alert(`Please select ${minElders}-${maxElders} elders to continue`);
+        return;
+      }
+    }
+    
+    // For short-term DAOs, skip governance step
+    if (currentStep === 4 && daoData.daoType === 'shortTerm') {
+      setCurrentStep(5);  // Skip to Treasury
+      return;
+    }
+    
+    if (currentStep < 8) setCurrentStep(currentStep + 1);
   };
 
   const prevStep = () => {
+    // For short-term DAOs, skip governance step when going back
+    if (currentStep === 5 && daoData.daoType === 'shortTerm') {
+      setCurrentStep(3);  // Jump back to Elder Selection
+      return;
+    }
     if (currentStep > 1) setCurrentStep(currentStep - 1);
   };
 
@@ -269,7 +413,58 @@ const CreateDAOFlow = () => {
     </Tooltip>
   );
 
-  // Step 1 - Basic Info
+  // Step 1 - DAO Type Selection
+  const renderDaoTypeSelection = () => (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">What type of group is this?</h2>
+        <p className="text-gray-600 dark:text-gray-400">Choose the structure that best fits your community</p>
+      </div>
+
+      <div className="grid gap-4">
+        {daoTypeOptions.map(type => (
+          <Card
+            key={type.id}
+            className={`cursor-pointer transition-all ${
+              daoData.daoType === type.id
+                ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/30'
+                : 'hover:border-gray-300'
+            }`}
+            onClick={() => {
+              setDaoData(prev => ({
+                ...prev,
+                daoType: type.id,
+                treasuryType: type.defaultTreasuryType
+              }));
+            }}
+          >
+            <CardContent className="p-6">
+              <div className="flex gap-4">
+                <div className="text-4xl">{type.icon}</div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">{type.label}</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{type.description}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">⏱️ Duration: {type.duration}</p>
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {type.examples.map(ex => (
+                      <Badge key={ex} variant="outline" className="text-xs">
+                        {ex}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+                {daoData.daoType === type.id && (
+                  <CheckCircle className="w-6 h-6 text-teal-500 flex-shrink-0" />
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+
+  // Step 2 - Basic Info
   const renderBasicInfo = () => (
     <div className="space-y-6">
       <div>
@@ -330,7 +525,7 @@ const CreateDAOFlow = () => {
               <SelectValue placeholder="What type of DAO is this?" />
             </SelectTrigger>
             <SelectContent>
-              {categories.map(cat => (
+              {getCategoriesForType(daoData.daoType).map(cat => (
                 <SelectItem key={cat.value} value={cat.value}>
                   <div className="flex items-start gap-2">
                     <span>{cat.emoji}</span>
@@ -449,7 +644,127 @@ const CreateDAOFlow = () => {
     </div>
   );
 
-  // Step 2 - Governance
+  // Step 2 - Select Elders
+  const renderElderSelection = () => {
+    // Get members excluding founder for elder selection
+    const selectableMembers = daoData.members.filter(m => m.address !== walletAddress);
+    const minElders = daoData.category === 'short-term' ? 2 : 2;
+    const maxElders = daoData.category === 'short-term' ? 3 : 5;
+    const isElderValid = selectedElders.length >= minElders && selectedElders.length <= maxElders;
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Select Elders</h2>
+          <p className="text-gray-600 dark:text-gray-400">Choose 2-5 trusted members to be elders who can approve withdrawals and manage the DAO</p>
+        </div>
+
+        <Card className="bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800">
+          <CardContent className="pt-4">
+            <div className="flex items-start gap-3">
+              <Shield className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+              <div className="flex-1">
+                <h4 className="font-medium text-blue-900 dark:text-blue-100">What are Elders?</h4>
+                <ul className="text-sm text-blue-700 dark:text-blue-300 mt-2 space-y-1">
+                  <li>✓ Can approve fund withdrawals</li>
+                  <li>✓ Vote on important DAO decisions</li>
+                  <li>✓ Manage treasury access and permissions</li>
+                  <li>✓ Act as trusted custodians of the group</li>
+                </ul>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div>
+          <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
+              👤 You (founder) will automatically be an elder
+            </p>
+          </div>
+
+          <div className="mb-4">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Select Additional Elders</Label>
+              <Badge variant={isElderValid ? 'default' : 'destructive'} className="text-xs">
+                {selectedElders.length}/{minElders}-{maxElders}
+              </Badge>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Select {minElders}-{maxElders} members to be elders
+            </p>
+          </div>
+
+          {selectableMembers.length === 0 ? (
+            <Card className="bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-800">
+              <CardContent className="p-6">
+                <p className="text-center text-gray-500 dark:text-gray-400">
+                  No additional members to select. Please add members first in step 5.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              {selectableMembers.map((member) => (
+                <Card key={member.address} className="cursor-pointer hover:shadow-md transition-shadow"
+                  onClick={() => {
+                    if (selectedElders.includes(member.address)) {
+                      setSelectedElders(selectedElders.filter(a => a !== member.address));
+                    } else if (selectedElders.length < maxElders) {
+                      setSelectedElders([...selectedElders, member.address]);
+                    }
+                  }}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex-shrink-0">
+                        <input
+                          type="checkbox"
+                          title={`Select ${member.name || 'this member'} as elder`}
+                          checked={selectedElders.includes(member.address)}
+                          onChange={() => {}}
+                          disabled={!selectedElders.includes(member.address) && selectedElders.length >= maxElders}
+                          className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500 cursor-pointer"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-900 dark:text-white">{member.name || 'Anonymous'}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">{member.address}</p>
+                      </div>
+                      <div className="text-right">
+                        <Badge variant={member.role === 'governor' ? 'default' : 'secondary'} className="text-xs">
+                          {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
+                        </Badge>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {!isElderValid && selectableMembers.length > 0 && (
+          <Card className="bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800">
+            <CardContent className="pt-4">
+              <div className="flex items-start gap-3">
+                <Info className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5" />
+                <div>
+                  <p className="font-medium text-red-900 dark:text-red-100">
+                    Select {minElders}-{maxElders} elders to continue
+                  </p>
+                  <p className="text-sm text-red-700 dark:text-red-300 mt-1">
+                    Currently selected: {selectedElders.length}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    );
+  };
+
+  // Step 3 - Governance
   const renderGovernance = () => (
     <div className="space-y-6">
       <div>
@@ -578,6 +893,51 @@ const CreateDAOFlow = () => {
             ))}
           </div>
         </div>
+
+        {/* Duration selector for short-term DAOs */}
+        {daoData.daoType === 'shortTerm' && (
+          <div>
+            <div className="flex items-center mb-3">
+              <Label className="text-sm font-medium">Fund Duration</Label>
+              <InfoTooltip text="How long this fund will operate before completion" />
+            </div>
+            <div className="space-y-3">
+              {[
+                { value: 30, label: '30 Days', desc: 'Quick fund cycle - ideal for events or urgent needs' },
+                { value: 60, label: '60 Days', desc: 'Standard cycle - good for most short-term goals' },
+                { value: 90, label: '90 Days', desc: 'Extended cycle - time for participation and growth' }
+              ].map(option => (
+                <Card
+                  key={option.value}
+                  className={`cursor-pointer transition-all ${
+                    daoData.duration === option.value 
+                      ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/30' 
+                      : 'hover:border-gray-300'
+                  }`}
+                  onClick={() => updateDaoData('duration', option.value)}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-4 h-4 rounded-full border-2 ${
+                        daoData.duration === option.value 
+                          ? 'bg-teal-500 border-teal-500' 
+                          : 'border-gray-300'
+                      }`}>
+                        {daoData.duration === option.value && (
+                          <div className="w-2 h-2 rounded-full bg-white mx-auto mt-0.5"></div>
+                        )}
+                      </div>
+                      <div>
+                        <h3 className="font-medium">{option.label}</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{option.desc}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div>
           <div className="flex items-center">
@@ -758,44 +1118,93 @@ const CreateDAOFlow = () => {
               <div className="text-2xl">{daoData.logo}</div>
               <div>
                 <h3 className="font-semibold text-lg">{daoData.name || 'Unnamed DAO'}</h3>
-                <Badge variant="outline">
-                  {categories.find(c => c.value === daoData.category)?.label || 'No category'}
-                </Badge>
+                <div className="flex gap-2 flex-wrap">
+                  <Badge variant="outline">
+                    {daoTypeOptions.find(d => d.id === daoData.daoType)?.label || 'DAO'}
+                  </Badge>
+                  <Badge variant="outline">
+                    {getCategoriesForType(daoData.daoType).find(c => c.value === daoData.category)?.label || 'No category'}
+                  </Badge>
+                </div>
               </div>
             </div>
             <p className="text-gray-600 dark:text-gray-400">{daoData.description || 'No description provided'}</p>
           </CardContent>
         </Card>
 
+        {/* Treasury Section */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
-              <Shield className="w-5 h-5" />
-              Governance
+              <Wallet className="w-5 h-5" />
+              Treasury Configuration
             </CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => setCurrentStep(2)}>
+            <Button variant="ghost" size="sm" onClick={() => setCurrentStep(daoData.daoType === 'shortTerm' ? 5 : 5)}>
               Edit
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div>
-                <Label className="text-xs text-gray-500 dark:text-gray-400">MODEL</Label>
+                <Label className="text-xs text-gray-500 dark:text-gray-400">TREASURY TYPE</Label>
                 <p className="font-medium">
-                  {governanceModels.find(g => g.value === daoData.governanceModel)?.label}
+                  {getTreasuryOptionsForType(daoData.daoType).find(t => t.value === daoData.treasuryType)?.label || 'Not selected'}
+                </p>
+              </div>
+              {daoData.daoType === 'shortTerm' && (
+                <div>
+                  <Label className="text-xs text-gray-500 dark:text-gray-400">DURATION</Label>
+                  <p className="font-medium">{daoData.duration} days</p>
+                </div>
+              )}
+              <div>
+                <Label className="text-xs text-gray-500 dark:text-gray-400">INITIAL FUNDING</Label>
+                <p className="font-medium">
+                  {daoData.initialFunding && daoData.initialFunding > 0 
+                    ? `${daoData.initialFunding} ${daoData.treasuryType === 'cusd' ? 'cUSD' : daoData.treasuryType === 'dual' ? 'CELO' : 'USD'}`
+                    : 'None'}
                 </p>
               </div>
               <div>
-                <Label className="text-xs text-gray-500 dark:text-gray-400">QUORUM</Label>
-                <p className="font-medium">{daoData.quorum}%</p>
-              </div>
-              <div>
-                <Label className="text-xs text-gray-500 dark:text-gray-400">VOTING PERIOD</Label>
-                <p className="font-medium">{daoData.votingPeriod}</p>
+                <Label className="text-xs text-gray-500 dark:text-gray-400">MEMBER DEPOSITS</Label>
+                <p className="font-medium">{daoData.depositRequired ? 'Required' : 'Optional'}</p>
               </div>
             </div>
           </CardContent>
         </Card>
+
+        {/* Governance Section - only for non-shortTerm DAOs */}
+        {daoData.daoType !== 'shortTerm' && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="w-5 h-5" />
+                Governance
+              </CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setCurrentStep(4)}>
+                Edit
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div>
+                  <Label className="text-xs text-gray-500 dark:text-gray-400">MODEL</Label>
+                  <p className="font-medium">
+                    {governanceModels.find(g => g.value === daoData.governanceModel)?.label}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-500 dark:text-gray-400">QUORUM</Label>
+                  <p className="font-medium">{daoData.quorum}%</p>
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-500 dark:text-gray-400">VOTING PERIOD</Label>
+                  <p className="font-medium">{daoData.votingPeriod}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -803,7 +1212,7 @@ const CreateDAOFlow = () => {
               <Users className="w-5 h-5" />
               Members ({daoData.members.length})
             </CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => setCurrentStep(4)}>
+            <Button variant="ghost" size="sm" onClick={() => setCurrentStep(6)}>
               Edit
             </Button>
           </CardHeader>
@@ -924,13 +1333,15 @@ const CreateDAOFlow = () => {
 
   const renderStepContent = () => {
     switch (currentStep) {
-      case 1: return renderBasicInfo();
-      case 2: return renderGovernance();
-      case 3: return renderTreasury();
-      case 4: return renderMembers();
-      case 5: return renderPreview();
-      case 6: return renderSuccess();
-      default: return renderBasicInfo();
+      case 1: return renderDaoTypeSelection(); // NEW: DAO type step
+      case 2: return renderBasicInfo();
+      case 3: return renderElderSelection();
+      case 4: return renderGovernance();
+      case 5: return renderTreasury();
+      case 6: return renderMembers();
+      case 7: return renderPreview();
+      case 8: return renderSuccess();
+      default: return renderDaoTypeSelection();
     }
   };
 
@@ -981,7 +1392,7 @@ const CreateDAOFlow = () => {
           </CardContent>
         </Card>
 
-        {currentStep < 6 && (
+        {currentStep < 8 && (
           <div className="flex justify-between">
             <Button
               variant="outline"
@@ -993,13 +1404,16 @@ const CreateDAOFlow = () => {
               Back
             </Button>
 
-            {currentStep < 5 ? (
+            {currentStep < 7 ? (
               <Button
                 onClick={nextStep}
                 disabled={
-                  (currentStep === 1 && !daoData.name.trim()) ||
-                  (currentStep === 2 && daoData.quorum < MINIMUM_QUORUM) ||
-                  (currentStep === 3 && !daoData.treasuryType)
+                  (currentStep === 1 && !daoData.daoType) ||
+                  (currentStep === 2 && !daoData.name.trim()) ||
+                  (currentStep === 3 && selectedElders.length < 2) ||
+                  (currentStep === 4 && daoData.daoType !== 'shortTerm' && daoData.quorum < MINIMUM_QUORUM) ||
+                  (currentStep === 5 && !daoData.treasuryType) ||
+                  (currentStep === 6 && daoData.members.length < 2)
                 }
                 className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700"
               >

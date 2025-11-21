@@ -13,6 +13,7 @@ export default function MtaaDAOLogin() {
   const [emailOrPhone, setEmailOrPhone] = useState('');
   const [loginType, setLoginType] = useState<'email' | 'phone' | null>(null);
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [remainingAttempts, setRemainingAttempts] = useState<number | null>(null);
   const [lockedUntil, setLockedUntil] = useState<string | null>(null);
@@ -23,6 +24,13 @@ export default function MtaaDAOLogin() {
 
   useEffect(() => {
     setIsVisible(true);
+    
+    // Load remembered email if exists
+    const rememberedEmail = localStorage.getItem('mtaa_remembered_email');
+    if (rememberedEmail) {
+      setEmailOrPhone(rememberedEmail);
+      setRememberMe(true);
+    }
     
     const handleMouseMove = (e: MouseEvent) => {
       setMousePosition({ x: e.clientX, y: e.clientY });
@@ -107,6 +115,13 @@ export default function MtaaDAOLogin() {
         // Store user data in localStorage
         localStorage.setItem('user', JSON.stringify(data.data.user));
         localStorage.setItem('accessToken', data.data.accessToken);
+        
+        // Handle remember me
+        if (rememberMe) {
+          localStorage.setItem('mtaa_remembered_email', emailOrPhone);
+        } else {
+          localStorage.removeItem('mtaa_remembered_email');
+        }
         
         // Redirect to dashboard - use replace to avoid back button issues
         console.log('[LOGIN] Redirecting to dashboard...');
@@ -264,7 +279,7 @@ export default function MtaaDAOLogin() {
                   />
                   <button
                     type="button"
-                    className="absolute right-3 top-3.5 text-slate-500 hover:text-slate-400 transition-colors z-10"
+                    className="absolute right-3 top-3.5 text-slate-500 hover:text-slate-400 transition-colors z-10 flex items-center"
                     onClick={() => setShowPassword(!showPassword)}
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -278,10 +293,12 @@ export default function MtaaDAOLogin() {
                   <input
                     type="checkbox"
                     className="mr-2 w-3.5 h-3.5 text-orange-500 bg-slate-800 border border-slate-700 rounded focus:ring-orange-500 focus:ring-1 transition-all"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
                   />
                   <span>Remember me</span>
                 </label>
-                <a href="/forgot-password" className="text-orange-500 hover:text-orange-400 font-semibold transition-colors">Forgot?</a>
+                <a href="/forgot-password" className="text-orange-500 hover:text-orange-400 font-semibold transition-colors">Forgot Password?</a>
               </div>
 
               {/* Submit Button */}

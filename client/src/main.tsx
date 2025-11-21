@@ -7,6 +7,7 @@ import { ToastProvider } from "./components/ui/ToastProvider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HelmetProvider } from "react-helmet-async";
 import AppLoading from "./components/ui/app-loading";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,16 +22,24 @@ const queryClient = new QueryClient({
 
 const root = document.getElementById("root");
 
+console.log('Root element:', root);
+
 if (root) {
+  console.log('Creating React root');
   createRoot(root).render(
-    <HelmetProvider>
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <ToastProvider>
-            <App />
-          </ToastProvider>
-        </BrowserRouter>
-      </QueryClientProvider>
-    </HelmetProvider>
+    <ErrorBoundary>
+      <HelmetProvider>
+        <QueryClientProvider client={queryClient}>
+          <BrowserRouter>
+            <ToastProvider>
+              <App />
+            </ToastProvider>
+          </BrowserRouter>
+        </QueryClientProvider>
+      </HelmetProvider>
+    </ErrorBoundary>
   );
+  console.log('React app rendered');
+} else {
+  console.error('Root element not found');
 }

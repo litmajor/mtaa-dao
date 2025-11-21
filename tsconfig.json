@@ -18,6 +18,7 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
+    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "types": ["node", "vite/client", "jest", "@testing-library/jest-dom"],
     "paths": {

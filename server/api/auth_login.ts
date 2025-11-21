@@ -50,7 +50,38 @@ export async function authLoginHandler(req: Request, res: Response) {
     // Find user by email or phone
     console.log('[LOGIN] Looking up user...');
     const [user] = await db
-      .select()
+      .select({
+        id: users.id,
+        name: users.name,
+        username: users.username,
+        password: users.password,
+        email: users.email,
+        phone: users.phone,
+        emailVerified: users.emailVerified,
+        phoneVerified: users.phoneVerified,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        profileImageUrl: users.profileImageUrl,
+        referralCode: users.referralCode,
+        walletAddress: users.walletAddress,
+        bio: users.bio,
+        location: users.location,
+        website: users.website,
+        lastLoginAt: users.lastLoginAt,
+        reputationScore: users.reputationScore,
+        roles: users.roles,
+        totalContributions: users.totalContributions,
+        isBanned: users.isBanned,
+        banReason: users.banReason,
+        isSuperUser: users.isSuperUser,
+        darkMode: users.darkMode,
+        joinedAt: users.joinedAt,
+        createdAt: users.createdAt,
+        updatedAt: users.updatedAt,
+        isActive: users.isActive,
+        isEmailVerified: users.isEmailVerified,
+        isPhoneVerified: users.isPhoneVerified,
+      })
       .from(users)
       .where(
         email 

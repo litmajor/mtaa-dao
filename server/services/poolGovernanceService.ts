@@ -439,8 +439,55 @@ class PoolGovernanceService {
         case 'allocation_change':
           // Update asset allocations
           const newAllocations = JSON.parse(proposal.details as string);
-          // TODO: Implement allocation change logic
-          executionResult = { message: 'Allocation change executed (simulated)' };
+          // Implement allocation change logic
+          // 1. Validate allocations sum to 100%
+          const totalAllocation = Object.values(newAllocations as any).reduce((a: number, b: number) => a + b, 0);
+          if (Math.abs(totalAllocation - 100) > 0.01) {
+            throw new Error(`Allocations must sum to 100%, got ${totalAllocation}%`);
+          }
+          
+          // 2. Get current pool positions
+          const currentAllocations = await db.query(sql`
+            SELECT asset, allocation_percentage FROM pool_allocations
+            WHERE pool_id = ${proposal.poolId}
+          `);
+          
+          // 3. Calculate rebalance trades needed
+          const trades = this.calculateRebalanceTrades(currentAllocations, newAllocations);
+          
+          // 4. Execute trades in order of priority
+          for (const trade of trades) {
+            const dexResult = await this.dexIntegration.executeSwap({
+              fromAsset: trade.fromAsset,
+              toAsset: trade.toAsset,
+              amount: trade.amount,
+              dex: 'uniswap' // or routing strategy
+            });
+            executionResult.trades = executionResult.trades || [];
+            executionResult.trades.push(dexResult);
+          }
+          
+          // 5. Update pool_allocations table
+          await db.execute(sql`
+            UPDATE pool_allocations
+            SET allocation_percentage = CASE
+              ${sql.raw(Object.entries(newAllocations as any).map(([asset, pct]) => 
+                `WHEN asset = '${asset}' THEN ${pct}`
+              ).join(' '))}
+            END
+            WHERE pool_id = ${proposal.poolId}
+          `);
+          
+          // 6. Emit rebalance event
+          await this.emitEvent('pool_rebalanced', {
+            poolId: proposal.poolId,
+            trades,
+            newAllocations
+          });
+          
+          // 7. Update performance metrics
+          executionResult.rebalanceStatus = 'completed';
+          executionResult = { message: 'Allocation change executed (simulated)', allocations: newAllocations };
           break;
 
         case 'fee_change':

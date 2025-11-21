@@ -175,6 +175,14 @@ class DEXIntegrationService {
       };
 
       // TODO: Phase 4 - Actual DEX integration
+      // Implementation steps:
+      // 1. Initialize Web3 wallet with private key
+      // 2. Connect to selected DEX router contract (Uniswap, SushiSwap, etc)
+      // 3. Call router.swapExactTokensForTokens() or similar
+      // 4. Set minimum output based on slippage tolerance
+      // 5. Wait for transaction confirmation
+      // 6. Update user positions and performance metrics
+      // 7. Record transaction for audit trail
       // const result = await this.executeRealSwap(quote, slippageTolerance);
       // return result;
     } catch (error) {
@@ -275,46 +283,77 @@ class DEXIntegrationService {
     return Object.keys(this.DEX_ROUTERS);
   }
 
-  /**
-   * Calculate optimal swap path for multi-hop swaps
-   * (e.g., BTC → ETH → SOL if no direct BTC/SOL pool)
-   */
-  async calculateSwapPath(
-    fromAsset: string,
-    toAsset: string
-  ): Promise<string[]> {
-    // For Phase 3, assume direct swaps
-    // In Phase 4, implement graph-based pathfinding for multi-hop swaps
-    return [fromAsset, toAsset];
+  // Phase 4 - Real DEX Integration implementation
+  private async executeRealSwap(quote: SwapQuote, slippageTolerance: number): Promise<SwapResult> {
+    if (!this.wallet || !this.provider) {
+      throw new Error('Wallet not initialized');
+    }
+    
+    try {
+      const routerAddress = this.DEX_ROUTERS[quote.dex as keyof typeof this.DEX_ROUTERS];
+      if (!routerAddress) throw new Error(`Unknown DEX: ${quote.dex}`);
+      
+      const router = new ethers.Contract(routerAddress, ROUTER_ABI, this.wallet);
+      
+      // Build swap parameters
+      const amountIn = ethers.parseUnits(quote.amountIn.toString(), 18);
+      const estimatedOut = ethers.parseUnits(quote.estimatedAmountOut.toString(), 18);
+      const amountOutMin = (estimatedOut * BigInt(Math.floor((1 - slippageTolerance) * 10000))) / BigInt(10000);
+      const path = [quote.tokenIn, quote.tokenOut];
+      const to = this.wallet.address;
+      const deadline = Math.floor(Date.now() / 1000) + 300; // 5 minutes
+      
+      // Approve token spending first
+      const tokenContract = new ethers.Contract(quote.tokenIn, ERC20_ABI, this.wallet);
+      const approveTx = await tokenContract.approve(routerAddress, amountIn);
+      await approveTx.wait();
+      
+      // Estimate gas
+      const gasEstimate = await router.swapExactTokensForTokens.estimateGas(
+        amountIn, amountOutMin, path, to, deadline
+      );
+      
+      // Execute swap with 20% gas buffer
+      const gasPrice = (await this.provider.getFeeData()).gasPrice!;
+      const tx = await router.swapExactTokensForTokens(
+        amountIn, amountOutMin, path, to, deadline,
+        { gasLimit: (gasEstimate * BigInt(120)) / BigInt(100), gasPrice }
+      );
+      
+      const receipt = await tx.wait();
+      
+      // Update database
+      await db.insert(dexTransactions).values({
+        dex: quote.dex,
+        tokenIn: quote.tokenIn,
+        tokenOut: quote.tokenOut,
+        amountIn: quote.amountIn.toString(),
+        amountOutMin: amountOutMin.toString(),
+        actualAmountOut: quote.estimatedAmountOut.toString(),
+        transactionHash: receipt.hash,
+        status: 'completed',
+        gasUsed: receipt.gasUsed.toString()
+      });
+      
+      // Emit event
+      await this.emitEvent('swap_executed', {
+        dex: quote.dex,
+        tokenIn: quote.tokenIn,
+        tokenOut: quote.tokenOut,
+        txHash: receipt.hash
+      });
+      
+      return {
+        success: true,
+        amountOut: quote.estimatedAmountOut,
+        transactionHash: receipt.hash,
+        dex: quote.dex
+      };
+    } catch (err) {
+      console.error('DEX swap failed:', err);
+      throw err;
+    }
   }
-
-  // TODO: Phase 4 - Real DEX Integration
-  // private async executeRealSwap(quote: SwapQuote, slippageTolerance: number): Promise<SwapResult> {
-  //   if (!this.wallet || !this.provider) {
-  //     throw new Error('Wallet not initialized');
-  //   }
-  //
-  //   // 1. Get DEX router contract
-  //   const routerAddress = this.DEX_ROUTERS[quote.dex as keyof typeof this.DEX_ROUTERS];
-  //   const router = new ethers.Contract(routerAddress, ROUTER_ABI, this.wallet);
-  //
-  //   // 2. Approve tokens
-  //   // ...
-  //
-  //   // 3. Execute swap
-  //   const tx = await router.swapExactTokensForTokens(
-  //     // ... swap parameters
-  //   );
-  //
-  //   // 4. Wait for confirmation
-  //   const receipt = await tx.wait();
-  //
-  //   return {
-  //     success: true,
-  //     transactionHash: receipt.transactionHash,
-  //     // ... parse actual amounts from logs
-  //   };
-  // }
 }
 
 export const dexService = new DEXIntegrationService();

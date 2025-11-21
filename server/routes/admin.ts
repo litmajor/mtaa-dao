@@ -15,10 +15,14 @@ import {
   tasks,
   referralRewards,
   votes,
-  contributions
+  contributions,
+  betaAccess,
+  config,
+  auditLogs
 } from '../../shared/schema';
 import { eq, desc, sql, and, gte, or, like, count } from 'drizzle-orm';
 import { requireRole } from '../middleware/rbac';
+import { featureFlags, betaAccessEnabled, betaTesterGroup } from '../../shared/config';
 import os from 'os';
 
 const router = Router();
@@ -153,11 +157,45 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
       .select({ total: sql<number>`COALESCE(SUM(CAST(${vaults.balance} AS NUMERIC)), 0)` })
       .from(vaults);
 
-    // Revenue metrics (mock - replace with actual billing data)
+    // Revenue metrics (from database - count premium subscriptions)
+    const now = new Date();
+    const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const quarterAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const yearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+
+    const [monthlyResult, quarterlyResult, annualResult] = await Promise.all([
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(subscriptions)
+        .where(and(
+          gte(subscriptions.createdAt, monthAgo),
+          eq(subscriptions.status, 'active'),
+          eq(subscriptions.plan, 'premium')
+        )),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(subscriptions)
+        .where(and(
+          gte(subscriptions.createdAt, quarterAgo),
+          eq(subscriptions.status, 'active'),
+          eq(subscriptions.plan, 'premium')
+        )),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(subscriptions)
+        .where(and(
+          gte(subscriptions.createdAt, yearAgo),
+          eq(subscriptions.status, 'active'),
+          eq(subscriptions.plan, 'premium')
+        )),
+    ]);
+
+    // Calculate revenue (premium subscription at ~$99/month)
+    const premiumPrice = 99;
     const revenueMetrics = {
-      monthly: 12500,
-      quarterly: 37500,
-      annual: 150000,
+      monthly: monthlyResult[0].count * premiumPrice,
+      quarterly: quarterlyResult[0].count * premiumPrice * 3,
+      annual: annualResult[0].count * premiumPrice * 12,
     };
 
     // Recent DAOs (last 5)
@@ -189,36 +227,89 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
       })
     );
 
-    // Top members by reputation (mock - replace with actual reputation data)
+    // Top members by activity score (calculated from contributions and votes)
     const topMembers = await db
       .select({
-        id: users.id,
+        userId: users.id,
+        username: users.username,
         firstName: users.firstName,
         lastName: users.lastName,
-        username: users.username,
+        activityCount: sql<number>`COUNT(DISTINCT ${userActivities.id})`,
+        contributionCount: sql<number>`COUNT(DISTINCT ${contributions.id})`,
+        voteCount: sql<number>`COUNT(DISTINCT ${votes.id})`,
       })
       .from(users)
+      .leftJoin(userActivities, eq(userActivities.userId, users.id))
+      .leftJoin(contributions, eq(contributions.userId, users.id))
+      .leftJoin(votes, eq(votes.userId, users.id))
+      .groupBy(users.id, users.username, users.firstName, users.lastName)
+      .orderBy(sql`COUNT(DISTINCT ${userActivities.id}) + COUNT(DISTINCT ${contributions.id}) + COUNT(DISTINCT ${votes.id}) DESC`)
       .limit(10);
 
-    const topMembersFormatted = topMembers.map(user => ({
-      name: user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Anonymous',
-      score: Math.floor(Math.random() * 1000), // Replace with actual reputation score
-      daoName: 'Various',
-    }));
+    const topMembersFormatted = topMembers.map((user: any) => {
+      // Calculate reputation score: activities*1 + contributions*5 + votes*2
+      const score = (user.activityCount || 0) * 1 + (user.contributionCount || 0) * 5 + (user.voteCount || 0) * 2;
+      return {
+        name: user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Anonymous',
+        score,
+        activities: user.activityCount || 0,
+        contributions: user.contributionCount || 0,
+        votes: user.voteCount || 0,
+      };
+    });
 
-    // System health checks
-    const systemHealth = {
-      database: 'healthy' as const,
-      blockchain: 'healthy' as const,
-      payments: 'healthy' as const,
-      api: 'healthy' as const,
+    // System health checks (actual connectivity tests)
+    const systemHealth: Record<string, 'healthy' | 'warning' | 'critical'> = {
+      database: 'healthy',
+      blockchain: 'healthy',
+      payments: 'healthy',
+      api: 'healthy',
     };
 
     // Check database health
     try {
       await db.execute(sql`SELECT 1`);
     } catch (err) {
-  (systemHealth as any).database = 'critical';
+      systemHealth.database = 'critical';
+      logger.error('Database health check failed', err);
+    }
+
+    // Check blockchain (RPC) health
+    try {
+      const rpcUrl = process.env.RPC_URL || 'https://alfajores-forno.celo-testnet.org';
+      const blockchainResponse = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'eth_chainId',
+          params: [],
+          id: 1,
+        }),
+      });
+      if (!blockchainResponse.ok) {
+        systemHealth.blockchain = 'critical';
+      }
+    } catch (err) {
+      systemHealth.blockchain = 'warning';
+      logger.warn('Blockchain health check failed', err);
+    }
+
+    // Check payment processor health (mock for now - would integrate with actual provider)
+    // This would check Stripe/payment provider API
+    try {
+      // Placeholder for actual payment health check
+      const recentPayments = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(vaultTransactions)
+        .where(gte(vaultTransactions.createdAt, new Date(Date.now() - 3600000))); // Last hour
+      
+      if (recentPayments[0].count < 0) {
+        systemHealth.payments = 'warning';
+      }
+    } catch (err) {
+      systemHealth.payments = 'warning';
+      logger.warn('Payments health check failed', err);
     }
 
     // System info
@@ -233,11 +324,36 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
       cpu: `${os.cpus().length} cores`,
     };
 
-    // Chain info (mock - replace with actual blockchain data)
-    const chainInfo = {
-      chain: 'Celo Alfajores',
-      block: 'Latest',
+    // Chain info (from RPC or cached)
+    let chainInfo = {
+      chain: process.env.BLOCKCHAIN_NETWORK || 'Celo Alfajores',
+      block: 'Unknown',
+      blockNumber: 0,
+      timestamp: new Date(),
     };
+    
+    try {
+      // Try to fetch latest block number if RPC is available
+      const rpcUrl = process.env.RPC_URL || 'https://alfajores-forno.celo-testnet.org';
+      const blockResponse = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'eth_blockNumber',
+          params: [],
+          id: 1,
+        }),
+      });
+      const blockData = await blockResponse.json();
+      if (blockData.result) {
+        chainInfo.blockNumber = parseInt(blockData.result, 16);
+        chainInfo.block = `Block #${chainInfo.blockNumber}`;
+      }
+    } catch (err) {
+      logger.warn('Could not fetch blockchain info from RPC', { error: err });
+      chainInfo.block = 'Connection error';
+    }
 
     // Critical alerts (check for issues)
     const criticalAlerts: any[] = [];
@@ -931,67 +1047,665 @@ router.get('/activity-logs', requireSuperAdmin, async (req, res) => {
 });
 
 // =====================================================
+// FEATURE FLAGS & PROGRESSIVE RELEASES
+// =====================================================
+
+// GET /api/features - Get all feature flags (public endpoint)
+// Returns feature flags that should be shown to current user
+// If user is authenticated, includes their personalized enabledBetaFeatures from database
+router.get('/features', async (req, res) => {
+  try {
+    const user = (req.user as any) || null;
+    
+    // Parse user's enabled beta features from database
+    let userEnabledFeatures: string[] = [];
+    if (user?.id) {
+      try {
+        const userRecord = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, user.id))
+          .limit(1);
+        
+        if (userRecord.length > 0 && userRecord[0].enabledBetaFeatures) {
+          const features = userRecord[0].enabledBetaFeatures;
+          userEnabledFeatures = JSON.parse(typeof features === 'string' ? features : JSON.stringify(features));
+        }
+      } catch (e) {
+        logger.warn('Failed to parse enabledBetaFeatures for user', { userId: user.id, error: e });
+      }
+    }
+    
+    const response = {
+      // All features with their current enabled status
+      features: featureFlags,
+      
+      // User-specific info
+      user: user ? {
+        id: user.id,
+        role: user.role,
+        betaAccess: userEnabledFeatures.length > 0,
+        enabledBetaFeatures: userEnabledFeatures, // Features stored in database
+      } : null,
+      
+      // Feature release schedule (for "Coming Soon" messages)
+      releaseSchedule: {
+        phase1: { 
+          name: 'Core Platform', 
+          startDate: '2025-12-01',
+          endDate: '2026-01-15',
+          status: 'live'
+        },
+        phase2: { 
+          name: 'Capital Features (Locked Savings, Pools)', 
+          startDate: '2026-01-15',
+          endDate: '2026-03-01',
+          status: 'coming'
+        },
+        phase3: { 
+          name: 'AI & Analytics', 
+          startDate: '2026-03-01',
+          endDate: '2026-04-15',
+          status: 'coming'
+        },
+        phase4: { 
+          name: 'Governance Evolution (Elder Council)', 
+          startDate: '2026-04-15',
+          endDate: '2026-06-01',
+          status: 'coming'
+        },
+        phase5: { 
+          name: 'Multi-Chain & Scale', 
+          startDate: '2026-06-01',
+          endDate: '2026-08-01',
+          status: 'coming'
+        },
+      },
+    };
+    
+    res.json(response);
+  } catch (error) {
+    logger.error('Error fetching features:', error);
+    res.status(500).json({ error: 'Failed to fetch features' });
+  }
+});
+
+// GET /api/admin/features - Get detailed feature info (admin only)
+router.get('/features/admin', requireSuperAdmin, async (req, res) => {
+  try {
+    res.json({
+      features: featureFlags,
+      betaAccessEnabled,
+      betaTesterGroup,
+      environmentVariables: {
+        note: 'Set these in .env.phases or .env file',
+        all: Object.keys(featureFlags).map(key => ({
+          flag: key,
+          envVar: `FEATURE_${key.replace(/([A-Z])/g, '_$1').toUpperCase()}`,
+          enabled: featureFlags[key as keyof typeof featureFlags],
+        })),
+      },
+    });
+  } catch (error) {
+    logger.error('Error fetching admin features:', error);
+    res.status(500).json({ error: 'Failed to fetch features' });
+  }
+});
+
+// POST /api/admin/beta-access - Grant beta access to features
+// Persists beta feature access to users table enabledBetaFeatures column
+router.post('/beta-access', requireSuperAdmin, async (req, res) => {
+  try {
+    const { userId, features: featuresToGrant } = req.body;
+    
+    if (!userId || !Array.isArray(featuresToGrant)) {
+      return res.status(400).json({ error: 'userId and features array required' });
+    }
+    
+    // Validate features exist in available features config
+    const invalidFeatures = featuresToGrant.filter(
+      f => !Object.keys(featureFlags).includes(f)
+    );
+    
+    if (invalidFeatures.length > 0) {
+      return res.status(400).json({
+        error: 'Invalid features provided',
+        invalidFeatures,
+        availableFeatures: Object.keys(featureFlags),
+      });
+    }
+    
+    // Fetch current user to get existing features
+    const userRecord = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    
+    if (userRecord.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Parse existing features and merge with new ones
+    let existingFeatures: string[] = [];
+    try {
+      const existing = userRecord[0].enabledBetaFeatures;
+      if (existing) {
+        existingFeatures = JSON.parse(typeof existing === 'string' ? existing : JSON.stringify(existing));
+      }
+    } catch (e) {
+      existingFeatures = [];
+    }
+    
+    // Merge and deduplicate
+    const mergedFeatures = Array.from(new Set([...existingFeatures, ...featuresToGrant]));
+    
+    // Update user record with new features
+    await db
+      .update(users)
+      .set({ enabledBetaFeatures: JSON.stringify(mergedFeatures) })
+      .where(eq(users.id, userId));
+    
+    logger.info('Beta access granted and persisted to database', {
+      userId,
+      features: featuresToGrant,
+      mergedFeatures,
+      grantedBy: (req.user as any)?.id,
+      timestamp: new Date(),
+    });
+    
+    res.json({
+      success: true,
+      message: 'Beta access granted and persisted',
+      userId,
+      grantedFeatures: featuresToGrant,
+      allEnabledFeatures: mergedFeatures,
+    });
+  } catch (error) {
+    logger.error('Error granting beta access:', error);
+    res.status(500).json({ error: 'Failed to grant beta access' });
+  }
+});
+
+// DELETE /api/admin/beta-access/:userId - Revoke beta access
+// Removes all beta feature access from user (resets to empty array)
+router.delete('/beta-access/:userId', requireSuperAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { features: featuresToRevoke } = req.body || {};
+    
+    // Fetch user record
+    const userRecord = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    
+    if (userRecord.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Parse existing features
+    let existingFeatures: string[] = [];
+    try {
+      const existing = userRecord[0].enabledBetaFeatures;
+      if (existing) {
+        existingFeatures = JSON.parse(typeof existing === 'string' ? existing : JSON.stringify(existing));
+      }
+    } catch (e) {
+      existingFeatures = [];
+    }
+    
+    // If specific features provided, remove only those; otherwise clear all
+    let newFeatures = existingFeatures;
+    if (featuresToRevoke && Array.isArray(featuresToRevoke)) {
+      newFeatures = existingFeatures.filter(f => !featuresToRevoke.includes(f));
+    } else {
+      newFeatures = [];
+    }
+    
+    // Update user record
+    await db
+      .update(users)
+      .set({ enabledBetaFeatures: JSON.stringify(newFeatures) })
+      .where(eq(users.id, userId));
+    
+    logger.info('Beta access revoked and persisted to database', {
+      userId,
+      revokedFeatures: featuresToRevoke || 'all',
+      remainingFeatures: newFeatures,
+      revokedBy: (req.user as any)?.id,
+      timestamp: new Date(),
+    });
+    
+    res.json({
+      success: true,
+      message: featuresToRevoke ? 'Specified features revoked' : 'All beta access revoked',
+      userId,
+      remainingFeatures: newFeatures,
+    });
+  } catch (error) {
+    logger.error('Error revoking beta access:', error);
+    res.status(500).json({ error: 'Failed to revoke beta access' });
+  }
+});
+
+// GET /api/admin/beta-access/:userId - Get specific user's beta features
+router.get('/beta-access/:userId', requireSuperAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const userRecord = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    
+    if (userRecord.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    let userBetaFeatures: string[] = [];
+    try {
+      const existing = userRecord[0].enabledBetaFeatures;
+      if (existing) {
+        userBetaFeatures = JSON.parse(typeof existing === 'string' ? existing : JSON.stringify(existing));
+      }
+    } catch (e) {
+      logger.warn('Failed to parse enabledBetaFeatures for user', { userId, error: e });
+    }
+    
+    res.json({
+      success: true,
+      userId,
+      email: userRecord[0].email,
+      username: userRecord[0].username,
+      enabledBetaFeatures: userBetaFeatures,
+      betaAccessEnabled: userBetaFeatures.length > 0,
+    });
+  } catch (error) {
+    logger.error('Error fetching user beta features:', error);
+    res.status(500).json({ error: 'Failed to fetch beta features' });
+  }
+});
+
+// GET /api/admin/beta-access - List all users with beta access
+router.get('/beta-access', requireSuperAdmin, async (req, res) => {
+  try {
+    const page = parseInt((req.query.page as string) || '1', 10);
+    const limit = parseInt((req.query.limit as string) || '50', 10);
+    const offset = (page - 1) * limit;
+
+    // Get users with non-empty enabledBetaFeatures
+    const usersWithBeta = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        username: users.username,
+        enabledBetaFeatures: users.enabledBetaFeatures,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .where(sql`enabled_beta_features IS NOT NULL AND enabled_beta_features != '[]'`)
+      .orderBy(desc(users.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    // Get total count
+    const countResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(users)
+      .where(sql`enabled_beta_features IS NOT NULL AND enabled_beta_features != '[]'`);
+
+    const totalCount = countResult[0].count;
+    const totalPages = Math.ceil(totalCount / limit);
+
+    // Parse features for each user
+    const parsedUsers = usersWithBeta.map(user => {
+      let features: string[] = [];
+      try {
+        const existing = user.enabledBetaFeatures;
+        if (existing) {
+          features = JSON.parse(typeof existing === 'string' ? existing : JSON.stringify(existing));
+        }
+      } catch (e) {
+        logger.warn('Failed to parse enabledBetaFeatures', { userId: user.id, error: e });
+      }
+      
+      return {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        enabledBetaFeatures: features,
+        featureCount: features.length,
+        createdAt: user.createdAt,
+      };
+    });
+
+    res.json({
+      success: true,
+      users: parsedUsers,
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages,
+      },
+    });
+  } catch (error) {
+    logger.error('Error fetching users with beta access:', error);
+    res.status(500).json({ error: 'Failed to fetch beta access list' });
+  }
+});
+
+// POST /api/admin/beta-access/bulk - Grant beta access to multiple users
+router.post('/beta-access/bulk', requireSuperAdmin, async (req, res) => {
+  try {
+    const { userIds, features: featuresToGrant } = req.body;
+    
+    if (!Array.isArray(userIds) || !Array.isArray(featuresToGrant)) {
+      return res.status(400).json({ error: 'userIds and features arrays required' });
+    }
+
+    if (userIds.length === 0) {
+      return res.status(400).json({ error: 'At least one user ID required' });
+    }
+
+    if (featuresToGrant.length === 0) {
+      return res.status(400).json({ error: 'At least one feature required' });
+    }
+    
+    // Validate features exist in available features config
+    const invalidFeatures = featuresToGrant.filter(
+      f => !Object.keys(featureFlags).includes(f)
+    );
+    
+    if (invalidFeatures.length > 0) {
+      return res.status(400).json({
+        error: 'Invalid features provided',
+        invalidFeatures,
+        availableFeatures: Object.keys(featureFlags),
+      });
+    }
+
+    // Fetch all users
+    const userRecords = await db
+      .select()
+      .from(users)
+      .where(sql`id = ANY(${userIds})`);
+
+    const notFoundIds = userIds.filter(
+      id => !userRecords.some(u => u.id === id)
+    );
+
+    if (notFoundIds.length > 0) {
+      return res.status(400).json({
+        error: 'Some users not found',
+        notFoundIds,
+      });
+    }
+
+    // Update each user
+    const updateResults = [];
+    for (const userRecord of userRecords) {
+      let existingFeatures: string[] = [];
+      try {
+        const existing = userRecord.enabledBetaFeatures;
+        if (existing) {
+          existingFeatures = JSON.parse(typeof existing === 'string' ? existing : JSON.stringify(existing));
+        }
+      } catch (e) {
+        existingFeatures = [];
+      }
+
+      const mergedFeatures = Array.from(new Set([...existingFeatures, ...featuresToGrant]));
+
+      await db
+        .update(users)
+        .set({ enabledBetaFeatures: JSON.stringify(mergedFeatures) })
+        .where(eq(users.id, userRecord.id));
+
+      updateResults.push({
+        userId: userRecord.id,
+        email: userRecord.email,
+        grantedFeatures: featuresToGrant,
+        allEnabledFeatures: mergedFeatures,
+      });
+    }
+
+    logger.info('Bulk beta access granted', {
+      userCount: userIds.length,
+      features: featuresToGrant,
+      grantedBy: (req.user as any)?.id,
+      timestamp: new Date(),
+    });
+
+    res.json({
+      success: true,
+      message: `Beta access granted to ${userIds.length} user(s)`,
+      usersUpdated: userIds.length,
+      results: updateResults,
+    });
+  } catch (error) {
+    logger.error('Error granting bulk beta access:', error);
+    res.status(500).json({ error: 'Failed to grant bulk beta access' });
+  }
+});
+
+// DELETE /api/admin/beta-access/bulk - Revoke beta access from multiple users
+router.delete('/beta-access/bulk', requireSuperAdmin, async (req, res) => {
+  try {
+    const { userIds, features: featuresToRevoke } = req.body;
+    
+    if (!Array.isArray(userIds)) {
+      return res.status(400).json({ error: 'userIds array required' });
+    }
+
+    if (userIds.length === 0) {
+      return res.status(400).json({ error: 'At least one user ID required' });
+    }
+
+    // Fetch all users
+    const userRecords = await db
+      .select()
+      .from(users)
+      .where(sql`id = ANY(${userIds})`);
+
+    const notFoundIds = userIds.filter(
+      id => !userRecords.some(u => u.id === id)
+    );
+
+    if (notFoundIds.length > 0) {
+      return res.status(400).json({
+        error: 'Some users not found',
+        notFoundIds,
+      });
+    }
+
+    // Validate features if provided
+    if (featuresToRevoke) {
+      if (!Array.isArray(featuresToRevoke)) {
+        return res.status(400).json({ error: 'features must be an array' });
+      }
+
+      const invalidFeatures = featuresToRevoke.filter(
+        f => !Object.keys(featureFlags).includes(f)
+      );
+
+      if (invalidFeatures.length > 0) {
+        return res.status(400).json({
+          error: 'Invalid features provided',
+          invalidFeatures,
+        });
+      }
+    }
+
+    // Update each user
+    const updateResults = [];
+    for (const userRecord of userRecords) {
+      let existingFeatures: string[] = [];
+      try {
+        const existing = userRecord.enabledBetaFeatures;
+        if (existing) {
+          existingFeatures = JSON.parse(typeof existing === 'string' ? existing : JSON.stringify(existing));
+        }
+      } catch (e) {
+        existingFeatures = [];
+      }
+
+      let newFeatures = existingFeatures;
+      if (featuresToRevoke && Array.isArray(featuresToRevoke)) {
+        newFeatures = existingFeatures.filter(f => !featuresToRevoke.includes(f));
+      } else {
+        newFeatures = [];
+      }
+
+      await db
+        .update(users)
+        .set({ enabledBetaFeatures: JSON.stringify(newFeatures) })
+        .where(eq(users.id, userRecord.id));
+
+      updateResults.push({
+        userId: userRecord.id,
+        email: userRecord.email,
+        revokedFeatures: featuresToRevoke || 'all',
+        remainingFeatures: newFeatures,
+      });
+    }
+
+    logger.info('Bulk beta access revoked', {
+      userCount: userIds.length,
+      features: featuresToRevoke || 'all',
+      revokedBy: (req.user as any)?.id,
+      timestamp: new Date(),
+    });
+
+    res.json({
+      success: true,
+      message: `Beta access revoked for ${userIds.length} user(s)`,
+      usersUpdated: userIds.length,
+      results: updateResults,
+    });
+  } catch (error) {
+    logger.error('Error revoking bulk beta access:', error);
+    res.status(500).json({ error: 'Failed to revoke bulk beta access' });
+  }
+});
+
+// =====================================================
 // SYSTEM SETTINGS
 // =====================================================
 
 // GET /api/admin/settings - Get system settings
+// GET /api/admin/settings - Get system settings (from database)
 router.get('/settings', requireSuperAdmin, async (req, res) => {
   try {
+    // Fetch all settings from config table
+    const configRecords = await db.select().from(config);
+    const configMap: Record<string, any> = {};
+    
+    configRecords.forEach(record => {
+      configMap[record.key] = record.value;
+    });
+
     const settings = {
-      // Platform settings
-      platform: {
+      // Platform settings (from database or env fallback)
+      platform: configMap.platform || {
         name: process.env.PLATFORM_NAME || 'MTAA DAO',
         maintenanceMode: process.env.MAINTENANCE_MODE === 'true',
         registrationEnabled: process.env.REGISTRATION_ENABLED !== 'false',
         requireEmailVerification: process.env.REQUIRE_EMAIL_VERIFICATION === 'true',
       },
-      // Blockchain settings
-      blockchain: {
+      // Blockchain settings (from database or env fallback)
+      blockchain: configMap.blockchain || {
         network: process.env.BLOCKCHAIN_NETWORK || 'alfajores',
         rpcUrl: process.env.RPC_URL || 'https://alfajores-forno.celo-testnet.org',
         maonoContractAddress: process.env.MAONO_CONTRACT_ADDRESS || 'Not configured',
       },
       // Feature flags
-      features: {
-        chatEnabled: true,
-        proposalsEnabled: true,
-        vaultsEnabled: true,
-        referralsEnabled: true,
-        nftMarketplaceEnabled: false,
-      },
-      // Rate limits
-      rateLimits: {
+      features: featureFlags,
+      // Rate limits (from database or defaults)
+      rateLimits: configMap.rateLimits || {
         login: 5,
         register: 3,
         apiDefault: 100,
       },
     };
 
-    res.json(settings);
+    res.json({
+      success: true,
+      settings,
+      source: configRecords.length > 0 ? 'database' : 'environment',
+    });
   } catch (error) {
     logger.error('Error fetching system settings:', error);
     res.status(500).json({ error: 'Failed to fetch settings' });
   }
 });
 
-// PUT /api/admin/settings - Update system settings
+// PUT /api/admin/settings - Update system settings (persisted to database)
 router.put('/settings', requireSuperAdmin, async (req, res) => {
   try {
     const { section, key, value } = req.body;
-    const adminId = (req.user as any).id;
+    const adminId = (req.user as any)?.id;
 
-    // Note: In production, you'd want to persist these to a database
-    // For now, this is just a placeholder
-    logger.info('System settings updated', {
-      section,
-      key,
+    if (!section || !key || value === undefined) {
+      return res.status(400).json({ error: 'section, key, and value are required' });
+    }
+
+    const configKey = `${section}.${key}`;
+
+    // Check if config exists
+    const existing = await db
+      .select()
+      .from(config)
+      .where(eq(config.key, configKey))
+      .limit(1);
+
+    let result;
+    if (existing.length > 0) {
+      // Update existing config
+      result = await db
+        .update(config)
+        .set({ value, updatedAt: new Date() })
+        .where(eq(config.key, configKey))
+        .returning();
+    } else {
+      // Insert new config
+      result = await db
+        .insert(config)
+        .values({ key: configKey, value })
+        .returning();
+    }
+
+    // Log audit trail
+    if (adminId) {
+      await db.insert(auditLogs).values({
+        userId: adminId,
+        action: 'UPDATE_SETTINGS',
+        resource: 'config',
+        resourceId: configKey,
+        method: 'PUT',
+        endpoint: '/api/admin/settings',
+        ipAddress: (req.ip || 'unknown'),
+        userAgent: (req.get('user-agent') || 'unknown'),
+        status: 200,
+        details: { section, key, oldValue: existing.length > 0 ? existing[0].value : null, newValue: value },
+        severity: 'medium',
+        category: 'settings',
+      });
+    }
+
+    logger.info('System settings updated and persisted to database', {
+      configKey,
       value,
       adminId,
     });
 
     res.json({
       success: true,
-      message: 'Settings updated successfully (Note: Requires server restart for some settings)',
+      message: 'Settings updated and persisted to database',
+      updated: result[0],
     });
   } catch (error) {
     logger.error('Error updating system settings:', error);

@@ -1,7 +1,7 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { MorioFAB } from './morio/MorioFAB';
-import { useLocation } from 'wouter';
+import { useLocation } from 'react-router-dom';
 
 interface MorioContextType {
   openMorio: (message?: string) => void;
@@ -21,14 +21,14 @@ export function useMorio() {
 
 interface MorioProviderProps {
   children: ReactNode;
-  userId: string;
+  userId?: string;
   daoId?: string;
 }
 
 export function MorioProvider({ children, userId, daoId }: MorioProviderProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [initialMessage, setInitialMessage] = useState<string>();
-  const [location] = useLocation();
+  const location = useLocation();
 
   const openMorio = (message?: string) => {
     setInitialMessage(message);
@@ -43,7 +43,7 @@ export function MorioProvider({ children, userId, daoId }: MorioProviderProps) {
   // Auto-show Morio on certain pages or first visit
   useEffect(() => {
     const hasSeenMorio = localStorage.getItem('morio-intro-seen');
-    const isLandingPage = location === '/';
+    const isLandingPage = location.pathname === '/';
     
     if (!hasSeenMorio && isLandingPage) {
       setTimeout(() => {
@@ -51,7 +51,7 @@ export function MorioProvider({ children, userId, daoId }: MorioProviderProps) {
         localStorage.setItem('morio-intro-seen', 'true');
       }, 3000);
     }
-  }, [location]);
+  }, [location.pathname]);
 
   return (
     <MorioContext.Provider value={{ openMorio, closeMorio, isOpen }}>

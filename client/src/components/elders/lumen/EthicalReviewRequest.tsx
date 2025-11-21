@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/pages/hooks/useAuth';
 import { AlertCircle, CheckCircle, Clock, Send, Shield } from 'lucide-react';
 
 interface ReviewRequest {

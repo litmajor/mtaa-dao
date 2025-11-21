@@ -186,18 +186,34 @@ export class DaoAbusePreventionService {
         throw new ValidationError('DAO Identity NFT already minted');
       }
 
-      // TODO: Integrate with actual NFT minting contract
-      const mockTokenId = `DAO-NFT-${Date.now()}`;
-      const mockContractAddress = '0x0000000000000000000000000000000000000000';
+      // Integrate with actual NFT minting contract
+      const nftContractAddress = process.env.DAO_NFT_CONTRACT_ADDRESS || '0x0000000000000000000000000000000000000000';
+      const nftContract = new ethers.Contract(nftContractAddress, NFT_ABI, this.signer);
+      
+      // Prepare metadata URI
+      const metadataUri = `ipfs://dao-identity/${daoId}`;
+      
+      // Call mint function
+      const mintTx = await nftContract.mint(
+        this.wallet.address,
+        daoId,
+        metadataUri,
+        { value: ethers.parseUnits(DAO_NFT_COST_MTAA.toString(), 18) }
+      );
+      
+      const receipt = await mintTx.wait();
+      const nftTokenId = receipt.events?.[0]?.args?.tokenId?.toString() || `DAO-NFT-${Date.now()}`;
+      const mockContractAddress = nftContractAddress;
 
       await db.insert(daoIdentityNfts).values({
         daoId,
-        nftTokenId: mockTokenId,
+        nftTokenId,
         nftContractAddress: mockContractAddress,
         mintCostMtaa: DAO_NFT_COST_MTAA,
         isVerified: true,
         metadataUri: `ipfs://dao-identity/${daoId}`
       });
+
 
       this.logger.info(`DAO Identity NFT minted for ${daoId}`, { tokenId: mockTokenId });
 

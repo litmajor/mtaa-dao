@@ -40,6 +40,7 @@ import investmentPoolsRoutes from './routes/investment-pools';
 import poolGovernanceRoutes from './routes/pool-governance';
 import treasuryIntelligenceRoutes from './routes/treasury-intelligence';
 import phoneVerificationRouter from './routes/phone-verification';
+import daoChatRoutes from './routes/dao-chat';
 import onboardingRoutes from './routes/onboarding';
 import subscriptionManagementRoutes from './routes/subscription-management'; // Import subscription management routes
 import userSubscriptionRoutes from './routes/user-subscription';
@@ -69,6 +70,22 @@ import { daoDeployHandler } from './api/dao_deploy';
 import { paymentsEstimateGasHandler } from './api/payments_estimate_gas';
 import { paymentsIndexHandler } from './api/payments_index';
 import { getWalletTransactions, createWalletTransaction } from './api/wallet_transactions';
+
+// Import Rotation and Invitation handlers
+import {
+  getRotationStatusHandler,
+  processRotationHandler,
+  getNextRecipientHandler
+} from './api/rotation_service';
+import {
+  createInvitationHandler,
+  getPendingInvitationsHandler,
+  acceptInvitationHandler,
+  rejectInvitationHandler,
+  getPeerInviteLinkHandler,
+  getDaoInvitationsHandler,
+  revokeInvitationHandler
+} from './api/invitation_service';
 
 // Import Dashboard handlers
 import {
@@ -183,6 +200,7 @@ export async function registerRoutes(app: Express) {
   app.delete('/api/account/delete', isAuthenticated, accountDeleteHandler); // Legacy endpoint
   app.use('/api/referral-rewards', referralRewardsRoutes);
   app.use('/api', proposalEngagementRoutes); // Proposal likes/comments/engagement
+  app.use('/api/dao-chat', daoChatRoutes); // DAO chat messages and reactions
   app.use('/api/admin', adminRoutes); // Admin/SuperUser management
   app.use('/api/announcements', announcementsRoutes); // Platform announcements
   app.use('/api/investment-pools', investmentPoolsRoutes); // Multi-asset investment pools
@@ -190,6 +208,21 @@ export async function registerRoutes(app: Express) {
 
   // DAO deployment
   app.post('/api/dao/deploy', isAuthenticated, daoDeployHandler);
+  app.post('/api/dao-deploy', isAuthenticated, daoDeployHandler); // Alias for client compatibility
+
+  // DAO Rotation Management
+  app.get('/api/dao/:daoId/rotation/status', getRotationStatusHandler);
+  app.post('/api/dao/:daoId/rotation/process', isAuthenticated, processRotationHandler);
+  app.get('/api/dao/:daoId/rotation/next-recipient', getNextRecipientHandler);
+
+  // DAO Invitation Management
+  app.post('/api/dao/:daoId/invitations', isAuthenticated, createInvitationHandler);
+  app.get('/api/dao/:daoId/invitations', getDaoInvitationsHandler);
+  app.delete('/api/dao/:daoId/invitations/:invitationId', isAuthenticated, revokeInvitationHandler);
+  app.get('/api/invitations/pending', isAuthenticated, getPendingInvitationsHandler);
+  app.post('/api/invitations/:inviteToken/accept', isAuthenticated, acceptInvitationHandler);
+  app.post('/api/invitations/:inviteToken/reject', rejectInvitationHandler);
+  app.get('/api/dao/:daoId/peer-invite-link', isAuthenticated, getPeerInviteLinkHandler);
 
   // Payment endpoints
   app.post('/api/payments/estimate-gas', isAuthenticated, paymentsEstimateGasHandler);

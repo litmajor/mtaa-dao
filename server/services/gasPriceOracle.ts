@@ -45,8 +45,8 @@ export class GasPriceOracle {
         const feeData = await provider.getFeeData();
         const block = await provider.getBlock('latest');
         
-        if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
-          const baseFee = block?.baseFeePerGas || feeData.maxFeePerGas;
+        if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas && block?.baseFeePerGas) {
+          const baseFee = block.baseFeePerGas;
           const priorityFee = feeData.maxPriorityFeePerGas;
           
           this.cachedPrices = {
@@ -81,7 +81,18 @@ export class GasPriceOracle {
       
     } catch (error) {
       logger.error('Failed to fetch gas prices:', error);
-      throw new Error('Unable to fetch current gas prices');
+      // Return reasonable defaults instead of throwing to keep system operational
+      const defaultPrice = BigInt('2000000000'); // 2 Gwei fallback
+      this.cachedPrices = {
+        slow: (defaultPrice * BigInt(80) / BigInt(100)).toString(),
+        standard: defaultPrice.toString(),
+        fast: (defaultPrice * BigInt(120) / BigInt(100)).toString(),
+        instant: (defaultPrice * BigInt(150) / BigInt(100)).toString(),
+        timestamp: now
+      };
+      this.cacheExpiry = now + (this.CACHE_DURATION / 2); // Shorter cache for fallback
+      logger.warn('Using fallback gas prices due to RPC error');
+      return this.cachedPrices;
     }
   }
 
