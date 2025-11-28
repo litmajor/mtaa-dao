@@ -147,4 +147,14 @@ function getBadge(referralCount: number): string {
   return 'Bronze';
 }
 
+// POST /api/referrals/ping-inactive
+router.post('/ping-inactive', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { pingInactiveReferralHandler } = await import('../api/referral_service');
+    return pingInactiveReferralHandler(req, res);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
