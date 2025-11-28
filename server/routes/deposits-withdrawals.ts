@@ -9,6 +9,7 @@ import { KotanipayService } from '../services/kotanipayService';
 import { db } from '../db';
 import { mpesaTransactions as mpesaTransactionsTable } from '../../shared/financialEnhancedSchema';
 import { eq } from 'drizzle-orm';
+import { transactionLimitService } from '../services/transactionLimitService';
 
 const router = express.Router();
 
@@ -16,7 +17,7 @@ const router = express.Router();
 const depositSchema = z.object({
   userId: z.string().uuid(),
   phone: z.string().regex(/^\+254[0-9]{9}$/, 'Invalid M-Pesa phone number'),
-  amountKES: z.number().min(100).max(1000000),
+  amountKES: z.number().min(100),
   reference: z.string().optional(),
   daoId: z.string().uuid().optional(),
 });
@@ -44,6 +45,40 @@ router.post('/initiate', async (req, res) => {
   try {
     const validated = depositSchema.parse(req.body);
 
+    // Convert KES to USD for limit checking
+    const amountUSD = validated.amountKES / 129; // Exchange rate
+
+    // Check KYC limits
+    const limitCheck = await transactionLimitService.canTransact(
+      validated.userId,
+      amountUSD,
+      'deposit'
+    );
+
+    if (!limitCheck.allowed) {
+      // Record rejected transaction
+      await transactionLimitService.recordTransaction(
+        validated.userId,
+        amountUSD,
+        'deposit',
+        'rejected',
+        limitCheck.reason
+      );
+
+      return res.status(403).json({
+        success: false,
+        error: limitCheck.reason,
+        code: 'KYC_LIMIT_EXCEEDED',
+        data: {
+          tier: limitCheck.tier,
+          dailyUsed: limitCheck.dailyUsed,
+          dailyLimit: limitCheck.dailyLimit,
+          monthlyUsed: limitCheck.monthlyUsed,
+          monthlyLimit: limitCheck.monthlyLimit,
+        },
+      });
+    }
+
     const response = await KotanipayService.initiateDeposit({
       userId: validated.userId,
       phone: validated.phone,
@@ -52,9 +87,24 @@ router.post('/initiate', async (req, res) => {
       daoId: validated.daoId,
     });
 
+    // Record approved transaction
+    await transactionLimitService.recordTransaction(
+      validated.userId,
+      amountUSD,
+      'deposit',
+      'approved'
+    );
+
     res.json({
       success: true,
-      data: response,
+      data: {
+        ...response,
+        kycInfo: {
+          tier: limitCheck.tier,
+          dailyRemaining: (limitCheck.dailyLimit || 0) - (limitCheck.dailyUsed || 0) - amountUSD,
+          monthlyRemaining: (limitCheck.monthlyLimit || 0) - (limitCheck.monthlyUsed || 0) - amountUSD,
+        },
+      },
     });
   } catch (error: any) {
     console.error('Deposit initiation error:', error);
@@ -161,6 +211,40 @@ router.post('/initiate', async (req, res) => {
   try {
     const validated = withdrawalSchema.parse(req.body);
 
+    // cUSD is approximately 1:1 with USD
+    const amountUSD = validated.amountCUSD;
+
+    // Check KYC limits
+    const limitCheck = await transactionLimitService.canTransact(
+      validated.userId,
+      amountUSD,
+      'withdrawal'
+    );
+
+    if (!limitCheck.allowed) {
+      // Record rejected transaction
+      await transactionLimitService.recordTransaction(
+        validated.userId,
+        amountUSD,
+        'withdrawal',
+        'rejected',
+        limitCheck.reason
+      );
+
+      return res.status(403).json({
+        success: false,
+        error: limitCheck.reason,
+        code: 'KYC_LIMIT_EXCEEDED',
+        data: {
+          tier: limitCheck.tier,
+          dailyUsed: limitCheck.dailyUsed,
+          dailyLimit: limitCheck.dailyLimit,
+          monthlyUsed: limitCheck.monthlyUsed,
+          monthlyLimit: limitCheck.monthlyLimit,
+        },
+      });
+    }
+
     const response = await KotanipayService.initiateWithdrawal({
       userId: validated.userId,
       phone: validated.phone,
@@ -168,9 +252,24 @@ router.post('/initiate', async (req, res) => {
       daoId: validated.daoId,
     });
 
+    // Record approved transaction
+    await transactionLimitService.recordTransaction(
+      validated.userId,
+      amountUSD,
+      'withdrawal',
+      'approved'
+    );
+
     res.json({
       success: true,
-      data: response,
+      data: {
+        ...response,
+        kycInfo: {
+          tier: limitCheck.tier,
+          dailyRemaining: (limitCheck.dailyLimit || 0) - (limitCheck.dailyUsed || 0) - amountUSD,
+          monthlyRemaining: (limitCheck.monthlyLimit || 0) - (limitCheck.monthlyUsed || 0) - amountUSD,
+        },
+      },
     });
   } catch (error: any) {
     console.error('Withdrawal initiation error:', error);
@@ -358,3 +457,66 @@ router.get('/summary', async (req, res) => {
 });
 
 export default router;
+
+
+
+/**
+ * GET /api/deposits/limits
+ * Get user's current transaction limits and usage
+ */
+router.get('/limits', async (req, res) => {
+  try {
+    const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'userId is required',
+      });
+    }
+
+    const usage = await transactionLimitService.getUserUsage(userId as string);
+
+    res.json({
+      success: true,
+      data: usage,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/deposits/transaction-history
+ * Get user's KYC transaction history
+ */
+router.get('/transaction-history', async (req, res) => {
+  try {
+    const { userId, limit = '50' } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'userId is required',
+      });
+    }
+
+    const history = await transactionLimitService.getTransactionHistory(
+      userId as string,
+      parseInt(limit as string)
+    );
+
+    res.json({
+      success: true,
+      data: history,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
