@@ -1,8 +1,8 @@
 import express, { Express, Router, Request, Response } from 'express';
 import { isAuthenticated } from '../auth';
+import crypto from 'crypto';
 
 import EnhancedAgentWallet, { NetworkConfig } from '../agent_wallet';
-const crypto = require('crypto');
 
 import { db } from '../db';
 import { walletTransactions, contributions, paymentRequests, lockedSavings, savingsGoals, paymentReceipts, vaults } from '../../shared/schema';
