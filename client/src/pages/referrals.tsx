@@ -92,6 +92,42 @@ export default function Referrals() {
     });
   };
 
+  const pingInactiveUser = async (referredUserId: string, daoId: string) => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch('/api/referrals/ping-inactive', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ referredUserId, daoId }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        toast({
+          title: "User Pinged!",
+          description: data.message,
+        });
+      } else {
+        toast({
+          title: "Cannot Ping",
+          description: data.message,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to ping user",
+        variant: "destructive",
+      });
+    }
+  };
+
   const shareReferralLink = () => {
     if (navigator.share) {
       navigator.share({
