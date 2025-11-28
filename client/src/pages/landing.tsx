@@ -199,10 +199,12 @@ export default function MtaaDAOLanding() {
           <Logo variant="icon" size="sm" forceTheme="dark" />
           <span className="font-black text-xl text-white">Mtaa DAO</span>
         </div>
-        <nav className="hidden md:flex space-x-6">
+        <nav className="hidden md:flex space-x-6 text-sm">
           <a href="#features" className="text-purple-200 hover:text-white transition">Features</a>
+          <a href="/blog" className="text-purple-200 hover:text-white transition">Blog</a>
           <a href="/success-stories" className="text-purple-200 hover:text-white transition">Success Stories</a>
           <a href="/pricing" className="text-purple-200 hover:text-white transition">Pricing</a>
+          <a href="/vault" className="text-purple-200 hover:text-white transition">MaanoVault</a>
           <a href="/whitepaper.html" target="_blank" className="text-purple-200 hover:text-white transition">Whitepaper</a>
         </nav>
         <a href="/register">
@@ -755,12 +757,17 @@ export default function MtaaDAOLanding() {
               <Logo variant="icon" size="sm" forceTheme="dark" />
               <span className="font-bold">© 2025 Mtaa DAO</span>
             </div>
-            <div className="flex gap-6 text-sm">
+            <div className="flex flex-wrap gap-6 text-sm justify-center md:justify-end">
               <a href="/success-stories" className="hover:text-white transition">Success Stories</a>
               <a href="/pricing" className="hover:text-white transition">Pricing</a>
               <a href="/whitepaper.html" target="_blank" className="hover:text-white transition">Whitepaper</a>
-              <a href="/help" className="hover:text-white transition">Support</a>
+              <a href="/blog" className="hover:text-white transition">Blog</a>
+              <a href="/vault" className="hover:text-white transition">MaanoVault</a>
+              <a href="/support" className="hover:text-white transition">Support</a>
+              <a href="/help" className="hover:text-white transition">Help</a>
+              <a href="/careers" className="hover:text-white transition">Careers</a>
               <a href="https://t.me/mtaadao" target="_blank" rel="noopener" className="hover:text-white transition">Telegram</a>
+              <a href="https://twitter.com/mtaadao" target="_blank" rel="noopener" className="hover:text-white transition">Twitter</a>
             </div>
           </div>
         </div>
