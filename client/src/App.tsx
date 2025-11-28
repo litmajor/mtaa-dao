@@ -199,6 +199,8 @@ function App() {
                         <Route path="/maonovault" element={<Suspense fallback={<PageLoading />}><MaonoVaultWeb3PageLazy /></Suspense>} />
                         <Route path="/login" element={<Login />} />
                         <Route path="/register" element={<Register />} />
+                        <Route path="/superuser-login" element={<Register1Raw />} />
+                        <Route path="/superuser-register" element={<Register1Raw adminMode={true} />} />
                         <Route path="/forgot-password" element={<ForgotPassword />} />
                         <Route path="/reset-password" element={<ResetPassword />} />
                         <Route path="/pricing" element={<PricingPage />} />
@@ -298,9 +300,6 @@ function App() {
                         <Route path="/admin-old/pools" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><PoolManagementLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/admin/billing" element={<ProtectedRoute><AdminBillingDashboard /></ProtectedRoute>} />
                         <Route path="/admin/payments" element={<ProtectedRoute><PaymentReconciliation /></ProtectedRoute>} />
-                        <Route path="/superuser-login" element={<Register1Raw />} />
-                        <Route path="/superuser-register" element={<Register1Raw adminMode={true} />} />
-                        <Route path="/admin-login" element={<Register1Raw adminMode={true} />} />
                         {/* Protected special routes */}
                         <Route path="/architect-setup" element={<ProtectedRoute><ArchitectSetupPage /></ProtectedRoute>} />
                         <Route path="/wallet-setup" element={<ProtectedRoute><WalletSetupPage /></ProtectedRoute>} />
