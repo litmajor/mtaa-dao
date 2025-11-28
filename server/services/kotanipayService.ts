@@ -10,6 +10,7 @@ import { userBalances as userBalancesTable, transactionFees as transactionFeesTa
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { notificationService } from '../notificationService';
 import { config } from '../../shared/config';
+import { exchangeRateService } from './exchangeRateService';
 
 interface DepositRequest {
   userId: string;
@@ -55,7 +56,6 @@ const KOTANI_SECRET_KEY = process.env.KOTANIPAY_SECRET_KEY;
 // Fee configuration
 const DEPOSIT_FEE_PERCENTAGE = 0.015; // 1.5% for M-Pesa deposits
 const WITHDRAWAL_FEE_PERCENTAGE = 0.02; // 2% for M-Pesa withdrawals
-const EXCHANGE_RATE = 129; // 1 cUSD = 129 KES (configurable)
 
 export class KotanipayService {
   /**
@@ -71,10 +71,13 @@ export class KotanipayService {
         throw new Error('Invalid deposit request');
       }
 
+      // Get current exchange rate
+      const exchangeRate = await exchangeRateService.getUSDtoKESRate();
+
       // Calculate conversion and fees
       const fee = request.amountKES * DEPOSIT_FEE_PERCENTAGE;
       const netKES = request.amountKES - fee;
-      const estimatedCUSD = netKES / EXCHANGE_RATE;
+      const estimatedCUSD = netKES / exchangeRate;
 
       // Record pending transaction
       const transaction = await (db as any).insert(mpesaTransactionsTable).values({
