@@ -1,0 +1,353 @@
+import React, { useState } from 'react';
+import { AlertCircle, CheckCircle, HelpCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+
+const ClarityAnalysis = () => {
+  const [expandedSection, setExpandedSection] = useState(null);
+
+  const clarityIssues = [
+    {
+      category: "Critical Confusion Points",
+      severity: "high",
+      items: [
+        {
+          issue: "What IS a DAO?",
+          current: "Form jumps straight into 'What type of group is this?'",
+          userThought: "💭 Wait, what am I creating? Is this just a group chat? A savings account?",
+          recommendation: "Add a 30-second explainer: 'A DAO is a digital group with a shared wallet that uses blockchain to track contributions and decisions. Think of it like a chama, but with automatic record-keeping that no one can change.'",
+          impact: "High - Users might create something without understanding the commitment"
+        },
+        {
+          issue: "Blockchain = Permanent",
+          current: "Small note: 'This action cannot be undone' only appears at Step 7",
+          userThought: "💭 Can I delete this later if I made a mistake?",
+          recommendation: "Add persistent warning badge throughout: '⚠️ Permanent - Cannot delete once deployed'",
+          impact: "High - Users might deploy test DAOs they can't remove"
+        },
+        {
+          issue: "What are 'Elders' really?",
+          current: "Shows checkboxes and bullet points about permissions",
+          userThought: "💭 So... they're like admins? Or more like the WhatsApp group admin? Can they steal money?",
+          recommendation: "Add real-world analogy: 'Like table banking signatories - they can't withdraw alone, but they approve when the group decides to spend money. You need 2-3 elders to approve any withdrawal.'",
+          impact: "High - Trust is critical in financial groups"
+        },
+        {
+          issue: "Governance confusion",
+          current: "Shows '1-person-1-vote' vs 'weighted-stake' without context",
+          userThought: "💭 Which one should I pick? Will people think I'm trying to control things?",
+          recommendation: "Add scenario examples: '1-person-1-vote: Everyone has equal say (Good for burial funds, community groups) | Weighted: Those who contribute more have more say (Good for investment clubs)'",
+          impact: "High - Wrong choice could cause group conflicts"
+        }
+      ]
+    },
+    {
+      category: "Medium Confusion Points",
+      severity: "medium",
+      items: [
+        {
+          issue: "Treasury types are technical",
+          current: "cUSD, CELO, Dual Treasury",
+          userThought: "💭 What even is cUSD? Is this like M-Pesa? Which is safer?",
+          recommendation: "Add plain language: 'cUSD = Digital dollars (stable, like M-Pesa) | CELO = Can grow or shrink in value (like stocks) | Dual = Mix of both'",
+          impact: "Medium - Could lead to poor financial choices"
+        },
+        {
+          issue: "Multisig sounds scary",
+          current: "Technical explanation with 'signers' and 'required signatures'",
+          userThought: "💭 Is this about signing documents? Do I need to print something?",
+          recommendation: "Rename to 'Group Approval' and explain: 'Requires 2-3 trusted members to approve withdrawals (like needing multiple keys to open a safe)'",
+          impact: "Medium - Might disable important security feature"
+        },
+        {
+          issue: "Peer invite system",
+          current: "Mentions it exists but not WHY it matters",
+          userThought: "💭 Why can't I just share a link with everyone?",
+          recommendation: "Explain trust network: 'Members you add can invite others they trust. This creates accountability - if someone misbehaves, we know who invited them.'",
+          impact: "Medium - Users might not leverage the trust mechanism"
+        },
+        {
+          issue: "Quorum percentage",
+          current: "Shows slider with 20-100%",
+          userThought: "💭 Is 50% too high? What if people don't vote?",
+          recommendation: "Add real examples: 'If you have 20 members and set 50% quorum, you need 10 votes for decisions to pass. Higher = safer but slower decisions.'",
+          impact: "Medium - Wrong setting could paralyze the DAO"
+        }
+      ]
+    },
+    {
+      category: "Missing Context",
+      severity: "medium",
+      items: [
+        {
+          issue: "What happens after deployment?",
+          current: "Success screen with buttons but no explanation",
+          userThought: "💭 Now what? Do people get notified? Can I change things?",
+          recommendation: "Add post-deployment guide: 'Next steps: 1) Share invite links 2) Wait for members to join 3) First members can start proposals'",
+          impact: "Medium - Users might feel lost after creation"
+        },
+        {
+          issue: "Cost implications",
+          current: "No mention of costs until deployment",
+          userThought: "💭 Is this going to cost me money? Transaction fees?",
+          recommendation: "Add cost transparency upfront: 'Free tier: No cost to create | Transaction fees: Small gas fees when moving money (typically <$0.01)'",
+          impact: "Medium - Unexpected costs erode trust"
+        },
+        {
+          issue: "Time commitments",
+          current: "Shows voting periods but not ongoing maintenance",
+          userThought: "💭 How much time do I need to manage this?",
+          recommendation: "Set expectations: 'As founder, expect 30min/week: reviewing proposals, approving withdrawals, resolving disputes'",
+          impact: "Low-Medium - Prevents founder burnout"
+        }
+      ]
+    },
+    {
+      category: "Jargon Alert",
+      severity: "low",
+      items: [
+        {
+          issue: "Technical terms without translation",
+          current: "Treasury, Governance, Quorum, Deployment, Multisig, Weighted-stake",
+          userThought: "💭 I feel dumb asking what these mean...",
+          recommendation: "Always pair technical terms with plain language in parentheses throughout",
+          impact: "Low - But cumulative effect makes form intimidating"
+        },
+        {
+          issue: "'Deploy' sounds military",
+          current: "Big 'Deploy DAO' button",
+          userThought: "💭 Deploy? Like soldiers? Can't we just 'Create' it?",
+          recommendation: "Use 'Create Your Group' or 'Launch Your DAO' - softer language",
+          impact: "Low - Psychological barrier"
+        }
+      ]
+    }
+  ];
+
+  const recommendations = {
+    immediate: [
+      "Add 'What is a DAO?' explainer before Step 1",
+      "Show real examples for each DAO type (with fake names)",
+      "Add 'This is permanent' warning that persists throughout flow",
+      "Include cost transparency upfront",
+      "Provide recommended settings with explanations"
+    ],
+    quick_wins: [
+      "Tooltip on EVERY technical term with plain language",
+      "Add 'Why does this matter?' to each major decision",
+      "Include estimated time-to-complete for each step",
+      "Show preview of what members will see at each step",
+      "Add 'Popular choice' badges on recommended options"
+    ],
+    ideal_state: [
+      "Interactive demo/preview mode before creating real DAO",
+      "Video walkthrough embedded in form",
+      "Live chat support for questions",
+      "Community templates with real success stories",
+      "Step-by-step tutorial for first-time users"
+    ]
+  };
+
+  const getSeverityColor = (severity) => {
+    switch(severity) {
+      case 'high': return 'bg-red-100 border-red-300 text-red-900';
+      case 'medium': return 'bg-yellow-100 border-yellow-300 text-yellow-900';
+      case 'low': return 'bg-blue-100 border-blue-300 text-blue-900';
+      default: return 'bg-gray-100 border-gray-300 text-gray-900';
+    }
+  };
+
+  const getSeverityIcon = (severity) => {
+    switch(severity) {
+      case 'high': return <XCircle className="w-5 h-5 text-red-600" />;
+      case 'medium': return <AlertCircle className="w-5 h-5 text-yellow-600" />;
+      case 'low': return <HelpCircle className="w-5 h-5 text-blue-600" />;
+      default: return null;
+    }
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto p-6 space-y-6">
+      <div className="text-center space-y-2 mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Will Users Understand? 🤔</h1>
+        <p className="text-gray-600 text-lg">Clarity analysis of the DAO creation form</p>
+      </div>
+
+      {/* Quick Summary */}
+      <Card className="bg-gradient-to-r from-orange-50 to-red-50 border-orange-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <AlertCircle className="w-6 h-6 text-orange-600" />
+            Executive Summary
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-lg font-semibold text-gray-900">
+            Short Answer: <span className="text-red-600">No, many users will be confused</span>
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+            <div className="p-4 bg-red-100 rounded-lg">
+              <div className="text-2xl font-bold text-red-700">4</div>
+              <div className="text-sm text-red-800">Critical confusion points</div>
+            </div>
+            <div className="p-4 bg-yellow-100 rounded-lg">
+              <div className="text-2xl font-bold text-yellow-700">7</div>
+              <div className="text-sm text-yellow-800">Medium confusion points</div>
+            </div>
+            <div className="p-4 bg-blue-100 rounded-lg">
+              <div className="text-2xl font-bold text-blue-700">10+</div>
+              <div className="text-sm text-blue-800">Technical terms needing translation</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Detailed Issues */}
+      {clarityIssues.map((section, idx) => (
+        <Card key={idx} className={`border-2 ${getSeverityColor(section.severity)}`}>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {getSeverityIcon(section.severity)}
+                {section.category}
+              </div>
+              <Badge variant={section.severity === 'high' ? 'destructive' : 'secondary'}>
+                {section.items.length} issues
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {section.items.map((item, itemIdx) => (
+              <div key={itemIdx} className="border-l-4 border-gray-300 pl-4 space-y-2">
+                <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                  {item.issue}
+                  <Badge variant="outline" className="text-xs">Impact: {item.impact}</Badge>
+                </h4>
+                
+                <div className="space-y-2 text-sm">
+                  <div className="bg-white p-3 rounded">
+                    <p className="text-gray-600 font-medium mb-1">Current state:</p>
+                    <p className="text-gray-700">{item.current}</p>
+                  </div>
+                  
+                  <div className="bg-purple-50 p-3 rounded border border-purple-200">
+                    <p className="text-purple-700 italic">{item.userThought}</p>
+                  </div>
+                  
+                  <div className="bg-green-50 p-3 rounded border border-green-200">
+                    <p className="text-green-800 font-medium mb-1">✅ Recommendation:</p>
+                    <p className="text-green-700">{item.recommendation}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ))}
+
+      {/* Action Plan */}
+      <Card className="bg-gradient-to-r from-green-50 to-teal-50 border-green-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CheckCircle className="w-6 h-6 text-green-600" />
+            Recommended Action Plan
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div>
+            <h3 className="font-semibold text-lg mb-3 flex items-center gap-2">
+              🚨 Immediate Fixes (Before Launch)
+            </h3>
+            <ul className="space-y-2">
+              {recommendations.immediate.map((rec, idx) => (
+                <li key={idx} className="flex items-start gap-2">
+                  <span className="text-green-600 mt-1">•</span>
+                  <span>{rec}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <h3 className="font-semibold text-lg mb-3 flex items-center gap-2">
+              ⚡ Quick Wins (Week 1-2)
+            </h3>
+            <ul className="space-y-2">
+              {recommendations.quick_wins.map((rec, idx) => (
+                <li key={idx} className="flex items-start gap-2">
+                  <span className="text-yellow-600 mt-1">•</span>
+                  <span>{rec}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <h3 className="font-semibold text-lg mb-3 flex items-center gap-2">
+              🎯 Ideal State (Long-term)
+            </h3>
+            <ul className="space-y-2">
+              {recommendations.ideal_state.map((rec, idx) => (
+                <li key={idx} className="flex items-start gap-2">
+                  <span className="text-blue-600 mt-1">•</span>
+                  <span>{rec}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* User Personas */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Who Will Struggle Most?</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 border-2 border-red-200 rounded-lg">
+              <div className="text-xl mb-2">👵 Mama Njeri (55)</div>
+              <p className="text-sm text-gray-600 mb-2">Runs a traditional chama, not tech-savvy</p>
+              <p className="text-xs text-red-700 font-semibold">Confusion level: 90%</p>
+              <p className="text-xs text-gray-600 mt-2">Struggles with: Everything blockchain-related, technical terms, understanding permanence</p>
+            </div>
+
+            <div className="p-4 border-2 border-yellow-200 rounded-lg">
+              <div className="text-xl mb-2">🧑 James (32)</div>
+              <p className="text-sm text-gray-600 mb-2">Small business owner, uses M-Pesa daily</p>
+              <p className="text-xs text-yellow-700 font-semibold">Confusion level: 50%</p>
+              <p className="text-xs text-gray-600 mt-2">Struggles with: Governance models, treasury types, multisig concept</p>
+            </div>
+
+            <div className="p-4 border-2 border-green-200 rounded-lg">
+              <div className="text-xl mb-2">💻 Faith (26)</div>
+              <p className="text-sm text-gray-600 mb-2">Digital native, university grad, crypto-curious</p>
+              <p className="text-xs text-green-700 font-semibold">Confusion level: 20%</p>
+              <p className="text-xs text-gray-600 mt-2">Struggles with: Specific governance implications, optimal settings</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Testing Suggestion */}
+      <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
+        <CardHeader>
+          <CardTitle>💡 Validation Strategy</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="font-semibold">Run these tests before launch:</p>
+          <ol className="space-y-2 list-decimal list-inside">
+            <li><strong>Grandmother test:</strong> Can someone with zero tech knowledge complete it with a friend reading the instructions?</li>
+            <li><strong>5-second test:</strong> Show each step for 5 seconds - can users describe what it's asking?</li>
+            <li><strong>Think-aloud protocol:</strong> Watch 5 users fill it out while speaking their thoughts</li>
+            <li><strong>Confusion rate:</strong> Track where users spend >2 minutes on a step (indicates confusion)</li>
+            <li><strong>Support tickets:</strong> What questions come up most in first 2 weeks?</li>
+          </ol>
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
+export default ClarityAnalysis;
