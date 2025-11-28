@@ -72,6 +72,48 @@ export default function MtaaDAOLanding() {
     }
   ];
 
+  const walletFeatures = [
+    {
+      icon: Shield,
+      title: "Peer-to-Peer Escrow",
+      description: "Send money safely with milestone protection. Create shareable invite links.",
+      features: [
+        "Custom milestones for deliverables",
+        "Shareable invite links (no signup needed)",
+        "Auto-signup for recipients",
+        "Dispute resolution & refunds"
+      ],
+      gradient: "from-emerald-400 to-teal-500",
+      path: "/wallet"
+    },
+    {
+      icon: TrendingUp,
+      title: "Smart Bill Splitting",
+      description: "Split costs instantly. Track who owes whom with zero friction.",
+      features: [
+        "Split any bill equally or custom amounts",
+        "Request payments from friends",
+        "Automatic settlement tracking",
+        "Monthly statements & history"
+      ],
+      gradient: "from-violet-400 to-indigo-500",
+      path: "/wallet"
+    },
+    {
+      icon: Heart,
+      title: "Group Money Management",
+      description: "Pool money with friends for gifts, events, or joint purchases.",
+      features: [
+        "Create group savings pots",
+        "Transparent balance tracking",
+        "One-tap contributions",
+        "Fair distribution rules"
+      ],
+      gradient: "from-pink-400 to-rose-500",
+      path: "/wallet"
+    }
+  ];
+
   const youthImpact = [
     {
       icon: Users,
@@ -383,7 +425,7 @@ export default function MtaaDAOLanding() {
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
-                    <span>Goal-based savings with time locks</span>
+                    <span>Goal-based savings accounts with time locks</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
@@ -401,6 +443,41 @@ export default function MtaaDAOLanding() {
                 </a>
               </CardContent>
             </Card>
+          </div>
+
+          {/* Wallet Advanced Features */}
+          <div className="mt-12 mb-8">
+            <div className="text-center mb-8">
+              <h3 className="text-3xl font-black text-white mb-2">Beyond Simple Transfers</h3>
+              <p className="text-lg text-purple-200">Advanced wallet features for everyday needs</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {walletFeatures.map((feature, index) => {
+                const Icon = feature.icon;
+                return (
+                  <Card key={index} className="group bg-white/10 backdrop-blur-sm border-white/20 hover:border-white/40 transition-all duration-300">
+                    <CardContent className="p-6">
+                      <div className={`w-14 h-14 bg-gradient-to-br ${feature.gradient} rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
+                        <Icon className="h-7 w-7 text-white" />
+                      </div>
+                      <h4 className="text-xl font-bold text-white mb-2">{feature.title}</h4>
+                      <p className="text-purple-200 text-sm mb-4">{feature.description}</p>
+                      <ul className="space-y-2 mb-6">
+                        {feature.features.map((feat, i) => (
+                          <li key={i} className="flex items-start gap-2 text-white text-xs">
+                            <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                            <span>{feat}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <a href={feature.path} className="text-orange-400 hover:text-orange-300 text-sm font-semibold flex items-center gap-1">
+                        Try It Now <ArrowRight className="w-3 h-3" />
+                      </a>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
           </div>
 
           {/* Quick Comparison */}

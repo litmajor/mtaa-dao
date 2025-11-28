@@ -1,9 +1,10 @@
 import { logger } from '../utils/logger';
+import { getGatewayAgentService } from '../core/agents/gateway/service';
 
 /**
  * Price Oracle Service for Cryptocurrency Prices
- * Phase 1: BTC and ETH support
- * Uses CoinGecko API (free tier) for real-time prices
+ * Primary: Gateway Agent (5+ adapters with auto-failover)
+ * Fallback: CoinGecko API
  */
 
 interface PriceData {
@@ -43,6 +44,7 @@ class PriceOracleService {
 
   /**
    * Get current price for a single asset
+   * Tries Gateway Agent (5+ adapters) first, falls back to CoinGecko
    */
   async getPrice(symbol: string): Promise<PriceData | null> {
     try {
@@ -52,6 +54,42 @@ class PriceOracleService {
         return cached.data;
       }
 
+      // Try Gateway Agent first (multi-adapter with auto-failover)
+      try {
+        const gatewayService = getGatewayAgentService();
+        if (gatewayService.isHealthy()) {
+          const priceRequest = await gatewayService.requestPrices(
+            [symbol.toUpperCase()],
+            undefined,
+            undefined
+          );
+
+          // Wait briefly for response
+          await new Promise((resolve) => setTimeout(resolve, 100));
+
+          const priceData = priceRequest?.payload?.data?.[0];
+          if (priceData && priceData.price > 0) {
+            const result: PriceData = {
+              symbol: symbol.toUpperCase(),
+              name: this.getCoinName(symbol),
+              priceUsd: priceData.price,
+              priceChange24h: priceData.change24h || 0,
+              marketCap: priceData.marketCap || 0,
+              volume24h: priceData.volume24h || 0,
+              lastUpdated: new Date(),
+            };
+
+            // Update cache
+            this.cache.set(symbol, { data: result, timestamp: Date.now() });
+            logger.debug(`[Gateway] Got price for ${symbol}: $${priceData.price}`);
+            return result;
+          }
+        }
+      } catch (gatewayError) {
+        logger.debug(`Gateway Agent failed for ${symbol}, falling back to CoinGecko:`, gatewayError);
+      }
+
+      // Fallback to CoinGecko
       const coinId = this.COIN_IDS[symbol.toUpperCase()];
       if (!coinId) {
         logger.warn(`Unsupported asset symbol: ${symbol}`);
@@ -86,6 +124,7 @@ class PriceOracleService {
 
       // Update cache
       this.cache.set(symbol, { data: priceData, timestamp: Date.now() });
+      logger.debug(`[CoinGecko] Got price for ${symbol}: $${coinData.usd}`);
 
       return priceData;
     } catch (error) {
@@ -96,12 +135,60 @@ class PriceOracleService {
 
   /**
    * Get prices for multiple assets
+   * Tries Gateway Agent (5+ adapters) first, falls back to CoinGecko
    */
   async getPrices(symbols: string[]): Promise<Map<string, PriceData>> {
     const prices = new Map<string, PriceData>();
 
     try {
-      const coinIds = symbols
+      // Try Gateway Agent first for batch pricing
+      try {
+        const gatewayService = getGatewayAgentService();
+        if (gatewayService.isHealthy()) {
+          const priceRequest = await gatewayService.requestPrices(
+            symbols.map(s => s.toUpperCase()),
+            undefined,
+            undefined
+          );
+
+          // Wait briefly for response
+          await new Promise((resolve) => setTimeout(resolve, 100));
+
+          const priceDataList = priceRequest?.payload?.data || [];
+          for (const priceData of priceDataList) {
+            if (priceData && priceData.price > 0) {
+              const result: PriceData = {
+                symbol: priceData.symbol,
+                name: this.getCoinName(priceData.symbol),
+                priceUsd: priceData.price,
+                priceChange24h: priceData.change24h || 0,
+                marketCap: priceData.marketCap || 0,
+                volume24h: priceData.volume24h || 0,
+                lastUpdated: new Date(),
+              };
+
+              prices.set(priceData.symbol, result);
+              this.cache.set(priceData.symbol, { data: result, timestamp: Date.now() });
+              logger.debug(`[Gateway] Got price for ${priceData.symbol}: $${priceData.price}`);
+            }
+          }
+
+          // If all prices found via Gateway, return early
+          if (prices.size === symbols.length) {
+            return prices;
+          }
+        }
+      } catch (gatewayError) {
+        logger.debug('Gateway Agent batch failed, falling back to CoinGecko:', gatewayError);
+      }
+
+      // Fallback to CoinGecko for remaining symbols
+      const remainingSymbols = symbols.filter(s => !prices.has(s.toUpperCase()));
+      if (remainingSymbols.length === 0) {
+        return prices;
+      }
+
+      const coinIds = remainingSymbols
         .map(s => this.COIN_IDS[s.toUpperCase()])
         .filter(Boolean);
 
@@ -119,7 +206,7 @@ class PriceOracleService {
 
       const data: CoinGeckoResponse = await response.json();
 
-      for (const symbol of symbols) {
+      for (const symbol of remainingSymbols) {
         const coinId = this.COIN_IDS[symbol.toUpperCase()];
         const coinData = data[coinId];
 
@@ -138,6 +225,7 @@ class PriceOracleService {
           
           // Update cache
           this.cache.set(symbol, { data: priceData, timestamp: Date.now() });
+          logger.debug(`[CoinGecko] Got price for ${symbol}: $${coinData.usd}`);
         }
       }
     } catch (error) {

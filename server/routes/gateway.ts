@@ -11,12 +11,17 @@ import { getGatewayAgentService } from "../core/agents/gateway/service";
 // Local type definition to avoid circular imports
 interface GatewayResponse<T = any> {
   success: boolean;
-  data?: T[];
+  data?: T;
   error?: string;
   timestamp: string;
   requestId?: string;
   cacheHit?: boolean;
   age?: number;
+  metadata?: {
+    source?: string;
+    latencyMs?: number;
+    [key: string]: any;
+  };
 }
 
 
@@ -300,8 +305,9 @@ export function createGatewayRoutes(service?: GatewayAgentService): Router {
       return sendResponse(res, 200, {
         success: gatewayService.isHealthy(),
         data: status,
+        timestamp: new Date().toISOString(),
         metadata: {
-          timestamp: new Date().toISOString(),
+          source: "gateway-service",
         },
         requestId,
       });
@@ -327,8 +333,9 @@ export function createGatewayRoutes(service?: GatewayAgentService): Router {
           cache: status.gateway.cache,
           adapters: status.gateway.adapters,
         },
+        timestamp: new Date().toISOString(),
         metadata: {
-          timestamp: new Date().toISOString(),
+          source: "gateway-service",
         },
         requestId,
       });
@@ -377,6 +384,7 @@ export function createGatewayRoutes(service?: GatewayAgentService): Router {
       return sendResponse(res, 200, {
         success: true,
         data: { invalidated: true, requestId },
+        timestamp: new Date().toISOString(),
         requestId,
       });
     } catch (error) {
@@ -410,6 +418,7 @@ function handleError(res: Response, error: any, endpoint: string) {
     success: false,
     error: error.message || "Internal server error",
     requestId,
+    timestamp: new Date().toISOString(),
   });
 }
 

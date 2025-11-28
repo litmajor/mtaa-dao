@@ -2,29 +2,63 @@
  * Response Generator
  *
  * Generates natural, contextual responses based on intent and context
+ * Now with optional LLM integration for enhanced responses
  */
 
 import type { UserContext } from '../../../core/nuru/types';
 import type { Action, MorioConfig } from '../types';
 import { responses, onboardingGuides } from '../config/responses';
+import { createLLMProvider, LLMResponseGenerator, LLMConfig } from './llm_provider';
+import { Logger } from '../../../utils/logger';
+
+const logger = new Logger('response-generator');
 
 export class ResponseGenerator {
   private config: MorioConfig;
+  private llmGenerator?: LLMResponseGenerator;
 
-  constructor(config: MorioConfig) {
+  constructor(config: MorioConfig, llmConfig?: LLMConfig) {
     this.config = config;
+    
+    // Initialize LLM if configured
+    if (llmConfig) {
+      try {
+        const llmProvider = createLLMProvider(llmConfig);
+        this.llmGenerator = new LLMResponseGenerator(llmProvider);
+        logger.info('LLM provider initialized');
+      } catch (error) {
+        logger.warn('Failed to initialize LLM provider, using template responses:', error);
+      }
+    }
   }
 
   /**
    * Generate response based on understanding and context
+   * Uses LLM if available, falls back to templates
    */
   async generate(understanding: any, context: UserContext) {
     const { intent, entities, confidence } = understanding;
 
-    // Get base response template
-    const template = this.getResponseTemplate(intent);
+    // Try LLM first if available and confidence is high enough
+    if (this.llmGenerator && confidence > 0.6) {
+      try {
+        const llmResponse = await this.llmGenerator.generateResponse(
+          understanding.rawInput || `User asking about: ${intent}`,
+          context
+        );
+        
+        return {
+          text: llmResponse.text,
+          suggestions: this.generateSuggestions(intent, context),
+          actions: this.generateActions(intent, entities)
+        };
+      } catch (error) {
+        logger.warn('LLM generation failed, falling back to templates:', error);
+      }
+    }
 
-    // Generate contextual suggestions and actions
+    // Fall back to template-based response
+    const template = this.getResponseTemplate(intent);
     let suggestions: string[] = [];
     let actions: Action[] = [];
 

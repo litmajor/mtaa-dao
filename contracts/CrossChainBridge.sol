@@ -18,14 +18,34 @@ import {IOFT} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/IOFT.sol";
 contract CrossChainBridge is Ownable, ReentrancyGuard, OApp {
     using SafeERC20 for IERC20;
 
-    // LayerZero endpoint (set in constructor or via lzCompose)
-    uint32 public constant LZ_ENDPOINT_ID = 400; // Example for Ethereum; configure per chain
+    // === CHAIN & ENDPOINT CONFIGURATION ===
+    
+    struct ChainConfig {
+        uint32 eid;                 // LayerZero eid
+        string name;                // Chain name
+        uint256 gasLimit;           // Default gas limit for transfers
+        uint256 gasPrice;           // Current gas price (in wei)
+        bool isActive;              // Is chain active
+    }
 
-    // Supported chains (LayerZero eid)
+    // Chain registry
+    mapping(uint32 => ChainConfig) public chainConfigs;
+    uint32[] public supportedChainIds;
     mapping(uint32 => bool) public supportedChains;
+
+    // Current chain EID (set in constructor or updated via manager)
+    uint32 public currentChainEid;
+    
+    // Supported chains (LayerZero eid)
+    // Celo: 125, Ethereum: 101, Polygon: 109, Arbitrum: 110, Optimism: 111, BSC: 102
+    mapping(uint32 => bool) public supportedChainsRegistry;
     
     // Token mappings: local OFT => remote chain eid => remote OFT
     mapping(address => mapping(uint32 => address)) public tokenMappings;
+    
+    // Cross-chain swap slippage protection
+    uint256 public defaultMaxSlippage = 500; // 5% (basis points)
+    mapping(address => uint256) public tokenSlippageLimits; // token => slippage in basis points
     
     // Pending transfers (for custom logic if needed)
     struct BridgeTransfer {
@@ -34,6 +54,8 @@ contract CrossChainBridge is Ownable, ReentrancyGuard, OApp {
         uint32 destinationEid;
         address destinationAddress;
         bool completed;
+        uint256 timestamp;
+        string status; // "pending", "completed", "failed"
     }
     
     mapping(bytes32 => BridgeTransfer) public transfers;
@@ -46,18 +68,27 @@ contract CrossChainBridge is Ownable, ReentrancyGuard, OApp {
         address token,
         uint256 amount,
         uint32 destinationEid,
-        address destinationAddress
+        address destinationAddress,
+        uint256 timestamp
     );
     
     event TransferCompleted(
         bytes32 indexed transferId,
         address indexed recipient,
         address token,
-        uint256 amount
+        uint256 amount,
+        uint32 sourceEid
     );
     
-    event ChainSupported(uint32 eid, bool supported);
+    event TransferFailed(
+        bytes32 indexed transferId,
+        string reason
+    );
+    
+    event ChainSupported(uint32 eid, string chainName, bool supported);
+    event ChainConfigUpdated(uint32 eid, string name, uint256 gasLimit);
     event TokenMapped(address localOFT, uint32 remoteEid, address remoteOFT);
+    event SlippageLimitUpdated(address token, uint256 newLimit);
 
     error ChainNotSupported(uint32 eid);
     error TokenNotMapped(address token, uint32 eid);
@@ -65,8 +96,28 @@ contract CrossChainBridge is Ownable, ReentrancyGuard, OApp {
     error TransferAlreadyCompleted(bytes32 transferId);
     error InvalidAmount(uint256 amount);
     error ZeroAddress();
+    error SlippageExceeded(uint256 received, uint256 expected);
+    error InvalidGasLimit(uint256 limit);
 
-    constructor(address _endpoint) OApp(_endpoint) Ownable(msg.sender) {}
+    constructor(
+        address _endpoint,
+        uint32 _currentChainEid,
+        string memory _currentChainName
+    ) OApp(_endpoint) Ownable(msg.sender) {
+        currentChainEid = _currentChainEid;
+        
+        // Initialize current chain
+        chainConfigs[_currentChainEid] = ChainConfig({
+            eid: _currentChainEid,
+            name: _currentChainName,
+            gasLimit: 200000, // Default gas limit
+            gasPrice: 1 gwei,
+            isActive: true
+        });
+        
+        supportedChainsRegistry[_currentChainEid] = true;
+        supportedChainIds.push(_currentChainEid);
+    }
 
     /**
      * @notice Initialize cross-chain transfer using LayerZero OFT
@@ -88,8 +139,13 @@ contract CrossChainBridge is Ownable, ReentrancyGuard, OApp {
     ) external nonReentrant returns (bytes32 transferId) {
         if (amount == 0) revert InvalidAmount(amount);
         if (destinationAddress == address(0)) revert ZeroAddress();
-        if (!supportedChains[destinationEid]) revert ChainNotSupported(destinationEid);
+        if (!supportedChainsRegistry[destinationEid]) revert ChainNotSupported(destinationEid);
         if (tokenMappings[oft][destinationEid] == address(0)) revert TokenNotMapped(oft, destinationEid);
+
+        // Check slippage limits
+        uint256 slippageLimit = tokenSlippageLimits[oft] > 0 ? tokenSlippageLimits[oft] : defaultMaxSlippage;
+        uint256 minAmount = (minAmountLDZ * (10000 - slippageLimit)) / 10000;
+        if (minAmountLDZ < minAmount) revert SlippageExceeded(minAmountLDZ, minAmount);
 
         // Transfer and burn local shares (OFT standard)
         IOFT(oft).sendFrom(
@@ -109,10 +165,12 @@ contract CrossChainBridge is Ownable, ReentrancyGuard, OApp {
             amount: amount,
             destinationEid: destinationEid,
             destinationAddress: destinationAddress,
-            completed: false
+            completed: false,
+            timestamp: block.timestamp,
+            status: "pending"
         });
 
-        emit TransferInitiated(transferId, msg.sender, oft, amount, destinationEid, destinationAddress);
+        emit TransferInitiated(transferId, msg.sender, oft, amount, destinationEid, destinationAddress, block.timestamp);
         
         return transferId;
     }
@@ -149,18 +207,88 @@ contract CrossChainBridge is Ownable, ReentrancyGuard, OApp {
         bytes32 transferId = keccak256(abi.encodePacked(_sender, localOFT, amount, _sourceEid, _nonce)); // Secure ID
         if (transfers[transferId].user != address(0)) {
             transfers[transferId].completed = true;
-            emit TransferCompleted(transferId, recipient, localOFT, amount);
+            transfers[transferId].status = "completed";
+            emit TransferCompleted(transferId, recipient, localOFT, amount, _sourceEid);
         }
     }
 
+    // === CHAIN MANAGEMENT ===
+
     /**
-     * @notice Add supported chain (LayerZero eid)
-     * @param eid Chain eid
-     * @param supported Whether supported
+     * @notice Add or update supported chain configuration
+     * @param eid LayerZero endpoint ID
+     * @param chainName Human-readable chain name
+     * @param gasLimit Default gas limit for transfers
      */
-    function setSupportedChain(uint32 eid, bool supported) external onlyOwner {
-        supportedChains[eid] = supported;
-        emit ChainSupported(eid, supported);
+    function configureSupportedChain(
+        uint32 eid,
+        string memory chainName,
+        uint256 gasLimit
+    ) external onlyOwner {
+        if (gasLimit < 100000 || gasLimit > 1000000) revert InvalidGasLimit(gasLimit);
+        if (bytes(chainName).length == 0) revert ZeroAddress();
+        
+        if (!supportedChainsRegistry[eid]) {
+            supportedChainIds.push(eid);
+        }
+        
+        chainConfigs[eid] = ChainConfig({
+            eid: eid,
+            name: chainName,
+            gasLimit: gasLimit,
+            gasPrice: chainConfigs[eid].gasPrice == 0 ? 1 gwei : chainConfigs[eid].gasPrice,
+            isActive: true
+        });
+        
+        supportedChainsRegistry[eid] = true;
+        supportedChains[eid] = true;
+        
+        emit ChainConfigUpdated(eid, chainName, gasLimit);
+        emit ChainSupported(eid, chainName, true);
+    }
+
+    /**
+     * @notice Disable a chain
+     * @param eid Chain EID to disable
+     */
+    function disableSupportedChain(uint32 eid) external onlyOwner {
+        if (!supportedChainsRegistry[eid]) revert ChainNotSupported(eid);
+        
+        chainConfigs[eid].isActive = false;
+        supportedChains[eid] = false;
+        
+        emit ChainSupported(eid, chainConfigs[eid].name, false);
+    }
+
+    /**
+     * @notice Update gas price for a chain
+     * @param eid Chain EID
+     * @param gasPrice New gas price in wei
+     */
+    function updateChainGasPrice(uint32 eid, uint256 gasPrice) external onlyOwner {
+        if (!supportedChainsRegistry[eid]) revert ChainNotSupported(eid);
+        chainConfigs[eid].gasPrice = gasPrice;
+    }
+
+    /**
+     * @notice Get all supported chain configurations
+     * @return Array of chain configurations
+     */
+    function getSupportedChains() external view returns (ChainConfig[] memory) {
+        ChainConfig[] memory configs = new ChainConfig[](supportedChainIds.length);
+        for (uint256 i = 0; i < supportedChainIds.length; ++i) {
+            configs[i] = chainConfigs[supportedChainIds[i]];
+        }
+        return configs;
+    }
+
+    /**
+     * @notice Get chain configuration
+     * @param eid Chain EID
+     * @return Chain configuration
+     */
+    function getChainConfig(uint32 eid) external view returns (ChainConfig memory) {
+        return chainConfigs[eid];
     }
 
     /**
@@ -175,19 +303,61 @@ contract CrossChainBridge is Ownable, ReentrancyGuard, OApp {
         address remoteOFT
     ) external onlyOwner {
         if (localOFT == address(0) || remoteOFT == address(0)) revert ZeroAddress();
+        if (!supportedChainsRegistry[remoteEid]) revert ChainNotSupported(remoteEid);
+        
         tokenMappings[localOFT][remoteEid] = remoteOFT;
         emit TokenMapped(localOFT, remoteEid, remoteOFT);
     }
 
     /**
+     * @notice Set slippage limit for a token
+     * @param token Token address
+     * @param slippageBps Slippage limit in basis points (e.g., 500 = 5%)
+     */
+    function setTokenSlippageLimit(address token, uint256 slippageBps) external onlyOwner {
+        if (token == address(0)) revert ZeroAddress();
+        if (slippageBps > 10000) revert InvalidAmount(slippageBps);
+        
+        tokenSlippageLimits[token] = slippageBps;
+        emit SlippageLimitUpdated(token, slippageBps);
+    }
+
+    /**
+     * @notice Set default slippage limit for all tokens
+     * @param slippageBps Slippage limit in basis points
+     */
+    function setDefaultMaxSlippage(uint256 slippageBps) external onlyOwner {
+        if (slippageBps > 10000) revert InvalidAmount(slippageBps);
+        defaultMaxSlippage = slippageBps;
+    }
+
+    /**
      * @notice Get transfer status (view)
      * @param transferId Transfer ID
-     * @return status Completed or not
+     * @return completed Whether transfer is completed
+     * @return amount Transfer amount
+     * @return status Transfer status string
+     * @return timestamp Timestamp of transfer
      */
-    function getTransferStatus(bytes32 transferId) external view returns (bool completed, uint256 amount, address token) {
+    function getTransferStatus(bytes32 transferId) 
+        external 
+        view 
+        returns (bool completed, uint256 amount, string memory status, uint256 timestamp) 
+    {
         BridgeTransfer memory transfer = transfers[transferId];
         if (transfer.user == address(0)) revert TransferNotFound(transferId);
-        return (transfer.completed, transfer.amount, address(0)); // Token not stored; adjust if needed
+        return (transfer.completed, transfer.amount, transfer.status, transfer.timestamp);
+    }
+
+    /**
+     * @notice Get transfer details
+     * @param transferId Transfer ID
+     * @return Transfer details
+     */
+    function getTransferDetails(bytes32 transferId) external view returns (BridgeTransfer memory) {
+        BridgeTransfer memory transfer = transfers[transferId];
+        if (transfer.user == address(0)) revert TransferNotFound(transferId);
+        return transfer;
     }
 
     /**

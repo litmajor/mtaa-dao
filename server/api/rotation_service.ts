@@ -4,6 +4,7 @@ import { daos, daoMemberships, daoRotationCycles } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
+import { evaluateRotationRules, formatRuleRejectionMessage, logRuleEvaluation } from '../services/rules-integration';
 
 const logger = new Logger('rotation-service');
 
@@ -118,14 +119,50 @@ function selectLottery(members: any[]) {
 }
 
 /**
- * Proportional: Based on total contributions (future implementation)
- * For now, defaults to equal probability
+ * Proportional: Based on total contributions using ContributionAnalyzer
+ * 
+ * Selects members with higher contribution weights having higher probability
+ * This ensures fair compensation proportional to contribution effort
  */
 async function selectProportional(daoId: string, members: any[]) {
-  // TODO: Calculate contribution amounts from payment history
-  // For MVP, treat as equal probability
-  const randomIndex = Math.floor(Math.random() * members.length);
-  return members[randomIndex];
+  try {
+    // Import analyzer at runtime to avoid circular dependencies
+    const { ContributionAnalyzer } = await import('../core/nuru/analytics/contribution_analyzer');
+    const analyzer = new ContributionAnalyzer();
+    
+    // Get contribution weights for each member (90-day history)
+    const memberIds = members.map(m => m.userId || m.id);
+    const weights = await analyzer.getContributionWeights(daoId, memberIds, '90d');
+    
+    // Calculate total weight
+    const totalWeight = Object.values(weights).reduce((a: number, b: any) => a + (b as number), 0);
+    
+    if (totalWeight === 0) {
+      // Fallback to random if no contribution data
+      const randomIndex = Math.floor(Math.random() * members.length);
+      return members[randomIndex];
+    }
+    
+    // Weighted random selection
+    let random = Math.random() * totalWeight;
+    for (const member of members) {
+      const memberId = member.userId || member.id;
+      const weight = weights[memberId] || 1;
+      random -= weight;
+      
+      if (random <= 0) {
+        return member;
+      }
+    }
+    
+    // Fallback to last member
+    return members[members.length - 1];
+  } catch (error) {
+    console.error('Error in selectProportional, falling back to random:', error);
+    // Fallback to random selection on error
+    const randomIndex = Math.floor(Math.random() * members.length);
+    return members[randomIndex];
+  }
 }
 
 /**
@@ -156,6 +193,23 @@ export async function processRotation(daoId: string) {
 
     const selectionMethod = (dao.rotationSelectionMethod || 'sequential') as RotationSelectionMethod;
     const recipientUserId = await selectRotationRecipient(daoId, selectionMethod);
+
+    // Evaluate rotation rules before distributing funds
+    const ruleResult = await evaluateRotationRules(daoId, {
+      nextLeader: recipientUserId,
+      rotationFrequency: dao.rotationFrequency || 'monthly',
+      rotationDate: new Date(),
+    });
+
+    if (!ruleResult.approved) {
+      logger.warn(`Rotation rejected by rules: recipient ${recipientUserId} - ${formatRuleRejectionMessage(ruleResult.results)}`);
+      logRuleEvaluation(daoId, 'rotation', recipientUserId, ruleResult.results);
+      return { 
+        status: 'rejected', 
+        reason: formatRuleRejectionMessage(ruleResult.results),
+        rules: ruleResult.results 
+      };
+    }
 
     // Calculate amount to distribute (total treasury balance)
     const treasuryBalance = parseFloat(dao.treasuryBalance?.toString() || '0');
@@ -201,6 +255,7 @@ export async function processRotation(daoId: string) {
       .where(eq(daos.id, daoId));
 
     logger.info(`Rotation processed for DAO ${daoId}: Cycle ${cycleNumber}, Recipient: ${recipientUserId}, Amount: ${treasuryBalance}`);
+    logRuleEvaluation(daoId, 'rotation', recipientUserId, ruleResult.results);
 
     return {
       status: 'completed',

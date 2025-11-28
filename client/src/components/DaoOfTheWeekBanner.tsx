@@ -3,14 +3,21 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
 import { Award, TrendingUp, Users } from 'lucide-react';
+import { useAuth } from '@/pages/hooks/useAuth';
+import { apiGet } from '@/lib/api';
 
 export default function DaoOfTheWeekBanner() {
+  const { isAuthenticated } = useAuth();
+
   const { data } = useQuery({
     queryKey: ['/api/dao-of-the-week/current'],
+    enabled: isAuthenticated, // Only fetch when authenticated
     queryFn: async () => {
-      const response = await fetch('/api/dao-of-the-week/current');
-      if (!response.ok) return null;
-      return response.json();
+      try {
+        return await apiGet('/api/dao-of-the-week/current');
+      } catch (error) {
+        return null;
+      }
     }
   });
 

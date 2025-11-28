@@ -24,7 +24,7 @@ contract MaonoVault is ERC4626, Ownable, ReentrancyGuard, Pausable {
 
     // --- Vault Parameters ---
     uint256 public minDeposit = 10 * 1e18; // 10 cUSD (assuming 18 decimals)
-    uint256 public vaultCap = 10_000 * 1e18; // 10,000 cUSD
+    uint256 public vaultCap = 100_000_000 * 1e18; // 10,000 cUSD
     uint256 public performanceFee = 1500; // 15% (basis points)
     uint256 public managementFee = 200; // 2% annual (basis points)
     uint256 public platformFeeRate = 100; // 1% of fees to platform (basis points)
@@ -45,6 +45,8 @@ contract MaonoVault is ERC4626, Ownable, ReentrancyGuard, Pausable {
     uint256 public lastNAVUpdate;
     uint256 public lastManagementFeeCollection;
     uint256 public highWaterMark = 1e18; // Initial share price (with 18 decimals)
+    uint256 public positionValueCheckpoint; // Value of all manager-deployed positions
+    bool public autoNAVEnabled = true; // Auto-update NAV on deposits/withdrawals
 
     // Fee tracking
     uint256 public totalPerformanceFeesCollected;
@@ -53,6 +55,23 @@ contract MaonoVault is ERC4626, Ownable, ReentrancyGuard, Pausable {
     // Platform fee tracking (optional, per DAO)
     mapping(string => uint256) public daoFees;
     mapping(string => bool) public validDAOs;
+
+    // Manager position tracking for transparency
+    struct ManagerPosition {
+        bytes32 positionId;        // Unique identifier
+        address protocol;          // Aave, Uniswap, etc.
+        uint256 assetAmount;       // In native asset (e.g., cUSD)
+        string assetType;          // cUSD, ETH, USDC, etc.
+        uint256 deployTime;        // When deployed
+        uint256 lastValueUpdate;   // Last time position was valued
+        uint256 currentValue;      // Current position value
+        bool isActive;             // Still deployed
+        string description;        // Human-readable description
+    }
+
+    mapping(bytes32 => ManagerPosition) public positions;
+    bytes32[] public activePositionIds;
+    uint256 private positionCounter;
 
     // Withdrawal queue for large redemptions
     struct WithdrawalRequest {
@@ -65,7 +84,7 @@ contract MaonoVault is ERC4626, Ownable, ReentrancyGuard, Pausable {
     mapping(uint256 => WithdrawalRequest) public withdrawalRequests;
     uint256 public withdrawalRequestCounter;
     uint256 public withdrawalDelay = 1 days; // 24 hour delay for large withdrawals
-    uint256 public largeWithdrawalThreshold = 1000 * 1e18; // 1000 cUSD
+    uint256 public largeWithdrawalThreshold = 10000 * 1e18; // 10000 cUSD
 
     // Events
     event NAVUpdated(uint256 newNAV, uint256 timestamp, address updatedBy);
@@ -89,6 +108,11 @@ contract MaonoVault is ERC4626, Ownable, ReentrancyGuard, Pausable {
     event EmergencyWithdraw(address indexed owner, uint256 amount);
     event AssetsWithdrawn(address indexed manager, uint256 amount);
     event AssetsDeposited(address indexed manager, uint256 amount);
+    event PositionOpened(bytes32 indexed positionId, address protocol, uint256 amount);
+    event PositionClosed(bytes32 indexed positionId, uint256 finalValue);
+    event PositionValueUpdated(bytes32 indexed positionId, uint256 newValue);
+    event PositionCheckpointUpdated(uint256 totalCheckpointValue);
+    event AutoNAVToggled(bool enabled);
 
     // Custom errors
     error BelowMinDeposit(uint256 provided, uint256 minimum);
@@ -204,6 +228,11 @@ contract MaonoVault is ERC4626, Ownable, ReentrancyGuard, Pausable {
         if (currentAssets + assets > vaultCap) revert VaultCapExceeded(assets, vaultCap - currentAssets);
 
         _collectManagementFees();
+        
+        // Auto-update NAV to include new deposit
+        if (autoNAVEnabled) {
+            _autoUpdateNAVOnDeposit(assets);
+        }
 
         return super.deposit(assets, receiver);
     }
@@ -628,4 +657,186 @@ contract MaonoVault is ERC4626, Ownable, ReentrancyGuard, Pausable {
         uint256 annualFee = aum.mulDiv(managementFee, FEE_DENOMINATOR, Math.Rounding.Floor);
         return annualFee.mulDiv(timeElapsed, SECONDS_PER_YEAR, Math.Rounding.Floor);
     }
-}
+
+    // === NAV AUTOMATION & POSITION TRACKING ===
+
+    /**
+     * @notice Report manager position value (called by manager)
+     * Updates the NAV checkpoint based on all deployed positions
+     * @param totalPositionValue Sum of all current position values in base asset
+     */
+    function updatePositionValue(uint256 totalPositionValue) 
+        external 
+        onlyManager 
+        nonReentrant 
+    {
+        _collectManagementFees();
+        
+        // Calculate new NAV = vault cash + positions value
+        uint256 vaultCash = IERC20(asset()).balanceOf(address(this));
+        uint256 newNAV = vaultCash + totalPositionValue;
+        
+        // Prevent unrealistic values (sanity check)
+        if (newNAV == 0) revert InvalidNAV();
+        
+        // Update checkpoint
+        positionValueCheckpoint = totalPositionValue;
+        lastNAV = newNAV;
+        lastNAVUpdate = block.timestamp;
+        
+        emit PositionCheckpointUpdated(totalPositionValue);
+        emit NAVUpdated(newNAV, block.timestamp, msg.sender);
+    }
+
+    /**
+     * @notice Auto-update NAV when deposit occurs (internal)
+     * Adds new deposit amount to tracked positions
+     */
+    function _autoUpdateNAVOnDeposit(uint256 depositAmount) internal {
+        uint256 vaultCash = IERC20(asset()).balanceOf(address(this));
+        uint256 newNAV = vaultCash + positionValueCheckpoint;
+        
+        lastNAV = newNAV;
+        lastNAVUpdate = block.timestamp;
+        
+        emit NAVUpdated(newNAV, block.timestamp, msg.sender);
+    }
+
+    /**
+     * @notice Auto-update NAV when withdrawal occurs (internal)
+     * Subtracts withdrawn amount from vault cash
+     */
+    function _autoUpdateNAVOnWithdrawal(uint256 withdrawalAmount) internal {
+        uint256 vaultCash = IERC20(asset()).balanceOf(address(this));
+        uint256 newNAV = vaultCash + positionValueCheckpoint;
+        
+        lastNAV = newNAV;
+        lastNAVUpdate = block.timestamp;
+        
+        emit NAVUpdated(newNAV, block.timestamp, msg.sender);
+    }
+
+    /**
+     * @notice Toggle automatic NAV updates
+     * @param enabled Whether to enable auto-updates
+     */
+    function setAutoNAVEnabled(bool enabled) external onlyOwner {
+        autoNAVEnabled = enabled;
+        emit AutoNAVToggled(enabled);
+    }
+
+    /**
+     * @notice Create a manager position record (for transparency)
+     * @param protocol Protocol address (Aave, Uniswap, etc.)
+     * @param assetAmount Amount of asset deployed
+     * @param assetType Type of asset (cUSD, ETH, etc.)
+     * @param description Human-readable description
+     * @return positionId Unique position identifier
+     */
+    function openPosition(
+        address protocol,
+        uint256 assetAmount,
+        string memory assetType,
+        string memory description
+    ) 
+        external 
+        onlyManager 
+        returns (bytes32 positionId) 
+    {
+        require(protocol != address(0), "Invalid protocol");
+        require(assetAmount > 0, "Invalid amount");
+        require(bytes(assetType).length > 0, "Invalid asset type");
+        
+        positionId = keccak256(abi.encodePacked(protocol, assetAmount, block.timestamp, positionCounter++));
+        
+        positions[positionId] = ManagerPosition({
+            positionId: positionId,
+            protocol: protocol,
+            assetAmount: assetAmount,
+            assetType: assetType,
+            deployTime: block.timestamp,
+            lastValueUpdate: block.timestamp,
+            currentValue: assetAmount, // Initially equal to deployed amount
+            isActive: true,
+            description: description
+        });
+        
+        activePositionIds.push(positionId);
+        
+        emit PositionOpened(positionId, protocol, assetAmount);
+        return positionId;
+    }
+
+    /**
+     * @notice Update position value (called by manager as positions generate returns)
+     * @param positionId Position to update
+     * @param newValue New valuation of position in base asset
+     */
+    function updatePositionValueReport(bytes32 positionId, uint256 newValue) 
+        external 
+        onlyManager 
+        nonReentrant 
+    {
+        require(positions[positionId].isActive, "Position not active");
+        require(newValue > 0, "Invalid value");
+        
+        positions[positionId].currentValue = newValue;
+        positions[positionId].lastValueUpdate = block.timestamp;
+        
+        emit PositionValueUpdated(positionId, newValue);
+    }
+
+    /**
+     * @notice Close a position (manager withdraws from protocol)
+     * @param positionId Position to close
+     * @param finalValue Final value received from protocol
+     */
+    function closePosition(bytes32 positionId, uint256 finalValue) 
+        external 
+        onlyManager 
+        nonReentrant 
+    {
+        ManagerPosition storage pos = positions[positionId];
+        require(pos.isActive, "Position not active");
+        
+        pos.isActive = false;
+        pos.currentValue = finalValue;
+        pos.lastValueUpdate = block.timestamp;
+        
+        emit PositionClosed(positionId, finalValue);
+    }
+
+    /**
+     * @notice Get all active positions
+     * @return List of active position IDs
+     */
+    function getActivePositions() external view returns (bytes32[] memory) {
+        return activePositionIds;
+    }
+
+    /**
+     * @notice Get position details
+     * @param positionId Position ID
+     * @return Position data
+     */
+    function getPosition(bytes32 positionId) 
+        external 
+        view 
+        returns (ManagerPosition memory) 
+    {
+        return positions[positionId];
+    }
+
+    /**
+     * @notice Calculate total value of all active positions
+     * @return Total position value in base asset
+     */
+    function getTotalPositionValue() external view returns (uint256) {
+        uint256 totalValue = 0;
+        for (uint256 i = 0; i < activePositionIds.length; ++i) {
+            if (positions[activePositionIds[i]].isActive) {
+                totalValue += positions[activePositionIds[i]].currentValue;
+            }
+        }
+        return totalValue;
+    }

@@ -4,6 +4,7 @@ import { TokenRegistry } from '../../shared/tokenRegistry';
 import { vaultValidation } from '../middleware/validation';
 import { asyncHandler } from '../middleware/errorHandler';
 import { Logger } from '../utils/logger';
+import { getGatewayAgentService } from '../core/agents/gateway/service';
 
 const logger = new Logger('vault-api');
 
@@ -354,26 +355,57 @@ export async function getSupportedTokensHandler(req: Request, res: Response) {
   }
 }
 
-// Get token price
+// Get token price from Gateway Agent (multi-adapter price feeds)
 export async function getTokenPriceHandler(req: Request, res: Response) {
   try {
     const { tokenAddress } = req.params;
 
-    // For now, return mock price - this should integrate with actual price feeds
-    const mockPrices: Record<string, number> = {
-      'CELO': 0.65,
-      'cUSD': 1.00,
-      'cEUR': 1.08,
-      'USDT': 1.00,
-      'MTAA': 0.10
-    };
-
     const token = TokenRegistry.getTokenByAddress(tokenAddress);
-    const price = token ? mockPrices[token.symbol] || 0.30 : 0;
+    if (!token) {
+      return res.status(404).json({ error: 'Token not found' });
+    }
 
-    res.json({ price, currency: 'USD' });
+    // Use Gateway Agent for real price feeds from 5+ adapters
+    const gatewayService = getGatewayAgentService();
+    
+    // Request prices with auto-failover through adapters
+    const priceRequest = await gatewayService.requestPrices(
+      [token.symbol],
+      ['celo', 'ethereum'],
+      undefined // auto-select best adapter
+    );
+
+    // Wait briefly for response from message bus
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const priceData = priceRequest?.payload?.data?.[0];
+    
+    if (!priceData) {
+      logger.warn(`No price data found for ${token.symbol}`);
+      return res.status(503).json({ 
+        error: 'Price data unavailable',
+        message: 'Gateway adapters did not return price data'
+      });
+    }
+
+    res.json({
+      success: true,
+      token: token.symbol,
+      address: tokenAddress,
+      price: priceData.price,
+      currency: 'USD',
+      source: priceData.source,
+      timestamp: new Date().toISOString(),
+      metadata: {
+        adapters: priceData.adapters || [],
+        confidence: priceData.confidence || 'high'
+      }
+    });
   } catch (error: any) {
-    console.error('Error fetching token price:', error);
-    res.status(500).json({ error: 'Failed to fetch token price' });
+    logger.error('Error fetching token price:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch token price',
+      message: error.message 
+    });
   }
 }

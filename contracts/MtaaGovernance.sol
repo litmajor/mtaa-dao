@@ -18,6 +18,9 @@ contract MTAARewardsManager is Ownable, ReentrancyGuard {
     address public daoTreasury;
     mapping(address => uint256) public lastChallengeTimestamp;
     
+    // Pool address registry for LP token tracking
+    mapping(bytes32 => address) public poolAddresses; // poolName hash => LP token address
+    
     // Reward rates (MTAA tokens)
     uint256 public constant VAULT_CREATION_REWARD = 2000 * 1e18;
     uint256 public constant FIRST_DEPOSIT_REWARD = 100 * 1e18;
@@ -80,6 +83,8 @@ contract MTAARewardsManager is Ownable, ReentrancyGuard {
     event VaultPerformanceUpdated(address indexed vault, bool isTopPerformer);
     event MilestoneRewardSet(uint256 milestone, uint256 reward);
     event TaskDeactivated(bytes32 indexed taskId);
+    event PoolRegistered(string indexed poolName, address lpToken);
+    event PoolUnregistered(string indexed poolName);
 
     // Errors
     error TaskNotActive();
@@ -349,10 +354,55 @@ contract MTAARewardsManager is Ownable, ReentrancyGuard {
     }
 
     function _getTotalLPTokens(string calldata poolName) internal view returns (uint256) {
-        // TODO: Map poolName to LP contract and call totalSupply()
-        // e.g., address lp = poolAddresses[keccak256(abi.encodePacked(poolName))];
-        // return IERC20(lp).totalSupply();
-        return 1; // Placeholder; implement properly
+        bytes32 poolKey = keccak256(abi.encodePacked(poolName));
+        address lpToken = poolAddresses[poolKey];
+        
+        // If pool not registered, return 1 to prevent division by zero
+        if (lpToken == address(0)) return 1;
+        
+        // Fetch total supply from LP token contract
+        try IERC20(lpToken).totalSupply() returns (uint256 supply) {
+            return supply > 0 ? supply : 1;
+        } catch {
+            // If call fails, return 1 as fallback
+            return 1;
+        }
+    }
+
+    /**
+     * @notice Register a liquidity pool for rewards calculation
+     * @param poolName Human-readable pool name (e.g., "UNISWAP_cUSD_ETH")
+     * @param lpToken Address of the LP token contract
+     */
+    function registerPool(string memory poolName, address lpToken) external onlyOwner {
+        require(lpToken != address(0), "Invalid LP token");
+        require(bytes(poolName).length > 0, "Invalid pool name");
+        
+        bytes32 poolKey = keccak256(abi.encodePacked(poolName));
+        poolAddresses[poolKey] = lpToken;
+        
+        emit PoolRegistered(poolName, lpToken);
+    }
+
+    /**
+     * @notice Unregister a liquidity pool
+     * @param poolName Pool name to unregister
+     */
+    function unregisterPool(string memory poolName) external onlyOwner {
+        bytes32 poolKey = keccak256(abi.encodePacked(poolName));
+        delete poolAddresses[poolKey];
+        
+        emit PoolUnregistered(poolName);
+    }
+
+    /**
+     * @notice Get registered pool LP token address
+     * @param poolName Pool name
+     * @return LP token address (or zero if not registered)
+     */
+    function getPoolLPToken(string memory poolName) external view returns (address) {
+        bytes32 poolKey = keccak256(abi.encodePacked(poolName));
+        return poolAddresses[poolKey];
     }
 
     // === DAILY CHALLENGES ===

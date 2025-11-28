@@ -31,6 +31,18 @@ export const LAYERZERO_ENDPOINTS: Record<SupportedChain, LayerZeroConfig> = {
     endpoint: '0x3c2269811836af69497E5F486A85D7316753cf62',
     chainId: 109
   },
+  [SupportedChain.POLYGON_MUMBAI]: {
+    endpoint: '0x6edce65f5bc78db0899dc2813cac82f8bb6e6a72',
+    chainId: 10109
+  },
+  [SupportedChain.BSC]: {
+    endpoint: '0x3c2269811836af69497E5F486A85D7316753cf62',
+    chainId: 102
+  },
+  [SupportedChain.BSC_TESTNET]: {
+    endpoint: '0x6edce65f5bc78db0899dc2813cac82f8bb6e6a72',
+    chainId: 10102
+  },
   [SupportedChain.OPTIMISM]: {
     endpoint: '0x3c2269811836af69497E5F486A85D7316753cf62',
     chainId: 111
@@ -38,6 +50,22 @@ export const LAYERZERO_ENDPOINTS: Record<SupportedChain, LayerZeroConfig> = {
   [SupportedChain.ARBITRUM]: {
     endpoint: '0x3c2269811836af69497E5F486A85D7316753cf62',
     chainId: 110
+  },
+  [SupportedChain.TRON]: {
+    endpoint: '0x3c2269811836af69497E5F486A85D7316753cf62',
+    chainId: 199
+  },
+  [SupportedChain.TRON_SHASTA]: {
+    endpoint: '0x6edce65f5bc78db0899dc2813cac82f8bb6e6a72',
+    chainId: 10199
+  },
+  [SupportedChain.TON]: {
+    endpoint: '0x3c2269811836af69497E5F486A85D7316753cf62',
+    chainId: 198
+  },
+  [SupportedChain.TON_TESTNET]: {
+    endpoint: '0x6edce65f5bc78db0899dc2813cac82f8bb6e6a72',
+    chainId: 10198
   }
 };
 
@@ -58,11 +86,39 @@ export const AXELAR_GATEWAYS: Record<SupportedChain, AxelarConfig> = {
     gateway: '0x6f015F16De9fC8791b234eF68D486d2bF203FBA8',
     gasReceiver: '0x2d5d7d31F671F86C782533cc367F14109a082712'
   },
+  [SupportedChain.POLYGON_MUMBAI]: {
+    gateway: '0x6f015F16De9fC8791b234eF68D486d2bF203FBA8',
+    gasReceiver: '0x2d5d7d31F671F86C782533cc367F14109a082712'
+  },
+  [SupportedChain.BSC]: {
+    gateway: '0x4F4495243837681061C4743b74B3eEdf548D56A5',
+    gasReceiver: '0x2d5d7d31F671F86C782533cc367F14109a082712'
+  },
+  [SupportedChain.BSC_TESTNET]: {
+    gateway: '0xe432150cce91c13a887f7D836923d5597adD8E31',
+    gasReceiver: '0x2d5d7d31F671F86C782533cc367F14109a082712'
+  },
   [SupportedChain.OPTIMISM]: {
     gateway: '0xe432150cce91c13a887f7D836923d5597adD8E31',
     gasReceiver: '0x2d5d7d31F671F86C782533cc367F14109a082712'
   },
   [SupportedChain.ARBITRUM]: {
+    gateway: '0xe432150cce91c13a887f7D836923d5597adD8E31',
+    gasReceiver: '0x2d5d7d31F671F86C782533cc367F14109a082712'
+  },
+  [SupportedChain.TRON]: {
+    gateway: '0xe432150cce91c13a887f7D836923d5597adD8E31',
+    gasReceiver: '0x2d5d7d31F671F86C782533cc367F14109a082712'
+  },
+  [SupportedChain.TRON_SHASTA]: {
+    gateway: '0xe432150cce91c13a887f7D836923d5597adD8E31',
+    gasReceiver: '0x2d5d7d31F671F86C782533cc367F14109a082712'
+  },
+  [SupportedChain.TON]: {
+    gateway: '0xe432150cce91c13a887f7D836923d5597adD8E31',
+    gasReceiver: '0x2d5d7d31F671F86C782533cc367F14109a082712'
+  },
+  [SupportedChain.TON_TESTNET]: {
     gateway: '0xe432150cce91c13a887f7D836923d5597adD8E31',
     gasReceiver: '0x2d5d7d31F671F86C782533cc367F14109a082712'
   }

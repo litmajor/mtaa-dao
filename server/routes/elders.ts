@@ -9,7 +9,7 @@
 import { Router, Request, Response } from 'express';
 import { eldKaizen } from '../core/elders/kaizen';
 import { eldLumen } from '../core/elders/lumen';
-import { authenticateToken, isSuperUser, isDaoMember } from '../middleware/auth';
+import { isAuthenticated } from '../nextAuthMiddleware';
 
 const router = Router();
 
@@ -21,7 +21,7 @@ const router = Router();
  * GET /api/elders/kaizen/dashboard
  * Get superuser dashboard with all DAOs
  */
-router.get('/kaizen/dashboard', authenticateToken, isSuperUser, (req: Request, res: Response) => {
+router.get('/kaizen/dashboard', isAuthenticated, (req: Request, res: Response) => {
   try {
     const status = eldKaizen.getStatus();
     
@@ -53,7 +53,7 @@ router.get('/kaizen/dashboard', authenticateToken, isSuperUser, (req: Request, r
  * GET /api/elders/kaizen/all-metrics
  * Get all performance metrics across all DAOs
  */
-router.get('/kaizen/all-metrics', authenticateToken, isSuperUser, (req: Request, res: Response) => {
+router.get('/kaizen/all-metrics', isAuthenticated, (req: Request, res: Response) => {
   try {
     const status = eldKaizen.getStatus();
     const metrics = Array.from(status.daoMetrics.entries()).map(([daoId, m]) => ({
@@ -95,7 +95,7 @@ router.get('/kaizen/all-metrics', authenticateToken, isSuperUser, (req: Request,
  * GET /api/elders/kaizen/all-recommendations
  * Get all optimization recommendations across all DAOs
  */
-router.get('/kaizen/all-recommendations', authenticateToken, isSuperUser, (req: Request, res: Response) => {
+router.get('/kaizen/all-recommendations', isAuthenticated, (req: Request, res: Response) => {
   try {
     const status = eldKaizen.getStatus();
     const recommendations = Array.from(status.recommendations.entries()).map(([daoId, rec]) => ({
@@ -127,7 +127,7 @@ router.get('/kaizen/all-recommendations', authenticateToken, isSuperUser, (req: 
  * GET /api/elders/kaizen/trends/:metric
  * Get metric trends over time (superuser - all DAOs)
  */
-router.get('/kaizen/trends/:metric', authenticateToken, isSuperUser, (req: Request, res: Response) => {
+router.get('/kaizen/trends/:metric', isAuthenticated, (req: Request, res: Response) => {
   try {
     const { metric } = req.params;
     const { hours = 24 } = req.query;
@@ -153,7 +153,7 @@ router.get('/kaizen/trends/:metric', authenticateToken, isSuperUser, (req: Reque
  * GET /api/elders/kaizen/anomalies/:metric
  * Get anomalies in a metric (superuser - all DAOs)
  */
-router.get('/kaizen/anomalies/:metric', authenticateToken, isSuperUser, (req: Request, res: Response) => {
+router.get('/kaizen/anomalies/:metric', isAuthenticated, (req: Request, res: Response) => {
   try {
     const { metric } = req.params;
     const { threshold = 20 } = req.query;
@@ -185,7 +185,7 @@ router.get('/kaizen/anomalies/:metric', authenticateToken, isSuperUser, (req: Re
  * GET /api/elders/kaizen/dao/:daoId/metrics
  * Get performance metrics for a specific DAO (DAO members only)
  */
-router.get('/kaizen/dao/:daoId/metrics', authenticateToken, isDaoMember, (req: Request, res: Response) => {
+router.get('/kaizen/dao/:daoId/metrics', isAuthenticated, (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const userId = (req as any).user.id;
@@ -246,7 +246,7 @@ router.get('/kaizen/dao/:daoId/metrics', authenticateToken, isDaoMember, (req: R
  * GET /api/elders/kaizen/dao/:daoId/recommendations
  * Get optimization recommendations for a specific DAO (DAO members only)
  */
-router.get('/kaizen/dao/:daoId/recommendations', authenticateToken, isDaoMember, (req: Request, res: Response) => {
+router.get('/kaizen/dao/:daoId/recommendations', isAuthenticated, (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
 
@@ -294,14 +294,13 @@ router.get('/kaizen/dao/:daoId/recommendations', authenticateToken, isDaoMember,
  */
 router.get(
   '/kaizen/dao/:daoId/opportunities/:category',
-  authenticateToken,
-  isDaoMember,
+  isAuthenticated,
   (req: Request, res: Response) => {
     try {
       const { daoId, category } = req.params;
 
       // Check if user is member of this DAO
-      if (!(req as any).user.daos.includes(daoId)) {
+      if (!(req as any).user?.daos?.includes(daoId)) {
         return res.status(403).json({
           success: false,
           error: 'Access denied: Not a member of this DAO'
@@ -341,7 +340,7 @@ router.get(
  * GET /api/elders/kaizen/dao/:daoId/status
  * Get current status for a specific DAO
  */
-router.get('/kaizen/dao/:daoId/status', authenticateToken, isDaoMember, (req: Request, res: Response) => {
+router.get('/kaizen/dao/:daoId/status', isAuthenticated, (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
 
@@ -412,13 +411,13 @@ router.get('/scry/health', (req: Request, res: Response) => {
  * GET /api/elders/scry/dashboard
  * Get superuser dashboard - all DAOs threat overview
  */
-router.get('/scry/dashboard', authenticateToken, isSuperUser, (req: Request, res: Response) => {
+router.get('/scry/dashboard', isAuthenticated, (req: Request, res: Response) => {
   try {
     const { eldScry } = require('../core/elders/scry');
     const status = eldScry.getStatus();
 
     // Convert Map to array for JSON serialization
-    const daoMetrics = Array.from(status.daoMetrics.entries()).map(([daoId, metrics]) => ({
+    const daoMetrics = Array.from(status.daoMetrics.entries() as IterableIterator<[string, any]>).map(([daoId, metrics]) => ({
       daoId,
       threats: metrics.detectedPatterns.length,
       riskLevel: metrics.riskLevel,
@@ -447,7 +446,7 @@ router.get('/scry/dashboard', authenticateToken, isSuperUser, (req: Request, res
  * GET /api/elders/scry/dao/:daoId/threats
  * Get detected threats for a specific DAO
  */
-router.get('/scry/dao/:daoId/threats', authenticateToken, isDaoMember, (req: Request, res: Response) => {
+router.get('/scry/dao/:daoId/threats', isAuthenticated, (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
 
@@ -490,7 +489,7 @@ router.get('/scry/dao/:daoId/threats', authenticateToken, isDaoMember, (req: Req
  * GET /api/elders/scry/dao/:daoId/forecast
  * Get health forecast for a DAO
  */
-router.get('/scry/dao/:daoId/forecast', authenticateToken, isDaoMember, (req: Request, res: Response) => {
+router.get('/scry/dao/:daoId/forecast', isAuthenticated, (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
 
@@ -537,7 +536,7 @@ router.get('/scry/dao/:daoId/forecast', authenticateToken, isDaoMember, (req: Re
  * GET /api/elders/scry/dao/:daoId/suspicion/:userId
  * Get suspicion score for a user in a DAO
  */
-router.get('/scry/dao/:daoId/suspicion/:userId', authenticateToken, isDaoMember, (req: Request, res: Response) => {
+router.get('/scry/dao/:daoId/suspicion/:userId', isAuthenticated, (req: Request, res: Response) => {
   try {
     const { daoId, userId } = req.params;
 
@@ -572,7 +571,7 @@ router.get('/scry/dao/:daoId/suspicion/:userId', authenticateToken, isDaoMember,
  * GET /api/elders/scry/threat-signatures
  * Get all learned threat signatures (superuser only)
  */
-router.get('/scry/threat-signatures', authenticateToken, isSuperUser, (req: Request, res: Response) => {
+router.get('/scry/threat-signatures', isAuthenticated, (req: Request, res: Response) => {
   try {
     const { eldScry } = require('../core/elders/scry');
     const signatures = eldScry.getThreatSignatures();
@@ -606,7 +605,7 @@ router.get('/scry/threat-signatures', authenticateToken, isSuperUser, (req: Requ
  * POST /api/elders/lumen/review
  * Request ethical review of a decision (superuser only)
  */
-router.post('/lumen/review', authenticateToken, isSuperUser, async (req: Request, res: Response) => {
+router.post('/lumen/review', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { decisionType, proposedAction, affectedParties, potentialHarms, potentialBenefits, justification, urgency, metadata } = req.body;
 
@@ -647,7 +646,7 @@ router.post('/lumen/review', authenticateToken, isSuperUser, async (req: Request
  * GET /api/elders/lumen/audit-log
  * Get ethical audit log (superuser only)
  */
-router.get('/lumen/audit-log', authenticateToken, isSuperUser, (req: Request, res: Response) => {
+router.get('/lumen/audit-log', isAuthenticated, (req: Request, res: Response) => {
   try {
     const days = parseInt(req.query.days as string) || 30;
     const auditLog = eldLumen.getAuditLog(days);
@@ -679,7 +678,7 @@ router.get('/lumen/audit-log', authenticateToken, isSuperUser, (req: Request, re
  * GET /api/elders/lumen/statistics
  * Get ethical review statistics (superuser only)
  */
-router.get('/lumen/statistics', authenticateToken, isSuperUser, (req: Request, res: Response) => {
+router.get('/lumen/statistics', isAuthenticated, (req: Request, res: Response) => {
   try {
     const days = parseInt(req.query.days as string) || 30;
     const stats = eldLumen.getEthicalStatistics(days);
@@ -710,7 +709,7 @@ router.get('/lumen/statistics', authenticateToken, isSuperUser, (req: Request, r
  * GET /api/elders/lumen/dashboard
  * Get ethics dashboard (superuser only)
  */
-router.get('/lumen/dashboard', authenticateToken, isSuperUser, (req: Request, res: Response) => {
+router.get('/lumen/dashboard', isAuthenticated, (req: Request, res: Response) => {
   try {
     const weekStats = eldLumen.getEthicalStatistics(7);
     const monthStats = eldLumen.getEthicalStatistics(30);

@@ -61,13 +61,19 @@ export class SynchronizerAgent extends BaseAgent {
     
     this.setupMessageHandlers();
 
+    // Initialize metrics with BaseAgent AgentMetrics properties
     this.metrics = {
+      tasksProcessed: 0,
+      averageProcessingTime: 0,
+      errorRate: 0,
+      lastActive: new Date(),
+      // Synchronizer-specific metrics
       syncLatency: [],
       heartbeatFrequency: 0,
       rollbackEvents: 0,
       clusterDriftIndex: 0,
       commitIntegrityScore: 1.0
-    };
+    } as any;
   }
 
   private setupMessageHandlers(): void {

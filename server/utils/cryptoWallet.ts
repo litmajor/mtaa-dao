@@ -1,10 +1,7 @@
 
 import crypto from 'crypto';
 import { generateMnemonic, mnemonicToSeedSync, validateMnemonic } from 'bip39';
-import * as EthereumJSWallet from 'ethereumjs-wallet';
-import Web3 from 'web3';
-
-const hdkey = (EthereumJSWallet as any).hdkey || EthereumJSWallet;
+import { ethers } from 'ethers';
 
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
 const SALT_LENGTH = 16;
@@ -31,16 +28,14 @@ export function generateWalletFromMnemonic(wordCount: 12 | 24 = 12): WalletCrede
   const strength = wordCount === 12 ? 128 : 256;
   const mnemonic = generateMnemonic(strength);
   
-  const seed = mnemonicToSeedSync(mnemonic);
-  const hdwallet = hdkey.fromMasterSeed(seed);
-  const wallet = hdwallet.derivePath("m/44'/60'/0'/0/0").getWallet();
-  
-  const privateKey = '0x' + wallet.getPrivateKey().toString('hex');
-  const address = '0x' + wallet.getAddress().toString('hex');
+  // Create wallet from mnemonic using ethers
+  // Use ethers HDNode for derivation
+  const mnemonicWallet = ethers.Mnemonic.fromPhrase(mnemonic);
+  const hdnode = ethers.HDNodeWallet.fromMnemonic(mnemonicWallet, "m/44'/60'/0'/0/0");
   
   return {
-    address,
-    privateKey,
+    address: hdnode.address,
+    privateKey: hdnode.privateKey,
     mnemonic
   };
 }
@@ -53,16 +48,12 @@ export function recoverWalletFromMnemonic(mnemonic: string): WalletCredentials {
     throw new Error('Invalid mnemonic phrase');
   }
   
-  const seed = mnemonicToSeedSync(mnemonic);
-  const hdwallet = hdkey.fromMasterSeed(seed);
-  const wallet = hdwallet.derivePath("m/44'/60'/0'/0/0").getWallet();
-  
-  const privateKey = '0x' + wallet.getPrivateKey().toString('hex');
-  const address = '0x' + wallet.getAddress().toString('hex');
+  const mnemonicWallet = ethers.Mnemonic.fromPhrase(mnemonic);
+  const hdnode = ethers.HDNodeWallet.fromMnemonic(mnemonicWallet, "m/44'/60'/0'/0/0");
   
   return {
-    address,
-    privateKey,
+    address: hdnode.address,
+    privateKey: hdnode.privateKey,
     mnemonic
   };
 }
@@ -71,12 +62,11 @@ export function recoverWalletFromMnemonic(mnemonic: string): WalletCredentials {
  * Import wallet from private key
  */
 export function importWalletFromPrivateKey(privateKey: string): WalletCredentials {
-  const web3 = new Web3();
-  const account = web3.eth.accounts.privateKeyToAccount(privateKey);
+  const wallet = new ethers.Wallet(privateKey);
   
   return {
-    address: account.address,
-    privateKey: account.privateKey
+    address: wallet.address,
+    privateKey: wallet.privateKey
   };
 }
 
@@ -125,11 +115,10 @@ export function decryptWallet(encryptedWallet: EncryptedWallet, password: string
   
   const walletData = JSON.parse(decrypted);
   
-  const web3 = new Web3();
-  const account = web3.eth.accounts.privateKeyToAccount(walletData.privateKey);
+  const wallet = new ethers.Wallet(walletData.privateKey);
   
   return {
-    address: account.address,
+    address: wallet.address,
     privateKey: walletData.privateKey,
     mnemonic: walletData.mnemonic
   };

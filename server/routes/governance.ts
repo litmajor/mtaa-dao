@@ -12,6 +12,7 @@ import {
 } from '../../shared/schema';
 import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
 import { isAuthenticated } from '../nextAuthMiddleware';
+import { evaluateGovernanceRules, formatRuleRejectionMessage, logRuleEvaluation } from '../services/rules-integration';
 
 const router = express.Router();
 
@@ -147,6 +148,37 @@ router.post('/proposals/:proposalId/execute', isAuthenticated, async (req, res) 
       return res.status(403).json({ message: 'Insufficient permissions to execute proposal' });
     }
 
+    // Evaluate governance rules before execution
+    const ruleResult = await evaluateGovernanceRules(proposalData.daoId, {
+      proposalId,
+      proposalType: proposalData.proposalType || 'general',
+      votesFor: yesVotes,
+      votesAgainst: noVotes,
+      totalMembers: memberCount,
+      createdAt: new Date(),
+    });
+
+    if (!ruleResult.approved) {
+      await db.update(proposals)
+        .set({ 
+          status: 'failed',
+          metadata: sql`jsonb_set(
+            COALESCE(metadata, '{}'::jsonb), 
+            '{failure_reason}', 
+            ${JSON.stringify(`Proposal rejected by governance rules: ${formatRuleRejectionMessage(ruleResult.results)}`)}
+          )`
+        })
+        .where(eq(proposals.id, proposalId));
+
+      logRuleEvaluation(proposalData.daoId, 'proposal', proposalId, ruleResult.results);
+      return res.status(403).json({
+        success: false,
+        message: 'Proposal execution blocked by governance rules',
+        reason: formatRuleRejectionMessage(ruleResult.results),
+        rules: ruleResult.results,
+      });
+    }
+
     // Add to execution queue with CRITICAL 48-hour timelock
     // This prevents immediate execution of malicious proposals
     let delay = 48; // Default 48 hours for security
@@ -165,6 +197,8 @@ router.post('/proposals/:proposalId/execute', isAuthenticated, async (req, res) 
       executionData: proposalData.executionData || {},
       status: 'pending'
     });
+
+    logRuleEvaluation(proposalData.daoId, 'proposal', proposalId, ruleResult.results);
 
     res.json({
       success: true,
@@ -383,7 +417,7 @@ router.delete('/:daoId/delegate/:delegationId', isAuthenticated, async (req, res
 // Check proposal quorum and update status with enforcement
 router.post('/proposals/:proposalId/check-quorum', isAuthenticated, async (req, res) => {
   try {
-    const { proposalId } = req.params;
+    const { proposalId } = req.params as { proposalId: string };
 
     const proposal = await db.select().from(proposals).where(eq(proposals.id, proposalId)).limit(1);
     if (!proposal.length) {
@@ -417,7 +451,9 @@ router.post('/proposals/:proposalId/check-quorum', isAuthenticated, async (req, 
     const requiredQuorum = Math.ceil((totalActiveMembers * quorumPercentage) / 100);
 
     // Calculate vote totals
-    const totalVotes = proposalData.yesVotes + proposalData.noVotes + (proposalData.abstainVotes || 0);
+    const yesVotes = proposalData.yesVotes || 0;
+    const noVotes = proposalData.noVotes || 0;
+    const totalVotes = yesVotes + noVotes + (proposalData.abstainVotes || 0);
 
     // CRITICAL: Enforce quorum requirement
     if (totalVotes < requiredQuorum) {
@@ -462,7 +498,8 @@ router.post('/proposals/:proposalId/check-quorum', isAuthenticated, async (req, 
     });
 
     // Proceed with checking majority and updating status as before
-    const majorityReached = proposalData.yesVotes > proposalData.noVotes;
+    const majorityReached = yesVotes > noVotes;
+    const quorumMet = totalVotes >= requiredQuorum;
     const passed = requiredQuorum > 0 && totalVotes >= requiredQuorum && majorityReached; // Ensure quorum is met and majority reached
 
     let newStatus = 'failed';
@@ -473,7 +510,7 @@ router.post('/proposals/:proposalId/check-quorum', isAuthenticated, async (req, 
       failureReason = `Quorum not met: ${totalVotes}/${requiredQuorum} votes (${(totalVotes / totalActiveMembers * 100).toFixed(2)}% participation)`;
     } else if (!majorityReached) {
       newStatus = 'failed';
-      failureReason = `Majority not reached: ${proposalData.yesVotes} yes vs ${proposalData.noVotes} no votes`;
+      failureReason = `Majority not reached: ${yesVotes} yes vs ${noVotes} no votes`;
     } else {
       newStatus = 'passed';
     }

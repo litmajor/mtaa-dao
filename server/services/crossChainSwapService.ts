@@ -5,6 +5,7 @@ import { Logger } from '../utils/logger';
 import { AppError } from '../middleware/errorHandler';
 import { db } from '../db';
 import { crossChainTransfers } from '../../shared/schema';
+import { eq } from 'drizzle-orm';
 import { synchronizerAgent } from '../agents/synchronizer';
 
 export interface SwapQuote {
@@ -13,6 +14,7 @@ export interface SwapQuote {
   fromToken: string;
   toToken: string;
   fromAmount: string;
+  toAmount?: string;  // Added for actual/estimated output amount
   estimatedToAmount: string;
   exchangeRate: number;
   priceImpact: number;
@@ -20,6 +22,7 @@ export interface SwapQuote {
   route: string[];
   bridgeFee: string;
   slippageTolerance: number;
+  toAddress?: string; // Added for recipient address
 }
 
 export interface SwapExecution {
@@ -213,7 +216,7 @@ export class CrossChainSwapService {
     userAddress: string
   ): Promise<string> {
     const { CHAIN_CONFIGS } = await import('../../shared/chainRegistry');
-    const fromConfig = CHAIN_CONFIGS[quote.fromChain as any];
+    const fromConfig = CHAIN_CONFIGS[quote.fromChain as SupportedChain];
 
     if (!fromConfig) {
       throw new Error(`No chain config for ${quote.fromChain}`);
@@ -281,7 +284,8 @@ export class CrossChainSwapService {
 
     try {
       const dstChainId = this.getLayerZeroChainId(quote.toChain);
-      const destination = ethers.AbiCoder.defaultAbiCoder().encode(['address'], [quote.toAddress || await signer.getAddress()]);
+      const recipientAddress = quote.toAddress || await signer.getAddress();
+      const destination = ethers.AbiCoder.defaultAbiCoder().encode(['address'], [recipientAddress]);
       const payload = ethers.AbiCoder.defaultAbiCoder().encode(
         ['address', 'uint256'],
         [quote.fromToken, ethers.parseEther(quote.fromAmount)]
@@ -315,7 +319,7 @@ export class CrossChainSwapService {
     userAddress: string
   ): Promise<string> {
     const { CHAIN_CONFIGS } = await import('../../shared/chainRegistry');
-    const toConfig = CHAIN_CONFIGS[quote.toChain as any];
+    const toConfig = CHAIN_CONFIGS[quote.toChain as SupportedChain];
 
     if (!toConfig) {
       throw new Error(`No chain config for ${quote.toChain}`);
@@ -331,7 +335,7 @@ export class CrossChainSwapService {
       txHash: tx.hash,
       fromToken: quote.fromToken,
       toToken: quote.toToken,
-      outputAmount: quote.toAmount
+      outputAmount: quote.estimatedToAmount
     });
 
     return tx.hash;
@@ -348,33 +352,40 @@ export class CrossChainSwapService {
     const ROUTER_V5 = '0x1111111254fb6c44bac0bed2854e76f90643097d'; // 1Inch router (universal)
 
     // Get swap data from 1Inch API
-    const response = await fetch(
-      `https://api.1inch.io/v5.0/${this.get1InchChainId(quote.toChain)}/swap?` +
-      `fromTokenAddress=${quote.fromToken}&` +
-      `toTokenAddress=${quote.toToken}&` +
-      `amount=${ethers.parseEther(quote.fromAmount)}&` +
-      `fromAddress=${await signer.getAddress()}&` +
-      `slippage=1&` +
-      `disableEstimate=true`,
-      { timeout: 10000 }
-    );
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    try {
+      const response = await fetch(
+        `https://api.1inch.io/v5.0/${this.get1InchChainId(quote.toChain)}/swap?` +
+        `fromTokenAddress=${quote.fromToken}&` +
+        `toTokenAddress=${quote.toToken}&` +
+        `amount=${ethers.parseEther(quote.fromAmount)}&` +
+        `fromAddress=${await signer.getAddress()}&` +
+        `slippage=1&` +
+        `disableEstimate=true`,
+        { signal: controller.signal }
+      );
 
-    if (!response.ok) {
-      throw new Error(`1Inch API error: ${response.statusText}`);
+      if (!response.ok) {
+        throw new Error(`1Inch API error: ${response.statusText}`);
+      }
+
+      const swapData = await response.json();
+
+      // Execute swap
+      const txResponse = await signer.sendTransaction({
+        to: swapData.tx.to,
+        data: swapData.tx.data,
+        value: swapData.tx.value,
+        gasLimit: BigInt(swapData.tx.gas) + BigInt(100000) // Add buffer
+      });
+
+      await txResponse.wait(2);
+      return txResponse as unknown as ethers.ContractTransactionResponse;
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    const swapData = await response.json();
-
-    // Execute swap
-    const tx = await signer.sendTransaction({
-      to: swapData.tx.to,
-      data: swapData.tx.data,
-      value: swapData.tx.value,
-      gasLimit: BigInt(swapData.tx.gas) + BigInt(100000) // Add buffer
-    });
-
-    await tx.wait(2);
-    return tx;
   }
 
   /**
@@ -386,17 +397,17 @@ export class CrossChainSwapService {
     fromTxHash?: string,
     toTxHash?: string
   ): Promise<void> {
-    const metadata: any = { status };
-    if (fromTxHash) metadata.fromTxHash = fromTxHash;
-    if (toTxHash) metadata.toTxHash = toTxHash;
-    if (status === 'completed') metadata.completedAt = new Date();
+    const updateData: any = { 
+      status: status === 'completed' || status === 'failed' ? status : 'bridging'
+    };
+    
+    if (fromTxHash) updateData.txHashSource = fromTxHash;
+    if (toTxHash) updateData.txHashDestination = toTxHash;
+    if (status === 'completed') updateData.completedAt = new Date();
 
     await db.update(crossChainTransfers)
-      .set({ 
-        status: status === 'completed' || status === 'failed' ? status : 'bridging',
-        metadata 
-      })
-      .where({ id: swapId });
+      .set(updateData)
+      .where(eq(crossChainTransfers.id, swapId));
   }
 
   /**
@@ -455,8 +466,8 @@ export class CrossChainSwapService {
     try {
       // Get providers for both chains
       const { CHAIN_CONFIGS } = await import('../../shared/chainRegistry');
-      const fromConfig = CHAIN_CONFIGS[fromChain as any];
-      const toConfig = CHAIN_CONFIGS[toChain as any];
+      const fromConfig = CHAIN_CONFIGS[fromChain as SupportedChain];
+      const toConfig = CHAIN_CONFIGS[toChain as SupportedChain];
 
       if (!fromConfig || !toConfig) {
         console.warn(`Chain config not found for ${fromChain} or ${toChain}, using fallback`);
@@ -468,11 +479,15 @@ export class CrossChainSwapService {
 
       try {
         const fromProvider = new ethers.JsonRpcProvider(fromConfig.rpcUrl);
-        const fromGasPrice = await fromProvider.getGasPrice();
-        // Typical swap: 150k-200k gas
-        const swapGas = BigInt('200000');
-        const swapCostWei = swapGas * fromGasPrice;
-        totalGasEth += Number(ethers.formatEther(swapCostWei));
+        const fromGasPrice = await fromProvider.getFeeData().then(fees => fees?.gasPrice || null);
+        if (fromGasPrice) {
+          // Typical swap: 150k-200k gas
+          const swapGas = BigInt('200000');
+          const swapCostWei = swapGas * fromGasPrice;
+          totalGasEth += Number(ethers.formatEther(swapCostWei));
+        } else {
+          throw new Error('Could not fetch gas price');
+        }
       } catch (error) {
         console.warn(`Failed to estimate gas on ${fromChain}:`, error);
         totalGasEth += parseFloat(this.getFallbackGasForChain(fromChain));
@@ -482,11 +497,15 @@ export class CrossChainSwapService {
       if (fromChain !== toChain) {
         try {
           const toProvider = new ethers.JsonRpcProvider(toConfig.rpcUrl);
-          const toGasPrice = await toProvider.getGasPrice();
-          // Bridge receipt: 100k-150k gas
-          const bridgeGas = BigInt('150000');
-          const bridgeCostWei = bridgeGas * toGasPrice;
-          totalGasEth += Number(ethers.formatEther(bridgeCostWei));
+          const toGasPrice = await toProvider.getFeeData().then(fees => fees?.gasPrice || null);
+          if (toGasPrice) {
+            // Bridge receipt: 100k-150k gas
+            const bridgeGas = BigInt('150000');
+            const bridgeCostWei = bridgeGas * toGasPrice;
+            totalGasEth += Number(ethers.formatEther(bridgeCostWei));
+          } else {
+            throw new Error('Could not fetch gas price');
+          }
         } catch (error) {
           console.warn(`Failed to estimate bridge gas on ${toChain}:`, error);
           totalGasEth += parseFloat(this.getFallbackGasForChain(toChain));
@@ -556,20 +575,18 @@ export class CrossChainSwapService {
   async getSwapStatus(swapId: string): Promise<SwapExecution | null> {
     try {
       const transfer = await db.query.crossChainTransfers.findFirst({
-        where: { id: swapId }
+        where: eq(crossChainTransfers.id, swapId)
       });
 
       if (!transfer) return null;
 
-      const metadata = transfer.metadata as any;
-
       return {
-        swapId: transfer.id!,
-        status: metadata?.status || transfer.status,
-        fromTxHash: metadata?.fromTxHash,
-        toTxHash: metadata?.toTxHash,
-        actualToAmount: metadata?.actualToAmount,
-        completedAt: metadata?.completedAt ? new Date(metadata.completedAt) : undefined
+        swapId: transfer.id,
+        status: transfer.status as SwapExecution['status'],
+        fromTxHash: transfer.txHashSource || undefined,
+        toTxHash: transfer.txHashDestination || undefined,
+        actualToAmount: undefined, // Not tracked in this schema
+        completedAt: transfer.completedAt || undefined
       };
     } catch (error) {
       this.logger.error('Failed to get swap status:', error);

@@ -1,4 +1,6 @@
 
+
+
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
@@ -8,6 +10,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HelmetProvider } from "react-helmet-async";
 import AppLoading from "./components/ui/app-loading";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { FeaturesProvider } from "./contexts/features-context";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,11 +33,13 @@ if (root) {
     <ErrorBoundary>
       <HelmetProvider>
         <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
-            <ToastProvider>
-              <App />
-            </ToastProvider>
-          </BrowserRouter>
+          <FeaturesProvider>
+            <BrowserRouter>
+              <ToastProvider>
+                <App />
+              </ToastProvider>
+            </BrowserRouter>
+          </FeaturesProvider>
         </QueryClientProvider>
       </HelmetProvider>
     </ErrorBoundary>
@@ -43,3 +48,4 @@ if (root) {
 } else {
   console.error('Root element not found');
 }
+

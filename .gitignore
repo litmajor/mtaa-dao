@@ -15,3 +15,11 @@ mtaa-dao-whitepaper/.env
 **/*.rs.bk
 .env
 .next
+artifacts
+.ENV.PHASES
+.ENV.PRODUCTION.EXAMPLE
+.ENV.EXAMPLE
+.ENV.LOCAL
+.env.example 
+.env
+.replit
