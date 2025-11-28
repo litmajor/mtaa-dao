@@ -642,6 +642,7 @@ const CreateDAOFlow = () => {
             daoType: daoData.daoType,
             category: daoData.category,
             treasuryType: daoData.treasuryType,
+            customTokenAddress: daoData.treasuryType === 'custom' ? daoData.customTokenAddress : undefined,
             durationDays: daoData.duration,
             rotationFrequency: daoData.daoType === 'shortTerm' ? 'monthly' : undefined
           },
@@ -1298,6 +1299,36 @@ const CreateDAOFlow = () => {
             ))}
           </div>
         </div>
+
+        {/* Custom Token Address Input - Only shown for custom treasury */}
+        {daoData.treasuryType === 'custom' && (
+          <Card className="border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Wallet className="w-5 h-5" />
+                Custom Stablecoin Details
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <div className="flex items-center">
+                  <Label htmlFor="custom-token" className="text-sm font-medium">Token Contract Address</Label>
+                  <InfoTooltip text="The contract address of your custom stablecoin (e.g., USDT on Celo, DAI, etc.)" />
+                </div>
+                <Input
+                  id="custom-token"
+                  placeholder="0x..."
+                  value={daoData.customTokenAddress || ''}
+                  onChange={(e) => updateDaoData('customTokenAddress', e.target.value)}
+                  className="mt-1 font-mono text-sm"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                  Must be a valid Celo network contract address starting with 0x followed by 40 hex characters
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Duration selector for short-term DAOs */}
         {daoData.daoType === 'shortTerm' && (
