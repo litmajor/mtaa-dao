@@ -3,6 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PersonalVaultSection } from './wallet/PesonalVaultBalance';
 import { PortfolioOverview } from './wallet/PortfolioOverview';
 import TransactionHistory from './wallet/TransactionHistory';
+import { TransactionMonitor } from './wallet/TransactionMonitor';
 import SplitBillModal from './wallet/SplitBillModal';
 import PaymentRequestModal from './wallet/PaymentRequestModal';
 import { Button } from '@/components/ui/button';
@@ -47,9 +48,10 @@ export default function WalletDashboard() {
 
         {/* Main Tabs */}
         <Tabs defaultValue="vault" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="vault">Vault</TabsTrigger>
             <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
+            <TabsTrigger value="monitor">Monitor</TabsTrigger>
             <TabsTrigger value="history">History</TabsTrigger>
             <TabsTrigger value="advanced">Advanced</TabsTrigger>
           </TabsList>
@@ -62,6 +64,11 @@ export default function WalletDashboard() {
           {/* Portfolio Tab */}
           <TabsContent value="portfolio" className="space-y-6">
             <PortfolioOverview />
+          </TabsContent>
+
+          {/* Transaction Monitor Tab */}
+          <TabsContent value="monitor" className="space-y-6">
+            <TransactionMonitor />
           </TabsContent>
 
           {/* Transaction History Tab */}
