@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { LockedSavingsSection } from "./LockedSavingsSection";
 import { motion } from "framer-motion";
-import { Wallet, TrendingUp, TrendingDown, RefreshCw, Info, ArrowUpDown, Sun, Moon } from "lucide-react";
+import { Wallet, TrendingUp, TrendingDown, RefreshCw, Info, ArrowUpDown, Sun, Moon, Copy, Check } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -17,6 +17,15 @@ import QRCode from "react-qr-code";
 import { useAccount, useBalance, useEstimateGas } from "wagmi"; // For Celo integration
 import { parseEther } from "viem";
 import { currentNetwork } from "@/lib/blockchain";
+
+// Multi-chain network definitions
+interface NetworkConfig {
+  name: string;
+  chainId: number;
+  rpcUrl: string;
+  explorerUrl: string;
+  currency: string;
+}
 
 const isValidAddress = (addr: string) => /^0x[a-fA-F0-9]{40}$/.test(addr);
 const isValidAmount = (value: string) => {
@@ -196,31 +205,100 @@ function VaultBalanceCard() {
 function VaultReceiveCard() {
   const { address } = useWallet();
   const [showQR, setShowQR] = useState(false);
+  const [selectedNetwork, setSelectedNetwork] = useState<'celo' | 'bsc' | 'tron'>('celo');
+  const [copiedAddress, setCopiedAddress] = useState(false);
+  
+  const networks: Record<'celo' | 'bsc' | 'tron', { name: string; icon: string; note: string }> = {
+    celo: { name: 'Celo', icon: '🌍', note: 'Low gas fees, optimized for Africa' },
+    bsc: { name: 'Binance Smart Chain', icon: '⛓️', note: 'BEP20 standard' },
+    tron: { name: 'Tron Network', icon: '⚡', note: 'USDT & other tokens' }
+  };
+  
+  const copyAddress = () => {
+    navigator.clipboard.writeText(address);
+    setCopiedAddress(true);
+    setTimeout(() => setCopiedAddress(false), 2000);
+    toast.success('Address copied!');
+  };
   
   if (!address) return <Alert><AlertDescription>Connect wallet to view address.</AlertDescription></Alert>;
 
   return (
-    <div className="p-4 border rounded-xl space-y-2 dark:border-gray-700">
-      <h3 className="text-lg font-semibold">Receive</h3>
-      <p className="text-sm">Your Address:</p>
-      <code className="block text-xs break-all dark:text-gray-300" data-testid="text-receive-address">{address}</code>
+    <div className="p-4 border rounded-xl space-y-4 dark:border-gray-700">
+      <h3 className="text-lg font-semibold">Receive Funds</h3>
+      
+      {/* Network Selector */}
+      <div className="grid grid-cols-3 gap-2">
+        {Object.entries(networks).map(([key, net]) => (
+          <button
+            key={key}
+            onClick={() => setSelectedNetwork(key as typeof selectedNetwork)}
+            className={`p-3 rounded-lg border-2 transition-all ${
+              selectedNetwork === key
+                ? 'border-purple-600 bg-purple-50 dark:bg-purple-900/20 dark:border-purple-500'
+                : 'border-gray-200 dark:border-gray-700 hover:border-purple-300'
+            }`}
+            data-testid={`button-network-${key}`}
+          >
+            <div className="text-xl mb-1">{net.icon}</div>
+            <div className="text-xs font-semibold text-gray-900 dark:text-gray-100">{net.name}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{net.note}</div>
+          </button>
+        ))}
+      </div>
+      
+      {/* Address Display */}
+      <div className="bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg">
+        <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Your {networks[selectedNetwork].name} Address</p>
+        <div className="flex items-start gap-2">
+          <code className="text-xs break-all dark:text-gray-300 flex-1 font-mono" data-testid="text-receive-address">{address}</code>
+          <button
+            onClick={copyAddress}
+            className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors flex-shrink-0"
+            title="Copy address"
+            data-testid="button-copy-address"
+          >
+            {copiedAddress ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-gray-600 dark:text-gray-400" />}
+          </button>
+        </div>
+      </div>
       
       {/* QR Code Section - Generated on demand */}
       {showQR && (
         <div className="flex flex-col items-center gap-3 py-4 border-t pt-4">
           <QRCode value={address} size={128} data-testid="qrcode-receive" />
-          <p className="text-xs text-gray-500 dark:text-gray-400">Scan to receive funds</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Scan to receive on {networks[selectedNetwork].name}</p>
         </div>
       )}
       
-      <Button 
-        onClick={() => setShowQR(!showQR)} 
-        variant="outline" 
-        className="w-full"
-        data-testid="button-toggle-qr"
-      >
-        {showQR ? 'Hide QR Code' : 'Generate QR Code'}
-      </Button>
+      <div className="flex gap-2">
+        <Button 
+          onClick={() => setShowQR(!showQR)} 
+          variant="outline" 
+          className="flex-1"
+          data-testid="button-toggle-qr"
+        >
+          {showQR ? 'Hide QR' : 'Show QR'}
+        </Button>
+        <Button 
+          onClick={() => window.open(`https://celoscan.io/address/${address}`, '_blank')} 
+          variant="outline" 
+          className="flex-1"
+          data-testid="button-view-explorer"
+        >
+          View on Explorer
+        </Button>
+      </div>
+      
+      {/* Info Box */}
+      <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+        <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+        <AlertDescription className="text-xs text-blue-800 dark:text-blue-300">
+          {selectedNetwork === 'celo' && 'Same wallet address works across all networks. Send from any chain and it arrives in your Celo vault.'}
+          {selectedNetwork === 'bsc' && 'Send BEP20 tokens. They automatically bridge to your Celo wallet.'}
+          {selectedNetwork === 'tron' && 'Send USDT or TRX tokens. They automatically bridge to your Celo wallet.'}
+        </AlertDescription>
+      </Alert>
     </div>
   );
 }
