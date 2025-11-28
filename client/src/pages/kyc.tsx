@@ -34,12 +34,43 @@ export default function KYCPage() {
     }
   };
 
+  const EXCHANGE_RATE = 129; // KES per USD
+  
   const tiers = [
-    { level: 'none', limit: '$100/day', requirements: 'No verification needed', color: 'bg-gray-500' },
-    { level: 'basic', limit: '$5,000/day', requirements: 'Email + Phone', color: 'bg-blue-500' },
-    { level: 'intermediate', limit: '$10,000/day', requirements: 'ID Document', color: 'bg-purple-500' },
-    { level: 'advanced', limit: '$100,000/day', requirements: 'Full KYC + Address Proof', color: 'bg-green-500' },
+    { 
+      level: 'none', 
+      dailyLimit: 100,
+      monthlyLimit: 3000,
+      requirements: 'No verification needed', 
+      color: 'bg-gray-500' 
+    },
+    { 
+      level: 'basic', 
+      dailyLimit: 1000,
+      monthlyLimit: 30000,
+      requirements: 'Email + Phone', 
+      color: 'bg-blue-500' 
+    },
+    { 
+      level: 'intermediate', 
+      dailyLimit: 5000,
+      monthlyLimit: 150000,
+      requirements: 'ID Document', 
+      color: 'bg-purple-500' 
+    },
+    { 
+      level: 'advanced', 
+      dailyLimit: 10000,
+      monthlyLimit: 300000,
+      requirements: 'Full KYC + Address Proof', 
+      color: 'bg-green-500' 
+    },
   ];
+
+  const formatCurrency = (usd: number) => {
+    const kes = usd * EXCHANGE_RATE;
+    return `${kes.toLocaleString('en-US')} KES [$${usd.toLocaleString('en-US')}]`;
+  };
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
@@ -54,7 +85,12 @@ export default function KYCPage() {
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Current Tier: {kycLevel.toUpperCase()}</CardTitle>
-          <CardDescription>Transaction Limit: {tiers.find(t => t.level === kycLevel)?.limit}</CardDescription>
+          {tiers.find(t => t.level === kycLevel) && (
+            <CardDescription className="space-y-1">
+              <div>Daily Limit: {formatCurrency(tiers.find(t => t.level === kycLevel)?.dailyLimit || 0)}</div>
+              <div>Monthly Limit: {formatCurrency(tiers.find(t => t.level === kycLevel)?.monthlyLimit || 0)}</div>
+            </CardDescription>
+          )}
         </CardHeader>
         <CardContent>
           <Progress value={(tiers.findIndex(t => t.level === kycLevel) + 1) * 25} className="mb-4" />
@@ -73,9 +109,15 @@ export default function KYCPage() {
                   </CardTitle>
                   <CardDescription>{tier.requirements}</CardDescription>
                 </div>
-                <div className="text-right">
-                  <div className="font-bold text-lg">{tier.limit}</div>
-                  <div className="text-sm text-muted-foreground">Daily Limit</div>
+                <div className="text-right space-y-2">
+                  <div>
+                    <div className="font-bold text-lg">{formatCurrency(tier.dailyLimit)}</div>
+                    <div className="text-xs text-muted-foreground">Daily Limit</div>
+                  </div>
+                  <div>
+                    <div className="font-bold text-lg">{formatCurrency(tier.monthlyLimit)}</div>
+                    <div className="text-xs text-muted-foreground">Monthly Limit</div>
+                  </div>
                 </div>
               </div>
             </CardHeader>
