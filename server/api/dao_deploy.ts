@@ -116,7 +116,7 @@ export async function daoDeployHandler(req: Request, res: Response) {
 
     // Normalize daoType (handle both camelCase and snake_case)
     const normalizedDaoType = daoData.daoType.replace('_', '') === 'shortterm' ? 'shortTerm' : daoData.daoType;
-    
+
     let withdrawalMode = 'multisig';
     let durationModel = 'time';
     let minElders = 2;
@@ -164,6 +164,9 @@ export async function daoDeployHandler(req: Request, res: Response) {
 
     const daoId = uuidv4();
 
+    // Auto-configure multi-sig based on DAO type
+    const multisigConfig = getMultisigConfigForDaoType(daoData.daoType);
+
     const [dao] = await db
       .insert(daos)
       .values({
@@ -178,7 +181,7 @@ export async function daoDeployHandler(req: Request, res: Response) {
 
         // Treasury configuration
         treasuryBalance: '0',
-        treasuryMultisigEnabled: true,
+        treasuryMultisigEnabled: multisigConfig.enabled,
         treasuryRequiredSignatures: elders.length, // CRITICAL: Set to actual elder count
         treasurySigners: elders, // CRITICAL: Set actual signer list (not empty!)
         treasuryWithdrawalThreshold: '5000.00',
@@ -258,7 +261,7 @@ export async function daoDeployHandler(req: Request, res: Response) {
     for (const elder of selectedElders) {
       if (elder !== founderWallet) {
         // Skip founder (already created above)
-        
+
         // Evaluate member creation rules
         const ruleResult = await evaluateMemberCreationRules(dao.id, {
           memberAddress: elder,
@@ -542,4 +545,30 @@ function calculateNextRotation(
       break;
   }
   return next;
+}
+
+// Helper: Multi-sig config per DAO type
+function getMultisigConfigForDaoType(type: string) {
+  if (type === 'free') {
+    return {
+      enabled: false, // Single-sig for free tier
+      requiredSignatures: 1,
+      withdrawalThreshold: 500, // $500 threshold
+      dailyLimit: 1000 // $1K/day
+    };
+  } else if (type === 'collective') {
+    return {
+      enabled: true, // 3-of-5 multi-sig
+      requiredSignatures: 3,
+      withdrawalThreshold: 1000, // $1K threshold
+      dailyLimit: 5000 // $5K/day
+    };
+  } else { // metadao
+    return {
+      enabled: true, // 5-of-7 multi-sig
+      requiredSignatures: 5,
+      withdrawalThreshold: 5000, // $5K threshold
+      dailyLimit: 10000 // $10K/day
+    };
+  }
 }

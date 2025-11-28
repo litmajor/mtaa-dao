@@ -492,16 +492,100 @@ contract MaonoVault is ERC4626, Ownable, ReentrancyGuard, Pausable {
     }
 
     // --- Manager Operations ---
+    // Multi-sig state for vault withdrawals
+    mapping(bytes32 => WithdrawalProposal) public withdrawalProposals;
+    
+    struct WithdrawalProposal {
+        address proposer;
+        uint256 amount;
+        uint256 signatures;
+        uint256 requiredSignatures;
+        mapping(address => bool) hasSign;
+        bool executed;
+        uint256 createdAt;
+    }
+    
+    address[] public authorizedSigners;
+    uint256 public requiredSignaturesCount;
+    
+    event WithdrawalProposed(bytes32 indexed proposalId, address proposer, uint256 amount);
+    event WithdrawalSigned(bytes32 indexed proposalId, address signer);
+    event WithdrawalExecuted(bytes32 indexed proposalId, uint256 amount);
+    
     /**
-     * @notice Withdraw assets from vault (manager only, e.g., for investing)
+     * @notice Propose a withdrawal (requires multi-sig if enabled)
      * @param amount Amount to withdraw
      */
-    function withdrawAssets(uint256 amount) external onlyManager {
+    function proposeWithdrawal(uint256 amount) external onlyManager returns (bytes32) {
         uint256 vaultBalance = IERC20(asset()).balanceOf(address(this));
         if (amount > vaultBalance) revert InsufficientBalance(amount, vaultBalance);
-        IERC20(asset()).safeTransfer(manager, amount);
-        emit AssetsWithdrawn(manager, amount);
-        // Recommend updating NAV after this
+        
+        bytes32 proposalId = keccak256(abi.encodePacked(msg.sender, amount, block.timestamp));
+        
+        WithdrawalProposal storage proposal = withdrawalProposals[proposalId];
+        proposal.proposer = msg.sender;
+        proposal.amount = amount;
+        proposal.signatures = 1; // Proposer auto-signs
+        proposal.requiredSignatures = requiredSignaturesCount > 0 ? requiredSignaturesCount : 1;
+        proposal.hasSign[msg.sender] = true;
+        proposal.createdAt = block.timestamp;
+        
+        emit WithdrawalProposed(proposalId, msg.sender, amount);
+        
+        return proposalId;
+    }
+    
+    /**
+     * @notice Sign a withdrawal proposal
+     * @param proposalId Proposal to sign
+     */
+    function signWithdrawal(bytes32 proposalId) external {
+        WithdrawalProposal storage proposal = withdrawalProposals[proposalId];
+        
+        require(!proposal.executed, "Already executed");
+        require(!proposal.hasSign[msg.sender], "Already signed");
+        require(_isAuthorizedSigner(msg.sender), "Not authorized signer");
+        
+        proposal.hasSign[msg.sender] = true;
+        proposal.signatures++;
+        
+        emit WithdrawalSigned(proposalId, msg.sender);
+        
+        // Auto-execute if threshold met
+        if (proposal.signatures >= proposal.requiredSignatures) {
+            _executeWithdrawal(proposalId);
+        }
+    }
+    
+    function _executeWithdrawal(bytes32 proposalId) internal {
+        WithdrawalProposal storage proposal = withdrawalProposals[proposalId];
+        
+        require(!proposal.executed, "Already executed");
+        require(proposal.signatures >= proposal.requiredSignatures, "Insufficient signatures");
+        
+        proposal.executed = true;
+        
+        IERC20(asset()).safeTransfer(manager, proposal.amount);
+        
+        emit WithdrawalExecuted(proposalId, proposal.amount);
+        emit AssetsWithdrawn(manager, proposal.amount);
+    }
+    
+    function _isAuthorizedSigner(address signer) internal view returns (bool) {
+        if (authorizedSigners.length == 0) return signer == manager;
+        
+        for (uint i = 0; i < authorizedSigners.length; i++) {
+            if (authorizedSigners[i] == signer) return true;
+        }
+        return false;
+    }
+    
+    /**
+     * @notice Set authorized signers for vault (owner only)
+     */
+    function setAuthorizedSigners(address[] memory signers, uint256 required) external onlyOwner {
+        authorizedSigners = signers;
+        requiredSignaturesCount = required;
     }
 
     /**

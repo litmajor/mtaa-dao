@@ -249,6 +249,23 @@ export async function registerRoutes(app: Express) {
   app.get('/api/dashboard/tasks', isAuthenticated, getDashboardTasksHandler);
   app.get('/api/dashboard/complete', isAuthenticated, getDashboardCompleteHandler);
 
+  // === MULTI-SIG ENDPOINTS ===
+  // Treasury multi-sig
+  app.post('/api/dao-treasury/:daoId/multisig/propose', isAuthenticated, async (req, res) => {
+    const { proposeWithdrawalHandler } = await import('./routes/dao_treasury');
+    return proposeWithdrawalHandler(req, res);
+  });
+  
+  app.post('/api/dao-treasury/:daoId/multisig/:txId/sign', isAuthenticated, async (req, res) => {
+    const { signTransactionHandler } = await import('./routes/dao_treasury');
+    return signTransactionHandler(req, res);
+  });
+  
+  app.get('/api/dao-treasury/:daoId/multisig/pending', isAuthenticated, async (req, res) => {
+    const { getPendingTransactionsHandler } = await import('./routes/dao_treasury');
+    return getPendingTransactionsHandler(req, res);
+  });
+
   // === VAULT API ENDPOINTS ===
   // Create vault
   app.post('/api/vaults', isAuthenticated, createVaultHandler);
