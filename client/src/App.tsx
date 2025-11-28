@@ -37,6 +37,7 @@ const MorioDemoLazy = lazy(() => import('./pages/MorioDemo'));
 
 
 import Wallet from './pages/wallet';
+const MaonoVaultLandingLazy = lazy(() => import('./pages/maonovault-landing'));
 const MaonoVaultWeb3PageLazy = lazy(() => import('./pages/maonovault-web3'));
 const SettingsLazy = lazy(() => import('./pages/settings'));
 const AnalyticsPageLazy = lazy(() => import('./pages/AnalyticsPage'));
@@ -196,7 +197,7 @@ function App() {
                       <Routes>
                         {/* Public routes - Authentication & Info Pages */}
                         <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" /> : <Landing />} />
-                        <Route path="/maonovault" element={<Suspense fallback={<PageLoading />}><MaonoVaultWeb3PageLazy /></Suspense>} />
+                        <Route path="/maonovault" element={<Suspense fallback={<PageLoading />}><MaonoVaultLandingLazy /></Suspense>} />
                         <Route path="/login" element={<Login />} />
                         <Route path="/register" element={<Register />} />
                         <Route path="/superuser-login" element={<Register1Raw />} />
