@@ -653,7 +653,7 @@ export default function StunningRegister() {
                       />
                       <button
                         type="button"
-                        className="absolute right-4 top-1/2 transform -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
+                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
                         onClick={() => setShowPassword(!showPassword)}
                       >
                         {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -715,7 +715,7 @@ export default function StunningRegister() {
                         />
                       <button
                         type="button"
-                        className="absolute right-4 top-1/2 transform -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
+                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                       >
                         {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}

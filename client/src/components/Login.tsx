@@ -279,7 +279,7 @@ export default function MtaaDAOLogin() {
                   />
                   <button
                     type="button"
-                    className="absolute right-3 top-3.5 text-slate-500 hover:text-slate-400 transition-colors z-10 flex items-center"
+                    className="absolute right-2 top-3.5 text-slate-500 hover:text-slate-400 transition-colors z-10 flex items-center"
                     onClick={() => setShowPassword(!showPassword)}
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

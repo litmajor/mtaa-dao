@@ -232,7 +232,7 @@ export default function MtaaDAOLanding() {
             </h1>
 
             <p className="text-xl md:text-2xl text-purple-100 max-w-3xl mx-auto mb-4 leading-relaxed font-semibold">
-              Blockchain transparency + AI fraud detection + Democratic governance
+              From Mtaa, for Mtaa
             </p>
             
             <p className="text-lg md:text-xl text-purple-200 max-w-2xl mx-auto mb-10 leading-relaxed">
