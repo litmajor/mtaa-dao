@@ -63,6 +63,9 @@ import telegramBotRoutes from './routes/telegram-bot';
 import telegramIntegrationRoutes from './routes/telegram-integration';
 import whatsappIntegrationRoutes from './routes/whatsapp-integration';
 
+// Import DAO Treasury Flows routes
+import daoTreasuryFlowsRouter from './routes/dao-treasury-flows';
+
 
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
@@ -162,6 +165,8 @@ export async function registerRoutes(app: Express) {
   app.use('/api/daos', daosRoutes);
   app.use('/api/dao-treasury', daoTreasuryRoutes);
   app.use('/api/dao-subscriptions', daoSubscriptionsRoutes);
+  // DAO Treasury Flows routes
+  app.use('/api/dao-treasury-flows', daoTreasuryFlowsRouter);
 
   // Task and bounty routes
   app.use('/api/tasks', tasksRoutes);
