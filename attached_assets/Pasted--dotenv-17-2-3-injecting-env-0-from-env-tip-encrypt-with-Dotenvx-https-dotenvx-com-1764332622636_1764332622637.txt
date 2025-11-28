@@ -1,0 +1,125 @@
+
+
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+2025-11-28 12:23:18 [message-bus] info: Agent NURU subscribed to analysis_request, user_query, health_check, risk_assessment
+2025-11-28 12:23:18 [morio-user-generator] info: UserGenerator initialized
+2025-11-28 12:23:18 [message-bus] info: Agent MORIO subscribed to notification, health_check
+2025-11-28 12:23:18 [morio-agent] info: MorioAgent initialized
+{
+  "personality": "friendly",
+  "language": "en",
+  "llmEnabled": false
+}
+2025-11-28 12:23:18 [api] info: Weekly reward distribution job initialized (runs every Monday at 9 AM UTC)
+2025-11-28 12:23:18 [message-bus] info: Agent KWETU subscribed to action_required, health_check
+2025-11-28 12:23:18 [api] info: ✅ DEX service initialized with wallet integration
+2025-11-28 12:23:18 [message-bus] info: Agent ANL-MTAA-001 subscribed to analysis_request, health_check
+2025-11-28 12:23:20 [message-bus] info: Agent SYNC-MTAA-001 subscribed to state_sync, rollback_request, sync_beat, health_check
+[ElderCoordinator] Initializing coordinator system...
+[ElderCoordinator] Coordinator ready for elder communication
+2025-11-28 12:23:20 [analyzer-agent] info: Initializing Analyzer Agent
+{
+  "agentId": "ANL-MTAA-001"
+}
+2025-11-28 12:23:20 [analyzer-agent] info: Analyzer Agent initialized successfully
+2025-11-28 12:23:20 [message-bus] info: Agent MTAA-001 subscribed to threat_detected, quarantine_user, release_user, health_check
+[DEF-OBSIDIAN-MTAA-001] Defender Agent initialized and active
+Redis: Not configured - using in-memory fallback.
+2025-11-28 12:23:20 [api] info: ⏰ Weekly rewards distribution job scheduled (Every Sunday at 00:00 UTC)
+2025-11-28 12:23:20 [api] info: 🤖 Setting up investment pools automation...
+2025-11-28 12:23:20 [api] info: ✅ Price recording job scheduled (every 5 minutes)
+2025-11-28 12:23:20 [api] info: ✅ Performance tracking job scheduled (every hour)
+2025-11-28 12:23:20 [api] info: ✅ Rebalancing check job scheduled (every 6 hours)
+2025-11-28 12:23:20 [api] info: ✅ Daily summary job scheduled (midnight)
+2025-11-28 12:23:20 [api] info: 🚀 Investment pools automation is running!
+ℹ️  Gateway Agent routes will be mounted asynchronously after service initialization
+2025-11-28 12:23:20 [synchronizer-agent] info: Initializing Synchronizer Agent
+{
+  "agentId": "SYNC-MTAA-001"
+}
+2025-11-28 12:23:20 [synchronizer-agent] info: Synchronizer Agent initialized successfully
+Forced re-optimization of dependencies
+🚀 Starting blockchain integration services...
+Starting vault event indexer...
+2025-11-28 12:23:21 [vault-automation] info: 🚀 Starting Vault Automation Service...
+2025-11-28 12:23:21 [vault-automation] warn: ⚠️  NAV update automation skipped: MaonoVault contract not configured
+2025-11-28 12:23:21 [vault-automation] info:    Deploy MaonoVault contract and set MAONO_CONTRACT_ADDRESS in .env to enable automation
+2025-11-28 12:23:21 [vault-automation] info: ✅ Vault Automation Service started successfully
+2025-11-28 12:23:21 [vault-automation] info: Performance: automation_service_startup took 1ms
+{
+  "performance": true,
+  "operation": "automation_service_startup",
+  "duration": 1,
+  "scheduledTasks": 2,
+  "intervalMs": 30000
+}
+Starting contribution indexer...
+2025-11-28 12:23:21 [api] info: 🔍 Starting Contribution Indexer Service
+2025-11-28 12:23:21 [api] info: 🚀 Server starting up
+{
+  "port": "5000",
+  "environment": "development"
+}
+2025-11-28 12:23:21 [api] info: Server configuration
+{
+  "port": 5000,
+  "host": "0.0.0.0",
+  "frontendUrl": "http://localhost:5173",
+  "backendUrl": "http://localhost:5000",
+  "environment": "development",
+  "nodeVersion": "v20.19.3"
+}
+Starting proposal execution scheduler...
+✅ Proposal execution scheduler started
+✅ PostgreSQL connected successfully
+2025-11-28 12:23:22 [api] info: Starting transaction monitor...
+2025-11-28 12:23:22 [api] info: Starting recurring payment processor...
+🏛️ Initializing Elder Council...
+🔍 ELD-SCRY starting surveillance operations...
+🔍 ELD-SCRY performing surveillance analysis...
+✓ Analysis complete: 0 threats, 0 critical
+✓ ELD-SCRY monitoring active (interval: 3600s)
+✅ ELD-SCRY initialized
+[ELD-KAIZEN] Starting continuous improvement monitoring...
+2025-11-28 12:23:22 [api] info: Processing 0 due recurring payments
+⚠️ ELD-KAIZEN: No active DAOs found to analyze
+✅ ELD-KAIZEN initialized
+ℹ️  [ELD-LUMEN] Starting Ethics Elder...
+ℹ️  [ELD-LUMEN] Ethics Elder started successfully
+✅ ELD-LUMEN initialized
+✅ ARCH-MALTA Coordinator initialized
+🎉 Elder Council fully operational
+🌐 Initializing Gateway Agent...
+[Gateway Init] Starting initialization...
+[Gateway Init] Initialized 6 adapters
+[GATEWAY-MESSAGE-BUS] Subscribed to gateway:price_request (1 handler(s))
+[GATEWAY-MESSAGE-BUS] Subscribed to gateway:liquidity_request (1 handler(s))
+[GATEWAY-MESSAGE-BUS] Subscribed to gateway:apy_request (1 handler(s))
+[GATEWAY-MESSAGE-BUS] Subscribed to gateway:risk_request (1 handler(s))
+[GATEWAY-AGENT-SERVICE] Initializing...
+[GATEWAY-AGENT] Initializing...
+[GATEWAY-AGENT] Registered adapter: chainlink
+[GATEWAY-AGENT] Registered adapter: uniswap
+[GATEWAY-AGENT] Registered adapter: coingecko
+[GATEWAY-AGENT] Registered adapter: moola
+[GATEWAY-AGENT] Registered adapter: beefyfi
+[GATEWAY-AGENT] Registered adapter: blockchain
+[GATEWAY-AGENT] Initialized with 6 adapters
+[GATEWAY-MESSAGE-BUS] Subscribed to gateway:price_request (2 handler(s))
+[GATEWAY-MESSAGE-BUS] Subscribed to gateway:liquidity_request (2 handler(s))
+[GATEWAY-MESSAGE-BUS] Subscribed to gateway:apy_request (2 handler(s))
+[GATEWAY-MESSAGE-BUS] Subscribed to gateway:risk_request (2 handler(s))
+[GATEWAY-MESSAGE-BUS] Subscribed to gateway:cache_invalidate (1 handler(s))
+[GATEWAY-MESSAGE-BUS] Subscribed to gateway:status (1 handler(s))
+[GATEWAY-AGENT-SERVICE] Message handlers registered
+[COORDINATOR-BRIDGE] Coordinator instance not available, using local message bus only
+[GATEWAY-AGENT-SERVICE] Initialization complete
+[Gateway Init] Initialization complete
+✅ Gateway Agent initialized
+✅ Gateway adapters ready: Chainlink, Uniswap, CoinGecko, Moola, Beefyfi, Blockchain
+✅ Gateway Agent API routes mounted at /api/gateway
+2025-11-28 12:23:23 [api] info: 🚀 Bridge relayer service started
+✅ Blockchain services initialized successfully
+Processing 0 pending executions
+[Event Query] Fetching events from block 52431842 to 52431856
