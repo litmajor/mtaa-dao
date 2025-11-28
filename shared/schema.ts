@@ -83,8 +83,6 @@ export const taskTemplates = pgTable('task_templates', {
 
 export const taskTemplatesCreatedBy = taskTemplates.createdBy;
 import { relations } from "drizzle-orm";
-import { IsRestoringProvider } from "@tanstack/react-query";
-import MtaaDAOLanding from "@/pages/landing";
 
 // User storage table
 export const users = pgTable("users", {
@@ -352,14 +350,11 @@ export const sessions = pgTable("sessions", {
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  lastAccessedAt: timestamp("last_accessed_at").defaultNow(), // For Redis sync tracking
   ipAddress: varchar("ip_address"), // Added for admin analytics compatibility
   userAgent: varchar("user_agent"), // Added for admin analytics compatibility
+  sessionData: jsonb("session_data"), // Store complete session data for recovery
 });
-
-export type InsertDao = typeof daos.$inferInsert;
-export type InsertUser = typeof users.$inferInsert;
-export type BillingHistory = typeof billingHistory.$inferSelect;
-export type InsertBillingHistory = typeof billingHistory.$inferInsert;
 
 export const createSessionSchema = createInsertSchema(sessions);
 export const sessionSchema = createSessionSchema;
@@ -648,33 +643,6 @@ export const daoRotationCycles = pgTable("dao_rotation_cycles", {
 });
 
 // DAO Custom Rules table
-export const daoRules = pgTable("dao_rules", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  daoId: uuid("dao_id").references(() => daos.id).notNull(),
-  ruleType: varchar("rule_type").notNull(), // entry, withdrawal, rotation, financial, governance
-  name: varchar("name").notNull(),
-  description: text("description"),
-  enabled: boolean("enabled").default(true),
-  priority: integer("priority").default(0), // Higher = evaluated first
-  conditions: jsonb("conditions").notNull(), // Array of RuleCondition
-  actions: jsonb("actions").notNull(), // Array of RuleAction
-  createdBy: varchar("created_by").references(() => users.id).notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// Rule Audit Log table
-export const ruleAuditLog = pgTable("rule_audit_log", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  ruleId: uuid("rule_id").references(() => daoRules.id).notNull(),
-  daoId: uuid("dao_id").references(() => daos.id).notNull(),
-  triggeredBy: varchar("triggered_by").references(() => users.id),
-  result: varchar("result").notNull(), // approved, rejected, pending
-  metadata: jsonb("metadata"), // Transaction details that triggered rule
-  triggeredAt: timestamp("triggered_at").defaultNow(),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
 // Payment Requests table
 export const paymentRequests = pgTable("payment_requests", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -2736,6 +2704,62 @@ export const insertVaultGovernanceProposalSchema = createInsertSchema(vaultGover
 export type UserContext = typeof userContexts.$inferSelect;
 export type InsertUserContext = typeof userContexts.$inferInsert;
 export const insertUserContextSchema = createInsertSchema(userContexts);
+
+// Phase 3: Rules Engine Tables
+export const ruleTemplates = pgTable("rule_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: varchar("name").notNull().unique(),
+  category: varchar("category").notNull(), // 'entry', 'withdrawal', 'rotation', 'financial', 'governance'
+  description: text("description"),
+  ruleConfig: jsonb("rule_config").notNull(), // Contains conditions and actions
+  isDefault: boolean("is_default").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const daoRules = pgTable("dao_rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: varchar("dao_id").notNull().references(() => daos.id, { onDelete: "cascade" }),
+  templateId: uuid("template_id").references(() => ruleTemplates.id),
+  name: varchar("name").notNull(),
+  description: text("description"),
+  eventType: varchar("event_type").notNull(), // 'member_entry', 'member_exit', 'proposal', 'contribution', 'rotation', 'withdrawal'
+  ruleConfig: jsonb("rule_config").notNull(), // Contains conditions and actions
+  isActive: boolean("is_active").default(true),
+  priority: integer("priority").default(100), // Higher number = higher priority
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  updatedBy: varchar("updated_by").references(() => users.id),
+});
+
+export const ruleExecutions = pgTable("rule_executions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ruleId: uuid("rule_id").notNull().references(() => daoRules.id, { onDelete: "cascade" }),
+  daoId: varchar("dao_id").notNull().references(() => daos.id, { onDelete: "cascade" }),
+  eventType: varchar("event_type").notNull(), // 'member_entry', 'member_exit', etc.
+  context: jsonb("context").notNull(), // The data that triggered the rule
+  conditionsMet: boolean("conditions_met").notNull(),
+  actionsExecuted: jsonb("actions_executed").default(sql`'[]'::jsonb`), // Array of executed actions
+  executionResult: varchar("execution_result").notNull(), // 'success', 'failed', 'partial'
+  errorMessage: text("error_message"),
+  executionTimeMs: integer("execution_time_ms"),
+  executedAt: timestamp("executed_at").defaultNow(),
+  executedBy: varchar("executed_by").references(() => users.id),
+});
+
+// Rules Engine Types
+export type RuleTemplate = typeof ruleTemplates.$inferSelect;
+export type InsertRuleTemplate = typeof ruleTemplates.$inferInsert;
+export type DaoRule = typeof daoRules.$inferSelect;
+export type InsertDaoRule = typeof daoRules.$inferInsert;
+export type RuleExecution = typeof ruleExecutions.$inferSelect;
+export type InsertRuleExecution = typeof ruleExecutions.$inferInsert;
+
+// Zod schemas for Rules Engine
+export const insertRuleTemplateSchema = createInsertSchema(ruleTemplates);
+export const insertDaoRuleSchema = createInsertSchema(daoRules);
+export const insertRuleExecutionSchema = createInsertSchema(ruleExecutions);
 
 export * from './vestingSchema';
 export * from './messageReactionsSchema';

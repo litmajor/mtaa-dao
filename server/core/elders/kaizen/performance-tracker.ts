@@ -8,6 +8,8 @@ import { db } from '../../../db';
 import { FinancialAnalyzer } from '../../nuru/analytics/financial_analyzer';
 import { GovernanceAnalyzer } from '../../nuru/analytics/governance_analyzer';
 import { CommunityAnalyzer } from '../../nuru/analytics/community_analyzer';
+import { WalletAnalyzer } from '../../nuru/analytics/wallet_analyzer';
+import { DaoAnalyzer } from '../../nuru/analytics/dao_analyzer';
 import type { AnalysisResponse } from '../../nuru/types';
 
 export interface PerformanceMetrics {
@@ -15,6 +17,8 @@ export interface PerformanceMetrics {
   treasury: TreasuryMetrics;
   governance: GovernanceMetrics;
   community: CommunityMetrics;
+  wallet: WalletMetrics;
+  dao: DaoMetrics;
   system: SystemMetrics;
   scores: PerformanceScores;
 }
@@ -43,6 +47,27 @@ export interface CommunityMetrics {
   communityHealth: number;
 }
 
+export interface WalletMetrics {
+  walletCount: number;
+  activeWallets: number;
+  totalBalance: number;
+  transactionCount: number;
+  securityScore: number;
+  concentrationRisk: number;
+  walletHealth: number;
+}
+
+export interface DaoMetrics {
+  memberCount: number;
+  activeMemberCount: number;
+  walletCount: number;
+  vaultCount: number;
+  treasuryBalance: number;
+  maturityScore: number;
+  governanceHealth: number;
+  daoHealth: number;
+}
+
 export interface SystemMetrics {
   responseTime: number; // milliseconds
   errorRate: number; // percentage
@@ -62,6 +87,8 @@ export class PerformanceTracker {
   private financialAnalyzer: FinancialAnalyzer;
   private governanceAnalyzer: GovernanceAnalyzer;
   private communityAnalyzer: CommunityAnalyzer;
+  private walletAnalyzer: WalletAnalyzer;
+  private daoAnalyzer: DaoAnalyzer;
   private metricsHistory: PerformanceMetrics[] = [];
   private maxHistorySize = 168; // 7 days of hourly metrics
 
@@ -69,30 +96,38 @@ export class PerformanceTracker {
     this.financialAnalyzer = new FinancialAnalyzer();
     this.governanceAnalyzer = new GovernanceAnalyzer();
     this.communityAnalyzer = new CommunityAnalyzer();
+    this.walletAnalyzer = new WalletAnalyzer();
+    this.daoAnalyzer = new DaoAnalyzer();
   }
 
   /**
    * Collect comprehensive performance metrics for a DAO
    */
   async collectMetrics(daoId: string): Promise<PerformanceMetrics> {
-    const [treasuryData, governanceData, communityData] = await Promise.all([
+    const [treasuryData, governanceData, communityData, walletData, daoData] = await Promise.all([
       this.financialAnalyzer.analyze(daoId, '30d'),
       this.governanceAnalyzer.analyze(daoId, '30d'),
-      this.communityAnalyzer.analyze(daoId, '30d')
+      this.communityAnalyzer.analyze(daoId, '30d'),
+      this.walletAnalyzer.analyze(daoId, '30d'),
+      this.daoAnalyzer.analyze(daoId, '30d')
     ]);
 
     const treasury = this.extractTreasuryMetrics(treasuryData);
     const governance = this.extractGovernanceMetrics(governanceData);
     const community = this.extractCommunityMetrics(communityData);
+    const wallet = this.extractWalletMetrics(walletData);
+    const dao = this.extractDaoMetrics(daoData);
     const system = await this.measureSystemMetrics();
 
-    const scores = this.calculateScores(treasury, governance, community, system);
+    const scores = this.calculateScores(treasury, governance, community, wallet, dao, system);
 
     const metrics: PerformanceMetrics = {
       timestamp: new Date(),
       treasury,
       governance,
       community,
+      wallet,
+      dao,
       system,
       scores
     };
@@ -146,6 +181,46 @@ export class PerformanceTracker {
   }
 
   /**
+   * Extract wallet metrics from analysis response
+   */
+  private extractWalletMetrics(analysis: AnalysisResponse): WalletMetrics {
+    const walletHealth = Math.min(100,
+      (Number(analysis.metrics.securityScore || 0) * 0.5) +
+      ((1 - Number(analysis.metrics.concentrationRisk || 0)) * 0.5) * 100
+    );
+    return {
+      walletCount: Number(analysis.metrics.walletCount || 0),
+      activeWallets: Number(analysis.metrics.activeWallets || 0),
+      totalBalance: Number(analysis.metrics.totalBalance || 0),
+      transactionCount: Number(analysis.metrics.transactionCount || 0),
+      securityScore: Number(analysis.metrics.securityScore || 0),
+      concentrationRisk: Number(analysis.metrics.concentrationRisk || 0),
+      walletHealth
+    };
+  }
+
+  /**
+   * Extract DAO metrics from analysis response
+   */
+  private extractDaoMetrics(analysis: AnalysisResponse): DaoMetrics {
+    const daoHealth = Math.min(100,
+      (Number(analysis.metrics.maturityScore || 0) * 0.4) +
+      (Number(analysis.metrics.governanceHealth || 0) * 0.3) +
+      ((Number(analysis.metrics.memberCount || 1) / Math.max(Number(analysis.metrics.memberCount || 1), 5)) * 100 * 0.3)
+    );
+    return {
+      memberCount: Number(analysis.metrics.memberCount || 0),
+      activeMemberCount: Number(analysis.metrics.activeMemberCount || 0),
+      walletCount: Number(analysis.metrics.walletCount || 0),
+      vaultCount: Number(analysis.metrics.vaultCount || 0),
+      treasuryBalance: Number(analysis.metrics.treasuryBalance || 0),
+      maturityScore: Number(analysis.metrics.maturityScore || 0),
+      governanceHealth: Number(analysis.metrics.governanceHealth || 0),
+      daoHealth
+    };
+  }
+
+  /**
    * Measure system-level performance metrics
    */
   private async measureSystemMetrics(): Promise<SystemMetrics> {
@@ -179,14 +254,18 @@ export class PerformanceTracker {
     treasury: TreasuryMetrics,
     governance: GovernanceMetrics,
     community: CommunityMetrics,
+    wallet: WalletMetrics,
+    dao: DaoMetrics,
     system: SystemMetrics
   ): PerformanceScores {
     const treasuryScore = Math.min(100, treasury.healthScore);
     const governanceScore = Math.min(100, governance.governanceHealth);
     const communityScore = Math.min(100, community.communityHealth);
+    const walletScore = Math.min(100, wallet.walletHealth);
+    const daoScore = Math.min(100, dao.daoHealth);
     const systemScore = Math.min(100, 100 - (system.errorRate * 0.1 + system.responseTime / 50));
 
-    const overall = (treasuryScore * 0.3 + governanceScore * 0.3 + communityScore * 0.25 + systemScore * 0.15);
+    const overall = (treasuryScore * 0.25 + governanceScore * 0.25 + communityScore * 0.15 + walletScore * 0.15 + daoScore * 0.15 + systemScore * 0.05);
 
     return {
       overall: Math.round(overall),
@@ -274,5 +353,31 @@ export class PerformanceTracker {
    */
   getLatestMetrics(): PerformanceMetrics | null {
     return this.metricsHistory.length > 0 ? this.metricsHistory[this.metricsHistory.length - 1] : null;
+  }
+
+  /**
+   * Get wallet metrics for a DAO
+   */
+  async getWalletMetrics(daoId: string): Promise<WalletMetrics | null> {
+    try {
+      const analysis = await this.walletAnalyzer.analyze(daoId);
+      return this.extractWalletMetrics(analysis);
+    } catch (error) {
+      console.error('Error getting wallet metrics:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get DAO metrics for a DAO
+   */
+  async getDaoMetrics(daoId: string): Promise<DaoMetrics | null> {
+    try {
+      const analysis = await this.daoAnalyzer.analyze(daoId);
+      return this.extractDaoMetrics(analysis);
+    } catch (error) {
+      console.error('Error getting DAO metrics:', error);
+      return null;
+    }
   }
 }

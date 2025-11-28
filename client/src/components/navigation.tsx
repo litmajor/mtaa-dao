@@ -70,6 +70,7 @@ export default function Navigation() {
     { href: "/rewards", label: "Rewards", icon: "🎁" },
     { href: "/referrals", label: "Referrals", icon: "🤝" },
     { href: "/investment-pools", label: "Invest", icon: "📈" },
+    { href: "/escrow", label: "Escrow", icon: "🔒" },
   ];
 
   const vaultItems = [

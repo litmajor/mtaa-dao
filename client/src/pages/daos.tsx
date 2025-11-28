@@ -6,7 +6,6 @@ import { Plus, Users, DollarSign, TrendingUp, Settings, ArrowRight, Sparkles, Cr
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useAuth } from "@/hooks/use-auth"; // Assuming useAuth is available
 
 type DaoRole = "elder" | "proposer" | "member" | null;
 

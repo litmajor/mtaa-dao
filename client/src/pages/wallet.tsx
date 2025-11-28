@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Send, Download, History, DollarSign, ArrowUpRight, ArrowDownLeft, User, Wallet, CreditCard, TrendingUp, Shield, Zap, Star, Crown, Sparkles, Eye, EyeOff, RefreshCw, Users, Share2, Repeat, QrCode } from 'lucide-react';
+import { Plus, Send, ArrowUpRight, ArrowDownLeft, Wallet, TrendingUp, Shield, DollarSign, Users, Settings } from 'lucide-react';
 
 import { Line, Pie, Bar } from 'react-chartjs-2';
 import {
@@ -37,6 +37,7 @@ import WalletBackupReminder from '@/components/wallet/WalletBackupReminder';
 import BackupWalletModal from '@/components/wallet/BackupWalletModal';
 import TokenSwapModal from '@/components/wallet/TokenSwapModal';
 import StakingModal from '@/components/wallet/StakingModal';
+import EscrowInitiator from '@/components/wallet/EscrowInitiator';
 
 
 const EnhancedWalletPage = () => {
@@ -53,6 +54,11 @@ const EnhancedWalletPage = () => {
   const [splitBillOpen, setSplitBillOpen] = useState(false);
   const [paymentLinkOpen, setPaymentLinkOpen] = useState(false);
   const [recurringPaymentOpen, setRecurringPaymentOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [selectedCurrency, setSelectedCurrency] = useState('cUSD');
+  const [showRequestFunds, setShowRequestFunds] = useState(false);
+  const [requestFundsOpen, setRequestFundsOpen] = useState(false);
+  const [userKycStatus, setUserKycStatus] = useState<'verified' | 'pending' | 'not-started'>('not-started');
 
   // Use real wallet data instead of mock data
   const { address, isConnected, balance, connectMetaMask, connectValora, connectMiniPay, isLoading, error, disconnect } = useWallet();
@@ -187,7 +193,7 @@ const EnhancedWalletPage = () => {
       case "sent":
         return <ArrowUpRight className="w-5 h-5 text-red-500" />;
       case "deposit":
-        return <Download className="w-5 h-5 text-blue-500" />;
+        return <Plus className="w-5 h-5 text-blue-500" />;
       case "withdrawal":
         return <ArrowUpRight className="w-5 h-5 text-orange-500" />;
       default:
@@ -274,7 +280,7 @@ const EnhancedWalletPage = () => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center">
         <Card className="p-8 max-w-md text-center">
-          <RefreshCw className="h-12 w-12 animate-spin mx-auto mb-4 text-blue-600" />
+          <Plus className="h-12 w-12 animate-spin mx-auto mb-4 text-blue-600" />
           <h3 className="text-xl font-bold mb-2">Loading Your Wallet</h3>
           <p className="text-gray-600 dark:text-gray-400">Fetching your balance and transactions...</p>
           <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">Connected: {address?.slice(0, 6)}...{address?.slice(-4)}</p>
@@ -403,7 +409,7 @@ const EnhancedWalletPage = () => {
           <WalletBackupReminder userId={user?.id} walletAddress={address} />
         )}
 
-        {/* Enhanced Header with Dashboard Navigation */}
+        {/* Header with Settings Icon */}
         <div className="flex items-center justify-between mb-12">
           <div className="flex items-center space-x-4">
             <div className="w-16 h-16 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl flex items-center justify-center shadow-lg">
@@ -428,200 +434,248 @@ const EnhancedWalletPage = () => {
               <p className="text-gray-600 text-lg">Secure digital asset management</p>
             </div>
           </div>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3">
             <Badge variant="orange" className="flex items-center space-x-1">
               <Shield className="w-4 h-4" />
               <span>Secured</span>
             </Badge>
-            <Button variant="outline" className="flex items-center space-x-2">
-              <RefreshCw className="w-4 h-4" />
-              <span>Refresh</span>
-            </Button>
+            <div className="relative">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => setSettingsOpen(!settingsOpen)}
+              >
+                <Settings className="w-4 h-4" />
+              </Button>
+              {settingsOpen && (
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border z-50">
+                  <div className="p-2 space-y-1">
+                    <button className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded flex items-center space-x-2">
+                      <Plus className="w-4 h-4" />
+                      <span>Refresh</span>
+                    </button>
+                    <button className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded flex items-center space-x-2" onClick={() => setShowBackupModal(true)}>
+                      <Plus className="w-4 h-4" />
+                      <span>Backup Wallet</span>
+                    </button>
+                    <button className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded flex items-center space-x-2" onClick={() => setRecurringPaymentOpen(true)}>
+                      <ArrowUpRight className="w-4 h-4" />
+                      <span>Recurring Payments</span>
+                    </button>
+                    {isConnected && (
+                      <button className="w-full text-left px-3 py-2 text-sm hover:bg-red-50 text-red-600 rounded flex items-center space-x-2" onClick={disconnect}>
+                        <ArrowUpRight className="w-4 h-4" />
+                        <span>Disconnect</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Premium Balance Overview */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
+        {/* Trust Wallet Style Balance & Actions */}
+        <div className="mb-8">
           {/* Main Balance Card */}
-          <CustomCard className="lg:col-span-2 bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 text-white p-8 relative overflow-hidden">
+          <div className="bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 text-white p-8 rounded-3xl relative overflow-hidden mb-6">
             <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent" />
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl" />
             <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full blur-2xl" />
-
+            
             <div className="relative z-10">
-              <div className="flex items-center justify-between mb-8">
-                <div>
-                  <div className="flex items-center space-x-3 mb-4">
-                    <p className="text-white/80 text-sm font-medium">Total Balance</p>
-                    <button
-                      onClick={() => setBalanceVisible(!balanceVisible)}
-                      className="text-white/60 hover:text-white/80 transition-colors"
-                    >
-                      {balanceVisible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  <h2 className="text-5xl font-bold text-white mb-2">
-                    {balanceVisible ? `$${totalBalance.toLocaleString()}` : '••••••'}
-                  </h2>
-                  <div className="flex items-center space-x-2">
-                    <TrendingUp className="w-4 h-4 text-emerald-300" />
-                    <span className="text-emerald-300 text-sm font-medium">+12.5% this month</span>
-                  </div>
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center space-x-3">
+                  <p className="text-white/80 text-sm font-medium">Total Balance</p>
+                  <button
+                    onClick={() => setBalanceVisible(!balanceVisible)}
+                    className="text-white/60 hover:text-white/80 transition-colors"
+                  >
+                    {balanceVisible ? <Shield className="w-4 h-4" /> : <Wallet className="w-4 h-4" />}
+                  </button>
                 </div>
-                <div className="w-20 h-20 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
-                  <DollarSign className="w-10 h-10 text-white" />
-                </div>
+                <select 
+                  aria-label="Currency selection"
+                  value={selectedCurrency}
+                  onChange={(e) => setSelectedCurrency(e.target.value)}
+                  className="bg-white/20 text-white rounded px-3 py-1 text-sm border border-white/30 focus:outline-none"
+                >
+                  <option value="cUSD">USD</option>
+                  <option value="cEUR">EUR</option>
+                  <option value="CELO">CELO</option>
+                  <option value="cREAL">REAL</option>
+                </select>
+              </div>
+              
+              <div className="mb-8">
+                <h2 className="text-5xl font-bold text-white mb-1">
+                  {balanceVisible ? `$${totalBalance.toLocaleString()}` : '••••••'}
+                </h2>
+                <p className="text-white/70 text-sm">Across all tokens</p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <Button variant="glass" className="py-4 text-lg">
-                  <Send className="mr-2 h-5 w-5" />
-                  Send Money
+              <div className="grid grid-cols-3 gap-3">
+                <Button 
+                  className="bg-white/20 hover:bg-white/30 text-white border border-white/30 py-3 flex flex-col items-center justify-center"
+                  onClick={() => setPaymentOpen(true)}
+                >
+                  <Plus className="w-5 h-5 mb-1" />
+                  <span className="text-xs">Add Funds</span>
                 </Button>
-                <Button variant="glass" className="py-4 text-lg" onClick={() => setPaymentOpen(true)}>
-                  <Download className="mr-2 h-5 w-5" />
-                  Add Funds
+                <Button 
+                  className="bg-white/20 hover:bg-white/30 text-white border border-white/30 py-3 flex flex-col items-center justify-center"
+                  onClick={() => setWithdrawOpen(true)}
+                >
+                  <ArrowUpRight className="w-5 h-5 mb-1" />
+                  <span className="text-xs">Withdraw</span>
+                </Button>
+                <Button 
+                  className="bg-white/20 hover:bg-white/30 text-white border border-white/30 py-3 flex flex-col items-center justify-center"
+                  onClick={() => setRequestFundsOpen(true)}
+                >
+                  <ArrowDownLeft className="w-5 h-5 mb-1" />
+                  <span className="text-xs">Request</span>
                 </Button>
               </div>
             </div>
-          </CustomCard>
+          </div>
 
-          {/* Enhanced Features Card */}
-          <CustomCard className="bg-gradient-to-br from-white/90 to-gray-50/90 p-8">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-gray-900">Wallet Features</h3>
-              <Zap className="w-6 h-6 text-yellow-500" />
+          {/* Token/Asset List - Trust Wallet Style */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100">
+            <div className="p-6 border-b">
+              <h3 className="text-lg font-bold text-gray-900">Your Assets</h3>
             </div>
-            <div className="space-y-3">
-              {/* Primary Actions */}
-              <div className="pb-3 border-b">
-                <p className="text-xs font-semibold text-gray-500 mb-2">PAYMENTS</p>
-                <Button variant="emerald" className="w-full py-3" onClick={() => setDepositOpen(true)}>
-                  <Send className="mr-2 h-4 w-4" />
-                  Send Money
-                </Button>
-              </div>
-
-              {/* Social Payments */}
-              <div className="pb-3 border-b">
-                <p className="text-xs font-semibold text-gray-500 mb-2">SOCIAL</p>
-                <div className="space-y-2">
-                  <Button variant="outline" className="w-full py-2 text-sm" onClick={() => setPhonePaymentOpen(true)}>
-                    <User className="mr-2 h-4 w-4" />
-                    Pay by Phone
-                  </Button>
-                  <Button variant="outline" className="w-full py-2 text-sm" onClick={() => setSplitBillOpen(true)}>
-                    <Users className="mr-2 h-4 w-4" />
-                    Split Bill
-                  </Button>
-                  <Button variant="outline" className="w-full py-2 text-sm" onClick={() => setPaymentRequestOpen(true)}>
-                    <QrCode className="mr-2 h-4 w-4" />
-                    Request Payment
-                  </Button>
+            <div className="divide-y">
+              {balanceVisible && vaults?.length > 0 ? (
+                vaults.map((vault, index) => {
+                  const vaultBalance = parseFloat(vault.balance.replace(/,/g, ''));
+                  return (
+                    <div key={vault.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                      <div className="flex items-center space-x-4">
+                        <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-xs">
+                          {vault.currency.substring(0, 1)}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-900">{vault.currency}</p>
+                          <p className="text-sm text-gray-500">{vault.type === 'personal' ? 'Personal' : 'Token'}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold text-gray-900">${vaultBalance.toLocaleString()}</p>
+                        <p className="text-sm text-emerald-600">+2.5%</p>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="p-8 text-center text-gray-500">
+                  {balanceVisible ? 'No assets yet. Add funds to get started.' : 'Balance hidden'}
                 </div>
-              </div>
-
-              {/* Advanced Features */}
-              <div className="pb-3 border-b">
-                <p className="text-xs font-semibold text-gray-500 mb-2">ADVANCED</p>
-                <div className="space-y-2">
-                  <Button variant="outline" className="w-full py-2 text-sm" onClick={() => setShowSwapModal(true)}>
-                    <Repeat className="mr-2 h-4 w-4" />
-                    Swap Tokens
-                  </Button>
-                  <Button variant="outline" className="w-full py-2 text-sm" onClick={() => setShowStakingModal(true)}>
-                    <TrendingUp className="mr-2 h-4 w-4" />
-                    Stake & Earn
-                  </Button>
-                  <Button variant="outline" className="w-full py-2 text-sm" onClick={() => window.location.href = '/vault-dashboard'}>
-                    <Shield className="mr-2 h-4 w-4" />
-                    Vaults
-                  </Button>
-                </div>
-              </div>
-
-              {/* Security */}
-              <div>
-                <p className="text-xs font-semibold text-gray-500 mb-2">SECURITY</p>
-                <div className="space-y-2">
-                  <Button variant="outline" className="w-full py-2 text-sm border-yellow-300 text-yellow-700 hover:bg-yellow-50" onClick={() => setShowBackupModal(true)}>
-                    <Download className="mr-2 h-4 w-4" />
-                    Backup Wallet
-                  </Button>
-                  <Button variant="outline" className="w-full py-2 text-sm" onClick={() => setRecurringPaymentOpen(true)}>
-                    <Repeat className="mr-2 h-4 w-4" />
-                    Recurring Payments
-                  </Button>
-                </div>
-              </div>
+              )}
             </div>
-          </CustomCard>
+          </div>
         </div>
 
-        {/* Enhanced Currency Breakdown */}
-        <CustomCard className="mb-12 p-8">
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-blue-900 bg-clip-text text-transparent">
-              Currency Portfolio
-            </h2>
-            <Button variant="outline" className="text-sm">
-              <Plus className="mr-2 h-4 w-4" />
-              Add Currency
-            </Button>
+        {/* DeFi & Advanced Features Section */}
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">Features & Services</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Swap Tokens */}
+            <div className="bg-white p-6 rounded-xl border border-gray-100 hover:shadow-lg transition-all cursor-pointer" onClick={() => setShowSwapModal(true)}>
+              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mb-4">
+                <ArrowUpRight className="w-5 h-5 text-blue-600" />
+              </div>
+              <h3 className="font-semibold text-gray-900 mb-1">Swap Tokens</h3>
+              <p className="text-sm text-gray-500">Exchange between tokens instantly</p>
+            </div>
+
+            {/* Stake & Earn */}
+            <div className="bg-white p-6 rounded-xl border border-gray-100 hover:shadow-lg transition-all cursor-pointer" onClick={() => setShowStakingModal(true)}>
+              <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center mb-4">
+                <TrendingUp className="w-5 h-5 text-emerald-600" />
+              </div>
+              <h3 className="font-semibold text-gray-900 mb-1">Stake & Earn</h3>
+              <p className="text-sm text-gray-500">Earn rewards from your assets</p>
+            </div>
+
+            {/* Vaults */}
+            <div className="bg-white p-6 rounded-xl border border-gray-100 hover:shadow-lg transition-all cursor-pointer" onClick={() => window.location.href = '/vault-dashboard'}>
+              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mb-4">
+                <Shield className="w-5 h-5 text-purple-600" />
+              </div>
+              <h3 className="font-semibold text-gray-900 mb-1">Vaults</h3>
+              <p className="text-sm text-gray-500">Secure your savings with vaults</p>
+            </div>
+
+            {/* P2P Escrow */}
+            <div className="bg-white p-6 rounded-xl border border-gray-100 hover:shadow-lg transition-all cursor-pointer">
+              <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center mb-4">
+                <Send className="w-5 h-5 text-orange-600" />
+              </div>
+              <h3 className="font-semibold text-gray-900 mb-1">Peer Escrow</h3>
+              {userKycStatus === 'verified' ? (
+                <>
+                  <p className="text-sm text-gray-500 mb-3">Safe transfers with escrow</p>
+                  <EscrowInitiator walletBalance={balance} defaultCurrency="cUSD" />
+                </>
+              ) : (
+                <p className="text-sm text-yellow-600">⚠️ KYC required to access</p>
+              )}
+            </div>
           </div>
+        </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {vaults?.map((vault, index) => (
-              <CustomCard key={vault.id} hover className="p-6 bg-gradient-to-br from-white/80 to-gray-50/80 relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-full blur-xl" />
+        {/* Social Payments Section */}
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">Pay Your Way</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Pay by Phone */}
+            <button
+              onClick={() => setPhonePaymentOpen(true)}
+              className="bg-white p-6 rounded-xl border border-gray-100 hover:shadow-lg transition-all text-left"
+            >
+              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mb-4">
+                <Users className="w-5 h-5 text-blue-600" />
+              </div>
+              <h3 className="font-semibold text-gray-900 mb-1">Pay by Phone</h3>
+              <p className="text-sm text-gray-500">Send money using phone number</p>
+            </button>
 
-                <div className="relative z-10">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
-                        <span className="text-white font-bold text-sm">
-                          {vault.currency.substring(0, 2)}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="font-bold text-gray-900 text-lg">{vault.currency}</span>
-                        <p className="text-sm text-gray-500">Active</p>
-                      </div>
-                    </div>
-                    <Badge variant="emerald" className="flex items-center space-x-1">
-                      <Star className="w-3 h-3" />
-                      <span>Live</span>
-                    </Badge>
-                  </div>
+            {/* Split Bill */}
+            <button
+              onClick={() => setSplitBillOpen(true)}
+              className="bg-white p-6 rounded-xl border border-gray-100 hover:shadow-lg transition-all text-left"
+            >
+              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mb-4">
+                <Users className="w-5 h-5 text-green-600" />
+              </div>
+              <h3 className="font-semibold text-gray-900 mb-1">Split Bill</h3>
+              <p className="text-sm text-gray-500">Share expenses with friends</p>
+            </button>
 
-                  <div className="space-y-2">
-                    <p className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-blue-900 bg-clip-text text-transparent">
-                      ${parseFloat(vault.balance.replace(/,/g, '')).toLocaleString()}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      Goal: ${parseFloat(vault.monthlyGoal || 0).toLocaleString()}
-                    </p>
-                    <div className="w-full bg-gray-200 rounded-full h-2 mt-3">
-                      <div
-                        className="bg-gradient-to-r from-emerald-400 to-teal-500 h-2 rounded-full transition-all duration-700"
-                        style={{
-                          width: `${Math.min((parseFloat(vault.balance.replace(/,/g, '')) / parseFloat(vault.monthlyGoal || 1)) * 100, 100)}%`
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </CustomCard>
-            ))}
+            {/* Request Payment */}
+            <button
+              onClick={() => setPaymentRequestOpen(true)}
+              className="bg-white p-6 rounded-xl border border-gray-100 hover:shadow-lg transition-all text-left"
+            >
+              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mb-4">
+                <Plus className="w-5 h-5 text-purple-600" />
+              </div>
+              <h3 className="font-semibold text-gray-900 mb-1">Request Payment</h3>
+              <p className="text-sm text-gray-500">Ask others to send you money</p>
+            </button>
           </div>
-        </CustomCard>
+        </div>
 
-        {/* New Wallet Features Section */}
-        <div className="space-y-6">
-          {/* Exchange Rate Widget */}
+        {/* Exchange Rate Widget */}
+        <div className="mb-8">
           <ExchangeRateWidget onConvert={(fromAmount, fromCurrency, toCurrency, toAmount) => {
             console.log(`Converting ${fromAmount} ${fromCurrency} to ${toAmount} ${toCurrency}`);
           }} />
+        </div>
+
+        {/* New Wallet Features Section */}
+        <div className="space-y-6">
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-3">
@@ -645,7 +699,16 @@ const EnhancedWalletPage = () => {
             </TabsContent>
 
             <TabsContent value="transactions">
-              <TransactionHistory userId={user?.id} walletAddress={address} />
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-lg font-semibold text-gray-900">Transaction History</h3>
+                  <Button onClick={() => setDepositOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white">
+                    <Send className="w-4 h-4 mr-2" />
+                    Send Money
+                  </Button>
+                </div>
+                <TransactionHistory userId={user?.id} walletAddress={address} />
+              </div>
             </TabsContent>
 
             <TabsContent value="recurring">
@@ -659,13 +722,38 @@ const EnhancedWalletPage = () => {
         </div>
       </div>
 
+      {requestFundsOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <CustomCard className="p-8 max-w-md w-full mx-4">
+            <div className="flex items-center space-x-3 mb-6">
+              <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl flex items-center justify-center">
+                <ArrowDownLeft className="w-6 h-6 text-white" />
+              </div>
+              <h3 className="text-xl font-bold">Request Funds</h3>
+            </div>
+            <p className="text-gray-600 text-sm mb-4">Create a payment request and share it with others</p>
+            <input type="text" placeholder="Requester Name" className="w-full mb-3 p-2 border rounded text-sm" />
+            <input type="number" placeholder="Amount Requested" className="w-full mb-3 p-2 border rounded text-sm" />
+            <select aria-label="Currency selection" className="w-full mb-3 p-2 border rounded text-sm">
+              <option>cUSD</option>
+              <option>CELO</option>
+              <option>cEUR</option>
+              <option>cREAL</option>
+            </select>
+            <textarea placeholder="Message (optional)" className="w-full mb-3 p-2 border rounded text-sm" rows={3}></textarea>
+            <Button className="w-full bg-purple-600 hover:bg-purple-700 text-white">Generate Request</Button>
+            <Button onClick={() => setRequestFundsOpen(false)} className="w-full mt-2" variant="outline">Close</Button>
+          </CustomCard>
+        </div>
+      )}
+
       {/* Mock Modals */}
       {depositOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <CustomCard className="p-8 max-w-md w-full mx-4">
             <div className="flex items-center space-x-3 mb-6">
               <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
-                <Download className="w-6 h-6 text-white" />
+                <Plus className="w-6 h-6 text-white" />
               </div>
               <h3 className="text-xl font-bold">Send Money</h3>
             </div>
@@ -683,7 +771,7 @@ const EnhancedWalletPage = () => {
           <CustomCard className="p-8 max-w-md w-full mx-4">
             <div className="flex items-center space-x-3 mb-6">
               <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center">
-                <CreditCard className="w-6 h-6 text-white" />
+                <Wallet className="w-6 h-6 text-white" />
               </div>
               <h3 className="text-xl font-bold">Add Funds</h3>
             </div>
@@ -698,7 +786,7 @@ const EnhancedWalletPage = () => {
 
       {withdrawOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <CustomCard className="p-8 max-w-md w-full mx-4">
+          <Card className="p-8 max-w-md w-full mx-4">
             <div className="flex items-center space-x-3 mb-6">
               <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl flex items-center justify-center">
                 <ArrowUpRight className="w-6 h-6 text-white" />
@@ -710,7 +798,7 @@ const EnhancedWalletPage = () => {
             {actionError && <p className="text-red-500 mb-2">{actionError}</p>}
             <Button onClick={handleWithdraw} className="w-full" disabled={actionLoading}>{actionLoading ? 'Withdrawing...' : 'Withdraw'}</Button>
             <Button onClick={() => setWithdrawOpen(false)} className="w-full mt-2" variant="outline">Close</Button>
-          </CustomCard>
+          </Card>
         </div>
       )}
 

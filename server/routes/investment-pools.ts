@@ -123,10 +123,10 @@ router.get('/:id/performance', async (req, res) => {
       .where(
         and(
           eq(poolPerformance.poolId, id),
-          sql`${poolPerformance.snapshotAt} >= ${startDate}`
+          sql`${poolPerformance.snapshot_at} >= ${startDate}`
         )
       )
-      .orderBy(poolPerformance.snapshotAt);
+      .orderBy(poolPerformance.snapshot_at);
 
     res.json({ performance });
   } catch (error) {
@@ -263,7 +263,10 @@ router.post('/:id/withdraw', async (req, res) => {
 
     // Calculate user's total shares
     const userInvestments = await db
-      .select({ shares: poolInvestments.sharesMinted })
+      .select({ 
+        investmentAmountUsd: poolInvestments.investmentAmountUsd,
+        sharesMinted: poolInvestments.sharesMinted 
+      })
       .from(poolInvestments)
       .where(
         and(
@@ -285,7 +288,7 @@ router.post('/:id/withdraw', async (req, res) => {
       );
 
     const totalInvested = userInvestments.reduce(
-      (sum, inv) => sum + Number(inv.shares),
+      (sum, inv) => sum + Number(inv.sharesMinted),
       0
     );
     const totalWithdrawn = userWithdrawals.reduce(

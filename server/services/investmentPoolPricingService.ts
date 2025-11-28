@@ -5,8 +5,8 @@ import {
   investmentPools,
   poolInvestments,
   poolWithdrawals,
-  daoSubscriptions,
   daos,
+  subscriptions,
 } from '../../shared/schema';
 import { eq, and, sql } from 'drizzle-orm';
 
@@ -69,18 +69,31 @@ class InvestmentPoolPricingService {
         return PLATFORM_FEES.community;
       }
 
-      // Get DAO's subscription tier
+      // Get DAO's subscription tier from subscriptions table or dao plan
       const [subscription] = await db
         .select({
-          currentPlan: daoSubscriptions.currentPlan,
+          plan: subscriptions.plan,
         })
-        .from(daoSubscriptions)
-        .where(eq(daoSubscriptions.daoId, pool.daoId))
-        .orderBy(sql`${daoSubscriptions.createdAt} DESC`)
+        .from(subscriptions)
+        .where(and(
+          eq(subscriptions.daoId, pool.daoId),
+          eq(subscriptions.status, 'active')
+        ))
+        .orderBy(sql`${subscriptions.startDate} DESC`)
         .limit(1);
 
-      const tier = subscription?.currentPlan || 'community';
-      return PLATFORM_FEES[tier] || PLATFORM_FEES.community;
+      let tier = subscription?.plan || 'community';
+      
+      // Fallback to DAO plan if no active subscription
+      if (!subscription) {
+        const [dao] = await db
+          .select({ plan: daos.plan })
+          .from(daos)
+          .where(eq(daos.id, pool.daoId));
+        tier = dao?.plan || 'community';
+      }
+      
+      return PLATFORM_FEES[tier as keyof typeof PLATFORM_FEES] || PLATFORM_FEES.community;
     } catch (error) {
       logger.error('Error getting platform fee:', error);
       return PLATFORM_FEES.community;

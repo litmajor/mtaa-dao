@@ -26,6 +26,9 @@ const ProposalsLazy = lazy(() => import('./pages/proposals'));
 const ProposalDetailLazy = lazy(() => import('./pages/proposal-detail'));
 const VaultLazy = lazy(() => import('./pages/vault'));
 const VaultDashboardLazy = lazy(() => import('./pages/vault-dashboard')); // Assuming this is the correct component
+const VaultOverviewLazy = lazy(() => import('./pages/vault-overview'));
+const CreateVaultLazy = lazy(() => import('./pages/create-vault'));
+const KYCLazy = lazy(() => import('./pages/kyc'));
 const ProfileLazy = lazy(() => import('./pages/profile'));
 const DAOsLazy = lazy(() => import('./pages/daos'));
 const WalletLazy = lazy(() => import('./pages/wallet'));
@@ -50,6 +53,8 @@ const InvestmentPoolsLazy = lazy(() => import('./pages/investment-pools'));
 const InvestmentPoolDetailLazy = lazy(() => import('./pages/investment-pool-detail'));
 // Import new page components for Investment Pools
 const PoolDiscovery = lazy(() => import('./pages/pool-discovery'));
+const EscrowPageLazy = lazy(() => import('./pages/escrow'));
+const EscrowAcceptLazy = lazy(() => import('./pages/escrow-accept'));
 
 // New Week 2 Admin Pages
 const AdminLayoutLazy = lazy(() => import('./pages/admin/AdminLayout'));
@@ -188,7 +193,7 @@ function App() {
                       </Suspense>
                     )}
 
-                    <main id="main-content" className={isAuthenticated ? "pb-16 lg:pb-0" : ""} role="main">
+                    <main id="main-content" className={isAuthenticated ? "pt-32 pb-16 lg:pb-0 lg:pt-20" : ""} role="main">
                       <Routes>
                         {/* Public routes - Authentication & Info Pages */}
                         <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" /> : <Landing />} />
@@ -231,6 +236,9 @@ function App() {
                         <Route path="/proposals/:id" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><ProposalDetailLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/vault" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><VaultLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/vault-dashboard" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><VaultDashboardLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/vault-overview" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><VaultOverviewLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/create-vault" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><CreateVaultLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/kyc" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><KYCLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/profile" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><ProfileLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/daos" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><DAOsLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/referrals" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><ReferralsLazy /></Suspense></ProtectedRoute>} />
@@ -244,6 +252,8 @@ function App() {
                         <Route path="/investment-pools" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><InvestmentPoolsLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/investment-pools/discover" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><PoolDiscovery /></Suspense></ProtectedRoute>} />
                         <Route path="/investment-pools/:id" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><InvestmentPoolDetailLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/escrow" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><EscrowPageLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/escrow/accept/:inviteCode" element={<Suspense fallback={<PageLoading />}><EscrowAcceptLazy /></Suspense>} />
                         <Route path="/nft-marketplace" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><NFTMarketplace /></Suspense></ProtectedRoute>} />
                         <Route path="/morio" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><MorioDemoLazy /></Suspense></ProtectedRoute>} />
                         {/* Blog routes */}

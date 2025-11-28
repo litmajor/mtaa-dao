@@ -16,7 +16,7 @@ RUN npm run build:backend
 # Generate Prisma client if needed
 RUN npx prisma generate || echo "Skipping prisma generate..."
 
-EXPOSE 4000
+EXPOSE 5000
 
 # Use tsx to run TypeScript directly
 CMD ["npx", "tsx", "server/index.ts"]

@@ -20,7 +20,7 @@
     "forceConsistentCasingInFileNames": true,
     "ignoreDeprecations": "6.0",
     "baseUrl": ".",
-    "types": ["node", "vite/client", "jest", "@testing-library/jest-dom"],
+    "types": ["node", "vite/client", "jest", "@testing-library/jest-dom", "./server/types"],
     "paths": {
       "@/*": ["./client/src/*"],
       "@shared/*": ["./shared/*"]

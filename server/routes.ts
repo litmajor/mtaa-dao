@@ -38,6 +38,7 @@ import adminAIMetricsRoutes from './routes/admin-ai-metrics';
 import announcementsRoutes from './routes/announcements';
 import investmentPoolsRoutes from './routes/investment-pools';
 import poolGovernanceRoutes from './routes/pool-governance';
+import depositsWithdrawalsRoutes from './routes/deposits-withdrawals';
 import treasuryIntelligenceRoutes from './routes/treasury-intelligence';
 import phoneVerificationRouter from './routes/phone-verification';
 import daoChatRoutes from './routes/dao-chat';
@@ -47,6 +48,8 @@ import userSubscriptionRoutes from './routes/user-subscription';
 import revenueRoutes from './routes/revenue';
 // Import savings routes
 import savingsRoutes from './routes/savings';
+// Import Phase 3 Rules Engine routes
+import rulesRoutes from './routes/rules';
 // Import blog, support, and success stories routes
 import blogRoutes from './routes/blog';
 import supportRoutes from './routes/support';
@@ -178,6 +181,9 @@ export async function registerRoutes(app: Express) {
   app.use('/api/stripe-status', stripeStatusRoutes);
   app.use('/api/kotanipay-status', kotanipayStatusRoutes);
   app.use('/api/mpesa-status', mpesaStatusRoutes);
+  app.use('/api/deposits', depositsWithdrawalsRoutes);
+  app.use('/api/withdrawals', depositsWithdrawalsRoutes);
+  app.use('/api/transactions', depositsWithdrawalsRoutes);
 
   // Monitoring
   app.use('/api/monitoring', monitoringRoutes);
@@ -205,6 +211,7 @@ export async function registerRoutes(app: Express) {
   app.use('/api/announcements', announcementsRoutes); // Platform announcements
   app.use('/api/investment-pools', investmentPoolsRoutes); // Multi-asset investment pools
   app.use('/api/pool-governance', poolGovernanceRoutes); // Pool weighted voting governance
+  app.use('/api', rulesRoutes); // Phase 3 Custom Rules Engine
 
   // DAO deployment
   app.post('/api/dao/deploy', isAuthenticated, daoDeployHandler);

@@ -3,8 +3,17 @@ import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db';
 import { daos, daoMemberships, vaults, users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
-import { isAddress } from 'viem';
 import { Logger } from '../utils/logger';
+import { evaluateMemberCreationRules, formatRuleRejectionMessage, logRuleEvaluation } from '../services/rules-integration';
+
+// Validate if string is a valid Ethereum address
+const isAddress = (address: string): boolean => {
+  try {
+    return /^0x[a-fA-F0-9]{40}$/.test(address);
+  } catch {
+    return false;
+  }
+};
 
 const logger = new Logger('dao-deploy');
 
@@ -56,7 +65,7 @@ const userProfile = await db.query.users.findFirst({
   where: eq(users.id, founderWallet)
 });
 
-const userTier = userProfile?.subscriptionTier || 'free';
+const userTier = 'free'; // Default to free tier - subscription system can be enhanced later
 const allowedTypes = tierPermissions[userTier as keyof typeof tierPermissions] || ['free'];
 
 if (!allowedTypes.includes(daoData.daoType)) {
@@ -245,6 +254,20 @@ logger.info(`User ${founderWallet} validated for ${daoData.daoType} DAO creation
     for (const elder of selectedElders) {
       if (elder !== founderWallet) {
         // Skip founder (already created above)
+        
+        // Evaluate member creation rules
+        const ruleResult = await evaluateMemberCreationRules(dao.id, {
+          memberAddress: elder,
+          role: 'elder',
+          joinedAt: new Date(),
+        });
+
+        if (!ruleResult.approved) {
+          logger.warn(`Elder membership rejected by rules: ${elder} - ${formatRuleRejectionMessage(ruleResult.results)}`);
+          logRuleEvaluation(dao.id, 'member_create', elder, ruleResult.results);
+          continue; // Skip this elder and continue with next
+        }
+
         await db
           .insert(daoMemberships)
           .values({
@@ -262,6 +285,7 @@ logger.info(`User ${founderWallet} validated for ${daoData.daoType} DAO creation
           });
 
         logger.info(`Elder membership created (pending): ${elder}`);
+        logRuleEvaluation(dao.id, 'member_create', elder, ruleResult.results);
       }
     }
 
@@ -272,6 +296,20 @@ logger.info(`User ${founderWallet} validated for ${daoData.daoType} DAO creation
     for (const member of invitedMembers || []) {
       if (!elders.includes(member)) {
         // Skip if already an elder
+
+        // Evaluate member creation rules
+        const ruleResult = await evaluateMemberCreationRules(dao.id, {
+          memberAddress: member,
+          role: 'member',
+          joinedAt: new Date(),
+        });
+
+        if (!ruleResult.approved) {
+          logger.warn(`Member membership rejected by rules: ${member} - ${formatRuleRejectionMessage(ruleResult.results)}`);
+          logRuleEvaluation(dao.id, 'member_create', member, ruleResult.results);
+          continue; // Skip this member and continue with next
+        }
+
         await db
           .insert(daoMemberships)
           .values({
@@ -289,6 +327,7 @@ logger.info(`User ${founderWallet} validated for ${daoData.daoType} DAO creation
           });
 
         logger.info(`Regular member membership created (pending): ${member}`);
+        logRuleEvaluation(dao.id, 'member_create', member, ruleResult.results);
       }
     }
 

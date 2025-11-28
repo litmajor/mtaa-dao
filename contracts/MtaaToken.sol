@@ -72,7 +72,8 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, ERC20Votes, Ownable, Pa
         MEMBER,      // 0-999
         CONTRIBUTOR, // 1000-4999
         ELDER,       // 5000-9999
-        ARCHITECT    // 10000+
+        ARCHITECT,    // 10000+
+        SHOGUN
     }
 
     // Events
@@ -109,8 +110,8 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, ERC20Votes, Ownable, Pa
         // Initialize lock period multipliers (basis points: 100 = 1%)
         lockPeriodMultipliers[30] = 800;   // 8% APY for 30 days
         lockPeriodMultipliers[90] = 1000;  // 10% APY for 90 days
-        lockPeriodMultipliers[180] = 1200; // 12% APY for 180 days
-        lockPeriodMultipliers[365] = 1500; // 15% APY for 365 days
+        lockPeriodMultipliers[180] = 1300; // 13% APY for 180 days
+        lockPeriodMultipliers[365] = 1800; // 18% APY for 365 days
         
         // Mint initial liquidity (7.5% of total supply)
         _mint(_owner, 75_000_000 * 1e18);
@@ -274,7 +275,9 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, ERC20Votes, Ownable, Pa
         if (tier == ReputationTier.CONTRIBUTOR) reward = (reward * 125) / 100;
         else if (tier == ReputationTier.ELDER) reward = (reward * 150) / 100;
         else if (tier == ReputationTier.ARCHITECT) reward = (reward * 200) / 100;
-        
+        else if (tier == ReputationTier.SHOGUN) reward = (reward * 300) / 100;
+
+
         return reward;
     }
 
@@ -353,6 +356,7 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, ERC20Votes, Ownable, Pa
      */
     function getReputationTier(address user) public view returns (ReputationTier) {
         uint256 score = reputationScores[user];
+        if (score >= 100000) return ReputationTier.SHOGUN;
         if (score >= 10000) return ReputationTier.ARCHITECT;
         if (score >= 5000) return ReputationTier.ELDER;
         if (score >= 1000) return ReputationTier.CONTRIBUTOR;

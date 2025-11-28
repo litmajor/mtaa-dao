@@ -20,12 +20,18 @@ const logger = new Logger('wallet-setup');
 const router = express.Router();
 
 // POST /api/wallet-setup/create-wallet-mnemonic
-router.post('/create-wallet-mnemonic', async (req, res) => {
+router.post('/create-wallet-mnemonic', isAuthenticated, async (req, res) => {
   try {
-    const { userId, currency = 'cUSD', initialGoal = 0, password, wordCount = 12 } = req.body;
+    const authReq = req as any;
+    const userId = authReq.user?.id || authReq.user?.claims?.sub;
+    const { currency = 'cUSD', initialGoal = 0, password, wordCount = 12 } = req.body;
 
-    if (!userId || !password) {
-      return res.status(400).json({ error: 'User ID and password are required' });
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized: User not found' });
+    }
+
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required' });
     }
 
     if (wordCount !== 12 && wordCount !== 24) {
@@ -88,6 +94,7 @@ router.post('/create-wallet-mnemonic', async (req, res) => {
 
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
+    logger.error('Wallet creation error:', errorMsg);
     res.status(500).json({ error: errorMsg });
   }
 });

@@ -9,8 +9,39 @@ import { treasuryMultisigService } from '../services/treasuryMultisigService';
 import { db } from '../db';
 import { treasuryMultisigTransactions, treasuryBudgetAllocations, treasuryAuditLog } from '../../shared/schema';
 import { eq, desc, and } from 'drizzle-orm';
+import { getGatewayAgentService } from '../core/agents/gateway/service';
+import { Logger } from '../utils/logger';
 
 const router = express.Router();
+const logger = new Logger('dao-treasury');
+
+/**
+ * Create a Gateway Agent-based price oracle
+ * Primary: Gateway Agent (5+ adapters), Fallback: returns 0
+ */
+function createPriceOracle(): (tokenSymbol: string) => Promise<number> {
+  const gatewayService = getGatewayAgentService();
+  
+  return async (tokenSymbol: string): Promise<number> => {
+    try {
+      // Request price from Gateway Agent with multi-adapter fallover
+      const priceRequest = await gatewayService.requestPrices(
+        [tokenSymbol],
+        ['celo'],
+        undefined
+      );
+
+      // Wait for response
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const priceData = priceRequest?.payload?.data?.[0];
+      return priceData?.price || 0;
+    } catch (error) {
+      logger.warn(`Failed to get price for ${tokenSymbol}:`, error);
+      return 0;
+    }
+  };
+}
 
 // --- DAO Treasury: Monitor Treasury Balances ---
 router.get('/:daoId/balance', isAuthenticated, async (req: Request, res: Response) => {
@@ -21,21 +52,16 @@ router.get('/:daoId/balance', isAuthenticated, async (req: Request, res: Respons
       return res.status(404).json({ message: 'DAO or treasury wallet not found' });
     }
     const config = NetworkConfig.CELO_ALFAJORES; // TODO: Make dynamic
-    // Mock price oracle for demonstration
-    const mockPriceOracle = async (tokenAddress: string): Promise<number> => {
-      const prices: Record<string, number> = {
-        'native': 2500, // ETH price
-        '0x...': 1.0 // USDC price
-      };
-      return prices[tokenAddress] || 0;
-    };
+    
+    const priceOracle = createPriceOracle();
+    
     const wallet = new EnhancedAgentWallet(
       dao.treasuryPrivateKey,
       config,
       undefined,
       undefined,
       undefined,
-      mockPriceOracle
+      priceOracle
     );
     // Use DaoTreasuryManager for advanced snapshot
     const treasuryManager = new DaoTreasuryManager(wallet, dao.treasuryAddress, dao.allowedTokens || []);
@@ -56,20 +82,14 @@ router.post('/:daoId/transfer/native', isAuthenticated, async (req: Request, res
       return res.status(404).json({ message: 'DAO or treasury wallet not found' });
     }
     const config = NetworkConfig.CELO_ALFAJORES;
-    const mockPriceOracle = async (tokenAddress: string): Promise<number> => {
-      const prices: Record<string, number> = {
-        'native': 2500,
-        '0x...': 1.0
-      };
-      return prices[tokenAddress] || 0;
-    };
+    const priceOracle = createPriceOracle();
     const wallet = new EnhancedAgentWallet(
       dao.treasuryPrivateKey,
       config,
       undefined,
       undefined,
       undefined,
-      mockPriceOracle
+      priceOracle
     );
     const tx = await wallet.sendNativeToken(toAddress, amount);
     res.json({ tx });
@@ -88,20 +108,14 @@ router.post('/:daoId/transfer/token', isAuthenticated, async (req: Request, res:
       return res.status(404).json({ message: 'DAO or treasury wallet not found' });
     }
     const config = NetworkConfig.CELO_ALFAJORES;
-    const mockPriceOracle = async (tokenAddress: string): Promise<number> => {
-      const prices: Record<string, number> = {
-        'native': 2500,
-        '0x...': 1.0
-      };
-      return prices[tokenAddress] || 0;
-    };
+    const priceOracle = createPriceOracle();
     const wallet = new EnhancedAgentWallet(
       dao.treasuryPrivateKey,
       config,
       undefined,
       undefined,
       undefined,
-      mockPriceOracle
+      priceOracle
     );
     const tx = await wallet.sendTokenHuman(tokenAddress, toAddress, amount);
     res.json({ tx });
@@ -120,20 +134,14 @@ router.post('/:daoId/automation/payout', isAuthenticated, async (req: Request, r
       return res.status(404).json({ message: 'DAO or treasury wallet not found' });
     }
     const config = NetworkConfig.CELO_ALFAJORES;
-    const mockPriceOracle = async (tokenAddress: string): Promise<number> => {
-      const prices: Record<string, number> = {
-        'native': 2500,
-        '0x...': 1.0
-      };
-      return prices[tokenAddress] || 0;
-    };
+    const priceOracle = createPriceOracle();
     const wallet = new EnhancedAgentWallet(
       dao.treasuryPrivateKey,
       config,
       undefined,
       undefined,
       undefined,
-      mockPriceOracle
+      priceOracle
     );
     // Use batchTransfer for payouts
     const results = await wallet.batchTransfer(payouts);
@@ -152,20 +160,14 @@ router.get('/:daoId/snapshot', isAuthenticated, async (req: Request, res: Respon
       return res.status(404).json({ message: 'DAO or treasury wallet not found' });
     }
     const config = NetworkConfig.CELO_ALFAJORES;
-    const mockPriceOracle = async (tokenAddress: string): Promise<number> => {
-      const prices: Record<string, number> = {
-        'native': 2500,
-        '0x...': 1.0
-      };
-      return prices[tokenAddress] || 0;
-    };
+    const priceOracle = createPriceOracle();
     const wallet = new EnhancedAgentWallet(
       dao.treasuryPrivateKey,
       config,
       undefined,
       undefined,
       undefined,
-      mockPriceOracle
+      priceOracle
     );
     const treasuryManager = new DaoTreasuryManager(wallet, dao.treasuryAddress, dao.allowedTokens || []);
     const snapshot = await treasuryManager.getTreasurySnapshot();
@@ -185,20 +187,14 @@ router.get('/:daoId/report', isAuthenticated, async (req: Request, res: Response
       return res.status(404).json({ message: 'DAO or treasury wallet not found' });
     }
     const config = NetworkConfig.CELO_ALFAJORES;
-    const mockPriceOracle = async (tokenAddress: string): Promise<number> => {
-      const prices: Record<string, number> = {
-        'native': 2500,
-        '0x...': 1.0
-      };
-      return prices[tokenAddress] || 0;
-    };
+    const priceOracle = createPriceOracle();
     const wallet = new EnhancedAgentWallet(
       dao.treasuryPrivateKey,
       config,
       undefined,
       undefined,
       undefined,
-      mockPriceOracle
+      priceOracle
     );
     const treasuryManager = new DaoTreasuryManager(wallet, dao.treasuryAddress, dao.allowedTokens || []);
     const report = await treasuryManager.generateTreasuryReport((period as any) || 'monthly');

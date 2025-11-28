@@ -11,7 +11,7 @@ import { FreeTierLimitWarning } from '@/components/FreeTierLimitWarning';
 export default function DaoSettings({ daoName = "Your DAO" }) {
   // Platform-set constants
   const disbursementFee = 2;
-  const withdrawalFee = 3;
+  const withdrawalFee = 2;
   const [offrampWhoPays, setOfframpWhoPays] = useState("DAO");
   const [isLoading, setIsLoading] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);

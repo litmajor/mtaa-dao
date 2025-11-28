@@ -5,6 +5,7 @@ import { tokenService } from '../services/tokenService';
 import { asyncHandler } from '../middleware/errorHandler';
 import { logger } from '../utils/logger';
 import { z } from 'zod';
+import { evaluateWithdrawalRules, formatRuleRejectionMessage, logRuleEvaluation } from '../services/rules-integration';
 
 const router = Router();
 
@@ -89,13 +90,34 @@ router.post('/withdraw', asyncHandler(async (req, res) => {
   const validatedData = withdrawSchema.parse(req.body);
   
   try {
+    const vaultId = req.body.vaultAddress || 'default-vault';
+
+    // Evaluate withdrawal rules before processing
+    const ruleResult = await evaluateWithdrawalRules(vaultId, {
+      memberAddress: userId,
+      withdrawalAmount: validatedData.amount,
+    });
+
+    if (!ruleResult.approved) {
+      logger.warn(`Withdrawal rejected by rules: user ${userId} - ${formatRuleRejectionMessage(ruleResult.results)}`);
+      logRuleEvaluation(vaultId, 'withdrawal', userId, ruleResult.results);
+      return res.status(403).json({
+        error: 'Withdrawal rejected',
+        reason: formatRuleRejectionMessage(ruleResult.results),
+        rules: ruleResult.results,
+      });
+    }
+
     // Process withdrawal through vault service
     const result = await vaultService.withdrawToken({
-      vaultId: req.body.vaultAddress || 'default-vault',
+      vaultId,
       userId,
       tokenSymbol: validatedData.currency as any,
       amount: validatedData.amount,
     });
+
+    logger.info(`Withdrawal approved and processed: user ${userId}, amount ${validatedData.amount}`);
+    logRuleEvaluation(vaultId, 'withdrawal', userId, ruleResult.results);
 
     res.json({
       success: true,

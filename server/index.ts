@@ -372,6 +372,10 @@ app.use((req, res, next) => {
     const proofOfContributionRoutes = (await import('./routes/proof-of-contribution')).default;
     app.use('/api/proof-of-contribution', proofOfContributionRoutes);
 
+    // Feature visibility routes
+    const featureRoutes = (await import('./routes/features')).default;
+    app.use('/api/features', featureRoutes);
+
     // AI Analytics endpoints
     // Load authentication middleware dynamically (avoid top-level static import inside function scope)
     const { isAuthenticated } = await import('./auth'); // Dynamically imported
@@ -464,7 +468,7 @@ app.use((req, res, next) => {
       if (typeof vaultAutomationService.start === 'function') {
         const result = vaultAutomationService.start();
         if (result && typeof result.catch === 'function') {
-          result.catch(err => {
+          result.catch((err: any) => {
             logger.error('⚠️ Vault automation service failed to start:', err.message);
           });
         }
@@ -478,7 +482,7 @@ app.use((req, res, next) => {
       if (typeof transactionMonitor.start === 'function') {
         const result = transactionMonitor.start();
         if (result && typeof result.catch === 'function') {
-          result.catch(err => {
+          result.catch((err: any) => {
             logger.error('⚠️ Transaction monitor failed to start:', err.message);
           });
         }
@@ -492,7 +496,7 @@ app.use((req, res, next) => {
       if (typeof recurringPaymentService.start === 'function') {
         const result = recurringPaymentService.start();
         if (result && typeof result.catch === 'function') {
-          result.catch(err => {
+          result.catch((err: any) => {
             logger.error('⚠️ Recurring payment service failed to start:', err.message);
           });
         }
@@ -503,10 +507,10 @@ app.use((req, res, next) => {
 
     // Start gas price oracle with error handling
     try {
-      if (typeof gasPriceOracle.start === 'function') {
+      if (typeof gasPriceOracle?.start === 'function') {
         const result = gasPriceOracle.start();
         if (result && typeof result.catch === 'function') {
-          result.catch(err => {
+          result.catch((err: any) => {
             logger.error('⚠️ Gas price oracle failed to start:', err.message);
           });
         }

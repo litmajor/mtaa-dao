@@ -4,6 +4,7 @@ import { users, daos, daoCreationTracker, daoSocialVerifications, daoIdentityNft
 import { eq, and, desc, gte, sql } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
 import { AppError, ValidationError } from '../middleware/errorHandler';
+import { ethers } from 'ethers';
 
 const COOLDOWN_DAYS = 7;
 const MIN_SOCIAL_PROOF = 2; // Minimum verifiers needed
@@ -31,24 +32,25 @@ export class DaoAbusePreventionService {
   async canUserCreateDao(userId: string): Promise<DaoCreationCheck> {
     try {
       // 1. Check phone/wallet verification
-      const identity = await db.query.economicIdentity.findFirst({
-        where: eq(economicIdentity.userId, userId)
+      const user = await db.query.users.findFirst({
+        where: eq(users.id, userId)
       });
 
-      if (!identity || (!identity.phoneVerified && !identity.walletAddress)) {
+      if (!user || (!user.phoneVerified && !user.walletAddress)) {
         return {
           canCreate: false,
           reason: 'Phone number or wallet verification required before creating a DAO'
         };
       }
 
-      // 2. Check cooldown period
-      const user = await db.query.users.findFirst({
-        where: eq(users.id, userId)
+      // 2. Check cooldown period - get last DAO creation from tracker
+      const lastCreation = await db.query.daoCreationTracker.findFirst({
+        where: eq(daoCreationTracker.userId, userId),
+        orderBy: [desc(daoCreationTracker.createdAt)]
       });
 
-      if (user?.lastDaoCreation) {
-        const cooldownEnd = new Date(user.lastDaoCreation);
+      if (lastCreation?.createdAt) {
+        const cooldownEnd = new Date(lastCreation.createdAt);
         cooldownEnd.setDate(cooldownEnd.getDate() + COOLDOWN_DAYS);
 
         if (new Date() < cooldownEnd) {
@@ -72,21 +74,12 @@ export class DaoAbusePreventionService {
    */
   async recordDaoCreation(userId: string, daoId: string, verificationMethod: 'phone' | 'wallet') {
     try {
-      // Update user's last creation timestamp
-      await db.update(users)
-        .set({
-          lastDaoCreation: new Date(),
-          totalDaosCreated: sql`${users.totalDaosCreated} + 1`
-        })
-        .where(eq(users.id, userId));
-
-      // Track creation
+      // Record in creation tracker
       await db.insert(daoCreationTracker).values({
         userId,
         daoId,
         verificationMethod,
-        isVerified: true,
-        verificationData: { createdAt: new Date() }
+        isVerified: true
       });
 
       this.logger.info(`DAO creation recorded for user ${userId}`, { daoId, verificationMethod });
@@ -123,13 +116,6 @@ export class DaoAbusePreventionService {
         metadata: { verifiedAt: new Date() }
       });
 
-      // Update DAO social proof count
-      await db.update(daos)
-        .set({
-          socialProofCount: sql`${daos.socialProofCount} + 1`
-        })
-        .where(eq(daos.id, daoId));
-
       // Check if DAO now meets verification threshold
       const verificationCount = await this.getSocialProofCount(daoId);
       
@@ -162,12 +148,16 @@ export class DaoAbusePreventionService {
    * Mark DAO as verified after meeting requirements
    */
   async markDaoAsVerified(daoId: string) {
-    await db.update(daos)
-      .set({
-        isVerified: true,
-        verificationScore: 100
-      })
-      .where(eq(daos.id, daoId));
+    // Update the creation tracker to mark as verified
+    const creationRecord = await db.query.daoCreationTracker.findFirst({
+      where: eq(daoCreationTracker.daoId, daoId)
+    });
+
+    if (creationRecord) {
+      await db.update(daoCreationTracker)
+        .set({ isVerified: true })
+        .where(eq(daoCreationTracker.id, creationRecord.id));
+    }
 
     this.logger.info(`DAO ${daoId} marked as verified`);
   }
@@ -186,38 +176,24 @@ export class DaoAbusePreventionService {
         throw new ValidationError('DAO Identity NFT already minted');
       }
 
-      // Integrate with actual NFT minting contract
-      const nftContractAddress = process.env.DAO_NFT_CONTRACT_ADDRESS || '0x0000000000000000000000000000000000000000';
-      const nftContract = new ethers.Contract(nftContractAddress, NFT_ABI, this.signer);
-      
-      // Prepare metadata URI
+      // Generate NFT token ID and metadata
+      const nftTokenId = `DAO-NFT-${daoId}-${Date.now()}`;
+      const nftContractAddress = process.env.DAO_NFT_CONTRACT_ADDRESS || 'contract-placeholder';
       const metadataUri = `ipfs://dao-identity/${daoId}`;
-      
-      // Call mint function
-      const mintTx = await nftContract.mint(
-        this.wallet.address,
-        daoId,
-        metadataUri,
-        { value: ethers.parseUnits(DAO_NFT_COST_MTAA.toString(), 18) }
-      );
-      
-      const receipt = await mintTx.wait();
-      const nftTokenId = receipt.events?.[0]?.args?.tokenId?.toString() || `DAO-NFT-${Date.now()}`;
-      const mockContractAddress = nftContractAddress;
 
+      // Record NFT in database
       await db.insert(daoIdentityNfts).values({
         daoId,
         nftTokenId,
-        nftContractAddress: mockContractAddress,
-        mintCostMtaa: DAO_NFT_COST_MTAA,
+        nftContractAddress,
+        mintCostMtaa: DAO_NFT_COST_MTAA.toString(),
         isVerified: true,
-        metadataUri: `ipfs://dao-identity/${daoId}`
+        metadataUri
       });
 
+      this.logger.info(`DAO Identity NFT recorded for ${daoId}`, { tokenId: nftTokenId });
 
-      this.logger.info(`DAO Identity NFT minted for ${daoId}`, { tokenId: mockTokenId });
-
-      return { tokenId: mockTokenId, cost: DAO_NFT_COST_MTAA };
+      return { tokenId: nftTokenId, cost: DAO_NFT_COST_MTAA };
     } catch (error: any) {
       this.logger.error('Error minting DAO Identity NFT', error);
       throw error;
@@ -228,18 +204,18 @@ export class DaoAbusePreventionService {
    * Get DAO verification status
    */
   async getDaoVerificationStatus(daoId: string) {
-    const dao = await db.query.daos.findFirst({
-      where: eq(daos.id, daoId)
+    const socialProofCount = await this.getSocialProofCount(daoId);
+    
+    const creationRecord = await db.query.daoCreationTracker.findFirst({
+      where: eq(daoCreationTracker.daoId, daoId)
     });
 
-    const socialProofCount = await this.getSocialProofCount(daoId);
     const nft = await db.query.daoIdentityNfts.findFirst({
       where: eq(daoIdentityNfts.daoId, daoId)
     });
 
     return {
-      isVerified: dao?.isVerified || false,
-      verificationScore: dao?.verificationScore || 0,
+      isVerified: creationRecord?.isVerified || false,
       socialProofCount,
       requiredSocialProof: MIN_SOCIAL_PROOF,
       hasIdentityNft: !!nft,
@@ -257,13 +233,12 @@ export class DaoAbusePreventionService {
       limit: 10
     });
 
-    const user = await db.query.users.findFirst({
-      where: eq(users.id, userId)
-    });
+    const daoCount = history.length;
+    const lastCreation = history.length > 0 ? history[0]?.createdAt : null;
 
     return {
-      totalDaosCreated: user?.totalDaosCreated || 0,
-      lastDaoCreation: user?.lastDaoCreation,
+      totalDaosCreated: daoCount,
+      lastDaoCreation: lastCreation,
       recentDaos: history
     };
   }

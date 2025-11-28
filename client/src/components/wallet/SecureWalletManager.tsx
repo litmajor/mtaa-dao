@@ -41,10 +41,21 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
 
     setLoading(true);
     try {
+      // Get auth token from localStorage
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        toast({ title: 'Error', description: 'Not authenticated. Please log in.', variant: 'destructive' });
+        setLoading(false);
+        return;
+      }
+
       const response = await fetch('/api/wallet-setup/create-wallet-mnemonic', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, password, wordCount })
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ password, wordCount })
       });
 
       const data = await response.json();
