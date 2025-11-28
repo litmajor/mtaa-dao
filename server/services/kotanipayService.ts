@@ -93,7 +93,7 @@ export class KotanipayService {
           reference: request.reference,
           daoId: request.daoId,
           amountCUSD: estimatedCUSD.toString(),
-          exchangeRate: EXCHANGE_RATE.toString(),
+          exchangeRate: exchangeRate.toString(),
           estimatedKES: request.amountKES,
         },
         createdAt: new Date(),
@@ -135,7 +135,7 @@ export class KotanipayService {
         status: 'pending',
         amountKES: request.amountKES,
         estimatedCUSD,
-        exchangeRate: EXCHANGE_RATE,
+        exchangeRate,
         fee,
         message: 'Deposit initiated. Please enter M-Pesa PIN to confirm.',
       };

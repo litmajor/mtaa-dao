@@ -5,6 +5,7 @@ import { db } from '../storage';
 import { p2pTransfers } from '../../shared/p2pTransferSchema';
 import { users } from '../../shared/schema';
 import { transactionLimitService } from '../services/transactionLimitService';
+import { exchangeRateService } from '../services/exchangeRateService';
 import { eq, or, and, desc } from 'drizzle-orm';
 import crypto from 'crypto';
 
@@ -87,7 +88,8 @@ router.post('/send', requireAuth, async (req, res) => {
 
     // Create transfer record
     const transferId = `P2P-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-    const amountKES = validated.amountUSD * 129; // Exchange rate
+    const exchangeRate = await exchangeRateService.getUSDtoKESRate();
+    const amountKES = validated.amountUSD * exchangeRate;
 
     const [transfer] = await db
       .insert(p2pTransfers)
