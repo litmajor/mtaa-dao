@@ -38,6 +38,7 @@ export class ResponseGenerator {
   /**
    * Generate response based on understanding and context
    * Uses LLM if available, falls back to templates
+   * KWETU Integration: Fetches real DAO data for treasury and proposal operations
    */
   async generate(understanding: any, context: UserContext) {
     const { intent, entities, confidence } = understanding;
@@ -64,6 +65,7 @@ export class ResponseGenerator {
     const template = this.getResponseTemplate(intent);
     let suggestions: string[] = [];
     let actions: Action[] = [];
+    let responseText = '';
 
     // Handle onboarding intents
     switch (intent) {
@@ -92,22 +94,63 @@ export class ResponseGenerator {
         };
 
       case 'check_balance':
-        suggestions = this.generateSuggestions(intent, context);
-        actions = this.generateActions(intent, entities);
+        // Fetch real treasury data via KWETU
+        try {
+          const treasuryData = await this.fetchTreasuryBalance(context.daoId);
+          responseText = `Your DAO treasury: **${treasuryData.balance} ${treasuryData.currency}** across ${treasuryData.vaults} vault(s). Last updated: ${new Date(treasuryData.lastUpdated).toLocaleString()}`;
+          suggestions = this.generateSuggestions(intent, context);
+          actions = this.generateActions(intent, { ...entities, balance: treasuryData.balance });
+        } catch (error) {
+          logger.warn('Failed to fetch treasury balance, using template:', error);
+          responseText = this.personalizeResponse(template.text, context, entities);
+          suggestions = this.generateSuggestions(intent, context);
+          actions = this.generateActions(intent, entities);
+        }
+        break;
+
+      case 'submit_proposal':
+        // Guide user through proposal creation
+        try {
+          const proposalData = {
+            title: entities.title || 'New Proposal',
+            description: entities.description || 'Describe your proposal here',
+            daoId: context.daoId,
+            proposerId: context.userId,
+            status: 'draft'
+          };
+          
+          // Validate required fields
+          if (!proposalData.title || !proposalData.daoId) {
+            responseText = 'To create a proposal, I need a title and DAO ID. Please provide these details.';
+          } else {
+            // Create proposal in database
+            const proposal = await this.createProposalAsync(proposalData);
+            responseText = `Proposal created successfully! 🎉\n\n**ID:** ${proposal.id}\n**Title:** ${proposal.title}\n\nNext steps:\n1. Add more details\n2. Submit to the DAO\n3. Community votes`;
+            suggestions = ['View proposal', 'Submit to voting', 'Edit proposal'];
+            actions = [{
+              type: 'view_proposal',
+              label: 'View Proposal',
+              data: { proposalId: proposal.id }
+            }];
+          }
+        } catch (error) {
+          logger.warn('Failed to create proposal, using template:', error);
+          responseText = this.personalizeResponse(template.text, context, entities);
+          suggestions = this.generateSuggestions(intent, context);
+          actions = this.generateActions(intent, entities);
+        }
         break;
 
       default:
         // For other intents, proceed with default response generation
+        responseText = this.personalizeResponse(template.text, context, entities);
         suggestions = this.generateSuggestions(intent, context);
         actions = this.generateActions(intent, entities);
         break;
     }
 
-    // Personalize response
-    const personalizedText = this.personalizeResponse(template.text, context, entities);
-
     return {
-      text: personalizedText,
+      text: responseText || this.personalizeResponse(template.text, context, entities),
       suggestions,
       actions
     };
@@ -249,5 +292,60 @@ export class ResponseGenerator {
     }
 
     return actions;
+  }
+
+  /**
+   * KWETU Integration: Fetch real treasury balance from DAO vaults
+   */
+  private async fetchTreasuryBalance(daoId: string): Promise<any> {
+    try {
+      if (!daoId) {
+        throw new Error('DAO ID is required to fetch treasury balance');
+      }
+
+      // Call KWETU treasury service to get actual balance
+      const treasuryData = await kwetu.execute({
+        service: 'treasury',
+        method: 'getBalance',
+        params: { daoId }
+      });
+
+      logger.info('Treasury balance fetched for DAO:', { daoId, balance: treasuryData.balance });
+      return treasuryData;
+    } catch (error) {
+      logger.error('Error fetching treasury balance:', error);
+      // Graceful fallback to template response
+      throw new Error(`Failed to fetch treasury balance: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * KWETU Integration: Create a new proposal in the database
+   */
+  private async createProposalAsync(proposalData: any): Promise<any> {
+    try {
+      // Validate proposal data
+      if (!proposalData.title) {
+        throw new Error('Proposal title is required');
+      }
+      if (!proposalData.daoId) {
+        throw new Error('DAO ID is required to create proposal');
+      }
+
+      // Create proposal via storage layer
+      const proposal = await storage.createProposal({
+        ...proposalData,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        proposalType: proposalData.proposalType || 'general',
+        fundingAmount: proposalData.fundingAmount || 0
+      });
+
+      logger.info('Proposal created successfully:', { proposalId: proposal.id, title: proposal.title });
+      return proposal;
+    } catch (error) {
+      logger.error('Error creating proposal:', error);
+      throw new Error(`Failed to create proposal: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 }
