@@ -10,6 +10,7 @@ import { db } from '../db';
 import { mpesaTransactions as mpesaTransactionsTable } from '../../shared/financialEnhancedSchema';
 import { eq } from 'drizzle-orm';
 import { transactionLimitService } from '../services/transactionLimitService';
+import { exchangeRateService } from '../services/exchangeRateService';
 
 const router = express.Router();
 
@@ -45,8 +46,9 @@ router.post('/initiate', async (req, res) => {
   try {
     const validated = depositSchema.parse(req.body);
 
-    // Convert KES to USD for limit checking
-    const amountUSD = validated.amountKES / 129; // Exchange rate
+    // Get current exchange rate and convert KES to USD for limit checking
+    const exchangeRate = await exchangeRateService.getUSDtoKESRate();
+    const amountUSD = validated.amountKES / exchangeRate;
 
     // Check KYC limits
     const limitCheck = await transactionLimitService.canTransact(

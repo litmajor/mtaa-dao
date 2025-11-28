@@ -3,10 +3,10 @@ import { db } from '../storage';
 import { unifiedTransactionLimits, p2pTransfers } from '../../shared/p2pTransferSchema';
 import { kycTransactionHistory } from '../../shared/transactionLimitSchema';
 import { kycService, KYC_TIERS } from './kycService';
+import { exchangeRateService } from './exchangeRateService';
 import { eq, and } from 'drizzle-orm';
 
 export class TransactionLimitService {
-  private readonly EXCHANGE_RATE_KES_USD = 129;
 
   /**
    * Check if user can perform any transaction within their KYC limits
@@ -97,12 +97,15 @@ export class TransactionLimitService {
       const dailyUsed = parseFloat(usage.dailyTotalVolume || '0');
       const monthlyUsed = parseFloat(usage.monthlyTotalVolume || '0');
 
+      // Get current exchange rate
+      const exchangeRate = await exchangeRateService.getUSDtoKESRate();
+
       // Record in history
       await db.insert(kycTransactionHistory).values({
         userId,
         transactionType,
         amountUSD: amountUSD.toString(),
-        amountKES: (amountUSD * this.EXCHANGE_RATE_KES_USD).toString(),
+        amountKES: (amountUSD * exchangeRate).toString(),
         kycTier: tier.tier,
         dailyLimit: tier.dailyLimit.toString(),
         monthlyLimit: tier.monthlyLimit.toString(),

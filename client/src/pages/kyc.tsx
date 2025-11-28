@@ -9,10 +9,12 @@ import { Progress } from '@/components/ui/progress';
 import { Shield, Upload, CheckCircle, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiPost, apiGet } from '@/lib/api';
+import { useEffect } from 'react';
 
 export default function KYCPage() {
   const [kycLevel, setKycLevel] = useState<'none' | 'basic' | 'intermediate' | 'advanced'>('none');
   const [verificationStatus, setVerificationStatus] = useState('pending');
+  const [exchangeRate, setExchangeRate] = useState(129); // Default fallback rate
   const { toast } = useToast();
 
   const [formData, setFormData] = useState({
@@ -24,6 +26,26 @@ export default function KYCPage() {
     idNumber: '',
   });
 
+  // Fetch current exchange rate on mount
+  useEffect(() => {
+    const fetchExchangeRate = async () => {
+      try {
+        // Try to fetch from public API
+        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.rates?.KES) {
+            setExchangeRate(parseFloat(data.rates.KES));
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch exchange rate, using default:', error);
+        // Keep default rate if API fails
+      }
+    };
+    fetchExchangeRate();
+  }, []);
+
   const handleSubmitKYC = async (level: string) => {
     try {
       const result = await apiPost('/api/kyc/submit', { ...formData, level });
@@ -33,8 +55,6 @@ export default function KYCPage() {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
     }
   };
-
-  const EXCHANGE_RATE = 129; // KES per USD
   
   const tiers = [
     { 
@@ -68,7 +88,7 @@ export default function KYCPage() {
   ];
 
   const formatCurrency = (usd: number) => {
-    const kes = usd * EXCHANGE_RATE;
+    const kes = usd * exchangeRate;
     return `${kes.toLocaleString('en-US')} KES [$${usd.toLocaleString('en-US')}]`;
   };
 
