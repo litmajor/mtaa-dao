@@ -16,6 +16,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   ChevronLeft,
   ChevronRight,
@@ -31,15 +32,126 @@ import {
   Upload,
   Copy,
   Info,
-  HelpCircle
+  HelpCircle,
+  AlertTriangle,
+  BookOpen
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import MultisigManager from '@/components/multisig/MultisigManager';
 import { useToast } from '@/components/ui/use-toast';
 
+const WhatIsDAOExplainer = ({ onContinue }: { onContinue: () => void }) => (
+  <div className="space-y-6">
+    <div className="text-center mb-8">
+      <div className="w-16 h-16 bg-teal-100 dark:bg-teal-900 rounded-full flex items-center justify-center mx-auto mb-4">
+        <BookOpen className="w-8 h-8 text-teal-600 dark:text-teal-400" />
+      </div>
+      <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Before You Start</h1>
+      <p className="text-gray-600 dark:text-gray-400">Let's make sure you understand what you're creating</p>
+    </div>
+
+    <Card className="border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-950/30">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-teal-800 dark:text-teal-200">
+          <Users className="w-5 h-5" />
+          What is a DAO? (Think of it like a digital Chama)
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4 text-gray-700 dark:text-gray-300">
+        <p>
+          A <strong>DAO</strong> (Decentralized Autonomous Organization) is like a <strong>chama or savings group</strong> that runs on the internet. 
+          Instead of keeping records in a book or M-Pesa statements, everything is stored on a shared digital ledger that everyone can see.
+        </p>
+        
+        <div className="grid gap-3 mt-4">
+          <div className="flex items-start gap-3 bg-white dark:bg-slate-800 p-3 rounded-lg">
+            <div className="w-8 h-8 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center flex-shrink-0">
+              <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
+            </div>
+            <div>
+              <p className="font-medium">Transparent like M-Pesa history</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Every contribution and withdrawal is recorded and visible to all members</p>
+            </div>
+          </div>
+          
+          <div className="flex items-start gap-3 bg-white dark:bg-slate-800 p-3 rounded-lg">
+            <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center flex-shrink-0">
+              <Users className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <p className="font-medium">Democratic like a community meeting</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Members vote on decisions - just like raising hands at a baraza</p>
+            </div>
+          </div>
+          
+          <div className="flex items-start gap-3 bg-white dark:bg-slate-800 p-3 rounded-lg">
+            <div className="w-8 h-8 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center flex-shrink-0">
+              <Shield className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+            </div>
+            <div>
+              <p className="font-medium">Protected by technology</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">No single person can run away with the money - rules are enforced automatically</p>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+
+    <Alert className="border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30">
+      <AlertTriangle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+      <AlertTitle className="text-orange-800 dark:text-orange-200">Important: This is Permanent</AlertTitle>
+      <AlertDescription className="text-orange-700 dark:text-orange-300">
+        <p className="mb-2">
+          Once you create a DAO, it becomes a <strong>permanent record on the blockchain</strong>. 
+          Think of it like registering a business with the government - the record exists forever.
+        </p>
+        <ul className="list-disc list-inside text-sm space-y-1">
+          <li>You <strong>cannot delete</strong> a DAO once created</li>
+          <li>The name and rules you set will be <strong>public and visible</strong> to anyone</li>
+          <li>All transactions will be <strong>recorded permanently</strong></li>
+        </ul>
+      </AlertDescription>
+    </Alert>
+
+    <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-lg">
+      <h4 className="font-semibold mb-2 text-gray-900 dark:text-white">Who should create a DAO?</h4>
+      <div className="grid gap-2 text-sm text-gray-600 dark:text-gray-400">
+        <p>A DAO is perfect for:</p>
+        <ul className="list-disc list-inside space-y-1">
+          <li><strong>Savings groups (Chamas)</strong> - Pool money together transparently</li>
+          <li><strong>Merry-go-rounds</strong> - Take turns receiving contributions</li>
+          <li><strong>Community projects</strong> - Fundraise for schools, water, etc.</li>
+          <li><strong>Welfare groups</strong> - Burial funds, emergency support</li>
+          <li><strong>Investment clubs</strong> - Pool resources for larger investments</li>
+        </ul>
+      </div>
+    </div>
+
+    <Button 
+      onClick={onContinue} 
+      className="w-full bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800"
+      size="lg"
+      data-testid="button-understand-continue"
+    >
+      I Understand, Let's Create My Group
+      <ChevronRight className="w-4 h-4 ml-2" />
+    </Button>
+  </div>
+);
+
+const BlockchainWarningBanner = () => (
+  <Alert className="mb-4 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30">
+    <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+    <AlertDescription className="text-amber-700 dark:text-amber-300 text-sm">
+      Remember: Once created, your group will be <strong>permanent and public</strong>. Choose your name and settings carefully.
+    </AlertDescription>
+  </Alert>
+);
+
 const MINIMUM_QUORUM = 20; // 20% minimum quorum
 
 const CreateDAOFlow = () => {
+  const [showExplainer, setShowExplainer] = useState(true);
   const [currentStep, setCurrentStep] = useState(1);
   const [isDeploying, setIsDeploying] = useState(false);
   const { address: walletAddress, isConnected } = useWallet();
@@ -210,14 +322,14 @@ const CreateDAOFlow = () => {
   const availableDaoTypes = getAvailableDaoTypes(userTier);
 
   const steps = [
-    { id: 1, title: 'DAO Type', icon: Settings }, // NEW: Step 1
-    { id: 2, title: 'Basic Info', icon: Settings },
-    { id: 3, title: 'Select Elders', icon: Shield },
-    { id: 4, title: 'Governance', icon: Shield },
-    { id: 5, title: 'Treasury', icon: Wallet },
+    { id: 1, title: 'Group Type', icon: Settings },
+    { id: 2, title: 'Name & Info', icon: Settings },
+    { id: 3, title: 'Trustees', icon: Shield },
+    { id: 4, title: 'Voting Rules', icon: Shield },
+    { id: 5, title: 'Money', icon: Wallet },
     { id: 6, title: 'Members', icon: Users },
-    { id: 7, title: 'Preview', icon: Eye },
-    { id: 8, title: 'Success', icon: CheckCircle }
+    { id: 7, title: 'Review', icon: Eye },
+    { id: 8, title: 'Done', icon: CheckCircle }
   ];
 
   const logoOptions = ['🏛️', '🌍', '🤝', '💎', '🚀', '⚡', '🌱', '🔥', '💰'];
@@ -300,28 +412,49 @@ const CreateDAOFlow = () => {
   const governanceModels = [
     {
       value: '1-person-1-vote',
-      label: '1 Person = 1 Vote',
-      desc: 'Every member has equal voting power regardless of contribution',
-      best_for: 'Community groups, social DAOs'
+      label: 'Equal Voice (1 Person = 1 Vote)',
+      desc: 'Every member has equal say, regardless of how much they contributed',
+      best_for: 'Burial funds, welfare groups, community projects',
+      example: 'Like a village baraza - the elder and the youth both raise one hand each when voting',
+      emoji: 'people-holding-hands'
     },
     {
       value: 'weighted-stake',
-      label: 'Weighted by Stake',
-      desc: 'Voting power proportional to treasury contribution',
-      best_for: 'Investment clubs, business ventures'
+      label: 'Contribution-Based Voting',
+      desc: 'Those who contribute more have more voting power',
+      best_for: 'Investment clubs, business ventures, table banking',
+      example: 'Like shareholders in a company - if you put in more money, you have more say in decisions',
+      emoji: 'money-with-wings'
     },
     {
       value: 'delegated',
-      label: 'Delegated Voting',
-      desc: 'Members can delegate their votes to trusted representatives',
-      best_for: 'Large DAOs, governance-focused groups'
+      label: 'Choose a Representative',
+      desc: 'Let someone you trust vote on your behalf',
+      best_for: 'Large groups, people who are too busy to attend every meeting',
+      example: 'Like sending your relative to represent you at a family meeting',
+      emoji: 'raised-hand'
     }
   ];
 
   const treasuryTypes = [
-    { value: 'cusd', label: 'cUSD Vault', desc: 'Simple stable treasury in Celo Dollars (USD-pegged)' },
-    { value: 'dual', label: 'CELO + cUSD Dual', desc: 'Mixed treasury with growth potential and stability' },
-    { value: 'custom', label: 'Custom Stablecoin', desc: 'USDT, DAI or other tokens (coming soon)' }
+    { 
+      value: 'cusd', 
+      label: 'Stable Money (cUSD)', 
+      desc: 'Your group\'s money stays the same value as USD - no surprises',
+      example: 'Like keeping money in a bank that doesn\'t fluctuate - 1000 stays 1000'
+    },
+    { 
+      value: 'dual', 
+      label: 'Mixed (Stable + Growth)', 
+      desc: 'Some money is stable, some can grow in value over time',
+      example: 'Like having some savings in a bank account and some in shares'
+    },
+    { 
+      value: 'custom', 
+      label: 'Other Currencies', 
+      desc: 'USDT, DAI or other digital currencies (coming soon)',
+      example: 'Coming soon - for advanced users'
+    }
   ];
 
   // DAO types that require multisig by default
@@ -573,8 +706,8 @@ const CreateDAOFlow = () => {
   const renderDaoTypeSelection = () => (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">What type of group is this?</h2>
-        <p className="text-gray-600 dark:text-gray-400">Choose the structure that best fits your community</p>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">What type of group are you creating?</h2>
+        <p className="text-gray-600 dark:text-gray-400">Choose the structure that best matches what your group does</p>
       </div>
 
       <div className="grid gap-4">
@@ -631,15 +764,15 @@ const CreateDAOFlow = () => {
   const renderBasicInfo = () => (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Let's create your DAO</h2>
-        <p className="text-gray-600 dark:text-gray-400">Start with the basics - what's your community about?</p>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Name Your Group</h2>
+        <p className="text-gray-600 dark:text-gray-400">This name will be visible to everyone and cannot be changed later</p>
       </div>
 
       <div className="space-y-4">
         <div>
           <div className="flex items-center">
-            <Label htmlFor="dao-name" className="text-sm font-medium">DAO Name *</Label>
-            <InfoTooltip text="This is the public name of your DAO that everyone will see" />
+            <Label htmlFor="dao-name" className="text-sm font-medium">Group Name *</Label>
+            <InfoTooltip text="This is the public name everyone will see. Choose something your members will recognize." />
           </div>
           <Input
             id="dao-name"
@@ -811,7 +944,7 @@ const CreateDAOFlow = () => {
     </div>
   );
 
-  // Step 3 - Select Elders
+  // Step 3 - Select Elders (Trustees)
   const renderElderSelection = () => {
     // Get members excluding founder for elder selection
     const selectableMembers = daoData.members.filter(m => m.address !== walletAddress);
@@ -822,9 +955,9 @@ const CreateDAOFlow = () => {
     return (
       <div className="space-y-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Select Elders</h2>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Choose Your Trustees (Elders)</h2>
           <p className="text-gray-600 dark:text-gray-400">
-            Choose {minElders}-{maxElders} trusted members to be elders who can approve withdrawals and manage the DAO
+            Select {minElders}-{maxElders} trusted people who will help manage the group's money
           </p>
         </div>
 
@@ -833,12 +966,16 @@ const CreateDAOFlow = () => {
             <div className="flex items-start gap-3">
               <Shield className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
               <div className="flex-1">
-                <h4 className="font-medium text-blue-900 dark:text-blue-100">What are Elders?</h4>
-                <ul className="text-sm text-blue-700 dark:text-blue-300 mt-2 space-y-1">
-                  <li>✓ Can approve fund withdrawals</li>
-                  <li>✓ Vote on important DAO decisions</li>
-                  <li>✓ Manage treasury access and permissions</li>
-                  <li>✓ Act as trusted custodians of the group</li>
+                <h4 className="font-medium text-blue-900 dark:text-blue-100">What are Elders? (Like Table Banking Signatories)</h4>
+                <p className="text-sm text-blue-700 dark:text-blue-300 mt-1 mb-2">
+                  Think of Elders like the trusted signatories in a table banking group. Just like how table banking 
+                  requires multiple signatories to approve withdrawals, Elders must agree before money can be moved.
+                </p>
+                <ul className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
+                  <li>Multiple Elders must approve before money leaves the group</li>
+                  <li>Protects against fraud - no single person can run off with funds</li>
+                  <li>They vote on important group decisions</li>
+                  <li>Choose people the group trusts - like your chama officials</li>
                 </ul>
               </div>
             </div>
@@ -941,15 +1078,15 @@ const CreateDAOFlow = () => {
   const renderGovernance = () => (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Governance Setup</h2>
-        <p className="text-gray-600 dark:text-gray-400">How will your DAO make decisions?</p>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">How Will Your Group Make Decisions?</h2>
+        <p className="text-gray-600 dark:text-gray-400">Choose how members will vote on proposals and approve spending</p>
       </div>
 
       <div className="space-y-6">
         <div>
           <div className="flex items-center mb-3">
-            <Label className="text-sm font-medium">Governance Model</Label>
-            <InfoTooltip text="This determines how voting power is distributed among members" />
+            <Label className="text-sm font-medium">Voting Method</Label>
+            <InfoTooltip text="This decides who has more say in group decisions" />
           </div>
           <RadioGroup
             value={daoData.governanceModel}
@@ -964,6 +1101,7 @@ const CreateDAOFlow = () => {
                     {model.label}
                   </Label>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{model.desc}</p>
+                  <p className="text-xs text-teal-600 dark:text-teal-400 mt-1 italic">{model.example}</p>
                   <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Best for: {model.best_for}</p>
                 </div>
               </div>
@@ -974,15 +1112,15 @@ const CreateDAOFlow = () => {
         <div>
           <div className="flex items-center justify-between">
             <div className="flex items-center">
-              <Label className="text-sm font-medium">Quorum Threshold: {daoData.quorum}%</Label>
-              <InfoTooltip text="Minimum percentage of members who must vote for a proposal to pass. Cannot be below 20% to ensure democratic participation" />
+              <Label className="text-sm font-medium">Minimum Voters Required: {daoData.quorum}%</Label>
+              <InfoTooltip text="How many members must vote for a decision to count? At least 20% must participate to prevent a small group from making all decisions." />
             </div>
             {daoData.quorum < MINIMUM_QUORUM && (
               <Badge variant="destructive" className="text-xs">Below minimum</Badge>
             )}
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-            Minimum participation needed for votes to pass (min: {MINIMUM_QUORUM}%)
+            Example: If you have 10 members and set this to 50%, at least 5 people must vote for the vote to count
           </p>
           <Slider
             value={[daoData.quorum]}
@@ -1024,8 +1162,8 @@ const CreateDAOFlow = () => {
   const renderTreasury = () => (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Treasury Setup</h2>
-        <p className="text-gray-600 dark:text-gray-400">Configure your DAO's financial foundation</p>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Set Up Your Group's Treasury</h2>
+        <p className="text-gray-600 dark:text-gray-400">This is where your group's money will be kept - like a shared bank account</p>
       </div>
 
       {/* Multisig explanatory area */}
@@ -1503,29 +1641,43 @@ const CreateDAOFlow = () => {
         </Card>
       </div>
 
-      <div className="bg-gradient-to-r from-teal-50 to-orange-50 dark:from-teal-950/30 dark:to-orange-950/30 p-6 rounded-lg border border-teal-200 dark:border-teal-800">
+      <Alert className="border-orange-300 dark:border-orange-700 bg-orange-50 dark:bg-orange-950/30 mb-4">
+        <AlertTriangle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+        <AlertTitle className="text-orange-800 dark:text-orange-200">Final Check Before Creating</AlertTitle>
+        <AlertDescription className="text-orange-700 dark:text-orange-300">
+          <ul className="list-disc list-inside text-sm space-y-1 mt-2">
+            <li>The group name <strong>"{daoData.name || 'Your Group'}"</strong> will be <strong>permanent</strong></li>
+            <li>Everyone can see your group and its transactions</li>
+            <li>You <strong>cannot delete</strong> this group once created</li>
+            <li>This is like registering a company - the record exists forever</li>
+          </ul>
+        </AlertDescription>
+      </Alert>
+
+      <div className="bg-gradient-to-r from-teal-50 to-teal-100 dark:from-teal-950/30 dark:to-teal-900/30 p-6 rounded-lg border border-teal-200 dark:border-teal-800">
         <div className="flex items-center gap-3 mb-4">
           <Rocket className="w-6 h-6 text-teal-600 dark:text-teal-400" />
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Ready to Launch!</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Ready to Create Your Group?</h3>
         </div>
         <p className="text-gray-600 dark:text-gray-400 mb-4">
-          Your DAO will be deployed to the blockchain. This action cannot be undone.
+          By clicking below, your group will be permanently created on the blockchain. All settings above are final.
         </p>
         <Button
           onClick={deployDAO}
           disabled={isDeploying}
           className="w-full bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white py-3"
           size="lg"
+          data-testid="button-deploy-dao"
         >
           {isDeploying ? (
             <>
               <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-              Deploying DAO...
+              Creating Your Group...
             </>
           ) : (
             <>
               <Rocket className="w-4 h-4 mr-2" />
-              Deploy DAO
+              Create My Group (This is Final)
             </>
           )}
         </Button>
@@ -1609,10 +1761,27 @@ const CreateDAOFlow = () => {
     }
   };
 
+  if (showExplainer) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 py-8">
+        <div className="max-w-2xl mx-auto px-4">
+          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+            <CardContent className="p-8">
+              <WhatIsDAOExplainer onContinue={() => setShowExplainer(false)} />
+            </CardContent>
+          </Card>
+          <div className="text-center mt-8 text-sm text-gray-500 dark:text-gray-400">
+            <p>Powered by Celo Blockchain</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 py-8">
       <div className="max-w-4xl mx-auto px-4">
-        {currentStep < 6 && (
+        {currentStep < 7 && currentStep !== 8 && (
           <div className="mb-8">
             <div className="flex items-center justify-between overflow-x-auto">
               {steps.slice(0, -1).map((step, index) => {
@@ -1652,7 +1821,8 @@ const CreateDAOFlow = () => {
 
         <Card className="mb-8 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
           <CardContent className="p-8">
-            {/* Auto-save indicator */}
+            {currentStep < 7 && currentStep !== 8 && <BlockchainWarningBanner />}
+            
             {lastSaved && (
               <div className="text-xs text-gray-500 mb-4 flex items-center gap-2">
                 <CheckCircle className="w-3 h-3 text-green-600" />
@@ -1660,7 +1830,6 @@ const CreateDAOFlow = () => {
               </div>
             )}
             
-            {/* Validation errors */}
             <ErrorAlert errors={validationErrors} />
             
             {renderStepContent()}

@@ -4,31 +4,36 @@ class RedisService {
   private client: RedisClientType | null = null;
   private fallbackStore = new Map<string, { value: string; expiresAt: number }>();
   private isConnected = false;
+  private hasLoggedFallback = false;
 
   async connect(): Promise<void> {
-    try {
-      if (process.env.REDIS_URL) {
-        this.client = createClient({
-          url: process.env.REDIS_URL,
-        });
-
-        this.client.on('error', (err) => {
-          console.error('Redis Client Error:', err);
-          this.isConnected = false;
-        });
-
-        this.client.on('connect', () => {
-          console.log('✅ Redis connected successfully');
-          this.isConnected = true;
-        });
-
-        await this.client.connect();
-      } else {
-        console.warn('⚠️  REDIS_URL not configured. Using in-memory fallback store.');
-        this.isConnected = false;
+    // Only attempt Redis connection if REDIS_URL is configured
+    if (!process.env.REDIS_URL) {
+      if (!this.hasLoggedFallback) {
+        console.log('Redis: Not configured - using in-memory fallback.');
+        this.hasLoggedFallback = true;
       }
+      this.isConnected = false;
+      return;
+    }
+
+    try {
+      this.client = createClient({
+        url: process.env.REDIS_URL,
+      });
+
+      this.client.on('error', () => {
+        // Silently handle Redis errors - fallback is already in use
+        this.isConnected = false;
+      });
+
+      this.client.on('connect', () => {
+        console.log('Redis connected successfully');
+        this.isConnected = true;
+      });
+
+      await this.client.connect();
     } catch (error) {
-      console.error('❌ Failed to connect to Redis. Using in-memory fallback:', error);
       this.isConnected = false;
     }
   }

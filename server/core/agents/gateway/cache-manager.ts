@@ -38,11 +38,14 @@ export class CacheManager {
   };
 
   constructor(config: Partial<CacheConfig> = {}) {
+    const redisUrl = config.redisUrl || process.env.REDIS_URL || "";
+    const hasValidRedis = !!redisUrl && redisUrl !== "redis://localhost:6379";
+    
     this.config = {
-      enabled: config.enabled !== false,
+      enabled: hasValidRedis && config.enabled !== false,
       maxItems: config.maxItems || 10000,
       maxMemoryMb: config.maxMemoryMb || 512,
-      redisUrl: config.redisUrl || process.env.REDIS_URL || "redis://localhost:6379",
+      redisUrl: redisUrl,
       keyPrefix: config.keyPrefix || "gateway:",
       defaultTtl: config.defaultTtl || 300,
     };
@@ -52,8 +55,8 @@ export class CacheManager {
    * Initialize Redis connection
    */
   async initialize(): Promise<void> {
-    if (!this.config.enabled) {
-      console.warn("Cache disabled");
+    if (!this.config.enabled || !this.config.redisUrl) {
+      // Redis not configured - use in-memory cache fallback
       return;
     }
 
@@ -62,9 +65,9 @@ export class CacheManager {
         url: this.config.redisUrl,
       });
 
-      this.client.on("error", (err) =>
-        console.error("Redis Client Error", err)
-      );
+      this.client.on("error", () => {
+        // Silently handle Redis errors
+      });
 
       await this.client.connect();
       console.log("Cache Manager connected to Redis");
@@ -76,7 +79,6 @@ export class CacheManager {
       );
       await this.client.configSet("maxmemory-policy", "allkeys-lru");
     } catch (error) {
-      console.error("Failed to initialize cache:", error);
       this.client = null;
     }
   }

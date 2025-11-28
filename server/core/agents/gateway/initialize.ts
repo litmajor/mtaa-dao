@@ -112,10 +112,10 @@ export function getDefaultGatewayConfig(): GatewayConfig {
       halfOpenRequests: 3,
     },
     cache: {
-      enabled: process.env.GATEWAY_CACHE_ENABLED !== "false",
+      enabled: !!process.env.REDIS_URL && process.env.GATEWAY_CACHE_ENABLED !== "false",
       maxItems: parseInt(process.env.GATEWAY_CACHE_MAX_ITEMS || "10000"),
       maxMemoryMb: parseInt(process.env.GATEWAY_CACHE_MAX_MEMORY || "512"),
-      redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
+      redisUrl: process.env.REDIS_URL || "",
       keyPrefix: "gateway:",
       defaultTtl: 300,
     },
