@@ -34,7 +34,8 @@ import {
   Info,
   HelpCircle,
   AlertTriangle,
-  BookOpen
+  BookOpen,
+  AlertCircle
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import MultisigManager from '@/components/multisig/MultisigManager';
@@ -59,10 +60,10 @@ const WhatIsDAOExplainer = ({ onContinue }: { onContinue: () => void }) => (
       </CardHeader>
       <CardContent className="space-y-4 text-gray-700 dark:text-gray-300">
         <p>
-          A <strong>DAO</strong> (Decentralized Autonomous Organization) is like a <strong>chama or savings group</strong> that runs on the internet. 
+          A <strong>DAO</strong> (Decentralized Autonomous Organization) is like a <strong>chama or savings group</strong> that runs on the internet.
           Instead of keeping records in a book or M-Pesa statements, everything is stored on a shared digital ledger that everyone can see.
         </p>
-        
+
         <div className="grid gap-3 mt-4">
           <div className="flex items-start gap-3 bg-white dark:bg-slate-800 p-3 rounded-lg">
             <div className="w-8 h-8 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center flex-shrink-0">
@@ -73,7 +74,7 @@ const WhatIsDAOExplainer = ({ onContinue }: { onContinue: () => void }) => (
               <p className="text-sm text-gray-500 dark:text-gray-400">Every contribution and withdrawal is recorded and visible to all members</p>
             </div>
           </div>
-          
+
           <div className="flex items-start gap-3 bg-white dark:bg-slate-800 p-3 rounded-lg">
             <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center flex-shrink-0">
               <Users className="w-4 h-4 text-blue-600 dark:text-blue-400" />
@@ -83,7 +84,7 @@ const WhatIsDAOExplainer = ({ onContinue }: { onContinue: () => void }) => (
               <p className="text-sm text-gray-500 dark:text-gray-400">Members vote on decisions - just like raising hands at a baraza</p>
             </div>
           </div>
-          
+
           <div className="flex items-start gap-3 bg-white dark:bg-slate-800 p-3 rounded-lg">
             <div className="w-8 h-8 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center flex-shrink-0">
               <Shield className="w-4 h-4 text-purple-600 dark:text-purple-400" />
@@ -102,7 +103,7 @@ const WhatIsDAOExplainer = ({ onContinue }: { onContinue: () => void }) => (
       <AlertTitle className="text-orange-800 dark:text-orange-200">Important: This is Permanent</AlertTitle>
       <AlertDescription className="text-orange-700 dark:text-orange-300">
         <p className="mb-2">
-          Once you create a DAO, it becomes a <strong>permanent record on the blockchain</strong>. 
+          Once you create a DAO, it becomes a <strong>permanent record on the blockchain</strong>.
           Think of it like registering a business with the government - the record exists forever.
         </p>
         <ul className="list-disc list-inside text-sm space-y-1">
@@ -127,8 +128,8 @@ const WhatIsDAOExplainer = ({ onContinue }: { onContinue: () => void }) => (
       </div>
     </div>
 
-    <Button 
-      onClick={onContinue} 
+    <Button
+      onClick={onContinue}
       className="w-full bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800"
       size="lg"
       data-testid="button-understand-continue"
@@ -155,7 +156,7 @@ const CreateDAOFlow = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [isDeploying, setIsDeploying] = useState(false);
   const { address: walletAddress, isConnected } = useWallet();
-  
+
   const initialDaoData: DaoData = useMemo(() => ({
     name: '',
     description: '',
@@ -437,21 +438,21 @@ const CreateDAOFlow = () => {
   ];
 
   const treasuryTypes = [
-    { 
-      value: 'cusd', 
-      label: 'Stable Money (cUSD)', 
+    {
+      value: 'cusd',
+      label: 'Stable Money (cUSD)',
       desc: 'Your group\'s money stays the same value as USD - no surprises',
       example: 'Like keeping money in a bank that doesn\'t fluctuate - 1000 stays 1000'
     },
-    { 
-      value: 'dual', 
-      label: 'Mixed (Stable + Growth)', 
+    {
+      value: 'dual',
+      label: 'Mixed (Stable + Growth)',
       desc: 'Some money is stable, some can grow in value over time',
       example: 'Like having some savings in a bank account and some in shares'
     },
-    { 
-      value: 'custom', 
-      label: 'Other Currencies', 
+    {
+      value: 'custom',
+      label: 'Other Currencies',
       desc: 'USDT, DAI or other digital currencies (coming soon)',
       example: 'Coming soon - for advanced users'
     }
@@ -564,7 +565,7 @@ const CreateDAOFlow = () => {
 
   const addMember = useCallback(() => {
     const trimmedAddress = newMember.address.trim();
-    
+
     if (!trimmedAddress) {
       alert('Please enter a wallet address, phone number, or email');
       return;
@@ -968,7 +969,7 @@ const CreateDAOFlow = () => {
               <div className="flex-1">
                 <h4 className="font-medium text-blue-900 dark:text-blue-100">What are Elders? (Like Table Banking Signatories)</h4>
                 <p className="text-sm text-blue-700 dark:text-blue-300 mt-1 mb-2">
-                  Think of Elders like the trusted signatories in a table banking group. Just like how table banking 
+                  Think of Elders like the trusted signatories in a table banking group. Just like how table banking
                   requires multiple signatories to approve withdrawals, Elders must agree before money can be moved.
                 </p>
                 <ul className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
@@ -1822,16 +1823,16 @@ const CreateDAOFlow = () => {
         <Card className="mb-8 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
           <CardContent className="p-8">
             {currentStep < 7 && currentStep !== 8 && <BlockchainWarningBanner />}
-            
+
             {lastSaved && (
               <div className="text-xs text-gray-500 mb-4 flex items-center gap-2">
                 <CheckCircle className="w-3 h-3 text-green-600" />
                 Draft auto-saved at {lastSaved.toLocaleTimeString()}
               </div>
             )}
-            
+
             <ErrorAlert errors={validationErrors} />
-            
+
             {renderStepContent()}
           </CardContent>
         </Card>
