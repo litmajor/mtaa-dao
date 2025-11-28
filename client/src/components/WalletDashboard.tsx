@@ -2,15 +2,17 @@ import React, { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PersonalVaultSection } from './wallet/PesonalVaultBalance';
 import { PortfolioOverview } from './wallet/PortfolioOverview';
-import { TransactionHistory } from './wallet/TransactionHistory';
+import TransactionHistory from './wallet/TransactionHistory';
 import SplitBillModal from './wallet/SplitBillModal';
 import PaymentRequestModal from './wallet/PaymentRequestModal';
 import { Button } from '@/components/ui/button';
 import { Zap, Send, Split } from 'lucide-react';
+import { useWallet } from '@/pages/hooks/useWallet';
 
 export default function WalletDashboard() {
   const [showSplitBill, setShowSplitBill] = useState(false);
   const [showPaymentRequest, setShowPaymentRequest] = useState(false);
+  const { address: userAddress } = useWallet();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
@@ -112,11 +114,19 @@ export default function WalletDashboard() {
       </div>
 
       {/* Modals */}
-      {showSplitBill && (
-        <SplitBillModal onClose={() => setShowSplitBill(false)} />
+      {showSplitBill && userAddress && (
+        <SplitBillModal 
+          isOpen={showSplitBill}
+          onClose={() => setShowSplitBill(false)} 
+          userAddress={userAddress}
+        />
       )}
-      {showPaymentRequest && (
-        <PaymentRequestModal onClose={() => setShowPaymentRequest(false)} />
+      {showPaymentRequest && userAddress && (
+        <PaymentRequestModal 
+          isOpen={showPaymentRequest}
+          onClose={() => setShowPaymentRequest(false)} 
+          userAddress={userAddress}
+        />
       )}
     </div>
   );
