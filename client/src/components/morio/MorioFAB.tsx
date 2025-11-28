@@ -167,10 +167,12 @@ export function MorioFAB({ userId, daoId, showOnboarding = false, variant = 'ful
                     )}
                   </Button>
                   <Button
+                    type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={handleClose}
+                    onClick={() => handleClose()}
                     className="text-white hover:bg-white/20 h-8 w-8 p-0"
+                    data-testid="button-morio-close"
                   >
                     <X className="w-4 h-4" />
                   </Button>
