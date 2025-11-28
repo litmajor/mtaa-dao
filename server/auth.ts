@@ -33,15 +33,17 @@ export interface AuthRequest extends Request {
 export const generateTokens = (payload: TokenPayload) => {
   const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
   const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
-
+  console.log('[JWT] Generated tokens with secret:', JWT_SECRET.substring(0, 10) + '***', 'Payload:', payload.sub);
   return { accessToken, refreshToken };
 };
 
 // Verify access token
 export const verifyAccessToken = (token: string): TokenPayload | null => {
   try {
-    return jwt.verify(token, JWT_SECRET) as TokenPayload;
+    const payload = jwt.verify(token, JWT_SECRET) as TokenPayload;
+    return payload;
   } catch (error) {
+    console.error('[JWT] Token verification failed:', (error as any).message, 'Secret used:', JWT_SECRET.substring(0, 10) + '***');
     return null;
   }
 };
