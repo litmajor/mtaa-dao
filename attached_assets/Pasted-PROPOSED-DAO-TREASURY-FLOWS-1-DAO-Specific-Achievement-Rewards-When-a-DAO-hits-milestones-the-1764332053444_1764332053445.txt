@@ -1,0 +1,58 @@
+PROPOSED DAO TREASURY FLOWS 💡
+1. DAO-Specific Achievement Rewards
+When a DAO hits milestones, the DAO treasury receives MTAA (not individual users):
+
+Examples:
+
+DAO reaches 50 active members → Treasury +500 MTAA
+DAO treasury reaches $10K → Treasury +1000 MTAA
+DAO completes first proposal successfully → Treasury +200 MTAA
+DAO member referral chain (someone refers someone who joins) → 10% of that user's MTAA reward goes to DAO treasury
+DAO hits 100 total contributions → Treasury +2000 MTAA
+2. Revenue Share to DAO Treasury
+When users earn MTAA through the DAO ecosystem, the DAO gets a cut:
+
+Example structure:
+
+User contributes $100 to DAO
+→ User earns 50 MTAA
+→ DAO treasury gets 5-10% (2.5-5 MTAA) [platform rake]
+→ Remaining 45-47.5 MTAA go to user
+
+3. Task Reward Pool Allocation
+When a DAO creator posts a task:
+
+Task reward: 100 MTAA
+→ User completes task: Gets 100 MTAA ✓
+→ If task is "fund this activity": 20% goes to DAO treasury
+→ Example: Fund project → 20 MTAA to treasury, 80 MTAA to completer
+
+4. Governance Participation Tax (Optional)
+When users vote on DAO proposals:
+
+Voting reward: 1 MTAA per vote
+→ User gets: 0.8 MTAA
+→ DAO treasury gets: 0.2 MTAA (platform reinvestment)
+
+5. Membership Tier System
+Premium membership could have DAO benefits:
+
+User buys "DAO Insider" tier: 50 MTAA
+→ User gets benefits/rewards
+→ DAO treasury: 20 MTAA (if user joined via DAO invitation)
+
+ARCHITECTURE NEEDED IN YOUR SYSTEM
+Three New Tables:
+dao_treasury_credits - Track what triggers treasury MTAA
+
+id, daoId, source (achievement, referral_rake, task_pool, etc)
+amount, reason, createdAt
+mtaa_distribution_rules - Define how much goes where
+
+id, daoId, action_type (contribution, referral, task, vote)
+user_percentage, dao_percentage, platform_percentage
+Example: 70% user, 20% DAO, 10% platform
+dao_achievement_milestones - DAO-level achievements
+
+id, daoId, type (member_count, treasury_value, proposal_success)
+threshold, mtaa_reward, completed_at
