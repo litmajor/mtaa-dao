@@ -694,16 +694,18 @@ export default function ComprehensiveDashboardV2() {
                 else if (tab.id === 'proposals') count = data.userDAOs?.reduce((sum, dao) => sum + (dao.governance?.proposals || 0), 0) || 0;
                 
                 return (
-                  <TabsTrigger key={tab.id} value={tab.id} className="text-xs sm:text-sm flex flex-col items-center gap-0.5">
-                    <div className="relative">
-                      <IconComponent className="w-4 h-4" />
-                      {count > 0 && (
-                        <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
-                          {count}
-                        </span>
-                      )}
+                  <TabsTrigger key={tab.id} value={tab.id} className="text-xs sm:text-sm">
+                    <div className="flex items-center gap-2">
+                      <div className="relative">
+                        <IconComponent className="w-4 h-4" />
+                        {count > 0 && (
+                          <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                            {count}
+                          </span>
+                        )}
+                      </div>
+                      <span>{tab.label}</span>
                     </div>
-                    <span className="text-xs">{tab.label}</span>
                   </TabsTrigger>
                 );
               }).filter(Boolean)}

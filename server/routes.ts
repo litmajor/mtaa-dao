@@ -97,7 +97,8 @@ import {
   getDashboardVaultsHandler,
   getDashboardContributionsHandler,
   getDashboardMembersHandler,
-  getDashboardTasksHandler
+  getDashboardTasksHandler,
+  getDashboardCompleteHandler
 } from './api/dashboard';
 
 // Import Vault API handlers
@@ -246,6 +247,7 @@ export async function registerRoutes(app: Express) {
   app.get('/api/dashboard/contributions', isAuthenticated, getDashboardContributionsHandler);
   app.get('/api/dashboard/members', isAuthenticated, getDashboardMembersHandler);
   app.get('/api/dashboard/tasks', isAuthenticated, getDashboardTasksHandler);
+  app.get('/api/dashboard/complete', isAuthenticated, getDashboardCompleteHandler);
 
   // === VAULT API ENDPOINTS ===
   // Create vault
