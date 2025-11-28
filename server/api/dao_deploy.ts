@@ -24,6 +24,7 @@ export interface DaoDeployRequest {
     daoType: 'shortTerm' | 'collective' | 'governance' | 'short_term' | 'free' | 'meta';
     category?: string;
     treasuryType?: 'cusd' | 'dual' | 'custom';
+    customTokenAddress?: string; // For custom stablecoin treasury
     durationDays?: number;
     rotationFrequency?: string;
   };
