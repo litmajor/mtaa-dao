@@ -31,7 +31,10 @@ import challengesRoutes from './routes/challenges';
 import morioRoutes from './routes/morio';
 import profileRoutes from './routes/profile';
 import accountRoutes from './routes/account';
+import proofOfContributionRoutes from './routes/proof-of-contribution';
 import referralRewardsRoutes from './routes/referral-rewards';
+import economyRoutes from './routes/economy';
+import contributionIndexerRoutes from './routes/contribution-indexer';
 import proposalEngagementRoutes from './routes/proposal-engagement';
 import adminRoutes from './routes/admin';
 import adminAIMetricsRoutes from './routes/admin-ai-metrics';
@@ -255,12 +258,12 @@ export async function registerRoutes(app: Express) {
     const { proposeWithdrawalHandler } = await import('./routes/dao_treasury');
     return proposeWithdrawalHandler(req, res);
   });
-  
+
   app.post('/api/dao-treasury/:daoId/multisig/:txId/sign', isAuthenticated, async (req, res) => {
     const { signTransactionHandler } = await import('./routes/dao_treasury');
     return signTransactionHandler(req, res);
   });
-  
+
   app.get('/api/dao-treasury/:daoId/multisig/pending', isAuthenticated, async (req, res) => {
     const { getPendingTransactionsHandler } = await import('./routes/dao_treasury');
     return getPendingTransactionsHandler(req, res);
@@ -308,6 +311,9 @@ export async function registerRoutes(app: Express) {
 
   // === ACHIEVEMENTS API ===
   app.use('/api/achievements', isAuthenticated, achievementsRouter);
+
+  // === PROOF OF CONTRIBUTION API ===
+  app.use('/api/proof-of-contribution', proofOfContributionRoutes);
 
   // === USERPROFILE API ===
   app.get('/api/user/profile', isAuthenticated, getUserProfileHandler);
@@ -405,6 +411,9 @@ export async function registerRoutes(app: Express) {
 
   // === PHONE VERIFICATION API ===
   app.use('/api/phone-verification', phoneVerificationRouter);
+
+  // === CONTRIBUTION INDEXER API ===
+  app.use('/api/contributions', contributionIndexerRoutes);
 
   // DAO Abuse Prevention routes
   const daoAbusePreventionRouter = await import('./routes/dao-abuse-prevention');

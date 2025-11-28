@@ -82,6 +82,9 @@ import treasuryIntelligenceRoutes from './routes/treasury-intelligence';
 import analyzerRoutes from './routes/analyzer';
 import defenderRoutes from './routes/defender'; // Added for defender routes
 
+// Import contribution indexer service
+import { contributionIndexer } from './services/contributionIndexerService';
+
 // Mount routes
 
 const app = express();
@@ -476,6 +479,10 @@ app.use((req, res, next) => {
     } catch (error) {
       logger.error('Error starting vault automation service:', error);
     }
+
+    // Start contribution indexer
+    console.log('Starting contribution indexer...');
+    await contributionIndexer.start();
 
     // Start transaction monitor with error handling
     try {
