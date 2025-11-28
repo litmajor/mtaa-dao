@@ -1,16 +1,22 @@
 
 import { db } from '../storage';
-import { transactionLimitTracking, kycTransactionHistory } from '../../shared/transactionLimitSchema';
+import { unifiedTransactionLimits, p2pTransfers } from '../../shared/p2pTransferSchema';
+import { kycTransactionHistory } from '../../shared/transactionLimitSchema';
 import { kycService, KYC_TIERS } from './kycService';
-import { eq, and, gte } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 
 export class TransactionLimitService {
   private readonly EXCHANGE_RATE_KES_USD = 129;
 
   /**
-   * Check if user can perform transaction within their KYC limits
+   * Check if user can perform any transaction within their KYC limits
+   * Supports: deposit, withdrawal, p2p_send
    */
-  async canTransact(userId: string, amountUSD: number, transactionType: 'deposit' | 'withdrawal'): Promise<{
+  async canTransact(
+    userId: string,
+    amountUSD: number,
+    transactionType: 'deposit' | 'withdrawal' | 'p2p_send'
+  ): Promise<{
     allowed: boolean;
     reason?: string;
     tier?: string;
@@ -20,17 +26,13 @@ export class TransactionLimitService {
     monthlyLimit?: number;
   }> {
     try {
-      // Get user's KYC tier
       const tier = await kycService.getCurrentTier(userId);
-      
-      // Get current usage for today
       const today = new Date().toISOString().split('T')[0];
-      const usage = await this.getOrCreateUsageTracking(userId, today);
+      const usage = await this.getOrCreateUnifiedUsage(userId, today);
 
-      const dailyUsed = parseFloat(usage.dailyVolume || '0');
-      const monthlyUsed = parseFloat(usage.monthlyVolume || '0');
+      const dailyUsed = parseFloat(usage.dailyTotalVolume || '0');
+      const monthlyUsed = parseFloat(usage.monthlyTotalVolume || '0');
 
-      // Convert tier limits to USD
       const dailyLimitUSD = tier.dailyLimit;
       const monthlyLimitUSD = tier.monthlyLimit;
 
@@ -78,22 +80,22 @@ export class TransactionLimitService {
   }
 
   /**
-   * Record a successful transaction and update limits
+   * Record a transaction and update unified limits
    */
   async recordTransaction(
     userId: string,
     amountUSD: number,
-    transactionType: 'deposit' | 'withdrawal',
+    transactionType: 'deposit' | 'withdrawal' | 'p2p_send',
     status: 'approved' | 'rejected' = 'approved',
     rejectionReason?: string
   ): Promise<void> {
     try {
       const tier = await kycService.getCurrentTier(userId);
       const today = new Date().toISOString().split('T')[0];
-      const usage = await this.getOrCreateUsageTracking(userId, today);
+      const usage = await this.getOrCreateUnifiedUsage(userId, today);
 
-      const dailyUsed = parseFloat(usage.dailyVolume || '0');
-      const monthlyUsed = parseFloat(usage.monthlyVolume || '0');
+      const dailyUsed = parseFloat(usage.dailyTotalVolume || '0');
+      const monthlyUsed = parseFloat(usage.monthlyTotalVolume || '0');
 
       // Record in history
       await db.insert(kycTransactionHistory).values({
@@ -110,19 +112,39 @@ export class TransactionLimitService {
         rejectionReason,
       });
 
-      // Update usage tracking only if approved
+      // Update unified usage tracking only if approved
       if (status === 'approved') {
+        const updates: any = {
+          dailyTotalVolume: (dailyUsed + amountUSD).toString(),
+          monthlyTotalVolume: (monthlyUsed + amountUSD).toString(),
+          updatedAt: new Date(),
+        };
+
+        // Update specific volume fields
+        if (transactionType === 'deposit') {
+          const currentDeposit = parseFloat(usage.dailyDepositVolume || '0');
+          const currentMonthlyDeposit = parseFloat(usage.monthlyDepositVolume || '0');
+          updates.dailyDepositVolume = (currentDeposit + amountUSD).toString();
+          updates.monthlyDepositVolume = (currentMonthlyDeposit + amountUSD).toString();
+        } else if (transactionType === 'withdrawal') {
+          const currentWithdrawal = parseFloat(usage.dailyWithdrawalVolume || '0');
+          const currentMonthlyWithdrawal = parseFloat(usage.monthlyWithdrawalVolume || '0');
+          updates.dailyWithdrawalVolume = (currentWithdrawal + amountUSD).toString();
+          updates.monthlyWithdrawalVolume = (currentMonthlyWithdrawal + amountUSD).toString();
+        } else if (transactionType === 'p2p_send') {
+          const currentP2p = parseFloat(usage.dailyP2pSentVolume || '0');
+          const currentMonthlyP2p = parseFloat(usage.monthlyP2pSentVolume || '0');
+          updates.dailyP2pSentVolume = (currentP2p + amountUSD).toString();
+          updates.monthlyP2pSentVolume = (currentMonthlyP2p + amountUSD).toString();
+        }
+
         await db
-          .update(transactionLimitTracking)
-          .set({
-            dailyVolume: (dailyUsed + amountUSD).toString(),
-            monthlyVolume: (monthlyUsed + amountUSD).toString(),
-            updatedAt: new Date(),
-          })
+          .update(unifiedTransactionLimits)
+          .set(updates)
           .where(
             and(
-              eq(transactionLimitTracking.userId, userId),
-              eq(transactionLimitTracking.transactionDate, today)
+              eq(unifiedTransactionLimits.userId, userId),
+              eq(unifiedTransactionLimits.transactionDate, today)
             )
           );
       }
@@ -133,16 +155,16 @@ export class TransactionLimitService {
   }
 
   /**
-   * Get or create usage tracking for a specific date
+   * Get or create unified usage tracking
    */
-  private async getOrCreateUsageTracking(userId: string, date: string) {
+  private async getOrCreateUnifiedUsage(userId: string, date: string) {
     const [existing] = await db
       .select()
-      .from(transactionLimitTracking)
+      .from(unifiedTransactionLimits)
       .where(
         and(
-          eq(transactionLimitTracking.userId, userId),
-          eq(transactionLimitTracking.transactionDate, date)
+          eq(unifiedTransactionLimits.userId, userId),
+          eq(unifiedTransactionLimits.transactionDate, date)
         )
       )
       .limit(1);
@@ -153,38 +175,44 @@ export class TransactionLimitService {
       const today = new Date();
       if (today.toDateString() !== lastReset.toDateString()) {
         await db
-          .update(transactionLimitTracking)
+          .update(unifiedTransactionLimits)
           .set({
-            dailyVolume: '0',
+            dailyDepositVolume: '0',
+            dailyWithdrawalVolume: '0',
+            dailyP2pSentVolume: '0',
+            dailyTotalVolume: '0',
             lastResetDaily: today,
             updatedAt: today,
           })
           .where(
             and(
-              eq(transactionLimitTracking.userId, userId),
-              eq(transactionLimitTracking.transactionDate, date)
+              eq(unifiedTransactionLimits.userId, userId),
+              eq(unifiedTransactionLimits.transactionDate, date)
             )
           );
-        return { ...existing, dailyVolume: '0' };
+        return { ...existing, dailyTotalVolume: '0' };
       }
 
       // Check if we need to reset monthly
       const lastMonthlyReset = new Date(existing.lastResetMonthly);
       if (today.getMonth() !== lastMonthlyReset.getMonth()) {
         await db
-          .update(transactionLimitTracking)
+          .update(unifiedTransactionLimits)
           .set({
-            monthlyVolume: '0',
+            monthlyDepositVolume: '0',
+            monthlyWithdrawalVolume: '0',
+            monthlyP2pSentVolume: '0',
+            monthlyTotalVolume: '0',
             lastResetMonthly: today,
             updatedAt: today,
           })
           .where(
             and(
-              eq(transactionLimitTracking.userId, userId),
-              eq(transactionLimitTracking.transactionDate, date)
+              eq(unifiedTransactionLimits.userId, userId),
+              eq(unifiedTransactionLimits.transactionDate, date)
             )
           );
-        return { ...existing, monthlyVolume: '0' };
+        return { ...existing, monthlyTotalVolume: '0' };
       }
 
       return existing;
@@ -192,12 +220,10 @@ export class TransactionLimitService {
 
     // Create new tracking record
     const [newTracking] = await db
-      .insert(transactionLimitTracking)
+      .insert(unifiedTransactionLimits)
       .values({
         userId,
         transactionDate: date,
-        dailyVolume: '0',
-        monthlyVolume: '0',
       })
       .returning();
 
@@ -215,13 +241,18 @@ export class TransactionLimitService {
     monthlyLimit: number;
     dailyRemaining: number;
     monthlyRemaining: number;
+    breakdown: {
+      deposits: { daily: number; monthly: number };
+      withdrawals: { daily: number; monthly: number };
+      p2pSent: { daily: number; monthly: number };
+    };
   }> {
     const tier = await kycService.getCurrentTier(userId);
     const today = new Date().toISOString().split('T')[0];
-    const usage = await this.getOrCreateUsageTracking(userId, today);
+    const usage = await this.getOrCreateUnifiedUsage(userId, today);
 
-    const dailyUsed = parseFloat(usage.dailyVolume || '0');
-    const monthlyUsed = parseFloat(usage.monthlyVolume || '0');
+    const dailyUsed = parseFloat(usage.dailyTotalVolume || '0');
+    const monthlyUsed = parseFloat(usage.monthlyTotalVolume || '0');
 
     return {
       tier: tier.tier,
@@ -231,6 +262,20 @@ export class TransactionLimitService {
       monthlyLimit: tier.monthlyLimit,
       dailyRemaining: Math.max(0, tier.dailyLimit - dailyUsed),
       monthlyRemaining: Math.max(0, tier.monthlyLimit - monthlyUsed),
+      breakdown: {
+        deposits: {
+          daily: parseFloat(usage.dailyDepositVolume || '0'),
+          monthly: parseFloat(usage.monthlyDepositVolume || '0'),
+        },
+        withdrawals: {
+          daily: parseFloat(usage.dailyWithdrawalVolume || '0'),
+          monthly: parseFloat(usage.monthlyWithdrawalVolume || '0'),
+        },
+        p2pSent: {
+          daily: parseFloat(usage.dailyP2pSentVolume || '0'),
+          monthly: parseFloat(usage.monthlyP2pSentVolume || '0'),
+        },
+      },
     };
   }
 

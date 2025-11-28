@@ -69,6 +69,9 @@ import daoTreasuryFlowsRouter from './routes/dao-treasury-flows';
 // Import User Follows routes
 import userFollowsRoutes from './routes/user-follows';
 
+// Import P2P Transfers routes
+import p2pTransfersRoutes from './routes/p2p-transfers';
+
 
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
@@ -196,6 +199,7 @@ export async function registerRoutes(app: Express) {
   app.use('/api/deposits', depositsWithdrawalsRoutes);
   app.use('/api/withdrawals', depositsWithdrawalsRoutes);
   app.use('/api/transactions', depositsWithdrawalsRoutes);
+  app.use('/api/p2p-transfers', p2pTransfersRoutes);
 
   // Monitoring
   app.use('/api/monitoring', monitoringRoutes);
