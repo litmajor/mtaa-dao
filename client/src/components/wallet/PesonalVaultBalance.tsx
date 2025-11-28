@@ -205,13 +205,34 @@ function VaultBalanceCard() {
 function VaultReceiveCard() {
   const { address } = useWallet();
   const [showQR, setShowQR] = useState(false);
-  const [selectedNetwork, setSelectedNetwork] = useState<'celo' | 'bsc' | 'tron'>('celo');
+  const [selectedNetwork, setSelectedNetwork] = useState<'celo' | 'bsc' | 'tron' | 'polygon' | 'arbitrum' | 'optimism' | 'ethereum' | 'base' | 'avalanche'>('celo');
   const [copiedAddress, setCopiedAddress] = useState(false);
   
-  const networks: Record<'celo' | 'bsc' | 'tron', { name: string; icon: string; note: string }> = {
-    celo: { name: 'Celo', icon: '🌍', note: 'Low gas fees, optimized for Africa' },
-    bsc: { name: 'Binance Smart Chain', icon: '⛓️', note: 'BEP20 standard' },
-    tron: { name: 'Tron Network', icon: '⚡', note: 'USDT & other tokens' }
+  const networks: Record<string, { name: string; icon: string; note: string }> = {
+    celo: { name: 'Celo', icon: '🌍', note: 'Optimized for Africa, low gas' },
+    bsc: { name: 'BSC', icon: '⛓️', note: 'BEP20 tokens' },
+    polygon: { name: 'Polygon', icon: '🟣', note: 'MATIC, fast & cheap' },
+    arbitrum: { name: 'Arbitrum', icon: '🔵', note: 'Ethereum L2' },
+    optimism: { name: 'Optimism', icon: '🔴', note: 'Ethereum L2' },
+    ethereum: { name: 'Ethereum', icon: '⧬', note: 'Mainnet' },
+    base: { name: 'Base', icon: '⬜', note: 'Coinbase L2' },
+    avalanche: { name: 'Avalanche', icon: '🔺', note: 'AVAX network' },
+    tron: { name: 'Tron', icon: '⚡', note: 'USDT & TRX' }
+  };
+  
+  const getNetworkInfo = () => {
+    const messages: Record<string, string> = {
+      celo: 'Optimized for Kenyan users with low gas fees. All tokens bridge here.',
+      bsc: 'Send BEP20 tokens from Binance Smart Chain. Auto-bridge to your vault.',
+      polygon: 'Send MATIC, USDC, or other Polygon tokens. Auto-bridge to vault.',
+      arbitrum: 'Send from Arbitrum L2. Ethereum tokens bridge to your vault.',
+      optimism: 'Send from Optimism L2. Ethereum tokens bridge to your vault.',
+      ethereum: 'Send from Ethereum mainnet. Tokens bridge to your vault.',
+      base: 'Send from Base (Coinbase). Tokens auto-bridge to your vault.',
+      avalanche: 'Send AVAX or tokens from Avalanche. Auto-bridge to vault.',
+      tron: 'Send USDT or TRX. Tokens automatically bridge to your vault.'
+    };
+    return messages[selectedNetwork] || 'Send funds to this address.';
   };
   
   const copyAddress = () => {
@@ -225,26 +246,27 @@ function VaultReceiveCard() {
 
   return (
     <div className="p-4 border rounded-xl space-y-4 dark:border-gray-700">
-      <h3 className="text-lg font-semibold">Receive Funds</h3>
+      <h3 className="text-lg font-semibold">Receive Funds (Multi-Chain)</h3>
       
-      {/* Network Selector */}
-      <div className="grid grid-cols-3 gap-2">
-        {Object.entries(networks).map(([key, net]) => (
-          <button
-            key={key}
-            onClick={() => setSelectedNetwork(key as typeof selectedNetwork)}
-            className={`p-3 rounded-lg border-2 transition-all ${
-              selectedNetwork === key
-                ? 'border-purple-600 bg-purple-50 dark:bg-purple-900/20 dark:border-purple-500'
-                : 'border-gray-200 dark:border-gray-700 hover:border-purple-300'
-            }`}
-            data-testid={`button-network-${key}`}
-          >
-            <div className="text-xl mb-1">{net.icon}</div>
-            <div className="text-xs font-semibold text-gray-900 dark:text-gray-100">{net.name}</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{net.note}</div>
-          </button>
-        ))}
+      {/* Network Selector - Scrollable */}
+      <div className="overflow-x-auto pb-2">
+        <div className="flex gap-2 min-w-min">
+          {Object.entries(networks).map(([key, net]) => (
+            <button
+              key={key}
+              onClick={() => setSelectedNetwork(key as any)}
+              className={`px-3 py-2 rounded-lg border-2 transition-all whitespace-nowrap text-sm font-medium flex-shrink-0 ${
+                selectedNetwork === key
+                  ? 'border-purple-600 bg-purple-50 dark:bg-purple-900/20 dark:border-purple-500 text-gray-900 dark:text-white'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-purple-300 text-gray-700 dark:text-gray-300'
+              }`}
+              data-testid={`button-network-${key}`}
+            >
+              <span className="mr-1">{net.icon}</span>
+              {net.name}
+            </button>
+          ))}
+        </div>
       </div>
       
       {/* Address Display */}
@@ -286,17 +308,15 @@ function VaultReceiveCard() {
           className="flex-1"
           data-testid="button-view-explorer"
         >
-          View on Explorer
+          Explorer
         </Button>
       </div>
       
       {/* Info Box */}
       <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
         <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-        <AlertDescription className="text-xs text-blue-800 dark:text-blue-300">
-          {selectedNetwork === 'celo' && 'Same wallet address works across all networks. Send from any chain and it arrives in your Celo vault.'}
-          {selectedNetwork === 'bsc' && 'Send BEP20 tokens. They automatically bridge to your Celo wallet.'}
-          {selectedNetwork === 'tron' && 'Send USDT or TRX tokens. They automatically bridge to your Celo wallet.'}
+        <AlertDescription className="text-xs text-blue-800 dark:text-blue-300" data-testid="text-network-info">
+          {getNetworkInfo()}
         </AlertDescription>
       </Alert>
     </div>
