@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line } from 'recharts';
 import { TrendingUp, DollarSign, Wallet, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -13,8 +13,17 @@ interface Asset {
   icon?: string;
 }
 
+type TimePeriod = '1d' | '7d' | '30d' | '90d' | '6m' | '1y';
+
+interface PerformancePoint {
+  label: string;
+  value: number;
+  date: string;
+}
+
 export function PortfolioOverview() {
   const [showValues, setShowValues] = useState(true);
+  const [timePeriod, setTimePeriod] = useState<TimePeriod>('6m');
 
   // Mock portfolio data - replace with real data from API
   const assets: Asset[] = [
@@ -32,13 +41,116 @@ export function PortfolioOverview() {
     color: asset.color,
   }));
 
-  const performanceData = [
-    { month: 'Jan', value: 7200 },
-    { month: 'Feb', value: 7500 },
-    { month: 'Mar', value: 7800 },
-    { month: 'Apr', value: 8200 },
-    { month: 'May', value: 8500 },
-    { month: 'Jun', value: 8520 },
+  // Generate performance data based on selected time period
+  const getPerformanceData = useMemo(() => {
+    const generateRandomData = (points: number, startValue: number, volatility: number = 0.02) => {
+      const data: PerformancePoint[] = [];
+      let currentValue = startValue;
+      
+      for (let i = 0; i < points; i++) {
+        const change = (Math.random() - 0.5) * volatility;
+        currentValue = currentValue * (1 + change);
+        data.push({
+          value: Math.round(currentValue * 100) / 100,
+          label: data.length.toString(),
+          date: new Date().toISOString(),
+        });
+      }
+      return data;
+    };
+
+    switch (timePeriod) {
+      case '1d':
+        return {
+          data: generateRandomData(24, 8520, 0.01).map((d, i) => ({
+            ...d,
+            label: `${i}:00`,
+          })),
+          title: '24-Hour Performance',
+          change: '+0.8%',
+          xKey: 'label',
+        };
+      case '7d':
+        return {
+          data: generateRandomData(7, 8520, 0.015).map((d, i) => ({
+            ...d,
+            label: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i],
+          })),
+          title: '7-Day Performance',
+          change: '+2.1%',
+          xKey: 'label',
+        };
+      case '30d':
+        return {
+          data: generateRandomData(30, 8520, 0.015).map((d, i) => ({
+            ...d,
+            label: `Day ${i + 1}`,
+          })),
+          title: '30-Day Performance',
+          change: '+3.5%',
+          xKey: 'label',
+        };
+      case '90d':
+        return {
+          data: generateRandomData(13, 8520, 0.02).map((d, i) => ({
+            ...d,
+            label: `W${i + 1}`,
+          })),
+          title: '90-Day Performance',
+          change: '+5.2%',
+          xKey: 'label',
+        };
+      case '6m':
+        return {
+          data: [
+            { label: 'Jan', value: 7200 },
+            { label: 'Feb', value: 7500 },
+            { label: 'Mar', value: 7800 },
+            { label: 'Apr', value: 8200 },
+            { label: 'May', value: 8500 },
+            { label: 'Jun', value: 8520 },
+          ],
+          title: '6-Month Performance',
+          change: '+3.2%',
+          xKey: 'label',
+        };
+      case '1y':
+        return {
+          data: [
+            { label: 'Jan', value: 6800 },
+            { label: 'Feb', value: 6900 },
+            { label: 'Mar', value: 7100 },
+            { label: 'Apr', value: 7300 },
+            { label: 'May', value: 7500 },
+            { label: 'Jun', value: 7800 },
+            { label: 'Jul', value: 7950 },
+            { label: 'Aug', value: 8100 },
+            { label: 'Sep', value: 8200 },
+            { label: 'Oct', value: 8400 },
+            { label: 'Nov', value: 8500 },
+            { label: 'Dec', value: 8520 },
+          ],
+          title: '1-Year Performance',
+          change: '+25.3%',
+          xKey: 'label',
+        };
+      default:
+        return {
+          data: [],
+          title: 'Performance',
+          change: '0%',
+          xKey: 'label',
+        };
+    }
+  }, [timePeriod]);
+
+  const timePeriodOptions: { value: TimePeriod; label: string }[] = [
+    { value: '1d', label: '1D' },
+    { value: '7d', label: '7D' },
+    { value: '30d', label: '30D' },
+    { value: '90d', label: '90D' },
+    { value: '6m', label: '6M' },
+    { value: '1y', label: '1Y' },
   ];
 
   return (
@@ -54,6 +166,7 @@ export function PortfolioOverview() {
           size="icon"
           onClick={() => setShowValues(!showValues)}
           title={showValues ? 'Hide values' : 'Show values'}
+          data-testid="button-toggle-values"
         >
           {showValues ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
         </Button>
@@ -65,12 +178,12 @@ export function PortfolioOverview() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Portfolio Value</p>
-              <p className="text-4xl font-bold text-purple-600 dark:text-purple-300 mt-2">
+              <p className="text-4xl font-bold text-purple-600 dark:text-purple-300 mt-2" data-testid="text-portfolio-value">
                 {showValues ? `$${totalValue.toLocaleString()}` : '••••••'}
               </p>
               <div className="flex items-center gap-2 mt-4">
                 <TrendingUp className="w-4 h-4 text-green-600" />
-                <p className="text-sm text-green-600 font-semibold">+3.2% this month</p>
+                <p className="text-sm text-green-600 font-semibold" data-testid="text-performance-change">{getPerformanceData.change} this period</p>
               </div>
             </div>
             <div className="bg-gradient-to-br from-purple-500 to-pink-500 rounded-full p-4">
@@ -85,7 +198,7 @@ export function PortfolioOverview() {
         {/* Allocation Pie Chart */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Asset Allocation</CardTitle>
+            <CardTitle className="text-lg" data-testid="title-asset-allocation">Asset Allocation</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -112,18 +225,74 @@ export function PortfolioOverview() {
 
         {/* Performance Chart */}
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">6-Month Performance</CardTitle>
+          <CardHeader className="pb-4">
+            <div className="flex items-center justify-between mb-4">
+              <CardTitle className="text-lg" data-testid="title-performance-chart">{getPerformanceData.title}</CardTitle>
+            </div>
+            {/* Time Period Selector */}
+            <div className="flex gap-2 flex-wrap" data-testid="group-time-period-buttons">
+              {timePeriodOptions.map((option) => (
+                <Button
+                  key={option.value}
+                  onClick={() => setTimePeriod(option.value)}
+                  variant={timePeriod === option.value ? 'default' : 'outline'}
+                  size="sm"
+                  className={timePeriod === option.value ? 'bg-purple-600 hover:bg-purple-700 text-white' : ''}
+                  data-testid={`button-period-${option.value}`}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={performanceData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis />
-                <Tooltip formatter={(value) => `$${value.toLocaleString()}`} />
-                <Bar dataKey="value" fill="#8B5CF6" radius={[8, 8, 0, 0]} />
-              </BarChart>
+              {timePeriod === '1d' || timePeriod === '7d' ? (
+                <LineChart data={getPerformanceData.data}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                  <XAxis 
+                    dataKey={getPerformanceData.xKey} 
+                    stroke="#888888"
+                    style={{ fontSize: '12px' }}
+                  />
+                  <YAxis 
+                    stroke="#888888"
+                    style={{ fontSize: '12px' }}
+                  />
+                  <Tooltip 
+                    formatter={(value) => `$${typeof value === 'number' ? value.toLocaleString() : value}`}
+                    contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '4px' }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="value" 
+                    stroke="#8B5CF6" 
+                    strokeWidth={2}
+                    dot={false}
+                    isAnimationActive={true}
+                  />
+                </LineChart>
+              ) : (
+                <BarChart data={getPerformanceData.data}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                  <XAxis 
+                    dataKey={getPerformanceData.xKey}
+                    stroke="#888888"
+                    style={{ fontSize: '12px' }}
+                  />
+                  <YAxis 
+                    stroke="#888888"
+                    style={{ fontSize: '12px' }}
+                  />
+                  <Tooltip formatter={(value) => `$${typeof value === 'number' ? value.toLocaleString() : value}`} />
+                  <Bar 
+                    dataKey="value" 
+                    fill="#8B5CF6" 
+                    radius={[8, 8, 0, 0]}
+                    isAnimationActive={true}
+                  />
+                </BarChart>
+              )}
             </ResponsiveContainer>
           </CardContent>
         </Card>
@@ -132,31 +301,38 @@ export function PortfolioOverview() {
       {/* Assets List */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Your Assets</CardTitle>
+          <CardTitle className="text-lg" data-testid="title-your-assets">Your Assets</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             {assets.map((asset) => (
-              <div key={asset.name} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+              <div 
+                key={asset.name} 
+                className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg"
+                data-testid={`card-asset-${asset.name.toLowerCase().replace(/\s+/g, '-')}`}
+              >
                 <div className="flex items-center gap-4">
                   <div
                     className="w-4 h-4 rounded-full"
                     style={{ backgroundColor: asset.color }}
                   />
                   <div>
-                    <p className="font-semibold text-gray-900 dark:text-white">{asset.name}</p>
+                    <p className="font-semibold text-gray-900 dark:text-white" data-testid={`text-asset-name-${asset.name.toLowerCase()}`}>{asset.name}</p>
                     {asset.balance > 0 && (
-                      <p className="text-xs text-gray-600 dark:text-gray-400">
+                      <p className="text-xs text-gray-600 dark:text-gray-400" data-testid={`text-asset-balance-${asset.name.toLowerCase()}`}>
                         {asset.balance.toLocaleString()} {asset.name}
                       </p>
                     )}
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-gray-900 dark:text-white">
+                  <p 
+                    className="font-bold text-gray-900 dark:text-white"
+                    data-testid={`text-asset-value-${asset.name.toLowerCase()}`}
+                  >
                     {showValues ? `$${asset.value.toLocaleString()}` : '••••'}
                   </p>
-                  <p className="text-xs text-gray-600 dark:text-gray-400">{asset.percentage}%</p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400" data-testid={`text-asset-percentage-${asset.name.toLowerCase()}`}>{asset.percentage}%</p>
                 </div>
               </div>
             ))}
