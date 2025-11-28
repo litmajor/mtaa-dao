@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Alert, AlertDescription } from '../ui/alert';
-import { Download, Copy, Eye, EyeOff, Shield, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Download, Copy, Shield, CheckCircle } from 'lucide-react';
 import { useToast } from '../ui/use-toast';
 
 interface BackupWalletModalProps {
@@ -13,39 +13,57 @@ interface BackupWalletModalProps {
 }
 
 export default function BackupWalletModal({ isOpen, onClose, userAddress }: BackupWalletModalProps) {
-  const [step, setStep] = useState<'warning' | 'mnemonic' | 'privatekey' | 'confirm'>('warning');
-  const [showMnemonic, setShowMnemonic] = useState(false);
-  const [showPrivateKey, setShowPrivateKey] = useState(false);
-  const [confirmed, setConfirmed] = useState({ mnemonic: false, privateKey: false, stored: false });
+  const [step, setStep] = useState<'warning' | 'export' | 'done'>('warning');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [exportPayload, setExportPayload] = useState<any | null>(null);
   const { toast } = useToast();
 
-  // In production, fetch from backend API
-  const mockMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-  const mockPrivateKey = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-
   const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    toast({ title: 'Copied', description: `${label} copied to clipboard` });
+    try {
+      navigator.clipboard.writeText(text);
+      toast({ title: 'Copied', description: `${label} copied to clipboard` });
+    } catch (e) {
+      toast({ title: 'Error', description: 'Unable to copy to clipboard', variant: 'destructive' });
+    }
   };
 
-  const downloadBackup = () => {
-    const backup = {
-      address: userAddress,
-      mnemonic: mockMnemonic,
-      privateKey: mockPrivateKey,
-      timestamp: new Date().toISOString(),
-      warning: "⚠️ KEEP THIS SAFE! Anyone with this file can access your funds!"
-    };
-    
-    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const requestBackupExport = async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const resp = await fetch('/api/wallet-setup/export-encrypted-backup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ password })
+      });
+
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Export failed');
+
+      setExportPayload({ backup: data.backup, filename: data.filename });
+      setStep('done');
+      toast({ title: 'Backup Ready', description: 'You can download your encrypted backup file now' });
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message || 'Failed to export backup', variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadExportFile = () => {
+    if (!exportPayload) return;
+    const content = JSON.stringify(exportPayload.backup, null, 2);
+    const blob = new Blob([content], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `mtaadao-wallet-backup-${Date.now()}.json`;
+    a.download = exportPayload.filename || `mtaadao-wallet-backup-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    
-    toast({ title: 'Backup Downloaded', description: 'Store this file securely offline' });
   };
 
   if (!isOpen) return null;
@@ -56,198 +74,77 @@ export default function BackupWalletModal({ isOpen, onClose, userAddress }: Back
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Shield className="h-6 w-6 text-yellow-600" />
-            Backup Your Wallet
+            Export Encrypted Backup
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {step === 'warning' && (
             <>
               <Alert className="border-red-500 bg-red-50">
-                <AlertTriangle className="h-5 w-5 text-red-600" />
+                <div className="h-5 w-5 text-red-600" />
                 <AlertDescription className="text-red-800">
-                  <strong>Critical Security Warning</strong>
+                  <strong>Security Notice</strong>
                   <ul className="list-disc ml-4 mt-2 space-y-1">
-                    <li>Your recovery phrase and private key give FULL ACCESS to your funds</li>
-                    <li>Never share them with anyone - not even MtaaDAO support</li>
-                    <li>Store them offline in multiple secure locations</li>
-                    <li>Anyone with access can steal all your money</li>
+                    <li>This export creates an encrypted backup file of your wallet stored client-side.</li>
+                    <li>Anyone with this file and the password can restore your wallet.</li>
+                    <li>Store the file offline and never share it.</li>
                   </ul>
                 </AlertDescription>
               </Alert>
 
               <div className="space-y-3">
-                <h3 className="font-semibold">What you'll receive:</h3>
-                <div className="space-y-2">
-                  <div className="flex items-start gap-3 p-3 bg-blue-50 rounded">
-                    <CheckCircle className="h-5 w-5 text-blue-600 mt-0.5" />
-                    <div>
-                      <p className="font-medium">Recovery Phrase (12 words)</p>
-                      <p className="text-sm text-gray-600">Use this to restore your wallet on any device</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3 p-3 bg-purple-50 rounded">
-                    <CheckCircle className="h-5 w-5 text-purple-600 mt-0.5" />
-                    <div>
-                      <p className="font-medium">Private Key</p>
-                      <p className="text-sm text-gray-600">Advanced users can import this directly</p>
-                    </div>
-                  </div>
-                </div>
+                <p className="text-sm">To generate an encrypted backup file, enter your wallet password. The server will double-encrypt the stored wallet and return a downloadable package.</p>
               </div>
 
               <div className="flex gap-2">
-                <Button onClick={() => setStep('mnemonic')} className="flex-1">
-                  I Understand, Continue
-                </Button>
+                <Button onClick={() => setStep('export')} className="flex-1">Proceed</Button>
                 <Button onClick={onClose} variant="outline">Cancel</Button>
               </div>
             </>
           )}
 
-          {step === 'mnemonic' && (
+          {step === 'export' && (
             <>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold">Recovery Phrase (12 words)</h3>
-                  <Button size="sm" variant="ghost" onClick={() => setShowMnemonic(!showMnemonic)}>
-                    {showMnemonic ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
-                
-                <div className={`grid grid-cols-3 gap-2 p-4 bg-gray-100 rounded ${!showMnemonic ? 'blur-sm' : ''}`}>
-                  {mockMnemonic.split(' ').map((word, i) => (
-                    <div key={i} className="flex items-center gap-2 p-2 bg-white rounded">
-                      <span className="text-xs text-gray-500">{i + 1}.</span>
-                      <span className="font-mono font-semibold">{word}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {showMnemonic && (
-                  <div className="space-y-2">
-                    <Button onClick={() => copyToClipboard(mockMnemonic, 'Recovery phrase')} className="w-full" variant="outline">
-                      <Copy className="h-4 w-4 mr-2" />
-                      Copy Recovery Phrase
-                    </Button>
-                    <div className="flex items-start gap-2">
-                      <input 
-                        type="checkbox" 
-                        id="mnemonic-confirm"
-                        checked={confirmed.mnemonic}
-                        onChange={(e) => setConfirmed({...confirmed, mnemonic: e.target.checked})}
-                        className="mt-1"
-                      />
-                      <label htmlFor="mnemonic-confirm" className="text-sm">
-                        I have written down my recovery phrase in a safe place
-                      </label>
-                    </div>
-                  </div>
-                )}
+              <div>
+                <label className="block text-sm font-medium mb-2">Enter Wallet Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full p-2 border rounded-md"
+                  placeholder="Your wallet password"
+                />
               </div>
 
               <div className="flex gap-2">
-                <Button onClick={() => setStep('privatekey')} disabled={!confirmed.mnemonic} className="flex-1">
-                  Next: Private Key
-                </Button>
+                <Button onClick={requestBackupExport} disabled={loading || !password} className="flex-1">{loading ? 'Exporting...' : 'Export Encrypted Backup'}</Button>
                 <Button onClick={() => setStep('warning')} variant="outline">Back</Button>
               </div>
             </>
           )}
 
-          {step === 'privatekey' && (
-            <>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold">Private Key (Advanced)</h3>
-                  <Button size="sm" variant="ghost" onClick={() => setShowPrivateKey(!showPrivateKey)}>
-                    {showPrivateKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
-                
-                <div className={`p-3 bg-gray-100 rounded font-mono text-xs break-all ${!showPrivateKey ? 'blur-sm' : ''}`}>
-                  {mockPrivateKey}
-                </div>
-
-                {showPrivateKey && (
-                  <div className="space-y-2">
-                    <Button onClick={() => copyToClipboard(mockPrivateKey, 'Private key')} className="w-full" variant="outline">
-                      <Copy className="h-4 w-4 mr-2" />
-                      Copy Private Key
-                    </Button>
-                    <div className="flex items-start gap-2">
-                      <input 
-                        type="checkbox" 
-                        id="privatekey-confirm"
-                        checked={confirmed.privateKey}
-                        onChange={(e) => setConfirmed({...confirmed, privateKey: e.target.checked})}
-                        className="mt-1"
-                      />
-                      <label htmlFor="privatekey-confirm" className="text-sm">
-                        I have securely stored my private key
-                      </label>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <Alert>
-                <AlertDescription className="text-sm">
-                  <strong>Tip:</strong> Use the download button to save an encrypted backup file you can store on a USB drive.
-                </AlertDescription>
-              </Alert>
-
-              <div className="flex gap-2">
-                <Button onClick={() => setStep('confirm')} disabled={!confirmed.privateKey} className="flex-1">
-                  Next: Confirm
-                </Button>
-                <Button onClick={() => setStep('mnemonic')} variant="outline">Back</Button>
-              </div>
-            </>
-          )}
-
-          {step === 'confirm' && (
+          {step === 'done' && exportPayload && (
             <>
               <Alert className="border-green-500 bg-green-50">
                 <CheckCircle className="h-5 w-5 text-green-600" />
-                <AlertDescription className="text-green-800">
-                  Almost done! Confirm that you've backed up your wallet.
-                </AlertDescription>
+                <AlertDescription className="text-green-800">Encrypted backup created. Download and store it securely offline.</AlertDescription>
               </Alert>
 
-              <div className="space-y-3">
-                <div className="flex items-start gap-2">
-                  <input 
-                    type="checkbox" 
-                    id="stored-confirm"
-                    checked={confirmed.stored}
-                    onChange={(e) => setConfirmed({...confirmed, stored: e.target.checked})}
-                    className="mt-1"
-                  />
-                  <label htmlFor="stored-confirm" className="text-sm">
-                    I confirm that I have securely stored my recovery phrase and private key in multiple safe locations. I understand that losing them means losing access to my funds forever.
-                  </label>
-                </div>
+              <div className="space-y-2">
+                <p className="text-sm">Wallet Address:</p>
+                <code className="block bg-white p-2 rounded font-mono break-all">{userAddress}</code>
               </div>
 
-              <div className="flex gap-2">
-                <Button onClick={downloadBackup} className="flex-1" variant="outline">
-                  <Download className="h-4 w-4 mr-2" />
-                  Download Backup File
+              <div className="flex gap-2 mt-2">
+                <Button onClick={downloadExportFile} className="flex-1" variant="outline">
+                  <Download className="h-4 w-4 mr-2" /> Download Backup File
                 </Button>
+                <Button onClick={() => copyToClipboard(JSON.stringify(exportPayload.backup), 'Backup JSON')} variant="outline">Copy JSON</Button>
               </div>
 
-              <div className="flex gap-2">
-                <Button 
-                  onClick={() => {
-                    toast({ title: 'Backup Confirmed', description: 'Your wallet is now secured!' });
-                    onClose();
-                  }} 
-                  disabled={!confirmed.stored} 
-                  className="flex-1 bg-green-600 hover:bg-green-700"
-                >
-                  Confirm & Close
-                </Button>
-                <Button onClick={() => setStep('privatekey')} variant="outline">Back</Button>
+              <div className="flex gap-2 mt-4">
+                <Button onClick={() => { toast({ title: 'Done', description: 'Backup exported.' }); onClose(); }} className="flex-1 bg-green-600 hover:bg-green-700">Close</Button>
+                <Button onClick={() => setStep('export')} variant="outline">Back</Button>
               </div>
             </>
           )}

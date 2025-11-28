@@ -114,7 +114,17 @@ export function FeaturesProvider({ children }: { children: ReactNode }) {
 export function useFeatures(): FeaturesContextType {
   const context = useContext(FeaturesContext);
   if (!context) {
-    throw new Error('useFeatures must be used within FeaturesProvider');
+    console.warn('useFeatures called outside FeaturesProvider, returning default context');
+    // Return a safe default that won't crash the component
+    return {
+      features: {},
+      isFeatureEnabled: () => false,
+      getFeature: () => undefined,
+      getFeaturesByCategory: () => ({}),
+      loading: true,
+      error: 'Features context not available',
+      refreshFeatures: async () => {},
+    };
   }
   return context;
 }

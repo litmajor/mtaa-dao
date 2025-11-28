@@ -284,7 +284,7 @@ export class ContributionAnalyzer {
         patterns,
         summary: {
           steadyCount: patterns.steadyContributors.length,
-          sporadic Count: patterns.sporadic.length,
+          sporadicCount: patterns.sporadic.length,
           growingCount: patterns.growing.length,
           decliningCount: patterns.declining.length,
           inactiveCount: patterns.inactive.length

@@ -41,7 +41,9 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const AUTH_STORAGE_KEY = 'mtaa_dao_auth_session';
 const AUTH_TOKEN_KEY = 'mtaa_dao_auth_token';
-const API_BASE_URL = process.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const WS_PORT = import.meta.env.VITE_API_PORT || '5000';
+const WS_HOST = import.meta.env.VITE_API_HOST || 'localhost';
 
 /**
  * Backend API client for authentication with Redis/Database persistence
@@ -412,7 +414,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
+    const hint = typeof window !== 'undefined' ? `location=${window.location.href}` : '';
+    console.warn(`useAuth called outside AuthProvider. ${hint} Returning safe default.`);
+    // Return a safe default to prevent crashes
+    return {
+      user: null,
+      isAuthenticated: false,
+      isLoading: true,
+      error: null,
+      login: async () => { throw new Error('AuthProvider not available'); },
+      logout: async () => { throw new Error('AuthProvider not available'); },
+      switchRole: async () => { throw new Error('AuthProvider not available'); },
+      clearError: () => {},
+      refreshSession: async () => { throw new Error('AuthProvider not available'); },
+    };
   }
   return context;
 };

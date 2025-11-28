@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS "rule_templates" (
 -- DAO Rules Table
 CREATE TABLE IF NOT EXISTS "dao_rules" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "dao_id" varchar NOT NULL REFERENCES "daos"("id") ON DELETE CASCADE,
+  "dao_id" uuid NOT NULL REFERENCES "daos"("id") ON DELETE CASCADE,
   "template_id" uuid REFERENCES "rule_templates"("id"),
   "name" varchar NOT NULL,
   "description" text,
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS "dao_rules" (
 CREATE TABLE IF NOT EXISTS "rule_executions" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   "rule_id" uuid NOT NULL REFERENCES "dao_rules"("id") ON DELETE CASCADE,
-  "dao_id" varchar NOT NULL REFERENCES "daos"("id") ON DELETE CASCADE,
+  "dao_id" uuid NOT NULL REFERENCES "daos"("id") ON DELETE CASCADE,
   "event_type" varchar NOT NULL, -- 'member_entry', 'member_exit', etc.
   "context" jsonb NOT NULL, -- The data that triggered the rule
   "conditions_met" boolean NOT NULL,

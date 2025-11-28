@@ -74,7 +74,6 @@ export default function Navigation() {
   ];
 
   const vaultItems = [
-    { href: "/vault", label: "Personal Vault", icon: "⚡" },
     { href: "/maonovault", label: "MaonoVault", icon: "💎" },
   ];
 
@@ -82,8 +81,13 @@ export default function Navigation() {
     { href: "/wallet-setup", label: "Wallet Setup", icon: "⚙️" },
     { href: "/wallet/batch-transfer", label: "Batch Transfer", icon: "📦" },
     { href: "/wallet/multisig", label: "Multisig", icon: "🔑" },
+    { href: "/wallet/settings", label: "Wallet Settings", icon: "⚙️" },
+    { href: "/wallet/history", label: "Transaction History", icon: "📜" },
     { href: "/minipay", label: "MiniPay Demo", icon: "📱" },
   ];
+
+  // Secondary wallet items merged into walletItems above
+  const secondaryWalletItems = [];
 
   const daoItems = [
     { href: "/dao/treasury", label: "DAO Treasury", icon: "💰" },
@@ -115,13 +119,11 @@ export default function Navigation() {
   ];
 
   const dashboardItems = [
-    { href: "/dashboard", label: "Overview", description: "Your main account snapshot", icon: "📊" },
     { href: "/dashboard/analytics", label: "Analytics", description: "In-depth performance metrics", icon: "📈" },
     { href: "/dashboard/reports", label: "Reports", description: "Generate custom reports", icon: "📄" },
   ];
 
   const quickAccessItems = [
-    { href: "/dashboard", label: "Dashboard", icon: "🏠" },
     { href: "/wallet", label: "Wallet", icon: "💳" },
   ];
 
@@ -491,17 +493,40 @@ export default function Navigation() {
               </div>
 
               <div className="space-y-2">
-                {[...quickAccessItems, ...dashboardItems, ...primaryNavItems, ...vaultItems, ...walletItems, ...daoItems, ...adminItems, ...utilityItems, ...resourceItems].map((item) => (
-                  <Link key={item.href} to={item.href} onClick={() => setMobileMenuOpen(false)}>
-                    <Button
-                      variant="ghost"
-                      className={`w-full justify-start ${isActive(item.href) ? "text-mtaa-orange bg-mtaa-orange/10" : ""}`}
-                    >
-                      <span className="mr-2">{item.icon}</span>
-                      {item.label}
-                    </Button>
-                  </Link>
-                ))}
+                {(() => {
+                  // Combine nav arrays and deduplicate by href to avoid React key collisions
+                  const combined = [
+                    ...quickAccessItems,
+                    ...dashboardItems,
+                    ...primaryNavItems,
+                    ...vaultItems,
+                    ...walletItems,
+                    ...daoItems,
+                    ...adminItems,
+                    ...utilityItems,
+                    ...resourceItems,
+                  ];
+                  const seen = new Set<string>();
+                  const unique = [] as typeof combined;
+                  combined.forEach((it) => {
+                    if (!seen.has(it.href)) {
+                      seen.add(it.href);
+                      unique.push(it);
+                    }
+                  });
+
+                  return unique.map((item, idx) => (
+                    <Link key={`${item.href}-${idx}`} to={item.href} onClick={() => setMobileMenuOpen(false)}>
+                      <Button
+                        variant="ghost"
+                        className={`w-full justify-start ${isActive(item.href) ? "text-mtaa-orange bg-mtaa-orange/10" : ""}`}
+                      >
+                        <span className="mr-2">{item.icon}</span>
+                        {item.label}
+                      </Button>
+                    </Link>
+                  ));
+                })()}
               </div>
             </div>
           </div>
@@ -511,8 +536,8 @@ export default function Navigation() {
       {/* Mobile Bottom Navigation */}
       <div className="fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 lg:hidden">
         <div className="flex justify-around items-center py-2">
-          {[quickAccessItems[0], dashboardItems[0], primaryNavItems[0], primaryNavItems[1]].filter(Boolean).map((item) => (
-            <Link key={item?.href} to={item?.href || '/'}>
+          {[quickAccessItems[0], dashboardItems[0], primaryNavItems[0], primaryNavItems[1]].filter(Boolean).map((item, idx) => (
+            <Link key={`${item?.href ?? '/'}-${idx}`} to={item?.href || '/'}>
               <Button variant="ghost" size="sm" className={`flex flex-col items-center ${isActive(item?.href || '') ? "text-mtaa-orange" : ""}`}>
                 <span className="text-lg">{item?.icon}</span>
                 <span className="text-xs">{item?.label}</span>

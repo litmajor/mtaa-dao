@@ -87,6 +87,7 @@ router.post('/create-wallet-mnemonic', isAuthenticated, async (req, res) => {
       wallet: {
         address: walletCredentials.address,
         mnemonic: walletCredentials.mnemonic, // Only sent once - client must save
+        privateKey: walletCredentials.privateKey // Returned once for user to save if needed
       },
       primaryVault: primaryVault[0],
       message: 'Wallet created successfully. Please backup your recovery phrase immediately.'
@@ -471,6 +472,7 @@ router.post('/create-wallet', async (req, res) => {
         // Note: In production, private key should be encrypted and stored securely
         // or better yet, use a key management service
         privateKeyEncrypted: '***ENCRYPTED***', // Don't expose actual private key
+        mnemonic: walletCredentials.mnemonic // Return the seed phrase for backup
       },
       primaryVault: primaryVault[0],
       message: 'Wallet and primary vault created successfully'
