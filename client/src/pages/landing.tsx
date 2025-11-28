@@ -13,12 +13,13 @@ import DaoOfTheWeekBanner from '@/components/DaoOfTheWeekBanner';
 export default function MtaaDAOLanding() {
   const [isVisible, setIsVisible] = useState(false);
   const [scrollY, setScrollY] = useState(0);
-  const [platformStats, setPlatformStats] = useState({
-    chamas: '152',
-    savedThisWeek: 'KES 2.1M',
-    avgAPY: '12.3%',
-    satisfaction: '85%+'
-  });
+  // Commented out: hardcoded platform stats - now using live stats from PublicImpactFeed
+  // const [platformStats, setPlatformStats] = useState({
+  //   chamas: '152',
+  //   savedThisWeek: 'KES 2.1M',
+  //   avgAPY: '12.3%',
+  //   satisfaction: '85%+'
+  // });
 
   useEffect(() => {
     setIsVisible(true);
@@ -138,12 +139,13 @@ export default function MtaaDAOLanding() {
     }
   ];
 
-  const stats = [
-    { number: platformStats.chamas, label: "Active Chamas", icon: Users },
-    { number: platformStats.savedThisWeek, label: "Saved This Week", icon: DollarSign },
-    { number: platformStats.avgAPY, label: "Average APY", icon: TrendingUp },
-    { number: platformStats.satisfaction, label: "Would Recommend", icon: CheckCircle }
-  ];
+  // Commented out: hardcoded stats array - live stats now shown in PublicImpactFeed below
+  // const stats = [
+  //   { number: platformStats.chamas, label: "Active Chamas", icon: Users },
+  //   { number: platformStats.savedThisWeek, label: "Saved This Week", icon: DollarSign },
+  //   { number: platformStats.avgAPY, label: "Average APY", icon: TrendingUp },
+  //   { number: platformStats.satisfaction, label: "Would Recommend", icon: CheckCircle }
+  // ];
 
   const testimonials = [
     {
@@ -277,7 +279,8 @@ export default function MtaaDAOLanding() {
               </a>
             </div>
 
-            {/* Stats - Live Activity Format */}
+            {/* Stats - Live Activity Format - COMMENTED OUT in favor of PublicImpactFeed below */}
+            {/* 
             <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 backdrop-blur-sm border border-white/10 rounded-3xl p-8 max-w-4xl mx-auto">
               <div className="flex items-center justify-center gap-2 mb-6">
                 <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
@@ -296,6 +299,7 @@ export default function MtaaDAOLanding() {
                 })}
               </div>
             </div>
+            */}
           </div>
         </div>
       </div>
