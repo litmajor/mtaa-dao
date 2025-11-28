@@ -375,3 +375,5 @@ router.post("/daos/:daoId/rules/evaluate/:eventType", isAuthenticated, async (re
     });
   }
 });
+
+export default router;

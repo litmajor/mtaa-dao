@@ -408,11 +408,20 @@ interface RealtimeMetricsProviderProps {
 
 export const RealtimeMetricsProvider: React.FC<RealtimeMetricsProviderProps> = ({
   children,
-  apiBaseUrl = process.env.VITE_API_URL || 'http://localhost:3001/api',
-  webSocketUrl = process.env.VITE_WS_URL,
+  apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api',
+  webSocketUrl,
   cacheTTL = DEFAULT_CACHE_TTL,
   enablePolling = true,
 }) => {
+  // Safely construct WebSocket URL, ensuring no undefined values
+  const safeWebSocketUrl = (() => {
+    if (webSocketUrl) return webSocketUrl;
+    const wsUrl = import.meta.env.VITE_WS_URL;
+    if (wsUrl && wsUrl !== 'undefined' && wsUrl.toLowerCase().startsWith('ws')) return wsUrl;
+    const host = window.location.hostname || 'localhost';
+    const port = window.location.port || '5000';
+    return `ws://${host}:${port}`;
+  })();
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected' | 'error'>('disconnected');
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
@@ -421,7 +430,7 @@ export const RealtimeMetricsProvider: React.FC<RealtimeMetricsProviderProps> = (
 
   // Initialize WebSocket manager
   useEffect(() => {
-    if (!webSocketUrl || !enablePolling) {
+    if (!safeWebSocketUrl || !enablePolling) {
       logger.warn('WebSocket not configured, falling back to polling only');
       return;
     }
@@ -462,7 +471,7 @@ export const RealtimeMetricsProvider: React.FC<RealtimeMetricsProviderProps> = (
       }
     };
 
-    const manager = new MetricsWebSocketManager(webSocketUrl, fetchData);
+    const manager = new MetricsWebSocketManager(safeWebSocketUrl, fetchData);
     managerRef.current = manager;
 
     // Connection state handlers
@@ -495,7 +504,7 @@ export const RealtimeMetricsProvider: React.FC<RealtimeMetricsProviderProps> = (
     return () => {
       manager.disconnect();
     };
-  }, [webSocketUrl, enablePolling, apiBaseUrl]);
+  }, [safeWebSocketUrl, enablePolling, apiBaseUrl]);
 
   const subscribe = useCallback(
     (channel: string, handler: (data: any) => void): string => {

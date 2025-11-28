@@ -104,7 +104,6 @@ export const users = pgTable("users", {
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   profilePicture: varchar("profile_picture"),
-  refferalCode: varchar("referral_code"),
   referralRewards: varchar("referral_rewards"),
   // wallet address used in multiple server callsites
   walletAddress: varchar("wallet_address"),
@@ -143,7 +142,6 @@ export const users = pgTable("users", {
   walletIv: text("wallet_iv"),
   walletAuthTag: text("wallet_auth_tag"),
   hasBackedUpMnemonic: boolean("has_backed_up_mnemonic").default(false),
-  voting_token_balance: decimal("voting_token_balance", { precision: 10, scale: 2 }).default("0"), // Added for admin analytics compatibility
   isActive: boolean("is_active").default(true), // Added for account enable/disable compatibility
   // ========================================
   // FEATURE FLAGS - PROGRESSIVE RELEASE
@@ -2719,7 +2717,7 @@ export const ruleTemplates = pgTable("rule_templates", {
 
 export const daoRules = pgTable("dao_rules", {
   id: uuid("id").primaryKey().defaultRandom(),
-  daoId: varchar("dao_id").notNull().references(() => daos.id, { onDelete: "cascade" }),
+  daoId: uuid("dao_id").notNull().references(() => daos.id, { onDelete: "cascade" }),
   templateId: uuid("template_id").references(() => ruleTemplates.id),
   name: varchar("name").notNull(),
   description: text("description"),
@@ -2736,7 +2734,7 @@ export const daoRules = pgTable("dao_rules", {
 export const ruleExecutions = pgTable("rule_executions", {
   id: uuid("id").primaryKey().defaultRandom(),
   ruleId: uuid("rule_id").notNull().references(() => daoRules.id, { onDelete: "cascade" }),
-  daoId: varchar("dao_id").notNull().references(() => daos.id, { onDelete: "cascade" }),
+  daoId: uuid("dao_id").notNull().references(() => daos.id, { onDelete: "cascade" }),
   eventType: varchar("event_type").notNull(), // 'member_entry', 'member_exit', etc.
   context: jsonb("context").notNull(), // The data that triggered the rule
   conditionsMet: boolean("conditions_met").notNull(),

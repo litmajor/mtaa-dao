@@ -40,7 +40,7 @@ const signer = tokenService.signer;
 
 // Helper to check if contract is configured (address is set and valid)
 function isContractConfigured(): boolean {
-  if (!MAONO_CONTRACT_ADDRESS || MAONO_CONTRACT_ADDRESS === "" || Maono_CONTRACT_ADDRESS === "0x1234567890123456789012345678901234567890") {
+  if (!MAONO_CONTRACT_ADDRESS || MAONO_CONTRACT_ADDRESS === "" || MAONO_CONTRACT_ADDRESS === "0x1234567890123456789012345678901234567890") {
     return false;
   }
   return ethers.isAddress(MAONO_CONTRACT_ADDRESS);

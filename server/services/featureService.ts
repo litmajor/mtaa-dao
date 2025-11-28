@@ -5,7 +5,6 @@
  */
 
 import { db } from '../db';
-import { cache } from '../cache';
 
 export interface FeatureConfig {
   name: string;
@@ -1062,7 +1061,7 @@ export function getFeaturesByCategory(category: string): FeatureVisibilityMap {
 export function enableFeature(featureKey: string): void {
   if (DEFAULT_FEATURES[featureKey]) {
     DEFAULT_FEATURES[featureKey].enabled = true;
-    cache.clear(`feature:${featureKey}`);
+    // cache.clear(`feature:${featureKey}`); // cache module not available
   }
 }
 
@@ -1072,7 +1071,7 @@ export function enableFeature(featureKey: string): void {
 export function disableFeature(featureKey: string): void {
   if (DEFAULT_FEATURES[featureKey]) {
     DEFAULT_FEATURES[featureKey].enabled = false;
-    cache.clear(`feature:${featureKey}`);
+    // cache.clear(`feature:${featureKey}`); // cache module not available
   }
 }
 
@@ -1085,7 +1084,7 @@ export function releasePhase(phase: number): void {
       feature.enabled = true;
     }
   });
-  cache.clear('features:*');
+  // cache.clear('features:*'); // cache module not available
 }
 
 /**
@@ -1095,7 +1094,7 @@ export function releaseAllFeatures(): void {
   Object.entries(DEFAULT_FEATURES).forEach(([, feature]) => {
     feature.enabled = true;
   });
-  cache.clear('features:*');
+  // cache.clear('features:*'); // cache module not available
 }
 
 /**

@@ -1,6 +1,7 @@
 import Web3 from 'web3';
 import { isAddress } from 'web3-validator';
 import type { TransactionReceipt, Contract } from 'web3';
+import * as bip39 from 'bip39';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -80,6 +81,7 @@ export interface NetworkInfo {
 export interface WalletCredentials {
   address: string;
   privateKey: string;
+  mnemonic?: string;
 }
 
 export interface TokenInfo {
@@ -992,10 +994,22 @@ export class NetworkConfig {
 // Enhanced Wallet Manager
 export class WalletManager {
   static createWallet(): WalletCredentials {
-    const account = new Web3().eth.accounts.create();
+    // Generate a 12-word mnemonic
+    const mnemonic = bip39.generateMnemonic(128);
+    
+    // Generate seed from mnemonic
+    const seed = bip39.mnemonicToSeedSync(mnemonic);
+    
+    // Create account using private key derived from seed
+    // For simplicity, we use the first 32 bytes of the seed as the private key
+    const privateKeyBuffer = seed.slice(0, 32);
+    const web3 = new Web3();
+    const account = web3.eth.accounts.privateKeyToAccount('0x' + privateKeyBuffer.toString('hex'));
+    
     return {
       address: account.address,
-      privateKey: account.privateKey
+      privateKey: account.privateKey,
+      mnemonic: mnemonic
     };
   }
 

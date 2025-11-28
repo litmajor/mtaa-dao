@@ -11,6 +11,7 @@ import { HelmetProvider } from "react-helmet-async";
 import AppLoading from "./components/ui/app-loading";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { FeaturesProvider } from "./contexts/features-context";
+import { AuthProvider } from "./contexts/auth-context";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,9 +36,11 @@ if (root) {
         <QueryClientProvider client={queryClient}>
           <FeaturesProvider>
             <BrowserRouter>
-              <ToastProvider>
-                <App />
-              </ToastProvider>
+              <AuthProvider>
+                <ToastProvider>
+                  <App />
+                </ToastProvider>
+              </AuthProvider>
             </BrowserRouter>
           </FeaturesProvider>
         </QueryClientProvider>

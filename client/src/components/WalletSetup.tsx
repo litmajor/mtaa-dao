@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -9,6 +10,7 @@ import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
 import { Wallet, Plus, Upload, Eye, EyeOff, Copy, Download, CheckCircle, Shield, AlertTriangle } from 'lucide-react';
 import { useToast } from './ui/use-toast';
+import SeedPhraseModal from './modals/SeedPhraseModal';
 
 interface WalletSetupProps {
   userId: string;
@@ -22,12 +24,18 @@ interface Asset {
 }
 
 export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProps) {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [showPrivateKey, setShowPrivateKey] = useState(false);
   const [privateKey, setPrivateKey] = useState('');
   const [assets, setAssets] = useState<Asset[]>([
     { currency: 'cUSD', initialAmount: 0, monthlyGoal: 100 }
   ]);
+  const [seedPhraseModal, setSeedPhraseModal] = useState({
+    isOpen: false,
+    seedPhrase: '',
+    walletAddress: ''
+  });
   const { toast } = useToast();
 
   const supportedCurrencies = [
@@ -55,9 +63,11 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
       const data = await response.json();
       
       if (data.success) {
-        toast({
-          title: "Wallet Created Successfully",
-          description: `Your new wallet address: ${data.wallet.address.slice(0, 8)}...`
+        // Show seed phrase modal instead of just a toast
+        setSeedPhraseModal({
+          isOpen: true,
+          seedPhrase: data.wallet.mnemonic || '',
+          walletAddress: data.wallet.address
         });
         
         // Initialize additional assets if any
@@ -78,6 +88,47 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSeedPhraseConfirmed = () => {
+    (async () => {
+      setSeedPhraseModal({ ...seedPhraseModal, isOpen: false });
+      try {
+        const resp = await fetch('/api/wallet-setup/backup-confirmed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (resp.ok) {
+          toast({
+            title: "Success!",
+            description: "Your wallet backup has been recorded. Redirecting to wallet dashboard..."
+          });
+        } else {
+          const err = await resp.json().catch(() => ({}));
+          toast({
+            title: "Notice",
+            description: err.error || 'Backup recorded locally; server update failed',
+            variant: 'destructive'
+          });
+        }
+      } catch (e: any) {
+        toast({
+          title: "Network Error",
+          description: e?.message || 'Failed to notify server of backup',
+          variant: 'destructive'
+        });
+      }
+
+      // Redirect to wallet dashboard after a short delay
+      setTimeout(() => {
+        navigate('/wallet');
+      }, 1000);
+    })();
+  };
+
+  const handleSeedPhraseCancel = () => {
+    setSeedPhraseModal({ ...seedPhraseModal, isOpen: false });
   };
 
   const importWallet = async () => {
@@ -341,6 +392,14 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
           </Card>
         </TabsContent>
       </Tabs>
+
+      <SeedPhraseModal
+        isOpen={seedPhraseModal.isOpen}
+        seedPhrase={seedPhraseModal.seedPhrase}
+        walletAddress={seedPhraseModal.walletAddress}
+        onConfirm={handleSeedPhraseConfirmed}
+        onCancel={handleSeedPhraseCancel}
+      />
     </div>
   );
 }

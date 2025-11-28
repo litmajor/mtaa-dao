@@ -14,9 +14,9 @@ export default function MtaaDAOLanding() {
   const [isVisible, setIsVisible] = useState(false);
   const [scrollY, setScrollY] = useState(0);
   const [platformStats, setPlatformStats] = useState({
-    members: '2K+',
-    daos: '150',
-    tvl: '$100K+',
+    chamas: '152',
+    savedThisWeek: 'KES 2.1M',
+    avgAPY: '12.3%',
     satisfaction: '85%+'
   });
 
@@ -31,7 +31,7 @@ export default function MtaaDAOLanding() {
     {
       icon: Wallet,
       title: "Personal Wallet",
-      description: "Send & receive money instantly. Support for CELO, cUSD, cEUR & more.",
+      description: "Send & receive money instantly. Support for USDT, CELO, cUSD, cEUR & more.",
       gradient: "from-blue-400 to-cyan-500",
       path: "/wallet"
     },
@@ -139,10 +139,10 @@ export default function MtaaDAOLanding() {
   ];
 
   const stats = [
-    { number: platformStats.members, label: "People Saving", icon: Users },
-    { number: platformStats.daos, label: "Active Groups", icon: Vote },
-    { number: platformStats.tvl, label: "Money Growing", icon: DollarSign },
-    { number: platformStats.satisfaction, label: "Would Recommend", icon: TrendingUp }
+    { number: platformStats.chamas, label: "Active Chamas", icon: Users },
+    { number: platformStats.savedThisWeek, label: "Saved This Week", icon: DollarSign },
+    { number: platformStats.avgAPY, label: "Average APY", icon: TrendingUp },
+    { number: platformStats.satisfaction, label: "Would Recommend", icon: CheckCircle }
   ];
 
   const testimonials = [
@@ -217,36 +217,41 @@ export default function MtaaDAOLanding() {
           <DaoOfTheWeekBanner />
 
           <div className={`text-center transform transition-all duration-1000 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'} mt-8`}>
+            {/* Trust Badge */}
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-full mb-8">
+              <CheckCircle className="w-4 h-4 text-emerald-400" />
+              <span className="text-sm font-semibold text-emerald-400">2,000+ people saving transparently • KES 30M in group treasuries</span>
+            </div>
+
             {/* Main Headline */}
             <h1 className="text-5xl md:text-7xl font-black mb-6 leading-tight">
-              <span className="block text-white">Your Complete </span>
+              <span className="block text-white">Your Chama,</span>
               <span className="bg-gradient-to-r from-orange-400 via-pink-500 to-purple-500 bg-clip-text text-transparent">
-                Financial Operating System
+                See Every Shilling, Every Second
               </span>
             </h1>
 
-            <p className="text-xl md:text-3xl text-purple-100 max-w-3xl mx-auto mb-4 leading-relaxed font-semibold">
-              Wallet • Savings • Investments • Community Governance
+            <p className="text-xl md:text-2xl text-purple-100 max-w-3xl mx-auto mb-4 leading-relaxed font-semibold">
+              Blockchain transparency + AI fraud detection + Democratic governance
             </p>
             
             <p className="text-lg md:text-xl text-purple-200 max-w-2xl mx-auto mb-10 leading-relaxed">
-              From daily transactions to earning 8-12% yields on savings,<br/>
-              to pooling resources with your community - all in one platform.
+              Every transaction tracked. Every decision voted on. Every shilling accounted for.
             </p>
 
             {/* Quick Stats */}
             <div className="flex flex-wrap justify-center gap-6 mb-10 text-white">
               <div className="flex items-center gap-2">
                 <CheckCircle className="w-5 h-5 text-green-400" />
-                <span>2,000+ people saving together</span>
+                <span>Money locked in smart contracts (code-enforced)</span>
               </div>
               <div className="flex items-center gap-2">
                 <CheckCircle className="w-5 h-5 text-green-400" />
-                <span>KES 30M saved so far</span>
+                <span>Blockchain records (permanent & immutable)</span>
               </div>
               <div className="flex items-center gap-2">
                 <CheckCircle className="w-5 h-5 text-green-400" />
-                <span>85% would recommend</span>
+                <span>Democratic voting (no single point of failure)</span>
               </div>
             </div>
 
@@ -257,7 +262,7 @@ export default function MtaaDAOLanding() {
                   size="lg"
                   className="w-full sm:w-auto bg-gradient-to-r from-orange-500 to-pink-600 hover:from-orange-600 hover:to-pink-700 text-white px-12 py-7 text-xl font-bold rounded-2xl shadow-2xl transform hover:scale-105 transition-all min-h-[56px]"
                 >
-                  Start Saving (Free)
+                  Start Your Chama Free
                   <ArrowRight className="ml-2 h-6 w-6" />
                 </Button>
               </a>
@@ -267,23 +272,29 @@ export default function MtaaDAOLanding() {
                   variant="outline"
                   className="w-full sm:w-auto border-2 border-white/30 text-white hover:bg-white/10 px-12 py-7 text-xl font-bold rounded-2xl backdrop-blur-sm transition-all min-h-[56px]"
                 >
-                  How It Works
+                  See How It Works
                 </Button>
               </a>
             </div>
 
-            {/* Stats - Compact Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto">
-              {stats.map((stat, index) => {
-                const Icon = stat.icon;
-                return (
-                  <div key={index} className="text-center p-4 bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 hover:border-white/40 transition-all">
-                    <Icon className="w-8 h-8 mx-auto mb-2 text-cyan-400" />
-                    <div className="text-3xl font-black text-white">{stat.number}</div>
-                    <div className="text-purple-200 text-sm">{stat.label}</div>
-                  </div>
-                );
-              })}
+            {/* Stats - Live Activity Format */}
+            <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 backdrop-blur-sm border border-white/10 rounded-3xl p-8 max-w-4xl mx-auto">
+              <div className="flex items-center justify-center gap-2 mb-6">
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                <span className="text-sm font-semibold text-gray-300">LIVE ACTIVITY</span>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-6 text-center">
+                {stats.map((stat, index) => {
+                  const Icon = stat.icon;
+                  return (
+                    <div key={index}>
+                      <Icon className="w-6 h-6 mx-auto mb-2 text-cyan-400" />
+                      <div className="text-3xl font-black text-white">{stat.number}</div>
+                      <div className="text-gray-400 text-sm">{stat.label}</div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
@@ -296,15 +307,140 @@ export default function MtaaDAOLanding() {
         </div>
       </section>
 
+      {/* The Problem - Why Most Chamas Fail */}
+      <section className="relative py-24 px-6 bg-gradient-to-b from-slate-900 to-slate-950">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-16">
+            <div className="inline-block px-4 py-2 bg-red-500/10 border border-red-500/30 rounded-full mb-4">
+              <span className="text-sm font-bold text-red-400">The Reality</span>
+            </div>
+            <h2 className="text-4xl md:text-5xl font-black mb-6">
+              Why <span className="text-red-400">60% of Chamas</span> Collapse
+            </h2>
+            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
+              Fraud, mismanagement, and lack of transparency destroy trust—and savings
+            </p>
+          </div>
+
+          {/* Problem Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+            <div className="relative group">
+              <div className="absolute inset-0 bg-gradient-to-br from-red-500 to-orange-500 opacity-10 group-hover:opacity-20 transition-opacity rounded-2xl blur-xl" />
+              <div className="relative bg-slate-800/50 backdrop-blur-sm border border-white/10 rounded-2xl p-6 hover:border-white/30 transition-all">
+                <div className="text-4xl mb-4">❌</div>
+                <p className="text-white font-semibold text-lg leading-relaxed">Treasurer disappears with group money</p>
+                <p className="text-gray-400 text-sm mt-2">No blockchain records. No accountability. Money gone.</p>
+              </div>
+            </div>
+
+            <div className="relative group">
+              <div className="absolute inset-0 bg-gradient-to-br from-orange-500 to-amber-500 opacity-10 group-hover:opacity-20 transition-opacity rounded-2xl blur-xl" />
+              <div className="relative bg-slate-800/50 backdrop-blur-sm border border-white/10 rounded-2xl p-6 hover:border-white/30 transition-all">
+                <div className="text-4xl mb-4">📱</div>
+                <p className="text-white font-semibold text-lg leading-relaxed">Fake M-Pesa screenshots</p>
+                <p className="text-gray-400 text-sm mt-2">Manual records altered. Impossible to verify truth.</p>
+              </div>
+            </div>
+
+            <div className="relative group">
+              <div className="absolute inset-0 bg-gradient-to-br from-amber-500 to-yellow-500 opacity-10 group-hover:opacity-20 transition-opacity rounded-2xl blur-xl" />
+              <div className="relative bg-slate-800/50 backdrop-blur-sm border border-white/10 rounded-2xl p-6 hover:border-white/30 transition-all">
+                <div className="text-4xl mb-4">📒</div>
+                <p className="text-white font-semibold text-lg leading-relaxed">Manual records get "lost"</p>
+                <p className="text-gray-400 text-sm mt-2">Excel files deleted. Disputes with no evidence.</p>
+              </div>
+            </div>
+
+            <div className="relative group">
+              <div className="absolute inset-0 bg-gradient-to-br from-yellow-500 to-lime-500 opacity-10 group-hover:opacity-20 transition-opacity rounded-2xl blur-xl" />
+              <div className="relative bg-slate-800/50 backdrop-blur-sm border border-white/10 rounded-2xl p-6 hover:border-white/30 transition-all">
+                <div className="text-4xl mb-4">🤔</div>
+                <p className="text-white font-semibold text-lg leading-relaxed">No proof where money is</p>
+                <p className="text-gray-400 text-sm mt-2">Trust breaks. Group collapses. Savings lost.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Stark Stat */}
+          <div className="bg-red-950/30 border-2 border-red-500/30 rounded-3xl p-8 text-center">
+            <div className="text-5xl md:text-6xl font-black text-red-400 mb-2">KES 12 Billion</div>
+            <p className="text-xl text-gray-300">Lost to chama fraud in Kenya last year alone</p>
+          </div>
+        </div>
+      </section>
+
+      {/* Solution Comparison */}
+      <section className="relative py-24 px-6">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-16">
+            <div className="inline-block px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-full mb-4">
+              <span className="text-sm font-bold text-emerald-400">The Solution</span>
+            </div>
+            <h2 className="text-4xl md:text-5xl font-black mb-6">
+              Make Theft <span className="bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Radically Harder</span>
+            </h2>
+          </div>
+
+          {/* Comparison Table */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+            <div className="bg-red-950/20 border border-red-500/30 rounded-3xl p-8">
+              <div className="text-3xl mb-4">❌</div>
+              <h3 className="text-2xl font-bold mb-4 text-red-400">Traditional Chama</h3>
+              <ul className="space-y-3 text-gray-300">
+                <li className="flex items-start gap-2">
+                  <span className="text-red-400 mt-1">•</span>
+                  <span>Money in treasurer's M-Pesa (trust-based)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-red-400 mt-1">•</span>
+                  <span>Manual Excel records (can be altered)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-red-400 mt-1">•</span>
+                  <span>No real-time visibility into balances</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-red-400 mt-1">•</span>
+                  <span>One person controls everything</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="bg-emerald-950/20 border border-emerald-500/30 rounded-3xl p-8">
+              <div className="text-3xl mb-4">✅</div>
+              <h3 className="text-2xl font-bold mb-4 text-emerald-400">Mtaa DAO Chama</h3>
+              <ul className="space-y-3 text-gray-300">
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                  <span>Money locked in smart contracts (code-enforced)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                  <span>Blockchain records (permanent & immutable)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                  <span>Live dashboard (see every transaction 24/7)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                  <span>Democratic voting (no single point of failure)</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Platform Capabilities */}
       <div className="py-16 relative" id="features">
         <div className="max-w-7xl mx-auto px-4">
           <div className="text-center mb-12">
             <h2 className="text-4xl md:text-5xl font-black text-white mb-4">
-              Everything You Need in One Platform
+              How Mtaa Works
             </h2>
             <p className="text-xl text-purple-200">
-              From everyday transactions to professional wealth management
+              From daily transactions to earning 8-15% yields on transparent group savings
             </p>
           </div>
 

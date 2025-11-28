@@ -167,12 +167,11 @@ function App() {
 
     return (
       <HelmetProvider>
-        <AuthProvider>
-          <NavigationProvider>
-            <ThemeProvider>
-              <TooltipProvider>
-                <MorioProvider userId={userId} daoId={user?.currentDaoId}>
-                  <div className="min-h-screen bg-background text-foreground">
+        <NavigationProvider>
+          <ThemeProvider>
+            <TooltipProvider>
+              <MorioProvider userId={userId} daoId={user?.currentDaoId}>
+                <div className="min-h-screen bg-background text-foreground">
                     <Helmet>
                       <title>{isAuthenticated ? "Dashboard | Mtaa DAO" : "Welcome | Mtaa DAO"}</title>
                       <meta name="description" content="Mtaa DAO — decentralized community finance platform" />
@@ -300,6 +299,7 @@ function App() {
                         <Route path="/admin/billing" element={<ProtectedRoute><AdminBillingDashboard /></ProtectedRoute>} />
                         <Route path="/admin/payments" element={<ProtectedRoute><PaymentReconciliation /></ProtectedRoute>} />
                         <Route path="/superuser-login" element={<Register1Raw />} />
+                        <Route path="/superuser-register" element={<Register1Raw adminMode={true} />} />
                         <Route path="/admin-login" element={<Register1Raw adminMode={true} />} />
                         {/* Protected special routes */}
                         <Route path="/architect-setup" element={<ProtectedRoute><ArchitectSetupPage /></ProtectedRoute>} />
@@ -322,7 +322,6 @@ function App() {
               </TooltipProvider>
             </ThemeProvider>
           </NavigationProvider>
-        </AuthProvider>
       </HelmetProvider>
     );
   } catch (error) {

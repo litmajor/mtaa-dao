@@ -34,6 +34,8 @@ import {
   HelpCircle
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
+import MultisigManager from '@/components/multisig/MultisigManager';
+import { useToast } from '@/components/ui/use-toast';
 
 const MINIMUM_QUORUM = 20; // 20% minimum quorum
 
@@ -62,7 +64,11 @@ const CreateDAOFlow = () => {
     enableSocialReactions: true,
     enableDiscovery: true,
     featuredMessage: '',
-    selectedElders: []
+    selectedElders: [],
+    // Multisig defaults
+    enableMultisig: false,
+    multisigSigners: [],
+    multisigRequiredSignatures: 2
   }), []);
 
   const { data: daoData, setData: setDaoData, lastSaved, clearDraft } = useFormPersistence(initialDaoData);
@@ -83,6 +89,9 @@ const CreateDAOFlow = () => {
   }, [walletAddress]);
 
   const [newMember, setNewMember] = useState({ address: '', role: 'member', name: '' });
+  const [newMultisigSigner, setNewMultisigSigner] = useState('');
+  const [showMultisigManager, setShowMultisigManager] = useState(false);
+  const { toast } = useToast();
 
   // Input sanitization helper
   const sanitizeInput = useCallback((input: string, maxLength: number = 500): string => {
@@ -315,6 +324,26 @@ const CreateDAOFlow = () => {
     { value: 'custom', label: 'Custom Stablecoin', desc: 'USDT, DAI or other tokens (coming soon)' }
   ];
 
+  // DAO types that require multisig by default
+  const multisigRequiredTypes = ['collective', 'governance', 'meta'];
+
+  // Ensure multisig is enabled automatically for required types
+  useEffect(() => {
+    if (multisigRequiredTypes.includes(daoData.daoType || '')) {
+      setDaoData(prev => ({ ...prev, enableMultisig: true }));
+    }
+  }, [daoData.daoType]);
+
+  // Pre-populate multisig signers when multisig is enabled
+  useEffect(() => {
+    if (daoData.enableMultisig && (!daoData.multisigSigners || daoData.multisigSigners.length === 0)) {
+      const founders = [walletAddress || ''];
+      const elders = daoData.selectedElders || [];
+      const unique = Array.from(new Set([...founders.filter(Boolean), ...elders]));
+      setDaoData(prev => ({ ...prev, multisigSigners: unique, multisigRequiredSignatures: Math.max(2, Math.min(prev.multisigRequiredSignatures || 2, unique.length)) }));
+    }
+  }, [daoData.enableMultisig, daoData.selectedElders, walletAddress]);
+
   // Dynamic treasury options based on DAO type
   const getTreasuryOptionsForType = (type?: string) => {
     const optionsByType: Record<string, typeof treasuryTypes> = {
@@ -377,6 +406,10 @@ const CreateDAOFlow = () => {
     daoType?: 'free' | 'shortTerm' | 'collective' | 'governance' | 'meta';
     duration?: number;
     selectedElders: string[]; // NEW: Track selected elders
+    // Multisig settings
+    enableMultisig?: boolean;
+    multisigSigners?: string[];
+    multisigRequiredSignatures?: number;
   }
 
   interface NewMember {
@@ -478,7 +511,12 @@ const CreateDAOFlow = () => {
           },
           founderWallet: walletAddress,
           invitedMembers: invitedMembers,
-          selectedElders: daoData.selectedElders
+          selectedElders: daoData.selectedElders,
+          multisig: {
+            enabled: !!daoData.enableMultisig,
+            signers: daoData.multisigSigners || [],
+            requiredSignatures: daoData.multisigRequiredSignatures || 2
+          }
         })
       });
 
@@ -989,6 +1027,97 @@ const CreateDAOFlow = () => {
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Treasury Setup</h2>
         <p className="text-gray-600 dark:text-gray-400">Configure your DAO's financial foundation</p>
       </div>
+
+      {/* Multisig explanatory area */}
+      <div>
+        {multisigRequiredTypes.includes(daoData.daoType || '') ? (
+          <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
+              Multisig is required for this DAO type and will be enabled.
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between p-3 border rounded-lg">
+            <div>
+              <p className="font-medium">Enable Multisig for Treasury</p>
+              <p className="text-xs text-gray-500">Require multiple elder approvals for withdrawals</p>
+            </div>
+            <Switch
+              checked={!!daoData.enableMultisig}
+              onCheckedChange={(checked) => setDaoData(prev => ({ ...prev, enableMultisig: checked }))}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Multisig signer editor & required signatures */}
+      {(daoData.enableMultisig || multisigRequiredTypes.includes(daoData.daoType || '')) && (
+        <div className="space-y-4">
+          <div>
+            <Label className="text-sm font-medium">Multisig Signers</Label>
+            <p className="text-xs text-gray-500">Who will be signers for multisig withdrawals? Founder is pre-added.</p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2">
+              {(daoData.multisigSigners || []).map((s, i) => (
+                <div key={s + i} className="flex items-center gap-2 px-3 py-1 bg-gray-100 rounded">
+                  <span className="font-mono text-sm break-all">{s}</span>
+                  <Button size="icon" variant="ghost" onClick={() => setDaoData(prev => ({ ...prev, multisigSigners: (prev.multisigSigners || []).filter((_, idx) => idx !== i) }))}>
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-2">
+              <Input
+                placeholder="0x... or user-id"
+                id="new-multisig-signer"
+                value={newMultisigSigner}
+                onChange={(e) => setNewMultisigSigner(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const val = newMultisigSigner.trim();
+                    if (!val) return;
+                    if (!validateAddress(val)) { toast({ title: 'Invalid', description: 'Invalid signer format', variant: 'destructive' }); return; }
+                    setDaoData(prev => ({ ...prev, multisigSigners: [...(prev.multisigSigners || []), val] }));
+                    setNewMultisigSigner('');
+                  }
+                }}
+              />
+              <Button onClick={() => {
+                const val = newMultisigSigner.trim();
+                if (!val) { toast({ title: 'Missing', description: 'Enter a signer address or id', variant: 'destructive' }); return; }
+                if (!validateAddress(val)) { toast({ title: 'Invalid', description: 'Invalid signer format', variant: 'destructive' }); return; }
+                setDaoData(prev => ({ ...prev, multisigSigners: [...(prev.multisigSigners || []), val] }));
+                setNewMultisigSigner('');
+              }} disabled={!validateAddress(newMultisigSigner)}>
+                Add
+              </Button>
+            </div>
+
+            <div>
+              <Button variant="ghost" size="sm" onClick={() => setShowMultisigManager(v => !v)}>
+                {showMultisigManager ? 'Hide Advanced Multisig Manager' : 'Open Advanced Multisig Manager'}
+              </Button>
+              {showMultisigManager && (
+                <div className="mt-4">
+                  <MultisigManager daoId={daoData.deployedAddress || ''} elders={daoData.selectedElders} />
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div>
+                <Label className="text-sm">Required Signatures</Label>
+                <p className="text-xs text-gray-500">Minimum number of signers required to approve a withdrawal</p>
+              </div>
+              <input aria-label="Required signatures" id="multisig-required" type="number" min={2} max={(daoData.multisigSigners || []).length || 2} value={daoData.multisigRequiredSignatures || 2} onChange={(e) => setDaoData(prev => ({ ...prev, multisigRequiredSignatures: Number(e.target.value) }))} className="w-20 px-2 py-1 border rounded" />
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-6">
         <div>

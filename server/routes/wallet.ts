@@ -2,6 +2,7 @@ import express, { Express, Router, Request, Response } from 'express';
 import { isAuthenticated } from '../auth';
 
 import EnhancedAgentWallet, { NetworkConfig } from '../agent_wallet';
+const crypto = require('crypto');
 
 import { db } from '../db';
 import { walletTransactions, contributions, paymentRequests, lockedSavings, savingsGoals, paymentReceipts, vaults } from '../../shared/schema';
@@ -34,6 +35,19 @@ try {
 }
 
 const router = express.Router();
+
+// Lightweight in-memory store for wallet-scoped multisig wallets (temporary)
+type InMemoryMultisig = {
+  address: string;
+  name?: string;
+  owners: string[];
+  threshold: number;
+  balance: string;
+  transactionCount: number;
+  createdAt: string;
+};
+
+const inMemoryMultisigs: Record<string, InMemoryMultisig> = {};
 
 // Validation schemas
 const sendNativeSchema = z.object({
@@ -442,6 +456,76 @@ router.get('/network-info', requireWallet, async (req, res) => {
   } catch (error) {
     logger.error('Failed to get network info:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch network info' });
+  }
+});
+
+// --- Wallet-scoped Multisig Endpoints (lightweight, in-memory) ---
+// POST /api/wallet/multisig/create
+router.post('/multisig/create', isAuthenticated, async (req, res) => {
+  try {
+    const { owners, threshold, name } = req.body;
+
+    if (!Array.isArray(owners) || owners.length === 0) {
+      return res.status(400).json({ success: false, error: 'Owners array required' });
+    }
+    const t = parseInt(threshold, 10) || Number(threshold) || threshold;
+    if (!t || t < 1 || t > owners.length) {
+      return res.status(400).json({ success: false, error: 'Invalid threshold' });
+    }
+
+    // Generate pseudo contract/address id
+    const address = '0x' + crypto.randomBytes(20).toString('hex');
+
+    const multisig: InMemoryMultisig = {
+      address,
+      name,
+      owners: owners.map((o: any) => String(o)),
+      threshold: t,
+      balance: '0',
+      transactionCount: 0,
+      createdAt: new Date().toISOString()
+    };
+
+    inMemoryMultisigs[address] = multisig;
+
+    res.json({ success: true, address: multisig.address, owners: multisig.owners, threshold: multisig.threshold, transactionCount: multisig.transactionCount });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || String(err) });
+  }
+});
+
+// POST /api/wallet/multisig/info
+router.post('/multisig/info', isAuthenticated, async (req, res) => {
+  try {
+    const { multisigAddress } = req.body;
+    if (!multisigAddress) return res.status(400).json({ success: false, error: 'multisigAddress required' });
+
+    const info = inMemoryMultisigs[multisigAddress];
+    if (!info) return res.status(404).json({ success: false, error: 'Multisig not found' });
+
+    res.json({ success: true, multisig: info });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || String(err) });
+  }
+});
+
+// POST /api/wallet/multisig/submit - create a transaction for a multisig wallet (fake)
+router.post('/multisig/submit', isAuthenticated, async (req, res) => {
+  try {
+    const { multisigAddress, destination, value, data } = req.body;
+    if (!multisigAddress || !destination) return res.status(400).json({ success: false, error: 'multisigAddress and destination required' });
+
+    const m = inMemoryMultisigs[multisigAddress];
+    if (!m) return res.status(404).json({ success: false, error: 'Multisig not found' });
+
+    // Fake transaction hash
+    const hash = '0x' + crypto.randomBytes(32).toString('hex');
+    m.transactionCount = (m.transactionCount || 0) + 1;
+
+    // Return a fake tx result
+    res.json({ success: true, hash, multisigAddress, destination, value: value || '0', data: data || '0x' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || String(err) });
   }
 });
 

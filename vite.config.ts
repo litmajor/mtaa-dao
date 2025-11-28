@@ -84,7 +84,8 @@ export default defineConfig({
     strictPort: false,
     middlewareMode: false,
     hmr: {
-      clientPort: 443,
+      host: 'localhost',
+      port: 5173,
     },
     proxy: {
       "/api": {

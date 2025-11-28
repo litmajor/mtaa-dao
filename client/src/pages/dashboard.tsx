@@ -23,10 +23,11 @@ import {
   TrendingUp, Users, DollarSign, Plus, Wallet, Shield, CheckCircle, Settings,
   Activity, Link as LinkIcon, Send, Gift, MoreHorizontal, ArrowUpRight, ArrowDownLeft
 } from 'lucide-react';
-import { useAuthUser } from '@/contexts/auth-context';
+import { useAuth } from '@/pages/hooks/useAuth';
 import { useFeatures } from '@/contexts/features-context';
 
-const API_BASE_URL = process.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+const API_ENDPOINT = `${API_BASE_URL}/api`;
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -171,10 +172,14 @@ const PAGE_TRACKER = {
 // ============================================================================
 
 const fetchDashboardData = async (): Promise<DashboardData> => {
-  const token = localStorage.getItem('mtaa_dao_auth_token');
+  const token = localStorage.getItem('accessToken');
+  const baseUrl = API_BASE_URL.includes('/api') ? API_BASE_URL : `${API_BASE_URL}/api`;
+  const dashboardUrl = `${baseUrl}/dashboard/complete`;
+  
+  console.log('Dashboard fetch - URL:', dashboardUrl, 'Token present:', !!token);
 
   try {
-    const response = await fetch(`${API_BASE_URL}/dashboard/complete`, {
+    const response = await fetch(dashboardUrl, {
       headers: {
         'Authorization': token ? `Bearer ${token}` : '',
         'Content-Type': 'application/json',
@@ -182,10 +187,15 @@ const fetchDashboardData = async (): Promise<DashboardData> => {
       credentials: 'include',
     });
 
-    if (!response.ok) throw new Error('Failed to fetch');
-    return response.json();
+    if (!response.ok) {
+      console.error('Dashboard API error:', response.status, response.statusText);
+      throw new Error(`API returned ${response.status}`);
+    }
+    const data = await response.json();
+    console.log('Dashboard data loaded:', !!data?.userDAOs?.length);
+    return data;
   } catch (error) {
-    console.warn('Using fallback data:', error);
+    console.warn('Dashboard fetch failed, using fallback data:', error);
     return {
       totalAssets: 125000,
       monthlyReturn: 3.2,
@@ -519,7 +529,7 @@ const DaoTab: React.FC<DaoTabProps> = ({ dao, features }) => {
 // ============================================================================
 
 export default function ComprehensiveDashboardV2() {
-  const authUser = useAuthUser();
+  const { user: authUser } = useAuth();
   const { isFeatureEnabled } = useFeatures();
   const [activeTab, setActiveTab] = useState('daos');
   const [selectedDao, setSelectedDao] = useState<string | null>(null);
@@ -531,6 +541,10 @@ export default function ComprehensiveDashboardV2() {
     queryFn: fetchDashboardData,
     refetchInterval: 30000,
     enabled: !!authUser,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes (was cacheTime)
+    retry: 3,
+    retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 
   if (!authUser) {
@@ -558,7 +572,9 @@ export default function ComprehensiveDashboardV2() {
       <div className="container mx-auto p-6">
         <Card className="border-yellow-200 bg-yellow-50">
           <CardContent className="pt-6">
-            <p className="text-yellow-800">Failed to load dashboard data</p>
+            <p className="text-yellow-800 font-semibold mb-2">Failed to load dashboard data</p>
+            <p className="text-yellow-700 text-sm mb-4">{error?.message || 'Unknown error'}</p>
+            <p className="text-yellow-700 text-xs">Check your connection and try refreshing the page.</p>
           </CardContent>
         </Card>
       </div>
@@ -670,10 +686,24 @@ export default function ComprehensiveDashboardV2() {
                 }
 
                 const IconComponent = tab.icon;
+                // Get count for this tab
+                let count = 0;
+                if (tab.id === 'daos') count = data.userDAOs?.length || 0;
+                else if (tab.id === 'wallet') count = data.wallets?.length || 0;
+                else if (tab.id === 'vaults') count = data.vaults?.length || 0;
+                else if (tab.id === 'proposals') count = data.userDAOs?.reduce((sum, dao) => sum + (dao.governance?.proposals || 0), 0) || 0;
+                
                 return (
-                  <TabsTrigger key={tab.id} value={tab.id} className="text-xs sm:text-sm">
-                    <IconComponent className="w-4 h-4 mr-1" />
-                    {tab.label}
+                  <TabsTrigger key={tab.id} value={tab.id} className="text-xs sm:text-sm flex flex-col items-center gap-0.5">
+                    <div className="relative">
+                      <IconComponent className="w-4 h-4" />
+                      {count > 0 && (
+                        <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                          {count}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs">{tab.label}</span>
                   </TabsTrigger>
                 );
               }).filter(Boolean)}

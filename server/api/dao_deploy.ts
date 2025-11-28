@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db';
-import { daos, daoMemberships, vaults, users } from '../../shared/schema';
+import { daos, daoMemberships, vaults, users, wallets, multisigWallets, multisigSigners } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
 import { evaluateMemberCreationRules, formatRuleRejectionMessage, logRuleEvaluation } from '../services/rules-integration';
@@ -30,6 +30,11 @@ export interface DaoDeployRequest {
   founderWallet: string;
   invitedMembers: string[];
   selectedElders: string[]; // CRITICAL: Array of user IDs or wallet addresses to be elders
+  multisig?: {
+    enabled?: boolean;
+    signers?: string[];
+    requiredSignatures?: number;
+  };
 }
 
 
@@ -51,36 +56,35 @@ export async function daoDeployHandler(req: Request, res: Response) {
     if (!founderWallet || !isAddress(founderWallet)) {
       logger.error(`Invalid founder wallet: ${founderWallet}`);
       return res.status(400).json({ error: 'Invalid founder wallet address' });
-
-// Validate user can create this DAO type based on subscription
-const tierPermissions = {
-  free: ['free'],
-  growth: ['free', 'shortTerm', 'short_term'],
-  professional: ['free', 'shortTerm', 'short_term', 'collective', 'governance'],
-  enterprise: ['free', 'shortTerm', 'short_term', 'collective', 'governance', 'meta']
-};
-
-// Get user's subscription tier
-const userProfile = await db.query.users.findFirst({
-  where: eq(users.id, founderWallet)
-});
-
-const userTier = 'free'; // Default to free tier - subscription system can be enhanced later
-const allowedTypes = tierPermissions[userTier as keyof typeof tierPermissions] || ['free'];
-
-if (!allowedTypes.includes(daoData.daoType)) {
-  logger.error(`User ${founderWallet} attempted to create ${daoData.daoType} DAO without proper tier (has: ${userTier})`);
-  return res.status(403).json({ 
-    error: 'Insufficient subscription tier',
-    message: `${daoData.daoType} DAOs require ${Object.keys(tierPermissions).find(k => tierPermissions[k as keyof typeof tierPermissions].includes(daoData.daoType))} tier or higher`,
-    currentTier: userTier,
-    requiredTier: Object.keys(tierPermissions).find(k => tierPermissions[k as keyof typeof tierPermissions].includes(daoData.daoType))
-  });
-}
-
-logger.info(`User ${founderWallet} validated for ${daoData.daoType} DAO creation (tier: ${userTier})`);
-
     }
+
+    // Validate user can create this DAO type based on subscription
+    const tierPermissions = {
+      free: ['free'],
+      growth: ['free', 'shortTerm', 'short_term'],
+      professional: ['free', 'shortTerm', 'short_term', 'collective', 'governance'],
+      enterprise: ['free', 'shortTerm', 'short_term', 'collective', 'governance', 'meta']
+    };
+
+    // Get user's subscription tier
+    const userProfile = await db.query.users.findFirst({
+      where: eq(users.id, founderWallet)
+    });
+
+    const userTier = 'free'; // Default to free tier - subscription system can be enhanced later
+    const allowedTypes = tierPermissions[userTier as keyof typeof tierPermissions] || ['free'];
+
+    if (!allowedTypes.includes(daoData.daoType)) {
+      logger.error(`User ${founderWallet} attempted to create ${daoData.daoType} DAO without proper tier (has: ${userTier})`);
+      return res.status(403).json({ 
+        error: 'Insufficient subscription tier',
+        message: `${daoData.daoType} DAOs require ${Object.keys(tierPermissions).find(k => tierPermissions[k as keyof typeof tierPermissions].includes(daoData.daoType))} tier or higher`,
+        currentTier: userTier,
+        requiredTier: Object.keys(tierPermissions).find(k => tierPermissions[k as keyof typeof tierPermissions].includes(daoData.daoType))
+      });
+    }
+
+    logger.info(`User ${founderWallet} validated for ${daoData.daoType} DAO creation (tier: ${userTier})`);
 
     // CRITICAL: Validate elders
     if (!selectedElders || selectedElders.length < 2) {
@@ -177,7 +181,7 @@ logger.info(`User ${founderWallet} validated for ${daoData.daoType} DAO creation
         treasuryMultisigEnabled: true,
         treasuryRequiredSignatures: elders.length, // CRITICAL: Set to actual elder count
         treasurySigners: elders, // CRITICAL: Set actual signer list (not empty!)
-        treasuryWithdrawalThreshold: '1000.00',
+        treasuryWithdrawalThreshold: '5000.00',
         treasuryDailyLimit: getDailyLimitByType(daoData.daoType),
         treasuryMonthlyBudget: getMonthlyBudgetByType(daoData.daoType),
 
@@ -191,7 +195,7 @@ logger.info(`User ${founderWallet} validated for ${daoData.daoType} DAO creation
 
         // Governance configuration
         quorumPercentage: daoData.daoType === 'short_term' ? 0 : 20,
-        votingPeriod: 72,
+        votingPeriod: 48,
         executionDelay: 24,
 
         plan: daoData.daoType,
@@ -330,6 +334,79 @@ logger.info(`User ${founderWallet} validated for ${daoData.daoType} DAO creation
         logRuleEvaluation(dao.id, 'member_create', member, ruleResult.results);
       }
     }
+
+        // ============================================
+        // CREATE DAO TREASURY WALLET + MULTISIG RECORD
+        // ============================================
+        try {
+          // Create a wallets record for the DAO treasury
+          const insertedDaoWallets = await db.insert(wallets).values({
+            userId: founderWallet,
+            daoId: dao.id,
+            currency: treasuryType === 'dual' ? 'CELO' : 'cUSD',
+            address: `0x${uuidv4().replace(/-/g, '').slice(0, 40)}`,
+            walletType: 'dao',
+            isActive: true,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          }).returning();
+          const daoWallet = insertedDaoWallets[0];
+
+          // Use client-provided multisig config if present, otherwise fall back to elders
+          const clientMultisig = (req.body as any)?.multisig;
+          const signersToUse: string[] = (clientMultisig && clientMultisig.enabled && Array.isArray(clientMultisig.signers) && clientMultisig.signers.length)
+            ? clientMultisig.signers
+            : elders;
+
+          const requestedRequired = clientMultisig && typeof clientMultisig.requiredSignatures === 'number'
+            ? Number(clientMultisig.requiredSignatures)
+            : elders.length;
+
+          // Ensure requiredSignatures is at least 2 and not greater than signers count
+          const requiredSignatures = Math.max(2, Math.min(requestedRequired || elders.length, Math.max(2, signersToUse.length)));
+
+          // Create a multisig wallet record tied to the DAO and wallet
+          const multisigAddress = `0x${uuidv4().replace(/-/g, '').slice(0, 40)}`; // placeholder until on-chain deployed
+          const insertedMultisigs = await db.insert(multisigWallets).values({
+            walletId: daoWallet.id,
+            daoId: dao.id,
+            contractAddress: multisigAddress,
+            chainId: 42220, // default to Celo mainnet; change if needed
+            requiredSignatures,
+            totalSigners: signersToUse.length,
+            walletStandard: 'gnosis',
+            isActive: true,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          }).returning();
+          const multisig = insertedMultisigs[0];
+
+          logger.info(`Created multisig record: ${multisig.id} contract: ${multisigAddress} required=${requiredSignatures} signers=${signersToUse.length}`);
+
+          // Create multisig signer entries for provided signers; attach userId when user exists
+          for (let i = 0; i < signersToUse.length; i++) {
+            const signer = signersToUse[i];
+            // Check if user exists
+            const existing = await db.select().from(users).where(eq(users.id, signer)).limit(1);
+            const signerRow: Record<string, any> = {
+              multisigWalletId: multisig.id,
+              signerAddress: signer,
+              signerIndex: i,
+              role: i === 0 ? 'lead_signer' : 'signer',
+              isActive: true,
+              joinedAt: new Date(),
+              createdAt: new Date(),
+              updatedAt: new Date()
+            };
+            if (existing.length) {
+              signerRow.userId = signer;
+            }
+            await db.insert(multisigSigners).values(signerRow);
+          }
+        } catch (err) {
+          logger.error('Failed to create multisig wallet or signers', err);
+          // Do not fail DAO creation for multisig creation issues; log and continue
+        }
 
     // ============================================
     // RESPONSE

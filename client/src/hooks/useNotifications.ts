@@ -19,12 +19,29 @@ export function useNotifications() {
   const [isConnected, setIsConnected] = useState(false);
   const queryClient = useQueryClient();
 
-  // Initialize WebSocket connection
+    // Initialize WebSocket connection
   useEffect(() => {
     // Get token from localStorage
     const token = localStorage.getItem('accessToken');
     // Explicit backend URL and port
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+    // Build a safe backend URL. If VITE_BACKEND_URL is present, parse it and
+    // ensure a port is available; otherwise, construct from host+port defaults.
+    const backendPort = import.meta.env.VITE_API_PORT ?? '5000';
+    const backendHost = import.meta.env.VITE_API_HOST ?? 'localhost';
+    let backendUrl = import.meta.env.VITE_BACKEND_URL ?? '';
+    try {
+      if (backendUrl) {
+        const parsed = new URL(backendUrl);
+        // If port is empty, set default
+        if (!parsed.port) parsed.port = backendPort;
+        backendUrl = parsed.toString().replace(/\/$/, '');
+      } else {
+        backendUrl = `http://${backendHost}:${backendPort}`;
+      }
+    } catch (err) {
+      // Fallback to constructed host:port
+      backendUrl = `http://${backendHost}:${backendPort}`;
+    }
     const newSocket = io(backendUrl, {
       auth: {
         token: token || undefined,
