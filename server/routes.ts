@@ -66,6 +66,9 @@ import whatsappIntegrationRoutes from './routes/whatsapp-integration';
 // Import DAO Treasury Flows routes
 import daoTreasuryFlowsRouter from './routes/dao-treasury-flows';
 
+// Import User Follows routes
+import userFollowsRoutes from './routes/user-follows';
+
 
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
