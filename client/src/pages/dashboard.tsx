@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/pages/hooks/useAuth';
 import { useFeatures } from '@/contexts/features-context';
+import { DaoQuickReference } from '@/components/DaoOnboardingTour';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 const API_ENDPOINT = `${API_BASE_URL}/api`;
@@ -57,6 +58,7 @@ interface DaoData {
     memberGrowth: number;
     proposalsApproved: number;
   };
+  role?: string; // Added role for context in DaoQuickReference
 }
 
 interface DashboardData {
@@ -175,7 +177,7 @@ const fetchDashboardData = async (): Promise<DashboardData> => {
   const token = localStorage.getItem('accessToken');
   const baseUrl = API_BASE_URL.includes('/api') ? API_BASE_URL : `${API_BASE_URL}/api`;
   const dashboardUrl = `${baseUrl}/dashboard/complete`;
-  
+
   console.log('Dashboard fetch - URL:', dashboardUrl, 'Token present:', !!token);
 
   try {
@@ -214,6 +216,21 @@ const fetchDashboardData = async (): Promise<DashboardData> => {
           governance: { proposals: 12, activeFundingRound: true, votingPower: 100 },
           treasury: { balance: 450000, assets: [{ name: 'USDC', value: 450000 }], lastUpdated: '2024-11-22' },
           stats: { transactionVolume: 125000, memberGrowth: 12.5, proposalsApproved: 9 },
+          role: 'admin', // Mock role for the first DAO
+        },
+        {
+          id: '2',
+          name: 'FinanceDAO',
+          description: 'Decentralized Finance Hub',
+          members: 100,
+          tvl: 300000,
+          status: 'active',
+          created: '2024-02-01',
+          avatar: '💰',
+          governance: { proposals: 5, activeFundingRound: false, votingPower: 50 },
+          treasury: { balance: 300000, assets: [{ name: 'USDC', value: 300000 }], lastUpdated: '2024-11-22' },
+          stats: { transactionVolume: 50000, memberGrowth: 5.2, proposalsApproved: 4 },
+          role: 'member', // Mock role for the second DAO
         },
       ],
       daoDiscovery: [
@@ -387,16 +404,16 @@ const DaoTab: React.FC<DaoTabProps> = ({ dao, features }) => {
                         cx="50%"
                         cy="50%"
                         labelLine={false}
-                        label={({ name, value }) => `${name}: ${value}`}
+                        label={({ name, value }) => `${name}: $${value.toLocaleString()}`}
                         outerRadius={80}
                         fill="#8884d8"
                         dataKey="value"
                       >
-                        {['#8b5cf6', '#ec4899', '#f59e0b'].map((color, idx) => (
+                        {['#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#6366f1'].map((color, idx) => (
                           <Cell key={`cell-${idx}`} fill={color} />
                         ))}
                       </Pie>
-                      <Tooltip />
+                      <Tooltip formatter={(value, name) => [`$${value.toLocaleString()}`, name]} />
                     </PieChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -410,15 +427,19 @@ const DaoTab: React.FC<DaoTabProps> = ({ dao, features }) => {
                   <div className="space-y-3">
                     <div className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded">
                       <CheckCircle className="w-4 h-4 text-green-600" />
-                      <span className="text-sm">Proposal #12 approved</span>
+                      <span className="text-sm">Proposal #{dao.governance.proposals} approved</span>
                     </div>
                     <div className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded">
                       <Users className="w-4 h-4 text-blue-600" />
-                      <span className="text-sm">5 new members joined</span>
+                      <span className="text-sm">New members joined. Total: {dao.members}</span>
                     </div>
                     <div className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded">
                       <TrendingUp className="w-4 h-4 text-purple-600" />
-                      <span className="text-sm">TVL increased to $450K</span>
+                      <span className="text-sm">TVL increased to ${dao.tvl.toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded">
+                      <DollarSign className="w-4 h-4 text-green-600" />
+                      <span className="text-sm">Treasury Balance: ${dao.treasury.balance.toLocaleString()}</span>
                     </div>
                   </div>
                 </CardContent>
@@ -435,20 +456,23 @@ const DaoTab: React.FC<DaoTabProps> = ({ dao, features }) => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {[1, 2, 3].map((i) => (
+                  {[...Array(Math.min(dao.governance.proposals, 5))].map((_, i) => (
                     <div key={i} className="p-3 border border-gray-200 rounded-lg">
                       <div className="flex justify-between items-start">
                         <div>
-                          <p className="font-semibold">Proposal #{i}: Increase Marketing Budget</p>
-                          <p className="text-sm text-gray-500">Voting ends in 3 days</p>
+                          <p className="font-semibold">Proposal #{i + 1}: Execute Strategy Update</p>
+                          <p className="text-sm text-gray-500">Voting ends in {Math.floor(Math.random() * 7) + 1} days</p>
                         </div>
-                        <Badge>58% in favor</Badge>
+                        <Badge>{"58%"}</Badge>
                       </div>
                       <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
                         <div className="bg-green-600 h-2 rounded-full w-[58%]" />
                       </div>
                     </div>
                   ))}
+                  {dao.governance.proposals === 0 && (
+                    <p className="text-center text-gray-500 py-4">No active proposals at the moment.</p>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -459,7 +483,7 @@ const DaoTab: React.FC<DaoTabProps> = ({ dao, features }) => {
             <Card>
               <CardHeader>
                 <CardTitle>Treasury Management</CardTitle>
-                <CardDescription>Balance: ${(dao.treasury.balance).toLocaleString()}</CardDescription>
+                <CardDescription>Total Balance: ${(dao.treasury.balance).toLocaleString()}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
@@ -470,6 +494,10 @@ const DaoTab: React.FC<DaoTabProps> = ({ dao, features }) => {
                     </div>
                   ))}
                 </div>
+                <Button variant="outline" className="w-full mt-4">
+                  <DollarSign className="w-4 h-4 mr-2" />
+                  Manage Treasury
+                </Button>
               </CardContent>
             </Card>
           </TabsContent>
@@ -479,19 +507,30 @@ const DaoTab: React.FC<DaoTabProps> = ({ dao, features }) => {
             <Card>
               <CardHeader>
                 <CardTitle>Members ({dao.members})</CardTitle>
+                <CardDescription>See who is part of the DAO and their roles.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {[1, 2, 3, 4].map((i) => (
+                  {/* Displaying mock members for now */}
+                  {[1, 2, 3, 4, 5].slice(0, dao.members > 5 ? 5 : dao.members).map((i) => (
                     <div key={i} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full" />
+                        <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
+                          {i}
+                        </div>
                         <span className="text-sm">Member {i}</span>
                       </div>
-                      <Badge variant="outline">Contributor</Badge>
+                      <Badge variant="outline">{i % 2 === 0 ? 'Contributor' : 'Voter'}</Badge>
                     </div>
                   ))}
+                  {dao.members > 5 && (
+                    <p className="text-center text-sm text-gray-500 py-2">and {dao.members - 5} more...</p>
+                  )}
                 </div>
+                <Button variant="outline" className="w-full mt-4">
+                  <Users className="w-4 h-4 mr-2" />
+                  Manage Members
+                </Button>
               </CardContent>
             </Card>
           </TabsContent>
@@ -501,6 +540,7 @@ const DaoTab: React.FC<DaoTabProps> = ({ dao, features }) => {
             <Card>
               <CardHeader>
                 <CardTitle>DAO Settings</CardTitle>
+                <CardDescription>Configure your DAO's parameters and preferences.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <Button variant="outline" className="w-full justify-start">
@@ -509,11 +549,15 @@ const DaoTab: React.FC<DaoTabProps> = ({ dao, features }) => {
                 </Button>
                 <Button variant="outline" className="w-full justify-start">
                   <Users className="w-4 h-4 mr-2" />
-                  Manage Members
+                  Manage Roles & Permissions
                 </Button>
                 <Button variant="outline" className="w-full justify-start">
                   <Shield className="w-4 h-4 mr-2" />
-                  Security Settings
+                  Security & Access Control
+                </Button>
+                <Button variant="outline" className="w-full justify-start">
+                  <LinkIcon className="w-4 h-4 mr-2" />
+                  Integrations & Webhooks
                 </Button>
               </CardContent>
             </Card>
@@ -533,8 +577,6 @@ export default function ComprehensiveDashboardV2() {
   const { isFeatureEnabled } = useFeatures();
   const [activeTab, setActiveTab] = useState('daos');
   const [selectedDao, setSelectedDao] = useState<string | null>(null);
-  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
-  const [showMorePages, setShowMorePages] = useState<string[]>([]);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['dashboard-v2', authUser?.id || 'anonymous'],
@@ -626,8 +668,14 @@ export default function ComprehensiveDashboardV2() {
   const selectedDaoData = data.userDAOs.find((dao) => dao.id === selectedDao);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
-      <div className="container mx-auto p-6 space-y-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50 dark:from-gray-900 dark:via-gray-800 dark:to-teal-900">
+      {data?.userDAOs?.[0] && (
+        <DaoQuickReference
+          daoId={data.userDAOs[0].id}
+          userRole={data.userDAOs[0].role === 'admin' ? 'creator' : 'member'}
+        />
+      )}
+      <div className="container mx-auto px-4 py-8 space-y-6">
         {/* Header with User Info */}
         <div className="flex items-center justify-between">
           <div className="space-y-2">
@@ -691,8 +739,7 @@ export default function ComprehensiveDashboardV2() {
                 if (tab.id === 'daos') count = data.userDAOs?.length || 0;
                 else if (tab.id === 'wallet') count = data.wallets?.length || 0;
                 else if (tab.id === 'vaults') count = data.vaults?.length || 0;
-                else if (tab.id === 'proposals') count = data.userDAOs?.reduce((sum, dao) => sum + (dao.governance?.proposals || 0), 0) || 0;
-                
+
                 return (
                   <TabsTrigger key={tab.id} value={tab.id} className="text-xs sm:text-sm">
                     <div className="flex items-center gap-2">
@@ -916,8 +963,9 @@ export default function ComprehensiveDashboardV2() {
               </div>
             </TabsContent>
             )}
-            
+
             {/* VAULTS TAB */}
+            {isFeatureEnabled('core.vaults') && (
             <TabsContent value="vaults" className="space-y-4">
               <Card>
                 <CardHeader>
@@ -953,8 +1001,10 @@ export default function ComprehensiveDashboardV2() {
                 </CardContent>
               </Card>
             </TabsContent>
+            )}
 
             {/* ANALYTICS TAB */}
+            {isFeatureEnabled('core.analytics') && (
             <TabsContent value="analytics" className="space-y-4">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <Card>
@@ -973,7 +1023,7 @@ export default function ComprehensiveDashboardV2() {
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="date" stroke="#888" />
                         <YAxis stroke="#888" />
-                        <Tooltip />
+                        <Tooltip formatter={(value) => `$${value.toLocaleString()}`} />
                         <Area
                           type="monotone"
                           dataKey="value"
@@ -996,7 +1046,7 @@ export default function ComprehensiveDashboardV2() {
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="month" stroke="#888" />
                         <YAxis stroke="#888" />
-                        <Tooltip />
+                        <Tooltip formatter={(value) => `${value}%`} />
                         <Bar dataKey="return" fill="#8b5cf6" name="Return %" />
                       </BarChart>
                     </ResponsiveContainer>
@@ -1004,6 +1054,7 @@ export default function ComprehensiveDashboardV2() {
                 </Card>
               </div>
             </TabsContent>
+            )}
 
             {/* MORE MENU TAB */}
             <TabsContent value="more" className="space-y-4">
@@ -1047,15 +1098,15 @@ export default function ComprehensiveDashboardV2() {
           <CardContent>
             <div className="space-y-2 text-sm">
               <div>
-                <p className="font-semibold mb-1">Core Pages (6)</p>
+                <p className="font-semibold mb-1">Core Pages ({PAGE_TRACKER.main.filter(tab => isFeatureEnabled(`core.${tab.id}`)).length})</p>
                 <div className="flex flex-wrap gap-2">
                   {PAGE_TRACKER.main.map((page) => (
-                    <Badge key={page.id} variant="outline">{page.label}</Badge>
+                    isFeatureEnabled(`core.${page.id}`) && <Badge key={page.id} variant="outline">{page.label}</Badge>
                   ))}
                 </div>
               </div>
               <div>
-                <p className="font-semibold mb-1">DAO Nested Tabs (5)</p>
+                <p className="font-semibold mb-1">DAO Nested Tabs ({PAGE_TRACKER.daoNested.length})</p>
                 <div className="flex flex-wrap gap-2">
                   {PAGE_TRACKER.daoNested.map((page) => (
                     <Badge key={page.id} variant="outline">{page.label}</Badge>
@@ -1071,7 +1122,7 @@ export default function ComprehensiveDashboardV2() {
                 </div>
               </div>
               <div className="pt-2 border-t">
-                <p className="text-xs text-gray-600">Total Pages: {PAGE_TRACKER.main.length + PAGE_TRACKER.daoNested.length + availableMorePages.length}</p>
+                <p className="text-xs text-gray-600">Total Pages: {PAGE_TRACKER.main.filter(tab => isFeatureEnabled(`core.${tab.id}`)).length + PAGE_TRACKER.daoNested.length + availableMorePages.length}</p>
               </div>
             </div>
           </CardContent>
