@@ -3,11 +3,20 @@ import { isAuthenticated } from '../nextAuthMiddleware';
 import { db } from '../db';
 import { userFollows, users } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
+import { isFeatureEnabled } from '../utils/feature-flags';
 
 const router = express.Router();
 
+// Feature flag middleware
+const requireFollowsFeature = (req: Request, res: Response, next: Function) => {
+  if (!isFeatureEnabled('ENABLE_USER_FOLLOWS')) {
+    return res.status(403).json({ error: 'Feature not available' });
+  }
+  next();
+};
+
 // Follow a user
-router.post('/follow/:userId', isAuthenticated, async (req: Request, res: Response) => {
+router.post('/follow/:userId', requireFollowsFeature, isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
     const followerId = (req.user as any)?.id;
@@ -46,7 +55,7 @@ router.post('/follow/:userId', isAuthenticated, async (req: Request, res: Respon
 });
 
 // Unfollow a user
-router.delete('/unfollow/:userId', isAuthenticated, async (req: Request, res: Response) => {
+router.delete('/unfollow/:userId', requireFollowsFeature, isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
     const followerId = (req.user as any)?.id;
@@ -122,7 +131,7 @@ router.get('/:userId/following', async (req: Request, res: Response) => {
 });
 
 // Check if following a user
-router.get('/:userId/is-following/:targetUserId', isAuthenticated, async (req: Request, res: Response) => {
+router.get('/:userId/is-following/:targetUserId', requireFollowsFeature, isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { userId, targetUserId } = req.params;
 

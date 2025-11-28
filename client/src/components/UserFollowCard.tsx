@@ -5,6 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Users, UserPlus, UserCheck } from 'lucide-react';
 import { useAuth } from '../pages/hooks/useAuth';
 
+// Feature flag: Disable if not enabled
+const FOLLOWS_ENABLED = import.meta.env.VITE_FEATURE_USER_FOLLOWS === 'true';
+
 interface UserFollowCardProps {
   userId: string;
   userName?: string;
@@ -13,6 +16,11 @@ interface UserFollowCardProps {
 export function UserFollowCard({ userId, userName }: UserFollowCardProps) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+
+  // Return null if follows feature is disabled
+  if (!FOLLOWS_ENABLED) {
+    return null;
+  }
 
   // Check if current user is following this user
   const { data: isFollowingData } = useQuery({
