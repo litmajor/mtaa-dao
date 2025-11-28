@@ -1,7 +1,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { TrendingUp, Users, DollarSign, Target } from 'lucide-react';
+import { TrendingUp, Users, DollarSign, CheckCircle } from 'lucide-react';
 
 export default function PublicImpactFeed() {
   const { data: stats } = useQuery({
@@ -19,34 +19,34 @@ export default function PublicImpactFeed() {
       icon: DollarSign,
       label: 'Total Raised This Month',
       value: `KES ${(stats?.totalRaisedThisMonth || 0).toLocaleString()}`,
-      color: 'text-green-600 bg-green-100'
+      color: 'text-emerald-400 bg-emerald-500/20'
     },
     {
       icon: Users,
       label: 'Active DAOs',
       value: stats?.activeDaos || 0,
-      color: 'text-blue-600 bg-blue-100'
+      color: 'text-blue-400 bg-blue-500/20'
     },
     {
-      icon: Target,
+      icon: CheckCircle,
       label: 'Goals Achieved',
       value: stats?.goalsAchieved || 0,
-      color: 'text-purple-600 bg-purple-100'
+      color: 'text-purple-400 bg-purple-500/20'
     },
     {
       icon: TrendingUp,
       label: 'Members Joined Today',
       value: stats?.newMembersToday || 0,
-      color: 'text-orange-600 bg-orange-100'
+      color: 'text-orange-400 bg-orange-500/20'
     }
   ];
 
   return (
-    <Card className="bg-gradient-to-br from-teal-50 to-orange-50">
+    <Card className="bg-gradient-to-br from-slate-900/50 via-purple-900/30 to-slate-900/50 border border-white/10 backdrop-blur-sm">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <TrendingUp className="w-5 h-5 text-teal-600" />
-          Platform Impact
+        <CardTitle className="flex items-center gap-2 text-white">
+          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+          <span>Platform Impact (Live)</span>
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -58,10 +58,10 @@ export default function PublicImpactFeed() {
                 <div className={`${metric.color} w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2`}>
                   <Icon className="w-6 h-6" />
                 </div>
-                <div className="text-2xl font-bold text-gray-900">
+                <div className="text-2xl font-bold text-white">
                   {metric.value}
                 </div>
-                <div className="text-xs text-gray-600">{metric.label}</div>
+                <div className="text-xs text-gray-300">{metric.label}</div>
               </div>
             );
           })}
