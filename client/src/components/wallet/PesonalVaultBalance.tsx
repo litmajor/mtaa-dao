@@ -195,14 +195,32 @@ function VaultBalanceCard() {
 
 function VaultReceiveCard() {
   const { address } = useWallet();
+  const [showQR, setShowQR] = useState(false);
+  
   if (!address) return <Alert><AlertDescription>Connect wallet to view address.</AlertDescription></Alert>;
 
   return (
     <div className="p-4 border rounded-xl space-y-2 dark:border-gray-700">
       <h3 className="text-lg font-semibold">Receive</h3>
       <p className="text-sm">Your Address:</p>
-      <code className="block text-xs break-all dark:text-gray-300">{address}</code>
-      <QRCode value={address} size={128} className="mx-auto" />
+      <code className="block text-xs break-all dark:text-gray-300" data-testid="text-receive-address">{address}</code>
+      
+      {/* QR Code Section - Generated on demand */}
+      {showQR && (
+        <div className="flex flex-col items-center gap-3 py-4 border-t pt-4">
+          <QRCode value={address} size={128} data-testid="qrcode-receive" />
+          <p className="text-xs text-gray-500 dark:text-gray-400">Scan to receive funds</p>
+        </div>
+      )}
+      
+      <Button 
+        onClick={() => setShowQR(!showQR)} 
+        variant="outline" 
+        className="w-full"
+        data-testid="button-toggle-qr"
+      >
+        {showQR ? 'Hide QR Code' : 'Generate QR Code'}
+      </Button>
     </div>
   );
 }
