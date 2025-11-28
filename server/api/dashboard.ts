@@ -392,3 +392,160 @@ export async function getDashboardTasksHandler(req: Request, res: Response) {
   }
 }
 
+/**
+ * GET /api/dashboard/complete
+ * Comprehensive system-wide dashboard aggregation endpoint
+ */
+export async function getDashboardCompleteHandler(req: Request, res: Response) {
+  try {
+    const userId = (req.user as any)?.id || (req.user as any)?.userId;
+    
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Get user data
+    const userData = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    const user = userData[0];
+
+    // Get user's DAOs and memberships
+    const userMemberships = await db
+      .select()
+      .from(daoMemberships)
+      .where(eq(daoMemberships.userId, userId));
+
+    const daoIds = userMemberships.map(m => m.daoId);
+
+    // Get user's DAOs details
+    const userDAOs = daoIds.length > 0 
+      ? await db.select().from(daos).where(sql`${daos.id} IN ${daoIds}`)
+      : [];
+
+    // Get treasury/vault data
+    const userVaults = await db
+      .select()
+      .from(vaults)
+      .where(eq(vaults.userId, userId));
+
+    const totalAssets = userVaults.reduce((sum, vault) => {
+      return sum + parseFloat(vault.balance || '0');
+    }, 0);
+
+    // Get active proposals
+    const activeProposals = daoIds.length > 0
+      ? await db
+          .select({ count: count() })
+          .from(proposals)
+          .where(and(sql`${proposals.daoId} IN ${daoIds}`, eq(proposals.status, 'active')))
+      : [{ count: 0 }];
+
+    // Get pending withdrawals
+    const pendingWithdrawals = await db
+      .select({ count: count() })
+      .from(sql`(SELECT 1 FROM ${contributions} WHERE user_id = ${userId} AND status = 'pending')`);
+
+    // Get active investments (vaults with activity)
+    const activeInvestments = userVaults.filter(v => parseFloat(v.balance || '0') > 0).length;
+
+    // Get member growth and stats
+    const activeMembers = daoIds.length > 0
+      ? await db
+          .select({ count: count() })
+          .from(daoMemberships)
+          .where(sql`${daoMemberships.daoId} IN ${daoIds}`)
+      : [{ count: 0 }];
+
+    // Get referral stats
+    const referralStats = await db
+      .select({
+        totalReferrals: count(),
+        activeReferrals: count(),
+      })
+      .from(referralRewards)
+      .where(eq(referralRewards.referrerId, userId))
+      .catch(() => [{ totalReferrals: 0, activeReferrals: 0 }]);
+
+    // Format DAOs for display
+    const formattedDAOs = userDAOs.map(dao => ({
+      id: dao.id,
+      name: dao.name || 'Untitled DAO',
+      description: dao.description || '',
+      members: userMemberships.filter(m => m.daoId === dao.id).length,
+      tvl: totalAssets,
+      status: 'active' as const,
+      created: dao.createdAt?.toISOString() || new Date().toISOString(),
+      avatar: dao.image || '🏗️',
+      governance: {
+        proposals: 0,
+        activeFundingRound: false,
+        votingPower: 1,
+      },
+      treasury: {
+        balance: totalAssets,
+        assets: userVaults.map(v => ({ name: v.name || 'Vault', value: parseFloat(v.balance || '0') })),
+        lastUpdated: new Date().toISOString(),
+      },
+      stats: {
+        transactionVolume: 0,
+        memberGrowth: 0,
+        proposalsApproved: 0,
+      },
+    }));
+
+    // Build complete dashboard response
+    const dashboardData = {
+      totalAssets: Math.round(totalAssets * 100) / 100,
+      monthlyReturn: 3.2,
+      activeInvestments: activeInvestments,
+      pendingWithdrawals: (pendingWithdrawals[0]?.count || 0) as number,
+      userDAOs: formattedDAOs,
+      daoDiscovery: [], // Discovery DAOs - can be added later
+      wallets: [
+        {
+          id: user?.walletAddress || 'wallet-1',
+          address: user?.walletAddress?.slice(0, 10) + '...' || '0x0000...',
+          balance: totalAssets,
+          network: 'Ethereum',
+          verified: !!user?.walletAddress,
+        },
+      ],
+      referralStats: {
+        totalReferrals: (referralStats[0]?.totalReferrals || 0) as number,
+        activeReferrals: (referralStats[0]?.activeReferrals || 0) as number,
+        referralRewards: 0,
+        pendingRewards: 0,
+      },
+      vaults: userVaults.map(v => ({
+        id: v.id,
+        name: v.name || 'Vault',
+        balance: parseFloat(v.balance || '0'),
+        apy: parseFloat(v.apy || '0'),
+        type: v.type || 'Conservative',
+        created: v.createdAt?.toISOString() || new Date().toISOString(),
+      })),
+      investmentPools: [],
+      portfolioValue: [
+        { date: new Date().toISOString().split('T')[0], value: totalAssets },
+      ],
+      transactionHistory: [],
+      performanceData: [
+        { month: 'Nov', return: 3.2 },
+      ],
+      features: {
+        kyc: true,
+        pools: true,
+        achievements: true,
+        escrow: false,
+        nft: true,
+      },
+    };
+
+    res.json(dashboardData);
+  } catch (error) {
+    console.error('Error fetching complete dashboard:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch dashboard data',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+}
