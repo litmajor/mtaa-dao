@@ -482,6 +482,24 @@ export default function EnhancedDAOs() {
             <h3 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-3">
               {currentView === "joined" ? "No DAOs joined yet" : "No DAOs available"}
             </h3>
+            
+            <p className="text-gray-600 dark:text-gray-400 mb-8 max-w-md mx-auto">
+              {currentView === "joined" 
+                ? "Start your journey by creating your first group or discovering existing ones!"
+                : "No groups available in this category yet. Be the first to create one!"}
+            </p>
+            
+            <button 
+              onClick={() => navigate('/create-dao')}
+              className="group relative overflow-hidden inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 text-white px-8 py-4 rounded-2xl font-semibold shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-orange-500 via-pink-600 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+              <div className="relative flex items-center gap-2">
+                <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
+                Start Your Group
+                <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
+              </div>
+            </button>
             <p className="text-gray-600 dark:text-gray-400 text-lg mb-8 max-w-md mx-auto">
               {currentView === "joined" 
                 ? "Join your first DAO to start participating in revolutionary community governance"
