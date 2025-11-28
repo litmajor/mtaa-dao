@@ -40,6 +40,51 @@ export const referralRewards = pgTable("referral_rewards", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// DAO Treasury Credits - Track MTAA flowing into DAO treasuries
+export const daoTreasuryCredits = pgTable("dao_treasury_credits", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }).notNull(),
+  source: varchar("source", { length: 50 }).notNull(), // 'earnings_rake', 'achievement', 'task_pool', 'referral_kickback'
+  amount: decimal("amount", { precision: 18, scale: 8 }).notNull(),
+  userId: varchar("user_id").references(() => users.id), // User who triggered this credit
+  reason: text("reason").notNull(),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// MTAA Distribution Rules - Configure splits
+export const mtaaDistributionRules = pgTable("mtaa_distribution_rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }), // NULL = global default
+  actionType: varchar("action_type", { length: 50 }).notNull(), // 'contribution', 'task_completion', etc
+  userPercentage: integer("user_percentage").notNull().default(90),
+  daoPercentage: integer("dao_percentage").notNull().default(10),
+  platformPercentage: integer("platform_percentage").notNull().default(0),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// DAO Achievement Milestones
+export const daoAchievementMilestones = pgTable("dao_achievement_milestones", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }).notNull(),
+  type: varchar("type", { length: 50 }).notNull(), // 'member_count', 'treasury_value', 'proposal_success'
+  threshold: integer("threshold").notNull(),
+  mtaaReward: decimal("mtaa_reward", { precision: 18, scale: 8 }).notNull(),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type DaoTreasuryCredit = typeof daoTreasuryCredits.$inferSelect;
+export type InsertDaoTreasuryCredit = typeof daoTreasuryCredits.$inferInsert;
+export type MtaaDistributionRule = typeof mtaaDistributionRules.$inferSelect;
+export type InsertMtaaDistributionRule = typeof mtaaDistributionRules.$inferInsert;
+export type DaoAchievementMilestone = typeof daoAchievementMilestones.$inferSelect;
+export type InsertDaoAchievementMilestone = typeof daoAchievementMilestones.$inferInsert;
+
 // Tasks table
 export const tasks = pgTable("tasks", {
   id: uuid("id").primaryKey().defaultRandom(),
