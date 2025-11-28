@@ -204,7 +204,7 @@ export default function MtaaDAOLanding() {
           <a href="/blog" className="text-purple-200 hover:text-white transition">Blog</a>
           <a href="/success-stories" className="text-purple-200 hover:text-white transition">Success Stories</a>
           <a href="/pricing" className="text-purple-200 hover:text-white transition">Pricing</a>
-          <a href="/vault" className="text-purple-200 hover:text-white transition">MaanoVault</a>
+          <a href="/maonovault" className="text-purple-200 hover:text-white transition">MaanoVault</a>
           <a href="/whitepaper.html" target="_blank" className="text-purple-200 hover:text-white transition">Whitepaper</a>
         </nav>
         <a href="/register">
@@ -762,7 +762,7 @@ export default function MtaaDAOLanding() {
               <a href="/pricing" className="hover:text-white transition">Pricing</a>
               <a href="/whitepaper.html" target="_blank" className="hover:text-white transition">Whitepaper</a>
               <a href="/blog" className="hover:text-white transition">Blog</a>
-              <a href="/vault" className="hover:text-white transition">MaanoVault</a>
+              <a href="/maonovault" className="hover:text-white transition">MaanoVault</a>
               <a href="/support" className="hover:text-white transition">Support</a>
               <a href="/help" className="hover:text-white transition">Help</a>
               <a href="/careers" className="hover:text-white transition">Careers</a>
