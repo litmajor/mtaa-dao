@@ -3,6 +3,7 @@
  *
  * Generates natural, contextual responses based on intent and context
  * Now with optional LLM integration for enhanced responses
+ * KWETU Integration: Executes real treasury and proposal operations
  */
 
 import type { UserContext } from '../../../core/nuru/types';
@@ -10,6 +11,8 @@ import type { Action, MorioConfig } from '../types';
 import { responses, onboardingGuides } from '../config/responses';
 import { createLLMProvider, LLMResponseGenerator, LLMConfig } from './llm_provider';
 import { Logger } from '../../../utils/logger';
+import { kwetu } from '../../../core/kwetu';
+import { storage } from '../../../storage';
 
 const logger = new Logger('response-generator');
 
