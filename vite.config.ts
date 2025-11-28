@@ -83,11 +83,7 @@ export default defineConfig({
     port: 5173,
     strictPort: false,
     middlewareMode: false,
-    allowedHosts: [
-      'localhost',
-      '127.0.0.1',
-      'c6f67aa6-cc10-4585-90c0-d99a4490bd1a-00-2zsxurjdwno2q.riker.replit.dev'
-    ],
+    allowedHosts: 'all',
     hmr: {
       host: 'localhost',
       port: 5173,
