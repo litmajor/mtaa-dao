@@ -6,6 +6,7 @@ import { Plus, Users, DollarSign, TrendingUp, Settings, ArrowRight, Sparkles, Cr
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DaoOnboardingTour } from '@/components/DaoOnboardingTour';
 
 type DaoRole = "elder" | "proposer" | "member" | null;
 
@@ -369,6 +370,7 @@ export default function EnhancedDAOs() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-purple-900">
+      <DaoOnboardingTour />
       {/* Animated background elements */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob"></div>
