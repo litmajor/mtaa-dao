@@ -189,11 +189,17 @@ export default function MaanoVaultLanding() {
 
       {/* Stats */}
       <div className="max-w-6xl mx-auto px-4 py-16 relative">
+        <div className="text-center mb-8">
+          <Badge className="bg-blue-500/20 border-blue-500/50 text-blue-300">
+            <CheckCircle className="w-3 h-3 mr-1" />
+            According to Roadmap
+          </Badge>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
           {[
-            { stat: "$50M+", label: "Total Assets Under Management" },
-            { stat: "12.5%", label: "Average Annual Yield" },
-            { stat: "5,000+", label: "Active Investors" }
+            { stat: "$2M+", label: "Assets by End of 2025" },
+            { stat: "10-12%", label: "Target Annual Yield" },
+            { stat: "500+", label: "Users by Q2 2025" }
           ].map((item, idx) => (
             <div key={idx} className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-8">
               <div className="text-4xl font-black bg-gradient-to-r from-orange-400 to-pink-500 bg-clip-text text-transparent mb-2">
