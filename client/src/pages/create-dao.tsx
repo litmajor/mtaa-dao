@@ -486,12 +486,13 @@ const CreateDAOFlow = () => {
       ],
       collective: [
         { value: 'cusd', label: 'cUSD Vault', desc: 'Stable treasury for regular savings' },
-        { value: 'dual', label: 'CELO + cUSD Dual', desc: 'Mixed treasury with growth potential' }
+        { value: 'dual', label: 'CELO + cUSD Dual', desc: 'Mixed treasury with growth potential' },
+        { value: 'custom', label: 'Custom Stablecoin', desc: 'USDT, DAI or other stablecoins of your choice' }
       ],
       governance: [
         { value: 'cusd', label: 'cUSD Vault', desc: 'Stable treasury for governance funds' },
         { value: 'dual', label: 'CELO + cUSD Dual', desc: 'Mixed treasury with growth potential' },
-        { value: 'custom', label: 'Custom Stablecoin', desc: 'USDT, DAI or other tokens (coming soon)' }
+        { value: 'custom', label: 'Custom Stablecoin', desc: 'USDT, DAI or other stablecoins of your choice' }
       ],
       free: [ // Treasury options for Free DAO type
         { value: 'cusd', label: 'cUSD Vault', desc: 'Standard stablecoin treasury' }
@@ -529,6 +530,7 @@ const CreateDAOFlow = () => {
     votingPeriod: string;
     founderWallet: string;
     treasuryType: string;
+    customTokenAddress?: string; // For custom stablecoin treasury
     initialFunding: string;
     depositRequired: boolean;
     members: Member[];
