@@ -448,6 +448,23 @@ async function calculateRewardAmount(
       .where(eq(users.id, referredUserId))
       .then(rows => rows[0]?.createdAt);
 
+    if (userJoinDate) {
+      const userAge = Date.now() - new Date(userJoinDate).getTime();
+      const userMonths = userAge / (1000 * 60 * 60 * 24 * 30);
+
+      if (userMonths >= 12) {
+        longevityMultiplier = 2.0; // 2x for 1+ year members
+      } else if (userMonths >= 6) {
+        longevityMultiplier = 1.5; // 1.5x for 6+ month members
+      } else if (userMonths >= 1) {
+        longevityMultiplier = 1.2; // 1.2x for 1+ month members
+      }
+    }
+  }
+
+  const finalReward = baseReward * maturityMultiplier * contributionMultiplier * longevityMultiplier;
+  return Math.round(finalReward * 100) / 100; // Round to 2 decimals
+}
 
 /**
  * Ping an inactive referred user to encourage re-engagement
@@ -499,7 +516,7 @@ export async function pingInactiveReferral(
       };
     }
 
-    // Check ping rate limit (max once per 7 days per user)
+    // Check ping rate limit (max once per 1 day per referrer)
     const recentPings = await db
       .select()
       .from(notificationHistory)
@@ -507,14 +524,14 @@ export async function pingInactiveReferral(
         and(
           eq(notificationHistory.userId, referredUserId),
           eq(notificationHistory.type, 'referral_ping'),
-          sql`${notificationHistory.createdAt} > NOW() - INTERVAL '7 days'`
+          sql`${notificationHistory.createdAt} > NOW() - INTERVAL '1 day'`
         )
       );
 
     if (recentPings.length > 0) {
       return {
         success: false,
-        message: 'User was already pinged recently. Please wait 7 days between pings.'
+        message: 'User was already pinged recently. You can ping once per day.'
       };
     }
 
@@ -605,25 +622,6 @@ export async function pingInactiveReferralHandler(req: Request, res: Response) {
       message: err instanceof Error ? err.message : 'Failed to ping user' 
     });
   }
-}
-
-
-    if (userJoinDate) {
-      const userAge = Date.now() - new Date(userJoinDate).getTime();
-      const userMonths = userAge / (1000 * 60 * 60 * 24 * 30);
-
-      if (userMonths >= 12) {
-        longevityMultiplier = 2.0; // 2x for 1+ year members
-      } else if (userMonths >= 6) {
-        longevityMultiplier = 1.5; // 1.5x for 6+ month members
-      } else if (userMonths >= 1) {
-        longevityMultiplier = 1.2; // 1.2x for 1+ month members
-      }
-    }
-  }
-
-  const finalReward = baseReward * maturityMultiplier * contributionMultiplier * longevityMultiplier;
-  return Math.round(finalReward * 100) / 100; // Round to 2 decimals
 }
 
 /**

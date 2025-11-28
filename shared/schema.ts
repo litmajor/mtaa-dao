@@ -42,27 +42,6 @@ export const referralRewards = pgTable("referral_rewards", {
 
 // Tasks table
 export const tasks = pgTable("tasks", {
-
-
-// Referral tier information for analytics
-export const referralTiers = pgTable("referral_tiers", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: varchar("user_id").references(() => users.id).notNull(),
-  daoId: uuid("dao_id").references(() => daos.id).notNull(),
-  tier: varchar("tier").notNull(), // bronze, silver, gold, platinum, diamond
-  totalReferrals: integer("total_referrals").default(0),
-  activeReferrals: integer("active_referrals").default(0),
-  totalContributionValue: decimal("total_contribution_value", { precision: 18, scale: 2 }).default("0"),
-  lifetimeEarnings: decimal("lifetime_earnings", { precision: 18, scale: 2 }).default("0"),
-  badges: jsonb("badges").default([]), // Array of achievement badges
-  lastPingDate: timestamp("last_ping_date"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-export type ReferralTier = typeof referralTiers.$inferSelect;
-export type InsertReferralTier = typeof referralTiers.$inferInsert;
-
   id: uuid("id").primaryKey().defaultRandom(),
   daoId: uuid("dao_id").references(() => daos.id).notNull(),
   creatorId: varchar("creator_id").references(() => users.id).notNull(),
@@ -85,6 +64,26 @@ export type InsertReferralTier = typeof referralTiers.$inferInsert;
 
 export type Task = typeof tasks.$inferSelect;
 export type InsertTask = typeof tasks.$inferInsert;
+
+// Referral tier information for analytics
+export const referralTiers = pgTable("referral_tiers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  tier: varchar("tier").notNull(), // bronze, silver, gold, platinum, diamond
+  totalReferrals: integer("total_referrals").default(0),
+  activeReferrals: integer("active_referrals").default(0),
+  totalContributionValue: decimal("total_contribution_value", { precision: 18, scale: 2 }).default("0"),
+  lifetimeEarnings: decimal("lifetime_earnings", { precision: 18, scale: 2 }).default("0"),
+  badges: jsonb("badges").default([]), // Array of achievement badges
+  lastPingDate: timestamp("last_ping_date"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type ReferralTier = typeof referralTiers.$inferSelect;
+export type InsertReferralTier = typeof referralTiers.$inferInsert;
+
 // Task Templates table
 export const taskTemplates = pgTable('task_templates', {
   id: uuid('id').primaryKey().defaultRandom(),
