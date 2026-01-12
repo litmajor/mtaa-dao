@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import { apiGet, apiPost } from '@/lib/api';
 import { Search, TrendingUp, Users, Wallet, ArrowRight, Share2, Copy } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -19,9 +20,7 @@ export default function PoolDiscovery() {
   const { data: pools = [], isLoading } = useQuery({
     queryKey: ['/api/investment-pools'],
     queryFn: async () => {
-      const res = await fetch('/api/investment-pools', { credentials: 'include' });
-      if (!res.ok) throw new Error('Failed to fetch pools');
-      return res.json();
+      return await apiGet<any[]>('/api/investment-pools');
     },
   });
 
@@ -29,21 +28,18 @@ export default function PoolDiscovery() {
   const { data: invitations = [] } = useQuery({
     queryKey: ['/api/investment-pools/my-invitations'],
     queryFn: async () => {
-      const res = await fetch('/api/investment-pools/my-invitations', { credentials: 'include' });
-      if (!res.ok) return [];
-      return res.json();
+      try {
+        return await apiGet<any[]>('/api/investment-pools/my-invitations');
+      } catch {
+        return [];
+      }
     },
   });
 
   // Accept invitation mutation
   const acceptInvitation = useMutation({
     mutationFn: async (inviteId: string) => {
-      const res = await fetch(`/api/investment-pools/invitations/${inviteId}/accept`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to accept invitation');
-      return res.json();
+      return await apiPost<any>(`/api/investment-pools/invitations/${inviteId}/accept`, {});
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/investment-pools/my-invitations'] });

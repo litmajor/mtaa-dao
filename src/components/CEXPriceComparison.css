@@ -1,0 +1,360 @@
+/**
+ * CEXPriceComparison Styles
+ */
+
+.cex-price-comparison {
+  background: linear-gradient(135deg, #1a1f3a 0%, #16213e 100%);
+  border: 1px solid rgba(100, 200, 255, 0.2);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  font-family: 'Monaco', 'Courier New', monospace;
+}
+
+/* Header */
+.cex-pc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid rgba(100, 200, 255, 0.1);
+}
+
+.cex-pc-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #64c8ff;
+  text-shadow: 0 0 10px rgba(100, 200, 255, 0.3);
+}
+
+.cex-pc-controls {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+}
+
+.cex-pc-symbol {
+  color: #a0a0a0;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 4px 8px;
+  background: rgba(100, 200, 255, 0.05);
+  border-radius: 4px;
+  border: 1px solid rgba(100, 200, 255, 0.1);
+}
+
+.cex-pc-refresh {
+  background: rgba(100, 200, 255, 0.1);
+  color: #64c8ff;
+  border: 1px solid rgba(100, 200, 255, 0.3);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 600;
+}
+
+.cex-pc-refresh:hover:not(:disabled) {
+  background: rgba(100, 200, 255, 0.2);
+  box-shadow: 0 0 10px rgba(100, 200, 255, 0.3);
+}
+
+.cex-pc-refresh:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cex-pc-refresh.loading {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Error */
+.cex-pc-error {
+  background: rgba(255, 100, 100, 0.1);
+  border: 1px solid rgba(255, 100, 100, 0.3);
+  color: #ff6464;
+  padding: 12px 15px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.cex-pc-error-icon {
+  font-size: 16px;
+}
+
+/* Loading */
+.cex-pc-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #64c8ff;
+  gap: 15px;
+}
+
+.cex-pc-spinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid rgba(100, 200, 255, 0.2);
+  border-top-color: #64c8ff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+/* Summary */
+.cex-pc-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 15px;
+  margin-bottom: 20px;
+  padding: 15px;
+  background: rgba(100, 200, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(100, 200, 255, 0.1);
+}
+
+.cex-pc-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.cex-pc-summary-item label {
+  font-size: 12px;
+  color: #a0a0a0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 500;
+}
+
+.cex-pc-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: #64c8ff;
+  font-family: 'Monaco', 'Courier New', monospace;
+}
+
+.cex-pc-value.high {
+  color: #ff6464;
+}
+
+.cex-pc-value.low {
+  color: #64ff64;
+}
+
+/* Table */
+.cex-pc-table-container {
+  overflow-x: auto;
+  margin-bottom: 15px;
+  border-radius: 8px;
+  border: 1px solid rgba(100, 200, 255, 0.1);
+}
+
+.cex-pc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.cex-pc-table thead {
+  background: rgba(100, 200, 255, 0.08);
+  border-bottom: 2px solid rgba(100, 200, 255, 0.2);
+}
+
+.cex-pc-table th {
+  padding: 12px 15px;
+  text-align: left;
+  color: #64c8ff;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 12px;
+}
+
+.cex-pc-table tbody tr {
+  border-bottom: 1px solid rgba(100, 200, 255, 0.05);
+  transition: all 0.2s ease;
+}
+
+.cex-pc-table tbody tr:hover {
+  background: rgba(100, 200, 255, 0.08);
+}
+
+.cex-pc-table tbody tr.best {
+  background: rgba(100, 200, 255, 0.1);
+  border-left: 3px solid #64c8ff;
+}
+
+.cex-pc-table tbody tr.selected {
+  background: rgba(100, 200, 255, 0.15);
+  border-left: 3px solid #64ff64;
+}
+
+.cex-pc-table td {
+  padding: 12px 15px;
+  color: #c0c0c0;
+}
+
+.cex-pc-exchange {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 500;
+  color: #64c8ff;
+  text-transform: capitalize;
+}
+
+.cex-pc-exchange-name {
+  font-family: 'Monaco', 'Courier New', monospace;
+}
+
+.cex-pc-badge {
+  display: inline-block;
+  background: rgba(100, 255, 100, 0.2);
+  color: #64ff64;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  border: 1px solid rgba(100, 255, 100, 0.3);
+}
+
+.cex-pc-price {
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-weight: 500;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.cex-pc-price:hover {
+  color: #64ff64;
+  text-shadow: 0 0 5px rgba(100, 255, 100, 0.3);
+}
+
+.cex-pc-price.bid {
+  color: #ff6464;
+}
+
+.cex-pc-price.ask {
+  color: #64ff64;
+}
+
+.cex-pc-price.last {
+  color: #ffff64;
+}
+
+.cex-pc-copied {
+  position: absolute;
+  right: -10px;
+  color: #64ff64;
+  font-size: 12px;
+  font-weight: 600;
+  animation: fadeOut 1.5s ease-out forwards;
+}
+
+@keyframes fadeOut {
+  0% {
+    opacity: 1;
+    right: -10px;
+  }
+  100% {
+    opacity: 0;
+    right: 5px;
+  }
+}
+
+.cex-pc-spread {
+  font-family: 'Monaco', 'Courier New', monospace;
+  color: #a0a0a0;
+}
+
+.cex-pc-action {
+  text-align: center;
+}
+
+.cex-pc-select-btn {
+  background: rgba(100, 200, 255, 0.15);
+  color: #64c8ff;
+  border: 1px solid rgba(100, 200, 255, 0.3);
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.cex-pc-select-btn:hover {
+  background: rgba(100, 200, 255, 0.25);
+  box-shadow: 0 0 8px rgba(100, 200, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.cex-pc-select-btn:active {
+  transform: translateY(0);
+}
+
+/* Empty */
+.cex-pc-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: #a0a0a0;
+  font-style: italic;
+}
+
+/* Footer */
+.cex-pc-footer {
+  text-align: center;
+  color: #707070;
+  font-size: 12px;
+  margin-top: 15px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(100, 200, 255, 0.1);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .cex-price-comparison {
+    padding: 15px;
+  }
+
+  .cex-pc-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .cex-pc-table {
+    font-size: 12px;
+  }
+
+  .cex-pc-table th,
+  .cex-pc-table td {
+    padding: 10px 12px;
+  }
+
+  .cex-pc-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .cex-pc-controls {
+    width: 100%;
+  }
+}

@@ -529,4 +529,118 @@ router.post('/multisig/submit', isAuthenticated, async (req, res) => {
   }
 });
 
+// GET /api/wallet/balance-multi - Get balance in multiple currencies for display
+router.get('/balance-multi', isAuthenticated, async (req, res) => {
+  try {
+    const address = req.query.address as string || wallet?.address;
+    const { primaryCurrency, secondaryCurrency } = req.query;
+
+    if (!address) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Wallet address required' 
+      });
+    }
+
+    // Get native balance
+    let nativeBalance = 0;
+    try {
+      nativeBalance = wallet ? await wallet.getBalanceEth(address) : 0;
+    } catch (e) {
+      logger.warn('Failed to get native balance:', e);
+    }
+
+    // Exchange rates - in production, fetch from real exchange rate service
+    const exchangeRates: Record<string, number> = {
+      'CELO-USD': 0.65,
+      'cUSD-USD': 1.0,
+      'cUSD-KES': 130.5,
+      'USDC-USD': 1.0,
+      'USDT-USD': 1.0,
+      'USD-KES': 130.5,
+      'EUR-USD': 1.10,
+      'USD-EUR': 0.91,
+      'USD-GHS': 14.5,
+      'USD-NGN': 1550,
+      'cEUR-EUR': 1.0,
+    };
+
+    // Calculate conversions
+    const convertAmount = (amount: number, from: string, to: string): number => {
+      if (from === to) return amount;
+      
+      const directRate = exchangeRates[`${from}-${to}`];
+      if (directRate) return amount * directRate;
+      
+      // Try reverse rate
+      const reverseRate = exchangeRates[`${to}-${from}`];
+      if (reverseRate) return amount / reverseRate;
+      
+      // Try via USD
+      const fromRate = exchangeRates[`${from}-USD`];
+      const toRate = exchangeRates[`${to}-USD`];
+      if (fromRate && toRate) return (amount * fromRate) / toRate;
+      
+      return amount; // No conversion available
+    };
+
+    res.json({
+      success: true,
+      balance: {
+        address,
+        nativeBalance,
+        nativeSymbol: 'CELO',
+        primary: {
+          currency: (primaryCurrency as string) || 'cUSD',
+          amount: convertAmount(nativeBalance, 'CELO', (primaryCurrency as string) || 'cUSD')
+        },
+        secondary: {
+          currency: (secondaryCurrency as string) || 'KES',
+          amount: convertAmount(nativeBalance, 'CELO', (secondaryCurrency as string) || 'KES')
+        },
+        lastUpdated: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to get multi-currency balance:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch balance' 
+    });
+  }
+});
+
+// GET /api/wallet/exchange-rates - Get current exchange rates
+router.get('/exchange-rates', async (req, res) => {
+  try {
+    // In production, fetch from real exchange rate API (e.g., Coingecko, Kraken)
+    const rates: Record<string, any> = {
+      'CELO-USD': { pair: 'CELO-USD', rate: 0.65, change24h: 0.5 },
+      'cUSD-USD': { pair: 'cUSD-USD', rate: 1.0, change24h: 0 },
+      'cUSD-KES': { pair: 'cUSD-KES', rate: 130.5, change24h: -0.3 },
+      'USDC-USD': { pair: 'USDC-USD', rate: 1.0, change24h: 0 },
+      'USDT-USD': { pair: 'USDT-USD', rate: 1.0, change24h: 0 },
+      'USD-KES': { pair: 'USD-KES', rate: 130.5, change24h: -0.3 },
+      'USD-EUR': { pair: 'USD-EUR', rate: 0.91, change24h: 0.2 },
+      'USD-GHS': { pair: 'USD-GHS', rate: 14.5, change24h: 0.1 },
+      'USD-NGN': { pair: 'USD-NGN', rate: 1550, change24h: -0.5 },
+      'EUR-USD': { pair: 'EUR-USD', rate: 1.10, change24h: -0.2 },
+      'cEUR-EUR': { pair: 'cEUR-EUR', rate: 1.0, change24h: 0 },
+    };
+
+    res.json({
+      success: true,
+      rates,
+      lastUpdated: new Date().toISOString(),
+      note: 'For production, integrate with real exchange rate API'
+    });
+  } catch (error) {
+    logger.error('Failed to get exchange rates:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch exchange rates' 
+    });
+  }
+});
+
 export default router;

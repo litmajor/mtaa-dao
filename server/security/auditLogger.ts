@@ -35,8 +35,9 @@ export class AuditLogger {
       // Store in database
       await storage.createAuditLog(entry);
       
-      // Console log for immediate visibility
-      console.log(`[AUDIT] ${entry.timestamp.toISOString()} | ${entry.severity.toUpperCase()} | ${entry.category} | ${entry.action} | User: ${entry.userId} | IP: ${entry.ipAddress}`);
+      // Console log for immediate visibility - show 'anonymous' instead of 'undefined'
+      const userDisplay = entry.userId || 'anonymous';
+      console.log(`[AUDIT] ${entry.timestamp.toISOString()} | ${entry.severity.toUpperCase()} | ${entry.category} | ${entry.action} | User: ${userDisplay} | IP: ${entry.ipAddress}`);
       
       // Alert on critical events
       if (entry.severity === 'critical') {
@@ -67,10 +68,14 @@ export const auditMiddleware = (req: Request, res: Response, next: NextFunction)
       const user = req.user as any;
       const auditLogger = AuditLogger.getInstance();
       
+      // Extract userId from various possible locations
+      const userId = user?.claims?.sub || user?.id || user?.sub || undefined;
+      const userEmail = user?.claims?.email || user?.email || undefined;
+      
       const entry: AuditLogEntry = {
         timestamp: new Date(),
-        userId: user?.claims?.sub,
-        userEmail: user?.claims?.email,
+        userId: userId,
+        userEmail: userEmail,
         action: getActionFromRequest(req),
         resource: getResourceFromRequest(req),
         resourceId: req.params.id || req.params.daoId || req.params.proposalId,

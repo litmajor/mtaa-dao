@@ -164,6 +164,7 @@ const CreateDAOFlow = () => {
     category: '',
     regionalTags: [],
     causeTags: [],
+    primaryCause: '', // User's custom cause/reason
     visibility: 'public',
     governanceModel: '1-person-1-vote',
     quorum: 50,
@@ -524,6 +525,7 @@ const CreateDAOFlow = () => {
     category: string;
     regionalTags: string[];
     causeTags: string[];
+    primaryCause?: string; // User's custom cause/reason for DAO
     visibility: string;
     governanceModel: string;
     quorum: number;
@@ -897,6 +899,26 @@ const CreateDAOFlow = () => {
               </Button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <div className="flex items-center">
+            <Label className="text-sm font-medium">💬 What's your main cause? (Custom & Personal)</Label>
+            <InfoTooltip text="Describe your specific reason in your own words - e.g., 'raising bond/bail money', 'funeral fund for my family', 'medical emergency support', 'education for kids'" />
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-2">
+            People got different needs, define yours
+          </p>
+          <Input
+            placeholder="e.g., 'raising bail money', 'burial fund', 'business startup capital', 'medical emergency', 'education fees'"
+            value={daoData.primaryCause || ''}
+            onChange={(e) => updateDaoData('primaryCause', e.target.value.slice(0, 100))}
+            className="mt-2"
+            maxLength={100}
+          />
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+            {(daoData.primaryCause || '').length}/100 characters
+          </p>
         </div>
 
         <div>

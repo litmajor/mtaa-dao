@@ -40,13 +40,88 @@ const UBESWAP_ROUTER_ABI = [
   'function getAmountsIn(uint amountOut, address[] calldata path) external view returns (uint[] memory amounts)'
 ];
 
+// Uniswap V3 Router ABI (compatible with multiple chains)
+const UNISWAP_V3_ROUTER_ABI = [
+  'function exactInputSingle((bytes path, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum) params) external payable returns (uint256 amountOut)',
+  'function exactOutputSingle((bytes path, address recipient, uint256 deadline, uint256 amountOut, uint256 amountInMaximum) params) external payable returns (uint256 amountIn)',
+  'function exactInput((bytes path, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum) params) external payable returns (uint256 amountOut)',
+  'function exactOutput((bytes path, address recipient, uint256 deadline, uint256 amountOut, uint256 amountInMaximum) params) external payable returns (uint256 amountIn)'
+];
+
+// Sushiswap Router ABI (V2 compatible)
+const SUSHISWAP_ROUTER_ABI = [
+  'function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)',
+  'function swapExactTokensForExactTokens(uint amountOut, uint amountInMax, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)',
+  'function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)',
+  'function getAmountsIn(uint amountOut, address[] calldata path) external view returns (uint[] memory amounts)'
+];
+
+// Curve stable swap ABI
+const CURVE_SWAP_ABI = [
+  'function exchange(int128 i, int128 j, uint256 dx, uint256 min_dy) external returns (uint256)',
+  'function get_dy(int128 i, int128 j, uint256 dx) external view returns (uint256)',
+  'function get_dx(int128 i, int128 j, uint256 dy) external view returns (uint256)'
+];
+
 class DEXIntegrationService {
   private provider: ethers.JsonRpcProvider | null = null;
   private wallet: ethers.Wallet | null = null;
 
-  // DEX Router addresses on Celo
+  // DEX Router addresses across multiple chains
   private readonly DEX_ROUTERS = {
-    ubeswap: '0xE3D8bd6Aed4F159bc8000a9cD47CffDb95F96121', // Celo Ubeswap Router
+    // Celo network
+    ubeswap_celo: {
+      address: '0xE3D8bd6Aed4F159bc8000a9cD47CffDb95F96121',
+      name: 'Ubeswap',
+      chain: 'celo',
+      type: 'uniswap-v2'
+    },
+    // Ethereum network
+    uniswap_v3_ethereum: {
+      address: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
+      name: 'Uniswap V3',
+      chain: 'ethereum',
+      type: 'uniswap-v3'
+    },
+    sushiswap_ethereum: {
+      address: '0xd9e1cE17f2641f24aE9bAEc3f8e4070Cbc9caBFf',
+      name: 'Sushiswap',
+      chain: 'ethereum',
+      type: 'uniswap-v2'
+    },
+    // Polygon network
+    uniswap_v3_polygon: {
+      address: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
+      name: 'Uniswap V3',
+      chain: 'polygon',
+      type: 'uniswap-v3'
+    },
+    sushiswap_polygon: {
+      address: '0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506',
+      name: 'Sushiswap',
+      chain: 'polygon',
+      type: 'uniswap-v2'
+    },
+    // Arbitrum network
+    uniswap_v3_arbitrum: {
+      address: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
+      name: 'Uniswap V3',
+      chain: 'arbitrum',
+      type: 'uniswap-v3'
+    },
+    sushiswap_arbitrum: {
+      address: '0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506',
+      name: 'Sushiswap',
+      chain: 'arbitrum',
+      type: 'uniswap-v2'
+    },
+    // Optimism network
+    uniswap_v3_optimism: {
+      address: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
+      name: 'Uniswap V3',
+      chain: 'optimism',
+      type: 'uniswap-v3'
+    }
   };
 
   constructor() {
@@ -86,7 +161,8 @@ class DEXIntegrationService {
     fromAsset: string,
     toAsset: string,
     amountIn: number,
-    preferredDex: string = 'ubeswap'
+    preferredDex: string = 'ubeswap_celo',
+    chain: string = 'celo'
   ): Promise<SwapQuote | null> {
     try {
       // Get current prices from Gateway Agent (primary) or fallback to priceOracle
@@ -214,7 +290,7 @@ class DEXIntegrationService {
   }
 
   /**
-   * Execute real swap via Ubeswap router
+   * Execute real swap via appropriate DEX router
    */
   private async executeRealSwap(
     quote: SwapQuote,
@@ -226,14 +302,47 @@ class DEXIntegrationService {
     }
 
     try {
-      // Get router address
-      const routerAddress = this.DEX_ROUTERS[dex as keyof typeof this.DEX_ROUTERS];
-      if (!routerAddress) {
+      // Get DEX configuration
+      const dexConfig = this.DEX_ROUTERS[dex as keyof typeof this.DEX_ROUTERS];
+      if (!dexConfig) {
         throw new Error(`Unknown DEX: ${dex}`);
       }
 
+      const routerAddress = dexConfig.address;
+      
+      // Route to appropriate swap handler based on DEX type
+      if (dexConfig.type === 'uniswap-v3') {
+        return await this.executeUniswapV3Swap(quote, slippageTolerance, routerAddress);
+      } else if (dexConfig.type === 'uniswap-v2') {
+        return await this.executeUniswapV2Swap(quote, slippageTolerance, routerAddress);
+      } else {
+        // Default to V2 style (Ubeswap, Sushiswap)
+        return await this.executeUniswapV2Swap(quote, slippageTolerance, routerAddress);
+      }
+    } catch (error) {
+      logger.error('❌ Real swap execution failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Swap execution failed',
+      };
+    }
+  }
+
+  /**
+   * Execute Uniswap V2 style swap (used by Ubeswap, Sushiswap, etc)
+   */
+  private async executeUniswapV2Swap(
+    quote: SwapQuote,
+    slippageTolerance: number,
+    routerAddress: string
+  ): Promise<SwapResult> {
+    if (!this.wallet || !this.provider) {
+      throw new Error('Wallet not initialized');
+    }
+
+    try {
       // Create router contract
-      const router = new ethers.Contract(routerAddress, UBESWAP_ROUTER_ABI, this.wallet);
+      const router = new ethers.Contract(routerAddress, SUSHISWAP_ROUTER_ABI, this.wallet);
 
       // Get token addresses
       const network = process.env.NODE_ENV === 'production' ? 'mainnet' : 'testnet';
@@ -277,7 +386,7 @@ class DEXIntegrationService {
                   `amountOutMin=${ethers.formatUnits(amountOutMin, toToken.decimals)} ${quote.toAsset}`);
 
       // Execute swap
-      logger.info(`🚀 Executing swap on ${dex}...`);
+      logger.info(`🚀 Executing swap on ${quote.dex}...`);
       const swapTx = await router.swapExactTokensForTokens(
         amountIn,
         amountOutMin,
@@ -285,16 +394,14 @@ class DEXIntegrationService {
         this.wallet.address,
         deadline,
         {
-          gasLimit: 500000, // Reasonable gas limit for swap
-          maxFeePerGas: undefined, // Let ethers estimate
+          gasLimit: 500000,
+          maxFeePerGas: undefined,
           maxPriorityFeePerGas: undefined
         }
       );
 
       logger.info(`⏳ Swap transaction submitted: ${swapTx.hash}`);
-      
-      // Wait for confirmation
-      const receipt = await swapTx.wait(2); // Wait for 2 confirmations
+      const receipt = await swapTx.wait(2);
 
       if (!receipt) {
         throw new Error('Transaction failed - no receipt');
@@ -311,6 +418,88 @@ class DEXIntegrationService {
       };
     } catch (error) {
       logger.error('DEX swap failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Execute Uniswap V3 style swap (concentrated liquidity)
+   */
+  private async executeUniswapV3Swap(
+    quote: SwapQuote,
+    slippageTolerance: number,
+    routerAddress: string
+  ): Promise<SwapResult> {
+    if (!this.wallet || !this.provider) {
+      throw new Error('Wallet not initialized');
+    }
+
+    try {
+      // For V3, we need to construct a path (tokenA -> fee -> tokenB)
+      // This is simplified - in production you'd need to determine optimal fees
+      logger.info(`🚀 Executing Uniswap V3 swap on ${quote.dex}...`);
+      
+      // Create router contract with V3 ABI
+      const router = new ethers.Contract(routerAddress, UNISWAP_V3_ROUTER_ABI, this.wallet);
+
+      const network = process.env.NODE_ENV === 'production' ? 'mainnet' : 'testnet';
+      const fromToken = TokenRegistry.getToken(quote.fromAsset);
+      const toToken = TokenRegistry.getToken(quote.toAsset);
+
+      if (!fromToken || !toToken) {
+        throw new Error(`Token not found in registry: ${quote.fromAsset} or ${quote.toAsset}`);
+      }
+
+      const fromAddress = fromToken.address[network];
+      const toAddress = toToken.address[network];
+
+      // Approve token spending
+      await tokenService.approveToken(
+        quote.fromAsset,
+        routerAddress,
+        quote.amountIn.toString()
+      );
+
+      const amountIn = ethers.parseUnits(quote.amountIn.toString(), fromToken.decimals);
+      const estimatedOut = ethers.parseUnits(quote.estimatedAmountOut.toString(), toToken.decimals);
+      
+      const slippageDecimal = slippageTolerance / 100;
+      const amountOutMinimum = estimatedOut * BigInt(Math.floor((1 - slippageDecimal) * 10000)) / BigInt(10000);
+
+      // Construct V3 path (simplified - assume 0.3% fee)
+      // In production: encode(tokenA, fee, tokenB)
+      const fee = 3000; // 0.3%
+      
+      logger.info(`Executing V3 exactInputSingle: ${quote.fromAsset} -> ${quote.toAsset}`);
+
+      const swapTx = await router.exactInputSingle({
+        path: ethers.solidityPacked(['address', 'uint24', 'address'], [fromAddress, fee, toAddress]),
+        recipient: this.wallet.address,
+        deadline: Math.floor(Date.now() / 1000) + 1200,
+        amountIn: amountIn,
+        amountOutMinimum: amountOutMinimum
+      }, {
+        gasLimit: 500000
+      });
+
+      logger.info(`⏳ V3 Swap transaction submitted: ${swapTx.hash}`);
+      const receipt = await swapTx.wait(2);
+
+      if (!receipt) {
+        throw new Error('Transaction failed - no receipt');
+      }
+
+      logger.info(`✅ V3 Swap completed! Hash: ${receipt.hash}`);
+
+      return {
+        success: true,
+        transactionHash: receipt.hash,
+        amountOut: quote.estimatedAmountOut,
+        actualRate: quote.exchangeRate,
+        gasUsed: receipt.gasUsed ? Number(receipt.gasUsed) / 1e18 : undefined,
+      };
+    } catch (error) {
+      logger.error('Uniswap V3 swap failed:', error);
       throw error;
     }
   }
@@ -415,10 +604,28 @@ class DEXIntegrationService {
   }
 
   /**
-   * Get supported DEXes
+   * Get supported DEXes with details
    */
-  getSupportedDEXes(): string[] {
-    return Object.keys(this.DEX_ROUTERS);
+  getSupportedDEXes(): Array<{name: string; id: string; chain: string; type: string}> {
+    return Object.entries(this.DEX_ROUTERS).map(([id, config]) => ({
+      id,
+      name: config.name,
+      chain: config.chain,
+      type: config.type
+    }));
+  }
+
+  /**
+   * Get DEXes for a specific chain
+   */
+  getDEXesByChain(chain: string): Array<{name: string; id: string; type: string}> {
+    return Object.entries(this.DEX_ROUTERS)
+      .filter(([_, config]) => config.chain === chain)
+      .map(([id, config]) => ({
+        id,
+        name: config.name,
+        type: config.type
+      }));
   }
 }
 

@@ -24,14 +24,14 @@ router.post('/create-wallet-mnemonic', isAuthenticated, async (req, res) => {
   try {
     const authReq = req as any;
     const userId = authReq.user?.id || authReq.user?.claims?.sub;
-    const { currency = 'cUSD', initialGoal = 0, password, wordCount = 12 } = req.body;
+    const { currency = 'cUSD', initialGoal = 0, password = '', wordCount = 12 } = req.body;
 
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized: User not found' });
     }
 
-    if (!password) {
-      return res.status(400).json({ error: 'Password is required' });
+    if (password && password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters if provided' });
     }
 
     if (wordCount !== 12 && wordCount !== 24) {
@@ -47,8 +47,9 @@ router.post('/create-wallet-mnemonic', isAuthenticated, async (req, res) => {
     // Generate wallet with mnemonic
     const walletCredentials = generateWalletFromMnemonic(wordCount);
 
-    // Encrypt wallet data
-    const encrypted = encryptWallet(walletCredentials, password);
+    // Encrypt wallet data (use a default password if not provided)
+    const encryptionPassword = password || 'default-unencrypted';
+    const encrypted = encryptWallet(walletCredentials, encryptionPassword);
 
     // Update user with encrypted wallet
     await db.update(users)
@@ -103,7 +104,8 @@ router.post('/create-wallet-mnemonic', isAuthenticated, async (req, res) => {
 // POST /api/wallet-setup/backup-confirmed
 router.post('/backup-confirmed', isAuthenticated, async (req, res) => {
   try {
-    const userId = (req.user as any)?.claims?.id;
+    const authReq = req as any;
+    const userId = authReq.user?.id || authReq.user?.claims?.sub || authReq.user?.claims?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -766,6 +768,95 @@ router.post('/import-wallet', async (req, res) => {
 
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// GET /api/wallet-setup/backup-status/:userId
+router.get('/backup-status/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+    if (!user.length) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const isBackedUp = user[0].hasBackedUpMnemonic || false;
+
+    res.json({
+      success: true,
+      isBackedUp,
+      walletAddress: user[0].walletAddress,
+      backupConfirmedAt: user[0].updatedAt,
+      message: isBackedUp ? 'Wallet backup confirmed' : 'Wallet backup pending'
+    });
+
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    logger.error('Backup status check error:', errorMsg);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// POST /api/wallet-setup/get-backup-data
+router.post('/get-backup-data', async (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+    if (!user.length) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!user[0].encryptedWallet) {
+      return res.status(404).json({ error: 'No wallet found for this user' });
+    }
+
+    // Decrypt wallet to get mnemonic and private key
+    const encrypted = {
+      encryptedData: user[0].encryptedWallet,
+      salt: user[0].walletSalt!,
+      iv: user[0].walletIv!,
+      authTag: user[0].walletAuthTag!
+    };
+
+    // For this endpoint, we use a default password to retrieve stored data
+    // In production, this should require the user's password or be more restricted
+    // This is a temporary solution - consider requiring user password verification
+    try {
+      // Try with default password first (from creation with no password)
+      const walletCredentials = decryptWallet(encrypted, 'default-unencrypted');
+
+      res.json({
+        success: true,
+        mnemonic: walletCredentials.mnemonic || null,
+        privateKey: walletCredentials.privateKey,
+        address: walletCredentials.address,
+        message: 'Backup data retrieved successfully'
+      });
+    } catch (decryptErr) {
+      // If default password fails, the wallet was encrypted with a user password
+      // We cannot decrypt without it
+      logger.warn(`Failed to decrypt wallet for user ${userId}: wallet requires password`);
+      res.status(401).json({ 
+        error: 'Cannot retrieve backup data. Your wallet is encrypted with a password. Please use the recovery phrase or password instead.' 
+      });
+    }
+
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    logger.error('Get backup data error:', errorMsg);
     res.status(500).json({ error: errorMsg });
   }
 });

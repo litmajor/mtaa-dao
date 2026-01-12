@@ -1,4 +1,5 @@
 import express, { Express } from 'express';
+import { Server as HTTPServer } from 'http';
 import { isAuthenticated } from './nextAuthMiddleware';
 import Stripe from "stripe"; // Stripe integration
 
@@ -47,6 +48,7 @@ import phoneVerificationRouter from './routes/phone-verification';
 import daoChatRoutes from './routes/dao-chat';
 import onboardingRoutes from './routes/onboarding';
 import subscriptionManagementRoutes from './routes/subscription-management'; // Import subscription management routes
+import dexRoutes from './routes/dex';
 import userSubscriptionRoutes from './routes/user-subscription';
 import revenueRoutes from './routes/revenue';
 // Import savings routes
@@ -72,6 +74,12 @@ import userFollowsRoutes from './routes/user-follows';
 // Import P2P Transfers routes
 import p2pTransfersRoutes from './routes/p2p-transfers';
 
+// Import Exchange and Order Router routes
+import exchangeRoutes from './routes/exchanges';
+import orderRoutes from './routes/orders';
+
+// Import Phase 4 WebSocket Price Stream Server
+import { priceStreamServer } from './websocket/priceStream';
 
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
@@ -151,7 +159,7 @@ import {
 import {getUsersHandler,updateUserRoleHandler } from './api/admin_users';
 
 
-export async function registerRoutes(app: Express) {
+export async function registerRoutes(app: Express, server: HTTPServer) {
   // Health check
   app.use('/api/health', healthRoutes);
 
@@ -228,6 +236,9 @@ export async function registerRoutes(app: Express) {
   app.use('/api/investment-pools', investmentPoolsRoutes); // Multi-asset investment pools
   app.use('/api/pool-governance', poolGovernanceRoutes); // Pool weighted voting governance
   app.use('/api', rulesRoutes); // Phase 3 Custom Rules Engine
+
+  // DeFi DEX Integration
+  app.use('/api/dex', dexRoutes);
 
   // DAO deployment
   app.post('/api/dao/deploy', isAuthenticated, daoDeployHandler);
@@ -426,6 +437,19 @@ export async function registerRoutes(app: Express) {
 
   // === CONTRIBUTION INDEXER API ===
   app.use('/api/contributions', contributionIndexerRoutes);
+
+  // === EXCHANGE AND ORDER ROUTING API ===
+  app.use('/api/exchanges', exchangeRoutes);
+  app.use('/api/orders', orderRoutes);
+
+  // === PHASE 4: WEBSOCKET PRICE STREAMING ===
+  priceStreamServer.initialize(server);
+  app.get('/api/websocket/stats', (req, res) => {
+    res.json({
+      status: 'active',
+      stats: priceStreamServer.getStats()
+    });
+  });
 
   // DAO Abuse Prevention routes
   const daoAbusePreventionRouter = await import('./routes/dao-abuse-prevention');

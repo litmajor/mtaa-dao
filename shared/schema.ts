@@ -352,7 +352,11 @@ export const daos = pgTable("daos", {
   totalRotationCycles: integer("total_rotation_cycles"), // Total cycles planned
   estimatedCycleDuration: integer("estimated_cycle_duration"), // in days
   minElders: integer("min_elders").default(2),
-  maxElders: integer("max_elders").default(5)
+  maxElders: integer("max_elders").default(5),
+
+  // Custom Causes - User-defined reasons for the DAO (e.g., bail money, medical, funeral)
+  primaryCause: varchar("primary_cause"), // Primary custom cause (user-defined string)
+  causeTags: jsonb("cause_tags").default([]), // Array of predefined cause tags: ['youthempowerment', 'funeralfund', 'education', 'healthcare', 'agriculture', 'smallbusiness']
 });
 
 // DAO Abuse Prevention Tables
@@ -2823,6 +2827,34 @@ export type InsertRuleExecution = typeof ruleExecutions.$inferInsert;
 export const insertRuleTemplateSchema = createInsertSchema(ruleTemplates);
 export const insertDaoRuleSchema = createInsertSchema(daoRules);
 export const insertRuleExecutionSchema = createInsertSchema(ruleExecutions);
+
+// === PHASE 3: SMART ORDER ROUTER - LIMIT ORDERS TABLE ===
+export const limitOrders = pgTable("limit_orders", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  exchange: varchar("exchange", { length: 50 }).notNull(), // 'binance', 'coinbase', etc
+  orderId: varchar("order_id", { length: 255 }).notNull(),
+  symbol: varchar("symbol", { length: 20 }).notNull(),
+  side: varchar("side", { length: 10 }).notNull(), // 'buy' or 'sell'
+  amount: numeric("amount", { precision: 20, scale: 8 }).notNull(),
+  price: numeric("price", { precision: 20, scale: 8 }).notNull(),
+  status: varchar("status", { length: 20 }).default('pending').notNull(), // 'pending', 'filled', 'canceled', 'expired'
+  filledAmount: numeric("filled_amount", { precision: 20, scale: 8 }).default('0'),
+  filledPrice: numeric("filled_price", { precision: 20, scale: 8 }),
+  fee: numeric("fee", { precision: 20, scale: 8 }).default('0'),
+  createdAt: timestamp("created_at").defaultNow(),
+  filledAt: timestamp("filled_at"),
+  expiresAt: timestamp("expires_at").notNull(),
+  canceledAt: timestamp("canceled_at"),
+  lastCheckedAt: timestamp("last_checked_at"),
+});
+
+// Limit Orders Types
+export type LimitOrder = typeof limitOrders.$inferSelect;
+export type InsertLimitOrder = typeof limitOrders.$inferInsert;
+
+// Zod schema for Limit Orders
+export const insertLimitOrderSchema = createInsertSchema(limitOrders);
 
 export * from './vestingSchema';
 export * from './messageReactionsSchema';

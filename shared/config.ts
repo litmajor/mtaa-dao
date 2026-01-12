@@ -1,7 +1,41 @@
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from 'url';
 import { z } from "zod";
 import dotenv from "dotenv";
 
 dotenv.config();
+
+// Exchange configuration loader
+// Load exchanges config from JSON file
+// __dirname is not defined in ESM; derive it from import.meta.url
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const exchangesConfigPath = path.resolve(__dirname, "../server/exchanges.config.json");
+let exchangesConfig: Record<string, any> = {};
+try {
+  const raw = fs.readFileSync(exchangesConfigPath, "utf-8");
+  exchangesConfig = JSON.parse(raw);
+} catch (err) {
+  console.error("Failed to load exchanges config:", err);
+}
+
+export { exchangesConfig };
+
+// Asset override loader (for hybrid dynamic/static asset metadata)
+let assetOverrides: Record<string, any> = {};
+try {
+  const assetOverridePath = path.resolve(__dirname, "../server/assets.override.json");
+  if (fs.existsSync(assetOverridePath)) {
+    const raw = fs.readFileSync(assetOverridePath, "utf-8");
+    assetOverrides = JSON.parse(raw);
+  }
+} catch (err) {
+  console.error("Failed to load asset overrides:", err);
+}
+
+export { assetOverrides };
 
 const envSchema = z.object({
   // Server Configuration

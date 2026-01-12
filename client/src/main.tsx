@@ -12,6 +12,8 @@ import AppLoading from "./components/ui/app-loading";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { FeaturesProvider } from "./contexts/features-context";
 import { AuthProvider } from "./contexts/auth-context";
+import { WagmiProvider } from "wagmi";
+import { wagmiConfig } from "./config/wagmi";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -37,9 +39,11 @@ if (root) {
           <FeaturesProvider>
             <BrowserRouter>
               <AuthProvider>
-                <ToastProvider>
-                  <App />
-                </ToastProvider>
+                <WagmiProvider config={wagmiConfig}>
+                  <ToastProvider>
+                    <App />
+                  </ToastProvider>
+                </WagmiProvider>
               </AuthProvider>
             </BrowserRouter>
           </FeaturesProvider>

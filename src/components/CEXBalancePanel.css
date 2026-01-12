@@ -1,0 +1,351 @@
+/**
+ * CEXBalancePanel Styles
+ */
+
+.cex-balance-panel {
+  background: linear-gradient(135deg, #1a1f3a 0%, #16213e 100%);
+  border: 1px solid rgba(100, 200, 255, 0.2);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  font-family: 'Monaco', 'Courier New', monospace;
+}
+
+/* Header */
+.cex-bp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid rgba(100, 200, 255, 0.1);
+}
+
+.cex-bp-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #64c8ff;
+  text-shadow: 0 0 10px rgba(100, 200, 255, 0.3);
+}
+
+.cex-bp-refresh {
+  background: rgba(100, 200, 255, 0.1);
+  color: #64c8ff;
+  border: 1px solid rgba(100, 200, 255, 0.3);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 600;
+}
+
+.cex-bp-refresh:hover:not(:disabled) {
+  background: rgba(100, 200, 255, 0.2);
+  box-shadow: 0 0 10px rgba(100, 200, 255, 0.3);
+}
+
+.cex-bp-refresh:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cex-bp-refresh.loading {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Error */
+.cex-bp-error {
+  background: rgba(255, 100, 100, 0.1);
+  border: 1px solid rgba(255, 100, 100, 0.3);
+  color: #ff6464;
+  padding: 12px 15px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.cex-bp-error-icon {
+  font-size: 16px;
+}
+
+/* Loading */
+.cex-bp-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #64c8ff;
+  gap: 15px;
+}
+
+.cex-bp-spinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid rgba(100, 200, 255, 0.2);
+  border-top-color: #64c8ff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+/* Summary */
+.cex-bp-summary {
+  background: rgba(100, 200, 255, 0.08);
+  border: 1px solid rgba(100, 200, 255, 0.2);
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 20px;
+}
+
+.cex-bp-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cex-bp-label {
+  color: #a0a0a0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 500;
+}
+
+.cex-bp-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: #64ff64;
+  font-family: 'Monaco', 'Courier New', monospace;
+  text-shadow: 0 0 10px rgba(100, 255, 100, 0.3);
+}
+
+/* Exchanges */
+.cex-bp-exchanges {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  overflow-x: auto;
+  padding-bottom: 5px;
+}
+
+.cex-bp-exchange-btn {
+  flex-shrink: 0;
+  background: rgba(100, 200, 255, 0.08);
+  border: 1px solid rgba(100, 200, 255, 0.2);
+  color: #a0a0a0;
+  padding: 10px 15px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  letter-spacing: 0.5px;
+}
+
+.cex-bp-exchange-btn:hover {
+  background: rgba(100, 200, 255, 0.15);
+  border-color: rgba(100, 200, 255, 0.3);
+  color: #64c8ff;
+}
+
+.cex-bp-exchange-btn.active {
+  background: rgba(100, 200, 255, 0.2);
+  border-color: rgba(100, 200, 255, 0.4);
+  color: #64c8ff;
+  box-shadow: 0 0 10px rgba(100, 200, 255, 0.2);
+}
+
+.cex-bp-exchange-name {
+  display: block;
+}
+
+.cex-bp-exchange-value {
+  display: block;
+  font-size: 11px;
+  color: #64ff64;
+  font-family: 'Monaco', 'Courier New', monospace;
+}
+
+/* Table */
+.cex-bp-table-container {
+  overflow-x: auto;
+  margin-bottom: 15px;
+  border-radius: 8px;
+  border: 1px solid rgba(100, 200, 255, 0.1);
+}
+
+.cex-bp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.cex-bp-table thead {
+  background: rgba(100, 200, 255, 0.08);
+  border-bottom: 2px solid rgba(100, 200, 255, 0.2);
+}
+
+.cex-bp-table th {
+  padding: 12px 15px;
+  text-align: left;
+  color: #64c8ff;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 12px;
+}
+
+.cex-bp-table tbody tr {
+  border-bottom: 1px solid rgba(100, 200, 255, 0.05);
+  transition: all 0.2s ease;
+}
+
+.cex-bp-table tbody tr:hover {
+  background: rgba(100, 200, 255, 0.08);
+}
+
+.cex-bp-table td {
+  padding: 12px 15px;
+  color: #c0c0c0;
+  font-family: 'Monaco', 'Courier New', monospace;
+}
+
+.cex-bp-currency {
+  font-weight: 500;
+}
+
+.cex-bp-currency-code {
+  color: #64c8ff;
+  font-weight: 600;
+}
+
+.cex-bp-amount {
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+}
+
+.cex-bp-amount.free {
+  color: #64ff64;
+}
+
+.cex-bp-amount.used {
+  color: #ff6464;
+}
+
+.cex-bp-amount.total {
+  color: #64c8ff;
+  font-weight: 600;
+}
+
+/* Empty */
+.cex-bp-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: #a0a0a0;
+}
+
+.cex-bp-empty p {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+}
+
+.cex-bp-empty small {
+  display: block;
+  font-size: 12px;
+  color: #707070;
+  font-style: italic;
+}
+
+/* Details */
+.cex-bp-details {
+  background: rgba(100, 200, 255, 0.05);
+  border: 1px solid rgba(100, 200, 255, 0.1);
+  border-radius: 8px;
+  padding: 15px;
+  margin-top: 15px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 15px;
+}
+
+.cex-bp-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  text-align: center;
+}
+
+.cex-bp-detail-item .label {
+  font-size: 11px;
+  color: #a0a0a0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.cex-bp-detail-item .value {
+  font-size: 14px;
+  color: #64c8ff;
+  font-weight: 600;
+  font-family: 'Monaco', 'Courier New', monospace;
+}
+
+/* Footer */
+.cex-bp-footer {
+  text-align: center;
+  color: #707070;
+  font-size: 12px;
+  margin-top: 15px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(100, 200, 255, 0.1);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .cex-balance-panel {
+    padding: 15px;
+  }
+
+  .cex-bp-details {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .cex-bp-table {
+    font-size: 12px;
+  }
+
+  .cex-bp-table th,
+  .cex-bp-table td {
+    padding: 10px 12px;
+  }
+
+  .cex-bp-summary {
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .cex-bp-details {
+    grid-template-columns: 1fr;
+  }
+
+  .cex-bp-value {
+    font-size: 16px;
+  }
+}

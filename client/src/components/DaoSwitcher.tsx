@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { ChevronDown, Check, Users, TrendingUp } from 'lucide-react';
+import { apiGet } from '@/lib/api';
 
 export default function DaoSwitcher() {
   const navigate = useNavigate();
@@ -16,9 +17,7 @@ export default function DaoSwitcher() {
   const { data: daos = [] } = useQuery({
     queryKey: ['/api/daos'],
     queryFn: async () => {
-      const res = await fetch('/api/daos', { credentials: 'include' });
-      if (!res.ok) throw new Error('Failed to fetch DAOs');
-      const data = await res.json();
+      const data = await apiGet<any[]>('/api/daos');
       return Array.isArray(data) ? data.filter((d: any) => d.isJoined) : [];
     },
   });

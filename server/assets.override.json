@@ -1,0 +1,6 @@
+
+{
+  "BTC/USDT": { "displayName": "Bitcoin", "icon": "btc.svg", "hidden": false },
+  "ETH/USDT": { "displayName": "Ethereum", "icon": "eth.svg", "hidden": false },
+  "DOGE/USDT": { "displayName": "Dogecoin", "icon": "doge.svg", "hidden": true }
+}

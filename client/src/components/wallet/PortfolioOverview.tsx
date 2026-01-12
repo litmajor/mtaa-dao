@@ -1,8 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line } from 'recharts';
-import { TrendingUp, DollarSign, Wallet, Eye, EyeOff } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Wallet, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useQuery } from '@tanstack/react-query';
+import { PriceBadge } from './PriceDisplay';
 
 interface Asset {
   name: string;
@@ -24,6 +26,63 @@ interface PerformancePoint {
 export function PortfolioOverview() {
   const [showValues, setShowValues] = useState(true);
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('6m');
+  const [currencyPreferences, setCurrencyPreferences] = useState({
+    primary: 'cUSD',
+    secondary: 'KES'
+  });
+
+  // Fetch user currency preferences
+  const { data: preferences } = useQuery({
+    queryKey: ['user-preferences'],
+    queryFn: async () => {
+      const response = await fetch('/api/user-preferences');
+      if (!response.ok) throw new Error('Failed to fetch preferences');
+      const data = await response.json();
+      return data.data;
+    },
+    staleTime: Infinity,
+    retry: 1
+  });
+
+  useEffect(() => {
+    if (preferences) {
+      setCurrencyPreferences({
+        primary: preferences.primaryCurrency || 'cUSD',
+        secondary: preferences.secondaryCurrency || 'KES'
+      });
+    }
+  }, [preferences]);
+
+  // Fetch exchange rates for conversions
+  const { data: exchangeRates = {} } = useQuery({
+    queryKey: ['exchange-rates'],
+    queryFn: async () => {
+      const response = await fetch('/api/wallet/exchange-rates');
+      if (!response.ok) throw new Error('Failed to fetch rates');
+      const data = await response.json();
+      return data.rates || {};
+    },
+    staleTime: 30000, // 30 seconds
+    retry: 1
+  });
+
+  // Convert amount between currencies
+  const convertAmount = (amount: number, from: string, to: string): number => {
+    if (from === to) return amount;
+    if (!exchangeRates || Object.keys(exchangeRates).length === 0) return amount;
+
+    const rateKey = `${from}-${to}`;
+    if (exchangeRates[rateKey]) {
+      return amount * exchangeRates[rateKey].rate;
+    }
+
+    const reverseKey = `${to}-${from}`;
+    if (exchangeRates[reverseKey]) {
+      return amount / exchangeRates[reverseKey].rate;
+    }
+
+    return amount;
+  };
 
   // Mock portfolio data - replace with real data from API
   const assets: Asset[] = [
@@ -34,6 +93,10 @@ export function PortfolioOverview() {
   ];
 
   const totalValue = assets.reduce((sum, asset) => sum + asset.value, 0);
+  
+  // Convert total value to both currencies
+  const totalValuePrimary = convertAmount(totalValue, 'USD', currencyPreferences.primary);
+  const totalValueSecondary = convertAmount(totalValue, 'USD', currencyPreferences.secondary);
   
   const chartData = assets.map(asset => ({
     name: asset.name,
@@ -172,15 +235,40 @@ export function PortfolioOverview() {
         </Button>
       </div>
 
-      {/* Total Balance Card */}
+      {/* Total Balance Card with Dual Currency */}
       <Card className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border-purple-200 dark:border-purple-800">
         <CardContent className="p-8">
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Portfolio Value</p>
-              <p className="text-4xl font-bold text-purple-600 dark:text-purple-300 mt-2" data-testid="text-portfolio-value">
-                {showValues ? `$${totalValue.toLocaleString()}` : '••••••'}
-              </p>
+              
+              {/* Primary Currency Display */}
+              <div className="mt-3">
+                <p className="text-3xl font-bold text-purple-600 dark:text-purple-300" data-testid="text-portfolio-value">
+                  {showValues 
+                    ? `${currencyPreferences.primary} ${totalValuePrimary.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
+                    : '••••••'
+                  }
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                  Primary Display
+                </p>
+              </div>
+
+              {/* Secondary Currency Display */}
+              <div className="mt-3 pt-3 border-t border-purple-200 dark:border-purple-800">
+                <p className="text-2xl font-semibold text-pink-600 dark:text-pink-300">
+                  {showValues 
+                    ? `${currencyPreferences.secondary} ${totalValueSecondary.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+                    : '••••••'
+                  }
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                  Real-time Conversion
+                </p>
+              </div>
+
+              {/* Performance Indicator */}
               <div className="flex items-center gap-2 mt-4">
                 <TrendingUp className="w-4 h-4 text-green-600" />
                 <p className="text-sm text-green-600 font-semibold" data-testid="text-performance-change">{getPerformanceData.change} this period</p>
@@ -305,37 +393,67 @@ export function PortfolioOverview() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {assets.map((asset) => (
-              <div 
-                key={asset.name} 
-                className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg"
-                data-testid={`card-asset-${asset.name.toLowerCase().replace(/\s+/g, '-')}`}
-              >
-                <div className="flex items-center gap-4">
-                  <div
-                    className="w-4 h-4 rounded-full"
-                    style={{ backgroundColor: asset.color }}
-                  />
-                  <div>
-                    <p className="font-semibold text-gray-900 dark:text-white" data-testid={`text-asset-name-${asset.name.toLowerCase()}`}>{asset.name}</p>
-                    {asset.balance > 0 && (
-                      <p className="text-xs text-gray-600 dark:text-gray-400" data-testid={`text-asset-balance-${asset.name.toLowerCase()}`}>
-                        {asset.balance.toLocaleString()} {asset.name}
+            {assets.map((asset) => {
+              // Get unit price for this asset
+              const assetPricePair = `${asset.name}-USD`;
+              const assetPriceData = exchangeRates[assetPricePair];
+              const unitPrice = assetPriceData?.rate || 0;
+              const changePercent = assetPriceData 
+                ? ((assetPriceData.change24h || 0) / unitPrice) * 100 
+                : 0;
+
+              return (
+                <div 
+                  key={asset.name} 
+                  className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg"
+                  data-testid={`card-asset-${asset.name.toLowerCase().replace(/\s+/g, '-')}`}
+                >
+                  <div className="flex items-center gap-4 flex-1">
+                    <div
+                      className="w-4 h-4 rounded-full"
+                      style={{ backgroundColor: asset.color }}
+                    />
+                    <div className="flex-1">
+                      <p className="font-semibold text-gray-900 dark:text-white" data-testid={`text-asset-name-${asset.name.toLowerCase()}`}>
+                        {asset.name}
                       </p>
-                    )}
+                      {asset.balance > 0 && (
+                        <p className="text-xs text-gray-600 dark:text-gray-400" data-testid={`text-asset-balance-${asset.name.toLowerCase()}`}>
+                          {asset.balance.toLocaleString()} {asset.name}
+                        </p>
+                      )}
+                      {/* Unit Price with Change Indicator */}
+                      {unitPrice > 0 && (
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs text-gray-600 dark:text-gray-400">
+                            Price: ${unitPrice.toLocaleString('en-US', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 8
+                            })}
+                          </span>
+                          <PriceBadge
+                            price={unitPrice}
+                            currency="USD"
+                            changePercent={changePercent}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p 
+                      className="font-bold text-gray-900 dark:text-white"
+                      data-testid={`text-asset-value-${asset.name.toLowerCase()}`}
+                    >
+                      {showValues ? `$${asset.value.toLocaleString()}` : '••••'}
+                    </p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400" data-testid={`text-asset-percentage-${asset.name.toLowerCase()}`}>
+                      {asset.percentage}%
+                    </p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p 
-                    className="font-bold text-gray-900 dark:text-white"
-                    data-testid={`text-asset-value-${asset.name.toLowerCase()}`}
-                  >
-                    {showValues ? `$${asset.value.toLocaleString()}` : '••••'}
-                  </p>
-                  <p className="text-xs text-gray-600 dark:text-gray-400" data-testid={`text-asset-percentage-${asset.name.toLowerCase()}`}>{asset.percentage}%</p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       </Card>

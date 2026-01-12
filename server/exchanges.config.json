@@ -1,0 +1,32 @@
+{
+  "binance": {
+    "enabled": true,
+    "apiKey": "",
+    "apiSecret": ""
+  },
+  "coinbase": {
+    "enabled": true,
+    "apiKey": "",
+    "apiSecret": ""
+  },
+  "kraken": {
+    "enabled": true,
+    "apiKey": "",
+    "apiSecret": ""
+  },
+  "bybit": {
+    "enabled": true,
+    "apiKey": "",
+    "apiSecret": ""
+  },
+  "kucoin": {
+    "enabled": true,
+    "apiKey": "",
+    "apiSecret": ""
+  },
+  "okx": {
+    "enabled": true,
+    "apiKey": "",
+    "apiSecret": ""
+  }
+}

@@ -54,6 +54,8 @@ const InvestmentPoolsLazy = lazy(() => import('./pages/investment-pools'));
 const InvestmentPoolDetailLazy = lazy(() => import('./pages/investment-pool-detail'));
 // Import new page components for Investment Pools
 const PoolDiscovery = lazy(() => import('./pages/pool-discovery'));
+const ExchangeMarketsLazy = lazy(() => import('./pages/ExchangeMarkets'));
+const DeFiDEXAnalyticsLazy = lazy(() => import('./pages/DeFiDEXAnalytics'));
 const EscrowPageLazy = lazy(() => import('./pages/escrow'));
 const EscrowAcceptLazy = lazy(() => import('./pages/escrow-accept'));
 
@@ -304,6 +306,9 @@ function App() {
                         {/* Protected special routes */}
                         <Route path="/architect-setup" element={<ProtectedRoute><ArchitectSetupPage /></ProtectedRoute>} />
                         <Route path="/wallet-setup" element={<ProtectedRoute><WalletSetupPage /></ProtectedRoute>} />
+                        {/* Exchange Markets - Phase 1 & 2 CCXT Integration */}
+                        <Route path="/exchange-markets" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><ExchangeMarketsLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/defi-dex" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><DeFiDEXAnalyticsLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/leaderboard" element={<ReputationLeaderboard />} />
                         <Route path="/reputation-dashboard" element={<ReputationDashboard />} />
                         <Route path="/minipay" element={<ProtectedRoute><MiniPayDemo /></ProtectedRoute>} />
@@ -327,7 +332,7 @@ function App() {
   } catch (error) {
     console.error('App component error:', error);
     return (
-      <div style={{ padding: '20px', color: 'red', backgroundColor: '#000' }}>
+      <div className="p-5 text-red-600 bg-black">
         <h1>Error Loading Application</h1>
         <p>{error instanceof Error ? error.message : 'Unknown error'}</p>
       </div>
