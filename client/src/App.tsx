@@ -106,7 +106,9 @@ import Checkout from './pages/Checkout';
 import Subscribe from './pages/Subscribe';
 
 // Cross-chain integration
-import CrossChainBridge from './pages/CrossChainBridge';
+import CrossChainHub from './pages/CrossChainHub';
+import CrossChainBridgePage from './pages/CrossChainBridgePage';
+import CrossChainSwapPage from './pages/CrossChainSwapPage';
 import NFTMarketplace from './pages/NFTMarketplace';
 
 // Subscription Management
@@ -315,7 +317,9 @@ function App() {
                         <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
                         <Route path="/subscribe" element={<ProtectedRoute><Subscribe /></ProtectedRoute>} />
                         {/* Cross-chain bridge route */}
-                        <Route path="/cross-chain" element={<ProtectedRoute><CrossChainBridge /></ProtectedRoute>} />
+                        <Route path="/cross-chain" element={<ProtectedRoute><CrossChainHub /></ProtectedRoute>} />
+                        <Route path="/cross-chain/bridge" element={<ProtectedRoute><CrossChainBridgePage /></ProtectedRoute>} />
+                        <Route path="/cross-chain/swap" element={<ProtectedRoute><CrossChainSwapPage /></ProtectedRoute>} />
                         {/* Catch-all 404 */}
                         <Route path="*" element={<NotFound />} />
                       </Routes>

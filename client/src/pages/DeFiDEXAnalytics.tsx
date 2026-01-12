@@ -101,14 +101,14 @@ const DeFiDEXAnalytics: React.FC = () => {
 
   // Fetch swap opportunities
   const { data: opportunities } = useQuery({
-  // Fetch swap opportunities
-  const { data: opportunities } = useQuery({
     queryKey: ['swap-opportunities', selectedChain],
     queryFn: async () => {
       return await apiGet<SwapOpportunity[]>(`/api/dex/opportunities?chain=${selectedChain}`);
     },
     gcTime: 60 * 1000, // 1 minute - opportunities change frequently
-  });Calculate chain TVL
+  });
+
+  // Calculate chain TVL
   const totalTVL = pools?.reduce((sum, pool) => sum + (pool.liquidity || 0), 0) || 0;
   const total24hVolume = pools?.reduce((sum, pool) => sum + (pool.volume24h || 0), 0) || 0;
 
