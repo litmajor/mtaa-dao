@@ -4,7 +4,10 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ||
 
 // Helper to get auth headers
 function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('accessToken');
+  // Check multiple possible token keys for backward compatibility
+  const token = localStorage.getItem('accessToken') || 
+                localStorage.getItem('token') || 
+                localStorage.getItem('mtaa_dao_auth_token');
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
   };

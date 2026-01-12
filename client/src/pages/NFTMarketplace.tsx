@@ -6,7 +6,7 @@ import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { ShoppingCart, TrendingUp, Award, Filter, Search } from 'lucide-react';
+import { apiGet, apiPost } from '@/lib/api';
 
 interface NFTListing {
   tokenId: number;
@@ -30,8 +30,7 @@ export default function NFTMarketplace() {
 
   const fetchListings = async () => {
     try {
-      const res = await fetch('/api/nft-marketplace/listings');
-      const data = await res.json();
+      const data = await apiGet<any>('/api/nft-marketplace/listings');
       setListings(data.listings || []);
     } catch (error) {
       console.error('Failed to fetch listings:', error);
@@ -62,16 +61,9 @@ export default function NFTMarketplace() {
 
   const handleBuy = async (tokenId: number) => {
     try {
-      const res = await fetch('/api/nft-marketplace/buy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tokenId })
-      });
-      
-      if (res.ok) {
-        alert('NFT purchased successfully!');
-        fetchListings();
-      }
+      await apiPost('/api/nft-marketplace/buy', { tokenId });
+      alert('NFT purchased successfully!');
+      fetchListings();
     } catch (error) {
       console.error('Purchase failed:', error);
     }

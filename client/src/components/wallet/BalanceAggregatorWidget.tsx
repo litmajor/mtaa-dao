@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Card, 
   CardContent, 
@@ -16,24 +16,79 @@ import {
   Badge 
 } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { 
-  Wallet, 
-  TrendingUp, 
-  Lock, 
-  Users, 
-  Zap,
-  RefreshCw,
-  DollarSign,
-  Eye,
-  EyeOff,
-  ArrowUpRight,
-  ArrowDownLeft,
-} from 'lucide-react';
+// @ts-ignore - Icons are properly exported, type definition issue
+// @ts-ignore
+import { Wallet, TrendingUp, Users, DollarSign, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+// @ts-ignore
+import { Lock, Zap, RefreshCw, Eye, EyeOff, TrendingDown } from 'lucide-react';
 import { useBalanceAggregator } from '@/pages/hooks/useBalanceAggregator';
+import { useQuery } from '@tanstack/react-query';
+import { PriceBadge } from './PriceDisplay';
 
 const BalanceAggregatorWidget: React.FC = () => {
   const [balanceVisible, setBalanceVisible] = useState(true);
+  const [currencyPreferences, setCurrencyPreferences] = useState({
+    primary: 'cUSD',
+    secondary: 'KES'
+  });
   const aggregator = useBalanceAggregator();
+
+  // Fetch user currency preferences
+  const { data: preferences } = useQuery({
+    queryKey: ['user-preferences'],
+    queryFn: async () => {
+      const response = await fetch('/api/user-preferences');
+      if (!response.ok) throw new Error('Failed to fetch preferences');
+      const data = await response.json();
+      return data.data;
+    },
+    staleTime: Infinity,
+    retry: 1
+  } as any);
+
+  // Fetch exchange rates for conversions
+  const { data: exchangeRates = {} } = useQuery({
+    queryKey: ['exchange-rates'],
+    queryFn: async () => {
+      const response = await fetch('/api/wallet/exchange-rates');
+      if (!response.ok) throw new Error('Failed to fetch rates');
+      const data = await response.json();
+      return data.rates || {};
+    },
+    staleTime: 30000, // 30 seconds
+    retry: 1
+  } as any);
+
+  useEffect(() => {
+    if (preferences && typeof preferences === 'object' && 'primaryCurrency' in preferences) {
+      setCurrencyPreferences({
+        primary: (preferences as any).primaryCurrency || 'cUSD',
+        secondary: (preferences as any).secondaryCurrency || 'KES'
+      });
+    }
+  }, [preferences]);
+
+  // Convert amount between currencies
+  const convertAmount = (amount: string | number, from: string, to: string): string => {
+    const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (from === to) return numAmount.toLocaleString('en-US', { maximumFractionDigits: 2 });
+    if (!exchangeRates || typeof exchangeRates !== 'object' || Object.keys(exchangeRates).length === 0) return numAmount.toLocaleString('en-US', { maximumFractionDigits: 2 });
+
+    const rates = exchangeRates as Record<string, any>;
+    const rateKey = `${from}-${to}`;
+    if (rates[rateKey]) {
+      const converted = numAmount * rates[rateKey].rate;
+      return converted.toLocaleString('en-US', { maximumFractionDigits: 2 });
+    }
+
+    const reverseKey = `${to}-${from}`;
+    if (rates[reverseKey]) {
+      const converted = numAmount / rates[reverseKey].rate;
+      return converted.toLocaleString('en-US', { maximumFractionDigits: 2 });
+    }
+
+    return numAmount.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  };
 
   if (aggregator.isLoading && aggregator.totalValueUSD === '0') {
     return (
@@ -46,9 +101,14 @@ const BalanceAggregatorWidget: React.FC = () => {
     );
   }
 
+  // Convert USD balance to selected currencies
+  const usdBalance = parseFloat(aggregator.totalValueUSD);
+  const primaryBalance = convertAmount(usdBalance, 'USD', currencyPreferences.primary);
+  const secondaryBalance = convertAmount(usdBalance, 'USD', currencyPreferences.secondary);
+
   return (
     <div className="space-y-6">
-      {/* Main Balance Card */}
+      {/* Main Balance Card with Dual Currency Display */}
       <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-gray-900 dark:to-gray-800 border-blue-200 dark:border-blue-900">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
@@ -86,12 +146,37 @@ const BalanceAggregatorWidget: React.FC = () => {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="text-4xl font-bold mb-2">
-            {balanceVisible ? `$${aggregator.totalValueUSD}` : '••••••'}
+          <div className="space-y-4">
+            {/* Primary Currency Display */}
+            <div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Primary Display</p>
+              <div className="text-4xl font-bold text-blue-600 dark:text-blue-400">
+                {balanceVisible ? `${currencyPreferences.primary} ${primaryBalance}` : '••••••'}
+              </div>
+            </div>
+
+            {/* Secondary Currency Display */}
+            <div className="pt-4 border-t border-blue-200 dark:border-blue-800">
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Secondary Display (Real-time)</p>
+              <div className="text-3xl font-semibold text-indigo-600 dark:text-indigo-400">
+                {balanceVisible ? `${currencyPreferences.secondary} ${secondaryBalance}` : '••••••'}
+              </div>
+            </div>
+
+            {/* Metadata */}
+            <div className="pt-2 text-xs text-gray-500 dark:text-gray-500">
+              Last updated: {aggregator.lastUpdated instanceof Date
+                ? aggregator.lastUpdated.toLocaleTimeString()
+                : aggregator.lastUpdated
+                  ? new Date(aggregator.lastUpdated).toString() !== 'Invalid Date'
+                    ? new Date(aggregator.lastUpdated).toLocaleTimeString()
+                    : 'N/A'
+                  : 'Never'}
+              {exchangeRates && typeof exchangeRates === 'object' && Object.keys(exchangeRates as Record<string, any>).length > 0 ? (
+                <p>Exchange rates refresh every 30 seconds</p>
+              ) : null}
+            </div>
           </div>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            Last updated: {aggregator.lastUpdated.toLocaleTimeString()}
-          </p>
           {aggregator.error && (
             <p className="text-sm text-red-600 mt-2">{aggregator.error}</p>
           )}
@@ -176,6 +261,12 @@ const BalanceAggregatorWidget: React.FC = () => {
                   symbol={aggregator.breakdown.nativeBalance.symbol}
                   valueUSD={aggregator.breakdown.nativeBalance.valueUSD}
                   visible={balanceVisible}
+                  unitPrice={(exchangeRates as Record<string, any>)[`${aggregator.breakdown.nativeBalance.symbol}-USD`]?.rate}
+                  priceChangePercent={
+                    (exchangeRates as Record<string, any>)[`${aggregator.breakdown.nativeBalance.symbol}-USD`]?.change24h
+                      ? (((exchangeRates as Record<string, any>)[`${aggregator.breakdown.nativeBalance.symbol}-USD`].change24h / (exchangeRates as Record<string, any>)[`${aggregator.breakdown.nativeBalance.symbol}-USD`].rate) * 100)
+                      : 0
+                  }
                 />
 
                 {/* Tokens */}
@@ -262,7 +353,15 @@ const BalanceAggregatorWidget: React.FC = () => {
 
                 {/* Tokens */}
                 {aggregator.breakdown.tokens.map((token: any) => (
-                  <TokenCard key={token.address} token={token} visible={balanceVisible} />
+                  <TokenCard 
+                    key={token.address} 
+                    token={token} 
+                    visible={balanceVisible}
+                    primaryCurrency={currencyPreferences.primary}
+                    secondaryCurrency={currencyPreferences.secondary}
+                    convertAmount={convertAmount}
+                    exchangeRates={exchangeRates}
+                  />
                 ))}
 
                 {aggregator.breakdown.tokens.length === 0 && (
@@ -285,7 +384,14 @@ const BalanceAggregatorWidget: React.FC = () => {
             <CardContent>
               <div className="space-y-4">
                 {aggregator.breakdown.investmentPools.map((pool: any) => (
-                  <PoolCard key={pool.poolId} pool={pool} visible={balanceVisible} />
+                  <PoolCard 
+                    key={pool.poolId} 
+                    pool={pool} 
+                    visible={balanceVisible}
+                    primaryCurrency={currencyPreferences.primary}
+                    secondaryCurrency={currencyPreferences.secondary}
+                    convertAmount={convertAmount}
+                  />
                 ))}
                 {aggregator.breakdown.investmentPools.length === 0 && (
                   <p className="text-center text-gray-500 py-4">
@@ -374,6 +480,8 @@ interface BalanceCategoryProps {
   count?: number;
   valueUSD: string;
   visible: boolean;
+  unitPrice?: number;
+  priceChangePercent?: number;
 }
 
 const BalanceCategory: React.FC<BalanceCategoryProps> = ({
@@ -384,75 +492,190 @@ const BalanceCategory: React.FC<BalanceCategoryProps> = ({
   count,
   valueUSD,
   visible,
-}) => (
-  <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-    <div className="flex items-center gap-3">
-      <div className="text-blue-600 dark:text-blue-400">{icon}</div>
-      <div>
-        <p className="font-semibold">{title}</p>
-        {count && (
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            {count} item{count !== 1 ? 's' : ''}
+  unitPrice,
+  priceChangePercent = 0,
+}) => {
+  const isPositive = priceChangePercent >= 0;
+  const priceChangeColor = isPositive
+    ? 'text-green-600 dark:text-green-400'
+    : 'text-red-600 dark:text-red-400';
+
+  return (
+    <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+      <div className="flex items-center gap-3 flex-1">
+        <div className="text-blue-600 dark:text-blue-400">{icon}</div>
+        <div className="flex-1">
+          <p className="font-semibold">{title}</p>
+          {count && (
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {count} item{count !== 1 ? 's' : ''}
+            </p>
+          )}
+          {/* Display unit price if available */}
+          {unitPrice !== undefined && unitPrice > 0 && (
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-xs text-gray-600 dark:text-gray-400">
+                ${unitPrice.toLocaleString('en-US', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 6
+                })}
+              </span>
+              {priceChangePercent !== 0 && (
+                <span className={`text-xs font-medium ${priceChangeColor}`}>
+                  {isPositive ? '↑' : '↓'} {Math.abs(priceChangePercent).toFixed(2)}%
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="text-right">
+        {amount && (
+          <p className="font-bold">
+            {visible ? amount : '••••••'} {symbol}
           </p>
         )}
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          ${valueUSD}
+        </p>
       </div>
     </div>
-    <div className="text-right">
-      {amount && (
-        <p className="font-bold">
-          {visible ? amount : '••••••'} {symbol}
-        </p>
-      )}
-      <p className="text-sm text-gray-600 dark:text-gray-400">
-        ${valueUSD}
-      </p>
-    </div>
-  </div>
-);
+  );
+};
 
 interface TokenCardProps {
   token: any;
   visible: boolean;
+  primaryCurrency?: string;
+  secondaryCurrency?: string;
+  convertAmount?: (amount: string | number, from: string, to: string) => string;
+  exchangeRates?: any;
 }
 
-const TokenCard: React.FC<TokenCardProps> = ({ token, visible }) => (
-  <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-    <div className="flex items-center justify-between mb-2">
-      <span className="font-semibold">{token.symbol}</span>
-      <Badge variant="outline">{token.address.slice(0, 6)}...</Badge>
+const TokenCard: React.FC<TokenCardProps> = ({ 
+  token, 
+  visible, 
+  primaryCurrency = 'cUSD',
+  secondaryCurrency = 'KES',
+  convertAmount = (amt) => typeof amt === 'string' ? amt : amt.toString(),
+  exchangeRates = {}
+}) => {
+  const usdValue = parseFloat(token.valueUSD || '0');
+  const primaryValue = convertAmount(usdValue, 'USD', primaryCurrency);
+  const secondaryValue = convertAmount(usdValue, 'USD', secondaryCurrency);
+
+  // Get unit price for this token (from USD pair or other available pair)
+  const getUnitPrice = () => {
+    const symbolPair = `${token.symbol}-USD`;
+    if (exchangeRates[symbolPair]) {
+      return {
+        price: exchangeRates[symbolPair].rate,
+        change24h: exchangeRates[symbolPair].change24h || 0,
+        changePercent: ((exchangeRates[symbolPair].change24h || 0) / exchangeRates[symbolPair].rate) * 100
+      };
+    }
+    return null;
+  };
+
+  const unitPrice = getUnitPrice();
+
+  return (
+    <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+      <div className="flex items-center justify-between mb-3">
+        <span className="font-semibold">{token.symbol}</span>
+        <Badge variant="outline">{token.address.slice(0, 6)}...</Badge>
+      </div>
+      <div className="space-y-3">
+        {/* Amount */}
+        <div>
+          <p className="text-xs text-gray-500 dark:text-gray-500">Amount</p>
+          <div className="text-lg font-bold">
+            {visible ? token.amount : '••••••'}
+          </div>
+        </div>
+
+        {/* Unit Price with 24h Change */}
+        {unitPrice && (
+          <div>
+            <p className="text-xs text-gray-500 dark:text-gray-500">Unit Price</p>
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-semibold">
+                USD ${unitPrice.price.toLocaleString('en-US', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 8
+                })}
+              </div>
+              <PriceBadge
+                price={unitPrice.price}
+                currency="USD"
+                changePercent={unitPrice.changePercent}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Primary Currency Value */}
+        <div>
+          <p className="text-xs text-gray-500 dark:text-gray-500">Value ({primaryCurrency})</p>
+          <div className="text-sm font-semibold text-blue-600 dark:text-blue-400">
+            {visible ? `${primaryCurrency} ${primaryValue}` : '••••••'}
+          </div>
+        </div>
+
+        {/* Secondary Currency Value */}
+        <div>
+          <p className="text-xs text-gray-500 dark:text-gray-500">Also in {secondaryCurrency}</p>
+          <div className="text-sm font-semibold text-indigo-600 dark:text-indigo-400">
+            {visible ? `${secondaryCurrency} ${secondaryValue}` : '••••••'}
+          </div>
+        </div>
+      </div>
     </div>
-    <div className="text-xl font-bold mb-1">
-      {visible ? token.amount : '••••••'}
-    </div>
-    <p className="text-sm text-gray-600 dark:text-gray-400">
-      ${token.valueUSD}
-    </p>
-  </div>
-);
+  );
+};
 
 interface PoolCardProps {
   pool: any;
   visible: boolean;
+  primaryCurrency?: string;
+  secondaryCurrency?: string;
+  convertAmount?: (amount: string | number, from: string, to: string) => string;
 }
 
-const PoolCard: React.FC<PoolCardProps> = ({ pool, visible }) => (
-  <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
-    <div className="flex items-center justify-between mb-2">
-      <span className="font-semibold">{pool.poolName}</span>
-      <Badge className="bg-purple-600">{pool.apy}% APY</Badge>
-    </div>
-    <div className="grid grid-cols-2 gap-4">
-      <div>
-        <p className="text-xs text-gray-600 dark:text-gray-400">Your Shares</p>
-        <p className="font-bold">{visible ? pool.shares : '••••••'}</p>
+const PoolCard: React.FC<PoolCardProps> = ({ 
+  pool, 
+  visible, 
+  primaryCurrency = 'cUSD',
+  secondaryCurrency = 'KES',
+  convertAmount = (amt) => typeof amt === 'string' ? amt : amt.toString()
+}) => {
+  const usdValue = parseFloat(pool.valueUSD || '0');
+  const primaryValue = convertAmount(usdValue, 'USD', primaryCurrency);
+  const secondaryValue = convertAmount(usdValue, 'USD', secondaryCurrency);
+
+  return (
+    <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+      <div className="flex items-center justify-between mb-3">
+        <span className="font-semibold">{pool.poolName}</span>
+        <Badge className="bg-purple-600">{pool.apy}% APY</Badge>
       </div>
-      <div>
-        <p className="text-xs text-gray-600 dark:text-gray-400">USD Value</p>
-        <p className="font-bold">${pool.valueUSD}</p>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <p className="text-xs text-gray-600 dark:text-gray-400">Your Shares</p>
+          <p className="font-bold">{visible ? pool.shares : '••••••'}</p>
+        </div>
+        <div>
+          <p className="text-xs text-gray-600 dark:text-gray-400">Value ({primaryCurrency})</p>
+          <p className="font-bold text-blue-600 dark:text-blue-400">{visible ? `${primaryCurrency} ${primaryValue}` : '••••••'}</p>
+        </div>
+      </div>
+      <div className="mt-3 pt-3 border-t border-purple-200 dark:border-purple-700">
+        <p className="text-xs text-gray-600 dark:text-gray-400">Also in {secondaryCurrency}</p>
+        <p className="font-semibold text-indigo-600 dark:text-indigo-400">{visible ? `${secondaryCurrency} ${secondaryValue}` : '••••••'}</p>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 interface VaultCardProps {
   vault: any;

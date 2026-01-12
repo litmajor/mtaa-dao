@@ -23,6 +23,8 @@ export interface DaoDeployRequest {
     description?: string;
     daoType: 'shortTerm' | 'collective' | 'governance' | 'short_term' | 'free' | 'meta';
     category?: string;
+    causeTags?: string[]; // Array of predefined cause tags
+    primaryCause?: string; // User's custom cause description
     treasuryType?: 'cusd' | 'dual' | 'custom';
     customTokenAddress?: string; // For custom stablecoin treasury
     durationDays?: number;
@@ -179,6 +181,10 @@ export async function daoDeployHandler(req: Request, res: Response) {
         daoType: daoData.daoType,
         access: 'public',
         memberCount: 1 + elders.filter(e => e !== founderWallet).length,
+
+        // Cause configuration
+        primaryCause: daoData.primaryCause || '', // User's custom cause
+        causeTags: daoData.causeTags || [], // Array of predefined tags
 
         // Treasury configuration
         treasuryBalance: '0',

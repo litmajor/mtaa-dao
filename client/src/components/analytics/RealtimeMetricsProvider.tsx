@@ -417,21 +417,58 @@ export const RealtimeMetricsProvider: React.FC<RealtimeMetricsProviderProps> = (
   const safeWebSocketUrl = (() => {
     if (webSocketUrl) return webSocketUrl;
     const wsUrl = import.meta.env.VITE_WS_URL;
-    if (wsUrl && wsUrl !== 'undefined' && wsUrl.toLowerCase().startsWith('ws')) return wsUrl;
+    
+    // Check if wsUrl is valid and doesn't contain 'undefined'
+    if (wsUrl && wsUrl !== 'undefined' && !wsUrl.includes('undefined')) {
+      if (wsUrl.toLowerCase().startsWith('ws')) {
+        console.log('Using VITE_WS_URL:', wsUrl);
+        return wsUrl;
+      }
+    }
+    
+    // Fallback: construct from current location
     const host = window.location.hostname || 'localhost';
-    const port = window.location.port || '5000';
-    return `ws://${host}:${port}`;
+    const port = window.location.port;
+    
+    // Only append port if it's explicitly set (not empty string)
+    if (port && port !== '80' && port !== '443') {
+      return `ws://${host}:${port}`;
+    } else if (window.location.protocol === 'https:') {
+      return `wss://${host}`;
+    } else {
+      return `ws://${host}:5000`; // Default fallback
+    }
   })();
+  
+  console.log('[RealtimeMetricsProvider] WebSocket URL:', safeWebSocketUrl);
+  
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected' | 'error'>('disconnected');
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const managerRef = useRef<MetricsWebSocketManager | null>(null);
 
+  // Validate WebSocket URL
+  const isValidWebSocketUrl = useCallback(() => {
+    try {
+      // Make sure URL doesn't contain 'undefined' or other invalid values
+      if (!safeWebSocketUrl || safeWebSocketUrl.includes('undefined') || safeWebSocketUrl.includes('null')) {
+        console.error('[RealtimeMetricsProvider] Invalid WebSocket URL:', safeWebSocketUrl);
+        return false;
+      }
+      // Try to create a URL object to validate format
+      new URL(safeWebSocketUrl);
+      return true;
+    } catch (e) {
+      console.error('[RealtimeMetricsProvider] WebSocket URL validation failed:', e);
+      return false;
+    }
+  }, [safeWebSocketUrl]);
+
   // Initialize WebSocket manager
   useEffect(() => {
-    if (!safeWebSocketUrl || !enablePolling) {
-      logger.warn('WebSocket not configured, falling back to polling only');
+    if (!isValidWebSocketUrl() || !enablePolling) {
+      logger.warn('WebSocket not configured or invalid, falling back to polling only');
       return;
     }
 

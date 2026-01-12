@@ -27,6 +27,7 @@ interface DAO {
   // Added missing properties for UI rendering
   regionalTags?: string[];
   causeTags?: string[];
+  primaryCause?: string; // User's custom cause description
   featuredMessage?: string;
   enableSocialReactions?: boolean;
   supportCount?: number;
@@ -253,6 +254,14 @@ export default function EnhancedDAOs() {
         <p className="text-gray-600 dark:text-gray-400 text-sm mb-4 line-clamp-2">
           {dao.description}
         </p>
+
+        {/* Primary Cause - User's custom reason */}
+        {dao.primaryCause && (
+          <div className="mb-4 p-3 bg-gradient-to-r from-teal-50 to-cyan-50 dark:from-teal-900/20 dark:to-cyan-900/20 rounded-lg border border-teal-200 dark:border-teal-700">
+            <p className="text-xs font-semibold text-teal-700 dark:text-teal-300 mb-1">💡 What we're doing this for:</p>
+            <p className="text-sm text-teal-900 dark:text-teal-100 font-medium">{dao.primaryCause}</p>
+          </div>
+        )}
 
         {/* Stats with enhanced visuals */}
         <div className="grid grid-cols-3 gap-4 mb-4">

@@ -1,0 +1,188 @@
+### Phase 4 WebSocket & Orders API Testing
+### Use with VS Code REST Client extension
+### https://marketplace.visualstudio.com/items?itemName=humao.rest-client
+
+### ============================================
+### WEBSOCKET STATS ENDPOINT
+### ============================================
+
+### Get WebSocket Server Statistics
+GET http://localhost:5000/api/websocket/stats
+
+
+### ============================================
+### ORDER ROUTING ENDPOINTS (Phase 3)
+### ============================================
+
+### Test Order Routing - Compare DEX vs CEX
+POST http://localhost:5000/api/orders/route
+Content-Type: application/json
+
+{
+  "symbol": "BTC/USDT",
+  "amount": 1
+}
+
+### Test Order Splitting - Get optimal split recommendation
+POST http://localhost:5000/api/orders/split
+Content-Type: application/json
+
+{
+  "symbol": "BTC/USDT",
+  "amount": 100
+}
+
+### Test Best Execution Venue
+GET http://localhost:5000/api/orders/best-venue?symbol=BTC/USDT&amount=100
+
+
+### ============================================
+### LIMIT ORDER ENDPOINTS (Phase 3)
+### ============================================
+
+### Create Limit Order
+POST http://localhost:5000/api/orders/limit
+Content-Type: application/json
+
+{
+  "symbol": "BTC/USDT",
+  "amount": 1,
+  "price": 42000,
+  "side": "buy",
+  "exchange": "binance"
+}
+
+### Check Limit Order Status
+GET http://localhost:5000/api/orders/limit/order-id-here/status
+
+### Cancel Limit Order
+DELETE http://localhost:5000/api/orders/limit/order-id-here
+
+
+### ============================================
+### EXCHANGE ENDPOINTS (Phase 3)
+### ============================================
+
+### Get Available Exchanges
+GET http://localhost:5000/api/exchanges/available
+
+### Get Exchange Markets
+GET http://localhost:5000/api/exchanges/markets?exchange=binance
+
+### Get Symbol Price from Exchange
+GET http://localhost:5000/api/exchanges/price?symbol=BTC/USDT&exchange=binance
+
+### Get Prices from Multiple Exchanges
+POST http://localhost:5000/api/exchanges/prices
+Content-Type: application/json
+
+{
+  "symbol": "BTC/USDT",
+  "exchanges": ["binance", "coinbase", "kraken"]
+}
+
+### Get Exchange Order Book
+GET http://localhost:5000/api/exchanges/orderbook?symbol=BTC/USDT&exchange=binance
+
+
+### ============================================
+### EXAMPLE WORKFLOWS
+### ============================================
+
+### Workflow 1: Compare prices and find best venue
+### Step 1: Get available exchanges
+GET http://localhost:5000/api/exchanges/available
+
+###
+### Step 2: Get prices from multiple exchanges
+POST http://localhost:5000/api/exchanges/prices
+Content-Type: application/json
+
+{
+  "symbol": "ETH/USDT",
+  "exchanges": ["binance", "coinbase", "kraken", "bybit", "kucoin"]
+}
+
+###
+### Step 3: Find best execution venue
+GET http://localhost:5000/api/orders/best-venue?symbol=ETH/USDT&amount=10
+
+###
+### Step 4: Route the order
+POST http://localhost:5000/api/orders/route
+Content-Type: application/json
+
+{
+  "symbol": "ETH/USDT",
+  "amount": 10
+}
+
+
+### Workflow 2: Place a limit order
+### Step 1: Create limit order
+POST http://localhost:5000/api/orders/limit
+Content-Type: application/json
+
+{
+  "symbol": "BTC/USDT",
+  "amount": 0.5,
+  "price": 41500,
+  "side": "buy",
+  "exchange": "binance"
+}
+
+###
+### Step 2: Check order status (replace order-id with response from Step 1)
+GET http://localhost:5000/api/orders/limit/order-id-from-step1/status
+
+###
+### Step 3: Cancel if needed
+DELETE http://localhost:5000/api/orders/limit/order-id-from-step1
+
+
+### Workflow 3: Detect arbitrage opportunities
+### Step 1: Get prices from multiple exchanges
+POST http://localhost:5000/api/exchanges/prices
+Content-Type: application/json
+
+{
+  "symbol": "BTC/USDT",
+  "exchanges": ["binance", "coinbase", "kraken", "bybit", "kucoin"]
+}
+
+###
+### Step 2: Analyze spreads
+### If buy price on exchange A < sell price on exchange B,
+### calculate potential profit and execute split order
+
+
+### ============================================
+### NOTES
+### ============================================
+### 
+### 1. Click "Send Request" link above any request to execute it
+### 2. Responses appear in the Response panel on the right
+### 3. You can save environment variables for base URL
+### 4. Use ### to add comments
+### 5. Separate requests with ### on its own line
+### 
+### Common Query Parameters:
+### - symbol: Required. Format: "BTC/USDT"
+### - amount: Required for most endpoints. Numeric value
+### - exchange: Optional. Exchange name like "binance", "coinbase"
+### - exchanges: Array of exchange names
+### 
+### WebSocket Connection:
+### 1. Open browser DevTools (F12)
+### 2. Paste in console:
+###
+###    const ws = new WebSocket('ws://localhost:5000/ws/prices');
+###    ws.onopen = () => {
+###      ws.send(JSON.stringify({
+###        action: 'subscribe',
+###        symbols: ['BTC/USDT'],
+###        exchanges: ['binance', 'coinbase']
+###      }));
+###    };
+###    ws.onmessage = (e) => console.log(JSON.parse(e.data));
+###

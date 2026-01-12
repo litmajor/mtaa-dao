@@ -21,8 +21,10 @@ export function useNotifications() {
 
     // Initialize WebSocket connection
   useEffect(() => {
-    // Get token from localStorage
-    const token = localStorage.getItem('accessToken');
+    // Get token from localStorage - check multiple keys for backward compatibility
+    const token = localStorage.getItem('accessToken') || 
+                  localStorage.getItem('token') || 
+                  localStorage.getItem('mtaa_dao_auth_token');
     // Explicit backend URL and port
     // Build a safe backend URL. If VITE_BACKEND_URL is present, parse it and
     // ensure a port is available; otherwise, construct from host+port defaults.
@@ -100,10 +102,25 @@ export function useNotifications() {
   useEffect(() => {
     if (!isConnected) {
       // Fallback to SSE if WebSocket fails
-      const token = localStorage.getItem('accessToken');
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+      const token = localStorage.getItem('accessToken') || 
+                    localStorage.getItem('token') || 
+                    localStorage.getItem('mtaa_dao_auth_token');
+      const backendPort = import.meta.env.VITE_API_PORT ?? '5000';
+      const backendHost = import.meta.env.VITE_API_HOST ?? 'localhost';
+      let backendUrl = import.meta.env.VITE_BACKEND_URL ?? '';
+      try {
+        if (backendUrl) {
+          const parsed = new URL(backendUrl);
+          if (!parsed.port) parsed.port = backendPort;
+          backendUrl = parsed.toString().replace(/\/$/, '');
+        } else {
+          backendUrl = `http://${backendHost}:${backendPort}`;
+        }
+      } catch (err) {
+        backendUrl = `http://${backendHost}:${backendPort}`;
+      }
       // Custom EventSource with Authorization header
-      const es = new window.EventSource(`${backendUrl}/api/sse/notifications?token=${token}`);
+      const es = new window.EventSource(`${backendUrl}/api/sse/notifications?token=${token || ''}`);
 
       es.onmessage = (event) => {
         try {

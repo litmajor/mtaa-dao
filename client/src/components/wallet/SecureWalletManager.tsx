@@ -26,17 +26,21 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
   const [wordCount, setWordCount] = useState<12 | 24>(12);
   const [walletAddress, setWalletAddress] = useState('');
   const [step, setStep] = useState<'create' | 'backup' | 'complete'>('create');
+  const [useEncryption, setUseEncryption] = useState(true);
   const { toast } = useToast();
 
   const handleCreateWallet = async () => {
-    if (password !== confirmPassword) {
-      toast({ title: 'Error', description: 'Passwords do not match', variant: 'destructive' });
-      return;
-    }
+    // Validation
+    if (useEncryption) {
+      if (password !== confirmPassword) {
+        toast({ title: 'Error', description: 'Passwords do not match', variant: 'destructive' });
+        return;
+      }
 
-    if (password.length < 8) {
-      toast({ title: 'Error', description: 'Password must be at least 8 characters', variant: 'destructive' });
-      return;
+      if (password.length < 8) {
+        toast({ title: 'Error', description: 'Password must be at least 8 characters', variant: 'destructive' });
+        return;
+      }
     }
 
     setLoading(true);
@@ -49,18 +53,29 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
         return;
       }
 
+      console.log('Creating wallet with:', { wordCount, useEncryption });
+
       const response = await fetch('/api/wallet-setup/create-wallet-mnemonic', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ password, wordCount })
+        body: JSON.stringify({ 
+          password: useEncryption ? password : '', 
+          wordCount 
+        })
       });
 
+      console.log('Response status:', response.status);
       const data = await response.json();
+      console.log('Response data:', data);
       
-      if (data.success) {
+      if (!response.ok) {
+        throw new Error(data.error || `Failed to create wallet (${response.status})`);
+      }
+
+      if (data.success || data.wallet) {
         setMnemonic(data.wallet.mnemonic);
         setWalletAddress(data.wallet.address);
         setPrivateKey(data.wallet.privateKey || '');
@@ -71,12 +86,13 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
         });
         onWalletCreated?.(data);
       } else {
-        throw new Error(data.error);
+        throw new Error(data.error || 'Failed to create wallet');
       }
     } catch (error) {
+      console.error('Wallet creation error:', error);
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to create wallet',
+        title: 'Error Creating Wallet',
+        description: error instanceof Error ? error.message : 'Failed to create wallet. Check console for details.',
         variant: 'destructive'
       });
     } finally {
@@ -154,15 +170,20 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
 
   const confirmBackup = async () => {
     try {
+      const token = localStorage.getItem('accessToken');
       await fetch('/api/wallet-setup/backup-confirmed', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ userId })
       });
       setBackedUp(true);
       setStep('complete');
       toast({ title: 'Success', description: 'Backup confirmed! Your wallet is ready.' });
     } catch (error) {
+      console.error('Backup confirmation error:', error);
       toast({ title: 'Error', description: 'Failed to confirm backup', variant: 'destructive' });
     }
   };
@@ -421,36 +442,74 @@ Created: ${new Date().toISOString()}
                 </div>
               </div>
 
-              <div>
-                <Label htmlFor="password">Encryption Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter a strong password"
-                />
+              <div className="border rounded-lg p-4 bg-blue-50 dark:bg-blue-950">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <Label className="text-base font-semibold mb-2 block">Encryption Password (Optional)</Label>
+                    <p className="text-sm text-gray-600 dark:text-gray-300">
+                      Add extra security by encrypting your wallet with a password. You can skip this and only use your recovery phrase.
+                    </p>
+                  </div>
+                  <div className="ml-4">
+                    <Button
+                      variant={useEncryption ? 'default' : 'outline'}
+                      onClick={() => setUseEncryption(!useEncryption)}
+                      className="whitespace-nowrap"
+                    >
+                      {useEncryption ? 'Enabled' : 'Disabled'}
+                    </Button>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <Label htmlFor="confirmPassword">Confirm Password</Label>
-                <Input
-                  id="confirmPassword"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Re-enter your password"
-                />
-              </div>
+              {useEncryption && (
+                <>
+                  <div>
+                    <Label htmlFor="password">Encryption Password</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter a strong password (min 8 characters)"
+                    />
+                  </div>
 
-              <Alert>
-                <Shield className="h-4 w-4" />
-                <AlertDescription>
-                  Your wallet will be encrypted with this password. Choose a strong password you won't forget.
-                </AlertDescription>
-              </Alert>
+                  <div>
+                    <Label htmlFor="confirmPassword">Confirm Password</Label>
+                    <Input
+                      id="confirmPassword"
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Re-enter your password"
+                    />
+                  </div>
 
-              <Button onClick={handleCreateWallet} disabled={loading} className="w-full" size="lg">
+                  <Alert>
+                    <Shield className="h-4 w-4" />
+                    <AlertDescription>
+                      Your wallet will be encrypted with this password. Choose a strong password you won't forget.
+                    </AlertDescription>
+                  </Alert>
+                </>
+              )}
+
+              {!useEncryption && (
+                <Alert className="bg-yellow-50 dark:bg-yellow-950 border-yellow-300">
+                  <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                  <AlertDescription className="text-yellow-800 dark:text-yellow-200">
+                    Without encryption, your recovery phrase is your only security. Store it very carefully in a secure offline location.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <Button 
+                onClick={handleCreateWallet} 
+                disabled={loading || (useEncryption && password.length < 8)} 
+                className="w-full" 
+                size="lg"
+              >
                 {loading ? 'Creating Wallet...' : 'Create Secure Wallet'}
               </Button>
             </CardContent>

@@ -24,6 +24,8 @@ router.get("/", authenticate, async (req, res) => {
         createdAt: daos.createdAt,
         founderId: daos.founderId,
         treasuryBalance: daos.treasuryBalance,
+        causeTags: daos.causeTags,
+        primaryCause: daos.primaryCause,
       })
       .from(daos);
 
@@ -79,13 +81,13 @@ router.get("/", authenticate, async (req, res) => {
     // Calculate growth rates (simplified - based on recent member joins)
     const growthRates = await db.execute(sql`
       SELECT 
-        "daoId",
+        "dao_id" as "daoId",
         CASE 
           WHEN COUNT(*) = 0 THEN 0
-          ELSE COUNT(*) FILTER (WHERE "joinedAt" >= NOW() - INTERVAL '30 days') * 100.0 / COUNT(*)
+          ELSE COUNT(*) FILTER (WHERE "created_at" >= NOW() - INTERVAL '30 days') * 100.0 / COUNT(*)
         END as "growthRate"
       FROM dao_memberships
-      GROUP BY "daoId"
+      GROUP BY "dao_id"
     `);
 
     const growthMap = new Map();
@@ -112,6 +114,8 @@ router.get("/", authenticate, async (req, res) => {
         trending: growthRate > 15,
         growthRate: parseFloat(growthRate.toFixed(1)),
         recentActivity: activeProposals > 0 ? `${activeProposals} proposals active` : 'No recent activity',
+        causeTags: dao.causeTags || [], // Include cause tags
+        primaryCause: dao.primaryCause || '', // Include primary cause
       };
     });
 

@@ -12,6 +12,7 @@ import { useNavigate } from "react-router-dom";
 import VotingModal from "../components/voting-modal";
 import { ProposalLeaderboard } from "../components/proposal_leaderboard";
 import DaoChat from "../components/dao-chat";
+import { apiGet } from "@/lib/api";
 
 export default function Proposals() {
   const [selectedProposal, setSelectedProposal] = useState<any>(null);
@@ -24,9 +25,7 @@ export default function Proposals() {
   const { data: proposals, isLoading: proposalsLoading, error: proposalsError } = useQuery({
     queryKey: ["/api/proposals"],
     queryFn: async () => {
-      const res = await fetch("/api/proposals");
-      if (!res.ok) throw new Error("Failed to fetch proposals");
-      return res.json();
+      return await apiGet<any[]>("/api/proposals");
     },
   });
 

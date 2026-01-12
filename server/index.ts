@@ -81,6 +81,7 @@ import publicStatsRoutes from './routes/public-stats';
 import treasuryIntelligenceRoutes from './routes/treasury-intelligence';
 import analyzerRoutes from './routes/analyzer';
 import defenderRoutes from './routes/defender'; // Added for defender routes
+import exchangeRoutes from './routes/exchanges'; // CCXT Service Phase 1
 
 // Import contribution indexer service
 import { contributionIndexer } from './services/contributionIndexerService';
@@ -301,7 +302,7 @@ app.use((req, res, next) => {
     setupWeeklyRewardsDistribution();
     setupInvestmentPoolsAutomation();
 
-    await registerRoutes(app);
+    await registerRoutes(app, server);
 
     // Health check endpoint
     app.get('/health', asyncHandler(async (req: Request, res: Response) => {
@@ -336,6 +337,7 @@ app.use((req, res, next) => {
     app.use('/api/treasury-intelligence', treasuryIntelligenceRoutes);
     app.use('/api/analyzer', analyzerRoutes);
     app.use('/api/defender', defenderRoutes); // Registered defender routes
+    app.use('/api/exchanges', exchangeRoutes); // CCXT Service - Phase 1
 
     // Synchronizer agent routes
     const synchronizerRoutes = (await import('./routes/synchronizer')).default;

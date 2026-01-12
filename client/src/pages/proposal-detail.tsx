@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { apiGet } from "@/lib/api";
 import { 
   ArrowLeft, 
   Calendar, 
@@ -34,9 +35,7 @@ export default function ProposalDetail() {
   const { data: proposal, isLoading, error } = useQuery({
     queryKey: [`/api/proposals/${proposalId}`],
     queryFn: async () => {
-      const res = await fetch(`/api/proposals/${proposalId}`);
-      if (!res.ok) throw new Error("Failed to fetch proposal");
-      return res.json();
+      return await apiGet(`/api/proposals/${proposalId}`);
     },
     enabled: !!proposalId,
   });
@@ -45,9 +44,7 @@ export default function ProposalDetail() {
   const { data: user } = useQuery({
     queryKey: ["/api/user/me"],
     queryFn: async () => {
-      const res = await fetch("/api/user/me");
-      if (!res.ok) return null;
-      return res.json();
+      return await apiGet("/api/user/me");
     },
   });
 
