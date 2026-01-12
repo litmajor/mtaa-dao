@@ -10,29 +10,98 @@ import { z } from 'zod';
 
 const router = Router();
 
+// Validation schemas with sanitization
+const chainNameSchema = z.string().toLowerCase().trim().refine(
+  (val) => ['celo', 'ethereum', 'polygon', 'optimism', 'arbitrum', 'bsc', 'tron', 'ton'].includes(val),
+  { message: 'Unsupported chain' }
+);
+
+const addressSchema = z.string().trim().refine(
+  (val) => /^0x[a-fA-F0-9]{40}$/.test(val),
+  { message: 'Invalid Ethereum address format' }
+);
+
+const amountSchema = z.string().trim().refine(
+  (val) => /^\d+(\.\d+)?$/.test(val) && parseFloat(val) > 0,
+  { message: 'Invalid amount - must be positive number' }
+);
+
 const transferSchema = z.object({
-  sourceChain: z.string(),
-  destinationChain: z.string(),
-  tokenAddress: z.string(),
-  amount: z.string(),
-  destinationAddress: z.string(),
+  sourceChain: chainNameSchema,
+  destinationChain: chainNameSchema,
+  tokenAddress: addressSchema,
+  amount: amountSchema,
+  destinationAddress: addressSchema,
   vaultId: z.string().optional()
+}).refine(
+  (data) => data.sourceChain !== data.destinationChain,
+  { message: 'Source and destination chains must be different' }
+);
+
+const feesSchema = z.object({
+  sourceChain: chainNameSchema,
+  destinationChain: chainNameSchema,
+  amount: amountSchema
+}).refine(
+  (data) => data.sourceChain !== data.destinationChain,
+  { message: 'Source and destination chains must be different' }
+);
+
+const swapQuoteSchema = z.object({
+  fromChain: chainNameSchema,
+  toChain: chainNameSchema,
+  fromToken: z.string().toUpperCase().trim().refine(
+    (val) => /^[A-Z0-9]{2,10}$/.test(val),
+    { message: 'Invalid token symbol' }
+  ),
+  toToken: z.string().toUpperCase().trim().refine(
+    (val) => /^[A-Z0-9]{2,10}$/.test(val),
+    { message: 'Invalid token symbol' }
+  ),
+  fromAmount: amountSchema,
+  slippageTolerance: z.number().min(0).max(100).optional().default(1.0)
+}).refine(
+  (data) => data.fromChain !== data.toChain,
+  { message: 'Source and destination chains must be different' }
+);
+
+const swapExecuteSchema = z.object({
+  quote: z.object({}).passthrough(),
+  userAddress: addressSchema
 });
 
 // Initiate cross-chain transfer
 router.post('/transfer', isAuthenticated, asyncHandler(async (req, res) => {
-  const userId = (req.user as any)?.claims?.sub;
-  const validated = transferSchema.parse(req.body);
+  try {
+    const validated = transferSchema.parse(req.body);
+    const userId = (req.user as any)?.claims?.sub;
 
-  const status = await crossChainService.initiateTransfer({
-    userId,
-    ...validated as any
-  });
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
 
-  res.json({
-    success: true,
-    data: status
-  });
+    const status = await crossChainService.initiateTransfer({
+      userId,
+      ...validated as any
+    });
+
+    res.json({
+      success: true,
+      data: status
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid input',
+        errors: error.errors
+      });
+    }
+    throw error;
+  }
 }));
 
 // Get transfer status
@@ -66,18 +135,30 @@ router.get('/chains', asyncHandler(async (req, res) => {
 
 // Estimate bridge fees
 router.post('/estimate-fees', asyncHandler(async (req, res) => {
-  const { sourceChain, destinationChain, amount } = req.body;
-  
-  const fees = await crossChainService.estimateBridgeFees(
-    sourceChain,
-    destinationChain,
-    amount
-  );
+  try {
+    const validated = feesSchema.parse(req.body);
+    
+    const fees = await crossChainService.estimateBridgeFees(
+      validated.sourceChain,
+      validated.destinationChain,
+      validated.amount
+    );
 
-  res.json({
-    success: true,
-    data: fees
-  });
+    res.json({
+      success: true,
+      data: fees
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid input',
+        errors: error.errors
+      });
+    }
+    throw error;
+  }
+}));
 
 
 // Create cross-chain proposal
@@ -190,45 +271,67 @@ router.post('/vault', isAuthenticated, asyncHandler(async (req, res) => {
 
 // Get swap quote
 router.post('/swap/quote', isAuthenticated, asyncHandler(async (req, res) => {
-  const { 
-    fromChain, 
-    toChain, 
-    fromToken, 
-    toToken, 
-    fromAmount,
-    slippageTolerance 
-  } = req.body;
+  try {
+    const validated = swapQuoteSchema.parse(req.body);
+    
+    const quote = await crossChainSwapService.getSwapQuote(
+      validated.fromChain,
+      validated.toChain,
+      validated.fromToken,
+      validated.toToken,
+      validated.fromAmount,
+      validated.slippageTolerance
+    );
 
-  const quote = await crossChainSwapService.getSwapQuote(
-    fromChain,
-    toChain,
-    fromToken,
-    toToken,
-    fromAmount,
-    slippageTolerance
-  );
-
-  res.json({
-    success: true,
-    data: quote
-  });
+    res.json({
+      success: true,
+      data: quote
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid input',
+        errors: error.errors
+      });
+    }
+    throw error;
+  }
 }));
 
 // Execute swap
 router.post('/swap/execute', isAuthenticated, asyncHandler(async (req, res) => {
-  const userId = (req.user as any)?.claims?.sub;
-  const { quote, userAddress } = req.body;
+  try {
+    const validated = swapExecuteSchema.parse(req.body);
+    const userId = (req.user as any)?.claims?.sub;
 
-  const execution = await crossChainSwapService.executeSwap(
-    userId,
-    quote,
-    userAddress
-  );
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
 
-  res.json({
-    success: true,
-    data: execution
-  });
+    const execution = await crossChainSwapService.executeSwap(
+      userId,
+      validated.quote,
+      validated.userAddress
+    );
+
+    res.json({
+      success: true,
+      data: execution
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid input',
+        errors: error.errors
+      });
+    }
+    throw error;
+  }
 }));
 
 // Get swap status

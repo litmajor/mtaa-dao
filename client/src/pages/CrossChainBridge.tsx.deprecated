@@ -53,25 +53,43 @@ export default function CrossChainBridge() {
   });
 
   // Fetch fee estimate or swap quote
-  const { data: feeEstimate, isLoading: loadingFees } = useQuery({
+  const { data: feeEstimate, isLoading: loadingFees, error: feeError } = useQuery({
     queryKey: ['bridge-fees', sourceChain, destinationChain, amount, mode],
     queryFn: async () => {
       if (!amount || parseFloat(amount) <= 0) return null;
       
-      if (mode === 'swap') {
-        const res = await apiPost('/api/cross-chain/swap/quote', {
-          fromChain: sourceChain,
-          toChain: destinationChain,
-          fromToken,
-          toToken,
-          fromAmount: amount,
-          slippageTolerance: 1.0
+      try {
+        if (mode === 'swap') {
+          // Validate inputs before sending
+          if (!fromToken || !toToken) {
+            throw new Error('Please select both tokens');
+          }
+          const res = await apiPost('/api/cross-chain/swap/quote', {
+            fromChain: sourceChain,
+            toChain: destinationChain,
+            fromToken: fromToken.toUpperCase(),
+            toToken: toToken.toUpperCase(),
+            fromAmount: amount,
+            slippageTolerance: 1.0
+          });
+          setSwapQuote(res.data);
+          return res.data;
+        } else {
+          const res = await apiPost('/api/cross-chain/estimate-fees', { 
+            sourceChain, 
+            destinationChain, 
+            amount 
+          });
+          return res.data;
+        }
+      } catch (error: any) {
+        const message = error?.response?.data?.message || error?.message || 'Failed to fetch quote';
+        toast({
+          title: 'Error',
+          description: message,
+          variant: 'destructive'
         });
-        setSwapQuote(res.data);
-        return res.data;
-      } else {
-        const res = await apiPost('/api/cross-chain/estimate-fees', { sourceChain, destinationChain, amount });
-        return res.data;
+        throw error;
       }
     },
     enabled: !!amount && parseFloat(amount) > 0
@@ -80,6 +98,11 @@ export default function CrossChainBridge() {
   // Transfer/Swap mutation
   const transferMutation = useMutation({
     mutationFn: async () => {
+      // Validate addresses before sending
+      if (!destinationAddress || !destinationAddress.startsWith('0x')) {
+        throw new Error('Invalid destination address');
+      }
+      
       if (mode === 'swap' && swapQuote) {
         const res = await apiPost('/api/cross-chain/swap/execute', {
           quote: swapQuote,
@@ -87,6 +110,9 @@ export default function CrossChainBridge() {
         });
         return res.data;
       } else {
+        if (!tokenAddress || !tokenAddress.startsWith('0x')) {
+          throw new Error('Invalid token address');
+        }
         const res = await apiPost('/api/cross-chain/transfer', {
           sourceChain,
           destinationChain,
@@ -109,10 +135,13 @@ export default function CrossChainBridge() {
       setDestinationAddress('');
       setSwapQuote(null);
     },
-    onError: () => {
+    onError: (error: any) => {
+      const errorMessage = error?.response?.data?.message || 
+                          error?.message || 
+                          `Failed to initiate cross-chain ${mode}`;
       toast({
         title: mode === 'swap' ? 'Swap Failed' : 'Transfer Failed',
-        description: `Failed to initiate cross-chain ${mode}`,
+        description: errorMessage,
         variant: 'destructive'
       });
     }
@@ -120,7 +149,8 @@ export default function CrossChainBridge() {
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
-      <h1 className="text-3xl font-bold mb-6">Cross-Chain Bridge</h1>
+      <h1 className="text-3xl font-bold mb-2">Cross-Chain Bridge</h1>
+      <p className="text-gray-600 mb-6">Move your assets across different blockchains easily and securely</p>
       
       <Card>
         <CardHeader>
@@ -147,6 +177,53 @@ export default function CrossChainBridge() {
               Swap
             </Button>
           </div>
+
+          {/* Mode Explanations */}
+          {mode === 'bridge' ? (
+            <Card className="border-blue-200 bg-blue-50">
+              <CardHeader>
+                <CardTitle className="text-base text-blue-900">What is Bridging?</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-blue-900">
+                <div>
+                  <p className="font-semibold mb-1">💡 How it works:</p>
+                  <p className="text-blue-800">Bridge transfers your token to another blockchain while maintaining its value. Your assets are locked on the source chain and released on the destination chain.</p>
+                </div>
+                <div>
+                  <p className="font-semibold mb-1">✅ What it means for you:</p>
+                  <p className="text-blue-800">You can move tokens between chains without converting them. Your CELO on Celo becomes CELO on Ethereum or other chains.</p>
+                </div>
+                <div>
+                  <p className="font-semibold mb-1">⏱️ What to expect:</p>
+                  <p className="text-blue-800">Processing time: 10-30 minutes. You'll pay a bridge fee + gas fees. The token amount stays the same, but you can use it on a different blockchain.</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-green-200 bg-green-50">
+              <CardHeader>
+                <CardTitle className="text-base text-green-900">What is Swapping?</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-green-900">
+                <div>
+                  <p className="font-semibold mb-1">💡 How it works:</p>
+                  <p className="text-green-800">Swap converts your tokens to a different token AND transfers them to another chain in one transaction. Your CELO becomes ETH on Ethereum, for example.</p>
+                </div>
+                <div>
+                  <p className="font-semibold mb-1">✅ What it means for you:</p>
+                  <p className="text-green-800">You get the token you want on the chain you want. Perfect for moving between different assets and blockchains in one step.</p>
+                </div>
+                <div>
+                  <p className="font-semibold mb-1">⏱️ What to expect:</p>
+                  <p className="text-green-800">Processing time: 15-45 minutes. You'll pay bridge fee + swap fee + gas fees. The output amount depends on market rates. Check the price impact before confirming.</p>
+                </div>
+                <div>
+                  <p className="font-semibold mb-1">⚠️ Important:</p>
+                  <p className="text-green-800">Price impact shows how much the market price will move due to your swap size. Higher impact = worse rate. Slippage of 1% is applied automatically.</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
           {/* Chain Selection */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
             <div>
@@ -285,7 +362,9 @@ export default function CrossChainBridge() {
                       </div>
                       <div className="flex justify-between">
                         <span>Price Impact:</span>
-                        <span className="font-medium text-orange-500">{swapQuote.priceImpact.toFixed(2)}%</span>
+                        <span className={`font-medium ${swapQuote.priceImpact > 5 ? 'text-red-500' : swapQuote.priceImpact > 2 ? 'text-orange-500' : 'text-green-500'}`}>
+                          {swapQuote.priceImpact.toFixed(2)}%
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Bridge Fee:</span>
@@ -298,6 +377,14 @@ export default function CrossChainBridge() {
                       <div className="flex justify-between border-t pt-2">
                         <span className="text-xs text-muted-foreground">Route:</span>
                         <span className="text-xs">{swapQuote.route.join(' → ')}</span>
+                      </div>
+                      <div className="mt-3 p-2 bg-yellow-100 rounded text-yellow-800 text-xs">
+                        <p className="font-semibold mb-1">📌 Tips for better swaps:</p>
+                        <ul className="list-disc list-inside space-y-1">
+                          <li>Lower price impact = better rate. Try smaller amounts if impact is high</li>
+                          <li>Fees are charged upfront. Make sure you have enough balance</li>
+                          <li>Check back in 15-45 minutes to see your tokens on {CHAIN_NAMES[destinationChain as keyof typeof CHAIN_NAMES]}</li>
+                        </ul>
                       </div>
                     </>
                   ) : (
@@ -314,11 +401,36 @@ export default function CrossChainBridge() {
                         <span className="font-semibold">Total Fee:</span>
                         <span className="font-semibold">{feeEstimate.totalFee}</span>
                       </div>
+                      <div className="mt-3 p-2 bg-blue-100 rounded text-blue-800 text-xs">
+                        <p className="font-semibold mb-1">📌 Tips for bridging:</p>
+                        <ul className="list-disc list-inside space-y-1">
+                          <li>Your token type stays the same (CELO remains CELO)</li>
+                          <li>Total cost = gas fee + bridge fee shown above</li>
+                          <li>Check back in 10-30 minutes to see your tokens on {CHAIN_NAMES[destinationChain as keyof typeof CHAIN_NAMES]}</li>
+                          <li>Higher gas fees on busy chains - consider timing your transfer</li>
+                        </ul>
+                      </div>
                     </>
                   )}
                 </div>
               </CardContent>
             </Card>
+          )}
+
+          {/* Validation Errors */}
+          {feeError && (
+            <div className="p-3 bg-red-100 border border-red-300 rounded text-red-800 text-sm">
+              <p className="font-semibold mb-1">⚠️ Error fetching quote:</p>
+              <p>{feeError instanceof Error ? feeError.message : 'Unable to fetch quote. Check your inputs.'}</p>
+            </div>
+          )}
+
+          {/* Input Validation Feedback */}
+          {amount && sourceChain && destinationChain && (
+            <div className="p-3 bg-green-100 border border-green-300 rounded text-green-800 text-sm">
+              <p className="font-semibold">✅ Inputs validated</p>
+              <p>Ready to {mode === 'swap' ? 'execute swap' : 'bridge assets'}</p>
+            </div>
           )}
 
           {/* Submit Button */}
@@ -328,7 +440,8 @@ export default function CrossChainBridge() {
               !amount || 
               !destinationAddress || 
               (mode === 'bridge' && !tokenAddress) ||
-              transferMutation.isPending
+              transferMutation.isPending ||
+              loadingFees
             }
             className="w-full"
             size="lg"
@@ -337,6 +450,11 @@ export default function CrossChainBridge() {
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 {mode === 'swap' ? 'Executing Swap...' : 'Initiating Transfer...'}
+              </>
+            ) : loadingFees ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Fetching Quote...
               </>
             ) : (
               mode === 'swap' ? 'Execute Swap' : 'Bridge Assets'
