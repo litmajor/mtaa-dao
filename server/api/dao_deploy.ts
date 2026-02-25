@@ -21,7 +21,7 @@ export interface DaoDeployRequest {
   daoData: {
     name: string;
     description?: string;
-    daoType: 'shortTerm' | 'collective' | 'governance' | 'short_term' | 'free' | 'meta';
+    daoType: 'shortTerm' | 'collective' | 'governance' | 'short_term' | 'free' | 'meta' | 'investment_club';
     category?: string;
     causeTags?: string[]; // Array of predefined cause tags
     primaryCause?: string; // User's custom cause description
@@ -37,6 +37,7 @@ export interface DaoDeployRequest {
     enabled?: boolean;
     signers?: string[];
     requiredSignatures?: number;
+    contractAddress?: string;
   };
 }
 
@@ -65,8 +66,8 @@ export async function daoDeployHandler(req: Request, res: Response) {
     const tierPermissions = {
       free: ['free'],
       growth: ['free', 'shortTerm', 'short_term'],
-      professional: ['free', 'shortTerm', 'short_term', 'collective', 'governance'],
-      enterprise: ['free', 'shortTerm', 'short_term', 'collective', 'governance', 'meta']
+      professional: ['free', 'shortTerm', 'short_term', 'collective', 'governance', 'investment_club'],
+      enterprise: ['free', 'shortTerm', 'short_term', 'collective', 'governance', 'investment_club', 'meta']
     };
 
     // Get user's subscription tier
@@ -74,7 +75,7 @@ export async function daoDeployHandler(req: Request, res: Response) {
       where: eq(users.id, founderWallet)
     });
 
-    const userTier = 'free'; // Default to free tier - subscription system can be enhanced later
+    const userTier = resolveUserTier(userProfile);
     const allowedTypes = tierPermissions[userTier as keyof typeof tierPermissions] || ['free'];
 
     if (!allowedTypes.includes(daoData.daoType)) {
@@ -159,6 +160,12 @@ export async function daoDeployHandler(req: Request, res: Response) {
       durationModel = 'ongoing';
     }
 
+    if (daoData.daoType === 'investment_club') {
+      // Investment groups: accumulative treasury behavior
+      durationModel = 'ongoing';
+      withdrawalMode = 'multisig';
+    }
+
     logger.info(`DAO Config: type=${normalizedDaoType}, treasuryType=${treasuryType}, withdrawalMode=${withdrawalMode}, elders=${elders.length}`);
 
     // ============================================
@@ -169,6 +176,11 @@ export async function daoDeployHandler(req: Request, res: Response) {
 
     // Auto-configure multi-sig based on DAO type
     const multisigConfig = getMultisigConfigForDaoType(daoData.daoType);
+
+    const configuredRequiredSignatures = treasuryConfig?.requiredSignatures ?? multisigConfig.requiredSignatures;
+    const effectiveRequiredSignatures = Math.max(1, Math.min(configuredRequiredSignatures, elders.length));
+    const dailyLimit = treasuryConfig?.dailyLimit ?? getDailyLimitByType(daoData.daoType);
+    const monthlyBudget = treasuryConfig?.monthlyBudget ?? getMonthlyBudgetByType(daoData.daoType);
 
     const [dao] = await db
       .insert(daos)
@@ -189,11 +201,11 @@ export async function daoDeployHandler(req: Request, res: Response) {
         // Treasury configuration
         treasuryBalance: '0',
         treasuryMultisigEnabled: multisigConfig.enabled,
-        treasuryRequiredSignatures: elders.length, // CRITICAL: Set to actual elder count
+        treasuryRequiredSignatures: effectiveRequiredSignatures,
         treasurySigners: elders, // CRITICAL: Set actual signer list (not empty!)
-        treasuryWithdrawalThreshold: '5000.00',
-        treasuryDailyLimit: getDailyLimitByType(daoData.daoType),
-        treasuryMonthlyBudget: getMonthlyBudgetByType(daoData.daoType),
+        treasuryWithdrawalThreshold: String(multisigConfig.withdrawalThreshold),
+        treasuryDailyLimit: dailyLimit,
+        treasuryMonthlyBudget: monthlyBudget,
 
         // NEW: Withdrawal and duration configuration
         withdrawalMode,
@@ -348,20 +360,7 @@ export async function daoDeployHandler(req: Request, res: Response) {
         // ============================================
         // CREATE DAO TREASURY WALLET + MULTISIG RECORD
         // ============================================
-        try {
-          // Create a wallets record for the DAO treasury
-          const insertedDaoWallets = await db.insert(wallets).values({
-            userId: founderWallet,
-            daoId: dao.id,
-            currency: treasuryType === 'dual' ? 'CELO' : 'cUSD',
-            address: `0x${uuidv4().replace(/-/g, '').slice(0, 40)}`,
-            walletType: 'dao',
-            isActive: true,
-            createdAt: new Date(),
-            updatedAt: new Date()
-          }).returning();
-          const daoWallet = insertedDaoWallets[0];
-
+        {
           // Use client-provided multisig config if present, otherwise fall back to elders
           const clientMultisig = (req.body as any)?.multisig;
           const signersToUse: string[] = (clientMultisig && clientMultisig.enabled && Array.isArray(clientMultisig.signers) && clientMultisig.signers.length)
@@ -374,14 +373,34 @@ export async function daoDeployHandler(req: Request, res: Response) {
 
           // Ensure requiredSignatures is at least 2 and not greater than signers count
           const requiredSignatures = Math.max(2, Math.min(requestedRequired || elders.length, Math.max(2, signersToUse.length)));
+          const chainId = Number(process.env.MULTISIG_CHAIN_ID || '42220');
 
-          // Create a multisig wallet record tied to the DAO and wallet
-          const multisigAddress = `0x${uuidv4().replace(/-/g, '').slice(0, 40)}`; // placeholder until on-chain deployed
+          const multisigAddress = await resolveMultisigContractAddress({
+            clientMultisig,
+            daoId: dao.id,
+            signers: signersToUse,
+            requiredSignatures,
+            chainId,
+          });
+
+          // Create a wallets record for the DAO treasury
+          const insertedDaoWallets = await db.insert(wallets).values({
+            userId: founderWallet,
+            daoId: dao.id,
+            currency: treasuryType === 'dual' ? 'CELO' : 'cUSD',
+            address: multisigAddress,
+            walletType: 'dao',
+            isActive: true,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          }).returning();
+          const daoWallet = insertedDaoWallets[0];
+
           const insertedMultisigs = await db.insert(multisigWallets).values({
             walletId: daoWallet.id,
             daoId: dao.id,
             contractAddress: multisigAddress,
-            chainId: 42220, // default to Celo mainnet; change if needed
+            chainId,
             requiredSignatures,
             totalSigners: signersToUse.length,
             walletStandard: 'gnosis',
@@ -396,7 +415,6 @@ export async function daoDeployHandler(req: Request, res: Response) {
           // Create multisig signer entries for provided signers; attach userId when user exists
           for (let i = 0; i < signersToUse.length; i++) {
             const signer = signersToUse[i];
-            // Check if user exists
             const existing = await db.select().from(users).where(eq(users.id, signer)).limit(1);
             const signerRow: Record<string, any> = {
               multisigWalletId: multisig.id,
@@ -413,9 +431,6 @@ export async function daoDeployHandler(req: Request, res: Response) {
             }
             await db.insert(multisigSigners).values(signerRow);
           }
-        } catch (err) {
-          logger.error('Failed to create multisig wallet or signers', err);
-          // Do not fail DAO creation for multisig creation issues; log and continue
         }
 
     // ============================================
@@ -434,6 +449,7 @@ export async function daoDeployHandler(req: Request, res: Response) {
         durationModel,
         elders: elders.map(e => ({ id: e, role: 'elder' })),
         memberCount: dao.memberCount,
+        capabilities: getDaoCapabilities(dao.daoType),
       },
     });
 
@@ -444,6 +460,54 @@ export async function daoDeployHandler(req: Request, res: Response) {
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
+}
+
+interface MultisigAddressResolutionInput {
+  clientMultisig?: { contractAddress?: string };
+  daoId: string;
+  signers: string[];
+  requiredSignatures: number;
+  chainId: number;
+}
+
+async function resolveMultisigContractAddress(input: MultisigAddressResolutionInput): Promise<string> {
+  const directAddress = input.clientMultisig?.contractAddress;
+  if (directAddress) {
+    if (!isAddress(directAddress)) {
+      throw new Error(`Invalid multisig contract address: ${directAddress}`);
+    }
+    return directAddress;
+  }
+
+  const deployerEndpoint = process.env.MULTISIG_FACTORY_API_URL;
+  if (!deployerEndpoint) {
+    throw new Error('Multisig contract address is required: provide multisig.contractAddress or configure MULTISIG_FACTORY_API_URL');
+  }
+
+  const response = await fetch(deployerEndpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      daoId: input.daoId,
+      signers: input.signers,
+      requiredSignatures: input.requiredSignatures,
+      chainId: input.chainId,
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Failed multisig deployment: ${response.status} ${text}`);
+  }
+
+  const payload = await response.json() as any;
+  const contractAddress = payload?.contractAddress || payload?.address;
+
+  if (!contractAddress || !isAddress(contractAddress)) {
+    throw new Error('Multisig factory response missing valid contractAddress');
+  }
+
+  return contractAddress;
 }
 
 // ============================================
@@ -506,12 +570,53 @@ const TREASURY_CONFIG: Record<string, Record<string, TreasuryConfig>> = {
       withdrawalMode: 'multisig',
       supportedTokens: ['cUSD', 'CELO', 'USDT', 'DAI']
     }
+  },
+  'investment_club': {
+    'cusd': {
+      requiredSignatures: 3,
+      dailyLimit: '20000.00',
+      monthlyBudget: '200000.00',
+      withdrawalMode: 'multisig',
+      supportedTokens: ['cUSD']
+    },
+    'dual': {
+      requiredSignatures: 3,
+      dailyLimit: '30000.00',
+      monthlyBudget: '300000.00',
+      withdrawalMode: 'multisig',
+      supportedTokens: ['cUSD', 'CELO']
+    },
+    'custom': {
+      requiredSignatures: 4,
+      dailyLimit: '50000.00',
+      monthlyBudget: '500000.00',
+      withdrawalMode: 'multisig',
+      supportedTokens: ['cUSD', 'CELO', 'USDT', 'DAI']
+    }
   }
 };
 
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
+
+function resolveUserTier(userProfile: any): 'free' | 'growth' | 'professional' | 'enterprise' {
+  const rawTier = String(
+    userProfile?.subscriptionPlan ||
+    userProfile?.plan ||
+    userProfile?.billingStatus ||
+    'free'
+  ).toLowerCase();
+
+  const normalized = rawTier
+    .replace(/\s+/g, '_')
+    .replace(/-/g, '_');
+
+  if (['enterprise', 'meta', 'metadao'].includes(normalized)) return 'enterprise';
+  if (['professional', 'pro', 'business'].includes(normalized)) return 'professional';
+  if (['growth', 'premium', 'starter_plus'].includes(normalized)) return 'growth';
+  return 'free';
+}
 
 function getDailyLimitByType(daoType: string): string {
   switch (daoType) {
@@ -554,6 +659,45 @@ function calculateNextRotation(
   return next;
 }
 
+function getDaoCapabilities(daoType: string) {
+  const common = [
+    'Create proposals and vote on governance decisions',
+    'Manage pooled funds with role-based controls',
+    'Track treasury balances and vault performance',
+    'Use multi-signature approvals for withdrawals',
+  ];
+
+  switch (daoType) {
+    case 'investment_club':
+      return [
+        ...common,
+        'Run accumulative treasury strategies for long-term growth',
+        'Allocate capital to yield strategies and rebalance allocations',
+        'Track risk levels and enforce min/max deposit constraints',
+      ];
+    case 'short_term':
+      return [
+        ...common,
+        'Support rotation-based contribution cycles and distributions',
+        'Configure duration windows (30/60/90-day style operations)',
+      ];
+    case 'collective':
+      return [
+        ...common,
+        'Operate ongoing communal treasury contributions and withdrawals',
+        'Use configurable treasury budgets and signer thresholds',
+      ];
+    case 'governance':
+      return [
+        ...common,
+        'Run governance-heavy workflows with stronger signer requirements',
+        'Manage broader token support for treasury operations',
+      ];
+    default:
+      return common;
+  }
+}
+
 // Helper: Multi-sig config per DAO type
 function getMultisigConfigForDaoType(type: string) {
   if (type === 'free') {
@@ -563,14 +707,14 @@ function getMultisigConfigForDaoType(type: string) {
       withdrawalThreshold: 500, // $500 threshold
       dailyLimit: 1000 // $1K/day
     };
-  } else if (type === 'collective') {
+  } else if (type === 'collective' || type === 'investment_club') {
     return {
       enabled: true, // 3-of-5 multi-sig
       requiredSignatures: 3,
       withdrawalThreshold: 1000, // $1K threshold
-      dailyLimit: 5000 // $5K/day
+      dailyLimit: type === 'investment_club' ? 10000 : 5000 // higher daily limit for investment clubs
     };
-  } else { // metadao
+  } else { // governance/meta dao
     return {
       enabled: true, // 5-of-7 multi-sig
       requiredSignatures: 5,

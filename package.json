@@ -19,7 +19,9 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "compile-contracts": "npx hardhat compile"
+    "compile-contracts": "npx hardhat compile",
+    "smoke:deployment": "tsx scripts/deployment-smoke.ts",
+    "backfill:dao:treasury": "tsx scripts/backfill-dao-treasury-modes.ts"
   },
   "dependencies": {
     "@babel/preset-typescript": "^7.27.1",

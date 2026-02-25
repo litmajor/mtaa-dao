@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { volatilityMetricsService } from '../services/volatilityMetricsService';
 import { marketAnalyticsService } from '../services/marketAnalyticsService';
 import { smartRetryLogicService } from '../services/smartRetryLogicService';
-import { ApiResponse } from '../types/ApiResponse';
+import { ApiResponse } from '../utils/apiResponse';
 import { logger } from '../utils/logger';
 
 const router = Router();

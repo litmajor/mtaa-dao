@@ -1,103 +1,80 @@
-
 # Production Readiness Checklist
 
-## ✅ Code Quality
+This checklist combines **baseline production standards** and a **prioritized gap list** so completion status is explicit and auditable.
 
-- [x] No mock data in production code paths
-- [x] All TODOs addressed or documented
-- [x] No placeholder implementations
-- [x] No demo/test code in production routes
-- [x] All hardcoded values moved to environment variables
-- [x] Proper error handling throughout
-- [x] Logging configured for production
+## Baseline Production Standards
 
-## ✅ Security
+### Code Quality
+- [ ] No mock data in production execution paths
+- [ ] All TODO/FIXME items either implemented or tracked with owner + target date
+- [ ] No placeholder implementations on critical paths (auth, treasury, payments, governance)
+- [ ] No demo/test code mounted in production routes
+- [ ] Hardcoded policy values moved to config/environment
+- [ ] Structured error handling and stable failure modes
+- [ ] Production log levels + log redaction policy enforced
 
-- [x] Private keys in environment variables only
-- [x] No secrets in code
-- [x] Authentication on all protected routes
-- [x] Input validation on all endpoints
-- [x] Rate limiting enabled
-- [x] CORS properly configured
-- [x] SQL injection protection via ORM
+### Security
+- [ ] Secrets managed via environment/secret manager only
+- [ ] Protected routes require authz + role checks
+- [ ] Input validation on all externally reachable endpoints
+- [ ] Rate limiting + abuse protections enabled
+- [ ] CORS policy restricted to allowed origins
+- [ ] ORM/query protections validated against injection vectors
 
-## ✅ Environment Configuration
+### Environment & Ops
+- [ ] Mandatory production env vars validated at startup
+- [ ] Database migrations applied and verified
+- [ ] Backup/restore runbook tested
+- [ ] Health and readiness endpoints functional
+- [ ] Monitoring + alerting + rollback plan in place
 
-Required `.env` variables for production:
-
-```bash
-# Database
-DATABASE_URL=postgresql://...
-
-# Blockchain
-PRIVATE_KEY=0x...
-CELO_RPC_URL=https://forno.celo.org
-MAONO_VAULT_ADDRESS=0x...
-MAONO_CONTRACT_ADDRESS=0x...
-MTAA_TOKEN_ADDRESS=0x...
-GOVERNANCE_ADDRESS=0x...
-
-# Services
-NODE_ENV=production
-PORT=5000
-
-# Notifications (optional)
-GOVERNANCE_EMAIL=governance@mtaa-dao.com
-ADMIN_URL=https://your-domain.com
-```
-
-## ✅ Database
-
-- [x] All migrations applied
-- [x] Indexes created for performance
-- [x] Foreign keys properly configured
-- [x] Backup strategy in place
-
-## ✅ API Endpoints
-
-- [x] All routes return proper status codes
-- [x] Error responses are consistent
-- [x] Response times optimized
-- [x] No mock data in responses
-
-## ✅ Frontend
-
-- [x] All API calls use real endpoints
-- [x] Loading states implemented
-- [x] Error handling with user feedback
-- [x] No hardcoded URLs
-
-## ✅ Testing
-
+### Test Readiness
 - [ ] Unit tests passing
 - [ ] Integration tests passing
-- [ ] Load testing completed
-- [ ] Security audit completed
+- [ ] Critical-path E2E smoke tests passing
+- [ ] Load/perf baseline established
+- [ ] Security review/audit completed
 
-## ✅ Deployment
+## P0 (Blockers)
+- [x] Replace payment provider mock endpoints with real integrations and persistent webhook handling (`server/payments.ts`).
+- [x] Implement rules engine persistence and audit trail (`server/api/rules_engine.ts`).
+- [x] Replace synthetic multisig contract address generation with deployment/registration flow (`server/api/dao_deploy.ts`).
+- [x] Add end-to-end payment state machine tests for success/failure/retry and webhook idempotency.
 
-- [ ] Environment variables set on Replit
-- [ ] Database accessible from deployment
-- [ ] Health check endpoint working
-- [ ] Monitoring configured
-- [ ] Rollback plan documented
+## P1 (High Priority)
+- [x] Implement symbol universe background sync in `dex-screener` routes (currently placeholder response).
+- [x] Complete invitation email metadata with authoritative DAO identity and telemetry.
+- [ ] Add cache hot-key telemetry (`topKeys`) and alert thresholds.
+- [ ] Add provider health checks and circuit-breaker alarms for payment and exchange adapters.
 
-## 🚀 Ready to Deploy
+## P2 (Operational Excellence)
+- [x] Add service-level SLO dashboards and error budgets.
+- [x] Add deployment smoke tests for key routes and websocket availability.
+- [x] Harden config validation with mandatory secrets in production mode.
+- [x] Add migration/backfill scripts for all newly introduced DAO types and treasury modes.
 
-Once all items are checked, the application is production-ready!
+## Recently Completed
+- [x] Invitation emails now use DAO name lookup instead of hardcoded fallback label.
+- [x] Rules engine CRUD + execution audit persistence wired to DB tables.
+- [x] Payment routes now persist transaction lifecycle and webhook status transitions across providers.
+- [x] Payment state-machine test coverage added for success/failure/retry and idempotent webhooks.
+- [x] Dex symbol-universe sync now executes background discovery with progress state.
+- [x] Deployment smoke test script added for health and websocket endpoints.
+- [x] Production config validation now enforces mandatory secrets and rejects weak defaults.
+- [x] DAO treasury backfill script added with safe dry-run default.
+- [x] SLO/error-budget baseline dashboard spec added for operations.
 
-## Quick Commands
-
+## Suggested verification commands
 ```bash
-# Scan for issues
-npm run scan:production
+# Type checks
+npx tsc --noEmit
 
-# Run all tests
+# Tests
 npm test
 
-# Build for production
+# Build
 npm run build
 
-# Start production server
-npm start
+# Runtime smoke
+npm run dev
 ```

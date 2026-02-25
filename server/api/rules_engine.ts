@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
 import { db } from '../db';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
+import { daoRules, ruleExecutions } from '../../shared/schema';
 
 const logger = new Logger('rules-engine');
 
@@ -421,9 +422,35 @@ export async function evaluateTransaction(
  * Get active rules for a DAO
  */
 async function getActiveRules(daoId: string, ruleType?: RuleType): Promise<CustomRule[]> {
-  // TODO: Implement database query
-  // This would fetch rules from a daoRules table
-  return [];
+  const baseFilter = [
+    eq(daoRules.daoId, daoId),
+    eq(daoRules.isActive, true),
+  ];
+
+  const rows = await db
+    .select()
+    .from(daoRules)
+    .where(ruleType ? and(...baseFilter, eq(daoRules.eventType, ruleType)) : and(...baseFilter))
+    .orderBy(desc(daoRules.priority), desc(daoRules.createdAt));
+
+  return rows.map((row) => {
+    const cfg = (row.ruleConfig as any) || {};
+    return {
+      id: row.id,
+      daoId: row.daoId,
+      ruleType: normalizeRuleType(row.eventType),
+      name: row.name,
+      description: row.description || '',
+      enabled: !!row.isActive,
+      priority: row.priority || 0,
+      conditions: Array.isArray(cfg.conditions) ? cfg.conditions : [],
+      actions: Array.isArray(cfg.actions) ? cfg.actions : [],
+      createdBy: row.createdBy,
+      auditLog: [],
+      createdAt: row.createdAt || new Date(),
+      updatedAt: row.updatedAt || new Date(),
+    } as CustomRule;
+  });
 }
 
 /**
@@ -436,7 +463,30 @@ async function logRuleExecution(
   metadata: any
 ): Promise<void> {
   try {
-    // TODO: Implement audit log creation
+    const rule = await db
+      .select({ daoId: daoRules.daoId, eventType: daoRules.eventType })
+      .from(daoRules)
+      .where(eq(daoRules.id, ruleId))
+      .then(rows => rows[0]);
+
+    if (!rule) {
+      logger.warn(`Rule execution log skipped; rule not found: ${ruleId}`);
+      return;
+    }
+
+    await db.insert(ruleExecutions).values({
+      id: uuidv4(),
+      ruleId,
+      daoId: rule.daoId,
+      eventType: rule.eventType,
+      context: metadata,
+      conditionsMet: true,
+      actionsExecuted: [],
+      executionResult: result === 'rejected' ? 'failed' : 'success',
+      executedAt: new Date(),
+      executedBy: userId,
+    });
+
     logger.info(`Rule executed: ${ruleId}, Result: ${result}`);
   } catch (err) {
     logger.error(`Error logging rule execution: ${err}`);
@@ -452,23 +502,43 @@ export async function createCustomRule(
   rule: Omit<CustomRule, 'id' | 'createdAt' | 'updatedAt' | 'auditLog'>
 ): Promise<CustomRule> {
   try {
+    const [inserted] = await db
+      .insert(daoRules)
+      .values({
+        id: uuidv4(),
+        daoId,
+        name: rule.name,
+        description: rule.description,
+        eventType: rule.ruleType,
+        ruleConfig: {
+          conditions: rule.conditions || [],
+          actions: rule.actions || [],
+        },
+        isActive: rule.enabled,
+        priority: rule.priority || 0,
+        createdBy,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        updatedBy: createdBy,
+      })
+      .returning();
+
     const customRule: CustomRule = {
-      id: uuidv4(),
-      daoId,
-      ruleType: rule.ruleType,
-      name: rule.name,
-      description: rule.description,
-      enabled: rule.enabled,
-      priority: rule.priority || 0,
-      conditions: rule.conditions,
-      actions: rule.actions,
-      createdBy,
+      id: inserted.id,
+      daoId: inserted.daoId,
+      ruleType: normalizeRuleType(inserted.eventType),
+      name: inserted.name,
+      description: inserted.description || '',
+      enabled: !!inserted.isActive,
+      priority: inserted.priority || 0,
+      conditions: (inserted.ruleConfig as any)?.conditions || [],
+      actions: (inserted.ruleConfig as any)?.actions || [],
+      createdBy: inserted.createdBy,
       auditLog: [],
-      createdAt: new Date(),
-      updatedAt: new Date()
+      createdAt: inserted.createdAt || new Date(),
+      updatedAt: inserted.updatedAt || new Date(),
     };
 
-    // TODO: Save to database
     logger.info(`Custom rule created: ${customRule.id} for DAO ${daoId}`);
     return customRule;
   } catch (err) {
@@ -485,9 +555,52 @@ export async function updateCustomRule(
   updates: Partial<Omit<CustomRule, 'id' | 'createdAt' | 'createdBy' | 'auditLog'>>
 ): Promise<CustomRule> {
   try {
-    // TODO: Implement database update
+    const current = await db
+      .select()
+      .from(daoRules)
+      .where(eq(daoRules.id, ruleId))
+      .then(rows => rows[0]);
+
+    if (!current) {
+      throw new Error(`Rule not found: ${ruleId}`);
+    }
+
+    const existingConfig = (current.ruleConfig as any) || {};
+    const nextConfig = {
+      conditions: updates.conditions ?? existingConfig.conditions ?? [],
+      actions: updates.actions ?? existingConfig.actions ?? [],
+    };
+
+    const [updated] = await db
+      .update(daoRules)
+      .set({
+        name: updates.name ?? current.name,
+        description: updates.description ?? current.description,
+        eventType: updates.ruleType ?? current.eventType,
+        ruleConfig: nextConfig,
+        isActive: updates.enabled ?? current.isActive,
+        priority: updates.priority ?? current.priority,
+        updatedAt: new Date(),
+      })
+      .where(eq(daoRules.id, ruleId))
+      .returning();
+
     logger.info(`Custom rule updated: ${ruleId}`);
-    throw new Error('Not yet implemented');
+    return {
+      id: updated.id,
+      daoId: updated.daoId,
+      ruleType: normalizeRuleType(updated.eventType),
+      name: updated.name,
+      description: updated.description || '',
+      enabled: !!updated.isActive,
+      priority: updated.priority || 0,
+      conditions: (updated.ruleConfig as any)?.conditions || [],
+      actions: (updated.ruleConfig as any)?.actions || [],
+      createdBy: updated.createdBy,
+      auditLog: [],
+      createdAt: updated.createdAt || new Date(),
+      updatedAt: updated.updatedAt || new Date(),
+    };
   } catch (err) {
     logger.error(`Error updating custom rule: ${err}`);
     throw err;
@@ -499,12 +612,36 @@ export async function updateCustomRule(
  */
 export async function deleteCustomRule(ruleId: string): Promise<void> {
   try {
-    // TODO: Implement database deletion
+    await db
+      .update(daoRules)
+      .set({
+        isActive: false,
+        updatedAt: new Date(),
+      })
+      .where(eq(daoRules.id, ruleId));
+
     logger.info(`Custom rule deleted: ${ruleId}`);
   } catch (err) {
     logger.error(`Error deleting custom rule: ${err}`);
     throw err;
   }
+}
+
+function normalizeRuleType(eventType: string): RuleType {
+  if (Object.values(RuleType).includes(eventType as RuleType)) {
+    return eventType as RuleType;
+  }
+
+  const mapping: Record<string, RuleType> = {
+    member_entry: RuleType.ENTRY,
+    member_exit: RuleType.WITHDRAWAL,
+    contribution: RuleType.FINANCIAL,
+    proposal: RuleType.GOVERNANCE,
+    rotation: RuleType.ROTATION,
+    withdrawal: RuleType.WITHDRAWAL,
+  };
+
+  return mapping[eventType] || RuleType.GOVERNANCE;
 }
 
 /**

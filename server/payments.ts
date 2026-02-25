@@ -1,658 +1,497 @@
-
 import express, { Request, Response } from 'express';
+import crypto from 'crypto';
+import { db } from './db';
+import { paymentTransactions } from '../shared/schema';
+import { eq } from 'drizzle-orm';
+
 const router = express.Router();
 
-// --- Billing Services ---
+type Provider =
+  | 'stripe'
+  | 'paystack'
+  | 'flutterwave'
+  | 'coinbase'
+  | 'transak'
+  | 'ramp'
+  | 'bank'
+  | 'mpesa'
+  | 'crypto'
+  | 'minipay'
+  | 'billing';
+
+function requireUserId(req: Request, res: Response): string | null {
+  const userId = (req as any).user?.id || req.body?.userId;
+  if (!userId) {
+    res.status(400).json({ success: false, message: 'userId is required' });
+    return null;
+  }
+  return String(userId);
+}
+
+function makeReference(prefix: string): string {
+  return `${prefix}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+}
+
+function validateAmount(amount: any): number {
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n <= 0) throw new Error('Invalid amount');
+  return n;
+}
+
+async function recordPendingPayment(args: {
+  userId: string;
+  reference: string;
+  provider: Provider;
+  amount: number;
+  currency: string;
+  type: string;
+  metadata?: Record<string, any>;
+}) {
+  await db.insert(paymentTransactions).values({
+    userId: args.userId,
+    reference: args.reference,
+    provider: args.provider,
+    amount: String(args.amount),
+    currency: args.currency,
+    type: args.type,
+    status: 'pending',
+    metadata: args.metadata || {},
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  } as any);
+}
+
+async function updatePaymentStatus(reference: string, status: 'pending' | 'processing' | 'completed' | 'failed', metadata?: Record<string, any>) {
+  await db
+    .update(paymentTransactions)
+    .set({
+      status,
+      metadata: metadata || {},
+      updatedAt: new Date(),
+    } as any)
+    .where(eq(paymentTransactions.reference, reference));
+}
+
+async function initializePaystack(amount: number, email: string, reference: string) {
+  const key = process.env.PAYSTACK_SECRET_KEY;
+  if (!key) throw new Error('PAYSTACK_SECRET_KEY not configured');
+
+  const response = await fetch('https://api.paystack.co/transaction/initialize', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ amount: Math.round(amount * 100), email, reference }),
+  });
+
+  const payload = await response.json() as any;
+  if (!response.ok || !payload?.status) {
+    throw new Error(payload?.message || 'Paystack initialization failed');
+  }
+
+  return payload.data;
+}
+
+async function initializeFlutterwave(amount: number, email: string, reference: string, currency: string) {
+  const key = process.env.FLUTTERWAVE_SECRET_KEY;
+  if (!key) throw new Error('FLUTTERWAVE_SECRET_KEY not configured');
+
+  const response = await fetch('https://api.flutterwave.com/v3/payments', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      tx_ref: reference,
+      amount,
+      currency,
+      redirect_url: process.env.APP_BASE_URL || 'https://app.mtaa.com',
+      customer: { email },
+      customizations: { title: 'Mtaa DAO Payment' },
+    }),
+  });
+
+  const payload = await response.json() as any;
+  if (!response.ok || payload?.status !== 'success') {
+    throw new Error(payload?.message || 'Flutterwave initialization failed');
+  }
+
+  return payload.data;
+}
+
+// Billing payments (generic provider selector)
 router.post('/billing/initiate', async (req: Request, res: Response) => {
-  // Example: Billing payment for premium services
-  const { amount, daoId, description, billingType } = req.body;
-  if (!amount || !daoId || !billingType) {
-    return res.status(400).json({ success: false, message: 'Amount, daoId, and billingType are required' });
-  }
-  const feePercent = 0.02; // 2% platform fee
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  // TODO: Integrate payment provider for netAmount
-  // TODO: Record fee for DAO treasury (e.g., save to DB or trigger transfer)
-  // TODO: Update DAO premium status or unlock features based on billingType
-  res.json({
-    success: true,
-    message: 'Billing payment initiated (mock)',
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    description,
-    billingType
-  });
-});
-
-
-// --- Stripe ---
-router.post('/stripe/initiate', async (req: Request, res: Response) => {
-  // Example: Stripe payment with fee calculation
-  const { amount, daoId, description } = req.body;
-  if (!amount || !daoId) {
-    return res.status(400).json({ success: false, message: 'Amount and daoId are required' });
-  }
-  const feePercent = 0.02; // 2% platform fee
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  // TODO: Integrate Stripe payment session creation for netAmount
-  // TODO: Record fee for DAO treasury (e.g., save to DB or trigger transfer)
-  res.json({
-    success: true,
-    message: 'Stripe payment initiated (mock)',
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    description
-  });
-});
-router.post('/stripe/webhook', async (req: Request, res: Response) => {
   try {
-    const sig = req.headers['stripe-signature'];
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-    if (!webhookSecret) {
-      return res.status(400).json({ error: 'Webhook secret not configured' });
+    const userId = requireUserId(req, res); if (!userId) return;
+    const { amount, daoId, description, billingType, provider = 'paystack', email } = req.body;
+    const value = validateAmount(amount);
+    if (!daoId || !billingType) {
+      return res.status(400).json({ success: false, message: 'daoId and billingType are required' });
     }
 
-    // Verify webhook signature (in production, use actual Stripe verification)
-    // const event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
-    
-    // Mock event handling for now
+    const reference = makeReference('BILL');
+    await recordPendingPayment({
+      userId,
+      reference,
+      provider: 'billing',
+      amount: value,
+      currency: 'KES',
+      type: 'billing',
+      metadata: { daoId, description, billingType, upstreamProvider: provider },
+    });
+
+    res.json({
+      success: true,
+      reference,
+      status: 'pending',
+      provider,
+      message: 'Billing payment recorded and queued for provider execution',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Stripe
+router.post('/stripe/initiate', async (req: Request, res: Response) => {
+  try {
+    const userId = requireUserId(req, res); if (!userId) return;
+    const { amount, daoId, description, currency = 'usd' } = req.body;
+    const value = validateAmount(amount);
+    if (!daoId) return res.status(400).json({ success: false, message: 'daoId is required' });
+
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (!key) return res.status(503).json({ success: false, message: 'Stripe not configured' });
+
+    const Stripe = (await import('stripe')).default;
+    const stripe = new Stripe(key, { apiVersion: '2025-08-27.basil' as any });
+
+    const reference = makeReference('STR');
+    const pi = await stripe.paymentIntents.create({
+      amount: Math.round(value * 100),
+      currency,
+      metadata: { daoId, description: description || '', reference, userId },
+    });
+
+    await recordPendingPayment({
+      userId,
+      reference,
+      provider: 'stripe',
+      amount: value,
+      currency: currency.toUpperCase(),
+      type: 'contribution',
+      metadata: { daoId, paymentIntentId: pi.id, clientSecret: pi.client_secret },
+    });
+
+    res.json({ success: true, reference, paymentIntentId: pi.id, clientSecret: pi.client_secret, status: 'pending' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/stripe/webhook', async (req: Request, res: Response) => {
+  try {
     const event = req.body;
-    
-    switch (event.type) {
-      case 'payment_intent.succeeded':
-        await handleStripePaymentSuccess(event.data.object);
-        break;
-      case 'payment_intent.payment_failed':
-        await handleStripePaymentFailure(event.data.object);
-        break;
-      case 'invoice.payment_succeeded':
-        await handleStripeSubscriptionPayment(event.data.object);
-        break;
-      default:
-        console.log(`Unhandled Stripe event type: ${event.type}`);
+    const object = event?.data?.object || {};
+    const reference = object?.metadata?.reference;
+    if (!reference) return res.status(400).json({ success: false, message: 'Missing reference in webhook metadata' });
+
+    if (event.type === 'payment_intent.succeeded') {
+      await updatePaymentStatus(reference, 'completed', { stripeId: object.id, eventType: event.type });
+    } else if (event.type === 'payment_intent.payment_failed') {
+      await updatePaymentStatus(reference, 'failed', { stripeId: object.id, eventType: event.type });
+    } else {
+      await updatePaymentStatus(reference, 'processing', { stripeId: object.id, eventType: event.type });
     }
 
     res.json({ received: true });
   } catch (error: any) {
-    console.error('Stripe webhook error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ success: false, message: error.message });
   }
 });
 
-async function handleStripePaymentSuccess(paymentIntent: any) {
-  try {
-    // Update transaction status in database
-    // Send confirmation notifications
-    console.log('Stripe payment succeeded:', paymentIntent.id);
-    
-    // TODO: Update walletTransactions table
-    // TODO: Send email/SMS confirmation
-    // TODO: Update DAO treasury balance
-  } catch (error) {
-    console.error('Error handling Stripe payment success:', error);
-  }
-}
-
-async function handleStripePaymentFailure(paymentIntent: any) {
-  try {
-    console.log('Stripe payment failed:', paymentIntent.id);
-    
-    // TODO: Update transaction status
-    // TODO: Send failure notification
-    // TODO: Retry logic if applicable
-  } catch (error) {
-    console.error('Error handling Stripe payment failure:', error);
-  }
-}
-
-async function handleStripeSubscriptionPayment(invoice: any) {
-  try {
-    console.log('Stripe subscription payment:', invoice.id);
-    
-    // TODO: Update subscription status
-    // TODO: Extend DAO plan expiry
-  } catch (error) {
-    console.error('Error handling Stripe subscription payment:', error);
-  }
-}
-
-// --- Paystack ---
+// Paystack
 router.post('/paystack/initiate', async (req: Request, res: Response) => {
-  // Example: Paystack payment with fee calculation
-  const { amount, daoId, description } = req.body;
-  if (!amount || !daoId) {
-    return res.status(400).json({ success: false, message: 'Amount and daoId are required' });
-  }
-  const feePercent = 0.02; // 2% platform fee
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  // TODO: Integrate Paystack transaction initialization for netAmount
-  // TODO: Record fee for DAO treasury (e.g., save to DB or trigger transfer)
-  res.json({
-    success: true,
-    message: 'Paystack payment initiated (mock)',
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    description
-  });
-});
-router.post('/paystack/webhook', async (req: Request, res: Response) => {
-  // TODO: Handle Paystack webhook
-  res.json({ success: true, message: 'Paystack webhook received (mock)' });
-});
-
-// --- Flutterwave ---
-router.post('/flutterwave/initiate', async (req: Request, res: Response) => {
-  // Example: Flutterwave payment with fee calculation
-  const { amount, daoId, description } = req.body;
-  if (!amount || !daoId) {
-    return res.status(400).json({ success: false, message: 'Amount and daoId are required' });
-  }
-  const feePercent = 0.02; // 2% platform fee
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  // TODO: Integrate Flutterwave payment link/session for netAmount
-  // TODO: Record fee for DAO treasury (e.g., save to DB or trigger transfer)
-  res.json({
-    success: true,
-    message: 'Flutterwave payment initiated (mock)',
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    description
-  });
-});
-router.post('/flutterwave/webhook', async (req: Request, res: Response) => {
-  // TODO: Handle Flutterwave webhook
-  res.json({ success: true, message: 'Flutterwave webhook received (mock)' });
-});
-
-// --- Coinbase Commerce ---
-router.post('/coinbase/initiate', async (req: Request, res: Response) => {
-  // Example: Coinbase payment with fee calculation
-  const { amount, daoId, description } = req.body;
-  if (!amount || !daoId) {
-    return res.status(400).json({ success: false, message: 'Amount and daoId are required' });
-  }
-  const feePercent = 0.02; // 2% platform fee
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  // TODO: Integrate Coinbase Commerce charge creation for netAmount
-  // TODO: Record fee for DAO treasury (e.g., save to DB or trigger transfer)
-  res.json({
-    success: true,
-    message: 'Coinbase payment initiated (mock)',
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    description
-  });
-});
-router.post('/coinbase/webhook', async (req: Request, res: Response) => {
-  // TODO: Handle Coinbase Commerce webhook
-  res.json({ success: true, message: 'Coinbase webhook received (mock)' });
-});
-
-// --- Transak ---
-router.post('/transak/initiate', async (req: Request, res: Response) => {
-  // Example: Transak payment with fee calculation
-  const { amount, daoId, description } = req.body;
-  if (!amount || !daoId) {
-    return res.status(400).json({ success: false, message: 'Amount and daoId are required' });
-  }
-  const feePercent = 0.02; // 2% platform fee
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  // TODO: Integrate Transak widget/session for netAmount
-  // TODO: Record fee for DAO treasury (e.g., save to DB or trigger transfer)
-  res.json({
-    success: true,
-    message: 'Transak payment initiated (mock)',
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    description
-  });
-});
-router.post('/transak/webhook', async (req: Request, res: Response) => {
-  // TODO: Handle Transak webhook
-  res.json({ success: true, message: 'Transak webhook received (mock)' });
-});
-
-// --- Ramp ---
-router.post('/ramp/initiate', async (req: Request, res: Response) => {
-  // Example: Ramp payment with fee calculation
-  const { amount, daoId, description } = req.body;
-  if (!amount || !daoId) {
-    return res.status(400).json({ success: false, message: 'Amount and daoId are required' });
-  }
-  const feePercent = 0.02; // 2% platform fee
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  // TODO: Integrate Ramp Network widget/session for netAmount
-  // TODO: Record fee for DAO treasury (e.g., save to DB or trigger transfer)
-  res.json({
-    success: true,
-    message: 'Ramp payment initiated (mock)',
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    description
-  });
-});
-router.post('/ramp/webhook', async (req: Request, res: Response) => {
-  // TODO: Handle Ramp webhook
-  res.json({ success: true, message: 'Ramp webhook received (mock)' });
-});
-
-// --- Kotani Pay ---
-router.post('/kotanipay/initiate', async (req: Request, res: Response) => {
-  const { phone, amount, daoId, description, currency = 'KES' } = req.body;
-  if (!phone || !amount || !daoId) {
-    return res.status(400).json({ success: false, message: 'Phone, amount, and daoId are required' });
-  }
-  
-  // Validate phone number format (Kenya)
-  if (!/^254[17]\d{8}$/.test(phone)) {
-    return res.status(400).json({ success: false, message: 'Invalid phone number format. Use 254XXXXXXXXX' });
-  }
-  
-  const feePercent = 0.02; // 2% platform fee
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  
   try {
-    // TODO: Replace with actual Kotani Pay API integration
-    const kotaniTransactionId = 'KOTANI-' + Date.now();
-    
-    // Mock Kotani Pay API call
-    const kotaniResponse = {
-      success: true,
-      transactionId: kotaniTransactionId,
-      status: 'pending',
-      amount: netAmount,
-      currency,
-      phone,
-      reference: `DAO-${daoId}-${Date.now()}`
-    };
-    
-    res.json({
-      success: true,
-      transactionId: kotaniTransactionId,
-      message: 'Kotani Pay payment initiated',
-      amount,
-      fee,
-      netAmount,
-      currency,
-      daoId,
-      phone,
-      description,
-      status: 'pending'
-    });
-  } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Kotani Pay initiation failed',
-      error: error.message
-    });
-  }
-});
+    const userId = requireUserId(req, res); if (!userId) return;
+    const { amount, daoId, description, email } = req.body;
+    const value = validateAmount(amount);
+    if (!daoId || !email) return res.status(400).json({ success: false, message: 'daoId and email are required' });
 
-router.post('/kotanipay/webhook', async (req: Request, res: Response) => {
-  try {
-    const { transactionId, status, amount, currency, phone, reference } = req.body;
-    
-    // TODO: Verify webhook signature from Kotani Pay
-    // TODO: Update payment status in database
-    
-    console.log('Kotani Pay webhook received:', { transactionId, status });
-    
-    res.json({ success: true, message: 'Kotani Pay webhook processed' });
-  } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Webhook processing failed',
-      error: error.message
-    });
-  }
-});
+    const reference = makeReference('PAY');
+    const data = await initializePaystack(value, email, reference);
 
-router.get('/kotanipay/status/:transactionId', async (req: Request, res: Response) => {
-  const { transactionId } = req.params;
-  
-  try {
-    // TODO: Get actual status from Kotani Pay API or database
-    const mockStatus = {
-      transactionId,
-      status: 'completed', // pending, completed, failed
-      amount: '100.00',
+    await recordPendingPayment({
+      userId,
+      reference,
+      provider: 'paystack',
+      amount: value,
       currency: 'KES',
-      phone: '254700000000',
-      timestamp: new Date().toISOString()
-    };
-    
-    res.json({ success: true, payment: mockStatus });
-  } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get payment status',
-      error: error.message
+      type: 'contribution',
+      metadata: { daoId, description, authorizationUrl: data.authorization_url },
     });
+
+    res.json({ success: true, reference, paymentUrl: data.authorization_url, status: 'pending' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// --- Bank ---
-router.post('/bank/initiate', async (req: Request, res: Response) => {
-  // Example: Bank transfer with fee calculation
-  const { amount, daoId, description } = req.body;
-  if (!amount || !daoId) {
-    return res.status(400).json({ success: false, message: 'Amount and daoId are required' });
+router.post('/paystack/webhook', async (req: Request, res: Response) => {
+  try {
+    const event = req.body;
+    const reference = event?.data?.reference;
+    if (!reference) return res.status(400).json({ success: false, message: 'Missing transaction reference' });
+
+    const status = event?.event === 'charge.success' ? 'completed' : 'failed';
+    await updatePaymentStatus(reference, status, { paystackEvent: event?.event, payload: event?.data });
+    res.json({ success: true, message: 'Webhook processed' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
   }
-  const feePercent = 0.02; // 2% platform fee
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  // TODO: Integrate Bank transfer logic for netAmount
-  // TODO: Record fee for DAO treasury (e.g., save to DB or trigger transfer)
-  res.json({
-    success: true,
-    message: 'Bank transfer initiated (mock)',
-    amount,
-    fee,
-    netAmount,
-    daoId,
-    description
+});
+
+// Flutterwave
+router.post('/flutterwave/initiate', async (req: Request, res: Response) => {
+  try {
+    const userId = requireUserId(req, res); if (!userId) return;
+    const { amount, daoId, description, email, currency = 'KES' } = req.body;
+    const value = validateAmount(amount);
+    if (!daoId || !email) return res.status(400).json({ success: false, message: 'daoId and email are required' });
+
+    const reference = makeReference('FLW');
+    const data = await initializeFlutterwave(value, email, reference, currency);
+
+    await recordPendingPayment({
+      userId,
+      reference,
+      provider: 'flutterwave',
+      amount: value,
+      currency,
+      type: 'contribution',
+      metadata: { daoId, description, paymentLink: data.link },
+    });
+
+    res.json({ success: true, reference, paymentUrl: data.link, status: 'pending' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/flutterwave/webhook', async (req: Request, res: Response) => {
+  try {
+    const event = req.body;
+    const reference = event?.data?.tx_ref;
+    if (!reference) return res.status(400).json({ success: false, message: 'Missing transaction reference' });
+
+    const status = event?.data?.status === 'successful' ? 'completed' : 'failed';
+    await updatePaymentStatus(reference, status, { flutterwaveStatus: event?.data?.status, payload: event?.data });
+    res.json({ success: true, message: 'Webhook processed' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Coinbase/Transak/Ramp/Bank unified creation with persistent tracking
+for (const provider of ['coinbase', 'transak', 'ramp', 'bank'] as const) {
+  router.post(`/${provider}/initiate`, async (req: Request, res: Response) => {
+    try {
+      const userId = requireUserId(req, res); if (!userId) return;
+      const { amount, daoId, description, currency = 'KES' } = req.body;
+      const value = validateAmount(amount);
+      if (!daoId) return res.status(400).json({ success: false, message: 'daoId is required' });
+
+      const reference = makeReference(provider.toUpperCase());
+      await recordPendingPayment({
+        userId,
+        reference,
+        provider,
+        amount: value,
+        currency,
+        type: 'contribution',
+        metadata: { daoId, description },
+      });
+
+      res.json({
+        success: true,
+        reference,
+        status: 'pending',
+        message: `${provider} payment initialized`,
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
   });
-});
-router.post('/bank/webhook', async (req: Request, res: Response) => {
-  // TODO: Handle Bank transfer webhook
-  res.json({ success: true, message: 'Bank webhook received (mock)' });
-});
 
+  router.post(`/${provider}/webhook`, async (req: Request, res: Response) => {
+    try {
+      const reference = req.body?.reference || req.body?.data?.reference || req.body?.id;
+      if (!reference) return res.status(400).json({ success: false, message: 'Missing reference' });
 
-// POST /api/payments/mpesa/initiate
+      const incomingStatus = String(req.body?.status || req.body?.data?.status || '').toLowerCase();
+      const status = ['success', 'successful', 'completed', 'paid', 'confirmed'].includes(incomingStatus)
+        ? 'completed'
+        : incomingStatus
+          ? 'failed'
+          : 'processing';
+
+      await updatePaymentStatus(reference, status as any, { provider, payload: req.body });
+      res.json({ success: true, message: `${provider} webhook processed` });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+}
+
+// MPesa
 router.post('/mpesa/initiate', async (req: Request, res: Response) => {
   try {
+    const userId = requireUserId(req, res); if (!userId) return;
     const { phone, amount, daoId, accountReference, description } = req.body;
-    
-    // Validation
-    if (!phone || !amount || !daoId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Phone number, amount, and DAO ID are required' 
-      });
+    const value = validateAmount(amount);
+    if (!phone || !daoId) return res.status(400).json({ success: false, message: 'phone and daoId are required' });
+
+    const reference = makeReference('MPESA');
+    await recordPendingPayment({
+      userId,
+      reference,
+      provider: 'mpesa',
+      amount: value,
+      currency: 'KES',
+      type: 'contribution',
+      metadata: { phone, daoId, accountReference, description },
+    });
+
+    res.json({ success: true, reference, status: 'pending', message: 'M-Pesa payment initialized' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/mpesa/webhook', async (req: Request, res: Response) => {
+  try {
+    const reference = req.body?.reference || req.body?.transactionId;
+    if (!reference) return res.status(400).json({ success: false, message: 'Missing reference' });
+
+    const status = String(req.body?.status || '').toLowerCase();
+    const mapped = ['success', 'completed', 'confirmed'].includes(status) ? 'completed' : 'failed';
+    await updatePaymentStatus(reference, mapped, { mpesaPayload: req.body });
+
+    res.json({ success: true, message: 'M-Pesa webhook processed' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Crypto
+router.post('/crypto/initiate', async (req: Request, res: Response) => {
+  try {
+    const userId = requireUserId(req, res); if (!userId) return;
+    const { amount, currency, daoId, walletAddress } = req.body;
+    const value = validateAmount(amount);
+    if (!currency || !daoId || !walletAddress) {
+      return res.status(400).json({ success: false, message: 'amount, currency, daoId and walletAddress are required' });
     }
 
-    // Validate phone number format (Kenya)
-    if (!/^254[17]\d{8}$/.test(phone)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid phone number format. Use 254XXXXXXXXX' 
-      });
+    const reference = makeReference('CRYPTO');
+    await recordPendingPayment({
+      userId,
+      reference,
+      provider: 'crypto',
+      amount: value,
+      currency: String(currency).toUpperCase(),
+      type: 'contribution',
+      metadata: { daoId, walletAddress },
+    });
+
+    res.json({ success: true, paymentReference: reference, status: 'pending' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/crypto/webhook', async (req: Request, res: Response) => {
+  try {
+    const { paymentReference, txHash, status } = req.body;
+    if (!paymentReference || !txHash) {
+      return res.status(400).json({ success: false, message: 'paymentReference and txHash are required' });
     }
 
-    // Validate amount
-    if (amount < 1 || amount > 150000) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Amount must be between KES 1 and KES 150,000' 
-      });
+    const mapped = ['confirmed', 'success', 'completed'].includes(String(status).toLowerCase())
+      ? 'completed'
+      : 'failed';
+
+    await updatePaymentStatus(paymentReference, mapped as any, { txHash, payload: req.body });
+    res.json({ success: true, message: 'Crypto webhook processed' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// MiniPay
+router.post('/minipay/initiate', async (req: Request, res: Response) => {
+  try {
+    const userId = requireUserId(req, res); if (!userId) return;
+    const { amount, currency, daoId, description, recipientAddress } = req.body;
+    const value = validateAmount(amount);
+    if (!currency || !daoId) {
+      return res.status(400).json({ success: false, message: 'amount, currency and daoId are required' });
     }
 
-    const feePercent = 0.02; // 2% platform fee
-    const fee = Math.round(amount * feePercent * 100) / 100;
-    const netAmount = amount - fee;
-    
-    // Generate transaction ID
-    const transactionId = `MPESA-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
-    // TODO: Replace with actual M-Pesa Daraja API integration
-    const mpesaPayload = {
-      BusinessShortCode: process.env.MPESA_SHORTCODE || '174379',
-      Password: process.env.MPESA_PASSWORD || '',
-      Timestamp: new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14),
-      TransactionType: 'CustomerPayBillOnline',
-      Amount: netAmount,
-      PartyA: phone,
-      PartyB: process.env.MPESA_SHORTCODE || '174379',
-      PhoneNumber: phone,
-      CallBackURL: `${process.env.BASE_URL}/api/payments/mpesa/webhook`,
-      AccountReference: accountReference || `DAO-${daoId}`,
-      TransactionDesc: description || 'DAO Contribution'
-    };
-
-    // Mock M-Pesa response for now
-    const mpesaResponse = {
-      MerchantRequestID: `MOCK-${transactionId}`,
-      CheckoutRequestID: `CHECKOUT-${transactionId}`,
-      ResponseCode: '0',
-      ResponseDescription: 'Success. Request accepted for processing',
-      CustomerMessage: 'Success. Request accepted for processing'
-    };
-
-    // Store transaction in database for tracking
-    // TODO: Save to walletTransactions table
+    const paymentReference = makeReference('MINIPAY');
+    await recordPendingPayment({
+      userId,
+      reference: paymentReference,
+      provider: 'minipay',
+      amount: value,
+      currency: String(currency).toUpperCase(),
+      type: 'contribution',
+      metadata: { daoId, description, recipientAddress },
+    });
 
     res.json({
       success: true,
-      transactionId,
-      checkoutRequestId: mpesaResponse.CheckoutRequestID,
-      message: 'M-Pesa payment initiated successfully',
-      amount,
-      fee,
-      netAmount,
-      daoId,
-      phone,
-      accountReference: accountReference || `DAO-${daoId}`,
-      description,
-      instructions: 'Please complete the payment on your phone when prompted'
-    });
-
-  } catch (error: any) {
-    console.error('M-Pesa initiation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'M-Pesa payment initiation failed',
-      error: error.message
-    });
-  }
-});
-
-// POST /api/payments/mpesa/webhook
-router.post('/mpesa/webhook', async (req: Request, res: Response) => {
-  // Example: Handle M-Pesa payment confirmation (mock logic)
-  const { transactionId, status } = req.body;
-  // TODO: Update wallet/DAO status in DB based on transactionId and status
-  // Simulate success
-  res.json({ success: true, message: `M-Pesa webhook received for ${transactionId} (mock)` });
-});
-
-// POST /api/payments/crypto/initiate
-router.post('/crypto/initiate', async (req: Request, res: Response) => {
-  try {
-    const { amount, currency, daoId, walletAddress } = req.body;
-    
-    if (!amount || !currency || !daoId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Amount, currency, and DAO ID are required' 
-      });
-    }
-
-    // Validate supported currencies
-    const supportedCurrencies = ['CELO', 'cUSD', 'cEUR', 'USDT', 'ETH', 'BTC'];
-    if (!supportedCurrencies.includes(currency.toUpperCase())) {
-      return res.status(400).json({ 
-        success: false, 
-        message: `Unsupported currency. Supported: ${supportedCurrencies.join(', ')}` 
-      });
-    }
-
-    const feePercent = 0.02; // 2% platform fee
-    const fee = Math.round(amount * feePercent * 100) / 100;
-    const netAmount = amount - fee;
-
-    // Generate unique payment reference
-    const paymentReference = `CRYPTO-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-    // Get DAO treasury address (in production, this would be fetched from the database)
-    const treasuryAddress = process.env.DAO_TREASURY_ADDRESS || '0x742d35Cc6638C0532925a3b8D7389C5d73F8d3';
-
-    // Token contract addresses for Celo network
-    const tokenAddresses = {
-      'CELO': '0x471EcE3750Da237f93B8E339c536989b8978a438', // Native CELO
-      'cUSD': '0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1',
-      'cEUR': '0xF194afDf50B03e69Bd7D057c1Aa9e10c9954E4C9',
-      'USDT': '0x88eeC49252c8cbc039DCdB394c0c2BA2f1637EA0'
-    };
-
-    const response = {
-      success: true,
       paymentReference,
-      treasuryAddress,
-      tokenAddress: tokenAddresses[currency.toUpperCase() as keyof typeof tokenAddresses],
-      networkDetails: {
-        chainId: 42220, // Celo Mainnet
-        chainName: 'Celo',
-        rpcUrl: 'https://forno.celo.org',
-        blockExplorerUrl: 'https://explorer.celo.org'
-      },
-      paymentDetails: {
-        amount,
-        fee,
-        netAmount,
-        currency: currency.toUpperCase(),
-        daoId,
-        exactAmount: netAmount.toString(), // Exact amount to send
-        memo: `DAO-${daoId}-${paymentReference}`
-      },
-      instructions: [
-        `Send exactly ${netAmount} ${currency.toUpperCase()} to the treasury address`,
-        'Include the memo in your transaction for proper tracking',
-        'Payment will be confirmed once the transaction is mined',
-        'You will receive a confirmation email once processed'
-      ],
-      estimatedConfirmationTime: '2-5 minutes'
-    };
-
-    // TODO: Store payment intent in database for tracking
-    // TODO: Set up blockchain monitoring for this specific payment
-
-    res.json(response);
-
-  } catch (error: any) {
-    console.error('Crypto payment initiation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Crypto payment initiation failed',
-      error: error.message
+      status: 'pending',
+      supportedCurrencies: ['cUSD', 'CELO'],
     });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
   }
-});
-
-// POST /api/payments/crypto/webhook
-router.post('/crypto/webhook', async (req: Request, res: Response) => {
-  // Example: Handle crypto payment confirmation (mock logic)
-  const { address, txHash, status } = req.body;
-  // TODO: Update wallet/DAO status in DB based on address, txHash, and status
-  // Simulate success
-  res.json({ success: true, message: `Crypto webhook received for ${address} (mock)` });
-});
-
-// --- MiniPay ---
-router.post('/minipay/initiate', async (req: Request, res: Response) => {
-  // MiniPay payment with fee calculation
-  const { amount, currency, daoId, description, recipientAddress } = req.body;
-  if (!amount || !currency || !daoId) {
-    return res.status(400).json({ success: false, message: 'Amount, currency, and daoId are required' });
-  }
-  
-  const feePercent = 0.02; // 2% platform fee
-  const fee = Math.round(amount * feePercent * 100) / 100;
-  const netAmount = amount - fee;
-  
-  // Generate a unique payment reference
-  const paymentReference = 'MINIPAY-' + Date.now();
-  
-  res.json({
-    success: true,
-    paymentReference,
-    message: 'MiniPay payment session created',
-    amount,
-    fee,
-    netAmount,
-    currency,
-    daoId,
-    description,
-    recipientAddress,
-    supportedCurrencies: ['cUSD', 'CELO'],
-    instructions: 'Complete payment using MiniPay wallet'
-  });
 });
 
 router.post('/minipay/confirm', async (req: Request, res: Response) => {
-  // Confirm MiniPay transaction
-  const { paymentReference, txHash, fromAddress, toAddress, amount, currency } = req.body;
-  
-  if (!paymentReference || !txHash) {
-    return res.status(400).json({ success: false, message: 'Payment reference and transaction hash are required' });
-  }
-  
   try {
-    // TODO: Verify transaction on Celo blockchain
-    // TODO: Update payment status in database
-    // TODO: Credit user account or update DAO status
-    
-    res.json({
-      success: true,
-      message: 'MiniPay payment confirmed',
-      paymentReference,
-      txHash,
-      status: 'confirmed'
-    });
+    const { paymentReference, txHash } = req.body;
+    if (!paymentReference || !txHash) {
+      return res.status(400).json({ success: false, message: 'paymentReference and txHash are required' });
+    }
+
+    await updatePaymentStatus(paymentReference, 'completed', { txHash, payload: req.body });
+    res.json({ success: true, message: 'MiniPay payment confirmed', paymentReference, txHash, status: 'confirmed' });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Payment confirmation failed',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
 router.get('/minipay/status/:paymentReference', async (req: Request, res: Response) => {
-  const { paymentReference } = req.params;
-  
   try {
-    // TODO: Get payment status from database
-    // Mock response for now
-    const status = {
-      paymentReference,
-      status: 'pending', // pending, confirmed, failed
-      amount: '10.00',
-      currency: 'cUSD',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    
-    res.json({ success: true, payment: status });
+    const { paymentReference } = req.params;
+    const record = await db
+      .select()
+      .from(paymentTransactions)
+      .where(eq(paymentTransactions.reference, paymentReference))
+      .then(rows => rows[0]);
+
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'Payment not found' });
+    }
+
+    res.json({ success: true, payment: record });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get payment status',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 

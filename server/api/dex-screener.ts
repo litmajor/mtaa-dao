@@ -1,44 +1,40 @@
 /**
  * DexScreener API Integration Handler
- * ✅ TypeScript + Express (replaces Python FastAPI backend)
- * 
- * Provides unified API for:
- * - Token pair search and discovery
- * - Trending pair detection
- * - Real-time token data from DexScreener
- * 
- * All requests are cached and rate-limited for optimal performance
  */
 
 import type { Request, Response, NextFunction } from 'express';
-import { DexScreenerClient } from '../services/dexscreener_client';
+import { DexScreenerClient, type DexPair } from '../services/dexscreener_client';
 import { logger } from '../utils/logger';
 
-/**
- * In-memory response cache with TTL
- * Production: Migrate to Redis for distributed caching
- */
+type SyncStatus = {
+  isRunning: boolean;
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
+  chains: string[];
+  totalPairsScanned: number;
+  uniqueTokensDiscovered: number;
+  retries: number;
+  idempotencyKey?: string;
+  error?: string;
+};
+
 class ResponseCache {
   private cache = new Map<string, { data: any; expiresAt: number }>();
-  private readonly TTL_MS = 5 * 60 * 1000; // 5 minutes
+  private readonly TTL_MS = 5 * 60 * 1000;
 
   get(key: string): any | null {
     const entry = this.cache.get(key);
     if (!entry) return null;
-
     if (Date.now() > entry.expiresAt) {
       this.cache.delete(key);
       return null;
     }
-
     return entry.data;
   }
 
   set(key: string, data: any): void {
-    this.cache.set(key, {
-      data,
-      expiresAt: Date.now() + this.TTL_MS
-    });
+    this.cache.set(key, { data, expiresAt: Date.now() + this.TTL_MS });
   }
 
   clear(): void {
@@ -46,20 +42,170 @@ class ResponseCache {
   }
 
   getStats(): { size: number; ttlMs: number } {
-    return {
-      size: this.cache.size,
-      ttlMs: this.TTL_MS
-    };
+    return { size: this.cache.size, ttlMs: this.TTL_MS };
   }
 }
 
 const responseCache = new ResponseCache();
 const dexScreenerClient = new DexScreenerClient();
+const symbolUniverseState: SyncStatus = {
+  isRunning: false,
+  chains: [],
+  totalPairsScanned: 0,
+  uniqueTokensDiscovered: 0,
+  retries: 0,
+};
 
-/**
- * GET /api/dex/health
- * Service health check
- */
+const discoveredTokenUniverse = new Map<string, {
+  chainId: string;
+  address: string;
+  symbol: string;
+  name: string;
+  lastSeenAt: string;
+}>();
+
+const DEFAULT_CHAINS = ['ethereum', 'solana', 'polygon', 'bsc', 'base'];
+
+async function clientSearchPairs(q: string, chains?: string[], limit: number = 50): Promise<any> {
+  const client: any = dexScreenerClient;
+  if (client.searchPairs.length >= 1) {
+    const response = await client.searchPairs(q, chains);
+    const pairs = (response?.pairs || []).slice(0, limit);
+    return { ...response, pairs, total: response?.total ?? pairs.length };
+  }
+  return client.searchPairs({ q, chains, limit });
+}
+
+async function clientGetPair(chain: string, pairAddress: string): Promise<any> {
+  const client: any = dexScreenerClient;
+  if (client.getPair.length >= 2) return client.getPair(chain, pairAddress);
+  return client.getPair({ chainId: chain, pairAddress });
+}
+
+async function clientGetTokenPairs(chain: string, tokenAddress: string, _factor: string): Promise<any> {
+  const client: any = dexScreenerClient;
+  if (client.getTokenPairs.length >= 2) return client.getTokenPairs(chain, tokenAddress);
+  return client.getTokenPairs({ chainId: chain, tokenAddress, orderby: _factor });
+}
+
+async function clientTrending(args: {
+  chainId?: string;
+  minLiquidity?: number;
+  minVolume?: number;
+  limit?: number;
+}): Promise<DexPair[]> {
+  const client: any = dexScreenerClient;
+  const legacy = await client.findTrending?.({
+    chain: args.chainId,
+    minLiquidity: args.minLiquidity,
+    minVolume24h: args.minVolume,
+    limit: args.limit,
+  });
+  if (legacy?.status === 'success') return legacy?.trending || [];
+
+  const modern = await client.getTrendingPairs?.(args);
+  if (Array.isArray(modern)) return modern;
+  if (Array.isArray(modern?.pairs)) return modern.pairs;
+  if (Array.isArray(modern?.trending)) return modern.trending;
+  return [];
+}
+
+async function runSymbolUniverseSync(options: {
+  chains?: string[];
+  minLiquidity?: number;
+  minVolume?: number;
+  limitPerChain?: number;
+  retryCount?: number;
+}) {
+  const chains = options.chains?.length ? options.chains : DEFAULT_CHAINS;
+  const minLiquidity = options.minLiquidity ?? 10000;
+  const minVolume = options.minVolume ?? 50000;
+  const limitPerChain = options.limitPerChain ?? 100;
+  const retryCount = options.retryCount ?? 1;
+
+  symbolUniverseState.isRunning = true;
+  symbolUniverseState.startedAt = new Date().toISOString();
+  symbolUniverseState.completedAt = undefined;
+  symbolUniverseState.durationMs = undefined;
+  symbolUniverseState.error = undefined;
+  symbolUniverseState.chains = chains;
+  symbolUniverseState.totalPairsScanned = 0;
+  symbolUniverseState.uniqueTokensDiscovered = 0;
+  symbolUniverseState.retries = 0;
+
+  const started = Date.now();
+  const runId = `sync-${started}`;
+  symbolUniverseState.idempotencyKey = runId;
+
+  const uniqueKeys = new Set<string>();
+
+  try {
+    for (const chain of chains) {
+      let lastError: unknown;
+      for (let attempt = 0; attempt <= retryCount; attempt++) {
+        try {
+          const pairs = await clientTrending({
+            chainId: chain,
+            minLiquidity,
+            minVolume,
+            limit: limitPerChain,
+          });
+
+          symbolUniverseState.totalPairsScanned += pairs.length;
+
+          for (const pair of pairs) {
+            for (const token of [pair.baseToken, pair.quoteToken]) {
+              if (!token?.address) continue;
+              const key = `${chain}:${token.address.toLowerCase()}`;
+              uniqueKeys.add(key);
+              discoveredTokenUniverse.set(key, {
+                chainId: chain,
+                address: token.address,
+                symbol: token.symbol,
+                name: token.name,
+                lastSeenAt: new Date().toISOString(),
+              });
+            }
+          }
+
+          lastError = undefined;
+          break;
+        } catch (error) {
+          symbolUniverseState.retries += 1;
+          lastError = error;
+          if (attempt < retryCount) {
+            logger.warn('Symbol universe sync retry', { chain, attempt: attempt + 1, error: (error as Error)?.message });
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          }
+        }
+      }
+
+      if (lastError) {
+        throw lastError;
+      }
+    }
+
+    symbolUniverseState.uniqueTokensDiscovered = uniqueKeys.size;
+    symbolUniverseState.completedAt = new Date().toISOString();
+    symbolUniverseState.durationMs = Date.now() - started;
+
+    logger.info('Symbol universe sync completed', {
+      runId,
+      chains,
+      totalPairsScanned: symbolUniverseState.totalPairsScanned,
+      uniqueTokensDiscovered: symbolUniverseState.uniqueTokensDiscovered,
+      retries: symbolUniverseState.retries,
+    });
+  } catch (error) {
+    symbolUniverseState.error = (error as Error)?.message || 'Unknown sync error';
+    symbolUniverseState.completedAt = new Date().toISOString();
+    symbolUniverseState.durationMs = Date.now() - started;
+    logger.error('Error syncing Symbol Universe:', error);
+  } finally {
+    symbolUniverseState.isRunning = false;
+  }
+}
+
 export const getDexHealth = async (req: Request, res: Response, next: NextFunction) => {
   try {
     res.json({
@@ -67,24 +213,17 @@ export const getDexHealth = async (req: Request, res: Response, next: NextFuncti
       service: 'dex-screener-api',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
-      cache: responseCache.getStats()
+      cache: responseCache.getStats(),
+      symbolUniverseSync: {
+        ...symbolUniverseState,
+        persistedUniverseSize: discoveredTokenUniverse.size,
+      },
     });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * GET /api/dex/search-pairs
- * Search for trading pairs by symbol or address
- * 
- * Query Parameters:
- * - q (required): Symbol or address to search (e.g., "PUMP", "0x1234...")
- * - chains (optional): Comma-separated chain names (e.g., "ethereum,solana")
- * - limit (optional): Max results (default: 50)
- * 
- * Rate Limit: 60 requests/minute
- */
 export const searchPairs = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { q, chains, limit } = req.query;
@@ -93,288 +232,165 @@ export const searchPairs = async (req: Request, res: Response, next: NextFunctio
       return res.status(400).json({ error: 'Query parameter "q" is required' });
     }
 
-    // Build cache key
     const cacheKey = `search:${q}:${chains || 'all'}:${limit || 50}`;
     const cached = responseCache.get(cacheKey);
-    if (cached) {
-      return res.json({ ...cached, cached: true });
-    }
+    if (cached) return res.json({ ...cached, cached: true });
 
-    // Prepare chains parameter
     const chainParam = chains ? (chains as string).split(',').map(c => c.trim()) : undefined;
+    const parsedLimit = limit ? parseInt(limit as string, 10) : 50;
 
-    // Call DexScreener API
-    const results = await dexScreenerClient.searchPairs({
-      q,
-      chains: chainParam,
-      limit: limit ? parseInt(limit as string) : 50
-    });
-
-    // Cache results
+    const results = await clientSearchPairs(q, chainParam, parsedLimit);
     responseCache.set(cacheKey, results);
 
-    res.json({
-      ...results,
-      cached: false,
-      timestamp: new Date().toISOString()
-    });
+    res.json({ ...results, cached: false, timestamp: new Date().toISOString() });
   } catch (error) {
     logger.error('Error searching pairs:', error);
     next(error);
   }
 };
 
-/**
- * GET /api/dex/pairs/:chain/:pairAddress
- * Get detailed information about a specific trading pair
- * 
- * Path Parameters:
- * - chain: Blockchain name (e.g., "ethereum", "solana")
- * - pairAddress: Pair contract address
- * 
- * Rate Limit: 300 requests/minute
- */
 export const getPairDetails = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { chain, pairAddress } = req.params;
-
     if (!chain || !pairAddress) {
-      return res.status(400).json({ 
-        error: 'Path parameters "chain" and "pairAddress" are required' 
-      });
+      return res.status(400).json({ error: 'Path parameters "chain" and "pairAddress" are required' });
     }
 
-    // Build cache key
     const cacheKey = `pair:${chain}:${pairAddress}`;
     const cached = responseCache.get(cacheKey);
-    if (cached) {
-      return res.json({ ...cached, cached: true });
-    }
+    if (cached) return res.json({ ...cached, cached: true });
 
-    // Call DexScreener API
-    const pairData = await dexScreenerClient.getPair({
-      chainId: chain,
-      pairAddress
-    });
-
-    // Cache results
+    const pairData = await clientGetPair(chain, pairAddress);
     responseCache.set(cacheKey, pairData);
-
-    res.json({
-      ...pairData,
-      cached: false,
-      timestamp: new Date().toISOString()
-    });
+    res.json({ ...pairData, cached: false, timestamp: new Date().toISOString() });
   } catch (error) {
     logger.error('Error fetching pair details:', error);
     next(error);
   }
 };
 
-/**
- * GET /api/dex/token-pairs/:chain/:tokenAddress
- * Get all trading pairs for a specific token
- * 
- * Path Parameters:
- * - chain: Blockchain name
- * - tokenAddress: Token contract address
- * 
- * Query Parameters:
- * - factor (optional): "txns" (transaction count), "liquidity", "volume", "fdv"
- * 
- * Rate Limit: 60 requests/minute
- */
 export const getTokenPairs = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { chain, tokenAddress } = req.params;
     const { factor } = req.query;
 
     if (!chain || !tokenAddress) {
-      return res.status(400).json({ 
-        error: 'Path parameters "chain" and "tokenAddress" are required' 
-      });
+      return res.status(400).json({ error: 'Path parameters "chain" and "tokenAddress" are required' });
     }
 
-    // Build cache key
     const cacheKey = `token-pairs:${chain}:${tokenAddress}:${factor || 'default'}`;
     const cached = responseCache.get(cacheKey);
-    if (cached) {
-      return res.json({ ...cached, cached: true });
-    }
+    if (cached) return res.json({ ...cached, cached: true });
 
-    // Call DexScreener API
-    const pairs = await dexScreenerClient.getTokenPairs({
-      chainId: chain,
-      tokenAddress,
-      orderby: (factor as string) || 'txns'
-    });
-
-    // Cache results
+    const pairs = await clientGetTokenPairs(chain, tokenAddress, (factor as string) || 'txns');
     responseCache.set(cacheKey, pairs);
 
-    res.json({
-      pairs,
-      cached: false,
-      timestamp: new Date().toISOString()
-    });
+    res.json({ pairs, cached: false, timestamp: new Date().toISOString() });
   } catch (error) {
     logger.error('Error fetching token pairs:', error);
     next(error);
   }
 };
 
-/**
- * GET /api/dex/trending-pairs
- * Discover trending trading pairs with filters
- * 
- * Query Parameters:
- * - chain (optional): Chain name (e.g., "ethereum", "solana")
- * - min_liquidity (optional): Minimum liquidity in USD (e.g., 100000)
- * - min_volume (optional): Minimum 24h volume in USD
- * - max_age (optional): Max pair age in hours
- * - limit (optional): Max results (default: 50)
- * 
- * Rate Limit: 30 requests/minute
- */
 export const getTrendingPairs = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { chain, min_liquidity, min_volume, max_age, limit } = req.query;
 
-    // Build cache key
     const cacheKey = `trending:${chain || 'all'}:${min_liquidity || 0}:${min_volume || 0}:${limit || 50}`;
     const cached = responseCache.get(cacheKey);
-    if (cached) {
-      return res.json({ ...cached, cached: true });
-    }
+    if (cached) return res.json({ ...cached, cached: true });
 
-    // Get trending pairs from DexScreener
-    const results = await dexScreenerClient.getTrendingPairs({
+    const results = await clientTrending({
       chainId: chain as string | undefined,
-      minLiquidity: min_liquidity ? parseInt(min_liquidity as string) : undefined,
-      minVolume: min_volume ? parseInt(min_volume as string) : undefined,
-      limit: limit ? parseInt(limit as string) : 50
+      minLiquidity: min_liquidity ? parseInt(min_liquidity as string, 10) : undefined,
+      minVolume: min_volume ? parseInt(min_volume as string, 10) : undefined,
+      limit: limit ? parseInt(limit as string, 10) : 50,
     });
 
-    // Apply age filter if specified
     let filtered = results;
     if (max_age) {
-      const maxAgeMs = parseInt(max_age as string) * 60 * 60 * 1000;
-      filtered = results.filter(pair => {
-        if (!pair.pairCreatedAt) return true;
-        const age = Date.now() - pair.pairCreatedAt;
-        return age <= maxAgeMs;
-      });
+      const maxAgeMs = parseInt(max_age as string, 10) * 60 * 60 * 1000;
+      filtered = results.filter(pair => !pair.pairCreatedAt || Date.now() - pair.pairCreatedAt <= maxAgeMs);
     }
 
-    // Cache results
     responseCache.set(cacheKey, { pairs: filtered, total: filtered.length });
-
-    res.json({
-      pairs: filtered,
-      total: filtered.length,
-      cached: false,
-      timestamp: new Date().toISOString()
-    });
+    res.json({ pairs: filtered, total: filtered.length, cached: false, timestamp: new Date().toISOString() });
   } catch (error) {
     logger.error('Error fetching trending pairs:', error);
     next(error);
   }
 };
 
-/**
- * POST /api/dex/symbol-universe/sync
- * Trigger Symbol Universe discovery from DexScreener data
- * 
- * This endpoint:
- * 1. Fetches trending pairs from DexScreener
- * 2. Auto-categorizes discovered tokens
- * 3. Enriches with CoinGecko metadata
- * 4. Detects asset relationships (wrapped, bridged, staking)
- * 5. Returns stats on new/updated assets
- * 
- * Rate Limit: 1 request/minute
- * 
- * Warning: This is a resource-intensive operation
- */
 export const syncSymbolUniverse = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Prevent concurrent syncs
-    if ((syncSymbolUniverse as any).isRunning) {
+    if (symbolUniverseState.isRunning) {
       return res.status(429).json({
         error: 'Discovery already in progress',
-        message: 'Please wait for the current sync to complete'
+        message: 'Please wait for the current sync to complete',
+        state: symbolUniverseState,
       });
     }
 
-    (syncSymbolUniverse as any).isRunning = true;
+    const {
+      chains,
+      minLiquidity,
+      minVolume,
+      limitPerChain,
+      retryCount,
+    } = req.body || {};
 
-    const startTime = Date.now();
-    logger.info('Starting Symbol Universe discovery...');
+    const selectedChains = Array.isArray(chains) ? chains : undefined;
 
-    try {
-      // This would integrate with Symbol Universe service
-      // For now, return a placeholder response
-      const result = {
-        status: 'discovery_started',
-        message: 'Symbol Universe discovery initiated',
-        chains: ['ethereum', 'solana', 'polygon'],
-        expectedDuration: '2-5 minutes',
-        startedAt: new Date().toISOString()
-      };
+    setImmediate(() => {
+      void runSymbolUniverseSync({
+        chains: selectedChains,
+        minLiquidity: minLiquidity ? Number(minLiquidity) : undefined,
+        minVolume: minVolume ? Number(minVolume) : undefined,
+        limitPerChain: limitPerChain ? Number(limitPerChain) : undefined,
+        retryCount: retryCount ? Number(retryCount) : undefined,
+      });
+    });
 
-      res.json(result);
-
-      // Note: In production, this would:
-      // - Run async discovery in background
-      // - Update database with new tokens
-      // - Categorize and enrich asset data
-      // - Return results via WebSocket when complete
-    } finally {
-      (syncSymbolUniverse as any).isRunning = false;
-    }
+    res.status(202).json({
+      status: 'discovery_started',
+      message: 'Symbol Universe background sync started',
+      state: {
+        ...symbolUniverseState,
+        isRunning: true,
+        chains: selectedChains?.length ? selectedChains : DEFAULT_CHAINS,
+      },
+      startedAt: new Date().toISOString(),
+    });
   } catch (error) {
-    logger.error('Error syncing Symbol Universe:', error);
-    (syncSymbolUniverse as any).isRunning = false;
+    logger.error('Error scheduling Symbol Universe sync:', error);
     next(error);
   }
 };
 
-/**
- * DELETE /api/dex/cache/clear
- * Clear all cached responses
- * 
- * ⚠️ Admin only - requires authentication
- */
 export const clearCache = async (req: Request, res: Response, next: NextFunction) => {
   try {
     responseCache.clear();
     logger.info('DexScreener cache cleared');
-    
-    res.json({
-      status: 'success',
-      message: 'Cache cleared',
-      timestamp: new Date().toISOString()
-    });
+    res.json({ status: 'success', message: 'Cache cleared', timestamp: new Date().toISOString() });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * GET /api/dex/cache/stats
- * Get cache statistics
- */
 export const getCacheStats = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const stats = responseCache.getStats();
-    
     res.json({
       cache: {
         size: stats.size,
         ttlMs: stats.ttlMs,
-        ttlMinutes: stats.ttlMs / 1000 / 60
+        ttlMinutes: stats.ttlMs / 1000 / 60,
       },
-      timestamp: new Date().toISOString()
+      symbolUniverse: {
+        ...symbolUniverseState,
+        persistedUniverseSize: discoveredTokenUniverse.size,
+      },
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     next(error);
@@ -389,5 +405,5 @@ export default {
   getTrendingPairs,
   syncSymbolUniverse,
   clearCache,
-  getCacheStats
+  getCacheStats,
 };
