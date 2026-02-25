@@ -106,7 +106,7 @@ export interface HedgingAnalysisQuery {
 }
 
 export interface HedgingAnalysisOutput {
-  current Downside: number; // Current portfolio downside risk
+  currentDownside: number; // Current portfolio downside risk
   
   hedgingOptions: Array<{
     assetSymbol: string;

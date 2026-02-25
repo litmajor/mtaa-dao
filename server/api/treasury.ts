@@ -27,7 +27,7 @@ import {
   monitorDaoTreasuryNow 
 } from '../services/treasury-monitoring.service';
 import { getTreasuryConfigForDAOType } from '@/config/treasury.config';
-import logger from '../utils/logger';
+import { logger } from '../utils/logger';
 
 /**
  * POST /api/treasury/analyze

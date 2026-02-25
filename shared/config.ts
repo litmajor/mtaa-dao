@@ -130,6 +130,48 @@ if (!parsedEnv.success) {
 
 export const env = parsedEnv.data;
 
+const productionSecretChecks = () => {
+  if (parsedEnv.data.NODE_ENV !== 'production') return;
+
+  const missing: string[] = [];
+  const weak: string[] = [];
+
+  const requiredInProd = [
+    'DATABASE_URL',
+    'SESSION_SECRET',
+    'JWT_SECRET',
+    'ENCRYPTION_KEY',
+    'WALLET_PRIVATE_KEY',
+  ] as const;
+
+  for (const key of requiredInProd) {
+    const value = (parsedEnv.data as any)[key];
+    if (!value || String(value).trim().length === 0) {
+      missing.push(key);
+    }
+  }
+
+  if (parsedEnv.data.SESSION_SECRET?.includes('dev-session-secret-change-in-production')) {
+    weak.push('SESSION_SECRET');
+  }
+  if (parsedEnv.data.JWT_SECRET?.includes('dev-jwt-secret-change-in-production')) {
+    weak.push('JWT_SECRET');
+  }
+
+  if (missing.length > 0 || weak.length > 0) {
+    console.error('❌ Production environment validation failed.');
+    if (missing.length > 0) {
+      console.error(`Missing required secrets: ${missing.join(', ')}`);
+    }
+    if (weak.length > 0) {
+      console.error(`Weak/default secret values detected: ${weak.join(', ')}`);
+    }
+    process.exit(1);
+  }
+};
+
+productionSecretChecks();
+
 // Helper functions for typed environment access
 export const isDevelopment = env.NODE_ENV === "development";
 export const isProduction = env.NODE_ENV === "production";
