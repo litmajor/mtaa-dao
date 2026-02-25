@@ -12,7 +12,7 @@ import { db } from '../db';
 import { daos, vaultTokenHoldings, treasuryHealthHistory } from '../../shared/schema';
 import { generateTreasuryIntelligence } from './treasury-intelligence.service';
 import { desc } from 'drizzle-orm';
-import logger from '../utils/logger';
+import { logger } from '../utils/logger';
 
 interface TreasuryMonitoringConfig {
   enabled?: boolean;

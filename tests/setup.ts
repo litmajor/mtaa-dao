@@ -1,6 +1,17 @@
 
 import { beforeAll, afterAll, afterEach } from '@jest/globals';
 import '@testing-library/jest-dom';
+import { TextEncoder, TextDecoder } from 'util';
+
+declare global {
+  // eslint-disable-next-line no-var
+  var testUser: {
+    id: string;
+    email: string;
+    username: string;
+  };
+}
+
 
 // Test database setup
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/mtaadao_test';
@@ -38,3 +49,6 @@ jest.mock('../server/notificationService', () => ({
     createNotification: jest.fn()
   }
 }));
+
+(global as any).TextEncoder = TextEncoder;
+(global as any).TextDecoder = TextDecoder as any;

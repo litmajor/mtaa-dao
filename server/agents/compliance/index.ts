@@ -15,7 +15,7 @@ import { BaseAgent, AgentConfig, AgentStatus } from '../framework/base-agent';
 import { Logger } from '../../utils/logger';
 import { healthRegistry } from '../../core/consolidation/HealthRegistryConsolidation';
 import { circuitBreakerRegistry } from '../../core/consolidation/CircuitBreakerConsolidation';
-import { auditService } from '../../services/AuditServiceConsolidation';
+import { auditService } from '../../core/consolidation/AuditServiceConsolidation';
 import { AgentCommunicator } from '../../core/agent-framework/agent-communicator';
 import { MessageType } from '../../core/agent-framework/message-bus';
 

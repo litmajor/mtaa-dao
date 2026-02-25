@@ -452,3 +452,5 @@ export class ExecutionTrackingService {
 
 // Export singleton instance
 export const executionTracking = ExecutionTrackingService.getInstance();
+
+export const executionTrackingService = executionTracking;

@@ -23,7 +23,7 @@ import {
   contributions,
   proposals,
   subscriptions,
-  payments,
+  paymentTransactions,
   userActivities,
 } from '../../shared/schema';
 import {
@@ -346,11 +346,11 @@ export class MonitoringAggregationService {
           .from(vaults),
         // Payment processing fees
         db
-          .select({ total: sql<string>`COALESCE(SUM(CAST(${payments.feeAmount} AS NUMERIC)), 0)` })
-          .from(payments)
+          .select({ total: sql<string>`COALESCE(SUM(CAST(${paymentTransactions.amount} AS NUMERIC)), 0)` })
+          .from(paymentTransactions)
           .where(and(
-            eq(payments.status, 'completed'),
-            gte(payments.processedAt, thirtyDaysAgo)
+            eq(paymentTransactions.status, 'completed'),
+            gte(paymentTransactions.updatedAt, thirtyDaysAgo)
           )),
         // Subscription revenue
         db

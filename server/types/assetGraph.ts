@@ -351,8 +351,57 @@ export interface TreasuryContext {
    * - investment_club:     { yield: 0.6, risk: 0.3, liquidity: 0.1 }
    * - foundation:          { risk: 0.6, yield: 0.3, liquidity: 0.1 }
    * - long_term:           { risk: 0.4, yield: 0.4, liquidity: 0.2 }
-   * \n   * Override via governance vote for custom allocation strategies.
-   * \n   * When provided, overrides default persona weights.\n   * Enables institutional treasuries to customize decision logic.\n   */\n  objectiveWeights?: {\n    risk: number;                  // 0-1, how much focus on reducing downside?\n    yield: number;                 // 0-1, how much focus on returns?\n    liquidity: number;             // 0-1, how much focus on exit speed?\n  };\n  \n  // ========== CURRENT ALLOCATION (CRITICAL FOR COGNITION) ==========\n  /**\n   * Current asset holdings by position ID\n   * \n   * Cognition needs this to calculate:\n   * - Over-concentration (single asset > 30% of portfolio)\n   * - Rebalance delta (current vs target allocation)\n   * - Correlation exposure risk (cumulative risk from related assets)\n   * - Liquidity stress (can we exit top 3 positions quickly?)\n   * \n   * Without this, cognition can't reason about portfolio-level decisions\n   */\n  currentAllocation?: {\n    treasuryPositionId: string;     // Links to treasuryPositions table\n    assetId: string;\n    symbol: string;\n    weightPercent: number;           // % of total treasury value\n    usdValue: number;\n    chain: SupportedChain;\n  }[];\n  \n  // ========== TIME CONSTRAINTS ==========\n  \n  // For rotation DAOs\n  nextDistributionWindow?: {\n    membersToReceive: number;\n    totalToDistribute: string;       // USD amount\n    deadline: Date;                  // Hard cutoff for paying members\n  };\n  \n  // For accumulative treasuries\n  perpetualMode?: {\n    targetAnnualSpendRate: number;  // e.g., 0.04 for 4% rule (endowment)\n    minimumPreserveAssets: boolean;  // Keep core capital intact?\n  };\n  \n  // ========== RISK TOLERANCE ==========\n  maxVolatilityAcceptable: number;  // 0-100\n  maxDrawdownTolerance: number;     // % drawdown acceptable before rebalance\n}
+   *
+   * Override via governance vote for custom allocation strategies.
+   * When provided, overrides default persona weights.
+   * Enables institutional treasuries to customize decision logic.
+   */
+  objectiveWeights?: {
+    risk: number;                  // 0-1, how much focus on reducing downside?
+    yield: number;                 // 0-1, how much focus on returns?
+    liquidity: number;             // 0-1, how much focus on exit speed?
+  };
+
+  // ========== CURRENT ALLOCATION (CRITICAL FOR COGNITION) ==========
+  /**
+   * Current asset holdings by position ID
+   *
+   * Cognition needs this to calculate:
+   * - Over-concentration (single asset > 30% of portfolio)
+   * - Rebalance delta (current vs target allocation)
+   * - Correlation exposure risk (cumulative risk from related assets)
+   * - Liquidity stress (can we exit top 3 positions quickly?)
+   *
+   * Without this, cognition can't reason about portfolio-level decisions
+   */
+  currentAllocation?: {
+    treasuryPositionId: string;     // Links to treasuryPositions table
+    assetId: string;
+    symbol: string;
+    weightPercent: number;           // % of total treasury value
+    usdValue: number;
+    chain: SupportedChain;
+  }[];
+
+  // ========== TIME CONSTRAINTS ==========
+
+  // For rotation DAOs
+  nextDistributionWindow?: {
+    membersToReceive: number;
+    totalToDistribute: string;       // USD amount
+    deadline: Date;                  // Hard cutoff for paying members
+  };
+
+  // For accumulative treasuries
+  perpetualMode?: {
+    targetAnnualSpendRate: number;  // e.g., 0.04 for 4% rule (endowment)
+    minimumPreserveAssets: boolean;  // Keep core capital intact?
+  };
+
+  // ========== RISK TOLERANCE ==========
+  maxVolatilityAcceptable: number;  // 0-100
+  maxDrawdownTolerance: number;     // % drawdown acceptable before rebalance
+}
 
 /**
  * Relationship strength for correlation-based decisions
