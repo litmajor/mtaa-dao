@@ -1,7 +1,14 @@
 
 {
-  "index": "Developer Hub",
-  "agents": "AI Agents Architecture",
+  "index": "Getting Started",
+  "api-reference": "API Reference",
+  "authentication": "Authentication",
+  "rate-limits": "Rate Limits",
+  "code-examples": "Code Examples",
+  "webhooks": "Webhooks",
+  "sdks": "SDKs",
+  "agents-guide": "Building Agents",
+  "strategies": "DeFi Strategies",
   "agent-communication": "Agent Communication",
   "ai-integration-complete": "Complete AI Integration Guide"
 }

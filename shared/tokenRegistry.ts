@@ -1,5 +1,8 @@
 // Phase 3: Advanced Token Registry for MtaaDAO
-// Supports CELO, cUSD, cEUR, USDT, and custom community tokens
+// Supports multi-chain tokens: CELO, cUSD, cEUR, USDT, BTC, ETH, USDC, MTAA
+// Integrated with cross-chain bridge support (LayerZero, Axelar, Wormhole)
+
+import type { SupportedChain } from './chainConfiguration';
 
 export interface TokenInfo {
   symbol: string;
@@ -13,19 +16,50 @@ export interface TokenInfo {
   isActive: boolean;
   logoUrl?: string;
   description?: string;
-  priceApi?: string; // For price fetching
+  priceApi?: string; // For price fetching (CoinGecko ID)
   riskLevel: 'low' | 'medium' | 'high';
   maxDailyVolume?: string; // In token units
   requiresKyc?: boolean;
+  emerging?: boolean; // Mark tokens as emerging/new
+  
+  // Multi-chain support
+  chains?: {
+    [chain in SupportedChain]?: {
+      address: string;
+      decimals: number;
+      isActive: boolean;
+      bridges?: {
+        [targetChain in SupportedChain]?: BridgeRoute;
+      };
+    };
+  };
+  
+  metadata?: {
+    riskScore?: 'low' | 'medium' | 'high';
+    liquidityScore?: number;        // 1-100, higher = more liquidity
+    volatilityScore?: number;       // 1-100, higher = more volatile
+    supportedExchanges?: string[]; // Exchanges where token is traded
+  };
 }
 
-// Bridge configuration for cross-chain tokens
-export interface BridgeConfig {
-  protocol: 'layerzero' | 'axelar' | 'wormhole';
-  sourceChain: string;
+// Bridge configuration for cross-chain token transfers
+export interface BridgeRoute {
+  protocol: 'layerzero' | 'axelar' | 'wormhole' | 'stargate';
   bridgeContract?: string;
   minimumAmount: string;
-  estimatedTime: number; // in seconds
+  maximumAmount: string;
+  estimatedTime: number;           // in seconds
+  feePercentage: number;           // 0.1 - 1.0%
+  active: boolean;
+}
+
+export interface BridgeConfig {
+  protocol: 'layerzero' | 'axelar' | 'wormhole' | 'stargate';
+  sourceChain: string;
+  targetChain: string;
+  bridgeContract?: string;
+  minimumAmount: string;
+  estimatedTime: number;           // in seconds
 }
 
 export interface TokenConfig {
@@ -107,7 +141,13 @@ export const TOKEN_REGISTRY: Record<string, TokenInfo> = {
     logoUrl: '/tokens/ceur.png',
     description: 'Celo Euro stablecoin pegged to EUR',
     priceApi: 'coingecko:celo-euro',
-    riskLevel: 'low'
+    riskLevel: 'low',
+    metadata: {
+      riskScore: 'low',
+      liquidityScore: 70,
+      volatilityScore: 5,
+      supportedExchanges: ['binance', 'coinbase', 'kraken']
+    }
   },
 
   cKES: {
@@ -121,9 +161,16 @@ export const TOKEN_REGISTRY: Record<string, TokenInfo> = {
     category: 'stablecoin',
     isActive: true,
     logoUrl: '/tokens/ckes.png',
-    description: 'Celo Kenyan Shilling stablecoin pegged to KES - the yin to cUSD yang for East African markets',
+    description: 'Celo Kenyan Shilling stablecoin pegged to KES',
     priceApi: 'coingecko:celo-kenyan-shilling',
-    riskLevel: 'low'
+    riskLevel: 'low',
+    emerging: true,
+    metadata: {
+      riskScore: 'low',
+      liquidityScore: 45,
+      volatilityScore: 8,
+      supportedExchanges: ['binance', 'bybit', 'kucoin']
+    }
   },
 
   USDT: {
@@ -140,7 +187,13 @@ export const TOKEN_REGISTRY: Record<string, TokenInfo> = {
     description: 'Tether USD bridged to Celo via Wormhole',
     priceApi: 'coingecko:tether',
     riskLevel: 'low',
-    requiresKyc: true
+    requiresKyc: true,
+    metadata: {
+      riskScore: 'low',
+      liquidityScore: 95,
+      volatilityScore: 2,
+      supportedExchanges: ['binance', 'coinbase', 'kraken', 'bybit', 'kucoin', 'okx']
+    }
   },
 
   BTC: {
@@ -157,7 +210,13 @@ export const TOKEN_REGISTRY: Record<string, TokenInfo> = {
     description: 'Bitcoin bridged to Celo',
     priceApi: 'coingecko:bitcoin',
     riskLevel: 'high', // Higher risk due to bridging complexity
-    requiresKyc: true
+    requiresKyc: true,
+    metadata: {
+      riskScore: 'high',
+      liquidityScore: 85,
+      volatilityScore: 75,
+      supportedExchanges: ['binance', 'coinbase', 'kraken', 'bybit', 'kucoin', 'okx']
+    }
   },
   ETH: {
     symbol: 'ETH',
@@ -173,7 +232,13 @@ export const TOKEN_REGISTRY: Record<string, TokenInfo> = {
     description: 'Ethereum bridged to Celo via CrossChainBridge contract',
     priceApi: 'coingecko:ethereum',
     riskLevel: 'high', // Higher risk due to bridging complexity
-    requiresKyc: true
+    requiresKyc: true,
+    metadata: {
+      riskScore: 'high',
+      liquidityScore: 90,
+      volatilityScore: 65,
+      supportedExchanges: ['binance', 'coinbase', 'kraken', 'bybit', 'kucoin', 'okx']
+    }
   },
   USDC: {
     symbol: 'USDC',
@@ -188,7 +253,13 @@ export const TOKEN_REGISTRY: Record<string, TokenInfo> = {
     logoUrl: '/tokens/usdc.png',
     description: 'USD Coin native to Celo',
     priceApi: 'coingecko:usd-coin',
-    riskLevel: 'low'
+    riskLevel: 'low',
+    metadata: {
+      riskScore: 'low',
+      liquidityScore: 92,
+      volatilityScore: 2,
+      supportedExchanges: ['binance', 'coinbase', 'kraken', 'bybit', 'kucoin', 'okx']
+    }
   },
 
   // Framework for custom community tokens
@@ -205,7 +276,14 @@ export const TOKEN_REGISTRY: Record<string, TokenInfo> = {
     logoUrl: '/tokens/mtaa.png',
     description: 'MtaaDAO governance and utility token',
     riskLevel: 'medium',
-    maxDailyVolume: '100000' // Example limit
+    maxDailyVolume: '100000', // Example limit
+    emerging: true,
+    metadata: {
+      riskScore: 'medium',
+      liquidityScore: 30,
+      volatilityScore: 45,
+      supportedExchanges: ['kucoin']
+    }
   }
 };
 

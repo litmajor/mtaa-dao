@@ -18,11 +18,13 @@ declare global {
 
 // Declare missing types for third-party libraries
 declare module 'web3' {
-  export const default: any;
+  const web3: any;
+  export = web3;
 }
 
 declare module 'ethers' {
-  export const default: any;
+  const ethers: any;
+  export = ethers;
 }
 
 export {};

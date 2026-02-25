@@ -4,18 +4,17 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Progress } from '../components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { useToast } from '../components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import {
-  Award,
-  Trophy,
-  Zap,
-  Star,
   Lock,
-  Unlock,
+  LockOpen,
   Gift,
+  CheckCircle,
   TrendingUp,
-  Share2,
-  Clock
+  Heart,
+  AlertCircle,
+  Clock,
+  Zap
 } from 'lucide-react';
 
 interface Achievement {
@@ -233,13 +232,13 @@ export default function AchievementSystemPage() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'locked':
-        return <Lock className="w-4 h-4" />;
+        return <Lock className="w-4 h-4" />
       case 'unlocked':
-        return <Unlock className="w-4 h-4" />;
+        return <LockOpen className="w-4 h-4" />
       case 'claimed':
-        return <Gift className="w-4 h-4" />;
+        return <Gift className="w-4 h-4" />
       case 'nft_minted':
-        return <Trophy className="w-4 h-4" />;
+        return <CheckCircle className="w-4 h-4" />;
       default:
         return null;
     }
@@ -264,7 +263,7 @@ export default function AchievementSystemPage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <Trophy className="w-16 h-16 text-purple-500 mx-auto mb-4 animate-bounce" />
+          <Zap className="w-16 h-16 text-purple-500 mx-auto mb-4 animate-bounce" />
           <p>Loading achievements...</p>
         </div>
       </div>
@@ -293,7 +292,7 @@ export default function AchievementSystemPage() {
                     <p className="text-sm text-gray-600 mb-1">Achievements Unlocked</p>
                     <p className="text-3xl font-bold text-purple-600">{stats.totalUnlocked}</p>
                   </div>
-                  <Trophy className="w-10 h-10 text-purple-400" />
+                  <Zap className="w-10 h-10 text-purple-400" />
                 </div>
               </CardContent>
             </Card>
@@ -317,7 +316,7 @@ export default function AchievementSystemPage() {
                     <p className="text-sm text-gray-600 mb-1">NFTs Minted</p>
                     <p className="text-3xl font-bold text-pink-600">{stats.totalNFTMinted}</p>
                   </div>
-                  <Star className="w-10 h-10 text-pink-400" />
+                  <CheckCircle className="w-10 h-10 text-pink-400" />
                 </div>
               </CardContent>
             </Card>
@@ -456,7 +455,7 @@ export default function AchievementSystemPage() {
                             <span>{achievement?.rewardPoints} points</span>
                           </div>
                           <div className="flex items-center gap-1">
-                            <Award className="w-4 h-4 text-green-500" />
+                            <Heart className="w-4 h-4 text-green-500" />
                             <span>{achievement?.rewardTokens} tokens</span>
                           </div>
                         </div>
@@ -465,7 +464,7 @@ export default function AchievementSystemPage() {
                         <div className="space-y-2 text-xs text-gray-500">
                           {item.unlockedAt && (
                             <div className="flex items-center gap-2">
-                              <Unlock className="w-3 h-3" />
+                              <LockOpen className="w-3 h-3" />
                               Unlocked {new Date(item.unlockedAt).toLocaleDateString()}
                             </div>
                           )}
@@ -477,7 +476,7 @@ export default function AchievementSystemPage() {
                           )}
                           {item.nftMintedAt && (
                             <div className="flex items-center gap-2">
-                              <Trophy className="w-3 h-3" />
+                              <CheckCircle className="w-3 h-3" />
                               NFT: #{item.nftTokenId}
                             </div>
                           )}
@@ -514,7 +513,7 @@ export default function AchievementSystemPage() {
                               variant="ghost"
                               className="flex-1"
                             >
-                              <Share2 className="w-4 h-4" />
+                              Recommend 👍
                             </Button>
                           )}
                         </div>
@@ -563,7 +562,7 @@ export default function AchievementSystemPage() {
             ) : (
               <Card>
                 <CardContent className="pt-12 text-center">
-                  <Star className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                  <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                   <p className="text-gray-500">No badges yet. Unlock more achievements to earn badges!</p>
                 </CardContent>
               </Card>
@@ -608,7 +607,7 @@ export default function AchievementSystemPage() {
             ) : (
               <Card>
                 <CardContent className="pt-12 text-center">
-                  <Trophy className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                  <Zap className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                   <p className="text-gray-500">No leaderboard data available</p>
                 </CardContent>
               </Card>

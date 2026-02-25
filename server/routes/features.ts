@@ -17,6 +17,11 @@ import {
   releaseAllFeatures,
   getFeatureStats,
 } from '../services/featureService';
+import {
+  GATING_RULES,
+  checkFeatureGating,
+} from '../services/gatingService';
+import { requireAuth } from '../middleware/auth';
 
 const router = Router();
 
@@ -305,6 +310,71 @@ router.post('/release-all', (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Failed to release all features',
+    });
+  }
+});
+
+/**
+ * GET /api/gating-rules
+ * Get all feature gating rules and explanations
+ */
+router.get('/gating-rules', (req: Request, res: Response) => {
+  try {
+    res.json({
+      success: true,
+      rules: GATING_RULES,
+      description: 'Feature gating rules and explanations',
+    });
+  } catch (error) {
+    console.error('Error fetching gating rules:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch gating rules',
+    });
+  }
+});
+
+/**
+ * GET /api/gating-status
+ * Get user-specific gating status for all features
+ */
+router.get('/gating-status', requireAuth, (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Not authenticated',
+      });
+    }
+
+    const features = Object.keys(GATING_RULES);
+    const status: Record<string, any> = {};
+    
+    features.forEach((feature) => {
+      status[feature] = checkFeatureGating(feature, user);
+    });
+
+    res.json({
+      success: true,
+      status,
+      user: {
+        id: user.id,
+        accountAge: Math.floor(
+          (Date.now() - new Date(user.createdAt).getTime()) / (1000 * 60 * 60 * 24)
+        ),
+        balance: user.balance || 0,
+        balanceCurrency: 'KES', // Base currency
+        preferredCurrency: (user.preferredCurrency || 'KES').toUpperCase(),
+        reputation: user.reputation || 0,
+        advancedMode: user.advancedMode || false,
+      },
+    });
+  } catch (error) {
+    console.error('Error checking gating status:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to check gating status',
     });
   }
 });

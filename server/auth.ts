@@ -2,7 +2,9 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import type { Request, Response, NextFunction } from 'express';
 
-const JWT_SECRET = process.env.JWT_SECRET_KEY || 'your-secret-key-change-in-production';
+// ⚠️ CRITICAL: USE SAME ENVIRONMENT VARIABLE EVERYWHERE
+// All JWT generation and verification must use process.env.JWT_SECRET (or fallback)
+const JWT_SECRET = process.env.JWT_SECRET || process.env.JWT_SECRET_KEY || 'your-secret-key-change-in-production';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-change-in-production';
 const ACCESS_TOKEN_EXPIRY = '15m';
 const REFRESH_TOKEN_EXPIRY = '7d';

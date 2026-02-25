@@ -121,6 +121,14 @@ class DEXIntegrationService {
       name: 'Uniswap V3',
       chain: 'optimism',
       type: 'uniswap-v3'
+    },
+    // BSC network
+    pancakeswap_bsc: {
+      address: '0x10ED43C718714eb63d5aA57B78B54704E256024E',
+      name: 'PancakeSwap',
+      chain: 'bsc',
+      type: 'uniswap-v2',
+      liquidity: '$2B+'
     }
   };
 

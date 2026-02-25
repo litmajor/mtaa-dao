@@ -461,4 +461,181 @@ router.get('/:escrowId', authenticate, async (req, res) => {
   }
 });
 
+// OKEDI: Get suggested mediators for DAO
+router.get('/mediators/suggest/:daoId', authenticate, async (req, res) => {
+  try {
+    const { daoId } = req.params;
+    const excludeUserIds = req.query.exclude ? (req.query.exclude as string).split(',') : [];
+
+    const mediators = await escrowService.suggestMediators(daoId, excludeUserIds);
+
+    res.json({
+      success: true,
+      mediators,
+      count: mediators.length
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// OKEDI: Set mediator for escrow
+router.post('/:escrowId/set-mediator', authenticate, async (req, res) => {
+  try {
+    const { escrowId } = req.params;
+    const { mediatorId } = req.body;
+    const payerId = req.user!.id;
+
+    if (!mediatorId) {
+      return res.status(400).json({ error: 'Mediator ID required' });
+    }
+
+    const escrow = await escrowService.setMediator(escrowId, mediatorId, payerId);
+
+    res.json({ success: true, escrow });
+  } catch (error: any) {
+    res.status(error.message.includes('Only payer') ? 403 : 500)
+      .json({ success: false, error: error.message });
+  }
+});
+
+// OKEDI: Mediator approves escrow
+router.post('/:escrowId/approve-as-mediator', authenticate, async (req, res) => {
+  try {
+    const { escrowId } = req.params;
+    const mediatorId = req.user!.id;
+
+    const escrow = await escrowService.approveAsMediator(escrowId, mediatorId);
+
+    res.json({ success: true, escrow });
+  } catch (error: any) {
+    res.status(error.message.includes('Not assigned') ? 403 : 500)
+      .json({ success: false, error: error.message });
+  }
+});
+
+// OKEDI: Complete escrow with reputation boost
+router.post('/:escrowId/complete-with-trust', authenticate, async (req, res) => {
+  try {
+    const { escrowId } = req.params;
+    const userId = req.user!.id;
+
+    // Verify caller is one of the parties
+    const escrow = await verifyEscrowParty(escrowId, userId);
+
+    const updated = await escrowService.completeWithReputationBoost(escrowId);
+
+    await notificationService.createNotification({
+      userId: escrow.payerId === userId ? escrow.payeeId : escrow.payerId,
+      type: 'escrow',
+      title: '✅ Escrow Completed',
+      message: `Escrow released! Both parties earned +2 reputation`,
+      metadata: { escrowId }
+    });
+
+    res.json({ success: true, escrow: updated });
+  } catch (error: any) {
+    res.status(error.message.includes('Unauthorized') ? 403 : 500)
+      .json({ success: false, error: error.message });
+  }
+});
+
+// OKEDI: Resolve dispute with mediator decision
+router.post('/:escrowId/resolve-dispute', authenticate, async (req, res) => {
+  try {
+    const { escrowId } = req.params;
+    const { winner, payerPercentage } = req.body;
+    const mediatorId = req.user!.id;
+
+    if (!winner || !['payer', 'payee', 'split'].includes(winner)) {
+      return res.status(400).json({ error: 'Invalid winner value (must be payer, payee, or split)' });
+    }
+
+    const escrow = await escrowService.resolveDisputeAsMediator(
+      escrowId,
+      mediatorId,
+      winner,
+      payerPercentage || 0
+    );
+
+    // Notify both parties of resolution
+    await notificationService.createNotification({
+      userId: escrow.payerId,
+      type: 'escrow',
+      title: '⚖️ Dispute Resolved',
+      message: `Mediator ruled in favor of ${winner}. Funds released accordingly.`,
+      metadata: { escrowId, winner }
+    });
+
+    await notificationService.createNotification({
+      userId: escrow.payeeId,
+      type: 'escrow',
+      title: '⚖️ Dispute Resolved',
+      message: `Mediator ruled in favor of ${winner}. Funds released accordingly.`,
+      metadata: { escrowId, winner }
+    });
+
+    res.json({ success: true, escrow });
+  } catch (error: any) {
+    res.status(error.message.includes('Not assigned') || error.message.includes('not in disputed') ? 403 : 500)
+      .json({ success: false, error: error.message });
+  }
+});
+
+// GUARDIANS: Add guardians to an escrow
+router.post('/:escrowId/guardians/add', authenticate, async (req, res) => {
+  try {
+    const { escrowId } = req.params;
+    const { guardians } = req.body; // array of user IDs/emails
+    const userId = req.user!.id;
+    if (!Array.isArray(guardians) || guardians.length === 0) {
+      return res.status(400).json({ error: 'Guardians array required' });
+    }
+    const updated = await escrowService.addGuardians(escrowId, userId, guardians);
+    res.json({ success: true, escrow: updated });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GUARDIANS: Remove a guardian from an escrow
+router.post('/:escrowId/guardians/remove', authenticate, async (req, res) => {
+  try {
+    const { escrowId } = req.params;
+    const { guardian } = req.body; // user ID/email
+    const userId = req.user!.id;
+    if (!guardian) {
+      return res.status(400).json({ error: 'Guardian required' });
+    }
+    const updated = await escrowService.removeGuardian(escrowId, userId, guardian);
+    res.json({ success: true, escrow: updated });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GUARDIANS: List guardians for an escrow
+router.get('/:escrowId/guardians', authenticate, async (req, res) => {
+  try {
+    const { escrowId } = req.params;
+    const userId = req.user!.id;
+    const guardians = await escrowService.listGuardians(escrowId, userId);
+    res.json({ success: true, guardians });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GUARDIANS: Guardian approves recovery
+router.post('/:escrowId/guardians/approve-recovery', authenticate, async (req, res) => {
+  try {
+    const { escrowId } = req.params;
+    const guardianId = req.user!.id;
+    const result = await escrowService.approveRecovery(escrowId, guardianId);
+    res.json({ success: true, ...result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 export default router;

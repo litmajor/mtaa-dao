@@ -1,6 +1,7 @@
 import React, { ReactNode } from 'react';
 import { useFeatureFlags, FeatureFlagNameExplicit } from '@/hooks/useFeatureFlags';
-import { AlertCircle, Clock } from 'lucide-react';
+import { useFeatureGating } from '@/hooks/useFeatureGating';
+import { AlertCircle, Clock, DollarSign } from 'lucide-react';
 
 interface FeatureGateProps {
   /**
@@ -27,6 +28,13 @@ interface FeatureGateProps {
    * @default 'auto'
    */
   showComingSoon?: 'auto' | false | string;
+
+  /**
+   * Show gating reasons (age, balance, reputation, etc)
+   * Set to true to show unlock requirements
+   * @default false
+   */
+  showGatingReason?: boolean;
 
   /**
    * CSS class to apply to the wrapper
@@ -74,28 +82,33 @@ export const FeatureGate: React.FC<FeatureGateProps> = ({
   children,
   fallback,
   showComingSoon = 'auto',
+  showGatingReason = false,
   className = '',
   debug = false,
 }) => {
   const flags = useFeatureFlags();
+  const gating = useFeatureGating(feature.replace(/^is|Enabled$/g, '').toLowerCase().replace(/([A-Z])/g, '.$1').substring(1).replace(/\./g, '.'));
 
   // Check if feature is enabled
   const isEnabled = flags[feature];
 
   if (debug) {
     console.log(`[FeatureGate] ${feature}: ${isEnabled ? 'enabled' : 'disabled'}`);
+    if (!gating.isAvailable) {
+      console.log(`[FeatureGate] ${feature} gating: ${gating.reason}`);
+    }
   }
 
-  if (isEnabled) {
+  if (isEnabled && gating.isAvailable) {
     return <div className={className}>{children}</div>;
   }
 
-  // Feature is disabled - show fallback or ComingSoon banner
-  if (fallback) {
+  // Feature is disabled or gated - show fallback or Banner
+  if (fallback && (!isEnabled || !gating.isAvailable)) {
     return <div className={className}>{fallback}</div>;
   }
 
-  if (showComingSoon !== false) {
+  if (!isEnabled && showComingSoon !== false) {
     const releaseDate = 
       showComingSoon === 'auto' 
         ? getReleaseDate(feature, flags)
@@ -108,7 +121,54 @@ export const FeatureGate: React.FC<FeatureGateProps> = ({
     );
   }
 
+  // Feature is gated (enabled but user doesn't meet requirements)
+  if (isEnabled && !gating.isAvailable && showGatingReason) {
+    return (
+      <div className={`feature-gate-locked ${className}`}>
+        <GatingReasonBanner gating={gating} />
+      </div>
+    );
+  }
+
   return null;
+};
+
+/**
+ * Gating Reason Banner Component
+ * Displays unlock requirements when a feature is gated
+ */
+const GatingReasonBanner: React.FC<{
+  gating: ReturnType<typeof useFeatureGating>;
+}> = ({ gating }) => {
+  return (
+    <div className="flex items-start gap-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-300">
+      <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+      <div className="flex-1">
+        <p className="font-semibold text-amber-900">
+          🔒 {gating.reason || 'Not available yet'}
+        </p>
+
+        {gating.daysUntilAvailable !== undefined && (
+          <div className="mt-2 text-sm text-amber-800 flex items-center gap-2">
+            <Clock className="w-4 h-4" />
+            Available in {gating.daysUntilAvailable} day
+            {gating.daysUntilAvailable > 1 ? 's' : ''}
+          </div>
+        )}
+
+        {gating.amountNeeded !== undefined && (
+          <div className="mt-2 text-sm text-amber-800 flex items-center gap-2">
+            <DollarSign className="w-4 h-4" />
+            Deposit {gating.amountNeeded.toLocaleString()} more
+          </div>
+        )}
+
+        <p className="mt-2 text-xs text-amber-700">
+          💡 <a href="#help" className="underline hover:no-underline">Learn why</a>
+        </p>
+      </div>
+    </div>
+  );
 };
 
 /**

@@ -6,6 +6,7 @@ import { bridgeRelayerService } from '../services/bridgeRelayerService';
 import { crossChainSwapService } from '../services/crossChainSwapService';
 import { asyncHandler } from '../middleware/errorHandler';
 import { isAuthenticated } from '../nextAuthMiddleware';
+import { requirePINVerification, checkAmountThreshold } from '../middleware/pin-verification';
 import { z } from 'zod';
 
 const router = Router();
@@ -71,7 +72,8 @@ const swapExecuteSchema = z.object({
 });
 
 // Initiate cross-chain transfer
-router.post('/transfer', isAuthenticated, asyncHandler(async (req, res) => {
+// Requires: PIN verification for security (sending to external address across chains)
+router.post('/transfer', isAuthenticated, requirePINVerification, checkAmountThreshold('5000'), asyncHandler(async (req, res) => {
   try {
     const validated = transferSchema.parse(req.body);
     const userId = (req.user as any)?.claims?.sub;
@@ -248,8 +250,6 @@ router.get('/analytics', asyncHandler(async (req, res) => {
       feesCollected
     }
   });
-}));
-
 }));
 
 // Create cross-chain vault

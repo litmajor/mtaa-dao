@@ -1,7 +1,7 @@
 // --- User Profile & Settings ---
 // Add these methods to the main DatabaseStorage class below:
 import { db } from './db';
-import { eq, inArray, or, and, desc, sql } from 'drizzle-orm';
+import { eq, inArray, or, and, desc, sql, isNull } from 'drizzle-orm';
 import { users, daos, daoMemberships, votes, contributions, vaults, budgetPlans, billingHistory, tasks, proposals, walletTransactions, config, logs, sessions, chains, notifications, taskHistory, proposalComments, proposalLikes, commentLikes, daoMessages, notificationPreferences, auditLogs, systemLogs, notificationHistory } from '../shared/schema';
 
 
@@ -184,22 +184,22 @@ export class DatabaseStorage implements IStorage {
   }
   // --- Admin Functions ---
   async getAllDaos({ limit = 10, offset = 0 }: { limit?: number; offset?: number } = {}): Promise<Dao[]> {
-    return await this.db.select().from(daos).orderBy(desc(daos.createdAt)).limit(limit).offset(offset);
+    return await this.db.select().from(daos).where(isNull(daos.deleted_at)).orderBy(desc(daos.createdAt)).limit(limit).offset(offset);
 
   }
 
   async getDaoCount(): Promise<number> {
   // Efficient count using Drizzle
-  const result = await this.db.select({ count: sql`count(*)` }).from(daos);
+  const result = await this.db.select({ count: sql`count(*)` }).from(daos).where(isNull(daos.deleted_at));
   return Number(result[0]?.count) || 0;
   }
 
   async getAllUsers({ limit = 10, offset = 0 }: { limit?: number; offset?: number } = {}): Promise<User[]> {
-    return await this.db.select().from(users).orderBy(desc(users.createdAt)).limit(limit).offset(offset);
+    return await this.db.select().from(users).where(isNull(users.deleted_at)).orderBy(desc(users.createdAt)).limit(limit).offset(offset);
   }
 
   async getUserCount(): Promise<number> {
-  const result = await this.db.select({ count: sql`count(*)` }).from(users);
+  const result = await this.db.select({ count: sql`count(*)` }).from(users).where(isNull(users.deleted_at));
   return Number(result[0]?.count) || 0;
   }
 
@@ -327,26 +327,26 @@ export class DatabaseStorage implements IStorage {
   }
   async getUserByEmail(email: string): Promise<any> {
     if (!email) throw new Error('Email required');
-    const result = await this.db.select().from(users).where(eq(users.email, email));
+    const result = await this.db.select().from(users).where(and(eq(users.email, email), isNull(users.deleted_at)));
     if (!result[0]) throw new Error('User not found');
     return result[0];
   }
   async getUserByPhone(phone: string): Promise<any> {
     if (!phone) throw new Error('Phone required');
-    const result = await this.db.select().from(users).where(eq(users.phone, phone));
+    const result = await this.db.select().from(users).where(and(eq(users.phone, phone), isNull(users.deleted_at)));
     if (!result[0]) throw new Error('User not found');
     return result[0];
   }
   async getUserById(userId: string): Promise<any> {
     if (!userId) throw new Error('User ID required');
-    const result = await this.db.select().from(users).where(eq(users.id, userId));
+    const result = await this.db.select().from(users).where(and(eq(users.id, userId), isNull(users.deleted_at)));
     if (!result[0]) throw new Error('User not found');
     return result[0];
   }
   async getUserByEmailOrPhone(emailOrPhone: string): Promise<any> {
     if (!emailOrPhone) throw new Error('Email or phone required');
     const result = await this.db.select().from(users).where(
-      or(eq(users.email, emailOrPhone), eq(users.phone, emailOrPhone))
+      and(or(eq(users.email, emailOrPhone), eq(users.phone, emailOrPhone)), isNull(users.deleted_at))
     );
     if (!result[0]) throw new Error('User not found');
     return result[0];
@@ -503,7 +503,7 @@ async getBudgetPlanCount(userId: string, month: string): Promise<number> {
 
   async getUser(userId: string): Promise<any> {
     if (!userId) throw new Error('User ID required');
-    const result = await this.db.select().from(users).where(eq(users.id, userId));
+    const result = await this.db.select().from(users).where(and(eq(users.id, userId), isNull(users.deleted_at)));
     if (!result[0]) throw new Error('User not found');
     return result[0];
   }
@@ -757,7 +757,7 @@ async getBudgetPlanCount(userId: string, month: string): Promise<number> {
 
   async getDao(daoId: string): Promise<any> {
     if (!daoId) throw new Error('DAO ID required');
-    const result = await this.db.select().from(daos).where(eq(daos.id, daoId));
+    const result = await this.db.select().from(daos).where(and(eq(daos.id, daoId), isNull(daos.deleted_at)));
     if (!result[0]) throw new Error('DAO not found');
     return result[0];
   }

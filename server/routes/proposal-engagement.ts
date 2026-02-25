@@ -248,6 +248,36 @@ router.post('/proposals/:proposalId/comments', authenticate, async (req, res) =>
       .where(eq(users.id, userId))
       .limit(1);
     
+    // Check if this is the user's first comment on this proposal (for activity award)
+    const previousComments = await db
+      .select({ id: proposalComments.id })
+      .from(proposalComments)
+      .where(
+        and(
+          eq(proposalComments.proposalId, proposalId),
+          eq(proposalComments.userId, userId),
+          // Exclude the comment we just created
+          (previousComments) => previousComments.id !== newComment.id
+        )
+      )
+      .limit(1);
+    
+    const isFirstComment = previousComments.length === 0;
+    
+    // Award activity points for first comment only (fire and forget)
+    if (isFirstComment) {
+      const { awardActivityDirect } = await import('../services/activity-award-helper');
+      awardActivityDirect({
+        userId,
+        daoId,
+        type: 'comment' as any,
+        description: `Commented on proposal discussion`,
+        metadata: { proposalId, commentId: newComment.id, isFirstComment: true },
+      }).catch((error) => {
+        logger.debug('Error awarding activity for comment:', error);
+      });
+    }
+    
     res.json({
       success: true,
       comment: {
@@ -255,6 +285,7 @@ router.post('/proposals/:proposalId/comments', authenticate, async (req, res) =>
         userName: user[0]?.username || `${user[0]?.firstName || ''} ${user[0]?.lastName || ''}`.trim() || 'Anonymous',
         likesCount: 0,
         userLiked: false,
+        pointsAwarded: isFirstComment ? 3 : 0, // Show user if points were awarded
       },
     });
   } catch (error) {

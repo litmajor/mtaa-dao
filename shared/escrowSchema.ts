@@ -1,6 +1,6 @@
 
 import { pgTable, uuid, varchar, decimal, boolean, timestamp, text, jsonb } from "drizzle-orm/pg-core";
-import { users, tasks } from "./schema";
+import { users, tasks, daos } from "./schema";
 import { createInsertSchema } from "drizzle-zod";
 
 export const escrowAccounts = pgTable("escrow_accounts", {
@@ -10,7 +10,7 @@ export const escrowAccounts = pgTable("escrow_accounts", {
   payeeId: varchar("payee_id").references(() => users.id).notNull(),
   amount: decimal("amount", { precision: 18, scale: 8 }).notNull(),
   currency: varchar("currency").notNull().default("cUSD"),
-  status: varchar("status").notNull().default("pending"), // pending, funded, released, refunded, disputed
+  status: varchar("status").notNull().default("pending"), // pending, funded, released, refunded, disputed, resolved
   milestones: jsonb("milestones").default([]), // array of milestone objects
   currentMilestone: varchar("current_milestone").default("0"),
   fundedAt: timestamp("funded_at"),
@@ -20,6 +20,15 @@ export const escrowAccounts = pgTable("escrow_accounts", {
   disputedAt: timestamp("disputed_at"),
   resolvedAt: timestamp("resolved_at"),
   transactionHash: varchar("transaction_hash"),
+  
+  // OKEDI: Mediator & Reputation Fields
+  daoId: uuid("dao_id").references(() => daos.id), // Link to DAO for mediator selection
+  mediatorId: varchar("mediator_id").references(() => users.id), // Chosen mediator for dispute resolution
+  mediatorApprovedAt: timestamp("mediator_approved_at"), // When mediator reviewed & approved escrow
+  disputeWinner: varchar("dispute_winner"), // "payer" | "payee" | "split"
+  disputePercentages: jsonb("dispute_percentages").default({ payer: 0, payee: 100 }), // {payer: 30, payee: 70}
+  
+  guardians: jsonb("guardians").default([]), // Optional: array of user IDs/emails for social recovery
   metadata: jsonb("metadata").default({}),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

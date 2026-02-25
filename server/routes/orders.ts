@@ -7,6 +7,7 @@
 import express, { Request, Response } from 'express';
 import { orderRouter } from '../services/orderRouter';
 import { logger } from '../utils/logger';
+import { rateLimitMiddleware, orderExecutionLimits } from '../middleware/rateLimitConfig';
 
 const router = express.Router();
 
@@ -163,6 +164,8 @@ router.get('/best-venue', async (req: Request, res: Response) => {
  * POST /api/orders/limit
  * Place a persistent limit order on CEX
  * 
+ * PHASE 1: SAFETY - Rate limited to 100 orders per minute per user
+ * 
  * Body:
  * {
  *   exchange: string (required) - "binance", "coinbase", etc.
@@ -188,12 +191,12 @@ router.get('/best-venue', async (req: Request, res: Response) => {
  *   expiresAt: Date
  * }
  */
-router.post('/limit', async (req: Request, res: Response) => {
+router.post('/limit', [rateLimitMiddleware(orderExecutionLimits)], async (req: Request, res: Response) => {
   try {
     const { exchange, symbol, side, amount, price, expiresInDays = 7 } = req.body;
 
     // TODO: Get userId from authenticated user
-    const userId = (req as any).user?.id || 'anonymous';
+    const userId = (req as any).user?.id || 'guest';
 
     // Validate input
     if (!exchange || !symbol || !side || !amount || !price) {

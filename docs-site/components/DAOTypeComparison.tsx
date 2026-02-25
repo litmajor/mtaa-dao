@@ -9,7 +9,7 @@ const daoTypes = [
     fee: '₭500',
     ideal: 'Wedding, funeral, event',
     upgrade: 'Extend / Upgrade',
-  color: 'bg-blue-100 dark:bg-blue-900 border-blue-500 dark:border-blue-400',
+    color: 'bg-blue-100 dark:bg-blue-900 border-blue-500 dark:border-blue-400',
     examples: ['Wedding fundraiser', 'Funeral support', 'One-time event']
   },
   {
@@ -18,7 +18,7 @@ const daoTypes = [
     fee: '₭1,500',
     ideal: 'Savings, chama, community projects',
     upgrade: 'Merge / MetaDAO',
-  color: 'bg-green-100 dark:bg-green-900 border-green-500 dark:border-green-400',
+    color: 'bg-green-100 dark:bg-green-900 border-green-500 dark:border-green-400',
     examples: ['Savings group', 'Business chama', 'Community development']
   },
   {
@@ -27,7 +27,7 @@ const daoTypes = [
     fee: 'Dynamic',
     ideal: 'Regional, strategic alliances',
     upgrade: 'Federation Layer',
-  color: 'bg-purple-100 dark:bg-purple-900 border-purple-500 dark:border-purple-400',
+    color: 'bg-purple-100 dark:bg-purple-900 border-purple-500 dark:border-purple-400',
     examples: ['Nairobi Creative Cluster', 'Regional alliance', 'Multi-DAO network']
   }
 ]
@@ -58,11 +58,11 @@ export function DAOTypeComparison() {
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.3 }}
-  className={`p-6 border-2 rounded-xl ${daoTypes[selected].color}`}
+        className={`p-6 border-2 rounded-xl ${daoTypes[selected].color}`}
       >
-  <h3 className="text-2xl font-bold mb-4 text-gray-900 dark:text-gray-100">{daoTypes[selected].type}</h3>
+        <h3 className="text-2xl font-bold mb-4 text-gray-900 dark:text-gray-100">{daoTypes[selected].type}</h3>
         
-  <div className="grid grid-cols-2 gap-4 mb-6">
+        <div className="grid grid-cols-2 gap-4 mb-6">
           <div>
             <p className="text-sm text-gray-600 dark:text-gray-300 mb-1">Duration</p>
             <p className="font-semibold text-lg text-gray-800 dark:text-gray-100">{daoTypes[selected].duration}</p>

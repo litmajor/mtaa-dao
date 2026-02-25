@@ -311,7 +311,7 @@ export class SecureGatewayService {
    * Track denied requests for monitoring
    */
   private trackDeniedRequest(userId?: string): void {
-    const key = userId || "anonymous";
+    const key = userId || "guest";
     const current = this.deniedRequests.get(key) || 0;
     this.deniedRequests.set(key, current + 1);
 

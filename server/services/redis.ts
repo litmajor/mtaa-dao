@@ -5,8 +5,14 @@ class RedisService {
   private fallbackStore = new Map<string, { value: string; expiresAt: number }>();
   private isConnected = false;
   private hasLoggedFallback = false;
+  private isConnecting = false;
 
   async connect(): Promise<void> {
+    // Prevent multiple simultaneous connection attempts
+    if (this.isConnecting || this.isConnected) {
+      return;
+    }
+
     // Only attempt Redis connection if REDIS_URL is configured
     if (!process.env.REDIS_URL) {
       if (!this.hasLoggedFallback) {
@@ -17,23 +23,29 @@ class RedisService {
       return;
     }
 
+    this.isConnecting = true;
+
     try {
       this.client = createClient({
         url: process.env.REDIS_URL,
       });
 
-      this.client.on('error', () => {
+      this.client.on('error', (err) => {
         // Silently handle Redis errors - fallback is already in use
         this.isConnected = false;
       });
 
-      this.client.on('connect', () => {
-        console.log('Redis connected successfully');
-        this.isConnected = true;
+      this.client.on('ready', () => {
+        if (!this.isConnected) {
+          console.log('Redis connected successfully');
+          this.isConnected = true;
+        }
       });
 
       await this.client.connect();
+      this.isConnecting = false;
     } catch (error) {
+      this.isConnecting = false;
       this.isConnected = false;
     }
   }

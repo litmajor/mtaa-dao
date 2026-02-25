@@ -317,11 +317,11 @@ export const VaultAnalyticsTab: React.FC<VaultAnalyticsTabProps> = ({
                 size="sm"
                 onClick={() => handleTimeRangeChange(range)}
               >
-                {range === '7d' ? '7D'}
-                {range === '30d' ? '30D'}
-                {range === '90d' ? '90D'}
-                {range === '1y' ? '1Y'}
-                {range === 'all' ? 'All'}
+                {range === '7d' ? '7D' : ''}
+                {range === '30d' ? '30D' : ''}
+                {range === '90d' ? '90D' : ''}
+                {range === '1y' ? '1Y' : ''}
+                {range === 'all' ? 'All' : ''}
               </Button>
             ))}
           </div>

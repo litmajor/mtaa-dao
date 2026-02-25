@@ -1,7 +1,7 @@
 
 import { Logger } from '../utils/logger';
 import { db } from '../db';
-import { bridgeTransfers } from '@/shared/schema';
+import { bridgeTransfers } from '../../shared/schema';
 import { eq, and, gte, sql } from 'drizzle-orm';
 
 export class BridgeMonitoringService {

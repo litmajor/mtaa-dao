@@ -19,6 +19,7 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 // Import new components for wallet features
 import TransactionHistory from '../components/wallet/TransactionHistory';
+import AccountSelector from '../components/wallet/AccountSelector';
 import { apiGet, apiPost } from '@/lib/api';
 import RecurringPayments from '../components/wallet/RecurringPayments';
 import ExchangeRateWidget from '../components/wallet/ExchangeRateWidget';
@@ -31,6 +32,7 @@ import PaymentRequestModal from '@/components/wallet/PaymentRequestModal';
 import PhonePaymentModal from '@/components/wallet/PhonePaymentModal';
 import SplitBillModal from '@/components/wallet/SplitBillModal';
 import PaymentLinkModal from '@/components/wallet/PaymentLinkModal';
+import BatchTransfer from '../components/batch-transfer';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import WalletConnectionManager from '@/components/wallet/WalletConnectionManager';
 import WalletBackupReminder from '@/components/wallet/WalletBackupReminder';
@@ -42,6 +44,8 @@ import EscrowInitiator from '@/components/wallet/EscrowInitiator';
 
 const EnhancedWalletPage = () => {
   const [activeTab, setActiveTab] = useState("overview");
+  const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>();
+  const [selectedAccount, setSelectedAccount] = useState<any>(null);
   const [depositOpen, setDepositOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
@@ -96,80 +100,51 @@ const EnhancedWalletPage = () => {
         ];
         setVaults(vaultsArr);
         // Transactions: (for demo, fetch last 10 txs for native address)
-        if (balanceData.address) {
-          const txStatusData = await apiGet(`/api/wallet/tx-status/${balanceData.address}`);
-          setTransactions(Array.isArray(txStatusData) ? txStatusData : []);
-        } else {
-          setTransactions([]);
-        }
-      } catch (e) {
-        setVaults([]);
-        setTransactions([]);
+      } catch (error) {
+        console.error('Error fetching wallet data:', error);
       }
     }
-    fetchWalletData();
-
-    // Fetch analytics
-    async function fetchAnalytics() {
-      setAnalyticsLoading(true);
-      setAnalyticsError('');
-      try {
-        const data = await apiGet('/api/wallet/analytics');
-        setAnalytics(data);
-      } catch (e: any) {
-        setAnalyticsError(e.message);
-        setAnalytics(null);
-      } finally {
-        setAnalyticsLoading(false);
-      }
+    
+    if (isConnected && address) {
+      fetchWalletData();
     }
-    fetchAnalytics();
-  }, []);
-
-  const totalBalance = vaults?.reduce((sum, vault) => sum + parseFloat((vault.balance || '0').replace(/,/g, '')), 0) || 0;
-
-  // Show wallet setup/connection UI if not connected
-  if (!isConnected) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 p-6">
-        <div className="max-w-7xl mx-auto">
-          <WalletConnectionManager
-            userId={user?.id}
-            onConnect={(address, provider) => {
-              console.log('Wallet connected:', address, provider);
-              // Refresh to load wallet data
-              window.location.reload();
-            }}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  // --- Send, Deposit, Withdraw Actions ---
-  const [sendAmount, setSendAmount] = useState('');
-  const [sendTo, setSendTo] = useState('');
+  }, [isConnected, address]);
+  
   const [depositAmount, setDepositAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [sendTo, setSendTo] = useState('');
+  const [sendAmount, setSendAmount] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [showFeaturesMenu, setShowFeaturesMenu] = useState(false);
+  const [showBackupModal, setShowBackupModal] = useState(false);
+  const [showStakingModal, setShowStakingModal] = useState(false);
+  const [showSwapModal, setShowSwapModal] = useState(false);
+  const [totalBalance, setTotalBalance] = useState(0);
 
-  async function handleSendNative() {
-    setActionLoading(true); setActionError('');
+  // Handle send native
+  const handleSendNative = useCallback(async () => {
+    setActionLoading(true);
+    setActionError('');
     try {
       await apiPost('/api/wallet/send-native', { toAddress: sendTo, amount: sendAmount });
-      setSendAmount(''); setSendTo(''); setDepositOpen(false);
+      setSendAmount('');
+      setSendTo('');
     } catch (e: any) {
       setActionError(e.message);
-    } finally { setActionLoading(false); }
-  }
+    } finally {
+      setActionLoading(false);
+    }
+  }, [sendTo, sendAmount]);
 
   async function handleDeposit() {
-    setActionLoading(true); setActionError('');
+    setActionLoading(true);
+    setActionError('');
     try {
       // For demo, treat deposit as send-native (or use /api/wallet/send-native)
       await apiPost('/api/wallet/send-native', { toAddress: sendTo, amount: depositAmount });
-      setDepositAmount(''); setPaymentOpen(false);
+      setDepositAmount('');
+      setPaymentOpen(false);
     } catch (e: any) {
       setActionError(e.message);
     } finally { setActionLoading(false); }
@@ -288,12 +263,6 @@ const EnhancedWalletPage = () => {
       </div>
     );
   }
-
-  // Enhanced Features Menu State
-  const [showFeaturesMenu, setShowFeaturesMenu] = useState(false);
-  const [showBackupModal, setShowBackupModal] = useState(false);
-  const [showStakingModal, setShowStakingModal] = useState(false);
-  const [showSwapModal, setShowSwapModal] = useState(false);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 relative overflow-hidden">
@@ -672,6 +641,28 @@ const EnhancedWalletPage = () => {
           <ExchangeRateWidget onConvert={(fromAmount, fromCurrency, toCurrency, toAmount) => {
             console.log(`Converting ${fromAmount} ${fromCurrency} to ${toAmount} ${toCurrency}`);
           }} />
+        </div>
+
+        {/* 4-Account Structure Selector */}
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">Your Accounts</h2>
+          <AccountSelector 
+            selectedAccountId={selectedAccountId}
+            onAccountSelect={(account) => {
+              setSelectedAccountId(account.id);
+              setSelectedAccount(account);
+            }}
+          />
+          {selectedAccount && (
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle>Selected Account: {selectedAccount.type.charAt(0).toUpperCase() + selectedAccount.type.slice(1)}</CardTitle>
+                <CardDescription>
+                  Balance: {parseFloat(selectedAccount.balance).toFixed(2)} {selectedAccount.currency}
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          )}
         </div>
 
         {/* New Wallet Features Section */}

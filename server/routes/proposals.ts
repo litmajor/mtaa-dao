@@ -28,11 +28,16 @@ router.post('/:proposalId/emoji-vote', async (req, res) => {
       return res.status(400).json({ error: 'Already voted on this proposal' });
     }
 
-    // Record vote
+    // Get proposal details for activity award
+    const proposalData = await db.query.proposals.findFirst({
+      where: eq(proposals.id, proposalId)
+    });
+
+    // Record vote (only happens once per user per proposal - DB constraint)
     await db.insert(votes).values({
       proposalId,
-      userId: isAnonymous ? 'anonymous' : userId,
-      daoId: req.body.daoId || '',
+      userId: isAnonymous ? 'guest' : userId,
+      daoId: req.body.daoId || proposalData?.daoId || '',
       voteType: vote,
       votingPower: '1',
       metadata: { isAnonymous, originalUserId: isAnonymous ? userId : undefined }
@@ -44,7 +49,22 @@ router.post('/:proposalId/emoji-vote', async (req, res) => {
       .set({ [updateField]: sql`${proposals[updateField]} + 1` })
       .where(eq(proposals.id, proposalId));
 
-    res.json({ success: true, vote, isAnonymous });
+    // Award activity points (fire and forget)
+    // Points are awarded once per vote since votes are unique per user per proposal (enforced by DB)
+    if (!isAnonymous && proposalData?.daoId) {
+      const { awardActivityDirect } = await import('../services/activity-award-helper');
+      awardActivityDirect({
+        userId,
+        daoId: proposalData.daoId,
+        type: 'vote' as any,
+        description: `Voted ${vote} on proposal: ${proposalData.title || proposalId}`,
+        metadata: { proposalId, vote },
+      }).catch((error) => {
+        console.error('Error awarding activity for vote:', error);
+      });
+    }
+
+    res.json({ success: true, vote, isAnonymous, pointsAwarded: !isAnonymous ? 5 : 0 });
   } catch (error) {
     console.error('Emoji vote error:', error);
     res.status(500).json({ error: 'Failed to submit vote' });

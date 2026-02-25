@@ -19,6 +19,7 @@ import {
   SyncMetrics
 } from './types';
 import { Logger } from '../../utils/logger';
+import { healthRegistry } from '../../core/consolidation/HealthRegistryConsolidation';
 import { AgentCommunicator } from '../../core/agent-framework/agent-communicator';
 import { MessageType } from '../../core/agent-framework/message-bus';
 
@@ -134,6 +135,18 @@ export class SynchronizerAgent extends BaseAgent {
     logger.info('Initializing Synchronizer Agent', { agentId: this.config.id });
     this.setStatus(BaseAgentStatus.ACTIVE);
     this.agentStatus = AgentStatus.ALIVE;
+    
+    // Register agent with unified health registry
+    try {
+      healthRegistry.recordComponentSuccess('agent', {
+        id: this.config.id,
+        name: 'SYNCHRONIZER',
+        status: 'initialized'
+      });
+    } catch (error) {
+      logger.warn('Failed to register agent with health registry:', error);
+    }
+    
     logger.info('Synchronizer Agent initialized successfully');
   }
 

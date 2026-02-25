@@ -42,6 +42,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import AdvancedSwap from '@/components/dex/AdvancedSwap';
+import AdvancedBridge from '@/components/dex/AdvancedBridge';
 
 interface DEXInfo {
   id: string;
@@ -276,10 +278,28 @@ const DeFiDEXAnalytics: React.FC = () => {
           </Card>
         </div>
 
-        {/* Tabs */}
+        {/* Advanced Swap & Bridge Tools */}
+        <Tabs defaultValue="swap" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="swap">Advanced Swap</TabsTrigger>
+            <TabsTrigger value="bridge">Cross-Chain Bridge</TabsTrigger>
+          </TabsList>
+
+          {/* Advanced Swap Tab */}
+          <TabsContent value="swap" className="space-y-4">
+            <AdvancedSwap />
+          </TabsContent>
+
+          {/* Advanced Bridge Tab */}
+          <TabsContent value="bridge" className="space-y-4">
+            <AdvancedBridge />
+          </TabsContent>
+        </Tabs>
+
+        {/* Analytics Tabs */}
         <Tabs defaultValue="pools" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="pools">Pools</TabsTrigger>
+            <TabsTrigger value="pools">Liquidity Pools</TabsTrigger>
             <TabsTrigger value="dex-breakdown">DEX Breakdown</TabsTrigger>
             <TabsTrigger value="opportunities">Opportunities</TabsTrigger>
           </TabsList>

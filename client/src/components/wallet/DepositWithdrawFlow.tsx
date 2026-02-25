@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ArrowDownLeft, ArrowUpRight } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ArrowDownLeft, ArrowUpRight, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
+import WithdrawalModal from './WithdrawalModal';
 
 type DepositMethod = 'mpesa' | 'bank' | 'exchange' | 'crypto';
 type WithdrawMethod = 'mpesa' | 'bank' | 'wallet' | 'crypto';
@@ -133,6 +135,39 @@ export function DepositWithdrawFlow() {
   const [selectedMethod, setSelectedMethod] = useState<DepositMethod | WithdrawMethod>('mpesa');
   const [amount, setAmount] = useState('');
   const [currentStep, setCurrentStep] = useState(0);
+  const [showWithdrawalModal, setShowWithdrawalModal] = useState(false);
+  const [vaults, setVaults] = useState<any[]>([]);
+  const [selectedVault, setSelectedVault] = useState('');
+  const [loadingVaults, setLoadingVaults] = useState(false);
+
+  // Fetch user vaults on component mount
+  useEffect(() => {
+    const fetchVaults = async () => {
+      setLoadingVaults(true);
+      try {
+        const res = await fetch('/api/wallets', {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await res.json();
+        if (data.success && data.wallets) {
+          setVaults(data.wallets);
+          if (data.wallets.length > 0) {
+            setSelectedVault(data.wallets[0]._id);
+          }
+        } else {
+          toast.error('Failed to load vaults');
+        }
+      } catch (err) {
+        console.error('Error fetching vaults:', err);
+        toast.error('Error loading vaults');
+      } finally {
+        setLoadingVaults(false);
+      }
+    };
+
+    fetchVaults();
+  }, []);
 
   const methods = flowType === 'deposit' ? DEPOSIT_METHODS : WITHDRAW_METHODS;
   const methodInfo = methods[selectedMethod];
@@ -143,7 +178,18 @@ export function DepositWithdrawFlow() {
       toast.error('Please enter an amount');
       return;
     }
-    setCurrentStep(1);
+
+    if (flowType === 'withdraw') {
+      if (!selectedVault) {
+        toast.error('Please select a vault');
+        return;
+      }
+      // For withdrawals, show the withdrawal modal
+      setShowWithdrawalModal(true);
+    } else {
+      // For deposits, show step-by-step flow
+      setCurrentStep(1);
+    }
   };
 
   const handleNext = () => {
@@ -155,7 +201,221 @@ export function DepositWithdrawFlow() {
   const handleReset = () => {
     setCurrentStep(0);
     setAmount('');
+    setShowWithdrawalModal(false);
   };
+
+  return (
+    <div className="space-y-6">
+      {/* Flow Type Selector */}
+      <div className="flex gap-4">
+        <button
+          onClick={() => { setFlowType('deposit'); setCurrentStep(0); }}
+          className={`flex-1 p-4 rounded-lg border-2 transition-all ${
+            flowType === 'deposit'
+              ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
+              : 'border-gray-200 dark:border-gray-700'
+          }`}
+          data-testid="button-flow-deposit"
+        >
+          <ArrowDownLeft className="w-6 h-6 mx-auto mb-2 text-green-600" />
+          <p className="font-semibold text-gray-900 dark:text-white">Deposit</p>
+          <p className="text-xs text-gray-600 dark:text-gray-400">Add funds</p>
+        </button>
+        <button
+          onClick={() => { setFlowType('withdraw'); setCurrentStep(0); }}
+          className={`flex-1 p-4 rounded-lg border-2 transition-all ${
+            flowType === 'withdraw'
+              ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+              : 'border-gray-200 dark:border-gray-700'
+          }`}
+          data-testid="button-flow-withdraw"
+        >
+          <ArrowUpRight className="w-6 h-6 mx-auto mb-2 text-blue-600" />
+          <p className="font-semibold text-gray-900 dark:text-white">Withdraw</p>
+          <p className="text-xs text-gray-600 dark:text-gray-400">Remove funds</p>
+        </button>
+      </div>
+
+      {/* Main Flow Card */}
+      {currentStep === 0 && !showWithdrawalModal ? (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+          {/* Method Selection */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Select Payment Method</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {Object.entries(methods).map(([key, method]) => (
+                <motion.button
+                  key={key}
+                  onClick={() => setSelectedMethod(key as any)}
+                  whileHover={{ scale: 1.02 }}
+                  className={`w-full p-4 rounded-lg border-2 transition-all text-left ${
+                    selectedMethod === key
+                      ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-purple-300'
+                  }`}
+                  data-testid={`button-method-${key}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="text-2xl">{method.icon}</span>
+                    <div className="flex-1">
+                      <p className="font-semibold text-gray-900 dark:text-white">{method.name}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">{method.desc}</p>
+                      <div className="flex gap-3 mt-2">
+                        <Badge variant="outline" className="text-xs">{method.fee}</Badge>
+                        <Badge variant="outline" className="text-xs">{method.time}</Badge>
+                      </div>
+                    </div>
+                  </div>
+                </motion.button>
+              ))}
+            </CardContent>
+          </Card>
+
+          {/* Vault Selection (for withdrawals) */}
+          {flowType === 'withdraw' && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Select Vault</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {loadingVaults ? (
+                  <p className="text-gray-600 dark:text-gray-400">Loading vaults...</p>
+                ) : vaults.length === 0 ? (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>No vaults available. Create a vault first.</AlertDescription>
+                  </Alert>
+                ) : (
+                  <select
+                    value={selectedVault}
+                    onChange={(e) => setSelectedVault(e.target.value)}
+                    className="w-full p-2 border rounded-lg dark:bg-gray-800 dark:border-gray-700"
+                    data-testid="select-vault"
+                  >
+                    {vaults.map((vault) => (
+                      <option key={vault._id} value={vault._id}>
+                        {vault.name} - {vault.currency} {vault.balance}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Amount Input */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Enter Amount</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                  Amount (KES)
+                </label>
+                <Input
+                  type="number"
+                  placeholder="0.00"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className="text-lg"
+                  data-testid="input-amount"
+                  disabled={flowType === 'withdraw' && !selectedVault}
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                  Fee: {methodInfo.fee} • Time: {methodInfo.time}
+                </p>
+              </div>
+              <Button 
+                onClick={handleStart} 
+                className="w-full bg-gradient-to-r from-purple-600 to-pink-600"
+                data-testid="button-start-flow"
+                disabled={flowType === 'withdraw' && !selectedVault}
+              >
+                Start {flowType === 'deposit' ? 'Deposit' : 'Withdrawal'}
+              </Button>
+            </CardContent>
+          </Card>
+        </motion.div>
+      ) : showWithdrawalModal ? (
+        // Withdrawal Modal
+        <WithdrawalModal
+          amount={parseFloat(amount)}
+          vaultId={selectedVault}
+          currency="KES"
+          method={selectedMethod as WithdrawMethod}
+          onClose={handleReset}
+        />
+      ) : (
+        // Step-by-Step Flow (Deposits)
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+          {/* Progress Bar */}
+          <div>
+            <div className="flex justify-between mb-2">
+              <span className="text-sm font-semibold text-gray-900 dark:text-white">Step {currentStep} of {steps.length}</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">{Math.round((currentStep / steps.length) * 100)}%</span>
+            </div>
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+              <div
+                className="bg-gradient-to-r from-purple-600 to-pink-600 h-2 rounded-full transition-all"
+                style={{ width: `${(currentStep / steps.length) * 100}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Current Step */}
+          <Card className="border-l-4 border-l-purple-500">
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <span className="text-2xl">{steps[currentStep - 1]?.num}</span>
+                </div>
+                <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                  {steps[currentStep - 1]?.title}
+                </h3>
+                <p className="text-gray-600 dark:text-gray-400 mb-6">
+                  {steps[currentStep - 1]?.desc}
+                </p>
+
+                {/* Amount Display */}
+                <div className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg mb-6">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Amount</p>
+                  <p className="text-3xl font-bold text-gray-900 dark:text-white">KES {amount}</p>
+                </div>
+
+                {/* Instructions for specific step */}
+                {currentStep === 2 && selectedMethod === 'mpesa' && (
+                  <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg text-left mb-6 text-sm text-blue-900 dark:text-blue-300">
+                    <p className="font-mono font-bold mb-2">*483*123*{amount}#</p>
+                    <p>Then press SEND on your phone. You'll receive a prompt to enter your M-Pesa PIN.</p>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Navigation Buttons */}
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={handleReset} className="flex-1" data-testid="button-cancel-flow">
+              Cancel
+            </Button>
+            {currentStep < steps.length && (
+              <Button onClick={handleNext} className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600" data-testid="button-next-step">
+                Next Step
+              </Button>
+            )}
+            {currentStep === steps.length && (
+              <Button onClick={handleReset} className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600" data-testid="button-complete-flow">
+                Done
+              </Button>
+            )}
+          </div>
+        </motion.div>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-6">

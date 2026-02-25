@@ -3,7 +3,7 @@ import { useStripe, Elements, PaymentElement, useElements } from '@stripe/react-
 import { loadStripe } from '@stripe/stripe-js';
 import { useEffect, useState } from 'react';
 import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 

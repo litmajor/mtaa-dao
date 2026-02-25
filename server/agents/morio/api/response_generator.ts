@@ -13,6 +13,7 @@ import { createLLMProvider, LLMResponseGenerator, LLMConfig } from './llm_provid
 import { Logger } from '../../../utils/logger';
 import { kwetu } from '../../../core/kwetu';
 import { storage } from '../../../storage';
+import { handleGatingQuestion } from '../handlers/gatingHandler';
 
 const logger = new Logger('response-generator');
 
@@ -39,15 +40,34 @@ export class ResponseGenerator {
    * Generate response based on understanding and context
    * Uses LLM if available, falls back to templates
    * KWETU Integration: Fetches real DAO data for treasury and proposal operations
+   * Gating Integration: Handles feature unlock questions
    */
   async generate(understanding: any, context: UserContext) {
     const { intent, entities, confidence } = understanding;
+    const rawInput = understanding.rawInput || '';
+
+    // Check for gating-related questions FIRST
+    const gatingResult = await handleGatingQuestion(context.userId, rawInput);
+    if (gatingResult.isGatingQuestion) {
+      return {
+        text: gatingResult.response,
+        suggestions: [
+          'What should I do next?',
+          'How else can I progress?',
+          'Tell me more about my persona'
+        ],
+        metadata: {
+          type: 'gating-guidance',
+          gatingContext: gatingResult.context
+        }
+      };
+    }
 
     // Try LLM first if available and confidence is high enough
     if (this.llmGenerator && confidence > 0.6) {
       try {
         const llmResponse = await this.llmGenerator.generateResponse(
-          understanding.rawInput || `User asking about: ${intent}`,
+          rawInput,
           context
         );
         

@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import EscrowMediatorSelector from '@/components/EscrowMediatorSelector';
 
 interface EscrowInitiatorProps {
   walletBalance?: string;
@@ -46,6 +47,8 @@ export default function EscrowInitiator({
   const [milestones, setMilestones] = useState<Array<{ description: string; amount: string }>>([
     { description: '', amount: '' }
   ]);
+  const [daoId, setDaoId] = useState(''); // OKEDI: For mediator selection
+  const [mediatorId, setMediatorId] = useState(''); // OKEDI: Selected mediator
 
   const handleMilestoneChange = (index: number, field: 'description' | 'amount', value: string) => {
     const updated = [...milestones];
@@ -97,6 +100,8 @@ export default function EscrowInitiator({
         currency,
         description,
         milestones,
+        daoId: daoId || undefined,      // OKEDI: Include DAO context
+        mediatorId: mediatorId || undefined, // OKEDI: Include mediator selection
       });
 
       if (response.success && response.inviteLink) {
@@ -131,6 +136,8 @@ export default function EscrowInitiator({
     setMilestones([{ description: '', amount: '' }]);
     setMilestoneCount('1');
     setInviteLink(null);
+    setDaoId('');
+    setMediatorId('');
   };
 
   return (
@@ -213,6 +220,36 @@ export default function EscrowInitiator({
                 rows={2}
               />
             </div>
+
+            {/* OKEDI: Associated DAO (Optional) */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Associated DAO (Optional)
+                <span className="text-xs text-gray-500 ml-2">To select a mediator</span>
+              </label>
+              <Select value={daoId} onValueChange={setDaoId} disabled={isLoading}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a DAO..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {/* Note: You'll need to fetch user's DAOs and map them here */}
+                  <SelectItem value="">None (No mediator)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500">
+                Select a DAO to assign a mediator from its elders to help resolve disputes
+              </p>
+            </div>
+
+            {/* OKEDI: Mediator Selector */}
+            {daoId && (
+              <EscrowMediatorSelector
+                daoId={daoId}
+                excludeUserIds={[]} // You'll need to get current user ID and recipient ID
+                onSelectMediator={setMediatorId}
+                selectedMediatorId={mediatorId}
+              />
+            )}
 
             {/* Milestones */}
             <div className="space-y-3">

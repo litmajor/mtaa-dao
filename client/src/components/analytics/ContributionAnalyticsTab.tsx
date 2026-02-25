@@ -345,11 +345,11 @@ export const ContributionAnalyticsTab: React.FC<ContributionAnalyticsTabProps> =
                 size="sm"
                 onClick={() => handleTimeRangeChange(range)}
               >
-                {range === '7d' ? '7D'}
-                {range === '30d' ? '30D'}
-                {range === '90d' ? '90D'}
-                {range === '1y' ? '1Y'}
-                {range === 'all' ? 'All'}
+                {range === '7d' ? '7D' : ''}
+                {range === '30d' ? '30D' : ''}
+                {range === '90d' ? '90D' : ''}
+                {range === '1y' ? '1Y' : ''}
+                {range === 'all' ? 'All' : ''}
               </Button>
             ))}
           </div>
@@ -547,10 +547,10 @@ export const ContributionAnalyticsTab: React.FC<ContributionAnalyticsTabProps> =
                   onClick={() => setSortBy(sort)}
                   className="capitalize"
                 >
-                  {sort === 'score' ? 'Score'}
-                  {sort === 'contributions' ? 'Contributions'}
-                  {sort === 'votes' ? 'Votes'}
-                  {sort === 'proposals' ? 'Proposals'}
+                  {sort === 'score' ? 'Score' : ''}
+                  {sort === 'contributions' ? 'Contributions' : ''}
+                  {sort === 'votes' ? 'Votes' : ''}
+                  {sort === 'proposals' ? 'Proposals' : ''}
                 </Button>
               ))}
             </div>

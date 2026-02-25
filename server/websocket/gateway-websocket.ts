@@ -10,6 +10,7 @@ import { GatewayAgentService } from "../core/agents/gateway/service";
 import { getGatewayAgentService } from "../core/agents/gateway/service";
 import { MessageBusAdapter, getMessageBus } from "../core/agents/gateway/message-bus";
 import { GatewayMessage } from "../core/agents/gateway/types";
+import { verifyAccessToken } from "../auth";
 
 /**
  * WebSocket subscription types
@@ -61,13 +62,25 @@ export class GatewayWebSocketServer {
         const token = socket.handshake.auth.token;
         const userId = socket.handshake.auth.userId;
 
-        // In production, validate JWT token here
-        //const user = validateToken(token);
-        //if (!user) return next(new Error('Unauthorized'));
+        // Validate JWT token
+        if (!token) {
+          return next(new Error('Authentication required: Missing token'));
+        }
+
+        const payload = verifyAccessToken(token);
+        if (!payload) {
+          return next(new Error('Authentication failed: Invalid or expired token'));
+        }
+
+        // Verify user ID matches token subject
+        if (userId && payload.sub !== userId) {
+          return next(new Error('Authentication failed: User ID mismatch'));
+        }
 
         // Store user info on socket
-        (socket as any).userId = userId || "anonymous";
+        (socket as any).userId = payload.sub;
         (socket as any).token = token;
+        (socket as any).user = payload;
 
         next();
       } catch (error) {

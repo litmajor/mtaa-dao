@@ -2,7 +2,7 @@ import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Zap, Shuffle3 } from 'lucide-react';
+import { ArrowRight, Zap, Shuffle } from 'lucide-react';
 
 export default function CrossChainHub() {
   return (
@@ -54,7 +54,7 @@ export default function CrossChainHub() {
             <CardHeader>
               <div className="flex items-center gap-3 mb-2">
                 <div className="p-2 bg-green-100 rounded-lg">
-                  <Shuffle3 className="h-6 w-6 text-green-600" />
+                  <Shuffle className="h-6 w-6 text-green-600" />
                 </div>
                 <CardTitle>Swap</CardTitle>
               </div>

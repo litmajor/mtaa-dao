@@ -1,0 +1,91 @@
+
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: mtaadao-api
+    expose:
+      - "4000"
+    environment:
+      PORT: 4000
+      NODE_ENV: production
+      DATABASE_URL: postgres://postgres:postgres@db:5432/mtaadao
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - db
+      - redis
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: mtaadao-frontend
+    expose:
+      - "80"
+    depends_on:
+      - api
+
+  nginx:
+    image: nginx:alpine
+    container_name: mtaadao-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - frontend
+      - api
+
+  db:
+    image: postgres:15
+    container_name: mtaadao-db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: mtaadao
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: mtaadao-redis
+    ports:
+      - "6379:6379"
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: mtaadao-pgadmin
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@mtaadao.org
+      PGADMIN_DEFAULT_PASSWORD: admin
+    depends_on:
+      - db
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    volumes:
+       - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
+volumes:
+  pgdata:
+  grafana-data:
+
