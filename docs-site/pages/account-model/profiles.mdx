@@ -1,0 +1,81 @@
+# User Profiles & Sub-Profiles
+
+User profiles allow you to segment access and functionality based on roles within your DAO.
+
+## Profile Types
+
+### Member Profile
+- Basic DAO participant
+- Can vote on proposals
+- Can view public treasury data
+- Can participate in governance
+
+### Contributor Profile
+- Creates proposals
+- Manages bounties
+- Tracks contribution hours
+- Receives contributor badges
+- Access to contributor dashboard
+
+### Treasurer Profile
+- Full treasury management
+- Can initiate transfers
+- Views detailed financial reports
+- Manages multi-sig approvals
+- Audit trail access
+
+### Admin Profile
+- System configuration
+- Member management
+- Rule enforcement
+- Emergency controls
+- Full audit access
+
+## Creating Sub-Profiles
+
+Sub-profiles allow fine-grained control:
+
+```javascript
+// Example: Create a Grants Manager sub-profile
+const grantManager = {
+  name: "Grants Manager",
+  parentRole: "treasurer",
+  permissions: [
+    "approve_grants_up_to_100000",
+    "view_grant_applications",
+    "manage_grant_recipients",
+    "generate_grant_reports"
+  ],
+  limits: {
+    monthlyBudget: 100000,
+    approvalThreshold: 2,
+    transactions: "unlimited"
+  }
+}
+```
+
+## Profile Inheritance
+
+Profiles can inherit permissions from parent roles:
+
+- **Member** → Can be elevated to Contributor
+- **Contributor** → Can specialize into Treasurer or Admin
+- **Admin** → Can delegate sub-admin roles
+
+## Permission Matrix
+
+| Action | Member | Contributor | Treasurer | Admin |
+|--------|--------|-------------|-----------|-------|
+| Vote | ✓ | ✓ | ✓ | ✓ |
+| Create Proposal | ✗ | ✓ | ✓ | ✓ |
+| Execute Transfer | ✗ | ✗ | ✓ | ✓ |
+| Manage Members | ✗ | ✗ | ✗ | ✓ |
+| Configure Settings | ✗ | ✗ | ✗ | ✓ |
+
+## Best Practices
+
+1. **Principle of Least Privilege**: Only grant necessary permissions
+2. **Role Separation**: Separate approval and execution roles
+3. **Regular Audits**: Review active profiles monthly
+4. **Succession Planning**: Designate backups for critical roles
+5. **Training**: Ensure profile holders understand their responsibilities

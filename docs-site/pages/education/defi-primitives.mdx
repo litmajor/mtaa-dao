@@ -1,0 +1,173 @@
+# DeFi Primitives: Building Blocks of Finance
+
+Understand the core components that power MtaaDAO's financial capabilities.
+
+## Core DeFi Primitives
+
+### 1. Automated Market Makers (AMMs)
+
+**What it is**: A smart contract that enables token trading without intermediaries.
+
+**How it works**:
+```
+Liquidity Pool: 1,000 ETH + 2,000,000 USDC
+Formula: ETH × USDC = constant (x × y = k)
+
+If I want to buy 10 ETH:
+1. Add USDC to pool
+2. Remove ETH from pool
+3. New prices calculated automatically
+```
+
+**Examples**: Uniswap, SushiSwap, Pancakeswap
+
+**MtaaDAO Usage**: Instant token swaps without order books
+
+---
+
+### 2. Lending Protocols
+
+**What it is**: Smart contracts that facilitate borrowing and lending.
+
+**How it works**:
+```
+Alice deposits: 100 USDC → Earns 8% APY
+Bob borrows: 50 USDC → Pays 12% APY (over-collateralized)
+
+Interest flow:
+Bob's interest → Liquidity pool → Paid to Alice
+```
+
+**Examples**: Aave, Compound, Venus
+
+**MtaaDAO Usage**: Earn yield on treasury funds
+
+---
+
+### 3. Staking
+
+**What it is**: Locking tokens to validate network transactions or earn rewards.
+
+**How it works**:
+```
+Stake MTAA → Become a validator → Validate transactions → Earn rewards
+
+Reward = (Your stake / Total stake) × Network rewards
+```
+
+**Examples**: Ethereum 2.0 staking, Celo validators
+
+**MtaaDAO Usage**: DAOs can stake to secure networks and earn APY
+
+---
+
+### 4. Flash Loans
+
+**What it is**: Uncollateralized loans that must be repaid in the same transaction.
+
+**How it works**:
+```
+Transaction:
+  1. Borrow 1M USDC (no collateral required)
+  2. Execute trades/arbs
+  3. Repay 1M USDC + fee (e.g., 0.09%)
+  4. If not repaid → Entire transaction reverts
+```
+
+**Examples**: Aave flash loans, dYdX
+
+**MtaaDAO Usage**: Arbitrage, liquidations, complex strategies
+
+---
+
+### 5. Token Swaps
+
+**What it is**: Instant exchange between different tokens.
+
+**How it works**:
+```
+Want: 100 USDC
+Have: MTAA
+
+Swap route:
+MTAA → USDC (direct if liquidity exists)
+OR
+MTAA → ETH → USDC (multi-hop)
+```
+
+**Examples**: 1inch, 0x Protocol
+
+**MtaaDAO Usage**: Rebalance portfolio, convert between assets
+
+---
+
+### 6. Yield Farming
+
+**What it is**: Providing liquidity to earn multiple layers of rewards.
+
+**How it works**:
+```
+1. Provide liquidity to ETH/USDC pool
+   Earn: 0.25% of swap fees
+
+2. Deposit LP token to farm
+   Earn: SUSHI rewards (100 per week)
+
+3. Total APY: 0.25% + 50% (farms) = 50.25%
+```
+
+**Risk**: Impermanent loss, smart contract risk
+
+**MtaaDAO Usage**: Maximize treasury returns
+
+---
+
+## DeFi Protocol Layers
+
+```
+┌─────────────────────────────────┐
+│    Applications (What users see)│
+│  (Dashboard, portfolio tracking) │
+└─────────────────────────────────┘
+           ↓
+┌─────────────────────────────────┐
+│   Application Layer             │
+│  (Lend, borrow, trade, etc)     │
+└─────────────────────────────────┘
+           ↓
+┌─────────────────────────────────┐
+│   Settlement Layer              │
+│  (Smart contracts executing)    │
+└─────────────────────────────────┘
+           ↓
+┌─────────────────────────────────┐
+│   Asset Layer                   │
+│  (Tokens, native assets)        │
+└─────────────────────────────────┘
+           ↓
+┌─────────────────────────────────┐
+│   Blockchain                    │
+│  (Celo, Ethereum, etc)         │
+└─────────────────────────────────┘
+```
+
+## Risks in DeFi
+
+⚠️ **Smart Contract Risk**: Code bugs can lead to fund loss
+
+⚠️ **Liquidation Risk**: Collateral sold if price drops
+
+⚠️ **Impermanent Loss**: LP providers lose value if prices diverge
+
+⚠️ **Slippage**: Actual price different from expected (large trades)
+
+⚠️ **Flash Loan Attack**: Attackers exploit temporary price changes
+
+## Risk Mitigation
+
+✓ Use audited protocols
+✓ Start with small amounts
+✓ Diversify across protocols
+✓ Understand liquidation prices
+✓ Monitor your positions
+✓ Keep emergency funds aside

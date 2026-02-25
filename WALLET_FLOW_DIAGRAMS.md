@@ -1,0 +1,512 @@
+ # Deposit/Withdraw Flow Diagrams
+
+## 1. Money Flow: From Fiat to Crypto & Back
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        USER'S MONEY JOURNEY                      │
+└─────────────────────────────────────────────────────────────────┘
+
+SCENARIO 1: Fiat (USD) → Crypto (USDC) → Withdraw
+
+User has $100 USD cash
+          ↓
+    Wants to invest in DAO
+          ↓
+    ┌─────────────────────────┐
+    │ DEPOSIT (Off-Ramp)       │
+    ├─────────────────────────┤
+    │ Method: Stripe          │
+    │ Amount: $100 USD        │
+    │ Fee: 2% ($2)            │
+    │ Receives: $98 USDC      │
+    └─────────────────────────┘
+          ↓
+    ┌─────────────────────────┐
+    │ PRIMARY WALLET ACCOUNT  │
+    │ Balance: $98 USDC       │
+    └─────────────────────────┘
+          ↓
+    User wants to withdraw $7 USDC
+          ↓
+    ┌─────────────────────────┐
+    │ WITHDRAW (< $10)         │
+    ├─────────────────────────┤
+    │ Method: Micro-Withdraw  │
+    │ Amount: $7 USDC         │
+    │ Goes to batch           │
+    │ Waits for 50+ requests  │
+    └─────────────────────────┘
+          ↓
+    ┌─────────────────────────┐
+    │ MICRO-WITHDRAW BATCH    │
+    │ 50 requests collected   │
+    │ $350 total              │
+    │ Gas: $30 → $0.60/user   │
+    │ Your $7 - $0.60 = $6.40 │
+    └─────────────────────────┘
+          ↓
+    User receives $6.40 USDC to wallet
+
+
+SCENARIO 2: Crypto (External Wallet) → DAO → Trade → Lock in Vault
+
+User has $1000 USDC in Binance
+          ↓
+    ┌─────────────────────────┐
+    │ DEPOSIT (External)      │
+    ├─────────────────────────┤
+    │ Method: Transfer        │
+    │ From: Binance           │
+    │ Amount: $1000 USDC      │
+    │ Fee: 0 (gas covered)    │
+    └─────────────────────────┘
+          ↓
+    ┌─────────────────────────┐
+    │ PRIMARY WALLET ACCOUNT  │
+    │ Balance: $1000 USDC     │
+    └─────────────────────────┘
+          ↓
+    User wants to trade (not keep in wallet)
+          ↓
+    ┌─────────────────────────┐
+    │ INTERNAL TRANSFER       │
+    ├─────────────────────────┤
+    │ From: Wallet            │
+    │ To: Trading Account     │
+    │ Amount: $1000 USDC      │
+    │ Fee: 0                  │
+    └─────────────────────────┘
+          ↓
+    ┌─────────────────────────┐
+    │ TRADING ACCOUNT         │
+    │ Balance: $1000 USDC     │
+    │ Position: USDC/ETH pair │
+    └─────────────────────────┘
+          ↓
+    Trading successful! Made $200 profit
+    Now has $1200 USDC
+          ↓
+    User wants to lock profits in vault
+          ↓
+    ┌─────────────────────────┐
+    │ INTERNAL TRANSFER       │
+    ├─────────────────────────┤
+    │ From: Trading           │
+    │ To: Vault               │
+    │ Amount: $1200 USDC      │
+    │ Fee: 0                  │
+    └─────────────────────────┘
+          ↓
+    ┌─────────────────────────┐
+    │ VAULT ACCOUNT           │
+    │ Balance: $1200 USDC     │
+    │ Earning: 10% APY        │
+    └─────────────────────────┘
+```
+
+---
+
+## 2. Account State Diagram
+
+```
+                        USER ACCOUNT SYSTEM
+
+    ┌──────────────────────────────────────────────────────┐
+    │                 USER PROFILE                         │
+    │              (Kyc, Auth, Settings)                   │
+    └──────────────┬───────────────────────────────────────┘
+                   │
+        ┌──────────┴──────────┐
+        │                     │
+        ▼                     ▼
+    ┌────────────────┐   ┌────────────────┐
+    │ WALLET ACCOUNT │   │ TRADING ACCOUNT │
+    ├────────────────┤   ├────────────────┤
+    │ Balance: $425  │   │ Balance: $1250 │
+    │ Status: ACTIVE │   │ Status: ACTIVE │
+    │ Currency: USDC │   │ Currency: USDC │
+    │                │   │ Positions: 2   │
+    │ Deposits:      │   │ Leverage: 1x   │
+    │ ✓ Off-ramp     │   │                │
+    │ ✓ External     │   │ Auto-close:    │
+    │                │   │ If loss > 10%  │
+    └────────────────┘   └────────────────┘
+             │                    │
+             └────────┬───────────┘
+                      │
+        ┌─────────────┼─────────────┐
+        │             │             │
+        ▼             ▼             ▼
+    ┌────────────┐ ┌────────────┐ ┌────────────┐
+    │ VAULT      │ │ ESCROW     │ │ STAGING    │
+    ├────────────┤ ├────────────┤ ├────────────┤
+    │ Balance:   │ │ Balance:   │ │ Balance:   │
+    │ $5430.20   │ │ $0         │ │ $12.50     │
+    │ Status:    │ │ Status:    │ │ Status:    │
+    │ LOCKED     │ │ WAITING    │ │ PENDING    │
+    │ Currency:  │ │ Currency:  │ │ Currency:  │
+    │ USDC       │ │ USDC       │ │ USDC       │
+    │            │ │            │ │            │
+    │ APY: 10%   │ │ Next       │ │ Pending    │
+    │ Lock:      │ │ Milestone: │ │ Requests:  │
+    │ 90 days    │ │ 2 months   │ │ 2          │
+    │            │ │            │ │            │
+    │ Earning!   │ │ Waiting    │ │ Waiting    │
+    │            │ │ release    │ │ 24hrs      │
+    └────────────┘ └────────────┘ └────────────┘
+
+    TOTAL BALANCE: $7,117.70
+    LIQUID: $1,687.50 (Wallet + Trading)
+    LOCKED: $5,430.20 (Vault)
+    PENDING: $12.50 (Micro-withdrawals)
+```
+
+---
+
+## 3. Deposit Flow Decision Tree
+
+```
+                        USER WANTS TO DEPOSIT
+
+                              │
+                              ▼
+                    ┌──────────────────┐
+                    │ How much money?  │
+                    └────────┬─────────┘
+                             │
+                ┌────────────┴────────────┐
+                │                        │
+                ▼                        ▼
+        Have USD/EUR?             Have Crypto?
+        (Fiat)                     (USDC, ETH, etc)
+                │                        │
+                ▼                        ▼
+        ┌──────────────────┐    ┌──────────────────┐
+        │ OFF-RAMP DEPOSIT │    │ EXTERNAL WALLET  │
+        └─────────┬────────┘    └────────┬─────────┘
+                  │                      │
+        ┌─────────┴─────────────┐        │
+        │                       │        │
+        ▼                       ▼        ▼
+    ┌────────┐            ┌────────┐ ┌──────────┐
+    │ Stripe │ Kotanipay  │ M-Pesa │ │ Transfer │
+    └────────┘ └────────┘ └────────┘ └──────────┘
+        │                       │        │
+        └─────────┬─────────────┴────────┘
+                  │
+    Amount conversion to USDC
+                  │
+                  ▼
+    ┌─────────────────────────────┐
+    │ PRIMARY WALLET ACCOUNT      │
+    │ Receives: [Amount] USDC     │
+    │ Fee: 2-3% (off-ramp)        │
+    │        or 0% (external)     │
+    │ Status: COMPLETED           │
+    └─────────────────────────────┘
+
+    WHERE DOES IT GO?
+    ├─ Defaults to: PRIMARY WALLET
+    ├─ User can transfer to:
+    │  ├─ TRADING ACCOUNT (start trading)
+    │  ├─ VAULT ACCOUNT (savings)
+    │  └─ ESCROW (if paying bounty)
+    └─ Usually deposits go to wallet first (hub account)
+```
+
+---
+
+## 4. Withdraw Flow Decision Tree
+
+```
+                        USER WANTS TO WITHDRAW
+
+                              │
+                              ▼
+                    ┌──────────────────┐
+                    │ Which account?   │
+                    └────────┬─────────┘
+                             │
+        ┌────────────┬────────┼────────┬────────┐
+        │            │        │        │        │
+        ▼            ▼        ▼        ▼        ▼
+    WALLET      TRADING     VAULT    ESCROW   MICRO-W
+    $425        $1250       $5430    $0       $12
+        │            │        │        │        │
+        │            │        │        │        │
+        │            │        │        │        ▼
+        │            │        │        │    ┌─────────────┐
+        │            │        │        │    │ Batch       │
+        │            │        │        │    │ Processing  │
+        │            │        │        │    │ (Automatic) │
+        │            │        │        │    └─────────────┘
+        │            │        │        │        │
+        └────────────┴────────┼────────┴────────┘
+                              │
+                              ▼
+                    ┌──────────────────┐
+                    │ Where to send it?│
+                    └────────┬─────────┘
+                             │
+        ┌────────────┬────────┼────────┬────────────┐
+        │            │        │        │            │
+        ▼            ▼        ▼        ▼            ▼
+    OFF-RAMP    EXTERNAL  INTERNAL  MICRO-W      BACK
+    (Fiat)      (Wallet)  (Account) (Batch)      HOME?
+        │            │        │        │            │
+        ▼            ▼        ▼        ▼            ▼
+    $[amount]   0x1234..  Vault    $<10       Later?
+    USD         ETH,       Traded           
+    Fee: 2-3%   USDC,      Saved
+               cUSD       Escaped
+               Fee: gas
+
+    USER CHOOSES:
+    ┌─────────────────────────────────────────────────┐
+    │ IF $0.50-$10.00 amount:                         │
+    │ → RECOMMEND: Micro-Withdrawal (save gas!)       │
+    │                                                  │
+    │ IF > $10:                                       │
+    │ → RECOMMEND: Off-Ramp (fiat exit)              │
+    │             Or External (crypto exit)          │
+    │                                                  │
+    │ IF moving between your accounts:                │
+    │ → RECOMMEND: Internal Transfer (0 fees)        │
+    └─────────────────────────────────────────────────┘
+```
+
+---
+
+## 5. Complete Money Lifecycle
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                     USER'S MONEY LIFECYCLE                    │
+└──────────────────────────────────────────────────────────────┘
+
+WEEK 1: DEPOSIT
+┌────────────────────┐
+│ User: "I have $100 │
+│ USD. Let's invest" │
+└─────────┬──────────┘
+          │
+          ▼
+    ┌──────────────┐
+    │ Off-Ramp:    │
+    │ $100 USD →   │
+    │ $98 USDC     │
+    │ (2% fee)     │
+    └──────┬───────┘
+           │
+           ▼
+    ┌──────────────────────┐
+    │ PRIMARY WALLET       │
+    │ Balance: $98 USDC ✓  │
+    │ Status: Ready        │
+    └──────────────────────┘
+
+
+WEEK 2: MOVE TO TRADING
+┌────────────────────┐
+│ User: "Let me try  │
+│ trading!"          │
+└─────────┬──────────┘
+          │
+          ▼
+    ┌──────────────────┐
+    │ INTERNAL TRANSFER │
+    │ $98 USDC         │
+    │ Wallet → Trading │
+    └──────┬───────────┘
+           │
+           ▼
+    ┌──────────────────────────────────────┐
+    │ PRIMARY WALLET: $0 USDC              │
+    │ TRADING ACCOUNT: $98 USDC (1x ETH)   │
+    └──────────────────────────────────────┘
+
+
+WEEK 3: PROFIT!
+┌──────────────────────┐
+│ ETH pumped 25%!      │
+│ Trading Position:    │
+│ $98 → $122.50 USDC   │
+│ Profit: $24.50 ✓     │
+└─────────┬────────────┘
+          │
+          ▼
+    ┌──────────────────────┐
+    │ Lock profits in      │
+    │ VAULT                │
+    │ (90-day lock, 10% APY)
+    └──────┬───────────────┘
+           │
+           ▼
+    ┌──────────────────────────────────────┐
+    │ PRIMARY WALLET: $0                   │
+    │ TRADING ACCOUNT: $0                  │
+    │ VAULT ACCOUNT: $122.50 (locked 90d) │
+    │ Earning 10% APY = +$12.25/year       │
+    └──────────────────────────────────────┘
+
+
+WEEK 4: NEED CASH
+┌──────────────────────┐
+│ User: "Need to pay   │
+│ rent ($5)"           │
+└─────────┬────────────┘
+          │
+          ▼
+    MICRO-WITHDRAWAL!
+    $5 USDC request
+          │
+          ▼
+    Waits for batch...
+    45 more requests needed
+          │
+    (3 days pass)
+          │
+          ▼
+    ┌──────────────────┐
+    │ BATCH READY:     │
+    │ 50 requests      │
+    │ $350 total       │
+    │ Gas: $30 shared  │
+    │ User pays: $0.60 │
+    │ Receives: $4.40  │
+    └──────┬───────────┘
+           │
+           ▼
+    ┌──────────────────────────────────────┐
+    │ WALLET (External): 0x1234...         │
+    │ Received: $4.40 USDC                 │
+    │ Status: ✓ CONFIRMED                  │
+    │ TX: 0xabcd...                        │
+    └──────────────────────────────────────┘
+
+END RESULT AFTER 4 WEEKS:
+├─ Deposited: $100
+├─ Withdrew: $4.40 (small need)
+├─ Locked in vault: $122.50 (growing!)
+├─ Total value: $126.90
+├─ Net gain: $26.90 (+26.9%)
+└─ Vault earning 10% APY passively
+```
+
+---
+
+## 6. Fee Comparison: Direct vs Batched Withdrawal
+
+```
+SCENARIO: User wants to withdraw $7 USDC
+
+OPTION A: Direct Withdrawal (Individual)
+┌─────────────────────────────────────────┐
+│ Amount: $7.00                           │
+│ Gas Fee (Ethereum): $6.50               │
+│ Network: Congested (2 Gwei)             │
+│ User receives: $0.50 😞                 │
+│ Loss rate: 93% !!!                      │
+└─────────────────────────────────────────┘
+❌ Terrible! Most gas cost
+
+OPTION B: Micro-Withdrawal (Batched)
+┌─────────────────────────────────────────┐
+│ Step 1: Submit request for $7          │
+│ Step 2: Wait for batch (50 requests)   │
+│ Step 3: Batch of $350 created          │
+│          Total gas: $30                 │
+│ Your share: $30 ÷ 50 = $0.60           │
+│ User receives: $6.40 ✓                 │
+│ Loss rate: 8.5%                        │
+└─────────────────────────────────────────┘
+✅ BEST OPTION! 92% savings vs direct
+
+MATH:
+Direct: $7 - $6.50 = $0.50 (7% received)
+Batched: $7 - $0.60 = $6.40 (91% received)
+SAVINGS: $5.90 per transaction
+         1180% better! 🎉
+
+With 50 users doing this weekly:
+Total savings: $5.90 × 50 = $295/week
+            = $1,280/month
+            = $15,340/year
+```
+
+---
+
+## 7. UI Layout: Wallet Dashboard
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║                    WALLET DASHBOARD                          ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                               ║
+║  NET WORTH: $7,117.70 💰                                     ║
+║  ┌──────────────────────────────────────────────────────┐   ║
+║  │  Wallet: $425.50      Trading: $1,250.00             │   ║
+║  │  Vault: $5,430.20     Escrow: $0         Staging: $12 │   ║
+║  └──────────────────────────────────────────────────────┘   ║
+║                                                               ║
+║  [DEPOSIT] [WITHDRAW] [TRANSFER] [TRANSACTIONS]             ║
+║  ═══════════════════════════════════════════════════════════║
+║                                                               ║
+║  ┌─ DEPOSIT TAB ────────────────────────────────────────┐   ║
+║  │                                                       │   ║
+║  │  How do you want to deposit?                          │   ║
+║  │                                                       │   ║
+║  │  ○ Off-Ramp (Fiat → Crypto)                          │   ║
+║  │    ├─ Stripe (Credit card)                           │   ║
+║  │    ├─ Kotanipay (Mobile money)                       │   ║
+║  │    └─ M-Pesa (East Africa)                           │   ║
+║  │                                                       │   ║
+║  │  ○ External Wallet (Crypto → Crypto)                 │   ║
+║  │    └─ Send to: 0x742d35Cc6634...                    │   ║
+║  │       [QR CODE]                                       │   ║
+║  │                                                       │   ║
+║  │  [Select Method] ▼                                   │   ║
+║  │                                                       │   ║
+║  │  ─────────────────────────────────────────────────   │   ║
+║  │  DEPOSIT HISTORY                                     │   ║
+║  │  Jan 15 | +$98 USDC | Stripe | ✓ Completed         │   ║
+║  │  Jan 10 | +$500 USDC | External | ✓ Completed      │   ║
+║  │                                                       │   ║
+║  └─────────────────────────────────────────────────────┘   ║
+║                                                               ║
+║  ┌─ WITHDRAW TAB ────────────────────────────────────────┐  ║
+║  │                                                       │   ║
+║  │  FROM WHICH ACCOUNT?                                 │   ║
+║  │  ┌─────────────────────────────────────────────┐     │   ║
+║  │  │ ○ Wallet ($425)  ○ Trading ($1,250)        │     │   ║
+║  │  │ ○ Vault ($5,430) ○ Escrow ($0)             │     │   ║
+║  │  └─────────────────────────────────────────────┘     │   ║
+║  │                                                       │   ║
+║  │  TO WHERE?                                           │   ║
+║  │  ┌─────────────────────────────────────────────┐     │   ║
+║  │  │ ○ Off-Ramp (get USD)                        │     │   ║
+║  │  │ ○ External Wallet (send crypto)             │     │   ║
+║  │  │ ◉ Micro-Withdrawal (< $10, batched) ← NEW! │     │   ║
+║  │  │ ○ Internal Transfer (move accounts)         │     │   ║
+║  │  └─────────────────────────────────────────────┘     │   ║
+║  │                                                       │   ║
+║  │  Amount: [7.50] USDC                                 │   ║
+║  │  Destination: 0x1234567890...                        │   ║
+║  │  Estimated Fee: $0.60 (micro-batch) 🎉              │   ║
+║  │  You'll receive: $6.90                               │   ║
+║  │                                                       │   ║
+║  │  [WITHDRAW]                                          │   ║
+║  │                                                       │   ║
+║  │  ─────────────────────────────────────────────────   │   ║
+║  │  PENDING MICRO-WITHDRAWALS                           │   ║
+║  │  45/50 in batch | $315/$350 total | ETA: 1 day      │   ║
+║  │                                                       │   ║
+║  └─────────────────────────────────────────────────────┘   ║
+║                                                               ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+---
+
+**Summary**: Micro-withdrawals fit as ONE OPTION in the comprehensive withdraw flow, alongside off-ramp, external wallets, and internal transfers. It's not separate—it's integrated into the money movement system.

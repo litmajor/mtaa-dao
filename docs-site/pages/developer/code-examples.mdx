@@ -1,0 +1,321 @@
+# Code Examples
+
+Real-world examples to get started quickly.
+
+## Example 1: List and Filter DAOs
+
+### Python
+```python
+from mtaadao import MtaaDAO
+
+dao_client = MtaaDAO(api_key='sk_live_xxx')
+
+# List all your DAOs
+daos = dao_client.daos.list()
+print(f"You have {len(daos)} DAOs")
+
+# Filter by type
+collective_daos = [d for d in daos if d['type'] == 'collective']
+print(f"Collective DAOs: {len(collective_daos)}")
+
+# Sort by treasury size
+sorted_daos = sorted(daos, key=lambda x: x['treasury']['balance'], reverse=True)
+print(f"Largest treasury: {sorted_daos[0]['name']}")
+```
+
+### JavaScript/Node.js
+```javascript
+import { MtaaDAO } from '@mtaadao/sdk'
+
+const dao = new MtaaDAO({ apiKey: 'sk_live_xxx' })
+
+// List all DAOs
+const daos = await dao.daos.list()
+console.log(`You have ${daos.length} DAOs`)
+
+// Filter by type
+const collectiveDAOs = daos.filter(d => d.type === 'collective')
+console.log(`Collective DAOs: ${collectiveDAOs.length}`)
+
+// Sort by treasury
+const sorted = daos.sort((a, b) => 
+  b.treasury.balance - a.treasury.balance
+)
+console.log(`Largest treasury: ${sorted[0].name}`)
+```
+
+### cURL
+```bash
+curl https://api.mtaadao.com/v1/daos \
+  -H "Authorization: Bearer sk_live_xxx" \
+  -H "Content-Type: application/json"
+```
+
+## Example 2: Create a Proposal
+
+```javascript
+const dao = new MtaaDAO({ apiKey: 'sk_live_xxx' })
+
+// Create a spending proposal
+const proposal = await dao.proposals.create('dao_123', {
+  title: 'Fund community project',
+  description: 'Allocate 50,000 KES for school renovation',
+  type: 'spending',
+  amount: 50000,
+  beneficiary: 'Community School',
+  votingPeriod: 7 * 24 * 60 * 60 // 7 days in seconds
+})
+
+console.log(`Proposal created: ${proposal.id}`)
+console.log(`Link: https://mtaadao.com/vote/${proposal.id}`)
+```
+
+## Example 3: Vote on a Proposal
+
+```javascript
+// Vote on proposal
+const vote = await dao.proposals.vote('dao_123', 'prop_456', {
+  choice: 'yes',  // 'yes', 'no', or 'abstain'
+  weight: 100     // Voting weight (usually = stake)
+})
+
+console.log(`Your vote recorded: ${vote.id}`)
+
+// Check voting status
+const proposal = await dao.proposals.get('dao_123', 'prop_456')
+console.log(`Current results:`)
+console.log(`  Yes: ${proposal.votes.yes}`)
+console.log(`  No: ${proposal.votes.no}`)
+console.log(`  Quorum: ${proposal.votes.total}/${proposal.quorumRequired}`)
+```
+
+## Example 4: Monitor Treasury
+
+```javascript
+const dao = new MtaaDAO({ apiKey: 'sk_live_xxx' })
+
+// Get treasury status
+const treasury = await dao.treasury.get('dao_123')
+
+console.log(`Treasury Balance: ${treasury.balance} ${treasury.currency}`)
+console.log(`Last Updated: ${treasury.updatedAt}`)
+
+// Get recent transactions
+const transactions = await dao.treasury.getTransactions('dao_123', {
+  limit: 10,
+  offset: 0
+})
+
+for (const tx of transactions) {
+  console.log(
+    `${tx.type}: ${tx.amount} ${tx.currency} - ${tx.description}`
+  )
+}
+
+// Get analytics
+const analytics = await dao.treasury.getAnalytics('dao_123', {
+  period: '30d'
+})
+
+console.log(`Monthly inflow: ${analytics.inflow}`)
+console.log(`Monthly outflow: ${analytics.outflow}`)
+console.log(`Net: ${analytics.net}`)
+```
+
+## Example 5: Manage Members
+
+```javascript
+// List members
+const members = await dao.members.list('dao_123')
+
+// Find admin members
+const admins = members.filter(m => m.role === 'admin')
+console.log(`${admins.length} admins in DAO`)
+
+// Invite new member
+const invite = await dao.members.invite('dao_123', {
+  email: 'new@example.com',
+  role: 'member',
+  expiresIn: 30 * 24 * 60 * 60 // 30 days
+})
+
+console.log(`Invite link: ${invite.link}`)
+
+// Update member role
+await dao.members.updateRole('dao_123', 'member_789', {
+  role: 'contributor'
+})
+
+console.log(`Member promoted to contributor`)
+```
+
+## Example 6: DeFi - Deposit to Yield Pool
+
+```javascript
+// Find high-yield pools
+const pools = await dao.defi.getPools({
+  minAPY: 10,
+  currency: 'USDC'
+})
+
+const bestPool = pools.sort((a, b) => b.apy - a.apy)[0]
+console.log(`Best pool: ${bestPool.name} - ${bestPool.apy}% APY`)
+
+// Deposit treasury funds
+const deposit = await dao.defi.deposit('dao_123', {
+  poolId: bestPool.id,
+  amount: 100000,
+  currency: 'USDC'
+})
+
+console.log(`Deposit successful: ${deposit.id}`)
+console.log(`Shares received: ${deposit.shares}`)
+
+// Monitor yield earnings
+const position = await dao.defi.getPosition('dao_123', deposit.id)
+console.log(`Current value: ${position.value}`)
+console.log(`Earned: ${position.earned}`)
+console.log(`APY: ${position.apy}%`)
+```
+
+## Example 7: Real-Time Webhooks
+
+```javascript
+import express from 'express'
+
+const app = express()
+app.use(express.json())
+
+// Webhook endpoint
+app.post('/webhooks/mtaadao', (req, res) => {
+  const { event, data } = req.body
+
+  console.log(`Received event: ${event}`)
+  console.log(`Data:`, data)
+
+  switch (event) {
+    case 'proposal.created':
+      console.log(`New proposal: ${data.title}`)
+      // Send notification
+      notifyMembers(data)
+      break
+
+    case 'proposal.executed':
+      console.log(`Proposal executed: ${data.title}`)
+      // Update database
+      recordExecution(data)
+      break
+
+    case 'transfer.executed':
+      console.log(`Transfer: ${data.amount} ${data.currency}`)
+      // Log transaction
+      logTransaction(data)
+      break
+
+    case 'yield.earned':
+      console.log(`Earned: ${data.amount} ${data.currency}`)
+      // Alert members
+      alertEarnings(data)
+      break
+  }
+
+  res.json({ received: true })
+})
+
+app.listen(3000)
+```
+
+## Example 8: Build a Dashboard
+
+```javascript
+class DAODashboard {
+  constructor(daoId, apiKey) {
+    this.dao = new MtaaDAO({ apiKey })
+    this.daoId = daoId
+  }
+
+  async getFullStatus() {
+    const [
+      daoInfo,
+      treasury,
+      proposals,
+      members,
+      defiPositions
+    ] = await Promise.all([
+      this.dao.daos.get(this.daoId),
+      this.dao.treasury.get(this.daoId),
+      this.dao.proposals.list(this.daoId, { limit: 5 }),
+      this.dao.members.list(this.daoId),
+      this.dao.defi.getPositions(this.daoId)
+    ])
+
+    return {
+      info: daoInfo,
+      treasury: {
+        balance: treasury.balance,
+        currency: treasury.currency,
+        monthlyInflow: treasury.analytics.monthlyInflow,
+        monthlyOutflow: treasury.analytics.monthlyOutflow
+      },
+      governance: {
+        totalMembers: members.length,
+        activeProposals: proposals.filter(p => p.status === 'active').length,
+        pendingProposals: proposals.filter(p => p.status === 'pending').length
+      },
+      defi: {
+        totalValue: defiPositions.reduce((sum, p) => sum + p.value, 0),
+        totalEarned: defiPositions.reduce((sum, p) => sum + p.earned, 0),
+        averageAPY: (defiPositions.reduce((sum, p) => sum + p.apy, 0) / defiPositions.length).toFixed(2)
+      }
+    }
+  }
+
+  async refreshEvery(interval = 60000) {
+    setInterval(async () => {
+      const status = await this.getFullStatus()
+      this.updateUI(status)
+    }, interval)
+  }
+
+  updateUI(status) {
+    console.log('Dashboard Updated:')
+    console.log(JSON.stringify(status, null, 2))
+  }
+}
+
+// Use it
+const dashboard = new DAODashboard('dao_123', 'sk_live_xxx')
+await dashboard.refreshEvery(30000) // Update every 30 seconds
+```
+
+## Example 9: Auto-Sweep Earnings
+
+```javascript
+async function autoSweepEarnings(daoId, apiKey) {
+  const dao = new MtaaDAO({ apiKey })
+
+  // Run every day
+  setInterval(async () => {
+    // Get all DeFi positions
+    const positions = await dao.defi.getPositions(daoId)
+
+    for (const position of positions) {
+      if (position.earned > 1000) { // Only if earned > 1000
+        // Withdraw earnings
+        const withdrawal = await dao.defi.withdraw(daoId, {
+          positionId: position.id,
+          amount: position.earned
+        })
+
+        console.log(`Swept ${position.earned} from ${position.pool}`)
+      }
+    }
+  }, 24 * 60 * 60 * 1000) // Daily
+}
+```
+
+## Next Steps
+
+- [API Reference](/developer/api-reference) - Complete docs
+- [Building Agents](/developer/agents) - Create automations
+- [DeFi Strategies](/developer/strategies) - Advanced trading

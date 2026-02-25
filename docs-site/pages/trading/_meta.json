@@ -1,0 +1,8 @@
+{
+  "index": "Trading Overview",
+  "strategies": "Strategy Development",
+  "dex-integration": "DEX Integration",
+  "dexscreener": "DexScreener Integration",
+  "bots-agents": "Trading Bots & Agents",
+  "backtesting": "Backtesting & Simulation"
+}

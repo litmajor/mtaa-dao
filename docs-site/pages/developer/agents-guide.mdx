@@ -1,0 +1,375 @@
+# Building Agents
+
+Create autonomous agents that execute strategies automatically.
+
+## What are Agents?
+
+Agents are automated programs that run on the MtaaDAO network and perform tasks without human intervention:
+
+- **Trading Agents**: Automatically trade based on market conditions
+- **Yield Agents**: Move funds between pools to maximize returns
+- **Risk Agents**: Monitor treasury health and trigger alerts
+- **Governance Agents**: Auto-vote based on pre-set rules
+- **Rebalancing Agents**: Maintain target asset allocation
+
+## Agent Architecture
+
+```
+┌─────────────────────┐
+│  Trigger (Timer)    │
+└──────────┬──────────┘
+           │
+           ↓
+┌─────────────────────┐
+│  Read State         │
+│  (DAOs, Pools, etc) │
+└──────────┬──────────┘
+           │
+           ↓
+┌─────────────────────┐
+│  Analyze & Decide   │
+│  (Strategy logic)   │
+└──────────┬──────────┘
+           │
+           ↓
+┌─────────────────────┐
+│  Execute Action     │
+│  (Trade, transfer)  │
+└──────────┬──────────┘
+           │
+           ↓
+┌─────────────────────┐
+│  Log & Notify       │
+│  (Webhooks)         │
+└─────────────────────┘
+```
+
+## Example 1: Dollar Cost Averaging (DCA) Agent
+
+Buy the same amount of an asset every day:
+
+```javascript
+import { MtaaDAO } from '@mtaadao/sdk'
+
+const dao = new MtaaDAO({ apiKey: 'sk_live_xxx' })
+
+const agent = await dao.agents.create({
+  name: 'MTAA Daily DCA',
+  description: 'Buy 1000 USDC of MTAA every day',
+  type: 'trading',
+  trigger: {
+    type: 'interval',
+    value: 24 * 60 * 60 * 1000 // Every 24 hours
+  },
+  strategy: {
+    name: 'dca',
+    params: {
+      asset: 'MTAA',
+      amount: 1000,
+      currency: 'USDC'
+    }
+  },
+  execution: {
+    daoId: 'dao_123',
+    approval: 'automatic' // Execute without vote
+  }
+})
+
+console.log(`Agent created: ${agent.id}`)
+console.log(`Running: ${agent.isActive}`)
+```
+
+## Example 2: Yield Optimization Agent
+
+Move funds to the highest-yield pool automatically:
+
+```javascript
+const agent = await dao.agents.create({
+  name: 'Yield Optimizer',
+  description: 'Automatically move treasury to highest-yield pool',
+  type: 'defi',
+  trigger: {
+    type: 'interval',
+    value: 6 * 60 * 60 * 1000 // Every 6 hours
+  },
+  strategy: {
+    name: 'yield_optimization',
+    params: {
+      minAPY: 8,
+      maxSlippage: 0.5, // 0.5%
+      assets: ['USDC', 'MTAA'],
+      excludePools: ['unstable_pool']
+    }
+  },
+  limits: {
+    maxPerTransaction: 100000,
+    maxDaily: 500000,
+    requiresApproval: false
+  },
+  execution: {
+    daoId: 'dao_123',
+    approval: 'automatic'
+  }
+})
+```
+
+### How It Works
+
+1. **Every 6 hours**, check all available pools
+2. **Compare APY** across all protocols
+3. **Calculate optimal** allocation
+4. **Execute swaps** if APY increase > 2%
+5. **Log results** to dashboard
+6. **Alert members** via webhook
+
+## Example 3: Risk Management Agent
+
+Trigger alerts if treasury drops below threshold:
+
+```javascript
+const agent = await dao.agents.create({
+  name: 'Treasury Guardian',
+  description: 'Monitor treasury health and alert if risks detected',
+  type: 'monitoring',
+  trigger: {
+    type: 'interval',
+    value: 60 * 60 * 1000 // Every hour
+  },
+  strategy: {
+    name: 'risk_monitoring',
+    checks: [
+      {
+        name: 'low_balance',
+        condition: 'balance < 10000',
+        action: 'alert'
+      },
+      {
+        name: 'high_outflow',
+        condition: 'daily_outflow > inflow * 1.5',
+        action: 'alert'
+      },
+      {
+        name: 'defi_risk',
+        condition: 'positions_at_risk > 0',
+        action: 'alert_and_rebalance'
+      }
+    ]
+  },
+  notifications: {
+    channels: ['email', 'telegram', 'discord'],
+    recipients: ['admin@dao.com'],
+    severity: 'high'
+  }
+})
+```
+
+## Example 4: Auto-Voting Agent
+
+Vote on proposals based on pre-set rules:
+
+```javascript
+const agent = await dao.agents.create({
+  name: 'Smart Voter',
+  description: 'Auto-vote based on governance rules',
+  type: 'governance',
+  trigger: {
+    type: 'event',
+    events: ['proposal.created']
+  },
+  strategy: {
+    name: 'governance_voting',
+    rules: [
+      {
+        condition: 'proposalType == "spending" && amount <= 50000',
+        action: 'vote_yes'
+      },
+      {
+        condition: 'proposalType == "spending" && amount > 500000',
+        action: 'vote_no'
+      },
+      {
+        condition: 'proposalType == "governance" && supportsChange',
+        action: 'vote_yes'
+      }
+    ]
+  }
+})
+```
+
+## Example 5: Flash Loan Arbitrage Agent
+
+Execute arbitrage using flash loans:
+
+```javascript
+const agent = await dao.agents.create({
+  name: 'Arbitrage Bot',
+  description: 'Execute flash loan arbitrage across DEXes',
+  type: 'trading',
+  trigger: {
+    type: 'interval',
+    value: 5 * 60 * 1000 // Every 5 minutes
+  },
+  strategy: {
+    name: 'flash_loan_arb',
+    params: {
+      token: 'MTAA',
+      minProfit: 100, // 100 USDC minimum
+      maxLoanAmount: 1000000,
+      exchanges: ['UniswapV3', 'CurveFinance', 'Balancer']
+    }
+  },
+  execution: {
+    type: 'atomic_transaction',
+    daoId: 'dao_123',
+    requiresApproval: false
+  }
+})
+```
+
+### How Flash Loans Work
+
+```
+1. Borrow 1,000,000 MTAA (no collateral required)
+2. Sell on Exchange A at 1.0 USDC/MTAA
+3. Buy on Exchange B at 0.99 USDC/MTAA
+4. Profit: 10,000 USDC
+5. Repay loan + 0.09% fee
+6. Net profit: ~10,000 - 900 = 9,100 USDC
+7. Deposit profit back to treasury
+```
+
+## Agent Management
+
+### List All Agents
+```javascript
+const agents = await dao.agents.list('dao_123')
+agents.forEach(a => {
+  console.log(`${a.name}: ${a.isActive ? '✓' : '✗'} Active`)
+})
+```
+
+### Monitor Agent Performance
+```javascript
+const agent = await dao.agents.get('dao_123', 'agent_456')
+console.log(`Executions: ${agent.stats.totalExecutions}`)
+console.log(`Success rate: ${agent.stats.successRate}%`)
+console.log(`Total profit: ${agent.stats.totalProfit}`)
+console.log(`Last run: ${agent.stats.lastRun}`)
+```
+
+### Update Agent Settings
+```javascript
+await dao.agents.update('dao_123', 'agent_456', {
+  isActive: false,
+  limits: {
+    maxPerTransaction: 200000
+  }
+})
+```
+
+### Delete Agent
+```javascript
+await dao.agents.delete('dao_123', 'agent_456')
+```
+
+## Best Practices
+
+✓ **Start small** - Test with low limits first
+✓ **Monitor actively** - Check agent performance daily
+✓ **Use approvals** - Require voting for major actions
+✓ **Set limits** - Cap per-transaction and daily amounts
+✓ **Log everything** - Keep detailed execution records
+✓ **Test on mainnet** - Use testnet before production
+✓ **Have safeguards** - Include kill switches and thresholds
+
+## Common Agent Strategies
+
+| Strategy | Use Case | Risk | Return |
+|----------|----------|------|--------|
+| DCA | Regular investing | Low | Moderate |
+| Yield Optimization | Maximize returns | Moderate | High |
+| Risk Management | Protect treasury | Low | Low |
+| Auto-Voting | Governance | Low | Low |
+| Flash Loan Arb | Generate alpha | High | Very High |
+| Market Making | Provide liquidity | High | Moderate |
+
+## Webhooks for Agents
+
+Get real-time notifications of agent execution:
+
+```javascript
+// Setup webhook
+await dao.webhooks.create({
+  url: 'https://your-app.com/webhooks/agents',
+  events: [
+    'agent.executed',
+    'agent.failed',
+    'agent.limit_reached'
+  ]
+})
+
+// Your endpoint receives:
+{
+  event: 'agent.executed',
+  agentId: 'agent_456',
+  agentName: 'Yield Optimizer',
+  result: {
+    action: 'rebalanced',
+    fromPool: 'MTAA/USDC',
+    toPool: 'MTAA/USDT',
+    amount: 50000,
+    aprChange: '+2.1%'
+  },
+  timestamp: '2026-02-04T10:30:00Z'
+}
+```
+
+## Advanced: Custom Agent Logic
+
+For complex strategies, use our Python SDK:
+
+```python
+from mtaadao import Agent, Strategy
+
+class CustomStrategy(Strategy):
+    def analyze(self):
+        """Custom analysis logic"""
+        # Your logic here
+        return decision
+
+    def execute(self):
+        """Execute the decision"""
+        # Your execution here
+        pass
+
+agent = Agent(
+    name='Custom Strategy',
+    strategy=CustomStrategy(),
+    dao_id='dao_123'
+)
+
+agent.deploy()
+```
+
+## Troubleshooting
+
+**Agent not executing?**
+- Check trigger conditions
+- Verify API key permissions
+- Check execution logs
+
+**Unexpected results?**
+- Review strategy parameters
+- Check market conditions at execution time
+- Test on testnet first
+
+**High gas fees?**
+- Batch operations together
+- Reduce execution frequency
+- Optimize smart contract calls
+
+## Next Steps
+
+- [DeFi Strategies](/developer/strategies) - Advanced techniques
+- [API Reference](/developer/api-reference) - Full API docs
+- [Community Forum](https://forum.mtaadao.com) - Get help

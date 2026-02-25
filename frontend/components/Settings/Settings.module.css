@@ -1,0 +1,695 @@
+/* ========================================
+   UNIFIED SETTINGS CSS MODULE
+   ======================================== */
+
+/* Container & Layout */
+.settingsContainer {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  min-height: 100vh;
+}
+
+.settingsHeader {
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.pageTitle {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #1a202c;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.5px;
+}
+
+.pageDescription {
+  font-size: 1.1rem;
+  color: #4a5568;
+  font-weight: 400;
+}
+
+/* Content Layout */
+.settingsContent {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2rem;
+}
+
+@media (min-width: 768px) {
+  .settingsContent {
+    grid-template-columns: 220px 1fr;
+    gap: 3rem;
+  }
+}
+
+/* ========================================
+   TABS COMPONENT
+   ======================================== */
+
+.tabsContainer {
+  position: sticky;
+  top: 1rem;
+  height: fit-content;
+}
+
+.tabsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  background: white;
+  padding: 1rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+
+  @media (max-width: 767px) {
+    flex-direction: row;
+    padding: 0.5rem;
+  }
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 2px solid transparent;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #4a5568;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+
+  &:hover {
+    background: #f7fafc;
+    color: #2d3748;
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+}
+
+.tabActive {
+  background: #edf2f7;
+  border-color: #4caf50;
+  color: #22543d;
+  font-weight: 600;
+}
+
+.tabIcon {
+  font-size: 1.25rem;
+  display: inline-block;
+}
+
+.tabLabel {
+  @media (max-width: 600px) {
+    display: none;
+  }
+}
+
+/* ========================================
+   SETTINGS CARD COMPONENT
+   ======================================== */
+
+.settingsCard {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+
+  &:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  }
+}
+
+.cardDefault {
+  border-color: transparent;
+}
+
+.cardSuccess {
+  border-color: #4caf50;
+  background: linear-gradient(135deg, #f1f8f4 0%, #ffffff 100%);
+}
+
+.cardWarning {
+  border-color: #ff9800;
+  background: linear-gradient(135deg, #fff8f0 0%, #ffffff 100%);
+}
+
+.cardDanger {
+  border-color: #f44336;
+  background: linear-gradient(135deg, #fff4f1 0%, #ffffff 100%);
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.cardTitle {
+  display: flex;
+  gap: 1rem;
+  flex: 1;
+  align-items: flex-start;
+}
+
+.cardIcon {
+  font-size: 1.75rem;
+  flex-shrink: 0;
+  margin-top: 0.25rem;
+}
+
+.cardHeading {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1a202c;
+  margin: 0;
+}
+
+.cardDescription {
+  font-size: 0.9rem;
+  color: #718096;
+  margin: 0.25rem 0 0 0;
+  font-weight: 400;
+}
+
+.cardAction {
+  flex-shrink: 0;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.cardContent {
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+  color: #4a5568;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  background: #4caf50;
+  color: white;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* ========================================
+   SETTINGS SECTION
+   ======================================== */
+
+.settingsSection {
+  min-height: 400px;
+}
+
+.sectionTitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1a202c;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.3px;
+}
+
+.sectionDescription {
+  font-size: 0.95rem;
+  color: #718096;
+  margin-bottom: 2rem;
+  font-weight: 400;
+}
+
+/* ========================================
+   FORM ELEMENTS
+   ======================================== */
+
+.input,
+.textarea,
+select {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  transition: all 0.2s ease;
+  background: white;
+
+  &:focus {
+    outline: none;
+    border-color: #4caf50;
+    box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
+  }
+
+  &:disabled {
+    background: #f7fafc;
+    color: #cbd5e0;
+    cursor: not-allowed;
+  }
+}
+
+.textarea {
+  resize: vertical;
+  font-family: inherit;
+  min-height: 100px;
+}
+
+.valueText {
+  font-size: 0.95rem;
+  color: #2d3748;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+/* ========================================
+   TOGGLE SWITCH
+   ======================================== */
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  gap: 0.5rem;
+
+  input {
+    display: none;
+  }
+}
+
+.toggleSlider {
+  position: relative;
+  width: 52px;
+  height: 28px;
+  background: #cbd5e0;
+  border-radius: 14px;
+  transition: all 0.3s ease;
+  display: inline-block;
+
+  &::after {
+    content: '';
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    background: white;
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    transition: all 0.3s ease;
+  }
+}
+
+.toggle input:checked + .toggleSlider {
+  background: #4caf50;
+
+  &::after {
+    left: 26px;
+  }
+}
+
+.toggle input:disabled + .toggleSlider {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ========================================
+   BUTTONS
+   ======================================== */
+
+.primaryButton,
+.secondaryButton,
+.dangerButton {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+
+  &:active {
+    transform: scale(0.97);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.primaryButton {
+  background: #4caf50;
+  color: white;
+
+  &:hover:not(:disabled) {
+    background: #45a049;
+    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+  }
+}
+
+.secondaryButton {
+  background: #f7fafc;
+  color: #2d3748;
+  border: 2px solid #e2e8f0;
+
+  &:hover:not(:disabled) {
+    background: #edf2f7;
+    border-color: #cbd5e0;
+  }
+}
+
+.dangerButton {
+  background: #f44336;
+  color: white;
+
+  &:hover:not(:disabled) {
+    background: #da190b;
+    box-shadow: 0 4px 12px rgba(244, 67, 54, 0.3);
+  }
+}
+
+.actionButtons {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+  justify-content: flex-start;
+
+  @media (max-width: 600px) {
+    flex-direction: column;
+  }
+}
+
+/* ========================================
+   MODAL STYLES
+   ======================================== */
+
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 1rem;
+}
+
+.modalContent {
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
+  max-width: 500px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(2rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modalIcon {
+  font-size: 3rem;
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.modalTitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1a202c;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.contextSections {
+  margin-bottom: 1.5rem;
+  background: #f7fafc;
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.contextSection {
+  margin-bottom: 1.5rem;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.contextLabel {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #2d3748;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.5rem;
+}
+
+.contextText {
+  font-size: 0.95rem;
+  color: #4a5568;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ========================================
+   CHECKBOX (Confirmation)
+   ======================================== */
+
+.checkboxContainer {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: #fff4f1;
+  border: 2px solid #ff9800;
+  border-radius: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.checkbox {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  cursor: pointer;
+  accent-color: #4caf50;
+  flex-shrink: 0;
+}
+
+.checkboxLabel {
+  cursor: pointer;
+  color: #2d3748;
+  font-weight: 500;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+/* ========================================
+   MODAL ACTIONS
+   ======================================== */
+
+.modalActions {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+
+  @media (max-width: 600px) {
+    flex-direction: column-reverse;
+  }
+}
+
+.modalActions button {
+  flex: 1;
+
+  @media (min-width: 601px) {
+    flex: 0 1 auto;
+  }
+}
+
+/* ========================================
+   DEVICE & SESSION DETAILS
+   ======================================== */
+
+.deviceDetails,
+.sessionDetails {
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+
+  p {
+    margin: 0;
+    font-size: 0.95rem;
+    color: #4a5568;
+
+    strong {
+      color: #2d3748;
+      font-weight: 600;
+    }
+  }
+}
+
+/* ========================================
+   PROFILE AVATAR
+   ======================================== */
+
+.avatarPreview {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid #4caf50;
+  margin-top: 1rem;
+}
+
+/* ========================================
+   WARNING TEXT
+   ======================================== */
+
+.warningText {
+  color: #d97706;
+  font-weight: 500;
+  margin: 0;
+}
+
+/* ========================================
+   TAB CONTENT
+   ======================================== */
+
+.tabContent {
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ========================================
+   RESPONSIVE DESIGN
+   ======================================== */
+
+@media (max-width: 768px) {
+  .settingsContainer {
+    padding: 1rem;
+  }
+
+  .pageTitle {
+    font-size: 2rem;
+  }
+
+  .settingsContent {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .tabsContainer {
+    position: static;
+  }
+
+  .tabsList {
+    justify-content: space-around;
+    padding: 0.75rem;
+  }
+
+  .tab {
+    padding: 0.6rem 0.8rem;
+    font-size: 0.85rem;
+  }
+
+  .settingsCard {
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .cardHeader {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .cardAction {
+    width: 100%;
+  }
+
+  .cardAction button {
+    width: 100%;
+  }
+
+  .modalContent {
+    padding: 1.5rem;
+    margin: 1rem;
+  }
+
+  .actionButtons {
+    flex-direction: column-reverse;
+  }
+
+  .actionButtons button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .pageTitle {
+    font-size: 1.5rem;
+  }
+
+  .pageDescription {
+    font-size: 1rem;
+  }
+
+  .sectionTitle {
+    font-size: 1.25rem;
+  }
+
+  .settingsCard {
+    padding: 0.75rem;
+  }
+
+  .cardIcon {
+    font-size: 1.5rem;
+  }
+
+  .modalTitle {
+    font-size: 1.25rem;
+  }
+
+  .primaryButton,
+  .secondaryButton,
+  .dangerButton {
+    padding: 0.6rem 1.2rem;
+    font-size: 0.9rem;
+  }
+}

@@ -1,0 +1,116 @@
+import { APIExplorer } from '../../components/APIExplorer'
+
+# API Reference
+
+Complete documentation of all MtaaDAO API endpoints. Use the interactive explorer below to browse, understand, and test endpoints.
+
+## Interactive API Explorer
+
+<APIExplorer />
+
+## REST API Basics
+
+### Base URL
+```
+https://api.mtaadao.com/v1
+```
+
+### Response Format
+All responses are JSON:
+```json
+{
+  "success": true,
+  "data": { /* ... */ },
+  "error": null,
+  "meta": {
+    "timestamp": "2026-02-04T10:30:00Z",
+    "request_id": "req_abc123"
+  }
+}
+```
+
+## API Categories
+
+### DAOs (`/daos`)
+- **GET** `/daos` - List all DAOs
+- **POST** `/daos` - Create a DAO
+- **GET** `/daos/:id` - Get DAO details
+- **PUT** `/daos/:id` - Update DAO settings
+- **DELETE** `/daos/:id` - Archive DAO
+
+### Governance (`/daos/:id/proposals`)
+- **GET** `/daos/:id/proposals` - List proposals
+- **POST** `/daos/:id/proposals` - Create proposal
+- **GET** `/daos/:id/proposals/:propId` - Get proposal details
+- **POST** `/daos/:id/proposals/:propId/vote` - Cast a vote
+- **POST** `/daos/:id/proposals/:propId/execute` - Execute proposal
+
+### Treasury (`/daos/:id/treasury`)
+- **GET** `/daos/:id/treasury` - Get treasury balance
+- **GET** `/daos/:id/treasury/transactions` - Get transaction history
+- **POST** `/daos/:id/treasury/transfer` - Execute transfer
+- **GET** `/daos/:id/treasury/analytics` - Treasury analytics
+
+### Members (`/daos/:id/members`)
+- **GET** `/daos/:id/members` - List members
+- **POST** `/daos/:id/members/invite` - Invite member
+- **GET** `/daos/:id/members/:memberId` - Get member details
+- **PUT** `/daos/:id/members/:memberId/role` - Update member role
+- **DELETE** `/daos/:id/members/:memberId` - Remove member
+
+### DeFi (`/defi`)
+- **GET** `/defi/yields` - List yield opportunities
+- **GET** `/defi/yields/:poolId` - Get pool details
+- **POST** `/defi/yields/deposit` - Deposit into pool
+- **POST** `/defi/yields/withdraw` - Withdraw from pool
+- **GET** `/defi/swaps/quote` - Get swap quote
+- **POST** `/defi/swaps/execute` - Execute swap
+
+### Agents (`/agents`)
+- **GET** `/agents` - List agents
+- **POST** `/agents` - Create agent
+- **GET** `/agents/:agentId` - Get agent details
+- **PUT** `/agents/:agentId` - Update agent
+- **POST** `/agents/:agentId/execute` - Manually trigger agent
+- **DELETE** `/agents/:agentId` - Delete agent
+
+## Authentication
+
+All endpoints require authentication. See [Authentication Guide](/developer/authentication).
+
+## Rate Limiting
+
+See [Rate Limits](/developer/rate-limits) for detailed information.
+
+## Error Handling
+
+Errors are returned with appropriate HTTP status codes:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INSUFFICIENT_BALANCE",
+    "message": "Treasury balance is too low",
+    "details": { "required": 10000, "available": 5000 }
+  }
+}
+```
+
+## Common Error Codes
+
+| Code | Status | Meaning |
+|------|--------|---------|
+| `AUTH_REQUIRED` | 401 | Missing or invalid API key |
+| `FORBIDDEN` | 403 | Not authorized for this operation |
+| `NOT_FOUND` | 404 | Resource doesn't exist |
+| `INVALID_PARAMS` | 400 | Invalid request parameters |
+| `RATE_LIMITED` | 429 | Too many requests |
+| `SERVER_ERROR` | 500 | Internal server error |
+
+## Next Steps
+
+- [Authentication](/developer/authentication) - Set up API keys
+- [Code Examples](/developer/code-examples) - Real-world examples
+- [Webhooks](/developer/webhooks) - Real-time events
+- [Rate Limits](/developer/rate-limits) - Understand limits

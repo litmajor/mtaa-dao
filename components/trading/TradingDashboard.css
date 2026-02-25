@@ -1,0 +1,783 @@
+/**
+ * TradingDashboard.css
+ * 
+ * Styles for complete Trading Dashboard with all 5 simulator panels
+ * Responsive layout with portfolio overview and trade history
+ */
+
+.trading-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 20px;
+  background: var(--page-background, #f5f5f5);
+  min-height: 100vh;
+}
+
+html.dark-mode .trading-dashboard {
+  background: var(--page-background-dark, #0f0f0f);
+}
+
+/* ========================================
+   DASHBOARD HEADER
+   ======================================== */
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 24px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+html.dark-mode .dashboard-header {
+  background: var(--card-background-dark, #1e1e1e);
+  border-color: var(--border-color-dark, #333333);
+}
+
+.dashboard-header h1 {
+  margin: 0 0 16px 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary, #1a1a1a);
+}
+
+html.dark-mode .dashboard-header h1 {
+  color: var(--text-primary-dark, #ffffff);
+}
+
+.header-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  width: 100%;
+  margin-top: 12px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: var(--stat-background, #f9f9f9);
+  border-radius: 6px;
+  border-left: 3px solid var(--accent-color, #4834d4);
+}
+
+html.dark-mode .stat {
+  background: var(--stat-background-dark, #1a1a1a);
+  border-left-color: var(--accent-color-dark, #6b5cff);
+}
+
+.stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary, #666666);
+  letter-spacing: 0.5px;
+}
+
+html.dark-mode .stat-label {
+  color: var(--text-secondary-dark, #999999);
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--accent-color, #4834d4);
+}
+
+html.dark-mode .stat-value {
+  color: var(--accent-color-dark, #6b5cff);
+}
+
+/* ========================================
+   PORTFOLIO SECTION
+   ======================================== */
+
+.portfolio-section {
+  padding: 24px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+html.dark-mode .portfolio-section {
+  background: var(--card-background-dark, #1e1e1e);
+  border-color: var(--border-color-dark, #333333);
+}
+
+.portfolio-section h2 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+}
+
+html.dark-mode .portfolio-section h2 {
+  color: var(--text-primary-dark, #ffffff);
+}
+
+.portfolio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.portfolio-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: var(--item-background, #f9f9f9);
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+html.dark-mode .portfolio-item {
+  background: var(--item-background-dark, #1a1a1a);
+  border-color: var(--border-color-dark, #333333);
+}
+
+.portfolio-item:hover {
+  border-color: var(--accent-color, #4834d4);
+  box-shadow: 0 2px 8px rgba(72, 52, 212, 0.15);
+}
+
+.token-symbol {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary, #666666);
+  letter-spacing: 0.5px;
+}
+
+html.dark-mode .token-symbol {
+  color: var(--text-secondary-dark, #999999);
+}
+
+.token-amount {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary, #1a1a1a);
+  font-family: 'Courier New', monospace;
+}
+
+html.dark-mode .token-amount {
+  color: var(--text-primary-dark, #ffffff);
+}
+
+.token-price {
+  font-size: 12px;
+  color: var(--accent-color, #4834d4);
+  font-weight: 500;
+}
+
+/* ========================================
+   PANEL SELECTOR
+   ======================================== */
+
+.panel-selector {
+  padding: 24px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+html.dark-mode .panel-selector {
+  background: var(--card-background-dark, #1e1e1e);
+  border-color: var(--border-color-dark, #333333);
+}
+
+.selector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.selector-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+}
+
+html.dark-mode .selector-header h2 {
+  color: var(--text-primary-dark, #ffffff);
+}
+
+.history-toggle {
+  padding: 8px 16px;
+  border: 1px solid var(--border-color, #d0d0d0);
+  background: var(--button-bg, #f5f5f5);
+  color: var(--text-primary, #1a1a1a);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+html.dark-mode .history-toggle {
+  background: var(--button-bg-dark, #2a2a2a);
+  color: var(--text-primary-dark, #ffffff);
+  border-color: var(--border-color-dark, #444444);
+}
+
+.history-toggle:hover {
+  border-color: var(--accent-color, #4834d4);
+  background: var(--accent-color-light, rgba(72, 52, 212, 0.1));
+}
+
+/* Panel tabs */
+.panel-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.panel-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  border: 2px solid var(--border-color, #e0e0e0);
+  background: var(--tab-background, #f9f9f9);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+html.dark-mode .panel-tab {
+  background: var(--tab-background-dark, #1a1a1a);
+  border-color: var(--border-color-dark, #333333);
+}
+
+.panel-tab:hover {
+  border-color: var(--accent-color, #4834d4);
+  background: var(--accent-color-light, rgba(72, 52, 212, 0.08));
+}
+
+.panel-tab.active {
+  border-color: var(--accent-color, #4834d4);
+  background: var(--accent-color-light, rgba(72, 52, 212, 0.1));
+  color: var(--accent-color, #4834d4);
+}
+
+.tab-icon {
+  font-size: 24px;
+  display: block;
+}
+
+.tab-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+  text-align: center;
+}
+
+html.dark-mode .tab-label {
+  color: var(--text-primary-dark, #ffffff);
+}
+
+.panel-tab.active .tab-label {
+  color: var(--accent-color, #4834d4);
+}
+
+html.dark-mode .panel-tab.active .tab-label {
+  color: var(--accent-color-dark, #6b5cff);
+}
+
+.tab-subtitle {
+  font-size: 10px;
+  color: var(--text-secondary, #999999);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+html.dark-mode .tab-subtitle {
+  color: var(--text-secondary-dark, #777777);
+}
+
+/* ========================================
+   PANELS CONTAINER
+   ======================================== */
+
+.panels-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.panel-wrapper {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ========================================
+   TRADE HISTORY SECTION
+   ======================================== */
+
+.trade-history-section {
+  padding: 24px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  animation: slideDown 0.3s ease;
+}
+
+html.dark-mode .trade-history-section {
+  background: var(--card-background-dark, #1e1e1e);
+  border-color: var(--border-color-dark, #333333);
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 1000px;
+  }
+}
+
+.trade-history-section h2 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+}
+
+html.dark-mode .trade-history-section h2 {
+  color: var(--text-primary-dark, #ffffff);
+}
+
+.empty-history {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-secondary, #666666);
+  background: var(--empty-background, #f9f9f9);
+  border-radius: 6px;
+}
+
+html.dark-mode .empty-history {
+  background: var(--empty-background-dark, #1a1a1a);
+  color: var(--text-secondary-dark, #999999);
+}
+
+.empty-history p {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* History table */
+.history-table {
+  overflow-x: auto;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #e0e0e0);
+}
+
+html.dark-mode .history-table {
+  border-color: var(--border-color-dark, #333333);
+}
+
+.history-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.history-table thead {
+  background: var(--table-header-bg, #f9f9f9);
+  border-bottom: 2px solid var(--border-color, #e0e0e0);
+}
+
+html.dark-mode .history-table thead {
+  background: var(--table-header-bg-dark, #1a1a1a);
+  border-bottom-color: var(--border-color-dark, #333333);
+}
+
+.history-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-size: 11px;
+}
+
+html.dark-mode .history-table th {
+  color: var(--text-primary-dark, #ffffff);
+}
+
+.history-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
+  color: var(--text-primary, #1a1a1a);
+}
+
+html.dark-mode .history-table td {
+  border-bottom-color: var(--border-color-dark, #333333);
+  color: var(--text-primary-dark, #ffffff);
+}
+
+.history-table tbody tr:hover {
+  background: var(--table-row-hover, #f5f5f5);
+}
+
+html.dark-mode .history-table tbody tr:hover {
+  background: var(--table-row-hover-dark, #2a2a2a);
+}
+
+.trade-type {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.3px;
+}
+
+.trade-type.spot {
+  background: #dbeafe;
+  color: #0c2340;
+}
+
+html.dark-mode .trade-type.spot {
+  background: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+}
+
+.trade-type.advanced {
+  background: #e9d5ff;
+  color: #581c87;
+}
+
+html.dark-mode .trade-type.advanced {
+  background: rgba(168, 85, 247, 0.2);
+  color: #d8b4fe;
+}
+
+.trade-type.dex {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+html.dark-mode .trade-type.dex {
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+}
+
+.trade-type.flash {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+html.dark-mode .trade-type.flash {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+.details-cell {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.3px;
+}
+
+.status-badge.success {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+html.dark-mode .status-badge.success {
+  background: rgba(16, 185, 129, 0.2);
+  color: #6ee7b7;
+}
+
+.status-badge.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+html.dark-mode .status-badge.pending {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+.status-badge.error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+html.dark-mode .status-badge.error {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+
+/* ========================================
+   INFO SECTION
+   ======================================== */
+
+.info-section {
+  padding: 24px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+html.dark-mode .info-section {
+  background: var(--card-background-dark, #1e1e1e);
+  border-color: var(--border-color-dark, #333333);
+}
+
+.info-section h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+}
+
+html.dark-mode .info-section h3 {
+  color: var(--text-primary-dark, #ffffff);
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px;
+}
+
+.info-card {
+  padding: 16px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 6px;
+  background: var(--info-card-bg, #f9f9f9);
+}
+
+html.dark-mode .info-card {
+  background: var(--info-card-bg-dark, #1a1a1a);
+  border-color: var(--border-color-dark, #333333);
+}
+
+.info-card h4 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+html.dark-mode .info-card h4 {
+  color: var(--text-primary-dark, #ffffff);
+}
+
+.info-card p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary, #666666);
+}
+
+html.dark-mode .info-card p {
+  color: var(--text-secondary-dark, #999999);
+}
+
+/* ========================================
+   RESPONSIVE DESIGN
+   ======================================== */
+
+@media (max-width: 1200px) {
+  .panel-tabs {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .portfolio-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .header-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .trading-dashboard {
+    gap: 16px;
+    padding: 12px;
+  }
+
+  .dashboard-header,
+  .portfolio-section,
+  .panel-selector,
+  .trade-history-section,
+  .info-section {
+    padding: 16px;
+  }
+
+  .panel-tabs {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .panel-tab {
+    padding: 12px 8px;
+    gap: 6px;
+  }
+
+  .tab-label {
+    font-size: 11px;
+  }
+
+  .history-table {
+    font-size: 11px;
+  }
+
+  .history-table th,
+  .history-table td {
+    padding: 8px 12px;
+  }
+
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-header {
+    flex-direction: column;
+  }
+
+  .selector-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .trading-dashboard {
+    gap: 12px;
+    padding: 8px;
+  }
+
+  .dashboard-header,
+  .portfolio-section,
+  .panel-selector,
+  .trade-history-section,
+  .info-section {
+    padding: 12px;
+    border-radius: 6px;
+  }
+
+  .dashboard-header h1 {
+    font-size: 20px;
+    margin-bottom: 12px;
+  }
+
+  .panel-tabs {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .panel-tab {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .tab-icon {
+    font-size: 18px;
+  }
+
+  .tab-label {
+    font-size: 12px;
+    text-align: left;
+  }
+
+  .tab-subtitle {
+    display: none;
+  }
+
+  .portfolio-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .history-table {
+    font-size: 10px;
+  }
+
+  .history-table th,
+  .history-table td {
+    padding: 6px 8px;
+  }
+
+  .stat {
+    padding: 8px;
+  }
+
+  .stat-label {
+    font-size: 10px;
+  }
+
+  .stat-value {
+    font-size: 18px;
+  }
+}
+
+/* ========================================
+   DARK MODE ROOT
+   ======================================== */
+
+html.dark-mode {
+  --page-background-dark: #0f0f0f;
+  --card-background-dark: #1e1e1e;
+  --border-color-dark: #333333;
+  --text-primary-dark: #ffffff;
+  --text-secondary-dark: #999999;
+  --stat-background-dark: #1a1a1a;
+  --accent-color-dark: #6b5cff;
+  --item-background-dark: #1a1a1a;
+  --button-bg-dark: #2a2a2a;
+  --tab-background-dark: #1a1a1a;
+  --table-header-bg-dark: #1a1a1a;
+  --table-row-hover-dark: #2a2a2a;
+  --empty-background-dark: #1a1a1a;
+  --info-card-bg-dark: #1a1a1a;
+}

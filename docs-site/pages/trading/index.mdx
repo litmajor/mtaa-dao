@@ -1,0 +1,139 @@
+# Trading Overview
+
+Develop sophisticated trading strategies on MtaaDAO.
+
+## What You Can Build
+
+### 1. Automated Trading Agents
+Bots that trade 24/7 based on predefined rules and market conditions.
+
+**Example**: Mean Reversion Agent
+- Monitors RSI indicator
+- Buys when oversold (RSI < 30)
+- Sells when overbought (RSI > 70)
+- Auto-executes with position sizing
+
+### 2. Arbitrage Strategies
+Exploit price differences across DEXs and chains.
+
+**Example**: Cross-Chain Arbitrage
+```
+1. Monitor MTAA price on Celo DEX
+2. Monitor MTAA price on Ethereum DEX
+3. If Ethereum price is 5% higher
+4. Buy on Celo, bridge to Ethereum
+5. Sell on Ethereum
+6. Profit = 5% - bridge fee - slippage
+```
+
+### 3. Yield Optimization
+Automatically move funds to highest-yielding strategies.
+
+**Example**: Yield Farmer Agent
+- Monitor APY across 10 protocols
+- Annually rebalance to highest yield
+- Compound rewards automatically
+- Max profit extraction
+
+### 4. Risk Management
+Implement stop-loss, take-profit, and hedging.
+
+**Example**: Stop-Loss Agent
+```
+Buy MTAA at $1.00
+Stop-loss at $0.95 (5% loss tolerance)
+Take-profit at $1.20 (20% gain)
+
+Agent automatically executes exit if triggered
+```
+
+## Trading Strategy Types
+
+### Momentum Strategies
+**Concept**: Buy uptrends, sell downtrends
+
+**Indicators**: MACD, Moving Averages, Volume
+
+**Best for**: Trending markets
+
+**Risk**: High during reversals
+
+### Mean Reversion Strategies
+**Concept**: Buy when oversold, sell when overbought
+
+**Indicators**: RSI, Bollinger Bands, Z-Score
+
+**Best for**: Range-bound markets
+
+**Risk**: Fails in strong trends
+
+### Volatility Strategies
+**Concept**: Exploit price swings
+
+**Indicators**: ATR, Keltner Channels, VIX
+
+**Best for**: High volatility periods
+
+**Risk**: Can amplify losses
+
+### Pairs Trading (Market Neutral)
+**Concept**: Buy correlated asset A, short asset B
+
+**Indicators**: Correlation, Co-integration
+
+**Best for**: Reducing systemic risk
+
+**Risk**: Correlation breakdown
+
+### Machine Learning Strategies
+**Concept**: AI models predict next price movement
+
+**Models**: Neural Networks, Random Forest, XGBoost
+
+**Best for**: Non-linear relationships
+
+**Risk**: Overfitting, data leakage
+
+## Key Concepts
+
+### Position Sizing
+Never risk your entire account on one trade.
+
+```
+Account: 100,000 USDC
+Risk per trade: 2% = 2,000 USDC
+
+Position = Risk / (Entry - Stop Loss)
+= 2,000 / (1.00 - 0.95)
+= 2,000 / 0.05
+= 40,000 MTAA
+```
+
+### Slippage
+Actual execution price differs from expected price.
+
+```
+Want to buy: 1000 MTAA at $1.00 = $1,000
+Liquidity: Only $500 of MTAA available at $1.00
+Actual cost: $1,050 (buying rest at higher prices)
+Slippage: 5%
+```
+
+### Impermanent Loss
+LP providers lose value when token prices diverge.
+
+```
+Provide: 1 ETH + 2000 USDC (ETH = $2000)
+Price changes: 1 ETH = $3000 (50% gain)
+
+Expected value if held: 3000 + 2000 = $5000
+Actual LP value: $4900
+Loss: $100 (due to ratio rebalancing)
+```
+
+## Next Steps
+
+- [Strategy Development](/trading/strategies) - Build your first strategy
+- [DexScreener Integration](/trading/dexscreener) - Find trading opportunities
+- [Trading Bots](/trading/bots-agents) - Deploy automated agents
+- [Backtesting](/trading/backtesting) - Test before risking real funds

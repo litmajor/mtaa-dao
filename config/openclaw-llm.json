@@ -1,0 +1,53 @@
+{
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "local": {
+        "baseUrl": "http://localhost:8000",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "llama-2-7b-chat",
+            "name": "LLaMA 2 7B Chat (Local)",
+            "reasoning": false,
+            "input": ["text"],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 4096,
+            "maxTokens": 2048,
+            "compat": {
+              "supportsStore": false,
+              "supportsDeveloperRole": true,
+              "supportsReasoningEffort": false,
+              "maxTokensField": "max_tokens"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "llm": {
+    "type": "local",
+    "model_path": "./models/llama-2-7b-chat.Q2_K.gguf",
+    "provider": "local",
+    "model": "llama-2-7b-chat",
+    "settings": {
+      "temperature": 0.7,
+      "top_p": 0.9,
+      "top_k": 40,
+      "context_size": 4096,
+      "num_predict": 2048,
+      "repeat_penalty": 1.1,
+      "threads": 4
+    }
+  },
+  "runtime": {
+    "agent_concurrency": 1,
+    "timeout_ms": 120000,
+    "fallback_model": null
+  }
+}

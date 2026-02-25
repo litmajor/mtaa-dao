@@ -1,0 +1,157 @@
+.toastContainer {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: all;
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(20, 20, 30, 0.95);
+  border: 1px solid rgba(147, 112, 219, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3),
+              0 0 20px rgba(147, 112, 219, 0.1);
+  backdrop-filter: blur(10px);
+  animation: slideIn 0.3s ease-out;
+  max-width: 400px;
+  min-width: 300px;
+}
+
+.toast.alert {
+  border-color: rgba(255, 59, 48, 0.3);
+  background: rgba(20, 20, 30, 0.95);
+}
+
+.toast.alert .icon {
+  color: #ff3b30;
+}
+
+.toast.error {
+  border-color: rgba(255, 59, 48, 0.3);
+  background: rgba(20, 20, 30, 0.95);
+}
+
+.toast.error .icon {
+  color: #ff3b30;
+}
+
+.toast.warning {
+  border-color: rgba(255, 193, 7, 0.3);
+  background: rgba(20, 20, 30, 0.95);
+}
+
+.toast.warning .icon {
+  color: #ffc107;
+}
+
+.toast.success {
+  border-color: rgba(76, 175, 80, 0.3);
+  background: rgba(20, 20, 30, 0.95);
+}
+
+.toast.success .icon {
+  color: #4caf50;
+}
+
+.toast.info {
+  border-color: rgba(33, 150, 243, 0.3);
+  background: rgba(20, 20, 30, 0.95);
+}
+
+.toast.info .icon {
+  color: #2196f3;
+}
+
+.toastContent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.icon {
+  font-size: 20px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.title {
+  font-weight: 600;
+  color: #ffffff;
+  font-size: 14px;
+  margin: 0;
+}
+
+.message {
+  font-size: 13px;
+  color: #b0b0b0;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 0;
+  margin-left: 8px;
+  flex-shrink: 0;
+  transition: color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.closeButton:hover {
+  color: #fff;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOut {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+}
+
+.toast.closing {
+  animation: slideOut 0.3s ease-in forwards;
+}
+
+@media (max-width: 640px) {
+  .toastContainer {
+    top: 10px;
+    right: 10px;
+    left: 10px;
+    gap: 8px;
+  }
+
+  .toast {
+    max-width: 100%;
+    min-width: auto;
+  }
+}

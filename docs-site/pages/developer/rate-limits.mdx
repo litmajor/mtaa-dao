@@ -1,0 +1,145 @@
+# Rate Limits & Quotas
+
+MtaaDAO uses token-bucket rate limiting to ensure fair API usage for all users.
+
+## Rate Limit Tiers
+
+### Free Tier
+- **100 requests** per minute
+- **10 concurrent** requests
+- **1,000 requests** per day
+- **10 GB** monthly bandwidth
+
+### Pro Tier ($99/month)
+- **1,000 requests** per minute
+- **100 concurrent** requests
+- **50,000 requests** per day
+- **100 GB** monthly bandwidth
+
+### Enterprise
+- **Custom limits**
+- **Dedicated support**
+- **SLA guarantees**
+- Contact: enterprise@mtaadao.com
+
+## How Rate Limiting Works
+
+Each request costs tokens. When you exceed your limit, you receive a `429 Too Many Requests` response.
+
+```
+X-RateLimit-Limit: 100        # Your limit
+X-RateLimit-Remaining: 45     # Requests left
+X-RateLimit-Reset: 1612345678 # Unix timestamp when limit resets
+```
+
+## Endpoint-Specific Limits
+
+Some endpoints have lower limits:
+
+| Endpoint | Free | Pro |
+|----------|------|-----|
+| List DAOs | 100/min | 1000/min |
+| Create DAO | 10/min | 100/min |
+| Vote on proposal | 50/min | 500/min |
+| Execute transfer | 20/min | 200/min |
+| Execute trade | 10/min | 100/min |
+| Create agent | 5/min | 50/min |
+
+## Handling Rate Limits
+
+### Exponential Backoff
+
+```javascript
+async function apiCall(url, options, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    const response = await fetch(url, options)
+    
+    if (response.status === 429) {
+      const resetTime = parseInt(response.headers.get('X-RateLimit-Reset'))
+      const waitTime = resetTime * 1000 - Date.now()
+      console.log(`Rate limited. Retrying in ${waitTime}ms`)
+      await new Promise(r => setTimeout(r, waitTime + 1000))
+      continue
+    }
+    
+    return response
+  }
+}
+```
+
+### Batch Requests
+
+Combine multiple operations into a single request when possible:
+
+```javascript
+// ❌ Bad: 3 separate requests
+await dao.daos.get('dao_1')
+await dao.daos.get('dao_2')
+await dao.daos.get('dao_3')
+
+// ✓ Good: 1 batch request
+const daos = await dao.daos.batch(['dao_1', 'dao_2', 'dao_3'])
+```
+
+### Caching
+
+Cache frequently accessed data locally:
+
+```javascript
+const cache = new Map()
+const CACHE_TTL = 60000 // 1 minute
+
+async function getDAOWithCache(daoId) {
+  const cached = cache.get(daoId)
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data
+  }
+  
+  const data = await dao.daos.get(daoId)
+  cache.set(daoId, { data, timestamp: Date.now() })
+  return data
+}
+```
+
+## Quota Management
+
+Monitor your usage in the Dashboard:
+
+**Dashboard** → **API** → **Usage Analytics**
+
+See:
+- Requests this month
+- Peak usage times
+- Errors and failed requests
+- Cost estimates
+
+## Upgrade Your Plan
+
+Need higher limits? Upgrade from Free to Pro or contact sales for Enterprise:
+
+```
+Free → Pro: Instant upgrade in Dashboard
+Pro → Enterprise: Contact enterprise@mtaadao.com
+```
+
+## Rate Limit Best Practices
+
+✓ **Check headers** - Always read rate limit headers
+✓ **Implement backoff** - Exponential backoff for retries
+✓ **Batch requests** - Combine operations
+✓ **Cache data** - Reduce redundant calls
+✓ **Monitor usage** - Track quota regularly
+✓ **Plan ahead** - Upgrade before hitting limits
+
+## Common Mistakes
+
+❌ **Polling instead of webhooks** - Use webhooks for real-time data
+❌ **No caching** - Cache frequently accessed data
+❌ **Synchronous loops** - Parallelize requests with `Promise.all()`
+❌ **Ignoring headers** - Always check `X-RateLimit-*` headers
+
+## Support
+
+- **Rate limit questions**: support@mtaadao.com
+- **Usage spikes**: Contact sales to discuss limits
+- **Enterprise limits**: enterprise@mtaadao.com

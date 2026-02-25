@@ -1,0 +1,145 @@
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.filterBar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  align-items: center;
+
+  @media (max-width: 768px) {
+    flex-direction: column;
+
+    > * {
+      width: 100%;
+    }
+  }
+}
+
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 200px;
+  background-color: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 8px 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+
+  input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 14px;
+    color: #1a1a2e;
+
+    &::placeholder {
+      color: #9ca3af;
+    }
+  }
+
+  svg {
+    color: #9ca3af;
+  }
+}
+
+.select {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background-color: #ffffff;
+  color: #1a1a2e;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: #9ca3af;
+  }
+
+  &:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  }
+}
+
+.alerts {
+  margin-bottom: 24px;
+}
+
+.alert {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  background-color: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  color: #92400e;
+
+  svg {
+    flex-shrink: 0;
+    color: #ca8a04;
+  }
+}
+
+.alertTitle {
+  font-weight: 600;
+  font-size: 14px;
+  margin: 0 0 4px 0;
+}
+
+.alertText {
+  font-size: 13px;
+  color: #b45309;
+  margin: 0;
+}
+
+.tableWrapper {
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+
+  &.active {
+    background-color: #d1fae5;
+    color: #065f46;
+  }
+
+  &.suspended {
+    background-color: #fee2e2;
+    color: #7f1d1d;
+  }
+
+  &.inactive {
+    background-color: #f3f4f6;
+    color: #6b7280;
+  }
+}
+
+.daoName {
+  font-weight: 600;
+  color: #1a1a2e;
+  margin: 0;
+  font-size: 14px;
+}
+
+.daoId {
+  color: #9ca3af;
+  font-size: 12px;
+  margin: 4px 0 0 0;
+}
