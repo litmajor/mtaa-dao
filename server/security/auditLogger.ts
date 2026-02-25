@@ -35,8 +35,8 @@ export class AuditLogger {
       // Store in database
       await storage.createAuditLog(entry);
       
-      // Console log for immediate visibility - show 'anonymous' instead of 'undefined'
-      const userDisplay = entry.userId || 'anonymous';
+      // Console log for immediate visibility - show 'guest' instead of 'undefined'
+      const userDisplay = entry.userId || 'guest';
       console.log(`[AUDIT] ${entry.timestamp.toISOString()} | ${entry.severity.toUpperCase()} | ${entry.category} | ${entry.action} | User: ${userDisplay} | IP: ${entry.ipAddress}`);
       
       // Alert on critical events

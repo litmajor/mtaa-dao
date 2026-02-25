@@ -1,126 +1,222 @@
-
-import { motion } from 'framer-motion'
 import { Card, Cards } from '../components/Card'
-import { DAOTypeComparison } from '../components/DAOTypeComparison'
+import { FeatureExplorer } from '../components/FeatureExplorer'
 
 # Welcome to MtaaDAO 🌍
 
-<motion.div 
-  initial={{ opacity: 0, y: 20 }}
-  animate={{ opacity: 1, y: 0 }}
-  transition={{ duration: 0.6 }}
->
+**MtaaDAO** is Africa's first AI-powered decentralized autonomous organization (DAO) platform designed for African communities. We're combining **blockchain**, **artificial intelligence**, and **mobile money** to democratize finance and governance.
 
 ## Govern Together, Grow Together
 
-**MtaaDAO** is Afrika's first AI-powered decentralized autonomous organization (DAO) platform designed for African communities. We're combining **blockchain**, **artificial intelligence**, and **mobile money** to democratize finance and governance.
+Every community deserves the power to **govern itself**, **pool resources**, and **make decisions together**—without intermediaries, without corruption, without barriers. 
 
-### Our Mission (Lengo Letu)
+Whether you're:
+- **Organizing a Chama** (savings group)
+- **Coordinating a Harambee** (community fundraiser)
+- **Building a Regional Network** (MetaDAO federation)
+- **Creating a Creative Collective** (artists, makers, builders)
+- **Managing a Community Fund** (healthcare, education, development)
 
-Every community deserves the power to **govern itself**, **pool resources**, and **make decisions together**—without intermediaries, without corruption, without barriers. Whether you're organizing a chama, coordinating a harambee, or building a regional network, MtaaDAO gives you the tools to do it transparently.
+MtaaDAO gives you transparent, democratic, and auditable tools to do it.
 
-**From Mtaa, For Mtaa.** Built by the people, for the people.
-
-</motion.div>
+**From Mtaa, For Mtaa.** Built by the people, for the people. 🌍
 
 ---
 
-## 🎯 What Can You Do?
+## 🎯 Key Features
 
 <Cards>
   <Card 
     icon="👥" 
-    title="Create a DAO in 2 Minutes" 
-    href="/getting-started/create-dao"
+    title="Role-Based Accounts" 
+    href="/account-model"
   >
-    Set up your community treasury with zero blockchain experience required.
+    Sub-profiles with granular permissions for different community roles.
   </Card>
   
   <Card 
     icon="💰" 
-    title="Raise Funds Transparently" 
-    href="/financial/wallets"
+    title="DeFi Enabled" 
+    href="/defi"
   >
-    Every shilling is visible. No hidden fees. Full accountability.
+    Earn yield, lend, borrow, and trade. Grow your treasury intelligently.
   </Card>
   
   <Card 
     icon="🗳️" 
-    title="Vote & Govern Together" 
-    href="/governance/voting"
+    title="Transparent Governance" 
+    href="/core-concepts/governance"
   >
-    Democracy on-chain. Your voice, your vote, your power.
+    Democratic voting with automatic execution and full audit trails.
   </Card>
   
   <Card 
     icon="🌱" 
-    title="Join the MetaDAO Network" 
-    href="/ecosystem/metadaos"
+    title="Scalable Networks" 
+    href="/dao-types"
   >
-    Connect with other DAOs. Pool resources. Amplify impact.
+    From community DAOs to federation networks with MetaDAOs.
+  </Card>
+
+  <Card 
+    icon="📱" 
+    title="Mobile First" 
+    href="/quick-start"
+  >
+    M-Pesa, SMS voting, USSD — designed for Africa, by Africans.
+  </Card>
+
+  <Card 
+    icon="🤖" 
+    title="AI-Powered" 
+    href="/ai-layer"
+  >
+    Smart recommendations, risk analysis, and proposal summaries.
   </Card>
 </Cards>
 
 ---
 
-## 📊 Choose Your DAO Type
+## 📊 All Features at a Glance
 
-<DAOTypeComparison />
+Explore our complete feature set with status, category, and implementation details.
 
----
-
-
-<div className="rounded-xl p-6 my-6 bg-gradient-to-br from-orange-50 via-white to-orange-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 border border-orange-200 dark:border-gray-700 shadow-md">
-  <h2 className="text-2xl font-bold mb-4 text-orange-700 dark:text-orange-300">💡 Real Stories, Real Impact</h2>
-  <blockquote className="mb-4 text-lg text-gray-800 dark:text-gray-100">
-    “We raised 20,000 Ksh for my uncle's funeral in 24 hours. Everyone could see exactly where the money went.”<br />
-    <span className="block mt-2 font-semibold text-orange-600 dark:text-orange-300">— Jane K., Nairobi Youth Group</span>
-  </blockquote>
-  <blockquote className="mb-4 text-lg text-gray-800 dark:text-gray-100">
-    “Five creative DAOs merged into one MetaDAO. Now we're funding documentaries together.”<br />
-    <span className="block mt-2 font-semibold text-orange-600 dark:text-orange-300">— Kofi M., Nairobi Creative Cluster</span>
-  </blockquote>
-  <a href="/case-studies" className="inline-block mt-2 px-4 py-2 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 transition">Read More Success Stories →</a>
-</div>
+<FeatureExplorer />
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Get Started in 5 Minutes
 
-```bash
-# 1. Connect your wallet (MiniPay, Valora, MetaMask)
-# 2. Choose DAO type (Short-Term, Collective, Meta)
-# 3. Set contribution amount
-# 4. Invite members
-# 5. Start raising funds!
-```
+### Step 1: Create Your DAO
+Head to [Quick Start](/quick-start) and choose your DAO type:
+- **Short-Term DAO** (30 days) - For events, funerals, or specific campaigns
+- **Collective DAO** (Monthly) - For savings groups, business chamas, or community projects
+- **MetaDAO** (Continuous) - For regional networks and strategic alliances
 
-<div className="mt-8 flex gap-4">
-  <a 
-    href="/getting-started" 
-    className="px-6 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 transition"
-  >
-    Create Your First DAO
-  </a>
-  <a 
-    href="/playground" 
-    className="px-6 py-3 border-2 border-orange-500 text-orange-500 rounded-lg font-semibold hover:bg-orange-50 transition"
-  >
-    Try Interactive Demo
-  </a>
-</div>
+### Step 2: Set Up Governance
+Define your rules:
+- Who votes? (All members or just core team?)
+- What's the vote threshold? (50%+1 or consensus?)
+- How long do votes last? (1 day, 1 week?)
+
+### Step 3: Activate Treasury
+Connect your mobile money account or crypto wallet. Start receiving funds.
+
+### Step 4: Invite Members
+Share your unique invite link. They join with one click.
+
+### Step 5: Make Decisions
+Create proposals, vote, and execute automatically.
+
+[**Launch Your DAO** →](/quick-start/create-dao)
 
 ---
 
-## 🧭 Explore the Docs
+## 📚 Explore by Topic
 
-Use the sidebar to navigate through:
-- **Getting Started** — Onboarding, wallet setup, first contribution
-- **DAO Types** — Short-Term, Collective, MetaDAOs
-- **Financial Layer** — Wallets, tokens, transparent ledgers
-- **Governance** — Voting, proposals, reputation
-- **Ecosystem** — MetaDAOs, networks, strategic alliances
-- **Developers** — API, smart contracts, SDK
-- **Case Studies** — Real-world success stories
-- **FAQ** — Quick answers to common questions
+### For New Users
+Start here to understand the basics:
+- [Core Concepts](/core-concepts) - Learn what DAOs are and how they work
+- [Quick Start](/quick-start) - Create your first DAO in 5 minutes
+- [DAO Types](/dao-types) - Choose the right structure for your community
+- [Web3 Education](/education) - Learn blockchain and DeFi fundamentals
 
+### For Governance Leaders
+Deep dives into community management:
+- [Account Model](/account-model) - Manage roles, permissions, and access control
+- [Governance](/governance) - Voting mechanisms, proposal management, quorum rules
+- [Treasury Management](/core-concepts/treasury) - Fund allocation, expense tracking, budgets
+
+### For Financial Teams
+Master the money side:
+- [DeFi Integration](/defi) - Earn yield, lend, borrow, swap tokens
+- [Trading Strategies](/trading) - Build automated trading agents and strategies
+- [Integrations](/integrations) - Connect to DEXs, CEX, and automation platforms
+- [Tokenomics](/tokenomics) - Understanding MTAA token mechanics
+- [Pricing](/pricing) - DAO creation fees, transaction costs, revenue sharing
+
+### For Developers
+Build on MtaaDAO:
+- [Developer API](/developer) - REST APIs, webhooks, SDKs
+- [Smart Contracts](/developer) - Contract addresses, ABIs, deployments
+- [Custom Integration](/developer) - Build trading bots, agents, strategies
+- [Strategy Development](/trading/strategies) - Write custom trading strategies
+- [DexScreener API](/trading/dexscreener) - Token discovery and analysis
+
+### Deep Dives
+Explore advanced topics:
+- [AI Layer](/ai-layer) - How AI powers recommendations and analysis
+- [Cross-Chain Concepts](/education/cross-chain) - Multi-chain treasury strategy
+- [Trading Bots](/trading/bots-agents) - Autonomous agents and automation
+- [CeFi Connections](/integrations/cefi-connections) - Connect to traditional finance
+- [Research](/research) - Academic papers, whitepapers, technical specs
+- [Impact](/impact) - Real-world results and community outcomes
+
+---
+
+## 💡 Real Stories, Real Impact
+
+> "We raised 20,000 Ksh for my uncle's funeral in 24 hours. Everyone could see exactly where the money went. No secrets, no 'lost' funds."
+>
+> — **Jane K.**, Nairobi Youth Group
+
+---
+
+> "Five creative DAOs merged into one MetaDAO. Now we're pooling resources to fund documentaries together. We couldn't do this with a bank account."
+>
+> — **Kofi M.**, Nairobi Creative Cluster
+
+---
+
+> "Our chama now earns 12% APY on our savings through DeFi. That's 5x better than the bank. And it's all automated and transparent."
+>
+> — **Ahmed H.**, Mombasa Savings Group
+
+[**Read More Success Stories** →](/use-cases)
+
+---
+
+## 🌐 Join the Movement
+
+- **Community Forum**: [forum.mtaadao.com](https://forum.mtaadao.com)
+- **Telegram**: [t.me/mtaadao](https://t.me/mtaadao)
+- **Twitter**: [@mtaadao](https://twitter.com/mtaadao)
+- **Email**: hello@mtaadao.com
+
+---
+
+## 📖 Documentation Guide
+
+This site is organized for quick navigation:
+
+- **Top Navigation**: Main sections and quick links
+- **Left Sidebar**: Detailed documentation structure
+- **Search (Ctrl+K)**: Find anything instantly
+- **Code Blocks**: Copy and execute in one click
+- **Interactive Demos**: Hands-on learning
+
+## Questions?
+
+- Check [FAQ & Support](/faq)
+- Read [Common Use Cases](/use-cases)
+- Browse [Developer Docs](/developer)
+- Join our [Community Forum](https://forum.mtaadao.com)
+
+---
+
+## What's Next?
+
+Choose your path:
+
+🎓 **I'm new to DAOs** → Start with [Core Concepts](/core-concepts)
+
+⚡ **I want to launch now** → Go to [Quick Start](/quick-start)
+
+💻 **I'm a developer** → Explore [Developer Hub](/developer) - API, agents, DeFi strategies
+
+🤖 **I want to build bots** → Check [Building Agents](/developer/agents-guide)
+
+📈 **I want yield strategies** → Discover [DeFi Strategies](/developer/strategies)
+
+🏛️ **I'm a governance expert** → Explore [Governance](/governance)
+
+💰 **I want to grow wealth** → Discover [DeFi](/defi)

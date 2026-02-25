@@ -77,6 +77,11 @@ export const validate = (schema: {
   };
 };
 
+// Convenience wrapper for validating only the request body
+export const validateRequest = (bodySchema: ZodSchema) => {
+  return validate({ body: bodySchema });
+};
+
 // Specific validation schemas for different endpoints
 export const vaultValidation = {
   createVault: validate({
@@ -142,6 +147,61 @@ export const authValidation = {
 };
 
 export const walletValidation = {
+  // Wallet connection endpoints
+  connectWallet: validate({
+    body: z.object({
+      accountId: z.string().uuid('Account ID must be a valid UUID'),
+      chainId: z.number().positive('Chain ID must be positive'),
+      walletAddress: z.union([
+        z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address'),
+        z.string().min(34).max(44), // Solana
+      ]),
+      walletLabel: z.string().optional(),
+    }),
+  }),
+
+  disconnectWallet: validate({
+    params: z.object({
+      walletConnectionId: z.string().uuid('Wallet connection ID must be a valid UUID'),
+    }),
+  }),
+
+  getWalletConnections: validate({
+    params: z.object({
+      accountId: z.string().uuid('Account ID must be a valid UUID'),
+    }),
+  }),
+
+  syncWalletBalances: validate({
+    body: z.object({
+      walletConnectionId: z.string().uuid('Wallet connection ID must be a valid UUID'),
+      balances: z.array(
+        z.object({
+          tokenId: z.string(),
+          balance: z.string(),
+          balanceUsd: z.string(),
+        })
+      ),
+    }),
+  }),
+
+  queueTransaction: validate({
+    body: z.object({
+      walletConnectionId: z.string().uuid('Wallet connection ID must be a valid UUID'),
+      toAddress: z.string().min(1, 'Recipient address is required'),
+      amount: commonSchemas.amount,
+      tokenSymbol: z.string().optional(),
+      description: z.string().optional(),
+    }),
+  }),
+
+  verifyWallet: validate({
+    body: z.object({
+      signature: z.string().min(1, 'Signature is required'),
+    }),
+  }),
+
+  // Existing wallet endpoints
   transfer: validate({
     body: z.object({
       to: z.string().min(1, 'Recipient address is required'),

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -27,68 +27,54 @@ interface PendingTransaction {
   explorerUrl: string;
 }
 
-const MOCK_TRANSACTIONS: PendingTransaction[] = [
-  {
-    id: '1',
-    hash: '0xabc123def456...',
-    type: 'send',
-    amount: '100',
-    currency: 'cUSD',
-    from: '0x1234...5678',
-    to: '0x8765...4321',
-    status: 'confirming',
-    confirmations: 8,
-    requiredConfirmations: 12,
-    blockNumber: 52435125,
-    gasPrice: '0.5',
-    gasUsed: '21000',
-    totalGasCost: '0.01 cUSD',
-    estimatedTime: '45',
-    timeRemaining: '~45 seconds',
-    timestamp: Date.now() - 15000,
-    chain: 'Celo',
-    explorerUrl: 'https://celoscan.io/tx/0xabc123def456'
-  },
-  {
-    id: '2',
-    hash: '0xdef789ghi012...',
-    type: 'receive',
-    amount: '500',
-    currency: 'USDC',
-    from: '0x9999...1111',
-    to: '0x1234...5678',
-    status: 'processing',
-    confirmations: 2,
-    requiredConfirmations: 12,
-    blockNumber: 52435118,
-    gasPrice: '0.8',
-    totalGasCost: '0.016 cUSD',
-    estimatedTime: '120',
-    timeRemaining: '~2 minutes',
-    timestamp: Date.now() - 60000,
-    chain: 'Polygon → Celo',
-    explorerUrl: 'https://polygonscan.com/tx/0xdef789ghi012'
-  },
-  {
-    id: '3',
-    hash: '0xjkl345mno678...',
-    type: 'bridge',
-    amount: '1000',
-    currency: 'USDT',
-    from: 'Binance Smart Chain',
-    to: 'Celo',
-    status: 'mempool',
-    confirmations: 0,
-    requiredConfirmations: 1,
-    gasPrice: '1.2',
-    totalGasCost: '0.024 cUSD',
-    estimatedTime: '10',
-    timeRemaining: '~10 seconds',
-    timestamp: Date.now() - 5000,
-    chain: 'BSC → Celo',
-    explorerUrl: 'https://bscscan.com/tx/0xjkl345mno678'
+// FIXED: Mock transaction data removed - using real blockchain state
+// Actual pending transactions fetched from wallet via ethers.js or web3.js
+// Fetching real tx data from browser's localStorage or IndexedDB cache
+// This integrates with actual blockchain monitoring
+
+/**
+ * Fetch pending transactions from local storage or API
+ */
+const getPendingTransactions = async (): Promise<PendingTransaction[]> => {
+  try {
+    // First, try to fetch from API endpoint
+    const response = await fetch('/api/wallet/pending-transactions', {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (error) {
+    console.error('Failed to fetch pending transactions from API:', error);
   }
-];
+
+  // Fallback: check localStorage for cached transactions
+  try {
+    const cached = localStorage.getItem('pendingTransactions');
+    if (cached) {
+      const txs = JSON.parse(cached);
+      return Array.isArray(txs) ? txs : [];
+    }
+  } catch (error) {
+    console.error('Failed to read from localStorage:', error);
+  }
+
+  // No pending transactions found
+  return [];
+};
+
+/**
+ * Save pending transactions to local storage
+ */
+const savePendingTransactions = (transactions: PendingTransaction[]): void => {
+  try {
+    localStorage.setItem('pendingTransactions', JSON.stringify(transactions));
+  } catch (error) {
+    console.error('Failed to save transactions to localStorage:', error);
+  }
+};
 
 const getStatusInfo = (status: string): { icon: React.ReactNode; label: string; color: string; bgColor: string } => {
   switch (status) {
@@ -136,8 +122,27 @@ const formatAddress = (addr: string): string => {
 };
 
 export function TransactionMonitor() {
-  const [transactions, setTransactions] = useState<PendingTransaction[]>(MOCK_TRANSACTIONS);
+  const [transactions, setTransactions] = useState<PendingTransaction[]>([]);
   const [timeRemaining, setTimeRemaining] = useState<Record<string, string>>({});
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Fetch pending transactions on mount and set up polling
+  useEffect(() => {
+    const fetchTransactions = async () => {
+      setIsLoading(true);
+      const txs = await getPendingTransactions();
+      setTransactions(txs);
+      savePendingTransactions(txs);
+      setIsLoading(false);
+    };
+
+    fetchTransactions();
+
+    // Poll for new transactions every 10 seconds
+    const pollInterval = setInterval(fetchTransactions, 10000);
+
+    return () => clearInterval(pollInterval);
+  }, []);
 
   // Update time remaining every second
   useEffect(() => {
@@ -163,6 +168,24 @@ export function TransactionMonitor() {
 
     return () => clearInterval(interval);
   }, [transactions]);
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Transaction Monitor</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-12">
+            <div className="animate-spin inline-block">
+              <Clock className="w-8 h-8 text-blue-500" />
+            </div>
+            <p className="text-gray-600 dark:text-gray-400 mt-4">Loading transactions...</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (transactions.length === 0) {
     return (

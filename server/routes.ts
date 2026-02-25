@@ -14,6 +14,8 @@ import tasksRoutes from './routes/tasks';
 import reputationRoutes from './routes/reputation';
 import analyticsRoutes from './routes/analytics';
 import notificationsRoutes from './routes/notifications';
+import userNotificationsRoutes from './routes/user/notifications';
+import userRecoveryRoutes from './routes/user/recovery';
 import disbursementsRoutes from './routes/disbursements';
 import daoTreasuryRoutes from './routes/dao_treasury';
 import daoSubscriptionsRoutes from './routes/dao-subscriptions';
@@ -43,8 +45,11 @@ import announcementsRoutes from './routes/announcements';
 import investmentPoolsRoutes from './routes/investment-pools';
 import poolGovernanceRoutes from './routes/pool-governance';
 import depositsWithdrawalsRoutes from './routes/deposits-withdrawals';
+import accountInitializationRoutes from './routes/account-initialization';
 import treasuryIntelligenceRoutes from './routes/treasury-intelligence';
+import treasuryRoutes from './routes/treasury';
 import phoneVerificationRouter from './routes/phone-verification';
+import agentRoutes from './routes/agents';
 import daoChatRoutes from './routes/dao-chat';
 import onboardingRoutes from './routes/onboarding';
 import subscriptionManagementRoutes from './routes/subscription-management'; // Import subscription management routes
@@ -59,6 +64,14 @@ import rulesRoutes from './routes/rules';
 import blogRoutes from './routes/blog';
 import supportRoutes from './routes/support';
 import successStoriesRoutes from './routes/success-stories';
+// Import Yuki trading platform routes
+import yukiRoutes from './routes/yuki';
+import marketDataRoutes from './routes/marketData';
+import executionQualityRoutes from './routes/executionQuality';
+import marketInsightsRoutes from './routes/marketInsights';
+import priority4Routes from './routes/priority4';
+import vaultsRoutes from './routes/vaults';
+import stakingRoutes from './routes/staking';
 
 // Import Telegram and WhatsApp routes
 import telegramBotRoutes from './routes/telegram-bot';
@@ -77,6 +90,9 @@ import p2pTransfersRoutes from './routes/p2p-transfers';
 // Import Exchange and Order Router routes
 import exchangeRoutes from './routes/exchanges';
 import orderRoutes from './routes/orders';
+
+// Import Withdrawal Verification routes (2FA and PIN)
+import { router as withdrawalVerificationRouter } from './routes/withdrawal-verification';
 
 // Import Phase 4 WebSocket Price Stream Server
 import { priceStreamServer } from './websocket/priceStream';
@@ -158,15 +174,27 @@ import {
 // Admin handlers
 import {getUsersHandler,updateUserRoleHandler } from './api/admin_users';
 
+// Week 1 Dashboard API handlers
+import {
+  getUserPersonaDataHandler,
+  getUserDAOsHandler,
+  getDashboardPersonaHandler
+} from './api/week1_dashboard';
+
 
 export async function registerRoutes(app: Express, server: HTTPServer) {
+  console.log('[ROUTES] *** STARTING ROUTE REGISTRATION ***');
+  
   // Health check
+  console.log('[ROUTES] Mounting health routes...');
   app.use('/api/health', healthRoutes);
 
   // SSE routes
+  console.log('[ROUTES] Mounting SSE routes...');
   app.use('/api/sse', sseRoutes);
 
   // Wallet routes
+  console.log('[ROUTES] Mounting wallet routes...');
   app.use('/api/wallet', walletRoutes);
   app.use('/api/wallet-setup', walletSetupRoutes);
   // Savings routes
@@ -174,6 +202,7 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
 
 
   // Governance and DAO routes
+  console.log('[ROUTES] Mounting governance routes...');
   app.use('/api/governance', governanceRoutes);
   app.use('/api/governance', governanceQuorumRouter);
   app.use('/api/daos', daosRoutes);
@@ -183,21 +212,26 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   app.use('/api/dao-treasury-flows', daoTreasuryFlowsRouter);
 
   // Task and bounty routes
+  console.log('[ROUTES] Mounting task routes...');
   app.use('/api/tasks', tasksRoutes);
   app.use('/api/task-templates', taskTemplatesRoutes);
   app.use('/api/bounty-escrow', bountyEscrowRoutes);
 
   // Reputation and analytics
+  console.log('[ROUTES] Mounting reputation routes...');
   app.use('/api/reputation', reputationRoutes);
   app.use("/api/analytics", analyticsRoutes);
   app.use("/api/challenges", challengesRoutes);
 
   // Notifications and disbursements
+  console.log('[ROUTES] Mounting notifications routes...');
   app.use('/api/notifications', notificationsRoutes);
+  app.use('/api/user/notifications', userNotificationsRoutes); // User notification endpoints (Phase 3c Part 4)
+  app.use('/api/user/recovery', userRecoveryRoutes); // User recovery endpoints (Phase 3c Part 5)
   app.use('/api/disbursements', disbursementsRoutes);
 
   // Proposal execution
-  app.use('/api/proposal-execution', proposalExecutionRoutes);
+  console.log('[ROUTES] Mounting proposal execution routes...');
 
   // Payment and reconciliation
   app.use('/api/payment-reconciliation', paymentReconciliationRoutes);
@@ -209,8 +243,16 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   app.use('/api/transactions', depositsWithdrawalsRoutes);
   app.use('/api/p2p-transfers', p2pTransfersRoutes);
 
+  // Withdrawal verification (2FA and PIN)
+  console.log('[ROUTES] Mounting withdrawal verification routes...');
+  app.use(withdrawalVerificationRouter);
+
   // Monitoring
   app.use('/api/monitoring', monitoringRoutes);
+
+  // Agent management and control
+  console.log('[ROUTES] Mounting agent management routes...');
+  app.use('/api/agents', agentRoutes);
 
   // Auth endpoints (with rate limiting)
   app.get('/api/auth/user', isAuthenticated, authUserHandler);
@@ -227,6 +269,7 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   // Profile and Account management
   app.use('/api/profile', profileRoutes);
   app.use('/api/account', accountRoutes);
+  app.use('/api/admin', accountInitializationRoutes); // Account initialization endpoints
   app.delete('/api/account/delete', isAuthenticated, accountDeleteHandler); // Legacy endpoint
   app.use('/api/referral-rewards', referralRewardsRoutes);
   app.use('/api', proposalEngagementRoutes); // Proposal likes/comments/engagement
@@ -239,6 +282,34 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
 
   // DeFi DEX Integration
   app.use('/api/dex', dexRoutes);
+
+  // Yuki Trading Platform
+  console.log('[ROUTES] Mounting Yuki trading platform routes...');
+  app.use('/api/yuki', yukiRoutes);
+
+  // Enhanced Market Data API
+  console.log('[ROUTES] Mounting enhanced market data routes...');
+  app.use('/api/v1/market', marketDataRoutes);
+
+  // Execution Quality & Slippage Analysis API
+  console.log('[ROUTES] Mounting execution quality routes...');
+  app.use('/api/v1/execution', executionQualityRoutes);
+
+  // Market Insights (Volatility, Analytics, Smart Retry) - Priority 3
+  console.log('[ROUTES] Mounting market insights routes...');
+  app.use('/api/v1/analytics', marketInsightsRoutes);
+
+  // Real-Time Feeds, Futures, Microstructure - Priority 4
+  console.log('[ROUTES] Mounting priority 4 routes (WebSocket, Futures, Microstructure)...');
+  app.use('/api/v1/priority4', priority4Routes);
+
+  // Strategy Vaults
+  console.log('[ROUTES] Mounting strategy vaults routes...');
+  app.use('/api/vaults', vaultsRoutes);
+
+  // MTAA Staking & Governance
+  console.log('[ROUTES] Mounting staking routes...');
+  app.use('/api/staking', stakingRoutes);
 
   // DAO deployment
   app.post('/api/dao/deploy', isAuthenticated, daoDeployHandler);
@@ -344,6 +415,11 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   app.put('/api/user/profile/password', isAuthenticated, changePasswordHandler);
   app.put('/api/user/profile/wallet', isAuthenticated, updateWalletAddressHandler);
 
+  // === WEEK 1 DASHBOARD API ===
+  app.get('/api/users/persona-data', isAuthenticated, getUserPersonaDataHandler);
+  app.get('/api/users/my-daos', isAuthenticated, getUserDAOsHandler);
+  app.get('/api/dashboard/:persona', isAuthenticated, getDashboardPersonaHandler);
+
   // === STRIPE PAYMENT ROUTES === (Stripe integration)
   // Initialize Stripe if keys are available
   if (process.env.STRIPE_SECRET_KEY) {
@@ -360,7 +436,7 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
           currency: "usd",
           metadata: {
             dao_payment: "true",
-            user_id: (req.user as any)?.claims?.id || "anonymous"
+            user_id: (req.user as any)?.claims?.id || "guest"
           }
         });
         res.json({ clientSecret: paymentIntent.client_secret });
@@ -431,6 +507,9 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
 
   // === TREASURY INTELLIGENCE API ===
   app.use('/api/treasury-intelligence', treasuryIntelligenceRoutes);
+
+  // === TREASURY ANALYSIS API (Layer 3) ===
+  app.use('/api/treasury', treasuryRoutes);
 
   // === PHONE VERIFICATION API ===
   app.use('/api/phone-verification', phoneVerificationRouter);

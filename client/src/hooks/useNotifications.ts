@@ -1,7 +1,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
 import { io, Socket } from 'socket.io-client';
+import { API_CONFIG } from '@/config/apiConfig';
 
 interface Notification {
   id: string;
@@ -25,25 +27,8 @@ export function useNotifications() {
     const token = localStorage.getItem('accessToken') || 
                   localStorage.getItem('token') || 
                   localStorage.getItem('mtaa_dao_auth_token');
-    // Explicit backend URL and port
-    // Build a safe backend URL. If VITE_BACKEND_URL is present, parse it and
-    // ensure a port is available; otherwise, construct from host+port defaults.
-    const backendPort = import.meta.env.VITE_API_PORT ?? '5000';
-    const backendHost = import.meta.env.VITE_API_HOST ?? 'localhost';
-    let backendUrl = import.meta.env.VITE_BACKEND_URL ?? '';
-    try {
-      if (backendUrl) {
-        const parsed = new URL(backendUrl);
-        // If port is empty, set default
-        if (!parsed.port) parsed.port = backendPort;
-        backendUrl = parsed.toString().replace(/\/$/, '');
-      } else {
-        backendUrl = `http://${backendHost}:${backendPort}`;
-      }
-    } catch (err) {
-      // Fallback to constructed host:port
-      backendUrl = `http://${backendHost}:${backendPort}`;
-    }
+    // Use API_CONFIG.BASE_URL for Socket.IO (http) and API_CONFIG.WS_URL for ws if needed
+    const backendUrl = API_CONFIG.BASE_URL;
     const newSocket = io(backendUrl, {
       auth: {
         token: token || undefined,
@@ -105,21 +90,8 @@ export function useNotifications() {
       const token = localStorage.getItem('accessToken') || 
                     localStorage.getItem('token') || 
                     localStorage.getItem('mtaa_dao_auth_token');
-      const backendPort = import.meta.env.VITE_API_PORT ?? '5000';
-      const backendHost = import.meta.env.VITE_API_HOST ?? 'localhost';
-      let backendUrl = import.meta.env.VITE_BACKEND_URL ?? '';
-      try {
-        if (backendUrl) {
-          const parsed = new URL(backendUrl);
-          if (!parsed.port) parsed.port = backendPort;
-          backendUrl = parsed.toString().replace(/\/$/, '');
-        } else {
-          backendUrl = `http://${backendHost}:${backendPort}`;
-        }
-      } catch (err) {
-        backendUrl = `http://${backendHost}:${backendPort}`;
-      }
-      // Custom EventSource with Authorization header
+      // Use API_CONFIG.BASE_URL for SSE as well
+      const backendUrl = API_CONFIG.BASE_URL;
       const es = new window.EventSource(`${backendUrl}/api/sse/notifications?token=${token || ''}`);
 
       es.onmessage = (event) => {
@@ -167,7 +139,7 @@ export function useNotificationData(filter: 'all' | 'unread' | 'high' = 'all') {
       if (filter === 'unread') params.append('read', 'false');
       if (filter === 'high') params.append('priority', 'high,urgent');
       const token = localStorage.getItem('accessToken');
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+    const backendUrl = API_CONFIG.BASE_URL;
       const response = await fetch(`${backendUrl}/api/notifications?${params}`, {
         headers: {
           'Authorization': token ? `Bearer ${token}` : '',

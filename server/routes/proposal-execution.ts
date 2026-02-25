@@ -9,6 +9,7 @@ import {
 import { eq, and, desc } from 'drizzle-orm';
 import { isAuthenticated } from '../auth';
 import { ProposalExecutionService } from '../proposalExecutionService';
+import { rateLimitMiddleware, proposalVotingLimits } from '../middleware/rateLimitConfig';
 
 const router = express.Router();
 
@@ -40,7 +41,8 @@ router.get('/:daoId/queue', isAuthenticated, async (req, res) => {
 });
 
 // Manually execute a proposal
-router.post('/:daoId/execute/:proposalId', isAuthenticated, async (req, res) => {
+// PHASE 1: SAFETY - Rate limited to 100 proposal votes per day per user
+router.post('/:daoId/execute/:proposalId', [isAuthenticated, rateLimitMiddleware(proposalVotingLimits)], async (req, res) => {
   try {
     const { daoId, proposalId } = req.params;
     const userId = (req.user as any).claims.sub;

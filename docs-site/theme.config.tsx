@@ -1,11 +1,12 @@
 
-import React, { useEffect } from 'react'
+import React from 'react'
 import { DocsThemeConfig } from 'nextra-theme-docs'
 
 const config: DocsThemeConfig = {
   logo: (
     <div className="flex items-center gap-2">
-      <img src="/mtaa_dao_logo_128x128.png" alt="MtaaDAO" className="h-8 w-8" />
+      <img src="/mtaa_dao_logos/icon_dark_sm.png" alt="MtaaDAO" className="h-8 w-8 dark:hidden" />
+      <img src="/mtaa_dao_logos/icon_light_sm.png" alt="MtaaDAO" className="h-8 w-8 hidden dark:block" />
       <span className="font-bold text-xl">MtaaDAO Docs</span>
     </div>
   ),
@@ -36,7 +37,8 @@ const config: DocsThemeConfig = {
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       <meta property="og:title" content="MtaaDAO Documentation" />
       <meta property="og:description" content="Build your DAO in minutes. Empower your community." />
-      <link rel="icon" href="/favicon.ico" />
+      <meta property="og:image" content="/mtaa_dao_logos/full_logo_light_banner.png" />
+      <link rel="icon" href="/mtaa_dao_logos/icon_dark_sm.png" />
       {/* Optimize font loading */}
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />

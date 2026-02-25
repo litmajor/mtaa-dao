@@ -1,25 +1,48 @@
-node_modules
 .DS_Store
+node_modules
+
+# Environment files (ignore all local envs)
 .env
+.env.*
+.env.local
+
+# Keep an example env file tracked
+!.env.example
+
+# Build / distribution / artifacts
+dist/
 artifacts
 cache
-dist/
+target/
 
-.env
+# Project-specific
 mtaa-dao-whitepaper/target
 mtaa-dao-whitepaper/.env
 
-# Added by cargo
-
-/target
+# Rust backups
 **/*.rs.bk
-.env
+
+# Next.js
 .next
-artifacts
+
+# Repl / editor
+.replit
+.vscode/
+
+# Example files (case-insensitive variants cleaned)
 .ENV.PHASES
 .ENV.PRODUCTION.EXAMPLE
 .ENV.EXAMPLE
 .ENV.LOCAL
-.env.example 
-.env
-.replit
+
+# Secrets and key files
+*.key
+*.pem
+*.secret
+
+# Large model binaries
+models/llama-2-7b-chat.Q2_K.gguf
+
+# Git rewrite state
+.git-rewrite/
+.git-rewrite

@@ -151,7 +151,8 @@ import { relations } from "drizzle-orm";
 
 // User storage table
 export const users = pgTable("users", {
-  id: varchar("id").primaryKey(),
+  id: varchar("id").primaryKey(), // VARCHAR to match current database state
+  // TODO: migrate to uuid after resolving all foreign key constraints
   // convenience full name for some callsites
   name: varchar("name"),
   username: varchar("username").unique(),
@@ -215,6 +216,14 @@ export const users = pgTable("users", {
   // Example: ["locked_savings", "ai_assistant", "advanced_analytics"]
   // Set via /api/admin/beta-access endpoint
   enabledBetaFeatures: text("enabled_beta_features").default("[]"), // JSON array as text, parsed on retrieval
+  
+  // ========================================
+  // GATING & FEATURE UNLOCK SYSTEM
+  // ========================================
+  advancedMode: boolean("advanced_mode").default(false), // Manual opt-in for advanced features
+  reputation: integer("reputation").default(0), // Reputation score for gating
+  balance: decimal("balance", { precision: 20, scale: 2 }).default("0"), // Account balance for gating
+  activeSubprofile: varchar("active_subprofile").default("okedi"), // User's active subprofile (okedi/yuki/amara) - users switch between these
   // If you need legacy/alternate spellings, use different property names or comment out as needed:
   // referralCodeLegacy: varchar("referralCode"),
   // votingTokenBalanceLegacy: decimal("votingTokenBalance", { precision: 10, scale: 2 }),
@@ -222,6 +231,12 @@ export const users = pgTable("users", {
   // referralcodeLegacy: varFchar("referralcode"),
   // votingtokenbalanceLegacy: decimal("votingtokenbalance", { precision: 10, scale: 2 }),
   // mtaatokenbalanceLegacy: decimal("mtaatokenbalance", { precision: 10, scale: 2 })
+
+  // Soft delete fields (Day 3 Emergency Response)
+  deleted_at: timestamp("deleted_at"),
+  deleted_by: varchar("deleted_by"),
+  delete_reason: text("delete_reason"),
+  deleted_recovery_deadline: timestamp("deleted_recovery_deadline"),
 });
 
 // Beta Access table for tracking feature access
@@ -357,6 +372,12 @@ export const daos = pgTable("daos", {
   // Custom Causes - User-defined reasons for the DAO (e.g., bail money, medical, funeral)
   primaryCause: varchar("primary_cause"), // Primary custom cause (user-defined string)
   causeTags: jsonb("cause_tags").default([]), // Array of predefined cause tags: ['youthempowerment', 'funeralfund', 'education', 'healthcare', 'agriculture', 'smallbusiness']
+
+  // Soft delete fields (Day 3 Emergency Response)
+  deleted_at: timestamp("deleted_at"),
+  deleted_by: varchar("deleted_by"),
+  delete_reason: text("delete_reason"),
+  deleted_recovery_deadline: timestamp("deleted_recovery_deadline"),
 });
 
 // DAO Abuse Prevention Tables
@@ -871,6 +892,288 @@ export const vaultRiskAssessments = pgTable("vault_risk_assessments", {
   assessedBy: varchar("assessed_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// ========== MARKET NERVOUS SYSTEM: ASSET GRAPH L1 ==========
+
+/**
+ * Treasury Position
+ * 
+ * Represents a single position in a DAO treasury across multi-chain environment.
+ * Context-aware: same asset, different DAO type = different cognition behavior.
+ * 
+ * DAO Personas:
+ * - free: No treasury
+ * - short_term (30/60/90 days): Rotation-based distribution to members
+ * - long_term: Ongoing, multi-sig controlled
+ * - bail_fund: Emergency rotation distributions to recipients
+ * - funeral_fund: Mutual aid, emergency distributions
+ * - investment_club: Yield strategy accumulation (no forced distributions)
+ * - foundation: Endowment mode, sustainable spend rate
+ */
+export const treasuryPositions = pgTable("treasury_positions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  
+  // Identity
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }).notNull(),
+  treasuryVaultId: uuid("treasury_vault_id").references(() => vaults.id, { onDelete: 'set null' }),
+  
+  // Asset reference (links to AssetGraph)
+  assetNodeId: varchar("asset_node_id").notNull(), // e.g., "celo:0x765DE816..."
+  symbol: varchar("symbol", { length: 20 }).notNull(), // cUSD, CELO, cEUR, etc.
+  
+  // Chain-specific holding (CRITICAL FOR MULTI-CHAIN)
+  chain: varchar("chain", { length: 20 }).notNull(), // celo, ethereum, base, polygon
+  contractAddress: varchar("contract_address", { length: 255 }).notNull(),
+  
+  // Position tracking
+  balance: decimal("balance", { precision: 18, scale: 8 }).notNull().default("0"),
+  balanceUsd: decimal("balance_usd", { precision: 18, scale: 2 }), // USD equivalent at last update
+  costBasis: decimal("cost_basis", { precision: 18, scale: 2 }), // USD paid for this position
+  acquisitionTimestamp: timestamp("acquisition_timestamp"),
+  lastRebalanceTimestamp: timestamp("last_rebalance_timestamp"),
+  
+  // Asset classification
+  assetClass: varchar("asset_class", { length: 30 }), // stable, volatile, yield, lp, vault, nft, wrapped, exotic
+  riskLevel: varchar("risk_level", { length: 20 }), // low, medium, high
+  
+  // DAO-specific context (makes Cognition decisions DAO-aware)
+  daoType: varchar("dao_type", { length: 30 }), // free, short_term, long_term, bail_fund, etc.
+  treasuryMode: varchar("treasury_mode", { length: 30 }), // accumulative (growth) vs distributive (payouts)
+  treasurySize: varchar("treasury_size", { length: 30 }), // small, medium, large
+  riskProfile: varchar("risk_profile", { length: 30 }), // conservative, balanced, aggressive
+  
+  // For rotation DAOs (critical!)
+  nextDistributionWindow: timestamp("next_distribution_window"), // When do members get paid?
+  needsLiquidityBy: timestamp("needs_liquidity_by"), // Hard deadline to exit
+  
+  // Yield tracking (for Investment Club & yield vaults)
+  yieldEarned: decimal("yield_earned", { precision: 18, scale: 8 }).default("0"),
+  yieldStrategy: varchar("yield_strategy", { length: 50 }), // moola-lending, celo-staking, ubeswap-lp
+  
+  // Execution hints (for Cognition to plan exit routes)
+  exitLiquidity: varchar("exit_liquidity", { length: 20 }), // immediate, fast, slow, illiquid
+  exitTimeAt5PercentSlippage: integer("exit_time_at_5_percent_slippage"), // seconds
+  bridgeCostIfMoving: decimal("bridge_cost_if_moving", { precision: 5, scale: 2 }), // % fee
+  
+  // Rebalancing tracking
+  rebalanceDeviation: decimal("rebalance_deviation", { precision: 5, scale: 2 }), // % away from target
+  isLockedUntil: timestamp("is_locked_until"), // For locked_savings vaults
+  
+  // Metadata
+  metadata: jsonb("metadata").default({}), // Custom data per DAO
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  daoIdIdx: index("treasury_positions_dao_id_idx").on(table.daoId),
+  symbolIdx: index("treasury_positions_symbol_idx").on(table.symbol),
+  chainIdx: index("treasury_positions_chain_idx").on(table.chain),
+  daoTypeIdx: index("treasury_positions_dao_type_idx").on(table.daoType),
+  nextDistributionIdx: index("treasury_positions_next_distribution_idx").on(table.nextDistributionWindow),
+}));
+
+/**
+ * Asset Graph Versions (Separate from Snapshots)
+ * 
+ * Stores the complete graph at a point in time.
+ * Updated ONLY when graph changes (new bridge, new LP pair, new yield track).
+ * Not updated with every shard cycle.
+ * 
+ * Snapshots reference this version number.
+ */
+/**
+ * Asset Nodes Table
+ * 
+ * Stores all asset nodes separately from versions.
+ * Allows efficient queries like "get all nodes for version X"
+ * or "get node Y across versions"
+ */
+export const assetNodes = pgTable("asset_nodes", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  version: integer("version").notNull(), // Which graph version(s) include this node?
+  
+  // Full asset node data
+  nodeData: jsonb("node_data").notNull(), // Full AssetNode JSON
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  versionIdx: index("asset_nodes_version_idx").on(table.version),
+  idVersionIdx: index("asset_nodes_id_version_idx").on(table.id, table.version),
+}));
+
+/**
+ * Asset Edges Table
+ * 
+ * Stores all edges separately from versions.
+ * Allows efficient queries like "get bridges only" or "get liquidity routes"
+ */
+export const assetEdges = pgTable("asset_edges", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  version: integer("version").notNull(), // Which graph version(s) include this edge?
+  
+  sourceAssetId: varchar("source_asset_id", { length: 255 }).notNull(),
+  targetAssetId: varchar("target_asset_id", { length: 255 }).notNull(),
+  relationshipType: varchar("relationship_type", { length: 50 }).notNull(),
+  
+  // Full edge data
+  edgeData: jsonb("edge_data").notNull(), // Full AssetEdge JSON
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  versionIdx: index("asset_edges_version_idx").on(table.version),
+  sourceIdx: index("asset_edges_source_idx").on(table.sourceAssetId),
+  typeIdx: index("asset_edges_type_idx").on(table.relationshipType),
+  versionTypeIdx: index("asset_edges_version_type_idx").on(table.version, table.relationshipType),
+}));
+
+/**
+ * Asset Graph Versions (HASH-BASED, LIGHTWEIGHT)
+ * 
+ * No longer embeds full node/edge arrays.
+ * Instead: references nodes/edges by version number in separate tables.
+ * This prevents O(version * nodes * edges) storage explosion.
+ * 
+ * Design: Git-like commits, not full copies
+ */
+export const assetGraphVersions = pgTable("asset_graph_versions", {
+  version: integer("version").primaryKey().notNull(),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+  
+  // ========== HASH-BASED REFERENCES (NOT FULL COPIES) ==========
+  nodeHash: varchar("node_hash", { length: 64 }).notNull(), // SHA256 of all nodes
+  edgeHash: varchar("edge_hash", { length: 64 }).notNull(), // SHA256 of all edges
+  
+  // ========== COUNTS (for quick access) ==========
+  nodeCount: integer("node_count").notNull(),
+  edgeCount: integer("edge_count").notNull(),
+  
+  // ========== CHANGE TRACKING ==========
+  changeReason: varchar("change_reason", { length: 50 }),
+  changeDetails: text("change_details"),
+  
+  // Edge counts by type/chain (for efficient queries without loading full graph)
+  edgeCountByType: jsonb("edge_count_by_type").default({}),
+  edgeCountByChain: jsonb("edge_count_by_chain").default({}),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  timestampIdx: index("asset_graph_versions_timestamp_idx").on(table.timestamp),
+  nodeHashIdx: index("asset_graph_versions_node_hash_idx").on(table.nodeHash),
+}));
+
+/**
+ * Correlation Matrices (INDEPENDENT VERSIONING)
+ * 
+ * Decoupled from AssetGraphVersion.
+ * 
+ * Correlation updates independently from graph updates:
+ * - Graph updates: bridge added, new LP pair, new yield strategy
+ * - Correlation updates: market dynamics shift, lookback window changes
+ * 
+ * Example: Adding a bridge doesn't invalidate yesterday's correlations
+ */
+export const correlationMatrices = pgTable("correlation_matrices", {
+  matrixVersion: integer("matrix_version").primaryKey().notNull(),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+  
+  // Which graph version was this computed against?
+  computedAgainstGraphVersion: integer("computed_against_graph_version").notNull(),
+  
+  // Sparse correlation matrix: { from_id: { to_id: CorrelationData } }
+  correlationMatrix: jsonb("correlation_matrix").notNull().default({}),
+  
+  // Quick access indexes
+  strongPositiveCorrelations: jsonb("strong_positive_correlations").default([]),
+  strongNegativeCorrelations: jsonb("strong_negative_correlations").default([]),
+  
+  // Lookback period for this matrix
+  lookbackPeriod: varchar("lookback_period", { length: 10 }).default('30d'),
+  
+  // Data quality
+  completeness: integer("completeness"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  matrixVersionIdx: index("correlation_matrices_matrix_version_idx").on(table.matrixVersion),
+  graphVersionIdx: index("correlation_matrices_graph_version_idx").on(table.computedAgainstGraphVersion),
+  timestampIdx: index("correlation_matrices_timestamp_idx").on(table.timestamp),
+}));
+
+/**
+ * Asset State Snapshots (LEAN - NO GRAPH OR CORRELATIONS)
+ * 
+ * One snapshot per asset per update cycle ensures consistency.
+ * Only stores core shard data (price, technical, yield, risk, liquidity).
+ * 
+ * Graph and correlations are stored separately and referenced by version number.
+ * This prevents O(n²) bloat and allows independent updates.
+ */
+export const assetStateSnapshots = pgTable("asset_state_snapshots", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  
+  // Identity
+  assetNodeId: varchar("asset_node_id", { length: 255 }).notNull(),
+  symbol: varchar("symbol", { length: 20 }).notNull(),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+  
+  // ========== CORE SHARD DATA (LIGHTWEIGHT) ==========
+  
+  // Price Shard (1-minute update cycle)
+  priceUsd: decimal("price_usd", { precision: 18, scale: 8 }),
+  priceConfidence: integer("price_confidence"), // 0-100
+  priceSources: jsonb("price_sources").default([]),
+  chainSpecificPrices: jsonb("chain_specific_prices").default({}),
+  
+  // Technical Shard (1-hour update cycle)
+  technicalRsi14: decimal("technical_rsi14", { precision: 5, scale: 2 }),
+  technicalMacdValue: decimal("technical_macd_value", { precision: 18, scale: 8 }),
+  technicalMacdSignal: decimal("technical_macd_signal", { precision: 18, scale: 8 }),
+  technicalMacdHistogram: decimal("technical_macd_histogram", { precision: 18, scale: 8 }),
+  technicalTrend: varchar("technical_trend", { length: 30 }),
+  technicalMomentum: integer("technical_momentum"),
+  technicalSignals: jsonb("technical_signals").default({}),
+  
+  // Yield Shard (variable update cycle)
+  yieldData: jsonb("yield_data").default({}),
+  yieldEstimate30d: decimal("yield_estimate_30d", { precision: 18, scale: 8 }),
+  yieldEstimate1y: decimal("yield_estimate_1y", { precision: 18, scale: 8 }),
+  
+  // Risk Shard (24-hour update cycle, DAO-weighted)
+  riskSmartContractScore: integer("risk_smart_contract_score"),
+  riskOracleScore: integer("risk_oracle_score"),
+  riskGovernanceScore: integer("risk_governance_score"),
+  riskLiquidationRisk: integer("risk_liquidation_risk"),
+  riskOverallScore: integer("risk_overall_score"),
+  riskWeightedByDaoType: jsonb("risk_weighted_by_dao_type").default({}),
+  
+  // Liquidity Shard (4-hour update cycle)
+  liquidityDepth1pct: decimal("liquidity_depth_1pct", { precision: 18, scale: 2 }),
+  liquidityDepth5pct: decimal("liquidity_depth_5pct", { precision: 18, scale: 2 }),
+  liquidityByChain: jsonb("liquidity_by_chain").default({}),
+  
+  // ========== GRAPH REFERENCE (NOT EMBEDDED) ==========
+  graphVersion: integer("graph_version").notNull().default(0),
+  
+  /**
+   * Which correlation matrix version applies to this snapshot?
+   * INDEPENDENT from graphVersion (correlation updates on different cycle)
+   */
+  correlationVersion: integer("correlation_version").notNull().default(0),
+  
+  // ========== SHARD UPDATE TRACKING ==========
+  shardUpdateStatus: jsonb("shard_update_status").default({}),
+  
+  // Metadata
+  isStale: boolean("is_stale").default(false),
+  completeness: integer("completeness"), // 0-100
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  assetNodeIdIdx: index("asset_state_snapshots_asset_node_id_idx").on(table.assetNodeId),
+  symbolIdx: index("asset_state_snapshots_symbol_idx").on(table.symbol),
+  timestampIdx: index("asset_state_snapshots_timestamp_idx").on(table.timestamp),
+  graphVersionIdx: index("asset_state_snapshots_graph_version_idx").on(table.graphVersion),
+}));
 
 // Pending Transactions table for queue management
 export const pendingTransactions = pgTable("pending_transactions", {
@@ -1542,6 +1845,30 @@ export const walletSecuritySettings = pgTable("wallet_security_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Wallet Sessions - Track active wallet connections (PIN-based access)
+export const walletSessions = pgTable("wallet_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  walletId: uuid("wallet_id").references(() => wallets.id, { onDelete: 'cascade' }).notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  sessionToken: varchar("session_token").unique().notNull(), // Unique token for this session
+  isActive: boolean("is_active").default(true),
+  connectedAt: timestamp("connected_at").defaultNow().notNull(),
+  disconnectedAt: timestamp("disconnected_at"),
+  lastAccessedAt: timestamp("last_accessed_at").defaultNow(), // Track usage for timeout
+  ipAddress: varchar("ip_address"),
+  userAgent: varchar("user_agent"),
+  deviceId: varchar("device_id"),
+  deviceName: varchar("device_name"), // e.g., "Chrome on Windows", "Safari on iPhone"
+  expiresAt: timestamp("expires_at").notNull(), // Session timeout (e.g., 24 hours)
+  lastActivityAt: timestamp("last_activity_at").defaultNow(), // For auto-extend
+  autoExtendEnabled: boolean("auto_extend_enabled").default(true), // Auto-extend on activity
+  warningShownAt: timestamp("warning_shown_at"), // Track if expiry warning shown
+  biometricEnabled: boolean("biometric_enabled").default(false), // Was this session unlocked with biometric?
+  location: varchar("location"), // Geolocation info
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Wallet Access Log (audit trail)
 export const walletAccessLog = pgTable("wallet_access_log", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -1555,6 +1882,58 @@ export const walletAccessLog = pgTable("wallet_access_log", {
   failureReason: text("failure_reason"),
   metadata: jsonb("metadata").default({}),
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Session Notifications - Alerts for new logins from other devices
+export const sessionNotifications = pgTable("session_notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  sessionId: uuid("session_id").references(() => walletSessions.id, { onDelete: 'cascade' }).notNull(),
+  notificationType: varchar("notification_type").notNull(), // new_login, login_from_new_device, suspicious_activity
+  title: varchar("title").notNull(),
+  message: text("message"),
+  deviceName: varchar("device_name"),
+  location: varchar("location"),
+  ipAddress: varchar("ip_address"),
+  isRead: boolean("is_read").default(false),
+  actionRequired: boolean("action_required").default(false), // e.g., approve login
+  actionToken: varchar("action_token"), // Token for approval/denial
+  actionExpiresAt: timestamp("action_expires_at"), // When action token expires
+  createdAt: timestamp("created_at").defaultNow(),
+  readAt: timestamp("read_at"),
+});
+
+// PIN Reset Requests - For resetting PIN via email/SMS
+export const pinResetRequests = pgTable("pin_reset_requests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  walletId: uuid("wallet_id").references(() => wallets.id, { onDelete: 'cascade' }).notNull(),
+  resetToken: varchar("reset_token").unique().notNull(),
+  resetMethod: varchar("reset_method").notNull(), // email, sms, security_question
+  verificationSent: timestamp("verification_sent").defaultNow(),
+  verificationCode: varchar("verification_code"), // For email/SMS verification
+  verificationCodeExpiresAt: timestamp("verification_code_expires_at"),
+  isVerified: boolean("is_verified").default(false),
+  verifiedAt: timestamp("verified_at"),
+  newPinHash: varchar("new_pin_hash"), // Hash of new PIN (not stored plaintext)
+  isCompleted: boolean("is_completed").default(false),
+  completedAt: timestamp("completed_at"),
+  expiresAt: timestamp("expires_at").notNull(), // Reset request expires after 24 hours
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Biometric Unlocks - Track which devices have biometric enabled
+export const biometricSettings = pgTable("biometric_settings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  deviceId: varchar("device_id").notNull(),
+  deviceName: varchar("device_name").notNull(),
+  biometricType: varchar("biometric_type").notNull(), // fingerprint, face_id, iris, windows_hello
+  biometricPublicKey: text("biometric_public_key"), // For verification
+  isEnabled: boolean("is_enabled").default(true),
+  lastUsedAt: timestamp("last_used_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Multisig Wallets - For DAO treasury and shared ownership
@@ -1965,6 +2344,7 @@ export const walletsRelations = relations(wallets, ({ one, many }) => ({
   publicKey: one(walletPublicKeys),
   securitySettings: one(walletSecuritySettings),
   accessLogs: many(walletAccessLog),
+  sessions: many(walletSessions),
 }));
 
 export const userBalancesRelations = relations(userBalances, ({ one }) => ({
@@ -2003,6 +2383,17 @@ export const walletSecuritySettingsRelations = relations(walletSecuritySettings,
   wallet: one(wallets, {
     fields: [walletSecuritySettings.walletId],
     references: [wallets.id],
+  }),
+}));
+
+export const walletSessionsRelations = relations(walletSessions, ({ one }) => ({
+  wallet: one(wallets, {
+    fields: [walletSessions.walletId],
+    references: [wallets.id],
+  }),
+  user: one(users, {
+    fields: [walletSessions.userId],
+    references: [users.id],
   }),
 }));
 
@@ -2458,6 +2849,8 @@ export type WalletPublicKey = typeof walletPublicKeys.$inferSelect;
 export type InsertWalletPublicKey = typeof walletPublicKeys.$inferInsert;
 export type WalletSecuritySettings = typeof walletSecuritySettings.$inferSelect;
 export type InsertWalletSecuritySettings = typeof walletSecuritySettings.$inferInsert;
+export type WalletSession = typeof walletSessions.$inferSelect;
+export type InsertWalletSession = typeof walletSessions.$inferInsert;
 export type WalletAccessLog = typeof walletAccessLog.$inferSelect;
 export type InsertWalletAccessLog = typeof walletAccessLog.$inferInsert;
 export type MultisigWallet = typeof multisigWallets.$inferSelect;
@@ -2815,6 +3208,37 @@ export const ruleExecutions = pgTable("rule_executions", {
   executedBy: varchar("executed_by").references(() => users.id),
 });
 
+// ========== MARKET NERVOUS SYSTEM TYPES ==========
+// Treasury Position Types
+export type TreasuryPosition = typeof treasuryPositions.$inferSelect;
+export type InsertTreasuryPosition = typeof treasuryPositions.$inferInsert;
+
+// Asset State Snapshot Types
+export type AssetStateSnapshot = typeof assetStateSnapshots.$inferSelect;
+export type InsertAssetStateSnapshot = typeof assetStateSnapshots.$inferInsert;
+
+// Asset Node & Edge Types (separated from versions)
+export type AssetNode = typeof assetNodes.$inferSelect;
+export type InsertAssetNode = typeof assetNodes.$inferInsert;
+export type AssetEdge = typeof assetEdges.$inferSelect;
+export type InsertAssetEdge = typeof assetEdges.$inferInsert;
+
+// Asset Graph Version Types
+export type AssetGraphVersion = typeof assetGraphVersions.$inferSelect;
+export type InsertAssetGraphVersion = typeof assetGraphVersions.$inferInsert;
+
+// Correlation Matrix Types
+export type CorrelationMatrix = typeof correlationMatrices.$inferSelect;
+export type InsertCorrelationMatrix = typeof correlationMatrices.$inferInsert;
+
+// Zod schemas for Market Nervous System
+export const insertTreasuryPositionSchema = createInsertSchema(treasuryPositions);
+export const insertAssetStateSnapshotSchema = createInsertSchema(assetStateSnapshots);
+export const insertAssetNodeSchema = createInsertSchema(assetNodes);
+export const insertAssetEdgeSchema = createInsertSchema(assetEdges);
+export const insertAssetGraphVersionSchema = createInsertSchema(assetGraphVersions);
+export const insertCorrelationMatrixSchema = createInsertSchema(correlationMatrices);
+
 // Rules Engine Types
 export type RuleTemplate = typeof ruleTemplates.$inferSelect;
 export type InsertRuleTemplate = typeof ruleTemplates.$inferInsert;
@@ -2856,11 +3280,120 @@ export type InsertLimitOrder = typeof limitOrders.$inferInsert;
 // Zod schema for Limit Orders
 export const insertLimitOrderSchema = createInsertSchema(limitOrders);
 
+// Bill Split Tables
+export const billSplits = pgTable("bill_splits", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  creatorId: varchar("creator_id").notNull(),
+  daoId: uuid("dao_id"),
+  title: varchar("title").notNull(),
+  description: text("description"),
+  totalAmount: decimal("total_amount", { precision: 18, scale: 8 }).notNull(),
+  currency: varchar("currency", { length: 10 }).notNull().default("cUSD"),
+  splitMethod: varchar("split_method", { length: 20 }).notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const billSplitParticipants = pgTable("bill_split_participants", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  billSplitId: uuid("bill_split_id").notNull().references(() => billSplits.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id"),
+  daoId: uuid("dao_id"),
+  walletAddress: varchar("wallet_address"),
+  sharePercentage: decimal("share_percentage", { precision: 5, scale: 2 }),
+  customAmount: decimal("custom_amount", { precision: 18, scale: 8 }),
+  amountOwed: decimal("amount_owed", { precision: 18, scale: 8 }).notNull(),
+  amountPaid: decimal("amount_paid", { precision: 18, scale: 8 }),
+  status: varchar("status", { length: 20 }).notNull().default("pending"),
+  paidAt: timestamp("paid_at"),
+  transactionHash: varchar("transaction_hash"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Treasury Health History - Track treasury health over time for monitoring
+export const treasuryHealthHistory = pgTable("treasury_health_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").notNull().references(() => daos.id, { onDelete: 'cascade' }),
+  healthStatus: varchar("health_status", { length: 20 }).notNull(), // 'healthy', 'caution', 'critical'
+  healthScore: integer("health_score").notNull(), // 0-100
+  
+  // Key metrics at time of snapshot
+  assetCount: integer("asset_count").default(0),
+  totalValueUsd: decimal("total_value_usd", { precision: 18, scale: 2 }),
+  stableExposurePercent: decimal("stable_exposure_percent", { precision: 5, scale: 2 }),
+  volatileExposurePercent: decimal("volatile_exposure_percent", { precision: 5, scale: 2 }),
+  yieldExposurePercent: decimal("yield_exposure_percent", { precision: 5, scale: 2 }),
+  
+  // Risk metrics
+  assetConcentration: decimal("asset_concentration", { precision: 5, scale: 4 }), // 0-1
+  chainConcentration: decimal("chain_concentration", { precision: 5, scale: 4 }), // 0-1
+  chainCount: integer("chain_count").default(1),
+  
+  // Alerts and recommendations
+  alertCount: integer("alert_count").default(0),
+  recommendationCount: integer("recommendation_count").default(0),
+  
+  // Metadata
+  snapshotReason: varchar("snapshot_reason", { length: 50 }), // 'scheduled', 'manual', 'webhook'
+  metadata: jsonb("metadata").default({}), // Store full intelligence for future analysis
+  
+  recordedAt: timestamp("recorded_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type TreasuryHealthHistory = typeof treasuryHealthHistory.$inferSelect;
+export type InsertTreasuryHealthHistory = typeof treasuryHealthHistory.$inferInsert;
+
+// Bridge Transfers
+export const bridgeTransfers = pgTable("bridge_transfers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sourceChain: varchar("source_chain", { length: 50 }).notNull(),
+  destinationChain: varchar("destination_chain", { length: 50 }).notNull(),
+  amount: decimal("amount", { precision: 18, scale: 8 }).notNull(),
+  tokenAddress: varchar("token_address", { length: 255 }).notNull(),
+  fromAddress: varchar("from_address", { length: 255 }).notNull(),
+  toAddress: varchar("to_address", { length: 255 }).notNull(),
+  transactionHash: varchar("transaction_hash", { length: 255 }),
+  status: varchar("status", { length: 20 }).notNull().default("pending"), // pending, completed, failed
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const billSplitPayments = pgTable("bill_split_payments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  billSplitId: uuid("bill_split_id").notNull().references(() => billSplits.id, { onDelete: 'cascade' }),
+  paymentId: uuid("payment_id").references(() => billSplitParticipants.id),
+  amount: decimal("amount", { precision: 18, scale: 8 }).notNull(),
+  transactionHash: varchar("transaction_hash").notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("confirmed"),
+  confirmedAt: timestamp("confirmed_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Bill Split Types
+export type BillSplit = typeof billSplits.$inferSelect;
+export type InsertBillSplit = typeof billSplits.$inferInsert;
+export type BillSplitParticipant = typeof billSplitParticipants.$inferSelect;
+export type InsertBillSplitParticipant = typeof billSplitParticipants.$inferInsert;
+export type BillSplitPayment = typeof billSplitPayments.$inferSelect;
+export type InsertBillSplitPayment = typeof billSplitPayments.$inferInsert;
+
+// Bridge Transfer Types
+export type BridgeTransfer = typeof bridgeTransfers.$inferSelect;
+export type InsertBridgeTransfer = typeof bridgeTransfers.$inferInsert;
+
 export * from './vestingSchema';
 export * from './messageReactionsSchema';
 export * from './kycSchema';
+export * from './accountSchema';
+export * from './transactionFlowSchema';
 export * from './escrowSchema';
 export * from './invoiceSchema';
 export * from './securityEnhancedSchema';
 export * from './financialEnhancedSchema';
 export * from './onboardingSchema';
+
+// Operational Framework Schema Extensions
+export * from '../server/services/operational/schema';

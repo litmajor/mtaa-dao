@@ -4,7 +4,7 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { ArrowUpRight, ArrowDownLeft, Clock, CheckCircle, XCircle, Search, Filter, RefreshCw, TrendingUp, TrendingDown } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, Clock, CheckCircle, XCircle, Search, Filter, RefreshCw, TrendingUp, TrendingDown, Shield, Lock } from 'lucide-react';
 import { Skeleton } from '../ui/skeleton';
 import ErrorBoundary from '../ErrorBoundary'; // Using ErrorBoundary from parent components directory
 import { motion, AnimatePresence } from 'framer-motion';
@@ -28,6 +28,8 @@ interface Transaction {
   priceAtTime?: number; // Price of asset at transaction time
   currentPrice?: number; // Current market price
   priceChange24h?: number; // 24-hour price change in percentage
+  twoFAVerified?: boolean; // 2FA verification status for withdrawals
+  pinVerified?: boolean; // PIN verification status
 }
 
 interface TransactionHistoryProps {
@@ -126,6 +128,20 @@ const TransactionItem = ({
             <Badge variant={tx.status === 'completed' ? 'default' : tx.status === 'pending' ? 'secondary' : 'destructive'} aria-label={`Status: ${tx.status}`}>
               {tx.status}
             </Badge>
+            {/* 2FA Badge for withdrawals */}
+            {tx.type === 'withdrawal' && tx.twoFAVerified && (
+              <Badge variant="outline" className="bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-300">
+                <Shield className="w-3 h-3 mr-1" />
+                2FA Verified
+              </Badge>
+            )}
+            {/* PIN Badge for secure withdrawals */}
+            {tx.type === 'withdrawal' && tx.pinVerified && (
+              <Badge variant="outline" className="bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border-blue-300">
+                <Lock className="w-3 h-3 mr-1" />
+                PIN Verified
+              </Badge>
+            )}
           </div>
           <div className="text-sm text-gray-500 truncate max-w-[200px] md:max-w-none" aria-label={`Description: ${tx.description || 'N/A'}`}>
             {tx.description || `${tx.type} transaction`}

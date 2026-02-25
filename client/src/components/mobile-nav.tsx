@@ -2,7 +2,9 @@ import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import {
   Home, FileText, Vault, Building, Wallet, Users,
-  Target, Gift, TrendingUp, Zap, Settings, Award, MoreHorizontal, Badge
+  Target, Gift, TrendingUp, Zap, Settings, Award, MoreHorizontal, Badge,
+  Shuffle, Shield, Zap as ZapIcon, TrendingUp as TrendingUpIcon, BarChart3, Activity, Layers, Lock,
+  Send, ArrowDownLeft, ArrowUpRight, Plus, Eye
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/pages/hooks/useAuth";
@@ -14,45 +16,152 @@ export function MobileNav() {
 
   const isActive = (path: string) => location === path;
 
-  // Updated primary navigation items based on user request
+  // Updated primary navigation items 
   const primaryNavItems = [
-    { to: "/dashboard", label: "Home", icon: Home, badge: 0 },
-    { to: "/wallet", label: "Wallet", icon: Wallet, badge: 0 },
-    { to: "/groups", label: "Groups", icon: Building, badge: 0 }, // Renamed from DAOs to Groups, more universal
-    { to: "/activity", label: "Activity", icon: Target, badge: 0 }, // Merged Proposals and Tasks into Activity
+    { to: "/dashboard", label: "Home", shortLabel: "H", icon: Home },
+    { to: "/daos", label: "DAOs", shortLabel: "D", icon: Building },
+    { to: "/defi-dex", label: "DeFi", shortLabel: "Dfi", icon: TrendingUp },
+    { to: "/exchange-markets", label: "Exchange", shortLabel: "Ex", icon: Zap },
+    { to: "/wallet", label: "Wallet", shortLabel: "W", icon: Wallet },
+
+  ];
+
+  // Top navigation items - Quick access to key pages
+  const topNavItems = [
+    { to: "/activity", label: "Activity", icon: Activity },
+    { to: "/profile", label: "Profile", icon: Users },
+    { to: "/settings", label: "Settings", icon: Settings },
+  ];
+
+  // Quick actions - useful inline actions for mobile users
+  const quickActions = [
+    { to: "/wallet", label: "Send", icon: Send, action: "send" },
+    { to: "/wallet", label: "Receive", icon: ArrowDownLeft, action: "receive" },
+    { to: "/vault-dashboard", label: "Deposit", icon: Plus, action: "deposit" },
+    { to: "/my-rewards", label: "Rewards", icon: Gift, action: "rewards" },
   ];
 
   // Updated secondary navigation items, organized into sections for the "More" menu
   const moreMenuSections = [
     {
-      title: "DAO Features", // Nested DAO features
+      title: "Trading",
       items: [
-        { to: "/dao/treasury", label: "Treasury", icon: Vault },
-        { to: "/dao/governance", label: "Governance", icon: FileText },
-        // Add other DAO specific features here
+        { to: "/defi-dex", label: "DeFi DEX", icon: TrendingUp },
+        { to: "/exchange-markets", label: "Exchange", icon: Zap },
+      ],
+    },
+
+    {
+      title: "Morio AI",
+      items: [
+        { to: "/morio-hub", label: "Morio AI", icon: Zap },
       ],
     },
     {
-      title: "Your Services",
+      title: "Cross-Chain",
+      items: [
+        { to: "/cross-chain-hub", label: "Cross-Chain Hub", icon: Shuffle },
+        { to: "/cross-chain-bridge", label: "Bridge", icon: Shuffle },
+        { to: "/cross-chain-swap", label: "Swap", icon: Shuffle },
+      ],
+    },
+    {
+      title: "Escrow & Security",
+      items: [
+        { to: "/escrow", label: "Escrow", icon: Lock },
+        { to: "/escrow-analytics", label: "Analytics", icon: BarChart3 },
+        { to: "/escrow-detail", label: "Details", icon: FileText },
+      ],
+    },
+    {
+      title: "Treasury & Governance",
+      items: [
+        { to: "/treasury-intelligence", label: "Treasury Intel", icon: BarChart3 },
+        { to: "/proposals", label: "Proposals", icon: FileText },
+      ],
+    },
+    {
+      title: "Monitoring & Sync",
+      items: [
+        { to: "/synchronizer-monitor", label: "Synchronizer", icon: Shuffle },
+        { to: "/defender-monitor", label: "Defender", icon: Shield },
+        { to: "/analyzer-dashboard", label: "Analyzer", icon: BarChart3 },
+      ],
+    },
+    {
+      title: "Investment & Finance",
       items: [
         { to: "/vault-dashboard", label: "Vaults", icon: Vault },
-        { to: "/maonovault", label: "MaonoVault", icon: Zap },
-        { to: "/rewards", label: "Rewards", icon: Gift },
-        { to: "/referrals", label: "Referrals", icon: Users },
-        { to: "/analytics", label: "Analytics", icon: TrendingUp },
-        { to: "/leaderboard", label: "Leaderboard", icon: Award },
+        { to: "/maonovault-dashboard", label: "MaonoVault", icon: Zap },
+        { to: "/investment-pools", label: "Pools", icon: TrendingUp },
       ],
     },
     {
-      title: "General",
+      title: "Rewards & Social",
+      items: [
+        { to: "/my-rewards", label: "My Rewards", icon: Gift },
+        { to: "/referrals", label: "Referrals", icon: Users },
+        { to: "/leaderboard", label: "Leaderboard", icon: Award },
+        { to: "/reputation-leaderboard", label: "Reputation", icon: Shield },
+        { to: "/achievements", label: "Achievements", icon: Award },
+      ],
+    },
+    {
+      title: "Analytics & Insights",
+      items: [
+        { to: "/analytics-dashboard", label: "Analytics", icon: BarChart3 },
+        { to: "/unified-dashboard", label: "Unified", icon: BarChart3 },
+        { to: "/revenue-dashboard", label: "Revenue", icon: TrendingUp },
+      ],
+    },
+    {
+      title: "Community & Support",
+      items: [
+        { to: "/elders", label: "Elders", icon: Users },
+        { to: "/events", label: "Events", icon: Layers },
+        { to: "/faq-center", label: "FAQ", icon: FileText },
+        { to: "/support", label: "Support", icon: Shield },
+        { to: "/task-bounty-board", label: "Tasks", icon: Target },
+      ],
+    },
+    {
+      title: "Account",
       items: [
         { to: "/settings", label: "Settings", icon: Settings },
+        { to: "/session-settings", label: "Sessions", icon: Activity },
+        { to: "/profile", label: "Profile", icon: Users },
       ],
     },
   ];
 
   return (
     <>
+      {/* Top Navigation Bar */}
+      <nav className="fixed top-0 left-0 right-0 bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-700/50 z-50 lg:hidden shadow-sm">
+        <div className="flex items-center justify-end px-3 py-3 safe-area-inset-top gap-2">
+          {topNavItems.map((item) => {
+            const Icon = item.icon;
+            const isItemActive = isActive(item.to);
+            return (
+              <Link key={item.to} to={item.to}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`relative flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-300 ${
+                    isItemActive
+                      ? "text-mtaa-orange bg-mtaa-orange/10"
+                      : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span className="text-xs font-medium hidden sm:inline">{item.label}</span>
+                </Button>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
+
       {/* Primary Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-t border-gray-200/50 dark:border-gray-700/50 z-50 lg:hidden shadow-lg">
         <div className="flex items-center justify-around px-2 py-2 safe-area-inset-bottom">
@@ -81,7 +190,8 @@ export function MobileNav() {
                       </Badge>
                     )}
                   </div>
-                  <span className="text-xs font-medium">{item.label}</span>
+                  <span className="text-xs font-medium hidden xs:inline">{item.label}</span>
+                  <span className="text-xs font-medium xs:hidden">{item.shortLabel || item.label}</span>
                 </Button>
               </Link>
             );
@@ -123,6 +233,30 @@ export function MobileNav() {
               >
                 ✕
               </Button>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="px-4 py-4 border-b border-gray-100 dark:border-gray-700">
+              <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 px-2">
+                Quick Actions
+              </h4>
+              <div className="grid grid-cols-4 gap-2">
+                {quickActions.map((action) => {
+                  const Icon = action.icon;
+                  return (
+                    <Link key={action.action} to={action.to}>
+                      <Button
+                        variant="ghost"
+                        onClick={() => setShowMore(false)}
+                        className="flex flex-col items-center space-y-2 p-3 rounded-lg h-auto w-full transition-all duration-300 text-gray-600 hover:text-mtaa-orange dark:text-gray-300 dark:hover:text-mtaa-orange hover:bg-orange-50/50 dark:hover:bg-gray-700/50"
+                      >
+                        <Icon className="w-5 h-5" />
+                        <span className="text-xs font-medium text-center leading-tight">{action.label}</span>
+                      </Button>
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Organized Sections */}

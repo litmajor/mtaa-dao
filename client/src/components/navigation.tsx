@@ -43,10 +43,16 @@ export default function Navigation() {
   async function handleLogout() {
     try {
       await apiRequest("POST", "/api/auth/logout");
-      navigate("/login");
-      window.location.reload();
+      // Clear local storage
+      localStorage.removeItem('mtaa_dao_auth_session');
+      localStorage.removeItem('mtaa_dao_auth_token');
+      localStorage.removeItem('mtaa_remembered_email');
+      // Navigate to login without reload
+      navigate("/login", { replace: true });
     } catch (e) {
-      alert("Logout failed");
+      console.error("Logout failed:", e);
+      // Still navigate even if API call fails
+      navigate("/login", { replace: true });
     }
   }
 

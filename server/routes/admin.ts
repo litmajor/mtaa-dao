@@ -40,8 +40,8 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
 // Type guard for user record
-function isUser(obj: any): obj is { id: string; email: string; passwordHash: string; roles: string } {
-  return obj && typeof obj.id === 'string' && typeof obj.email === 'string' && typeof obj.passwordHash === 'string' && typeof obj.roles === 'string';
+function isUser(obj: any): obj is { id: string; email: string; password: string; roles: string } {
+  return obj && typeof obj.id === 'string' && typeof obj.email === 'string' && typeof obj.password === 'string' && typeof obj.roles === 'string';
 }
 
 // POST /api/auth/admin-login
@@ -54,13 +54,18 @@ router.post('/auth/admin-login', async (req, res) => {
   try {
     const userArr = await db.select().from(users).where(eq(users.email, email)).limit(1);
     const user = userArr[0];
-    if (!isUser(user) || (user.roles !== 'super_admin' && user.roles !== 'admin')) {
+    if (!isUser(user)) {
       return res.status(401).json({ message: 'Invalid credentials or not an admin/superuser' });
     }
-    if (!user.passwordHash) {
+    // Check if user has admin or superUser role, or has isSuperUser flag set
+    const hasAdminAccess = user.roles === 'superUser' || user.roles === 'admin' || (user as any).isSuperUser === true;
+    if (!hasAdminAccess) {
+      return res.status(401).json({ message: 'Invalid credentials or not an admin/superuser' });
+    }
+    if (!user.password) {
       return res.status(401).json({ message: 'No password set for this user' });
     }
-    const valid = await bcrypt.compare(password, user.passwordHash);
+    const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -74,8 +79,8 @@ router.post('/auth/admin-login', async (req, res) => {
       lastName: user.lastName || '',
       phone: user.phone || null,
       role: user.roles,
-      isSuperUser: user.roles === 'super_admin',
-      isAdmin: user.roles === 'admin' || user.roles === 'super_admin',
+      isSuperUser: user.roles === 'superUser' || (user as any).isSuperUser === true,
+      isAdmin: user.roles === 'admin' || user.roles === 'superUser' || (user as any).isSuperUser === true,
       walletAddress: user.walletAddress || null,
       isEmailVerified: user.emailVerified || false,
       isPhoneVerified: user.phoneVerified || false,
@@ -98,7 +103,7 @@ router.post('/auth/admin-login', async (req, res) => {
 // POST /api/auth/superuser-register
 
 router.post('/auth/superuser-register', async (req, res) => {
-  const { email, password, firstName, lastName } = req.body;
+  const { email, password, firstName, lastName, name } = req.body;
   if (!email || !password) {
     return res.status(400).json({ message: 'Email and password required' });
   }
@@ -112,16 +117,30 @@ router.post('/auth/superuser-register', async (req, res) => {
       id: crypto.randomUUID(),
       email,
       password: hash,
+      name: name || firstName || '',
       firstName: firstName || '',
       lastName: lastName || '',
-      roles: 'super_admin',
+      roles: 'superUser',
+      isSuperUser: true,
+      isEmailVerified: true,
       createdAt: new Date(),
     }).returning();
-    if (!isUser(newUser)) {
+    if (!newUser) {
       return res.status(500).json({ message: 'User creation failed' });
     }
-    const token = jwt.sign({ id: newUser.id, role: newUser.roles }, process.env.JWT_SECRET || 'changeme', { expiresIn: '1d' });
-    res.json({ success: true, data: { user: newUser, accessToken: token } });
+    // Construct response with proper flags
+    const responseUser = {
+      id: newUser.id,
+      email: newUser.email,
+      firstName: newUser.firstName || '',
+      lastName: newUser.lastName || '',
+      role: newUser.roles,
+      roles: newUser.roles,
+      isSuperUser: newUser.isSuperUser === true,
+      isAdmin: newUser.roles === 'superUser' || newUser.roles === 'admin',
+    };
+    const token = jwt.sign({ id: newUser.id, role: newUser.roles, isSuperUser: newUser.isSuperUser }, process.env.JWT_SECRET || 'changeme', { expiresIn: '1d' });
+    res.json({ success: true, data: { user: responseUser, accessToken: token } });
   } catch (err) {
     logger.error('Superuser register error:', err);
     res.status(500).json({ message: 'Server error' });

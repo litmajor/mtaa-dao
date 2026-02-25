@@ -7,16 +7,18 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { LockedSavingsSection } from "./LockedSavingsSection";
 import { motion } from "framer-motion";
-import { Wallet, TrendingUp, TrendingDown, RefreshCw, Info, ArrowUpDown, Sun, Moon, Copy, Check } from "lucide-react";
+import { Wallet, TrendingUp, TrendingDown, RefreshCw, Info, ArrowUpDown, Sun, Moon, Copy, Check, Lock, Shield } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "../ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../ui/select";
 import QRCode from "react-qr-code";
 import { useAccount, useBalance, useEstimateGas } from "wagmi"; // For Celo integration
 import { parseEther } from "viem";
 import { currentNetwork } from "@/lib/blockchain";
+import { PINVerificationModal } from "./PINVerificationModal";
 
 // Multi-chain network definitions
 interface NetworkConfig {
@@ -60,7 +62,29 @@ const useVaultCounts = () => {
 export function PersonalVaultSection() {
   const { data: vaultCounts } = useVaultCounts();
   const [darkMode, setDarkMode] = useState(localStorage.theme === 'dark');
+  const [pinConfigured, setPinConfigured] = useState(false);
+  const [showPINSetup, setShowPINSetup] = useState(false);
   const userId = "current-user-id"; // From auth context
+
+  // Check if PIN is configured
+  useEffect(() => {
+    const checkPINStatus = async () => {
+      try {
+        const res = await fetch('/api/2fa/config', {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await res.json();
+        if (data.success && data.config?.pin?.configured) {
+          setPinConfigured(true);
+        }
+      } catch (err) {
+        console.error('Failed to check PIN status:', err);
+      }
+    };
+
+    checkPINStatus();
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
@@ -71,9 +95,17 @@ export function PersonalVaultSection() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-bold">Your Personal Vault (2025 Edition)</h2>
-        <Button variant="ghost" onClick={() => setDarkMode(!darkMode)} aria-label="Toggle dark mode">
-          {darkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-        </Button>
+        <div className="flex items-center gap-2">
+          {pinConfigured && (
+            <Badge className="bg-blue-600 hover:bg-blue-700">
+              <Lock className="w-3 h-3 mr-1" />
+              PIN Configured
+            </Badge>
+          )}
+          <Button variant="ghost" onClick={() => setDarkMode(!darkMode)} aria-label="Toggle dark mode">
+            {darkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+          </Button>
+        </div>
       </div>
       <div className="flex gap-4 text-sm text-muted-foreground dark:text-gray-400">
         <span>Vaults: {vaultCounts?.total ?? '...'}</span>
@@ -81,6 +113,41 @@ export function PersonalVaultSection() {
         <span>DAO: {vaultCounts?.dao ?? '...'}</span>
         <span>Multisig: {vaultCounts?.multisig ?? '...'}</span>
       </div>
+
+      {/* PIN Setup Alert */}
+      {!pinConfigured && (
+        <Alert className="bg-amber-50 dark:bg-amber-900/20 border-amber-300">
+          <Lock className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="text-amber-800 dark:text-amber-200">
+            <div className="flex justify-between items-center">
+              <span>Set up a PIN code for additional security on withdrawals</span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowPINSetup(true)}
+                className="ml-2 text-amber-600 border-amber-600 hover:bg-amber-50"
+              >
+                Set PIN Now
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* PIN Setup Modal */}
+      {showPINSetup && (
+        <PINVerificationModal
+          title="Create New PIN"
+          description="Set a 4-8 digit PIN code to protect your withdrawals"
+          onPINVerified={(token) => {
+            setPinConfigured(true);
+            setShowPINSetup(false);
+            toast.success('PIN configured successfully');
+          }}
+          onClose={() => setShowPINSetup(false)}
+        />
+      )}
+
       <VaultBalanceCard />
       <VaultReceiveCard />
       <VaultSendCard />

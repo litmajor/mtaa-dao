@@ -1,6 +1,5 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { MorioFAB } from './morio/MorioFAB';
 import { useLocation } from 'react-router-dom';
 
 interface MorioContextType {
@@ -56,13 +55,6 @@ export function MorioProvider({ children, userId, daoId }: MorioProviderProps) {
   return (
     <MorioContext.Provider value={{ openMorio, closeMorio, isOpen }}>
       {children}
-      {userId && (
-        <MorioFAB 
-          userId={userId} 
-          daoId={daoId}
-          showOnboarding={!localStorage.getItem('onboarding-complete')}
-        />
-      )}
     </MorioContext.Provider>
   );
 }

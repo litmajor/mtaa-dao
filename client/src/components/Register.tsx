@@ -253,8 +253,9 @@ export default function StunningRegister() {
       }
 
       setStep('success');
+      // Redirect to wallet setup + persona selection after 2 seconds
       setTimeout(() => {
-        window.location.href = '/login';
+        window.location.href = '/subprofile-selection';
       }, 2000);
     } catch (err: any) {
       setError(err.message || 'OTP verification failed');

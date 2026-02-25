@@ -1,0 +1,50 @@
+/* dao-treasury.css - Follows Mtaa DAO styling conventions */
+
+.dao-treasury-container {
+  @apply bg-gradient-mtaa-soft p-6 rounded-lg shadow-md;
+}
+
+.dao-treasury-header {
+  @apply text-2xl font-bold text-mtaa-orange mb-4;
+}
+
+.dao-treasury-section {
+  @apply mb-6;
+}
+
+.dao-treasury-card {
+  @apply bg-card p-4 rounded-lg shadow hover-lift mb-4;
+}
+
+.dao-treasury-balance {
+  @apply text-lg font-semibold text-mtaa-emerald;
+}
+
+.dao-treasury-token {
+  @apply flex items-center gap-2 text-mtaa-purple;
+}
+
+.dao-treasury-actions {
+  @apply flex gap-4 mt-4;
+}
+
+.dao-treasury-table {
+  @apply w-full border border-mtaa-orange rounded-lg overflow-hidden;
+}
+
+.dao-treasury-table th {
+  @apply bg-mtaa-orange text-primary-foreground p-2;
+}
+
+.dao-treasury-table td {
+  @apply p-2 border-t border-border;
+}
+
+.dao-treasury-report {
+  @apply bg-mtaa-gold text-mtaa-terra p-2 rounded;
+}
+
+/* Animation for new items */
+.dao-treasury-slide-in {
+  @apply slide-in;
+}

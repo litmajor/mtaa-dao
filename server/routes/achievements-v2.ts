@@ -1,8 +1,24 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { authenticateToken } from '../middleware/auth';
 import { AchievementSystemService } from '../services/achievementSystemService';
+import { AppError } from '../middleware/errorHandler';
 
 const router = Router();
+
+/**
+ * Middleware to check admin role
+ */
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  if (req.user.role !== 'admin' && req.user.claims?.role !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden: Admin role required' });
+  }
+  
+  next();
+}
 
 // ============ Achievement Management ============
 
@@ -50,14 +66,8 @@ router.get('/:achievementId', async (req: Request, res: Response) => {
 /**
  * POST /api/achievements - Create new achievement (admin only)
  */
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
   try {
-    // Require authentication
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    
-    // TODO: Add admin role check
     const achievementData = req.body;
     
     const achievement = await AchievementSystemService.createAchievement(achievementData);
@@ -212,9 +222,8 @@ router.get('/user/badges', async (req: Request, res: Response) => {
 /**
  * POST /api/achievements/badges - Create badge (admin only)
  */
-router.post('/badges', async (req: Request, res: Response) => {
+router.post('/badges', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
   try {
-    // TODO: Add admin role check
     const badge = await AchievementSystemService.createBadge(req.body);
     
     res.status(201).json({

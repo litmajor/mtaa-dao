@@ -2,6 +2,19 @@
 import { db } from '../storage';
 import { paymentTransactions, users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
+import { logger } from '../utils/logger';
+import {
+  PaymentError,
+  PaymentErrorHandler,
+  PaymentErrorCode,
+  PaymentValidator
+} from './paymentErrorHandler';
+import {
+  RetryService,
+  DEFAULT_RETRY_POLICIES
+} from './retryService';
+import { PaymentErrorMonitoringService } from './paymentErrorMonitoringService';
+import { distributedLockManager } from './concurrencyControl';
 
 export interface PaymentGatewayConfig {
   provider: 'flutterwave' | 'paystack' | 'mpesa' | 'mtn' | 'airtel' | 'stripe';
@@ -95,20 +108,137 @@ export class PaymentGatewayService {
     }
   }
 
-  async initiateDeposit(provider: string, request: PaymentRequest): Promise<PaymentResponse> {
-    const config = this.configs.get(provider);
-    if (!config) {
-      throw new Error(`Payment provider ${provider} not configured`);
+  async initiateDeposit(provider: string, request: PaymentRequest & { idempotencyKey?: string }): Promise<PaymentResponse> {
+    try {
+      // PHASE 1: SAFETY - Check idempotency cache first
+      const idempotencyKey = request.idempotencyKey || `deposit:${request.userId}:${request.amount}:${Date.now()}`;
+      const cachedResult = await distributedLockManager.idempotencyManager.getResult(idempotencyKey);
+      
+      if (cachedResult) {
+        logger.info(`[IDEMPOTENCY CACHE HIT] Deposit for user ${request.userId}`, { idempotencyKey });
+        return cachedResult as PaymentResponse;
+      }
+
+      // Validate all inputs first
+      const validProvider = PaymentValidator.validateProvider(provider);
+      const validAmount = PaymentValidator.validateAmount(request.amount);
+      const validUserId = PaymentValidator.validateUserId(request.userId);
+      const validCurrency = PaymentValidator.validateCurrency(request.currency);
+
+      const config = this.configs.get(validProvider);
+      if (!config) {
+        throw PaymentErrorHandler.createError(
+          PaymentErrorCode.PROVIDER_NOT_CONFIGURED,
+          `Payment provider ${validProvider} not configured`,
+          { provider: validProvider }
+        );
+      }
+
+      // Check user verification level and apply limits
+      const limits = await this.getTransactionLimits(validUserId);
+
+      if (validAmount > limits.dailyLimit) {
+        throw PaymentErrorHandler.createError(
+          PaymentErrorCode.DAILY_LIMIT_EXCEEDED,
+          `Transaction exceeds daily limit of ${limits.dailyLimit} ${validCurrency}`,
+          {
+            amount: validAmount,
+            limit: limits.dailyLimit,
+            currency: validCurrency,
+            tier: limits.tier
+          }
+        );
+      }
+
+      // Prepare request with validated data
+      const validatedRequest = {
+        ...request,
+        userId: validUserId,
+        amount: validAmount.toString(),
+        currency: validCurrency
+      };
+
+      // Execute with retry and timeout
+      const result = await RetryService.executeWithRetryAndTimeout(
+        () => this.executeDeposit(validProvider, config, validatedRequest),
+        DEFAULT_RETRY_POLICIES.provider,
+        30000,
+        { provider: validProvider, userId: validUserId }
+      );
+
+      // PHASE 1: SAFETY - Cache successful result for idempotency
+      await distributedLockManager.idempotencyManager.recordResult(
+        idempotencyKey,
+        result,
+        3600 // 1 hour TTL
+      );
+
+      return result;
+
+    } catch (error) {
+      // Return properly formatted error response
+      if (error instanceof PaymentError) {
+        logger.warn('Deposit initiation failed', {
+          code: error.code,
+          message: error.message,
+          provider: provider,
+          retryable: error.retryable
+        });
+
+        // Record error in monitoring service
+        PaymentErrorMonitoringService.recordError({
+          timestamp: new Date(),
+          errorCode: error.code,
+          errorCategory: 'validation',
+          provider: provider,
+          operation: 'deposit',
+          userId: (request as any).userId,
+          count: 1,
+          retryCount: 0,
+          statusCode: error.statusCode,
+          message: error.message,
+          context: error.metadata,
+        });
+
+        return PaymentErrorHandler.toResponse(error);
+      }
+
+      // Handle unexpected errors
+      const paymentError = PaymentErrorHandler.handleProviderError(
+        provider,
+        error,
+        { operation: 'initiateDeposit' }
+      );
+
+      logger.error('Deposit initiation error', {
+        code: paymentError.code,
+        message: paymentError.message,
+        originalError: (error as any).message
+      });
+
+      // Record error in monitoring service
+      PaymentErrorMonitoringService.recordError({
+        timestamp: new Date(),
+        errorCode: paymentError.code,
+        errorCategory: 'provider',
+        provider: provider,
+        operation: 'deposit',
+        userId: (request as any).userId,
+        count: 1,
+        retryCount: 0,
+        statusCode: paymentError.statusCode,
+        message: paymentError.message,
+      });
+
+      return PaymentErrorHandler.toResponse(paymentError);
     }
+  }
 
-    // Check user verification level and apply limits
-    const limits = await this.getTransactionLimits(request.userId);
-    const amount = parseFloat(request.amount);
-
-    if (amount > limits.dailyLimit) {
-      throw new Error(`Transaction exceeds daily limit of ${limits.dailyLimit} ${request.currency}`);
-    }
-
+  private async executeDeposit(
+    provider: string,
+    config: PaymentGatewayConfig,
+    request: PaymentRequest
+  ): Promise<PaymentResponse> {
     switch (provider) {
       case 'flutterwave':
         return this.flutterwaveDeposit(config, request);
@@ -123,23 +253,121 @@ export class PaymentGatewayService {
       case 'stripe':
         return this.stripeDeposit(config, request);
       default:
-        throw new Error(`Unsupported provider: ${provider}`);
+        throw PaymentErrorHandler.createError(
+          PaymentErrorCode.INVALID_PROVIDER,
+          `Unsupported provider: ${provider}`
+        );
     }
   }
 
-  async initiateWithdrawal(provider: string, request: PaymentRequest): Promise<PaymentResponse> {
-    const config = this.configs.get(provider);
-    if (!config) {
-      throw new Error(`Payment provider ${provider} not configured`);
+  async initiateWithdrawal(provider: string, request: PaymentRequest & { idempotencyKey?: string }): Promise<PaymentResponse> {
+    try {
+      // PHASE 1: SAFETY - Check idempotency cache first
+      const idempotencyKey = request.idempotencyKey || `withdrawal:${request.userId}:${request.amount}:${Date.now()}`;
+      const cachedResult = await distributedLockManager.idempotencyManager.getResult(idempotencyKey);
+      
+      if (cachedResult) {
+        logger.info(`[IDEMPOTENCY CACHE HIT] Withdrawal for user ${request.userId}`, { idempotencyKey });
+        return cachedResult as PaymentResponse;
+      }
+
+      // Validate inputs
+      const validProvider = PaymentValidator.validateProvider(provider);
+      const validAmount = PaymentValidator.validateAmount(request.amount);
+      const validUserId = PaymentValidator.validateUserId(request.userId);
+      const validCurrency = PaymentValidator.validateCurrency(request.currency);
+
+      const config = this.configs.get(validProvider);
+      if (!config) {
+        throw PaymentErrorHandler.createError(
+          PaymentErrorCode.PROVIDER_NOT_CONFIGURED,
+          `Payment provider ${validProvider} not configured`
+        );
+      }
+
+      const limits = await this.getTransactionLimits(validUserId);
+
+      if (validAmount > limits.dailyLimit) {
+        throw PaymentErrorHandler.createError(
+          PaymentErrorCode.DAILY_LIMIT_EXCEEDED,
+          `Withdrawal exceeds daily limit of ${limits.dailyLimit}`
+        );
+      }
+
+      const validatedRequest = {
+        ...request,
+        userId: validUserId,
+        amount: validAmount.toString(),
+        currency: validCurrency
+      };
+
+      const result = await RetryService.executeWithRetryAndTimeout(
+        () => this.executeWithdrawal(validProvider, config, validatedRequest),
+        DEFAULT_RETRY_POLICIES.provider,
+        30000,
+        { provider: validProvider, userId: validUserId }
+      );
+
+      // PHASE 1: SAFETY - Cache successful result for idempotency
+      await distributedLockManager.idempotencyManager.recordResult(
+        idempotencyKey,
+        result,
+        3600 // 1 hour TTL
+      );
+
+      return result;
+
+    } catch (error) {
+      if (error instanceof PaymentError) {
+        logger.warn('Withdrawal initiation failed', {
+          code: error.code,
+          message: error.message,
+          provider: provider
+        });
+
+        // Record error in monitoring service
+        PaymentErrorMonitoringService.recordError({
+          timestamp: new Date(),
+          errorCode: error.code,
+          errorCategory: 'validation',
+          provider: provider,
+          operation: 'withdrawal',
+          userId: (request as any).userId,
+          count: 1,
+          retryCount: 0,
+          statusCode: error.statusCode,
+          message: error.message,
+          context: error.metadata,
+        });
+
+        return PaymentErrorHandler.toResponse(error);
+      }
+      const paymentError = PaymentErrorHandler.handleProviderError(provider, error);
+      logger.error('Withdrawal initiation error', { code: paymentError.code });
+
+      // Record error in monitoring service
+      PaymentErrorMonitoringService.recordError({
+        timestamp: new Date(),
+        errorCode: paymentError.code,
+        errorCategory: 'provider',
+        provider: provider,
+        operation: 'withdrawal',
+        userId: (request as any).userId,
+        count: 1,
+        retryCount: 0,
+        statusCode: paymentError.statusCode,
+        message: paymentError.message,
+      });
+
+      return PaymentErrorHandler.toResponse(paymentError);
     }
+  }
 
-    const limits = await this.getTransactionLimits(request.userId);
-    const amount = parseFloat(request.amount);
-
-    if (amount > limits.dailyLimit) {
-      throw new Error(`Transaction exceeds daily limit of ${limits.dailyLimit} ${request.currency}`);
-    }
-
+  private async executeWithdrawal(
+    provider: string,
+    config: PaymentGatewayConfig,
+    request: PaymentRequest
+  ): Promise<PaymentResponse> {
     switch (provider) {
       case 'flutterwave':
         return this.flutterwaveWithdrawal(config, request);
@@ -154,27 +382,56 @@ export class PaymentGatewayService {
       case 'stripe':
         return this.stripeWithdrawal(config, request);
       default:
-        throw new Error(`Unsupported provider: ${provider}`);
+        throw PaymentErrorHandler.createError(
+          PaymentErrorCode.INVALID_PROVIDER,
+          `Unsupported provider: ${provider}`
+        );
     }
   }
 
   private async getTransactionLimits(userId: string): Promise<{ dailyLimit: number; tier: string }> {
-    const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-    
-    if (!user.length) {
-      throw new Error('User not found');
+    try {
+      const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      
+      if (!user.length) {
+        throw PaymentErrorHandler.createError(
+          PaymentErrorCode.INVALID_USER,
+          'User not found',
+          { userId }
+        );
+      }
+
+      const verificationLevel = user[0].verificationLevel || 'none';
+
+      const limits = {
+        none: { dailyLimit: 100, tier: 'Basic' },
+        basic: { dailyLimit: 1000, tier: 'Verified' },
+        intermediate: { dailyLimit: 10000, tier: 'Enhanced' },
+        advanced: { dailyLimit: 50000, tier: 'Premium' }
+      };
+
+      const limit = limits[verificationLevel as keyof typeof limits] || limits.none;
+      
+      logger.debug('Transaction limits retrieved', {
+        userId,
+        tier: limit.tier,
+        dailyLimit: limit.dailyLimit
+      });
+
+      return limit;
+
+    } catch (error: any) {
+      if (error instanceof PaymentError) {
+        throw error;
+      }
+
+      const dbError = PaymentErrorHandler.handleDatabaseError(
+        error,
+        'getTransactionLimits',
+        { userId }
+      );
+      throw dbError;
     }
-
-    const verificationLevel = user[0].verificationLevel || 'none';
-
-    const limits = {
-      none: { dailyLimit: 100, tier: 'Basic' },
-      basic: { dailyLimit: 1000, tier: 'Verified' },
-      intermediate: { dailyLimit: 10000, tier: 'Enhanced' },
-      advanced: { dailyLimit: 50000, tier: 'Premium' }
-    };
-
-    return limits[verificationLevel as keyof typeof limits] || limits.none;
   }
 
   private async flutterwaveDeposit(config: PaymentGatewayConfig, request: PaymentRequest): Promise<PaymentResponse> {
@@ -556,19 +813,66 @@ export class PaymentGatewayService {
     status: string,
     additionalMetadata: Record<string, any> = {}
   ) {
-    await db.insert(paymentTransactions).values({
-      userId,
-      reference,
-      type,
-      amount,
-      currency,
-      provider,
-      status,
-      metadata: { 
-        timestamp: new Date().toISOString(),
-        ...additionalMetadata
+    try {
+      await RetryService.executeWithRetry(
+        () => db.insert(paymentTransactions).values({
+          userId,
+          reference,
+          type,
+          amount,
+          currency,
+          provider,
+          status,
+          metadata: { 
+            timestamp: new Date().toISOString(),
+            ...additionalMetadata
+          }
+        }),
+        DEFAULT_RETRY_POLICIES.database,
+        { operation: 'recordTransaction', reference }
+      );
+
+      logger.info('Transaction recorded', {
+        reference,
+        userId,
+        provider,
+        status,
+        amount,
+        currency
+      });
+
+    } catch (error: any) {
+      // Handle duplicate transaction (unique constraint violation)
+      if (error.code === '23505' || error.message?.includes('unique')) {
+        const dbError = PaymentErrorHandler.handleDatabaseError(
+          error,
+          'recordTransaction',
+          { reference, userId }
+        );
+        logger.warn('Transaction already recorded', {
+          reference,
+          code: dbError.code
+        });
+        // Don't throw for duplicate - transaction already recorded
+        return;
       }
-    });
+
+      // Other database errors
+      const dbError = PaymentErrorHandler.handleDatabaseError(
+        error,
+        'recordTransaction',
+        { reference, userId }
+      );
+
+      logger.error('Failed to record transaction', {
+        code: dbError.code,
+        message: dbError.message,
+        reference,
+        retryable: dbError.retryable
+      });
+
+      throw dbError;
+    }
   }
 
   async verifyTransaction(provider: string, reference: string): Promise<any> {

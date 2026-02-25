@@ -1,3 +1,24 @@
+/**
+ * ⚠️ DEPRECATED - Activity Tracker Middleware
+ * 
+ * This middleware has been consolidated into the unified AuditService (Phase 4)
+ * 
+ * MIGRATION GUIDE:
+ * Old tracking pattern:
+ *   analyticsService.trackUserActivity(userId, activityType, metadata)
+ * 
+ * New pattern:
+ *   import { auditService } from '../core/consolidation/AuditServiceConsolidation'
+ *   auditService.logUserAction({ userId, action, resource, details })
+ * 
+ * For middleware usage:
+ *   - Remove from app.use(activityTracker())
+ *   - User action logging now happens in route handlers/services via auditService
+ *   - All user actions are automatically persisted and audited
+ * 
+ * This middleware will be removed in v2.0. Please migrate to AuditService.
+ * For questions: See CONSOLIDATION_INTEGRATION_GUIDE.md
+ */
 
 import { Request, Response, NextFunction } from 'express';
 

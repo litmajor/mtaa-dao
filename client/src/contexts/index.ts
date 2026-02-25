@@ -29,3 +29,20 @@ export type {
   PermissionSet,
   NavigationContextType,
 } from './navigation-context';
+
+// Trading Account Context
+export {
+  TradingAccountProvider,
+  useTradingAccount,
+  useHasConnectedExchanges,
+  useExchange,
+} from './trading-account-context';
+
+export type {
+  TradingAccountContextType,
+  TradePosition,
+  TradingOrder,
+  ExchangeBalance,
+  TradingMetrics,
+  ConnectedExchange,
+} from './trading-account-context';

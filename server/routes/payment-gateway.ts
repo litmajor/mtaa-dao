@@ -2,6 +2,14 @@
 import express from 'express';
 import { paymentGatewayService } from '../services/paymentGatewayService';
 import { isAuthenticated } from '../auth';
+import { logger } from '../utils/logger';
+import {
+  PaymentError,
+  PaymentErrorHandler,
+  PaymentErrorCode
+} from '../services/paymentErrorHandler';
+import { PaymentErrorMonitoringService } from '../services/paymentErrorMonitoringService';
+import { rateLimitMiddleware, withdrawalLimits } from '../middleware/rateLimitConfig';
 
 const router = express.Router();
 
@@ -12,7 +20,14 @@ router.post('/deposit', isAuthenticated, async (req, res) => {
     const userId = (req.user as any)?.claims?.id;
 
     if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return res.status(401).json(
+        PaymentErrorHandler.toResponse(
+          PaymentErrorHandler.createError(
+            PaymentErrorCode.INVALID_USER,
+            'User ID is required'
+          )
+        )
+      );
     }
 
     const result = await paymentGatewayService.initiateDeposit(provider, {
@@ -24,20 +39,73 @@ router.post('/deposit', isAuthenticated, async (req, res) => {
       callbackUrl: `${process.env.APP_URL}/payment/callback`
     });
 
-    res.json(result);
+    // Set appropriate status code based on result
+    const statusCode = !result.success ? (result.error?.statusCode || 400) : 200;
+    res.status(statusCode).json(result);
+
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    logger.error('Deposit endpoint error', { 
+      message: error.message,
+      code: error.code 
+    });
+
+    if (error instanceof PaymentError) {
+      // Record error in monitoring service
+      PaymentErrorMonitoringService.recordError({
+        timestamp: new Date(),
+        errorCode: error.code,
+        errorCategory: 'validation',
+        provider: req.body.provider || 'unknown',
+        operation: 'deposit',
+        userId: (req.user as any)?.claims?.id,
+        count: 1,
+        retryCount: 0,
+        statusCode: error.statusCode,
+        message: error.message,
+        context: error.metadata,
+      });
+      return res.status(error.statusCode).json(PaymentErrorHandler.toResponse(error));
+    }
+
+    const paymentError = PaymentErrorHandler.createError(
+      PaymentErrorCode.UNKNOWN_ERROR,
+      'Deposit request failed'
+    );
+
+    // Record error in monitoring service
+    PaymentErrorMonitoringService.recordError({
+      timestamp: new Date(),
+      errorCode: paymentError.code,
+      errorCategory: 'unknown',
+      provider: req.body.provider || 'unknown',
+      operation: 'deposit',
+      userId: (req.user as any)?.claims?.id,
+      count: 1,
+      retryCount: 0,
+      statusCode: 500,
+      message: error.message,
+    });
+
+    res.status(500).json(PaymentErrorHandler.toResponse(paymentError));
   }
 });
 
 // POST /api/payment-gateway/withdraw
-router.post('/withdraw', isAuthenticated, async (req, res) => {
+// PHASE 1: SAFETY - Rate limited to 10 withdrawals per hour per user
+router.post('/withdraw', [isAuthenticated, rateLimitMiddleware(withdrawalLimits)], async (req, res) => {
   try {
     const { provider, amount, currency, method, metadata } = req.body;
     const userId = (req.user as any)?.claims?.id;
 
     if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return res.status(401).json(
+        PaymentErrorHandler.toResponse(
+          PaymentErrorHandler.createError(
+            PaymentErrorCode.INVALID_USER,
+            'User ID is required'
+          )
+        )
+      );
     }
 
     const result = await paymentGatewayService.initiateWithdrawal(provider, {
@@ -48,9 +116,53 @@ router.post('/withdraw', isAuthenticated, async (req, res) => {
       metadata
     });
 
-    res.json(result);
+    const statusCode = !result.success ? (result.error?.statusCode || 400) : 200;
+    res.status(statusCode).json(result);
+
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    logger.error('Withdrawal endpoint error', { 
+      message: error.message,
+      code: error.code 
+    });
+
+    if (error instanceof PaymentError) {
+      // Record error in monitoring service
+      PaymentErrorMonitoringService.recordError({
+        timestamp: new Date(),
+        errorCode: error.code,
+        errorCategory: 'validation',
+        provider: req.body.provider || 'unknown',
+        operation: 'withdrawal',
+        userId: (req.user as any)?.claims?.id,
+        count: 1,
+        retryCount: 0,
+        statusCode: error.statusCode,
+        message: error.message,
+        context: error.metadata,
+      });
+      return res.status(error.statusCode).json(PaymentErrorHandler.toResponse(error));
+    }
+
+    const paymentError = PaymentErrorHandler.createError(
+      PaymentErrorCode.UNKNOWN_ERROR,
+      'Withdrawal request failed'
+    );
+
+    // Record error in monitoring service
+    PaymentErrorMonitoringService.recordError({
+      timestamp: new Date(),
+      errorCode: paymentError.code,
+      errorCategory: 'unknown',
+      provider: req.body.provider || 'unknown',
+      operation: 'withdrawal',
+      userId: (req.user as any)?.claims?.id,
+      count: 1,
+      retryCount: 0,
+      statusCode: 500,
+      message: error.message,
+    });
+
+    res.status(500).json(PaymentErrorHandler.toResponse(paymentError));
   }
 });
 
@@ -61,49 +173,202 @@ router.get('/verify/:provider/:reference', isAuthenticated, async (req, res) => 
 
     const result = await paymentGatewayService.verifyTransaction(provider, reference);
 
-    res.json(result);
+    res.json({
+      success: true,
+      data: result
+    });
+
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    logger.error('Verify transaction error', {
+      provider: req.params.provider,
+      reference: req.params.reference,
+      message: error.message
+    });
+
+    if (error instanceof PaymentError) {
+      return res.status(error.statusCode).json(PaymentErrorHandler.toResponse(error));
+    }
+
+    const paymentError = PaymentErrorHandler.handleProviderError(
+      req.params.provider,
+      error,
+      { reference: req.params.reference }
+    );
+    res.status(paymentError.statusCode).json(PaymentErrorHandler.toResponse(paymentError));
   }
 });
 
 // POST /api/payment-gateway/flutterwave/webhook
 router.post('/flutterwave/webhook', async (req, res) => {
   try {
-    const signature = req.headers['verif-hash'];
+    const signature = req.headers['verif-hash'] as string;
     
-    if (signature !== process.env.FLUTTERWAVE_WEBHOOK_SECRET) {
-      return res.status(401).json({ error: 'Invalid signature' });
+    // Verify webhook signature
+    if (!signature || signature !== process.env.FLUTTERWAVE_WEBHOOK_SECRET) {
+      const error = PaymentErrorHandler.createError(
+        PaymentErrorCode.WEBHOOK_SIGNATURE_INVALID,
+        'Invalid webhook signature',
+        { provider: 'flutterwave' }
+      );
+      logger.warn('Invalid Flutterwave webhook signature');
+      return res.status(401).json(PaymentErrorHandler.toResponse(error));
     }
 
     const payload = req.body;
-    
-    // Process webhook
-    console.log('Flutterwave webhook received:', payload);
 
-    res.json({ status: 'success' });
+    // Validate webhook payload
+    if (!payload.data?.id || !payload.data?.tx_ref) {
+      const error = PaymentErrorHandler.createError(
+        PaymentErrorCode.PROVIDER_API_ERROR,
+        'Invalid webhook payload structure',
+        { provider: 'flutterwave' }
+      );
+      logger.warn('Invalid Flutterwave webhook payload', { payload });
+      return res.status(400).json(PaymentErrorHandler.toResponse(error));
+    }
+
+    // Process webhook with retry
+    await processFlutterwaveWebhook(payload);
+
+    logger.info('Flutterwave webhook processed successfully', {
+      reference: payload.data.tx_ref,
+      status: payload.data.status
+    });
+
+    res.json({ success: true, message: 'Webhook processed' });
+
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    logger.error('Flutterwave webhook processing error', {
+      message: error.message,
+      code: error.code
+    });
+
+    if (error instanceof PaymentError) {
+      return res.status(error.statusCode).json(PaymentErrorHandler.toResponse(error));
+    }
+
+    res.status(500).json(
+      PaymentErrorHandler.toResponse(
+        PaymentErrorHandler.createError(
+          PaymentErrorCode.UNKNOWN_ERROR,
+          'Webhook processing failed'
+        )
+      )
+    );
   }
 });
+
+async function processFlutterwaveWebhook(payload: any): Promise<void> {
+  const { db } = await import('../storage');
+  const { paymentTransactions } = await import('../../shared/schema');
+  const { eq } = await import('drizzle-orm');
+  const { RetryService, DEFAULT_RETRY_POLICIES } = await import('../services/retryService');
+
+  const reference = payload.data.tx_ref;
+  const status = payload.data.status === 'successful' ? 'completed' : 'failed';
+
+  await RetryService.executeWithRetry(
+    () => db.update(paymentTransactions)
+      .set({ 
+        status, 
+        metadata: { 
+          ...payload.data,
+          webhookReceivedAt: new Date().toISOString()
+        },
+        updatedAt: new Date() 
+      })
+      .where(eq(paymentTransactions.reference, reference))
+      .execute(),
+    DEFAULT_RETRY_POLICIES.database,
+    { reference, provider: 'flutterwave' }
+  );
+}
 
 // POST /api/payment-gateway/paystack/webhook
 router.post('/paystack/webhook', async (req, res) => {
   try {
-    const signature = req.headers['x-paystack-signature'];
+    const signature = req.headers['x-paystack-signature'] as string;
     
     // Verify webhook signature
-    // Implementation depends on Paystack webhook documentation
+    if (!signature) {
+      const error = PaymentErrorHandler.createError(
+        PaymentErrorCode.WEBHOOK_SIGNATURE_INVALID,
+        'Missing webhook signature',
+        { provider: 'paystack' }
+      );
+      logger.warn('Missing Paystack webhook signature');
+      return res.status(401).json(PaymentErrorHandler.toResponse(error));
+    }
 
     const payload = req.body;
-    
-    console.log('Paystack webhook received:', payload);
 
-    res.json({ status: 'success' });
+    // Validate webhook payload
+    if (!payload.data?.reference) {
+      const error = PaymentErrorHandler.createError(
+        PaymentErrorCode.PROVIDER_API_ERROR,
+        'Invalid webhook payload structure',
+        { provider: 'paystack' }
+      );
+      logger.warn('Invalid Paystack webhook payload', { payload });
+      return res.status(400).json(PaymentErrorHandler.toResponse(error));
+    }
+
+    // Process webhook with retry
+    await processPaystackWebhook(payload);
+
+    logger.info('Paystack webhook processed successfully', {
+      reference: payload.data.reference,
+      status: payload.data.status
+    });
+
+    res.json({ success: true, message: 'Webhook processed' });
+
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    logger.error('Paystack webhook processing error', {
+      message: error.message,
+      code: error.code
+    });
+
+    if (error instanceof PaymentError) {
+      return res.status(error.statusCode).json(PaymentErrorHandler.toResponse(error));
+    }
+
+    res.status(500).json(
+      PaymentErrorHandler.toResponse(
+        PaymentErrorHandler.createError(
+          PaymentErrorCode.UNKNOWN_ERROR,
+          'Webhook processing failed'
+        )
+      )
+    );
   }
 });
+
+async function processPaystackWebhook(payload: any): Promise<void> {
+  const { db } = await import('../storage');
+  const { paymentTransactions } = await import('../../shared/schema');
+  const { eq } = await import('drizzle-orm');
+  const { RetryService, DEFAULT_RETRY_POLICIES } = await import('../services/retryService');
+
+  const reference = payload.data.reference;
+  const status = payload.data.status === 'success' ? 'completed' : 'failed';
+
+  await RetryService.executeWithRetry(
+    () => db.update(paymentTransactions)
+      .set({ 
+        status, 
+        metadata: { 
+          ...payload.data,
+          webhookReceivedAt: new Date().toISOString()
+        },
+        updatedAt: new Date() 
+      })
+      .where(eq(paymentTransactions.reference, reference))
+      .execute(),
+    DEFAULT_RETRY_POLICIES.database,
+    { reference, provider: 'paystack' }
+  );
+}
 
 // POST /api/payment-gateway/mpesa/callback
 router.post('/mpesa/callback', async (req, res) => {

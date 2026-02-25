@@ -27,6 +27,8 @@ import { Logger } from "../utils/logger";
 import { getErrorMessage } from '../utils/errorUtils';
 import { AppError, ValidationError, NotFoundError } from "../middleware/errorHandler";
 import { z } from "zod";
+import { distributedLockManager } from './concurrencyControl';
+import { cacheInvalidationManager } from './cacheInvalidationManager';
 
 export interface VaultDepositRequest {
   vaultId: string;
@@ -593,8 +595,10 @@ export class VaultService {
     }
   }
 
-  // Deposit tokens into a vault
+  // Deposit tokens into a vault (PHASE 1: SAFETY - Distributed Locking)
   async depositToken(request: VaultDepositRequest): Promise<VaultTransaction> {
+    const lockKey = `vault:${request.vaultId}:write`;
+    
     try {
       const validatedRequest = depositSchema.parse(request);
 
@@ -643,8 +647,12 @@ export class VaultService {
       const depositAmountFloat = parseFloat(ethers.formatUnits(depositAmountWei, token.decimals));
       const valueUSD = depositAmountFloat * priceUSD;
 
-      // Wrap critical operations in database transaction with explicit isolation level
-      const result = await db.transaction(async (tx) => {
+      // PHASE 1: Execute deposit with distributed lock to prevent concurrent mutations
+      const result = await distributedLockManager.executeWithLock(
+        lockKey,
+        async () => {
+          // Wrap critical operations in database transaction with explicit isolation level
+      return await db.transaction(async (tx) => {
         await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`);
         // Create transaction record
         const [transaction] = await tx.insert(vaultTransactions).values({
@@ -686,6 +694,15 @@ export class VaultService {
 
         return transaction;
       }, { isolationLevel: 'serializable' });
+        },
+        { timeout: 30000, retries: 3 }
+      );
+
+      // Invalidate related caches after successful deposit
+      await cacheInvalidationManager.invalidateVaultCaches(
+        validatedRequest.vaultId,
+        vault.daoId
+      );
 
       // Trigger strategy allocation if configured (outside transaction)
       // Explicit rebalance authorization logic
@@ -725,8 +742,10 @@ export class VaultService {
     }
   }
 
-  // Withdraw tokens from a vault
+  // Withdraw tokens from a vault (PHASE 1: SAFETY - Distributed Locking)
   async withdrawToken(request: VaultWithdrawRequest): Promise<VaultTransaction> {
+    const lockKey = `vault:${request.vaultId}:write`;
+    
     try {
       const validatedRequest = withdrawSchema.parse(request);
 
@@ -781,8 +800,12 @@ export class VaultService {
       const withdrawAmountFloat = parseFloat(ethers.formatUnits(withdrawAmountWei, token.decimals));
       const valueUSD = withdrawAmountFloat * priceUSD;
 
-      // Wrap critical operations in database transaction with explicit isolation level
-      const result = await db.transaction(async (tx) => {
+      // PHASE 1: Execute withdrawal with distributed lock to prevent concurrent mutations
+      const result = await distributedLockManager.executeWithLock(
+        lockKey,
+        async () => {
+          // Wrap critical operations in database transaction with explicit isolation level
+      return await db.transaction(async (tx) => {
         await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`);
         // Create transaction record
         const [transaction] = await tx.insert(vaultTransactions).values({
@@ -810,6 +833,15 @@ export class VaultService {
 
         return transaction;
       }, { isolationLevel: 'serializable' });
+        },
+        { timeout: 30000, retries: 3 }
+      );
+
+      // Invalidate related caches after successful withdrawal
+      await cacheInvalidationManager.invalidateVaultCaches(
+        validatedRequest.vaultId,
+        vault.daoId
+      );
 
       return result;
     } catch (error) {

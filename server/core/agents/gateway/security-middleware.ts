@@ -275,7 +275,7 @@ export function createGatewaySecurityMiddleware(secureService: SecureGatewayServ
     res: Response,
     next: NextFunction
   ) => {
-    const userId = (req as any).gatewayUser || "anonymous";
+    const userId = (req as any).gatewayUser || "guest";
     const now = Date.now();
     const window = 60000; // 1 minute
 

@@ -1,0 +1,23 @@
+Assistant checkpoint: Fix export name mismatch
+
+Assistant generated file changes:
+- server/api/wallet_transactions.ts: Fix export name to match import
+
+---
+
+User prompt:
+
+/home/runner/workspace/server/routes.ts:37
+import { getWalletTransactions, createWalletTransaction } from './api/wallet_transactions';
+                                ^
+
+SyntaxError: The requested module './api/wallet_transactions' does not provide an export named 'createWalletTransaction'
+    at ModuleJob._instantiate (node:internal/modules/esm/module_job:175:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:258:5)
+    at async ModuleLoader.import (node:internal/modules/esm/loader:540:24)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+
+Node.js v20.19.3
+
+Replit-Commit-Author: Assistant
+Replit-Commit-Session-Id: ac8e9e56-7678-483b-8c57-43b62251fee0

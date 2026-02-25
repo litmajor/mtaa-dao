@@ -13,6 +13,7 @@ import {
   Finding 
 } from './types';
 import { Logger } from '../../utils/logger';
+import { healthRegistry } from '../../core/consolidation/HealthRegistryConsolidation';
 import { AgentCommunicator } from '../../core/agent-framework/agent-communicator';
 import { MessageType } from '../../core/agent-framework/message-bus';
 import { db } from '../../db';
@@ -108,6 +109,10 @@ export class AnalyzerAgent extends BaseAgent {
   async initialize(): Promise<void> {
     logger.info('Initializing Analyzer Agent', { agentId: this.config.id });
     this.setStatus(AgentStatus.ACTIVE);
+    
+    // Register agent with health telemetry
+    healthTelemetry.registerAgent(this.config.id, 'ANALYZER');
+    
     logger.info('Analyzer Agent initialized successfully');
   }
 

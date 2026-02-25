@@ -2,7 +2,11 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useWallet } from './hooks/useWallet';
 import { useFormPersistence } from './hooks/useFormPersistence';
 import { useStepValidation } from './hooks/useStepValidation';
+import { useTreasury } from '@/hooks/useTreasury';
+import { useTreasuryIntelligence } from '@/hooks/useTreasuryIntelligence';
+import { getTreasuryConfigForDAOType } from '@/config/treasury.config';
 import { ErrorAlert } from '@/components/ErrorAlert';
+import type { DAOType } from '@/types/treasury';
 import { CharacterCounter } from '@/components/CharacterCounter';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,11 +39,16 @@ import {
   HelpCircle,
   AlertTriangle,
   BookOpen,
-  AlertCircle
+  AlertCircle,
+  TrendingUp,
+  AlertOctagon,
+  Lightbulb,
+  Heart,
+  BarChart3
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import MultisigManager from '@/components/multisig/MultisigManager';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 
 const WhatIsDAOExplainer = ({ onContinue }: { onContinue: () => void }) => (
   <div className="space-y-6">
@@ -156,6 +165,15 @@ const CreateDAOFlow = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [isDeploying, setIsDeploying] = useState(false);
   const { address: walletAddress, isConnected } = useWallet();
+  
+  // Initialize treasury hook
+  const {
+    treasury,
+    error: treasuryError,
+    initializeTreasury,
+    validate: validateTreasury,
+    getSummary: getTreasurySummary
+  } = useTreasury();
 
   const initialDaoData: DaoData = useMemo(() => ({
     name: '',
@@ -479,33 +497,33 @@ const CreateDAOFlow = () => {
     }
   }, [daoData.enableMultisig, daoData.selectedElders, walletAddress]);
 
-  // Dynamic treasury options based on DAO type
-  const getTreasuryOptionsForType = (type?: string) => {
-    const optionsByType: Record<string, typeof treasuryTypes> = {
-      shortTerm: [
-        { value: 'cusd', label: 'cUSD Vault', desc: 'Simple stable treasury in Celo Dollars' }
-      ],
-      collective: [
-        { value: 'cusd', label: 'cUSD Vault', desc: 'Stable treasury for regular savings' },
-        { value: 'dual', label: 'CELO + cUSD Dual', desc: 'Mixed treasury with growth potential' },
-        { value: 'custom', label: 'Custom Stablecoin', desc: 'USDT, DAI or other stablecoins of your choice' }
-      ],
-      governance: [
-        { value: 'cusd', label: 'cUSD Vault', desc: 'Stable treasury for governance funds' },
-        { value: 'dual', label: 'CELO + cUSD Dual', desc: 'Mixed treasury with growth potential' },
-        { value: 'custom', label: 'Custom Stablecoin', desc: 'USDT, DAI or other stablecoins of your choice' }
-      ],
-      free: [ // Treasury options for Free DAO type
-        { value: 'cusd', label: 'cUSD Vault', desc: 'Standard stablecoin treasury' }
-      ],
-      meta: [ // Treasury options for MetaDAO type
-        { value: 'dual', label: 'CELO + cUSD Dual', desc: 'Robust treasury for network operations' },
-        { value: 'custom', label: 'Custom Stablecoin', desc: 'Flexible treasury for specific needs' }
-      ]
-    };
+  // Initialize treasury when DAO type is selected
+  useEffect(() => {
+    if (daoData.daoType && currentStep >= 5) {
+      initializeTreasury(
+        `dao-${Date.now()}`, // temporary ID until deployed
+        daoData.daoType as DAOType
+      );
+    }
+  }, [daoData.daoType, currentStep, initializeTreasury]);
 
-    // Fallback to collective if type not found or specific options not defined
-    return optionsByType[type || 'collective'] || optionsByType['collective'];
+  // Dynamic treasury options based on DAO type
+  // Get treasury options derived from treasury.config (single source of truth)
+  const getTreasuryOptionsForType = (type?: string) => {
+    try {
+      const config = getTreasuryConfigForDAOType((type || 'collective') as DAOType);
+      // Derive chain options from the config's supported chains
+      return config.defaultChains.map(chain => ({
+        value: chain.toLowerCase(),
+        label: `${chain === 'CELO' ? 'cUSD' : 'USDC'} on ${chain}`,
+        desc: `Treasury using stablecoins on ${chain}`
+      }));
+    } catch {
+      // Fallback for error cases
+      return [
+        { value: 'cusd', label: 'cUSD Vault', desc: 'Standard stablecoin treasury' }
+      ];
+    }
   };
 
   const roleTypes = ['member', 'moderator', 'treasurer', 'governor'];
@@ -1185,12 +1203,197 @@ const CreateDAOFlow = () => {
   );
 
   // Step 5 - Treasury
-  const renderTreasury = () => (
+  const renderTreasury = () => {
+    // Get treasury intelligence
+    const { intelligence, treasuryCharacter, healthStatus, analyze } = useTreasuryIntelligence();
+
+    // Analyze treasury when it becomes available
+    useEffect(() => {
+      if (treasury) {
+        // Use mock price data for now - in production this would come from an oracle
+        const mockPriceData: Record<string, number> = {
+          'CELO-CELO': 0.75,
+          'cUSD-CELO': 1.0,
+          'USDC-ETH': 1.0,
+          'DAI-ETH': 1.0,
+          'USDC-BSC': 1.0
+        };
+        analyze(treasury, mockPriceData);
+      }
+    }, [treasury, analyze]);
+
+    return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Set Up Your Group's Treasury</h2>
         <p className="text-gray-600 dark:text-gray-400">This is where your group's money will be kept - like a shared bank account</p>
       </div>
+
+      {/* Treasury Configuration Summary */}
+      {treasury && (
+        <Card className="bg-teal-50 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800">
+          <CardHeader>
+            <CardTitle className="text-teal-800 dark:text-teal-200 flex items-center gap-2">
+              <Wallet className="w-5 h-5" />
+              Treasury Configuration for {daoData.daoType?.toUpperCase() || 'Your DAO'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-3 bg-white dark:bg-slate-800 rounded-lg">
+                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold">Supported Assets</p>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {treasury.assets.map((asset, idx) => (
+                    <Badge key={idx} variant="secondary" className="text-xs">
+                      {asset.symbol} ({asset.chain})
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="p-3 bg-white dark:bg-slate-800 rounded-lg">
+                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold">Multisig Required</p>
+                <div className="flex items-center gap-2 mt-2">
+                  <Badge variant={treasury.multisigRequired ? 'destructive' : 'secondary'} className="text-xs">
+                    {treasury.multisigRequired ? `Yes (${treasury.minSigners} signers min)` : 'Optional'}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="p-3 bg-white dark:bg-slate-800 rounded-lg">
+                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold">Member Deposits</p>
+                <div className="flex items-center gap-2 mt-2">
+                  <Badge variant={treasury.membersCanDeposit ? 'secondary' : 'outline'} className="text-xs">
+                    {treasury.membersCanDeposit ? 'Allowed' : 'Not Allowed'}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="p-3 bg-white dark:bg-slate-800 rounded-lg">
+                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold">Custom Tokens</p>
+                <div className="flex items-center gap-2 mt-2">
+                  <Badge variant={treasury.customTokenAllowed ? 'secondary' : 'outline'} className="text-xs">
+                    {treasury.customTokenAllowed ? 'Allowed' : 'Not Allowed'}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+
+            <Alert className="border-teal-200 dark:border-teal-800 bg-teal-100/50 dark:bg-teal-900/20">
+              <Info className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+              <AlertDescription className="text-teal-700 dark:text-teal-300 text-sm">
+                All settings above are automatically configured based on your DAO type for security and best practices.
+              </AlertDescription>
+            </Alert>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Treasury Intelligence Dashboard - Layer 3 */}
+      {intelligence && (
+        <Card className="bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30 border-purple-200 dark:border-purple-800">
+          <CardHeader>
+            <CardTitle className="text-purple-800 dark:text-purple-200 flex items-center gap-2">
+              <BarChart3 className="w-5 h-5" />
+              Treasury Intelligence & Insights
+            </CardTitle>
+            <p className="text-sm text-purple-700 dark:text-purple-300 mt-2">AI-powered analysis of your treasury setup</p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Treasury Character & Health Status */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border-l-4 border-purple-500">
+                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold mb-2">Treasury Character</p>
+                <div className="flex items-center gap-2">
+                  <Heart className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <Badge className="text-xs" variant="outline">
+                    {treasuryCharacter() || 'Analyzing...'}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border-l-4 border-blue-500">
+                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold mb-2">Health Status</p>
+                <div className="flex items-center gap-2">
+                  {healthStatus() === 'healthy' && <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />}
+                  {healthStatus() === 'caution' && <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />}
+                  {healthStatus() === 'critical' && <AlertOctagon className="w-4 h-4 text-red-600 dark:text-red-400" />}
+                  <Badge className="text-xs" variant={healthStatus() === 'healthy' ? 'secondary' : healthStatus() === 'caution' ? 'outline' : 'destructive'}>
+                    {healthStatus()?.charAt(0).toUpperCase() + healthStatus()?.slice(1) || 'Analyzing...'}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+
+            {/* Governance Formula Recommendation */}
+            {intelligence.recommendedGovernanceFormula && (
+              <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border-l-4 border-indigo-500">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold mb-2">Recommended Voting Formula</p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 font-medium">
+                      {intelligence.recommendedGovernanceFormula.charAt(0).toUpperCase() + intelligence.recommendedGovernanceFormula.slice(1)}
+                    </p>
+                  </div>
+                  <TrendingUp className="w-5 h-5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+                </div>
+              </div>
+            )}
+
+            {/* Risks Section */}
+            {intelligence.risks && intelligence.risks.length > 0 && (
+              <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border-l-4 border-red-500">
+                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold mb-3">⚠️ Identified Risks</p>
+                <div className="space-y-2">
+                  {intelligence.risks.slice(0, 3).map((risk, idx) => (
+                    <div key={idx} className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+                      <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                      <span>{risk}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Opportunities Section */}
+            {intelligence.opportunities && intelligence.opportunities.length > 0 && (
+              <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border-l-4 border-green-500">
+                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold mb-3">💡 Opportunities</p>
+                <div className="space-y-2">
+                  {intelligence.opportunities.slice(0, 3).map((opp, idx) => (
+                    <div key={idx} className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+                      <Lightbulb className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                      <span>{opp}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Key Insights */}
+            {intelligence.semanticSummary?.keyInsights && intelligence.semanticSummary.keyInsights.length > 0 && (
+              <Alert className="border-purple-200 dark:border-purple-800 bg-purple-100/50 dark:bg-purple-900/20">
+                <Lightbulb className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                <AlertDescription>
+                  <p className="text-sm text-purple-700 dark:text-purple-300 font-medium mb-2">Key Insights:</p>
+                  <ul className="text-xs text-purple-700 dark:text-purple-300 space-y-1 list-disc list-inside">
+                    {intelligence.semanticSummary.keyInsights.slice(0, 2).map((insight, idx) => (
+                      <li key={idx}>{insight}</li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {treasuryError && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>{treasuryError}</AlertDescription>
+        </Alert>
+      )}
 
       {/* Multisig explanatory area */}
       <div>
@@ -1429,7 +1632,8 @@ const CreateDAOFlow = () => {
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   // Step 6 - Members (with Peer Invite System)
   const renderMembers = () => (

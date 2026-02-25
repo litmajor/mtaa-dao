@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
 import { PersonalVaultSection } from './wallet/PesonalVaultBalance';
 import { PortfolioOverview } from './wallet/PortfolioOverview';
 import TransactionHistory from './wallet/TransactionHistory';
@@ -8,12 +9,35 @@ import { DepositWithdrawFlow } from './wallet/DepositWithdrawFlow';
 import SplitBillModal from './wallet/SplitBillModal';
 import PaymentRequestModal from './wallet/PaymentRequestModal';
 import { Button } from '@/components/ui/button';
-import { Zap, Send, Split } from 'lucide-react';
+import { Zap, Send, Split, Lock, Shield } from 'lucide-react';
 import { useWallet } from '@/pages/hooks/useWallet';
 
 export default function WalletDashboard() {
   const [showSplitBill, setShowSplitBill] = useState(false);
   const [showPaymentRequest, setShowPaymentRequest] = useState(false);
+  const [twoFAEnabled, setTwoFAEnabled] = useState(false);
+  const [pinConfigured, setPinConfigured] = useState(false);
+
+  // Check 2FA and PIN status on component mount
+  useEffect(() => {
+    const checkSecurityStatus = async () => {
+      try {
+        const res = await fetch('/api/2fa/config', {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await res.json();
+        if (data.success) {
+          setTwoFAEnabled(data.config?.twoFA?.enabled || false);
+          setPinConfigured(data.config?.pin?.configured || false);
+        }
+      } catch (err) {
+        console.error('Failed to check security status:', err);
+      }
+    };
+
+    checkSecurityStatus();
+  }, []);
 
   return (
     <div className="space-y-6 p-6">
@@ -22,6 +46,27 @@ export default function WalletDashboard() {
         <div>
           <h1 className="text-4xl font-bold text-gray-900 dark:text-white">Wallet</h1>
           <p className="text-gray-600 dark:text-gray-400">Manage your funds and transactions</p>
+        </div>
+
+        {/* Security Status Badges */}
+        <div className="flex gap-2 items-center">
+          {twoFAEnabled && (
+            <Badge variant="default" className="bg-green-600 hover:bg-green-700">
+              <Shield className="w-3 h-3 mr-1" />
+              2FA Enabled
+            </Badge>
+          )}
+          {pinConfigured && (
+            <Badge variant="default" className="bg-blue-600 hover:bg-blue-700">
+              <Lock className="w-3 h-3 mr-1" />
+              PIN Set
+            </Badge>
+          )}
+          {!twoFAEnabled && (
+            <Badge variant="outline" className="text-amber-600 border-amber-600">
+              2FA Disabled
+            </Badge>
+          )}
         </div>
 
         {/* Quick Action Buttons */}
