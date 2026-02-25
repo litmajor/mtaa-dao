@@ -1,0 +1,631 @@
+/**
+ * agent-panels.css
+ * 
+ * Unified styling for all agent management panels
+ * Light/dark theme support, responsive design, accessibility features
+ * Week 2 Agent Implementation
+ */
+
+:root {
+  /* Agent Colors */
+  --agent-primary: #1f2937;
+  --agent-secondary: #374151;
+  --agent-accent: #3b82f6;
+  --agent-success: #10b981;
+  --agent-warning: #f59e0b;
+  --agent-danger: #ef4444;
+
+  /* Status Colors */
+  --status-running: #10b981;
+  --status-paused: #f59e0b;
+  --status-stopped: #6b7280;
+  --status-error: #ef4444;
+
+  /* Complexity Colors */
+  --complexity-1: #10b981;
+  --complexity-2: #3b82f6;
+  --complexity-3: #f59e0b;
+  --complexity-4: #ef4444;
+  --complexity-5: #991b1b;
+
+  /* Spacing */
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+  --spacing-2xl: 3rem;
+}
+
+/* Dark theme overrides */
+[data-theme='dark'] {
+  --agent-primary: #3b82f6;
+  --agent-secondary: #60a5fa;
+}
+
+/* ============================================
+   AGENT DEPLOYMENT PANEL STYLES
+   ============================================ */
+
+.agent-deployment-panel {
+  background: var(--bg-secondary, #ffffff);
+  border-radius: 12px;
+  padding: var(--spacing-lg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: box-shadow 0.3s ease;
+}
+
+.agent-deployment-panel:hover {
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+.agent-deployment-panel .panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-xl);
+  border-bottom: 2px solid var(--border-color, #e5e7eb);
+  padding-bottom: var(--spacing-lg);
+}
+
+.agent-deployment-panel .panel-header h3 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--agent-accent);
+  font-weight: 700;
+}
+
+.agent-deployment-panel .template-count {
+  font-size: 0.875rem;
+  color: var(--agent-accent);
+  background: rgba(59, 130, 246, 0.1);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.deployment-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.deployment-form .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.deployment-form label {
+  font-weight: 600;
+  color: var(--text-primary, #111827);
+  font-size: 0.95rem;
+}
+
+.deployment-form input[type='text'],
+.deployment-form input[type='number'],
+.deployment-form input[type='range'],
+.deployment-form select {
+  padding: var(--spacing-md);
+  border: 1px solid var(--border-color, #d1d5db);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.deployment-form input[type='text']:focus,
+.deployment-form input[type='number']:focus,
+.deployment-form select:focus {
+  outline: none;
+  border-color: var(--agent-accent);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.deployment-form small {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #6b7280);
+}
+
+.template-info-card {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  background: var(--bg-tertiary, #f3f4f6);
+  border-radius: 8px;
+  margin: var(--spacing-lg) 0;
+  border-left: 4px solid var(--agent-accent);
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.info-item .label {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #6b7280);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.info-item .value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--agent-accent);
+}
+
+.frequency-buttons,
+.risk-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.freq-btn,
+.risk-btn {
+  padding: var(--spacing-md);
+  border: 2px solid var(--border-color, #d1d5db);
+  border-radius: 8px;
+  background: var(--bg-secondary, #ffffff);
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.freq-btn.active,
+.risk-btn.active {
+  border-color: var(--agent-accent);
+  background: rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  background: var(--bg-tertiary, #f3f4f6);
+  border-radius: 8px;
+  margin: var(--spacing-lg) 0;
+}
+
+.metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  background: var(--bg-secondary, #ffffff);
+  border-radius: 6px;
+  border-left: 4px solid var(--agent-accent);
+}
+
+.metric-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #6b7280);
+  font-weight: 600;
+}
+
+.metric-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--agent-accent);
+}
+
+.form-group.checkbox-group {
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.form-group.checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  font-weight: 600;
+  cursor: pointer;
+  margin: 0;
+}
+
+.form-group.checkbox-group input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--agent-accent);
+}
+
+/* ============================================
+   MULTI-AGENT PANEL STYLES
+   ============================================ */
+
+.multi-agent-panel {
+  background: var(--bg-secondary, #ffffff);
+  border-radius: 12px;
+  padding: var(--spacing-lg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.multi-agent-panel .panel-header h3 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--agent-accent);
+  font-weight: 700;
+}
+
+.fleet-stats {
+  font-size: 0.875rem;
+  color: var(--agent-accent);
+  background: rgba(59, 130, 246, 0.1);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.multi-agent-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.fleet-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  background: var(--bg-tertiary, #f3f4f6);
+  border-radius: 8px;
+  margin: var(--spacing-lg) 0;
+}
+
+.overview-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  background: var(--bg-secondary, #ffffff);
+  border-radius: 6px;
+  border-left: 4px solid var(--agent-accent);
+}
+
+.overview-stat .label {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #6b7280);
+  font-weight: 600;
+}
+
+.overview-stat .value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--agent-accent);
+}
+
+.operation-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.op-btn {
+  padding: var(--spacing-md);
+  border: 2px solid var(--border-color, #d1d5db);
+  border-radius: 8px;
+  background: var(--bg-secondary, #ffffff);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+}
+
+.op-btn.active {
+  border-color: var(--agent-accent);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.agent-selection {
+  padding: var(--spacing-lg);
+  background: var(--bg-tertiary, #f3f4f6);
+  border-radius: 8px;
+  margin: var(--spacing-lg) 0;
+}
+
+.selection-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-lg);
+}
+
+.selection-header h4 {
+  margin: 0;
+  color: var(--text-primary, #111827);
+}
+
+.select-all {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.select-all input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--agent-accent);
+}
+
+.agents-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.agent-item {
+  padding: var(--spacing-md);
+  background: var(--bg-secondary, #ffffff);
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #d1d5db);
+  transition: all 0.2s ease;
+}
+
+.agent-item:hover {
+  border-color: var(--agent-accent);
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.1);
+}
+
+.agent-item label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  cursor: pointer;
+  margin: 0;
+}
+
+.agent-item input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--agent-accent);
+  flex-shrink: 0;
+}
+
+.agent-checkbox-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  flex: 1;
+}
+
+.agent-name {
+  font-weight: 700;
+  color: var(--text-primary, #111827);
+  font-size: 0.95rem;
+}
+
+.agent-details {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #6b7280);
+}
+
+.selected-metrics {
+  padding: var(--spacing-lg);
+  background: var(--bg-tertiary, #f3f4f6);
+  border-radius: 8px;
+  margin: var(--spacing-lg) 0;
+}
+
+.selected-metrics h4 {
+  margin: 0 0 var(--spacing-lg) 0;
+  color: var(--text-primary, #111827);
+}
+
+.selected-metrics .metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--spacing-md);
+  background: none;
+  padding: 0;
+  margin: 0;
+}
+
+.metric-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  background: var(--bg-secondary, #ffffff);
+  border-radius: 6px;
+  border-left: 4px solid var(--agent-accent);
+}
+
+.metric-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #6b7280);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.metric-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--agent-accent);
+}
+
+/* ============================================
+   SHARED MESSAGE STYLES
+   ============================================ */
+
+.warning-message,
+.error-message {
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-radius: 8px;
+  font-weight: 600;
+  margin: var(--spacing-lg) 0;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  line-height: 1.5;
+}
+
+.warning-message {
+  background: rgba(245, 158, 11, 0.1);
+  border-left: 4px solid var(--agent-warning);
+  color: var(--agent-warning);
+}
+
+.error-message {
+  background: rgba(239, 68, 68, 0.1);
+  border-left: 4px solid var(--agent-danger);
+  color: var(--agent-danger);
+}
+
+.empty-state {
+  padding: var(--spacing-xl);
+  text-align: center;
+  color: var(--text-secondary, #6b7280);
+  font-size: 1rem;
+}
+
+/* ============================================
+   FORM ACTIONS
+   ============================================ */
+
+.form-actions {
+  display: flex;
+  gap: var(--spacing-md);
+  justify-content: flex-end;
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--border-color, #d1d5db);
+}
+
+.btn {
+  padding: var(--spacing-md) var(--spacing-xl);
+  border: none;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--agent-accent), #1d4ed8);
+  color: white;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.btn-primary:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+}
+
+/* ============================================
+   RESPONSIVE DESIGN
+   ============================================ */
+
+@media (max-width: 1200px) {
+  .template-info-card,
+  .fleet-overview,
+  .metrics-grid,
+  .selected-metrics .metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .operation-buttons,
+  .frequency-buttons,
+  .risk-buttons {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .agent-deployment-panel,
+  .multi-agent-panel {
+    padding: var(--spacing-md);
+  }
+
+  .agent-deployment-panel .panel-header,
+  .multi-agent-panel .panel-header {
+    flex-direction: column;
+    gap: var(--spacing-md);
+    align-items: flex-start;
+  }
+
+  .template-info-card,
+  .fleet-overview,
+  .metrics-grid,
+  .selected-metrics .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-actions {
+    flex-direction: column;
+    justify-content: stretch;
+  }
+
+  .btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .agent-deployment-panel,
+  .multi-agent-panel {
+    padding: var(--spacing-sm);
+    border-radius: 8px;
+  }
+
+  .agent-deployment-panel .panel-header h3,
+  .multi-agent-panel .panel-header h3 {
+    font-size: 1.2rem;
+  }
+
+  .operation-buttons,
+  .frequency-buttons,
+  .risk-buttons {
+    grid-template-columns: 1fr;
+  }
+
+  .agents-list {
+    gap: var(--spacing-sm);
+  }
+
+  .agent-item {
+    padding: var(--spacing-sm);
+  }
+}
+
+/* ============================================
+   ACCESSIBILITY
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-deployment-panel,
+  .multi-agent-panel,
+  .btn,
+  .deployment-form {
+    transition: none;
+  }
+
+  .btn-primary:not(:disabled):hover {
+    transform: none;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .agent-deployment-panel,
+  .multi-agent-panel {
+    background: var(--bg-secondary, #1f2937);
+    color: var(--text-primary, #f3f4f6);
+  }
+}

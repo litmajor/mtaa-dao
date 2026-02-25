@@ -1,0 +1,189 @@
+.presenceContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(20, 20, 30, 0.6);
+  border: 1px solid rgba(147, 112, 219, 0.2);
+  border-radius: 12px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.onlineIndicator {
+  width: 10px;
+  height: 10px;
+  background: #4caf50;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0;
+}
+
+.count {
+  font-size: 12px;
+  color: #b0b0b0;
+  margin-left: auto;
+}
+
+.usersList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.userCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  background: rgba(147, 112, 219, 0.05);
+  border: 1px solid rgba(147, 112, 219, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex: 1;
+  min-width: 80px;
+}
+
+.userCard:hover {
+  background: rgba(147, 112, 219, 0.15);
+  border-color: rgba(147, 112, 219, 0.3);
+}
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #9370db, #6c5ce7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 14px;
+  border: 2px solid rgba(147, 112, 219, 0.3);
+  position: relative;
+}
+
+.avatar::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 12px;
+  height: 12px;
+  background: #4caf50;
+  border: 2px solid rgba(20, 20, 30, 0.95);
+  border-radius: 50%;
+}
+
+.userName {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+  text-align: center;
+  word-break: break-word;
+}
+
+.actionBadge {
+  display: inline-block;
+  padding: 3px 8px;
+  background: rgba(147, 112, 219, 0.2);
+  border: 1px solid rgba(147, 112, 219, 0.3);
+  border-radius: 4px;
+  font-size: 10px;
+  color: #9370db;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.actionBadge.editing {
+  background: rgba(255, 193, 7, 0.1);
+  border-color: rgba(255, 193, 7, 0.3);
+  color: #ffc107;
+}
+
+.actionBadge.viewing {
+  background: rgba(33, 150, 243, 0.1);
+  border-color: rgba(33, 150, 243, 0.3);
+  color: #2196f3;
+}
+
+.actionBadge.searching {
+  background: rgba(76, 175, 80, 0.1);
+  border-color: rgba(76, 175, 80, 0.3);
+  color: #4caf50;
+}
+
+.moreUsersButton {
+  flex: 1;
+  min-width: 80px;
+  padding: 8px;
+  background: rgba(147, 112, 219, 0.05);
+  border: 1px dashed rgba(147, 112, 219, 0.2);
+  border-radius: 8px;
+  color: #b0b0b0;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.moreUsersButton:hover {
+  background: rgba(147, 112, 219, 0.15);
+  border-color: rgba(147, 112, 219, 0.3);
+  color: #9370db;
+}
+
+.emptyState {
+  text-align: center;
+  padding: 20px;
+  color: #666;
+  font-size: 13px;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@media (max-width: 768px) {
+  .presenceContainer {
+    padding: 12px;
+  }
+
+  .userCard {
+    min-width: 70px;
+  }
+
+  .avatar {
+    width: 36px;
+    height: 36px;
+    font-size: 12px;
+  }
+
+  .userName {
+    font-size: 11px;
+  }
+
+  .actionBadge {
+    font-size: 9px;
+    padding: 2px 6px;
+  }
+}

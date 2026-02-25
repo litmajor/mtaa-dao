@@ -1,0 +1,529 @@
+/**
+ * Agent Status Card Styles
+ * Day 1 Emergency Response - Power Checklist Compliance
+ * 
+ * Checklist #2: Power Gradient - Color coding based on risk
+ * Checklist #9: Emotional Safety - Calm, reassuring UI
+ * Checklist #10: Consistency - Matches admin component patterns
+ */
+
+.card {
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 16px;
+  background: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: box-shadow 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* ============================================================================
+ * HEADER SECTION
+ * ============================================================================ */
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.titleSection {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.powerBadge {
+  background: #FF6B6B;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.type {
+  color: #888;
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* ============================================================================
+ * STATE CLARITY SECTION (Checklist #3)
+ * ============================================================================ */
+
+.stateClarity {
+  margin-bottom: 16px;
+}
+
+.statusIndicator {
+  padding: 12px 16px;
+  border-radius: 6px;
+  text-align: center;
+  margin-bottom: 12px;
+  color: white;
+  transition: background-color 0.2s ease;
+}
+
+.statusLabel {
+  font-size: 14px;
+  font-weight: 600;
+  display: block;
+}
+
+.stateDetails {
+  background: #f9f9f9;
+  padding: 12px;
+  border-radius: 6px;
+  border-left: 3px solid #ddd;
+}
+
+.metric {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #eee;
+}
+
+.metric:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.metric label {
+  display: block;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 4px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.metric .value {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.progressBar {
+  width: 100%;
+  height: 8px;
+  background: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.progress {
+  height: 100%;
+  width: var(--progress-width, 0%);
+  transition: width 0.3s ease;
+  border-radius: 4px;
+}
+
+.percentage {
+  display: block;
+  font-size: 11px;
+  color: #999;
+  text-align: right;
+}
+
+.reason {
+  display: block;
+  font-size: 12px;
+  color: #d32f2f;
+  margin-top: 6px;
+  padding: 6px;
+  background: #ffebee;
+  border-radius: 4px;
+  border-left: 2px solid #d32f2f;
+}
+
+/* ============================================================================
+ * AUTHORITY TRANSPARENCY SECTION (Checklist #4)
+ * ============================================================================ */
+
+.authorityDetails {
+  background: #e3f2fd;
+  padding: 0;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  border: 1px solid #90caf9;
+}
+
+.authoritySummary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #1976d2;
+  font-size: 13px;
+  padding: 12px;
+  display: block;
+  user-select: none;
+  transition: background-color 0.2s ease;
+}
+
+.authoritySummary:hover {
+  background-color: #bbdefb;
+}
+
+.authorityDetails[open] .authoritySummary {
+  border-bottom: 1px solid #90caf9;
+}
+
+.authorityContent {
+  padding: 12px;
+  font-size: 12px;
+  color: #333;
+  line-height: 1.6;
+}
+
+.authorityContent p {
+  margin: 6px 0;
+}
+
+.authorityContent strong {
+  color: #1976d2;
+}
+
+/* ============================================================================
+ * MODAL DIALOG (Checklist #6: Intent Confirmation)
+ * ============================================================================ */
+
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  padding: 16px;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modal {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 500px;
+  width: 100%;
+  box-shadow: 0 20px 25px rgba(0, 0, 0, 0.15);
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.modal h4 {
+  margin-top: 0;
+  margin-bottom: 16px;
+  color: #333;
+  font-size: 18px;
+}
+
+.warning {
+  background: #fff3cd;
+  border-left: 3px solid #ffc107;
+  padding: 12px;
+  border-radius: 4px;
+  color: #856404;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.warning strong {
+  color: #333;
+}
+
+/* ============================================================================
+ * FORM SECTION
+ * ============================================================================ */
+
+.formGroup {
+  margin: 16px 0;
+}
+
+.formGroup label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #333;
+}
+
+.required {
+  color: #d32f2f;
+}
+
+.textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  min-height: 80px;
+  resize: vertical;
+  transition: border-color 0.2s ease;
+  box-sizing: border-box;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: #1976d2;
+  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+}
+
+.textarea:disabled {
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+}
+
+.charCount {
+  display: block;
+  font-size: 11px;
+  color: #999;
+  text-align: right;
+  margin-top: 4px;
+}
+
+/* ============================================================================
+ * PREVIEW SECTION (Checklist #8: Narrative)
+ * ============================================================================ */
+
+.preview {
+  background: #f0f7ff;
+  padding: 12px;
+  border-radius: 4px;
+  margin: 16px 0;
+  border-left: 3px solid #1976d2;
+}
+
+.preview h5 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  color: #1976d2;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.preview ul {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 12px;
+  color: #333;
+  line-height: 1.8;
+}
+
+.preview li {
+  margin: 4px 0;
+}
+
+/* ============================================================================
+ * BUTTON GROUPS (Checklist #7: Reversibility & #9: Emotional Safety)
+ * ============================================================================ */
+
+.buttonGroup {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.declineBtn,
+.confirmBtn {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 4px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s ease;
+  text-align: center;
+  user-select: none;
+}
+
+.declineBtn {
+  background: #f0f0f0;
+  color: #333;
+  border: 1px solid #ddd;
+}
+
+.declineBtn:hover:not(:disabled) {
+  background: #e0e0e0;
+}
+
+.confirmBtn {
+  background: #ff6b6b;
+  color: white;
+}
+
+.confirmBtn:hover:not(:disabled) {
+  background: #ff5252;
+}
+
+.declineBtn:disabled,
+.confirmBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+ * ACTION BUTTONS (Checklist #7: Reversibility)
+ * ============================================================================ */
+
+.actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.killSwitchBtn,
+.reactivateBtn,
+.viewActivityBtn {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 4px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 13px;
+  transition: all 0.2s ease;
+  user-select: none;
+  text-align: center;
+  flex: 1;
+  min-width: 150px;
+}
+
+.killSwitchBtn {
+  background: #ff6b6b;
+  color: white;
+  border: none;
+}
+
+.killSwitchBtn:hover:not(:disabled) {
+  background: #ff5252;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(255, 107, 107, 0.3);
+}
+
+.reactivateBtn {
+  background: #10b981;
+  color: white;
+  border: none;
+}
+
+.reactivateBtn:hover:not(:disabled) {
+  background: #059669;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+}
+
+.viewActivityBtn {
+  background: #f0f0f0;
+  color: #333;
+  border: 1px solid #ddd;
+  flex: 0 1 auto;
+}
+
+.viewActivityBtn:hover {
+  background: #e0e0e0;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+ * RESPONSIVE DESIGN
+ * ============================================================================ */
+
+@media (max-width: 600px) {
+  .card {
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  .titleSection {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .title {
+    font-size: 16px;
+  }
+
+  .actions {
+    flex-direction: column;
+  }
+
+  .killSwitchBtn,
+  .reactivateBtn,
+  .viewActivityBtn {
+    width: 100%;
+    min-width: auto;
+  }
+
+  .modal {
+    max-width: 95%;
+    padding: 16px;
+  }
+
+  .buttonGroup {
+    flex-direction: column;
+  }
+
+  .declineBtn,
+  .confirmBtn {
+    width: 100%;
+  }
+}

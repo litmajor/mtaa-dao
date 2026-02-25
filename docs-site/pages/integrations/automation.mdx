@@ -1,0 +1,238 @@
+# Trade Automation
+
+Automate trading with workflows and smart contracts.
+
+## What is Trade Automation?
+
+**Trade automation** removes manual steps from trading:
+
+```
+Without Automation:
+Check prices → Analyze → Decide → Execute
+(1-5 minutes per decision)
+
+With Automation:
+Monitor → Analyze → Execute
+(milliseconds per decision, 24/7)
+```
+
+## Types of Automation
+
+### 1. Rule-Based Triggers
+
+Execute trades when conditions are met:
+
+```python
+# Example: Rebalance if allocation drifts > 5%
+if abs(current_allocation - target_allocation) > 5%:
+    execute_rebalance_trade()
+```
+
+### 2. Time-Based Execution
+
+Execute trades on schedule:
+
+```python
+# Every hour: Move profits to treasury
+schedule.every().hour.do(move_profits_to_treasury)
+
+# Every day: Rebalance portfolio
+schedule.every().day.at("00:00").do(daily_rebalance)
+```
+
+### 3. Price-Based Triggers
+
+Execute when price hits level:
+
+```
+Set alerts:
+- BUY if MTAA < $0.95
+- SELL if MTAA > $1.20
+- Exit position if loss > 5%
+```
+
+### 4. Multi-Condition Automation
+
+Combine multiple conditions:
+
+```python
+# Buy only if:
+# - RSI < 30 (oversold)
+# - Volume > average (confirming)
+# - Price above 200MA (in uptrend)
+# - Account has capital available
+
+if rsi < 30 and volume > avg_volume and price > ma200:
+    if account_balance > 10_000:
+        execute_buy()
+```
+
+## Implementation Methods
+
+### Method 1: Smart Contract Automation
+
+```solidity
+// Automated Yield Harvesting
+contract AutoHarvest {
+    function harvestAndReinvest() public {
+        // Harvest rewards
+        uint256 rewards = aave.claimRewards();
+        
+        // Reinvest in highest APY pool
+        uint256 bestApy = 0;
+        address bestPool = address(0);
+        
+        for (address pool in allowedPools) {
+            uint256 apy = getAPY(pool);
+            if (apy > bestApy) {
+                bestApy = apy;
+                bestPool = pool;
+            }
+        }
+        
+        // Deposit to best pool
+        deposit(bestPool, rewards);
+    }
+}
+
+// Triggered daily by keeper network
+```
+
+### Method 2: Off-Chain Bots
+
+```python
+# Python script running on server
+import schedule
+from mtaadao.api import MtaaoDAOClient
+
+client = MtaaDAOClient()
+
+def rebalance_treasury():
+    """Rebalance portfolio daily"""
+    current = client.get_portfolio()
+    targets = {
+        "MTAA": 0.40,
+        "USDC": 0.35,
+        "BTC": 0.15,
+        "ETH": 0.10
+    }
+    
+    for asset, target_pct in targets.items():
+        current_pct = current[asset] / current.total
+        if abs(current_pct - target_pct) > 0.05:
+            # Rebalance
+            client.rebalance(asset, target_pct)
+
+# Run daily
+schedule.every().day.at("00:00").do(rebalance_treasury)
+
+while True:
+    schedule.run_pending()
+    time.sleep(1)
+```
+
+### Method 3: Zapier / IFTTT
+
+```
+Trigger: Price alert from DexScreener
+If MTAA drops 10% below 7-day average
+
+Actions:
+1. Buy $5,000 MTAA
+2. Notify treasury team on Slack
+3. Record in Airtable
+```
+
+## Real-World Automation Examples
+
+### Example 1: Yield Optimizer
+
+```
+Daily at 00:00 UTC:
+1. Check APY on 10 protocols
+2. Find protocol with highest APY
+3. If APY increased > 1%:
+   → Withdraw from old protocol
+   → Deposit to new protocol
+   → Update spreadsheet
+4. If APY decreased < 1%:
+   → Leave funds where they are
+```
+
+### Example 2: Arbitrage Executor
+
+```
+Every 10 seconds:
+1. Get MTAA price on Celo DEX
+2. Get MTAA price on Ethereum DEX
+3. If spread > 2% and liquidity sufficient:
+   → Buy on cheaper chain
+   → Bridge to expensive chain
+   → Sell on expensive chain
+   → Log profit
+4. Track performance metrics
+```
+
+### Example 3: Liquidation Prevention
+
+```
+Monitor every 5 minutes:
+1. Check borrow health ratio
+2. If health < 1.3 (danger zone):
+   → Sell risky assets
+   → Deposit as collateral
+   → Reduce borrow amount
+3. Notify admin if action taken
+```
+
+## Safety Features
+
+✓ **Maximum Position Size**: Can't exceed 5% of pool
+✓ **Rate Limiting**: Max 100 trades per hour
+✓ **Slippage Protection**: Won't execute if > 2% slippage
+✓ **Circuit Breakers**: Stop all trading if losses exceed threshold
+✓ **Manual Kill Switch**: Admin can pause anytime
+✓ **Dry-Run Mode**: Test automation without real trades
+✓ **Audit Logging**: Every action logged on-chain
+
+## Monitoring Automation
+
+```
+Dashboard View:
+┌─────────────────────────────────┐
+│  Automation Status              │
+├─────────────────────────────────┤
+│ Rebalance: ✓ Active            │
+│ Yield Optimizer: ✓ Active      │
+│ Arbitrage: ⚠ Paused (low vol)  │
+│ Liquidation Guard: ✓ Active    │
+├─────────────────────────────────┤
+│ Last Actions (24h):             │
+│ • Rebalanced BTC (09:45)        │
+│ • Harvested $234 (03:12)        │
+│ • Moved $10k to Aave (22:05)    │
+├─────────────────────────────────┤
+│ Performance:                     │
+│ • Savings from automation: $2.3k│
+│ • Failed executions: 0          │
+│ • Uptime: 99.97%               │
+└─────────────────────────────────┘
+```
+
+## Best Practices
+
+✓ Start with simple automations (price alerts)
+✓ Test thoroughly with small amounts
+✓ Set reasonable limits on execution size
+✓ Monitor logs regularly
+✓ Have manual override always available
+✓ Use multiple data sources for decisions
+✓ Update conditions based on market changes
+✓ Document all automation rules
+✓ Regular security audits of code
+
+## Next Steps
+
+1. [Backtesting](/trading/backtesting) - Test before automating
+2. [CeFi Automation](/integrations/automation) - Automate with exchanges
+3. [Monitoring](/trading/analytics) - Track results

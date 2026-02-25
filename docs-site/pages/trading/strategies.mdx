@@ -1,0 +1,282 @@
+# Custom Strategy Development
+
+Build your own trading strategies on MtaaDAO.
+
+## Strategy Architecture
+
+Every strategy has three components:
+
+```python
+class TradingStrategy:
+    def __init__(self):
+        self.name = "My Strategy"
+        self.risk_per_trade = 0.02  # 2% risk
+        self.max_positions = 5
+    
+    def analyze(self, market_data):
+        """Return trading signal"""
+        # Your analysis logic here
+        return {"signal": "BUY", "confidence": 0.8}
+    
+    def execute(self, signal):
+        """Execute the trade"""
+        # Your execution logic here
+        return {"order_id": "123", "status": "filled"}
+    
+    def manage_risk(self, position):
+        """Apply risk management"""
+        # Stop loss, take profit, etc
+        return {"status": "active"}
+```
+
+## Building a Mean Reversion Strategy
+
+This strategy buys oversold and sells overbought tokens.
+
+### Step 1: Define Parameters
+
+```python
+from mtaadao.trading import BaseStrategy
+import numpy as np
+
+class MeanReversionStrategy(BaseStrategy):
+    def __init__(self):
+        super().__init__("MeanReversion")
+        
+        # Parameters
+        self.rsi_period = 14
+        self.rsi_oversold = 30
+        self.rsi_overbought = 70
+        self.position_size = 0.02  # 2% risk per trade
+        
+        # Tracking
+        self.positions = {}
+        self.trades = []
+```
+
+### Step 2: Calculate Indicators
+
+```python
+def calculate_rsi(prices, period=14):
+    """Calculate Relative Strength Index"""
+    deltas = np.diff(prices)
+    
+    seed = deltas[:period+1]
+    up = seed[seed >= 0].sum() / period
+    down = -seed[seed < 0].sum() / period
+    
+    rs = up / down if down != 0 else np.inf
+    rsi = 100 - 100 / (1 + rs)
+    
+    for d in deltas[period+1:]:
+        if d > 0:
+            up = (up * 13 + d) / 14
+            down = (down * 13) / 14
+        else:
+            up = (up * 13) / 14
+            down = (-d * 13 + down) / 14
+        
+        rs = up / down if down != 0 else np.inf
+        rsi = 100 - 100 / (1 + rs)
+    
+    return rsi
+
+def analyze(self, data):
+    """Generate trading signal based on RSI"""
+    prices = data["close_prices"]  # Last 100 prices
+    rsi = calculate_rsi(prices, self.rsi_period)
+    
+    if rsi < self.rsi_oversold:
+        confidence = (self.rsi_oversold - rsi) / self.rsi_oversold
+        return {"signal": "BUY", "confidence": confidence}
+    
+    elif rsi > self.rsi_overbought:
+        confidence = (rsi - self.rsi_overbought) / (100 - self.rsi_overbought)
+        return {"signal": "SELL", "confidence": confidence}
+    
+    else:
+        return {"signal": "HOLD", "confidence": 0.5}
+```
+
+### Step 3: Implement Risk Management
+
+```python
+def calculate_position_size(self, account_balance, entry_price, stop_loss_price):
+    """Calculate position size based on risk"""
+    risk_amount = account_balance * self.position_size
+    price_risk = entry_price - stop_loss_price
+    
+    if price_risk <= 0:
+        return 0
+    
+    position_size = risk_amount / price_risk
+    return position_size
+
+def execute(self, signal, market_data):
+    """Execute trade with risk management"""
+    if signal["signal"] == "BUY":
+        entry_price = market_data["price"]
+        stop_loss = entry_price * 0.97  # 3% below entry
+        take_profit = entry_price * 1.05  # 5% above entry
+        
+        size = self.calculate_position_size(
+            account_balance=100_000,
+            entry_price=entry_price,
+            stop_loss_price=stop_loss
+        )
+        
+        order = {
+            "symbol": "MTAA/USDC",
+            "side": "BUY",
+            "size": size,
+            "entry_price": entry_price,
+            "stop_loss": stop_loss,
+            "take_profit": take_profit,
+            "timestamp": market_data["timestamp"]
+        }
+        
+        self.positions[order["id"]] = order
+        return order
+```
+
+### Step 4: Track Performance
+
+```python
+def record_trade(self, position, exit_price, exit_reason):
+    """Record completed trade for analysis"""
+    entry_price = position["entry_price"]
+    profit = (exit_price - entry_price) * position["size"]
+    profit_pct = (exit_price - entry_price) / entry_price * 100
+    
+    trade = {
+        "entry_price": entry_price,
+        "exit_price": exit_price,
+        "size": position["size"],
+        "profit": profit,
+        "profit_pct": profit_pct,
+        "reason": exit_reason,
+        "duration": position["timestamp"] - position["entry_timestamp"]
+    }
+    
+    self.trades.append(trade)
+    return trade
+
+def performance_metrics(self):
+    """Calculate strategy performance"""
+    if not self.trades:
+        return None
+    
+    trades_df = pd.DataFrame(self.trades)
+    
+    return {
+        "total_trades": len(trades_df),
+        "winning_trades": len(trades_df[trades_df["profit"] > 0]),
+        "losing_trades": len(trades_df[trades_df["profit"] < 0]),
+        "win_rate": len(trades_df[trades_df["profit"] > 0]) / len(trades_df),
+        "avg_profit": trades_df["profit"].mean(),
+        "avg_profit_pct": trades_df["profit_pct"].mean(),
+        "max_profit": trades_df["profit"].max(),
+        "max_loss": trades_df["profit"].min(),
+        "total_profit": trades_df["profit"].sum(),
+        "sharpe_ratio": trades_df["profit_pct"].mean() / trades_df["profit_pct"].std()
+    }
+```
+
+## Strategy Types & Examples
+
+### 1. Momentum Strategy
+```python
+class MomentumStrategy(BaseStrategy):
+    def analyze(self, data):
+        # Buy if 20-day MA > 50-day MA
+        if data["ma20"] > data["ma50"]:
+            return {"signal": "BUY", "confidence": 0.7}
+        return {"signal": "HOLD", "confidence": 0.5}
+```
+
+### 2. Volatility Breakout
+```python
+class VolatilityBreakoutStrategy(BaseStrategy):
+    def analyze(self, data):
+        # Buy if price breaks above 20-day high
+        if data["price"] > data["20day_high"]:
+            return {"signal": "BUY", "confidence": 0.8}
+        return {"signal": "HOLD", "confidence": 0.5}
+```
+
+### 3. Mean Reversion
+```python
+class MeanReversionStrategy(BaseStrategy):
+    def analyze(self, data):
+        # Buy if price below lower Bollinger Band
+        if data["price"] < data["bb_lower"]:
+            return {"signal": "BUY", "confidence": 0.7}
+        return {"signal": "HOLD", "confidence": 0.5}
+```
+
+## Testing Your Strategy
+
+### Backtest First
+```python
+from mtaadao.backtesting import Backtest
+
+backtest = Backtest(
+    strategy=MeanReversionStrategy(),
+    data="historical_mtaa_data.csv",
+    start_date="2024-01-01",
+    end_date="2025-12-31",
+    initial_capital=100_000
+)
+
+results = backtest.run()
+print(f"Total Return: {results['return_pct']}%")
+print(f"Sharpe Ratio: {results['sharpe_ratio']}")
+print(f"Max Drawdown: {results['max_drawdown']}%")
+```
+
+### Paper Trade
+```python
+strategy = MeanReversionStrategy()
+strategy.mode = "paper"  # No real trades
+
+# Run for 1 week with fake money
+for data in market_data_stream:
+    signal = strategy.analyze(data)
+    strategy.execute(signal, data)
+    # Simulate fills but don't actually trade
+```
+
+### Deploy with Limits
+```python
+strategy = MeanReversionStrategy()
+strategy.mode = "live"
+strategy.max_daily_loss = 1000  # Stop if lose $1k
+strategy.max_position_size = 10_000  # Max $10k per trade
+strategy.require_approval = True  # Require manual approval
+
+# Start trading with safeguards
+strategy.start()
+```
+
+## Common Mistakes
+
+❌ **Overfitting**: Optimizing too much for past data
+→ Use out-of-sample testing
+
+❌ **Survivorship Bias**: Only looking at successful tokens
+→ Include all tokens, not just winners
+
+❌ **Look-Ahead Bias**: Using future data in analysis
+→ Only use data available at decision time
+
+❌ **Ignoring Fees**: Profits eaten by transaction costs
+→ Account for all fees in backtest
+
+❌ **No Risk Management**: Not setting stops
+→ Always use position sizing and stops
+
+## Next Steps
+
+1. [Backtesting](/trading/backtesting) - Test your strategy
+2. [Deploy Strategy](/developer/deployment) - Go live
+3. [Monitor Performance](/trading/analytics) - Track results

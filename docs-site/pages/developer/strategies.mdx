@@ -1,0 +1,344 @@
+# DeFi Strategies
+
+Advanced DeFi techniques and strategies for DAOs to maximize returns and manage risk.
+
+## Strategy Framework
+
+All DeFi strategies follow this framework:
+
+1. **Assess** - Analyze market conditions
+2. **Decide** - Choose optimal action
+3. **Execute** - Perform transactions
+4. **Monitor** - Track performance
+5. **Rebalance** - Adjust as needed
+
+## Strategy 1: Dollar Cost Averaging (DCA)
+
+**Best for**: Risk-averse DAOs, long-term investing
+
+**How it works**:
+- Buy fixed amount at fixed intervals
+- Reduces impact of price volatility
+- Averages out entry prices over time
+
+**Example**:
+- Buy 1,000 USDC of MTAA every week
+- Month 1: 0.50 USDC/MTAA (buy 2,000 MTAA)
+- Month 2: 1.00 USDC/MTAA (buy 1,000 MTAA)
+- Month 3: 0.75 USDC/MTAA (buy 1,333 MTAA)
+- Average cost: 0.75 USDC/MTAA
+
+**Implementation**:
+```javascript
+const dca = new DCAAgent({
+  daoId: 'dao_123',
+  asset: 'MTAA',
+  stableAsset: 'USDC',
+  frequency: 'weekly',
+  amount: 1000
+})
+
+await dca.deploy()
+```
+
+**Pros**: Low risk, consistent, simple
+**Cons**: No alpha generation, slower accumulation
+
+## Strategy 2: Yield Farming Rotation
+
+**Best for**: Moderate-risk DAOs seeking yield
+
+**How it works**:
+- Monitor multiple yield pools
+- Rotate capital to highest APY
+- Rebalance periodically
+
+**Example Portfolio**:
+```
+Week 1:
+- 40% in MTAA/USDC LP @ 12% APY
+- 30% in Lending Pool @ 8% APY
+- 30% in Cash Reserve @ 0%
+Average: 7.6% APY
+
+Week 2 (Market changes):
+- 20% in MTAA/USDC LP @ 12% APY (yield decreased)
+- 50% in USDC Lending @ 10% APY (new opportunity)
+- 30% in Cash Reserve @ 0%
+Average: 8% APY (improved!)
+```
+
+**Implementation**:
+```javascript
+const yieldRotation = new YieldRotationAgent({
+  daoId: 'dao_123',
+  rebalanceFrequency: 'weekly',
+  targetAPY: 10,
+  constraints: {
+    maxSinglePool: 0.5, // 50% max
+    minLiquidity: 0.2,  // 20% minimum liquid
+    excludeAssets: ['unstable_tokens']
+  }
+})
+
+await yieldRotation.deploy()
+```
+
+**Pros**: Higher returns, diversified
+**Cons**: Moderate complexity, gas costs
+
+## Strategy 3: Flash Loan Arbitrage
+
+**Best for**: DAOs with technical expertise, short-term alpha
+
+**How it works**:
+1. Borrow large amount (flash loan)
+2. Exploit price differences across exchanges
+3. Repay loan + fee
+4. Keep profit
+
+**Example Arbitrage**:
+```
+Opportunity:
+- MTAA price: 1.00 USDC on Uniswap
+- MTAA price: 0.98 USDC on SushiSwap
+
+Execution:
+1. Flash loan 1,000,000 USDC
+2. Buy 1,000,000 MTAA on SushiSwap (cost: 980,000 USDC)
+3. Sell on Uniswap (earn: 1,000,000 USDC)
+4. Repay loan: 1,000,000 + 900 fee = 1,000,900 USDC
+5. Profit: 1,000,000 - 980,000 - 900 = 19,100 USDC
+
+Net profit to treasury: 19,100 USDC
+ROI: 1.9% per transaction
+```
+
+**Implementation**:
+```javascript
+const flashArbAgent = new FlashLoanArbAgent({
+  daoId: 'dao_123',
+  minProfitThreshold: 100, // Only execute if >100 USDC profit
+  exchanges: [
+    'UniswapV3',
+    'SushiSwap', 
+    'Curve',
+    'Balancer'
+  ],
+  maxLoanAmount: 10000000 // 10M USDC max
+})
+
+await flashArbAgent.deploy()
+```
+
+**Pros**: High returns, quick execution
+**Cons**: High risk, requires monitoring, complex logic
+
+## Strategy 4: Liquidity Provision (LP) with Impermanent Loss Protection
+
+**Best for**: DAOs seeking fee income
+
+**How it works**:
+1. Deposit equal values of two assets
+2. Earn fees from trades
+3. Manage impermanent loss
+
+**Example**:
+```
+Deposit to MTAA/USDC LP:
+- 500,000 MTAA
+- 500,000 USDC
+- Total value: 1,000,000 USDC
+
+Fees earned: 50 USDC/day (0.25% fee on 20,000 daily volume)
+Impermanent loss: Track price divergence
+
+Days later:
+- MTAA price: 2.00 USDC (up 100%)
+- Your LP position worth ~1.4M but only have 1.35M due to IL
+- IL loss: ~50,000 USDC
+- BUT fees earned: +150,000 USDC
+- Net profit: 100,000 USDC
+```
+
+**Implementation**:
+```javascript
+const lpAgent = new LiquidityProviderAgent({
+  daoId: 'dao_123',
+  pairs: [
+    { token0: 'MTAA', token1: 'USDC', fee: 0.0005 }, // 0.05% fee tier
+  ],
+  deployAmount: 1000000, // 1M USDC value
+  hedgeIL: true, // Use options to hedge IL
+  rebalanceThreshold: 0.05 // Rebalance if price moves 5%
+})
+
+await lpAgent.deploy()
+```
+
+**Pros**: Passive income, fee accrual
+**Cons**: Impermanent loss risk, capital efficiency
+
+## Strategy 5: Leverage Trading (Advanced)
+
+**Best for**: Experienced DAOs, risk-tolerant
+
+**How it works**:
+1. Borrow funds against collateral
+2. Amplify position size
+3. Manage liquidation risk
+
+**Example**:
+```
+Treasury has: 100,000 USDC
+Borrow: 300,000 USDC (3x leverage)
+Total buying power: 400,000 USDC
+
+Buy MTAA @ 1.00 USDC:
+- Receive 400,000 MTAA
+
+Price increases to 1.25 USDC:
+- Position worth: 500,000 USDC
+- Repay loan: 300,000 USDC
+- Net profit: 200,000 USDC (200% ROI on 100K capital)
+
+BUT if price drops to 0.99 USDC:
+- Position worth: 396,000 USDC
+- Repay loan: 300,000 USDC
+- Net loss: 96,000 USDC (96% loss)
+```
+
+**Implementation**:
+```javascript
+const leverageAgent = new LeverageAgent({
+  daoId: 'dao_123',
+  leverageRatio: 2, // 2x leverage max
+  collateral: 'USDC',
+  borrowAsset: 'USDC',
+  tradeAsset: 'MTAA',
+  liquidationThreshold: 1.5, // Deleverage if ratio drops
+  stopLoss: 0.90 // Close position if drops 10%
+})
+
+await leverageAgent.deploy()
+```
+
+**Pros**: Amplified returns
+**Cons**: Amplified losses, liquidation risk
+
+## Strategy 6: Market Making
+
+**Best for**: DAOs with significant capital
+
+**How it works**:
+1. Provide buy/sell quotes for assets
+2. Earn spread on trades
+3. Manage inventory
+
+**Example**:
+```
+You provide liquidity for MTAA:
+- Buy at: 0.99 USDC (bid)
+- Sell at: 1.01 USDC (ask)
+- Spread: 0.02 USDC (2%)
+
+Daily volume: 100,000 MTAA
+Average trades: 20,000 MTAA/day
+Daily revenue: 20,000 * 0.02 = 400 USDC/day
+
+Monthly: 400 * 30 = 12,000 USDC
+APY: 12,000 * 12 / initial_capital
+```
+
+**Implementation**:
+```javascript
+const mmAgent = new MarketMakerAgent({
+  daoId: 'dao_123',
+  assets: ['MTAA', 'USDC'],
+  bidAskSpread: 0.0025, // 0.25%
+  inventory: {
+    MTAA: 100000,
+    USDC: 100000
+  },
+  rebalanceLevel: 0.3, // Rebalance if > 30% skew
+  maxInventory: 500000
+})
+
+await mmAgent.deploy()
+```
+
+**Pros**: Consistent income
+**Cons**: Inventory risk, capital intensive
+
+## Risk Management
+
+### Portfolio Constraints
+```javascript
+const constraints = {
+  maxSingleAsset: 0.4,        // 40% in any asset
+  minLiquidity: 0.2,           // 20% in cash/stables
+  maxLeverage: 2,              // 2x max
+  maxPerTransaction: 100000,   // 100K USDC max
+  maxDaily: 500000,            // 500K USDC/day max
+  stopLossPercentage: 0.1      // Exit if down 10%
+}
+```
+
+### Monitoring Metrics
+```javascript
+const metrics = {
+  sharpeRatio: 1.5,       // Higher is better
+  maxDrawdown: 0.15,      // 15% max
+  winRate: 0.65,          // 65% winning trades
+  profitFactor: 2.0,      // 2:1 profit to loss ratio
+  sortino: 1.8            // Downside-adjusted return
+}
+```
+
+## Comparing Strategies
+
+| Strategy | Risk | Return | Complexity | Capital |
+|----------|------|--------|-----------|---------|
+| DCA | Low | 5-10% | Low | Any |
+| Yield Rotation | Medium | 8-15% | Medium | 100K+ |
+| Flash Loans | High | 15-50% | High | 1M+ |
+| LP | Medium | 10-30% | Medium | 500K+ |
+| Leverage | Very High | 50%+ | High | 100K+ |
+| Market Making | High | 20-40% | High | 1M+ |
+
+## Choosing Your Strategy
+
+**Conservative DAO** →  DCA or Yield Rotation
+**Balanced DAO** → Yield Rotation or LP
+**Aggressive DAO** → Flash Loans or Leverage
+**Professional DAO** → Market Making or Multi-Strategy
+
+## Implementation Checklist
+
+✓ Start with 10% of treasury
+✓ Test on testnet first
+✓ Set clear risk limits
+✓ Monitor daily
+✓ Have kill switches
+✓ Use automation sparingly
+✓ Get community approval
+✓ Keep detailed records
+✓ Audit smart contracts
+✓ Have backup plans
+
+## Common Pitfalls
+
+❌ Over-leveraging
+❌ No stop losses
+❌ Ignoring IL on LPs
+❌ Single protocol dependency
+❌ Not monitoring gas costs
+❌ Forgetting about taxes
+❌ Complex strategies without expertise
+
+## Next Steps
+
+- [Building Agents](/developer/agents-guide) - Automate strategies
+- [Code Examples](/developer/code-examples) - Implementation
+- [API Reference](/developer/api-reference) - Full docs
+- [Community Forum](https://forum.mtaadao.com) - Discuss strategies

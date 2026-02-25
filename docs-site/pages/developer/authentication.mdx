@@ -1,0 +1,116 @@
+# Authentication
+
+Secure your API requests with authentication.
+
+## Getting API Keys
+
+1. Go to **Dashboard** → **Settings** → **API Keys**
+2. Click **Create New Key**
+3. Choose permission level:
+   - **Read-Only**: View data only
+   - **Write**: Create and update operations
+   - **Admin**: Full access including deletion
+4. Name the key and save it securely
+
+## Using API Keys
+
+Include your API key in the Authorization header:
+
+```bash
+curl https://api.mtaadao.com/v1/daos \
+  -H "Authorization: Bearer sk_live_abc123xyz789"
+```
+
+### JavaScript/Node.js
+```javascript
+import { MtaaDAO } from '@mtaadao/sdk'
+
+const dao = new MtaaDAO({
+  apiKey: 'sk_live_abc123xyz789'
+})
+```
+
+### Python
+```python
+from mtaadao import MtaaDAO
+
+dao = MtaaDAO(api_key='sk_live_abc123xyz789')
+```
+
+## OAuth 2.0
+
+For production applications, use OAuth 2.0 for user authorization:
+
+```javascript
+// Redirect user to
+https://auth.mtaadao.com/oauth/authorize?
+  client_id=YOUR_CLIENT_ID&
+  redirect_uri=YOUR_REDIRECT_URI&
+  scope=daos:read daos:write&
+  state=random_state
+
+// User authenticates and is redirected back with code
+// Exchange code for access token
+const response = await fetch('https://auth.mtaadao.com/oauth/token', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    code: auth_code,
+    client_id: YOUR_CLIENT_ID,
+    client_secret: YOUR_CLIENT_SECRET
+  })
+})
+
+const { access_token } = await response.json()
+```
+
+## Security Best Practices
+
+✓ **Store keys securely** - Use environment variables, not in code
+✓ **Rotate keys regularly** - Change keys every 90 days
+✓ **Use read-only keys** - For non-critical operations
+✓ **Monitor key usage** - Check API logs regularly
+✓ **Revoke unused keys** - Remove keys you don't need
+
+## Scopes
+
+When using OAuth, request only necessary scopes:
+
+| Scope | Permission |
+|-------|-----------|
+| `daos:read` | View DAO data |
+| `daos:write` | Create/update DAOs |
+| `governance:read` | View proposals |
+| `governance:write` | Create/vote proposals |
+| `treasury:read` | View treasury data |
+| `treasury:write` | Execute transfers |
+| `members:read` | View members |
+| `members:write` | Manage members |
+| `agents:write` | Create/manage agents |
+| `defi:read` | View DeFi data |
+| `defi:write` | Execute DeFi operations |
+
+## Rate Limits by Tier
+
+| Tier | Requests/Min | Concurrent | Price |
+|------|-------------|-----------|-------|
+| Free | 100 | 10 | Free |
+| Pro | 1,000 | 100 | $99/mo |
+| Enterprise | Custom | Custom | Contact |
+
+## Testing
+
+Use these test keys during development:
+
+```
+sk_test_abc123xyz789  # Test API key (simulated responses)
+pk_test_public123     # Test public key (for client-side)
+```
+
+Test mode never modifies real data. Perfect for testing your integration.
+
+## Support
+
+- **API Key Issues**: dev@mtaadao.com
+- **Security Concerns**: security@mtaadao.com
+- **Rate Limit Help**: support@mtaadao.com

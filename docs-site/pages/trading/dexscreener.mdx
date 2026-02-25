@@ -1,0 +1,197 @@
+# DexScreener Integration
+
+Discover and analyze tokens using DexScreener data.
+
+## What is DexScreener?
+
+**DexScreener** is a real-time DEX analytics platform that shows:
+- Token prices across all DEXs
+- Liquidity pools and trading volume
+- Trending tokens and emerging opportunities
+- Candlestick charts with technical indicators
+- Community sentiment and metrics
+
+## Why Use DexScreener?
+
+| Feature | Benefit |
+|---------|---------|
+| **Real-time Data** | Update every few seconds |
+| **Multi-DEX** | See prices across all chains |
+| **Liquidity Metrics** | Know if pool is reliable |
+| **Charts** | Technical analysis on any token |
+| **Alerts** | Get notified of price moves |
+| **Trending Tab** | Find emerging opportunities |
+
+## MtaaDAO Integration
+
+### API Connection
+
+```python
+from mtaadao.integrations import DexScreenerAPI
+
+ds = DexScreenerAPI()
+
+# Get token data
+token = ds.get_token("celo", "0x123...")
+print(f"Price: ${token['price']}")
+print(f"Volume 24h: ${token['volume_24h']}")
+print(f"Liquidity: ${token['liquidity']}")
+```
+
+### Watchlist Management
+
+Create watchlists of tokens to monitor:
+
+```
+My Portfolio:
+├─ MTAA (Celo DEX) - +8.2% today
+├─ USDC (Celo DEX) - -0.1% today
+└─ cUSD (Curve) - +0.0% today
+
+Emerging Opportunities:
+├─ NewToken (Uniswap) - +145% this week
+├─ GameToken (SushiSwap) - +89% this month
+└─ StakingToken (Aave) - +23% this month
+```
+
+### Chart Integration
+
+```
+MTAA/USDC 4h Chart (from DexScreener):
+
+[Chart visualization]
+├─ RSI: 45 (neutral)
+├─ MACD: Bearish cross
+├─ 200MA: $0.98 (below current price)
+└─ Volume: 50K USDC (above average)
+
+Trading Signal: HOLD (until volume increases)
+```
+
+## Use Cases
+
+### 1. Token Discovery
+
+Find emerging tokens early:
+
+```
+Trending (24h):
+1. NewMeme - +450% (risky)
+2. LiquidStake - +145% (moderate)
+3. YieldToken - +78% (established)
+
+Filter by:
+- Min liquidity: $100k
+- Min holders: 500
+- Contract verified: Yes
+- Renounced: Yes
+→ Better risk profile
+```
+
+### 2. Liquidity Analysis
+
+Ensure pool is safe to trade:
+
+```
+Token: YieldMTAA
+Pool: MTAA/USDC on Uniswap
+
+Liquidity: $2.5M (excellent)
+Volume 24h: $1.2M (high)
+Slippage for $50k trade: 0.12% (low)
+Reserve ratio: Balanced
+
+→ Safe to trade large amounts
+```
+
+### 3. Price Alerts
+
+Get notified when token hits your price:
+
+```
+Alert: MTAA price
+- When: Drops to $0.95 (BUY opportunity)
+- When: Rises to $1.20 (SELL signal)
+- Notification: SMS + Email + Telegram
+```
+
+## Integration with Trading Agents
+
+### Automated Token Discovery
+
+```python
+# Monitor trending tokens hourly
+tokens_trending = ds.get_trending(timeframe="24h")
+
+for token in tokens_trending:
+    if token["change"] > 50:  # 50%+ gain
+        if token["liquidity"] > 500_000:  # $500k+ liquidity
+            if token["contract_verified"]:  # Verified contract
+                # Analyze with strategy
+                signal = analyze_strategy(token)
+```
+
+### Dynamic Watchlist Update
+
+```python
+# Rebalance watchlist based on performance
+for token in my_watchlist:
+    current_data = ds.get_token(token)
+    
+    if current_data["volume_24h"] < 10_000:
+        my_watchlist.remove(token)  # Remove low volume
+    
+    if current_data["price_change_24h"] > 100:
+        my_watchlist.add_to_top(token)  # Feature emerging tokens
+```
+
+## Data Points Available
+
+```
+Token Metrics:
+├─ Price (USDC, other pairs)
+├─ Price change (1h, 24h, 7d, 30d)
+├─ Volume (24h, cumulative)
+├─ Market cap
+├─ Liquidity (total in pool)
+├─ Slippage impact
+├─ Holder count
+├─ Trading pairs
+├─ DEXs available
+└─ Recent trades
+
+Pool Metrics:
+├─ Reserve tokens
+├─ Liquidity providers
+├─ Trading fees earned
+├─ Impermanent loss risk
+└─ APY for LPs
+```
+
+## Safety Tips
+
+✓ Always verify contract address on multiple sources
+✓ Check if contract is verified on block explorer
+✓ Ensure liquidity is sufficient for your trade size
+✓ Monitor for rug pull indicators (lp locked, team verified)
+✓ Use slippage alerts to prevent sandwich attacks
+✓ Start with small trades on new tokens
+
+## API Rate Limits
+
+```
+Free Tier:
+- 100 requests/minute
+- 1-hour historical data
+
+Pro Tier:
+- 1000 requests/minute
+- Full historical data
+- Advanced charts
+```
+
+## Next Steps
+
+1. [Custom Strategies](/trading/strategies) - Build trading logic
+2. [Trading Bots](/trading/bots-agents) - Automate with agents
+3. [Backtesting](/trading/backtesting) - Test before deploying

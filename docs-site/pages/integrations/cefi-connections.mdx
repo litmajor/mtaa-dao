@@ -1,0 +1,205 @@
+# CeFi Connections
+
+Connect your DAO treasury to centralized exchanges.
+
+## Why CeFi Integration?
+
+| Reason | Benefit |
+|--------|---------|
+| **Deep Liquidity** | Execute large trades without slippage |
+| **Multiple Assets** | Access to 500+ trading pairs |
+| **Fiat On/Off Ramp** | Convert to local currency easily |
+| **Staking Services** | Earn on assets without self-custody risk |
+| **Compliance** | Tax reporting, KYC if needed |
+
+## Supported Exchanges
+
+### Kraken
+**Type**: Tier-1 exchange with institutional services
+
+**Integrations**:
+- REST API for trading
+- WebSocket for real-time data
+- Staking services (5-25% APY)
+
+**Fees**:
+- Trading: 0.16% - 0.26%
+- Staking: Commission-based
+
+**Best for**: Large treasury moves, staking
+
+### Coinbase
+**Type**: Regulated US-based exchange
+
+**Integrations**:
+- REST API
+- WebSocket feeds
+- Institutional custody (Coinbase Prime)
+
+**Fees**:
+- Trading: 0.40% - 0.60%
+- Custody: 10-25 bps annually
+
+**Best for**: US-based DAOs, compliance
+
+### Binance
+**Type**: Largest global exchange
+
+**Integrations**:
+- REST API
+- WebSocket streams
+- Margin trading available
+
+**Fees**:
+- Trading: 0.10% - 0.15%
+- Withdrawal: Variable per asset
+
+**Best for**: Highest liquidity, low fees
+
+## Setting Up CeFi Connection
+
+### Step 1: Create API Keys
+On your exchange, generate API keys with:
+- ✓ Trade permission
+- ✓ View balance permission
+- ✗ Withdraw permission (for security)
+
+### Step 2: Add to MtaaDAO
+```
+Treasury Settings → Integrations → Add Exchange
+Exchange: Kraken
+API Key: your_public_key
+API Secret: (encrypted)
+Subaccount: "MtaaDAO-Trading"
+```
+
+### Step 3: Set Trading Limits
+```
+Max trade size: $50,000 USDC
+Max daily volume: $200,000
+Allowed pairs: MTAA/*, stable/stable
+Require approval: Yes (for trades > $10k)
+```
+
+### Step 4: Verify Connection
+```
+Test trade: Buy $100 USDC
+Monitor for 5 minutes
+If successful → Enable live trading
+```
+
+## Trading Flows
+
+### Simple Swap
+
+```
+Scenario: Need USDC, have MTAA
+
+Flow:
+1. Kraken: MTAA → BTC → USDC
+2. Fee: 0.16%
+3. Time: 10 seconds
+4. Received: $9,984 (from $10,000)
+```
+
+### Arbitrage Execution
+
+```
+Opportunity:
+- MtaaDAO DEX: MTAA = $1.00
+- Kraken: MTAA = $1.02
+
+Execution:
+1. Kraken: Buy 10,000 MTAA = $10,200
+2. Bridge to MtaaDAO chain
+3. DEX: Sell 10,000 MTAA = $10,000
+4. Loss: $200 + fees (unprofitable!)
+
+Note: Spreads shrink quickly, so automation is key
+```
+
+### Liquidity Pool Arbitrage
+
+```
+MTAA/USDC on DEX:
+- Uniswap: 1000 MTAA / 1000 USDC
+- Kraken: 1.005 USDC per MTAA
+- SushiSwap: 0.995 USDC per MTAA
+
+Strategy:
+1. Buy on SushiSwap: 10,000 MTAA = 9,950 USDC
+2. Sell on Uniswap: 10,000 MTAA ≈ 10,050 USDC
+3. Profit: ~$100 (minus gas)
+```
+
+## Risk Management with CeFi
+
+### Counterparty Risk
+
+Exchanges can be hacked or fail:
+
+```
+Mitigation:
+- Split treasury across 3+ exchanges
+- Never keep > 30% on single exchange
+- Use institutional custody (Coinbase Prime)
+- Insurance where available
+```
+
+### Trading Risk
+
+```
+Max position: 10% of daily volume
+Stop loss: 2% below entry
+Take profit: 5% above entry
+Slippage limit: 1% max
+Rate limit: 10 trades per hour
+```
+
+### Bridge Risk
+
+Cross-chain transfers can fail:
+
+```
+Safety:
+1. Test bridge with $100
+2. Monitor for 30 minutes
+3. Confirm arrival before sending more
+4. Use most established bridges (Stargate, Portal)
+```
+
+## Monitoring Dashboard
+
+```
+Exchange Balances:
+├─ Kraken: $45,000 USDC
+├─ Coinbase: $30,000 USDC
+└─ Binance: $25,000 USDC
+
+Staking Returns (24h):
+├─ Kraken ETH: +$1.2
+├─ Kraken DOT: +$0.8
+└─ Total APY: 6.2%
+
+Recent Trades:
+├─ Buy MTAA: $10,000 → 9,950 MTAA
+├─ Sell BTC: 0.5 BTC → $21,000
+└─ Swap USDCeth → USDCcelo: $5,000
+```
+
+## Best Practices
+
+✓ Use sub-accounts for each strategy
+✓ Enable IP whitelisting
+✓ Require 2FA for API changes
+✓ Regularly rotate API keys
+✓ Monitor exchange status pages
+✓ Have emergency withdrawal plan
+✓ Keep audit trail of all trades
+✓ Reconcile with on-chain records daily
+
+## Next Steps
+
+1. [Automation](/integrations/automation) - Automate trades
+2. [Trading Bots](/trading/bots-agents) - Deploy agents
+3. [Backtesting](/trading/backtesting) - Test strategies

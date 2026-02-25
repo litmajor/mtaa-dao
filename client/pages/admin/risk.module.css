@@ -1,0 +1,615 @@
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  min-height: 100vh;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 28px;
+  color: #333;
+}
+
+.refreshBtn {
+  padding: 10px 20px;
+  background: #2196f3;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.3s;
+}
+
+.refreshBtn:hover:not(:disabled) {
+  background: #1976d2;
+}
+
+.refreshBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Score Card */
+.scoreCard {
+  display: flex;
+  align-items: center;
+  gap: 30px;
+  background: white;
+  padding: 30px;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  margin-bottom: 30px;
+}
+
+.scoreCircle {
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: white;
+  font-weight: bold;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+}
+
+.scoreValue {
+  font-size: 64px;
+  line-height: 1;
+}
+
+.scoreLabel {
+  font-size: 14px;
+  margin-top: 8px;
+  opacity: 0.9;
+}
+
+.scoreDetails {
+  flex: 1;
+}
+
+.scoreStatus {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 10px 0;
+  color: #333;
+}
+
+.scoreText {
+  font-size: 14px;
+  color: #666;
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #e0e0e0;
+  background: white;
+  padding: 0 20px;
+  border-radius: 8px 8px 0 0;
+}
+
+.tab {
+  padding: 15px 20px;
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  border-bottom: 3px solid transparent;
+  transition: all 0.3s;
+}
+
+.tab:hover {
+  color: #2196f3;
+}
+
+.tab.active {
+  color: #2196f3;
+  border-bottom-color: #2196f3;
+}
+
+/* Tab Content */
+.tabContent {
+  background: white;
+  padding: 30px;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.tabContent h2 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: #333;
+  font-size: 20px;
+}
+
+/* Overview */
+.overview {
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 30px;
+}
+
+.summaryCard {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 20px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.summaryCard h3 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  font-weight: 500;
+  opacity: 0.9;
+}
+
+.summaryCard .number {
+  margin: 0;
+  font-size: 36px;
+  font-weight: bold;
+}
+
+.recommendations {
+  background: #f5f5f5;
+  padding: 20px;
+  border-radius: 8px;
+}
+
+.recommendations h3 {
+  margin-top: 0;
+  color: #333;
+}
+
+.recommendations ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.recommendations li {
+  padding: 10px 0;
+  border-bottom: 1px solid #ddd;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.recommendations li:last-child {
+  border-bottom: none;
+}
+
+.recommendations strong {
+  color: #2196f3;
+}
+
+/* Risk Factors */
+.factors {
+}
+
+.factorsList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.factorCard {
+  background: #fafafa;
+  border: 1px solid #e0e0e0;
+  padding: 20px;
+  border-radius: 8px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.factorCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.factorHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  margin-bottom: 15px;
+}
+
+.factorHeader h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #333;
+  flex: 1;
+}
+
+.severityBadge {
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: white;
+  font-size: 11px;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.factorScore {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 15px 0;
+}
+
+.scoreBar {
+  flex: 1;
+  height: 8px;
+  background: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.scoreProgress {
+  height: 100%;
+  transition: width 0.3s;
+}
+
+.factorScore span {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  min-width: 50px;
+}
+
+.description {
+  font-size: 13px;
+  color: #555;
+  margin: 10px 0;
+  line-height: 1.5;
+}
+
+.mitigation {
+  font-size: 13px;
+  color: #1976d2;
+  margin: 10px 0 0 0;
+  line-height: 1.5;
+}
+
+/* Alerts */
+.alerts {
+}
+
+.alertsList {
+  display: grid;
+  gap: 15px;
+}
+
+.alertCard {
+  border-left: 4px solid #666;
+  background: #fafafa;
+  padding: 20px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.alertCard.acknowledged {
+  opacity: 0.6;
+  background: #f0f0f0;
+}
+
+.alertHeader {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.alertType {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  background: #e0e0e0;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.acknowledgedBadge {
+  font-size: 11px;
+  font-weight: bold;
+  color: #4caf50;
+  background: #e8f5e9;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.alertMessage {
+  margin: 10px 0;
+  font-size: 14px;
+  color: #333;
+  line-height: 1.5;
+}
+
+.alertFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 15px;
+}
+
+.timestamp {
+  font-size: 12px;
+  color: #999;
+}
+
+.acknowledgeBtn {
+  padding: 8px 16px;
+  background: #2196f3;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+
+.acknowledgeBtn:hover {
+  background: #1976d2;
+}
+
+/* Compliance */
+.compliance {
+}
+
+.complianceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 15px;
+}
+
+.complianceCard {
+  padding: 20px;
+  border-radius: 8px;
+  border: 2px solid #e0e0e0;
+}
+
+.complianceCard.compliant {
+  background: #e8f5e9;
+  border-color: #4caf50;
+}
+
+.complianceCard['at-risk'] {
+  background: #fff3e0;
+  border-color: #ff9800;
+}
+
+.complianceCard['non-compliant'] {
+  background: #ffebee;
+  border-color: #d32f2f;
+}
+
+.complianceHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.complianceHeader h3 {
+  margin: 0;
+  font-size: 14px;
+  color: #333;
+}
+
+.statusBadge {
+  font-size: 20px;
+}
+
+.details {
+  font-size: 12px;
+  color: #555;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Audit Trail */
+.auditTrail {
+}
+
+.auditTable {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.auditHeader {
+  display: grid;
+  grid-template-columns: 200px 1fr 120px 150px;
+  gap: 0;
+  background: #f5f5f5;
+  padding: 0;
+  font-weight: 600;
+  font-size: 13px;
+  color: #333;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.auditRow {
+  display: grid;
+  grid-template-columns: 200px 1fr 120px 150px;
+  gap: 0;
+  padding: 0;
+  border-bottom: 1px solid #e0e0e0;
+  font-size: 13px;
+}
+
+.auditRow:last-child {
+  border-bottom: none;
+}
+
+.col1, .col2, .col3, .col4 {
+  padding: 12px 15px;
+}
+
+.col1 {
+  color: #666;
+}
+
+.col2 {
+  color: #333;
+}
+
+.col3 {
+  text-align: center;
+}
+
+.col4 {
+  color: #999;
+}
+
+/* No Data */
+.noData {
+  text-align: center;
+  padding: 40px 20px;
+  color: #999;
+  font-size: 14px;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .scoreCard {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .scoreCircle {
+    width: 150px;
+    height: 150px;
+  }
+
+  .scoreValue {
+    font-size: 48px;
+  }
+
+  .factorsList {
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .header {
+    flex-direction: column;
+    gap: 15px;
+  }
+
+  .tabs {
+    flex-wrap: wrap;
+    padding: 10px;
+  }
+
+  .tab {
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+
+  .tabContent {
+    padding: 20px;
+  }
+
+  .summaryGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .factorsList {
+    grid-template-columns: 1fr;
+  }
+
+  .complianceGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .auditHeader,
+  .auditRow {
+    grid-template-columns: 120px 1fr 100px;
+  }
+
+  .col4 {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .container {
+    padding: 10px;
+  }
+
+  .header {
+    margin-bottom: 20px;
+  }
+
+  .header h1 {
+    font-size: 20px;
+  }
+
+  .scoreCard {
+    padding: 20px;
+    gap: 20px;
+  }
+
+  .scoreCircle {
+    width: 120px;
+    height: 120px;
+  }
+
+  .scoreValue {
+    font-size: 36px;
+  }
+
+  .tabs {
+    padding: 0;
+  }
+
+  .tab {
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+
+  .tabContent {
+    padding: 15px;
+  }
+
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .auditHeader,
+  .auditRow {
+    grid-template-columns: 100px 1fr;
+  }
+
+  .col3 {
+    display: none;
+  }
+}

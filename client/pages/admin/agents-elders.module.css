@@ -1,0 +1,837 @@
+.container {
+  padding: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.header h1 {
+  font-size: 28px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+}
+
+.refreshBtn {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.refreshBtn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(102, 126, 234, 0.4);
+}
+
+.refreshBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.tab {
+  padding: 12px 20px;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: #6b7280;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tab:hover {
+  color: #111827;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.tab.active {
+  color: #667eea;
+  border-bottom-color: #667eea;
+}
+
+/* Content Area */
+.content {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Elders View */
+.eldersView,
+.agentsView,
+.configView {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.eldersList,
+.agentsList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 20px;
+}
+
+/* Elder Card */
+.elderCard,
+.agentCard {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.elderCard:hover,
+.agentCard:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+  border-color: #667eea;
+}
+
+.elderCardHeader,
+.agentCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.elderEmoji,
+.agentEmoji {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.elderCardTitle,
+.agentCardTitle {
+  flex: 1;
+}
+
+.elderCardTitle h3,
+.agentCardTitle h3 {
+  margin: 0 0 4px 0;
+  font-size: 18px;
+  color: #111827;
+}
+
+.elderCardTitle p,
+.agentCardTitle p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.uptimeBadge {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.elderDesc,
+.agentDesc {
+  color: #6b7280;
+  font-size: 13px;
+  margin: 0 0 16px 0;
+  line-height: 1.6;
+}
+
+/* Capabilities */
+.capabilities,
+.capList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.capBadge {
+  display: inline-block;
+  background: rgba(102, 126, 234, 0.1);
+  color: #667eea;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.capItem {
+  padding: 8px 16px;
+  background: rgba(102, 126, 234, 0.05);
+  border-left: 3px solid #667eea;
+  border-radius: 4px;
+  color: #111827;
+  font-size: 13px;
+}
+
+/* Stats */
+.elderStats,
+.agentMetrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.statMini,
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.statMini .label,
+.metric .label {
+  font-size: 11px;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.statMini .value,
+.metric .value {
+  font-size: 16px;
+  font-weight: 700;
+  color: #667eea;
+}
+
+.statusBadge {
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 6px;
+  color: white;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.statusBadge.online {
+  background: #10b981;
+}
+
+.statusBadge.offline {
+  background: #ef4444;
+}
+
+/* Detail View */
+.detailView {
+  background: white;
+  border-radius: 12px;
+  padding: 28px;
+  border: 1px solid #e5e7eb;
+}
+
+.backBtn {
+  background: none;
+  border: none;
+  color: #667eea;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  margin-bottom: 20px;
+  padding: 0;
+  transition: all 0.2s ease;
+}
+
+.backBtn:hover {
+  color: #764ba2;
+  transform: translateX(-4px);
+}
+
+.detailHeader,
+.agentDetailHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  margin-bottom: 32px;
+  padding-bottom: 24px;
+  border-bottom: 2px solid #f3f4f6;
+}
+
+.elderIcon,
+.agentIcon {
+  font-size: 64px;
+  line-height: 1;
+}
+
+.elderInfo,
+.agentInfo {
+  flex: 1;
+}
+
+.elderInfo h2,
+.agentInfo h2 {
+  margin: 0 0 8px 0;
+  font-size: 24px;
+  color: #111827;
+}
+
+.elderInfo p,
+.agentInfo p {
+  margin: 0 0 12px 0;
+  color: #6b7280;
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+.version {
+  display: inline-block;
+  background: rgba(102, 126, 234, 0.1);
+  color: #667eea;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Stats Grid */
+.statsGrid,
+.performanceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.statCard,
+.perfCard {
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+}
+
+.statCard:nth-child(odd),
+.perfCard:nth-child(odd) {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.statLabel,
+.perfLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  opacity: 0.8;
+}
+
+.statValue,
+.perfValue {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+/* Sections */
+.section {
+  margin-bottom: 28px;
+}
+
+.section h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  color: #111827;
+  font-weight: 700;
+}
+
+.actionsList,
+.threatsList,
+.reviewsList,
+.activityList,
+.capList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Action Item */
+.actionItem,
+.threatItem,
+.activityItem {
+  background: #f9fafb;
+  border-left: 4px solid #667eea;
+  padding: 16px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.actionItem:hover,
+.activityItem:hover {
+  background: #f3f4f6;
+  border-left-color: #764ba2;
+}
+
+.actionTitle,
+.threatType {
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.actionDetails,
+.threatDesc {
+  color: #6b7280;
+  font-size: 13px;
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.actionDate,
+.threatStatus {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.threatItem.high {
+  border-left-color: #ef4444;
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.threatItem.medium {
+  border-left-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.threatItem.low {
+  border-left-color: #10b981;
+  background: rgba(16, 185, 129, 0.05);
+}
+
+/* Review Item */
+.reviewItem {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  padding: 16px;
+  border-radius: 8px;
+}
+
+.reviewTitle {
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 12px;
+}
+
+.scoreBar {
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.scoreFill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  transition: width 0.3s ease;
+}
+
+.reviewRec {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+/* Activity List */
+.time {
+  font-size: 12px;
+  color: #9ca3af;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.action {
+  color: #111827;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.result {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.result.success {
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+}
+
+.result.error {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+}
+
+.result.pending {
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
+}
+
+/* Configuration View */
+.configView {
+  max-width: 100%;
+}
+
+.configView h2 {
+  margin: 0 0 28px 0;
+  font-size: 24px;
+  color: #111827;
+}
+
+.configSection {
+  margin-bottom: 32px;
+}
+
+.configSection h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  color: #111827;
+  font-weight: 700;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #f3f4f6;
+}
+
+.configGrid,
+.systemConfig {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.configCard {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 20px;
+  transition: all 0.3s ease;
+}
+
+.configCard:hover {
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+  border-color: #667eea;
+}
+
+.configCard h4 {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  color: #667eea;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 700;
+}
+
+.configItems {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.configItem,
+.systemItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.configItem:last-child,
+.systemItem:last-child {
+  border-bottom: none;
+}
+
+.configItem .key,
+.systemItem .key {
+  font-weight: 600;
+  color: #6b7280;
+  font-size: 13px;
+  text-transform: capitalize;
+}
+
+.configItem .value,
+.systemItem .value {
+  background: rgba(102, 126, 234, 0.1);
+  color: #667eea;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 12px;
+  font-family: 'Courier New', monospace;
+}
+
+.configTable {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.configRow {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.agentName {
+  font-weight: 700;
+  color: #667eea;
+  text-transform: capitalize;
+}
+
+.configValue {
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.6;
+}
+
+.configValue strong {
+  color: #111827;
+  display: block;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .container {
+    padding: 16px;
+  }
+
+  .header {
+    flex-direction: column;
+    gap: 16px;
+    align-items: flex-start;
+  }
+
+  .header h1 {
+    font-size: 24px;
+  }
+
+  .refreshBtn {
+    align-self: flex-end;
+  }
+
+  .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tab {
+    font-size: 12px;
+    padding: 10px 16px;
+    white-space: nowrap;
+  }
+
+  .eldersList,
+  .agentsList {
+    grid-template-columns: 1fr;
+  }
+
+  .elderStats,
+  .agentMetrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .statsGrid,
+  .performanceGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .detailHeader,
+  .agentDetailHeader {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .elderIcon,
+  .agentIcon {
+    font-size: 48px;
+  }
+
+  .configGrid,
+  .systemConfig {
+    grid-template-columns: 1fr;
+  }
+
+  .configRow {
+    grid-template-columns: 1fr;
+  }
+
+  .agentName {
+    padding-bottom: 8px;
+    border-bottom: 2px solid #f3f4f6;
+    margin-bottom: 8px;
+  }
+
+  .statusBadge {
+    padding: 6px 12px;
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .header h1 {
+    font-size: 20px;
+  }
+
+  .tab {
+    font-size: 11px;
+    padding: 8px 12px;
+  }
+
+  .elderCardHeader,
+  .agentCardHeader {
+    flex-wrap: wrap;
+  }
+
+  .elderEmoji,
+  .agentEmoji {
+    font-size: 32px;
+  }
+
+  .upliftBadge {
+    align-self: flex-start;
+  }
+
+  .statCard,
+  .perfCard {
+    padding: 12px;
+  }
+
+  .statLabel,
+  .perfLabel {
+    font-size: 10px;
+  }
+
+  .statValue,
+  .perfValue {
+    font-size: 16px;
+  }
+
+  .configItem .key {
+    font-size: 12px;
+  }
+
+  .configItem .value {
+    font-size: 11px;
+  }
+
+  .actionItem,
+  .threatItem,
+  .activityItem {
+    padding: 12px;
+  }
+}
+
+/* Dark Mode Support (optional) */
+@media (prefers-color-scheme: dark) {
+  .container {
+    background: #1f2937;
+    color: #f3f4f6;
+  }
+
+  .header,
+  .tab,
+  .elderCard,
+  .agentCard,
+  .detailView,
+  .configCard,
+  .configRow {
+    background: #111827;
+    border-color: #374151;
+    color: #f3f4f6;
+  }
+
+  .header h1 {
+    color: #f9fafb;
+  }
+
+  .tab.active {
+    color: #818cf8;
+    border-bottom-color: #818cf8;
+  }
+
+  .elderCardTitle h3,
+  .agentCardTitle h3,
+  .actionTitle,
+  .threatType,
+  .section h3 {
+    color: #f9fafb;
+  }
+
+  .elderCardTitle p,
+  .agentCardTitle p,
+  .elderDesc,
+  .agentDesc,
+  .actionDetails,
+  .threatDesc,
+  .configItem .key {
+    color: #d1d5db;
+  }
+
+  .configItem,
+  .systemItem {
+    border-bottom-color: #374151;
+  }
+
+  .actionItem,
+  .threatItem,
+  .activityItem,
+  .reviewItem {
+    background: #1f2937;
+    border-color: #374151;
+  }
+}

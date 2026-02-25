@@ -46,3 +46,4 @@ models/llama-2-7b-chat.Q2_K.gguf
 # Git rewrite state
 .git-rewrite/
 .git-rewrite
+.env

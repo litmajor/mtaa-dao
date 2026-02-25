@@ -1,0 +1,195 @@
+.alertBanner {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: linear-gradient(135deg, rgba(255, 193, 7, 0.1), rgba(255, 152, 0, 0.08));
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 10px;
+  animation: slideDown 0.3s ease-out;
+}
+
+.bannerHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.warningIcon {
+  font-size: 20px;
+  color: #ffc107;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.headerContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.title {
+  font-weight: 600;
+  color: #ffffff;
+  font-size: 14px;
+  margin: 0;
+}
+
+.timestamp {
+  font-size: 11px;
+  color: #b0b0b0;
+  margin: 0;
+}
+
+.changedBy {
+  font-size: 11px;
+  color: #9370db;
+  margin: 0;
+  font-weight: 500;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  color: #ffc107;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 0;
+  flex-shrink: 0;
+  transition: color 0.2s;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.closeButton:hover {
+  color: #fff;
+}
+
+.changedFields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid rgba(255, 193, 7, 0.2);
+  border-bottom: 1px solid rgba(255, 193, 7, 0.2);
+}
+
+.fieldTag {
+  display: inline-block;
+  padding: 4px 10px;
+  background: rgba(255, 193, 7, 0.15);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffc107;
+  text-transform: capitalize;
+}
+
+.reason {
+  font-size: 12px;
+  color: #b0b0b0;
+  padding: 8px 0;
+  display: flex;
+  gap: 4px;
+}
+
+.reasonLabel {
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.refreshButton {
+  flex: 1;
+  padding: 8px 12px;
+  background: rgba(76, 175, 80, 0.15);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  color: #4caf50;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.refreshButton:hover {
+  background: rgba(76, 175, 80, 0.25);
+  border-color: rgba(76, 175, 80, 0.5);
+  color: #66bb6a;
+}
+
+.dismissButton {
+  flex: 1;
+  padding: 8px 12px;
+  background: rgba(158, 158, 158, 0.1);
+  border: 1px solid rgba(158, 158, 158, 0.2);
+  color: #b0b0b0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.dismissButton:hover {
+  background: rgba(158, 158, 158, 0.2);
+  border-color: rgba(158, 158, 158, 0.3);
+  color: #ffffff;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+}
+
+.alertBanner.closing {
+  animation: slideUp 0.3s ease-in forwards;
+}
+
+@media (max-width: 640px) {
+  .alertBanner {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .actions {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .changedFields {
+    gap: 6px;
+  }
+
+  .fieldTag {
+    padding: 3px 8px;
+    font-size: 10px;
+  }
+}

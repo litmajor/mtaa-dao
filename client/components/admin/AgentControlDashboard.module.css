@@ -1,0 +1,259 @@
+.dashboard {
+  background: #f8f9fa;
+  min-height: 100vh;
+  padding: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
+    'Cantarell', sans-serif;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.stats {
+  display: flex;
+  gap: 24px;
+}
+
+.statItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.statLabel {
+  font-size: 12px;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.statValue {
+  font-size: 24px;
+  font-weight: 700;
+  color: #333;
+}
+
+.activeValue {
+  color: #4caf50;
+}
+
+.pendingValue {
+  color: #ffc107;
+}
+
+.container {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.sidebar {
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+  height: fit-content;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  position: sticky;
+  top: 20px;
+}
+
+.sidebar h3 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #f0f0f0;
+}
+
+.agentList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agentItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-left: 3px solid transparent;
+}
+
+.agentItem:hover {
+  background: #f5f5f5;
+  border-left-color: #667eea;
+}
+
+.agentItem.active {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  border-left-color: #667eea;
+}
+
+.agentName {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+
+.agentItem.active .agentName {
+  color: #667eea;
+}
+
+.agentStatus {
+  font-size: 14px;
+  transition: transform 0.2s ease;
+}
+
+.agentItem:hover .agentStatus {
+  transform: scale(1.2);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.section {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.noSelection {
+  background: white;
+  border: 2px dashed #ddd;
+  border-radius: 8px;
+  padding: 60px 20px;
+  text-align: center;
+  color: #999;
+  font-size: 16px;
+}
+
+.loadHistoryBtn {
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  align-self: flex-end;
+}
+
+.loadHistoryBtn:hover:not(:disabled) {
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  transform: translateY(-2px);
+}
+
+.loadHistoryBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .header {
+    flex-direction: column;
+    gap: 16px;
+    align-items: flex-start;
+  }
+
+  .stats {
+    width: 100%;
+    gap: 16px;
+  }
+
+  .container {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: static;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .sidebar h3 {
+    grid-column: 1 / -1;
+  }
+
+  .agentList {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .agentItem {
+    flex: 0 1 auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard {
+    padding: 12px;
+  }
+
+  .header h1 {
+    font-size: 20px;
+  }
+
+  .stats {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .statItem {
+    align-items: flex-start;
+  }
+
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .agentList {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .agentItem {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+}

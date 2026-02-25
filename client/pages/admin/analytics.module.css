@@ -1,0 +1,676 @@
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  min-height: 100vh;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 28px;
+  color: #333;
+}
+
+.refreshBtn {
+  padding: 10px 20px;
+  background: #2196f3;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.3s;
+}
+
+.refreshBtn:hover:not(:disabled) {
+  background: #1976d2;
+}
+
+.refreshBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Quick Metrics */
+.quickMetrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.metric {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.metric .label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.metric .value {
+  font-size: 36px;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+.metric .status {
+  font-size: 13px;
+  color: #999;
+}
+
+/* View Selector */
+.viewSelector {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  background: white;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.viewBtn {
+  padding: 10px 16px;
+  background: #f5f5f5;
+  border: 2px solid #e0e0e0;
+  color: #333;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.viewBtn:hover {
+  border-color: #2196f3;
+  color: #2196f3;
+}
+
+.viewBtn.active {
+  background: #2196f3;
+  border-color: #2196f3;
+  color: white;
+}
+
+/* View Content */
+.viewContent {
+  background: white;
+  padding: 30px;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.section h2 {
+  margin-top: 0;
+  margin-bottom: 25px;
+  color: #333;
+  font-size: 20px;
+}
+
+/* Health Grid */
+.healthGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 30px;
+  align-items: start;
+}
+
+.healthCircle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.circle {
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: white;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  margin-bottom: 15px;
+}
+
+.scoreText {
+  font-size: 56px;
+  font-weight: bold;
+}
+
+.scoreLabel {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.componentsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 15px;
+}
+
+.componentCard {
+  background: #f5f5f5;
+  padding: 15px;
+  border-radius: 8px;
+}
+
+.componentCard h4 {
+  margin: 0 0 10px 0;
+  font-size: 13px;
+  color: #333;
+}
+
+.componentScore {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.componentBar {
+  flex: 1;
+  height: 6px;
+  background: #e0e0e0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.componentFill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+}
+
+.componentScore span {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  min-width: 50px;
+  text-align: right;
+}
+
+/* Engagement Grid */
+.engagementGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.engagementCard {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 20px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.engagementCard h3 {
+  margin: 0 0 10px 0;
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.9;
+}
+
+.largeNumber {
+  margin: 0;
+  font-size: 40px;
+  font-weight: bold;
+}
+
+.trend {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 60px;
+}
+
+.trendBar {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 2px 2px 0 0;
+}
+
+.topVotersSection {
+  margin-top: 30px;
+}
+
+.topVotersSection h3 {
+  margin-top: 0;
+  color: #333;
+}
+
+.topVotersList {
+  display: grid;
+  gap: 10px;
+}
+
+.voterRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.rank {
+  font-weight: 600;
+  color: #2196f3;
+  min-width: 40px;
+}
+
+.votes {
+  background: #2196f3;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+/* Trends Chart */
+.trendsChart {
+  display: grid;
+  grid-template-columns: 1fr 200px;
+  gap: 20px;
+}
+
+.chartArea {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 200px;
+  background: #f5f5f5;
+  padding: 15px;
+  border-radius: 8px;
+}
+
+.trendPoint {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+}
+
+.bar {
+  width: 100%;
+  background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+  border-radius: 2px 2px 0 0;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.bar:hover {
+  filter: brightness(1.1);
+}
+
+.trendStats {
+  background: #f5f5f5;
+  padding: 20px;
+  border-radius: 8px;
+}
+
+.trendStats p {
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.trendStats strong {
+  color: #2196f3;
+}
+
+/* Pyramid */
+.pyramid {
+  display: grid;
+  gap: 15px;
+}
+
+.pyramidLevel {
+  display: grid;
+  grid-template-columns: 100px 1fr 150px;
+  gap: 15px;
+  align-items: center;
+}
+
+.pyramidLabel {
+  font-weight: 600;
+  color: #333;
+  font-size: 13px;
+  text-transform: capitalize;
+}
+
+.pyramidBar {
+  height: 30px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.pyramidFill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 10px;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pyramidCount {
+  font-size: 13px;
+  color: #666;
+  text-align: right;
+}
+
+/* Voting Grid */
+.votingGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.votingCard {
+  background: #f5f5f5;
+  padding: 20px;
+  border-radius: 8px;
+}
+
+.votingCard h3 {
+  margin: 0 0 15px 0;
+  font-size: 14px;
+  color: #333;
+}
+
+.votingBar {
+  height: 30px;
+  background: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.votingFill {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 10px;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.votingCard p {
+  margin: 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.consensusIndicator {
+  background: #f5f5f5;
+  padding: 20px;
+  border-radius: 8px;
+  text-align: center;
+  margin-top: 20px;
+}
+
+.consensusLabel {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #666;
+}
+
+.consensusValue {
+  margin: 10px 0 0 0;
+  font-size: 32px;
+  font-weight: bold;
+  color: #2196f3;
+  text-transform: capitalize;
+}
+
+/* Growth Grid */
+.growthGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.growthCard {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 30px 20px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.growthCard h3 {
+  margin: 0 0 10px 0;
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.9;
+}
+
+.growthPercent {
+  margin: 10px 0;
+  font-size: 48px;
+  font-weight: bold;
+}
+
+.growthLabel {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.monthlyChart {
+  margin-top: 30px;
+  padding-top: 30px;
+  border-top: 2px solid #e0e0e0;
+}
+
+.monthlyChart h3 {
+  margin-top: 0;
+  color: #333;
+}
+
+.monthlyGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 15px;
+}
+
+.monthCard {
+  background: #f5f5f5;
+  padding: 15px;
+  border-radius: 8px;
+  border-left: 4px solid #2196f3;
+}
+
+.monthCard .month {
+  margin: 0 0 10px 0;
+  font-weight: 600;
+  color: #333;
+  font-size: 13px;
+}
+
+.monthCard .stat {
+  margin: 5px 0;
+  font-size: 12px;
+  color: #666;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .quickMetrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .healthGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .trendsChart {
+    grid-template-columns: 1fr;
+  }
+
+  .componentsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .header {
+    flex-direction: column;
+    gap: 15px;
+  }
+
+  .quickMetrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .metric .value {
+    font-size: 28px;
+  }
+
+  .viewSelector {
+    padding: 10px;
+  }
+
+  .viewBtn {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .viewContent {
+    padding: 20px;
+  }
+
+  .section h2 {
+    margin-bottom: 20px;
+  }
+
+  .engagementGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .votingGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .growthGrid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+
+  .pyramidLevel {
+    grid-template-columns: 80px 1fr 120px;
+  }
+}
+
+@media (max-width: 480px) {
+  .container {
+    padding: 10px;
+  }
+
+  .header h1 {
+    font-size: 20px;
+  }
+
+  .quickMetrics {
+    grid-template-columns: 1fr;
+  }
+
+  .metric .value {
+    font-size: 24px;
+  }
+
+  .viewSelector {
+    flex-direction: column;
+  }
+
+  .viewBtn {
+    width: 100%;
+  }
+
+  .viewContent {
+    padding: 15px;
+  }
+
+  .healthGrid {
+    gap: 20px;
+  }
+
+  .circle {
+    width: 160px;
+    height: 160px;
+  }
+
+  .scoreText {
+    font-size: 40px;
+  }
+
+  .componentsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .trendsChart {
+    gap: 15px;
+  }
+
+  .chartArea {
+    height: 150px;
+  }
+
+  .pyramidLevel {
+    grid-template-columns: 70px 1fr;
+    gap: 10px;
+  }
+
+  .pyramidCount {
+    display: none;
+  }
+
+  .monthlyGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .engagementCard,
+  .growthCard {
+    padding: 20px 15px;
+  }
+
+  .largeNumber,
+  .growthPercent {
+    font-size: 32px;
+  }
+}

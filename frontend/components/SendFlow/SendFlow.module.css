@@ -1,0 +1,327 @@
+.container {
+  max-width: 500px;
+  margin: 0 auto;
+  padding: 20px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.balanceSection {
+  padding: 16px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  margin-bottom: 24px;
+}
+
+.balanceSection label {
+  display: block;
+  font-size: 12px;
+  color: #999;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.balanceAmount {
+  font-size: 32px;
+  font-weight: bold;
+  color: #000;
+  font-family: 'Courier New', monospace;
+}
+
+.formGroup {
+  margin-bottom: 16px;
+}
+
+.formGroup label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: #333;
+  font-size: 14px;
+}
+
+.formGroup input {
+  width: 100%;
+  padding: 12px;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  font-size: 16px;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.formGroup input:focus {
+  outline: none;
+  border-color: #4CAF50;
+}
+
+.formGroup small {
+  display: block;
+  color: #999;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.inputError {
+  border-color: #F44336 !important;
+}
+
+.error {
+  color: #F44336;
+  font-size: 12px;
+  margin-top: 4px;
+  display: block;
+}
+
+.impactCard {
+  background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+  color: white;
+  padding: 24px;
+  border-radius: 12px;
+  margin: 24px 0;
+}
+
+.breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.breakdownRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 16px;
+}
+
+.breakdownRow.highlight {
+  font-size: 18px;
+  font-weight: bold;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+  margin-top: 12px;
+}
+
+.amount {
+  font-weight: bold;
+  font-family: 'Courier New', monospace;
+}
+
+.fee {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.infoIcon {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.infoIcon:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.3);
+  margin: 8px 0;
+}
+
+.timelineSection {
+  margin: 24px 0;
+}
+
+.timelineSection h3 {
+  font-size: 16px;
+  margin-bottom: 12px;
+  color: #333;
+}
+
+.timeline {
+  position: relative;
+  padding: 0;
+}
+
+.timelineStep {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  position: relative;
+  z-index: 1;
+}
+
+.timelineMarker {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #4CAF50;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.timelineContent {
+  padding-top: 4px;
+}
+
+.timelineContent strong {
+  display: block;
+  font-size: 14px;
+  color: #333;
+  margin-bottom: 2px;
+}
+
+.timelineContent small {
+  display: block;
+  font-size: 12px;
+  color: #999;
+}
+
+.timelineConnector {
+  position: absolute;
+  left: 15px;
+  top: 32px;
+  width: 2px;
+  height: 24px;
+  background: #ddd;
+  z-index: 0;
+}
+
+.details {
+  margin: 16px 0;
+  padding: 12px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.details summary {
+  font-weight: 500;
+  color: #333;
+  font-size: 14px;
+}
+
+.details p {
+  margin: 12px 0 0 0;
+  font-size: 13px;
+  color: #666;
+  line-height: 1.5;
+}
+
+.warningCard {
+  background: #FFF3E0;
+  border: 1px solid #FFB74D;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 16px 0;
+}
+
+.warningCard strong {
+  color: #E65100;
+  display: block;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.warningCard p {
+  color: #F57C00;
+  font-size: 13px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.buttonPrimary {
+  width: 100%;
+  padding: 16px;
+  background: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-top: 12px;
+}
+
+.buttonPrimary:hover:not(:disabled) {
+  background: #45a049;
+}
+
+.buttonPrimary:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.buttonSecondary {
+  padding: 12px 24px;
+  background: #f5f5f5;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+  width: 100%;
+}
+
+.buttonSecondary:hover {
+  background: #e0e0e0;
+}
+
+.buttonText {
+  background: none;
+  border: none;
+  color: #2196F3;
+  cursor: pointer;
+  font-size: 14px;
+  text-decoration: underline;
+  padding: 8px 0;
+  width: 100%;
+  text-align: center;
+  margin-top: 12px;
+}
+
+.buttonText:hover {
+  color: #1976D2;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  flex-direction: column;
+  margin-top: 24px;
+}
+
+@media (max-width: 600px) {
+  .container {
+    padding: 16px;
+  }
+
+  .balanceAmount {
+    font-size: 28px;
+  }
+
+  .impactCard {
+    padding: 20px;
+  }
+
+  .buttonPrimary,
+  .buttonSecondary {
+    width: 100%;
+  }
+}

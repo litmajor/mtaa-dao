@@ -1,0 +1,1083 @@
+/**
+ * treasury-panels.css
+ * 
+ * Unified styling for all treasury dashboard panels
+ * Includes: TreasuryRebalancePanel, AssetAllocationPanel, GrantDistributionPanel
+ * Theme Support: Light/Dark mode
+ */
+
+/* ========================================
+   BASE PANEL STYLING
+   ======================================== */
+
+.treasury-rebalance-panel,
+.asset-allocation-panel,
+.grant-distribution-panel {
+  background: var(--panel-background, #ffffff);
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  padding: 24px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: all 0.2s ease;
+}
+
+.treasury-rebalance-panel:hover,
+.asset-allocation-panel:hover,
+.grant-distribution-panel:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+html.dark-mode .treasury-rebalance-panel,
+html.dark-mode .asset-allocation-panel,
+html.dark-mode .grant-distribution-panel {
+  background: var(--panel-background-dark, #1e1e1e);
+  border-color: var(--border-color-dark, #333333);
+}
+
+/* ========================================
+   PANEL HEADERS
+   ======================================== */
+
+.treasury-rebalance-panel .panel-header,
+.asset-allocation-panel .panel-header,
+.grant-distribution-panel .panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--border-color, #e0e0e0);
+}
+
+.treasury-rebalance-panel .panel-header h3,
+.asset-allocation-panel .panel-header h3,
+.grant-distribution-panel .panel-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+}
+
+html.dark-mode .treasury-rebalance-panel .panel-header h3,
+html.dark-mode .asset-allocation-panel .panel-header h3,
+html.dark-mode .grant-distribution-panel .panel-header h3 {
+  color: var(--text-primary-dark, #ffffff);
+}
+
+.header-info {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-secondary, #666666);
+}
+
+html.dark-mode .header-info {
+  color: var(--text-secondary-dark, #999999);
+}
+
+.total-value,
+.capital-amount,
+.budget {
+  background: var(--info-background, #f0f4ff);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-weight: 500;
+}
+
+html.dark-mode .total-value,
+html.dark-mode .capital-amount,
+html.dark-mode .budget {
+  background: var(--info-background-dark, #1a2540);
+}
+
+/* ========================================
+   FORM LAYOUT
+   ======================================== */
+
+.rebalance-form,
+.allocation-strategy-form,
+.distribution-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+html.dark-mode .form-group label {
+  color: var(--text-primary-dark, #ffffff);
+}
+
+.form-group input,
+.form-group select {
+  padding: 10px 12px;
+  border: 1px solid var(--border-color, #d0d0d0);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--input-background, #ffffff);
+  color: var(--input-text, #1a1a1a);
+  transition: border-color 0.2s ease;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--accent-color, #4834d4);
+  box-shadow: 0 0 0 3px var(--accent-color-light, rgba(72, 52, 212, 0.1));
+}
+
+html.dark-mode .form-group input,
+html.dark-mode .form-group select {
+  background: var(--input-background-dark, #2a2a2a);
+  border-color: var(--border-color-dark, #444444);
+  color: var(--input-text-dark, #ffffff);
+}
+
+.form-group small {
+  font-size: 11px;
+  color: var(--text-secondary, #999999);
+  margin-top: 2px;
+}
+
+html.dark-mode .form-group small {
+  color: var(--text-secondary-dark, #777777);
+}
+
+/* ========================================
+   SLIDER INPUT
+   ======================================== */
+
+input[type="range"] {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--slider-track, #e0e0e0);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent-color, #4834d4);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 8px var(--accent-color, #4834d4);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent-color, #4834d4);
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+input[type="range"]::-moz-range-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 8px var(--accent-color, #4834d4);
+}
+
+html.dark-mode input[type="range"] {
+  background: var(--slider-track-dark, #333333);
+}
+
+/* ========================================
+   ALLOCATION VISUALIZATION
+   ======================================== */
+
+.allocation-section {
+  background: var(--section-background, #f9f9f9);
+  padding: 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #e0e0e0);
+}
+
+html.dark-mode .allocation-section {
+  background: var(--section-background-dark, #1a1a1a);
+  border-color: var(--border-color-dark, #333333);
+}
+
+.allocation-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-primary, #1a1a1a);
+}
+
+html.dark-mode .allocation-section h4 {
+  color: var(--text-primary-dark, #ffffff);
+}
+
+.allocation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.allocation-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.symbol {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary, #666666);
+}
+
+html.dark-mode .symbol {
+  color: var(--text-secondary-dark, #999999);
+}
+
+.drift {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.drift.normal {
+  color: #10b981;
+}
+
+.drift.warning {
+  color: #f59e0b;
+}
+
+.item-bar {
+  position: relative;
+  height: 24px;
+  background: var(--bar-background, #e0e0e0);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+html.dark-mode .item-bar {
+  background: var(--bar-background-dark, #2a2a2a);
+}
+
+.bar-current {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.bar-target {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 2px;
+  background: #ef4444;
+  opacity: 0.7;
+}
+
+.item-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-secondary, #666666);
+}
+
+html.dark-mode .item-stats {
+  color: var(--text-secondary-dark, #999999);
+}
+
+/* ========================================
+   PRESET BUTTONS
+   ======================================== */
+
+.preset-buttons,
+.horizon-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.preset,
+.horizon {
+  padding: 12px;
+  border: 2px solid var(--border-color, #d0d0d0);
+  background: var(--button-secondary-bg, #f5f5f5);
+  color: var(--text-primary, #1a1a1a);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+html.dark-mode .preset,
+html.dark-mode .horizon {
+  background: var(--button-secondary-bg-dark, #2a2a2a);
+  color: var(--text-primary-dark, #ffffff);
+  border-color: var(--border-color-dark, #444444);
+}
+
+.preset:hover,
+.horizon:hover {
+  border-color: var(--accent-color, #4834d4);
+  background: var(--accent-color-light, rgba(72, 52, 212, 0.1));
+}
+
+.preset.active,
+.horizon.active {
+  border-color: var(--accent-color, #4834d4);
+  background: var(--accent-color-light, rgba(72, 52, 212, 0.15));
+  color: var(--accent-color, #4834d4);
+}
+
+html.dark-mode .preset.active,
+html.dark-mode .horizon.active {
+  color: var(--accent-color-dark, #6b5cff);
+}
+
+.preset-desc,
+.duration {
+  font-size: 10px;
+  color: var(--text-secondary, #999999);
+  font-weight: normal;
+  text-transform: none;
+}
+
+html.dark-mode .preset-desc,
+html.dark-mode .duration {
+  color: var(--text-secondary-dark, #777777);
+}
+
+/* ========================================
+   SCENARIOS GRID (ASSET ALLOCATION)
+   ======================================== */
+
+.scenarios-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.scenario-card {
+  padding: 16px;
+  border: 2px solid var(--border-color, #d0d0d0);
+  border-radius: 6px;
+  background: var(--card-background, #f9f9f9);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+html.dark-mode .scenario-card {
+  background: var(--card-background-dark, #1a1a1a);
+  border-color: var(--border-color-dark, #333333);
+}
+
+.scenario-card:hover {
+  border-color: var(--accent-color, #4834d4);
+  box-shadow: 0 4px 12px rgba(72, 52, 212, 0.15);
+}
+
+.scenario-card.active {
+  border-color: var(--accent-color, #4834d4);
+  background: var(--accent-color-light, rgba(72, 52, 212, 0.1));
+}
+
+.scenario-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+  margin-bottom: 8px;
+}
+
+html.dark-mode .scenario-name {
+  color: var(--text-primary-dark, #ffffff);
+}
+
+.scenario-yield,
+.scenario-risk {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
+  font-size: 12px;
+}
+
+html.dark-mode .scenario-yield,
+html.dark-mode .scenario-risk {
+  border-bottom-color: var(--border-color-dark, #333333);
+}
+
+.scenario-risk:last-of-type {
+  border-bottom: none;
+}
+
+.label {
+  color: var(--text-secondary, #666666);
+  font-weight: 500;
+}
+
+html.dark-mode .label {
+  color: var(--text-secondary-dark, #999999);
+}
+
+.value {
+  color: var(--text-primary, #1a1a1a);
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+}
+
+html.dark-mode .value {
+  color: var(--text-primary-dark, #ffffff);
+}
+
+.risk-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.risk-2 {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.risk-4 {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.risk-6 {
+  background: #fed7aa;
+  color: #92400e;
+}
+
+.risk-8 {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+html.dark-mode .risk-2 {
+  background: rgba(16, 185, 129, 0.2);
+  color: #6ee7b7;
+}
+
+html.dark-mode .risk-4 {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+html.dark-mode .risk-6 {
+  background: rgba(251, 146, 60, 0.2);
+  color: #fb923c;
+}
+
+html.dark-mode .risk-8 {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+
+.scenario-allocation {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color, #e0e0e0);
+}
+
+html.dark-mode .scenario-allocation {
+  border-top-color: var(--border-color-dark, #333333);
+}
+
+.alloc-item {
+  font-size: 11px;
+  color: var(--text-secondary, #666666);
+  padding: 2px 0;
+}
+
+html.dark-mode .alloc-item {
+  color: var(--text-secondary-dark, #999999);
+}
+
+/* ========================================
+   RESULTS & ANALYSIS
+   ======================================== */
+
+.rebalance-analysis,
+.projection-results,
+.allocation-chart,
+.distribution-summary,
+.budget-overview {
+  background: var(--results-background, #f9f9f9);
+  border-left: 3px solid var(--accent-color, #4834d4);
+  padding: 16px;
+  border-radius: 4px;
+  margin-top: 16px;
+}
+
+html.dark-mode .rebalance-analysis,
+html.dark-mode .projection-results,
+html.dark-mode .allocation-chart,
+html.dark-mode .distribution-summary,
+html.dark-mode .budget-overview {
+  background: var(--results-background-dark, #1a1a1a);
+  border-left-color: var(--accent-color-dark, #6b5cff);
+}
+
+.analysis-item,
+.projection {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
+  font-size: 13px;
+}
+
+html.dark-mode .analysis-item,
+html.dark-mode .projection {
+  border-bottom-color: var(--border-color-dark, #333333);
+}
+
+.analysis-item:last-child,
+.projection:last-child {
+  border-bottom: none;
+}
+
+.analysis-item span:first-child,
+.projection span:first-child {
+  color: var(--text-secondary, #666666);
+  font-weight: 500;
+}
+
+html.dark-mode .analysis-item span:first-child,
+html.dark-mode .projection span:first-child {
+  color: var(--text-secondary-dark, #999999);
+}
+
+.projection.highlight {
+  background: var(--highlight-background, #f0f4ff);
+  padding: 12px;
+  border-radius: 4px;
+  margin: 8px 0;
+  font-weight: 600;
+}
+
+html.dark-mode .projection.highlight {
+  background: var(--highlight-background-dark, #1a2540);
+}
+
+.value.success {
+  color: #10b981;
+}
+
+.value.danger {
+  color: #ef4444;
+}
+
+/* ========================================
+   ALLOCATION CHART
+   ======================================== */
+
+.allocation-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.allocation-chart h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.chart-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chart-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.chart-bar {
+  flex: 1;
+  height: 20px;
+  background: var(--bar-track, #e0e0e0);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+html.dark-mode .chart-bar {
+  background: var(--bar-track-dark, #2a2a2a);
+}
+
+.bar-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.chart-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 100px;
+  font-size: 11px;
+}
+
+.chart-label span:first-child {
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+}
+
+html.dark-mode .chart-label span:first-child {
+  color: var(--text-primary-dark, #ffffff);
+}
+
+.percentage {
+  color: var(--text-secondary, #666666);
+}
+
+html.dark-mode .percentage {
+  color: var(--text-secondary-dark, #999999);
+}
+
+/* ========================================
+   GRANTS SECTION (GRANT DISTRIBUTION)
+   ======================================== */
+
+.grants-section {
+  background: var(--section-background, #f9f9f9);
+  padding: 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #e0e0e0);
+}
+
+html.dark-mode .grants-section {
+  background: var(--section-background-dark, #1a1a1a);
+  border-color: var(--border-color-dark, #333333);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.section-header h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-primary, #1a1a1a);
+}
+
+html.dark-mode .section-header h4 {
+  color: var(--text-primary-dark, #ffffff);
+}
+
+.btn-add-grant {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color, #d0d0d0);
+  background: var(--accent-color, #4834d4);
+  color: white;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-add-grant:hover {
+  background: var(--accent-color-dark, #372ba8);
+  box-shadow: 0 2px 8px rgba(72, 52, 212, 0.3);
+}
+
+.grants-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.grant-item {
+  background: var(--item-background, white);
+  padding: 12px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+html.dark-mode .grant-item {
+  background: var(--item-background-dark, #2a2a2a);
+  border-color: var(--border-color-dark, #333333);
+}
+
+.grant-header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.recipient-input,
+.amount-input {
+  padding: 8px 10px;
+  border: 1px solid var(--border-color, #d0d0d0);
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--input-background, #ffffff);
+  color: var(--input-text, #1a1a1a);
+}
+
+html.dark-mode .recipient-input,
+html.dark-mode .amount-input {
+  background: var(--input-background-dark, #1a1a1a);
+  border-color: var(--border-color-dark, #444444);
+  color: var(--input-text-dark, #ffffff);
+}
+
+.recipient-input {
+  flex: 1;
+}
+
+.amount-input {
+  width: 120px;
+}
+
+.btn-remove {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-color, #d0d0d0);
+  background: var(--button-secondary-bg, #f5f5f5);
+  color: #ef4444;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: all 0.2s ease;
+}
+
+html.dark-mode .btn-remove {
+  background: var(--button-secondary-bg-dark, #2a2a2a);
+  border-color: var(--border-color-dark, #444444);
+}
+
+.btn-remove:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+.vesting-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.control label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary, #666666);
+}
+
+html.dark-mode .control label {
+  color: var(--text-secondary-dark, #999999);
+}
+
+.control input,
+.control select {
+  padding: 6px 8px;
+  border: 1px solid var(--border-color, #d0d0d0);
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--input-background, #ffffff);
+  color: var(--input-text, #1a1a1a);
+}
+
+html.dark-mode .control input,
+html.dark-mode .control select {
+  background: var(--input-background-dark, #1a1a1a);
+  border-color: var(--border-color-dark, #444444);
+  color: var(--input-text-dark, #ffffff);
+}
+
+.vesting-description {
+  font-size: 11px;
+  color: var(--text-secondary, #666666);
+  background: var(--description-background, #f5f5f5);
+  padding: 8px;
+  border-radius: 4px;
+  margin-top: 4px;
+}
+
+html.dark-mode .vesting-description {
+  background: var(--description-background-dark, #1a1a1a);
+  color: var(--text-secondary-dark, #999999);
+}
+
+/* ========================================
+   BUDGET OVERVIEW
+   ======================================== */
+
+.budget-bar {
+  position: relative;
+  height: 32px;
+  background: var(--bar-track, #e0e0e0);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 12px;
+  display: flex;
+}
+
+html.dark-mode .budget-bar {
+  background: var(--bar-track-dark, #2a2a2a);
+}
+
+.bar-allocated {
+  background: #4834d4;
+  transition: width 0.3s ease;
+}
+
+.bar-remaining {
+  background: #10b981;
+  transition: width 0.3s ease;
+}
+
+.budget-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: var(--stat-background, white);
+  border-radius: 4px;
+  border: 1px solid var(--border-color, #e0e0e0);
+}
+
+html.dark-mode .stat {
+  background: var(--stat-background-dark, #2a2a2a);
+  border-color: var(--border-color-dark, #333333);
+}
+
+.stat span:first-child {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary, #666666);
+}
+
+html.dark-mode .stat span:first-child {
+  color: var(--text-secondary-dark, #999999);
+}
+
+.stat .value {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.percentage {
+  font-size: 10px;
+  color: var(--text-secondary, #666666);
+}
+
+html.dark-mode .percentage {
+  color: var(--text-secondary-dark, #999999);
+}
+
+/* ========================================
+   MESSAGES
+   ======================================== */
+
+.error-message,
+.warning-message {
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.error-message {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+
+html.dark-mode .error-message {
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+  border-color: #dc2626;
+}
+
+.warning-message {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+html.dark-mode .warning-message {
+  background: rgba(245, 158, 11, 0.1);
+  color: #fbbf24;
+  border-color: #d97706;
+}
+
+/* ========================================
+   ACTION BUTTONS
+   ======================================== */
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  justify-content: flex-end;
+}
+
+.btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn-primary {
+  background: var(--accent-color, #4834d4);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-color-dark, #372ba8);
+  box-shadow: 0 4px 12px rgba(72, 52, 212, 0.3);
+}
+
+.btn-primary:disabled {
+  background: var(--disabled-color, #d0d0d0);
+  color: var(--disabled-text, #999999);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* ========================================
+   RESPONSIVE DESIGN
+   ======================================== */
+
+@media (max-width: 768px) {
+  .treasury-rebalance-panel,
+  .asset-allocation-panel,
+  .grant-distribution-panel {
+    padding: 16px;
+  }
+
+  .allocation-grid,
+  .scenarios-grid,
+  .budget-stats,
+  .vesting-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .preset-buttons,
+  .horizon-buttons {
+    grid-template-columns: 1fr;
+  }
+
+  .form-actions {
+    justify-content: stretch;
+  }
+
+  .btn {
+    flex: 1;
+  }
+}
+
+@media (max-width: 480px) {
+  .treasury-rebalance-panel,
+  .asset-allocation-panel,
+  .grant-distribution-panel {
+    padding: 12px;
+  }
+
+  .panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* ========================================
+   DARK MODE ROOT
+   ======================================== */
+
+html.dark-mode {
+  --panel-background-dark: #1e1e1e;
+  --border-color-dark: #333333;
+  --text-primary-dark: #ffffff;
+  --text-secondary-dark: #999999;
+  --info-background-dark: #1a2540;
+  --input-background-dark: #2a2a2a;
+  --input-text-dark: #ffffff;
+  --section-background-dark: #1a1a1a;
+  --card-background-dark: #1a1a1a;
+  --slider-track-dark: #333333;
+  --button-secondary-bg-dark: #2a2a2a;
+  --bar-background-dark: #2a2a2a;
+  --results-background-dark: #1a1a1a;
+  --bar-track-dark: #2a2a2a;
+  --item-background-dark: #2a2a2a;
+  --description-background-dark: #1a1a1a;
+  --stat-background-dark: #2a2a2a;
+  --accent-color-dark: #6b5cff;
+}

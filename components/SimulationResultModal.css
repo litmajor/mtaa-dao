@@ -1,0 +1,682 @@
+/**
+ * SimulationResultModal.css
+ * 
+ * Styling for simulation result modal component
+ * Theme-aware with light/dark mode support
+ */
+
+/* ============================================================================
+   Modal Overlay & Container
+   ============================================================================ */
+
+.simulation-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+
+.simulation-modal {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  max-width: 800px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .simulation-modal {
+    background: #1e293b;
+    color: #e2e8f0;
+  }
+}
+
+/* ============================================================================
+   Header
+   ============================================================================ */
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px;
+  border-bottom: 1px solid #e5e7eb;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.close-button:hover {
+  background: #e5e7eb;
+  color: #1f2937;
+}
+
+@media (prefers-color-scheme: dark) {
+  .modal-header {
+    background: linear-gradient(135deg, #334155 0%, #1e293b 100%);
+    border-bottom-color: #475569;
+  }
+
+  .modal-header h2 {
+    color: #f1f5f9;
+  }
+
+  .close-button {
+    color: #94a3b8;
+  }
+
+  .close-button:hover {
+    background: #475569;
+    color: #f1f5f9;
+  }
+}
+
+/* ============================================================================
+   Risk Banner
+   ============================================================================ */
+
+.risk-banner {
+  padding: 20px 24px;
+  border-left: 4px solid #ef4444;
+  background: #fef2f2;
+  border-bottom: 1px solid #fee2e2;
+}
+
+.risk-banner.risk-low {
+  border-left-color: #10b981;
+  background: #f0fdf4;
+  border-bottom-color: #dcfce7;
+}
+
+.risk-banner.risk-medium {
+  border-left-color: #f59e0b;
+  background: #fffbeb;
+  border-bottom-color: #fef3c7;
+}
+
+.risk-banner.risk-high {
+  border-left-color: #ef4444;
+  background: #fef2f2;
+  border-bottom-color: #fee2e2;
+}
+
+.risk-banner.risk-critical {
+  border-left-color: #7c2d12;
+  background: #7c2d12;
+  border-bottom-color: #5b21b6;
+}
+
+.risk-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.risk-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.risk-summary {
+  margin: 0;
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.5;
+}
+
+.risk-banner.risk-critical .risk-summary {
+  color: #f8fafc;
+}
+
+@media (prefers-color-scheme: dark) {
+  .risk-banner {
+    background: #2d3748;
+    border-bottom-color: #4a5568;
+  }
+
+  .risk-banner.risk-low {
+    background: #1e3a1f;
+    border-bottom-color: #2d5a3d;
+  }
+
+  .risk-banner.risk-medium {
+    background: #332701;
+    border-bottom-color: #574e0f;
+  }
+
+  .risk-banner.risk-high {
+    background: #431407;
+    border-bottom-color: #7c1d12;
+  }
+
+  .risk-summary {
+    color: #d1d5db;
+  }
+}
+
+/* ============================================================================
+   Badges
+   ============================================================================ */
+
+.risk-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.risk-badge.risk-low {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.risk-badge.risk-medium {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.risk-badge.risk-high {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.risk-badge.risk-critical {
+  background: #dc2626;
+  color: #f8fafc;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.status-badge[data-status='SUCCESS'] {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.status-badge[data-status='WARNING'] {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-badge[data-status='ERROR'] {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* ============================================================================
+   Modal Content
+   ============================================================================ */
+
+.modal-content {
+  padding: 24px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.modal-content section {
+  margin-bottom: 24px;
+}
+
+.modal-content h3 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .modal-content h3 {
+    color: #e2e8f0;
+  }
+}
+
+/* ============================================================================
+   Metrics Grid
+   ============================================================================ */
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.metric {
+  background: #f9fafb;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.metric label {
+  display: block;
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 8px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.metric-value {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+  word-break: break-word;
+}
+
+@media (prefers-color-scheme: dark) {
+  .metric {
+    background: #1e293b;
+    border-color: #334155;
+  }
+
+  .metric label {
+    color: #94a3b8;
+  }
+
+  .metric-value {
+    color: #f1f5f9;
+  }
+}
+
+/* ============================================================================
+   Lists
+   ============================================================================ */
+
+.risk-factors,
+.warnings-list,
+.errors-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.risk-factor,
+.warning-item,
+.error-item {
+  padding: 12px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-size: 14px;
+}
+
+.risk-factor {
+  background: #fef2f2;
+  border-left: 3px solid #ef4444;
+  color: #7c2d12;
+}
+
+.warning-item {
+  background: #fffbeb;
+  border-left: 3px solid #f59e0b;
+  color: #92400e;
+}
+
+.error-item {
+  background: #fef2f2;
+  border-left: 3px solid #ef4444;
+  color: #7c2d12;
+}
+
+.risk-indicator,
+.warning-icon,
+.error-icon {
+  flex-shrink: 0;
+  font-size: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .risk-factor {
+    background: #1f2d3d;
+    color: #fca5a5;
+  }
+
+  .warning-item {
+    background: #332701;
+    color: #fcd34d;
+  }
+
+  .error-item {
+    background: #1f2d3d;
+    color: #fca5a5;
+  }
+}
+
+/* ============================================================================
+   Reversibility & Sections
+   ============================================================================ */
+
+.reversibility-section,
+.details-section {
+  background: #f9fafb;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.reversibility-section p {
+  margin: 8px 0;
+  font-size: 14px;
+  color: #374151;
+}
+
+.reversibility-section strong {
+  color: #1f2937;
+}
+
+@media (prefers-color-scheme: dark) {
+  .reversibility-section,
+  .details-section {
+    background: #1e293b;
+    border-color: #334155;
+  }
+
+  .reversibility-section p {
+    color: #cbd5e1;
+  }
+
+  .reversibility-section strong {
+    color: #f1f5f9;
+  }
+}
+
+/* ============================================================================
+   Details Toggle
+   ============================================================================ */
+
+.details-toggle {
+  background: none;
+  border: 1px solid #e5e7eb;
+  color: #6b7280;
+  padding: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  width: 100%;
+  text-align: left;
+  transition: all 0.2s;
+  margin-bottom: 12px;
+}
+
+.details-toggle:hover {
+  background: #f9fafb;
+  border-color: #d1d5db;
+  color: #1f2937;
+}
+
+@media (prefers-color-scheme: dark) {
+  .details-toggle {
+    border-color: #475569;
+    color: #94a3b8;
+  }
+
+  .details-toggle:hover {
+    background: #1e293b;
+    border-color: #64748b;
+    color: #e2e8f0;
+  }
+}
+
+/* ============================================================================
+   Code Blocks
+   ============================================================================ */
+
+.state-block,
+.entities-block {
+  margin-bottom: 16px;
+}
+
+.state-block h4,
+.entities-block h4 {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.code-block {
+  background: #1f2937;
+  color: #e5e7eb;
+  padding: 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.entities-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.entities-table th {
+  background: #f3f4f6;
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #1f2937;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.entities-table td {
+  padding: 12px;
+  border-bottom: 1px solid #e5e7eb;
+  color: #374151;
+}
+
+.entity-id {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+@media (prefers-color-scheme: dark) {
+  .state-block h4,
+  .entities-block h4 {
+    color: #f1f5f9;
+  }
+
+  .entities-table th {
+    background: #0f172a;
+    color: #e2e8f0;
+    border-bottom-color: #475569;
+  }
+
+  .entities-table td {
+    border-bottom-color: #334155;
+    color: #cbd5e1;
+  }
+}
+
+/* ============================================================================
+   Action Buttons
+   ============================================================================ */
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  padding: 20px 24px;
+  border-top: 1px solid #e5e7eb;
+  background: #f9fafb;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.btn {
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background: #3b82f6;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #2563eb;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.btn-primary.disabled,
+.btn-primary:disabled {
+  background: #d1d5db;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: white;
+  color: #374151;
+  border: 1px solid #d1d5db;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.btn-secondary:disabled {
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.critical-warning {
+  background: #dc2626;
+  color: white;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  grid-column: 1 / -1;
+}
+
+@media (prefers-color-scheme: dark) {
+  .modal-actions {
+    background: #0f172a;
+    border-top-color: #334155;
+  }
+
+  .btn-secondary {
+    background: #1e293b;
+    color: #e2e8f0;
+    border-color: #475569;
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background: #334155;
+    border-color: #64748b;
+  }
+}
+
+/* ============================================================================
+   Responsive Design
+   ============================================================================ */
+
+@media (max-width: 600px) {
+  .simulation-modal {
+    width: 95%;
+    max-height: 95vh;
+  }
+
+  .modal-header {
+    padding: 16px;
+  }
+
+  .modal-content {
+    padding: 16px;
+  }
+
+  .modal-actions {
+    padding: 16px;
+  }
+
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-actions {
+    flex-direction: column;
+  }
+
+  .btn {
+    width: 100%;
+  }
+}

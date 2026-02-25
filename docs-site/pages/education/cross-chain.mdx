@@ -1,0 +1,149 @@
+# Cross-Chain Concepts
+
+Master multi-chain trading and treasury management across different blockchains.
+
+## What is Cross-Chain?
+
+**Cross-chain** means moving assets or data between different blockchains. Instead of being locked to Ethereum, your assets can exist on Celo, Polygon, Arbitrum, and more simultaneously.
+
+## Why Cross-Chain Matters
+
+| Benefit | Example |
+|---------|---------|
+| **Lower Fees** | ETH on Celo costs $0.001 vs $5 on mainnet |
+| **Speed** | Celo transactions finalize in 5 seconds |
+| **Liquidity** | Access pools on multiple chains |
+| **Resilience** | DAO funds not dependent on one chain |
+| **Scalability** | Distribute load across chains |
+
+## Cross-Chain Bridges
+
+A **bridge** connects two blockchains and enables asset transfers.
+
+### How Bridges Work
+
+```
+┌──────────────┐         ┌──────────────┐
+│  Ethereum    │         │     Celo     │
+│              │         │              │
+│   1000 USDC  │←Bridge→ │   1000 USDC  │
+│              │         │              │
+└──────────────┘         └──────────────┘
+
+Steps:
+1. Lock USDC on Ethereum
+2. Smart contract verifies lock
+3. Mint USDC on Celo
+4. User receives USDC on Celo
+```
+
+### Types of Bridges
+
+**Lock & Mint**
+- Lock assets on source chain
+- Mint representation on destination
+- Examples: Nomad, Portal
+
+**Liquidity Pool**
+- Swap between wrapped assets
+- Faster, more capital efficient
+- Example: Stargate Finance
+
+**Validator Set**
+- Validators confirm transfers
+- Most secure, slower
+- Example: Anyswap
+
+## MtaaDAO Cross-Chain Strategy
+
+### Scenario: DAO Treasury Optimization
+
+```
+Total Treasury: 100,000 USDC
+
+Distribution:
+├─ Ethereum (40%): 40,000 USDC
+│  └─ Aave lending → 5% APY
+│
+├─ Celo (35%): 35,000 USDC
+│  └─ Moola lending → 8% APY
+│
+├─ Polygon (20%): 20,000 USDC
+│  └─ Aave lending → 6% APY
+│
+└─ Reserve (5%): 5,000 USDC
+   └─ Stablecoins for liquidity
+
+Total APY: ~6.5% (vs 5% on single chain)
+```
+
+## Common Cross-Chain Patterns
+
+### 1. Arbitrage Across Chains
+
+```
+1. Price of ETH on Ethereum: $2,000
+2. Price of ETH on Celo: $1,980 (cheaper)
+3. Buy on Celo: 10 ETH = $19,800
+4. Bridge to Ethereum
+5. Sell on Ethereum: 10 ETH = $20,000
+6. Profit: $200 (minus fees)
+```
+
+### 2. Liquidity Optimization
+
+Provide liquidity where rewards are highest:
+
+```
+MTAA/USDC Yield:
+- Ethereum: 0.25% swaps
+- Celo: 0.30% swaps + 50% farm rewards
+- Polygon: 0.25% swaps
+
+→ Provide more liquidity on Celo
+```
+
+### 3. Risk Mitigation
+
+Spread treasury across chains:
+
+```
+Ethereum exploited:
+→ Still have funds on Celo & Polygon
+→ Can bridge funds from other chains
+→ DAO continues operating
+```
+
+## Risks & Challenges
+
+⚠️ **Bridge Risk**: If bridge is compromised, funds can be lost
+
+⚠️ **Finality Risk**: Confirmation times vary (Ethereum: 15 min vs Celo: 5 sec)
+
+⚠️ **Fee Fluctuation**: Bridging costs change with network congestion
+
+⚠️ **Wrapped Assets**: Cross-chain representation may have counterparty risk
+
+## Best Practices
+
+✓ Use battle-tested bridges (Stargate, Portal, Nomad)
+✓ Verify bridge security before deploying funds
+✓ Test with small amounts first
+✓ Monitor bridge liquidity
+✓ Have exit strategy from each chain
+✓ Diversify across multiple chains
+
+## MtaaDAO Supported Chains
+
+- **Celo**: Native chain (low fees, fast finality)
+- **Ethereum**: Mainnet (high liquidity, high fees)
+- **Polygon**: Sidechain (moderate fees, decent liquidity)
+- **Arbitrum**: L2 (low fees, good liquidity)
+- **Optimism**: L2 (low fees, growing ecosystem)
+
+## Next Steps
+
+1. Learn about [DeFi Primitives](/education/defi-primitives)
+2. Explore [Smart Contracts](/education/smart-contracts)
+3. Read [Security Best Practices](/education/security)
+4. Try [Custom Strategies](/trading/strategies)
