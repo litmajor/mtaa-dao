@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { websocketRealtimeFeeds } from '../services/websocketRealTimeFeeds';
 import { futuresMarketSupport } from '../services/futuresMarketSupport';
 import { advancedMicrostructureIndicators } from '../services/advancedMicrostructureIndicators';
-import { ApiResponse } from '../types/ApiResponse';
+import { ApiResponse } from '../utils/apiResponse';
 import { logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -16,17 +16,25 @@ const router = Router();
  * WebSocket upgrade endpoint
  * Clients connect here and subscribe to real-time feeds
  */
-router.ws('/realtime', (ws, req) => {
-  const clientId = uuidv4();
-  logger.info('WebSocket client connection request', { clientId });
+const wsRouter = router as Router & {
+  ws?: (path: string, handler: (ws: any, req: Request) => void) => void;
+};
 
-  try {
-    websocketRealtimeFeeds.addClient(clientId, ws);
-  } catch (error) {
-    logger.error('Failed to add WebSocket client', { clientId, error });
-    ws.close(1011, 'Server error');
-  }
-});
+if (typeof wsRouter.ws === 'function') {
+  wsRouter.ws('/realtime', (ws, req) => {
+    const clientId = uuidv4();
+    logger.info('WebSocket client connection request', { clientId });
+
+    try {
+      websocketRealtimeFeeds.addClient(clientId, ws);
+    } catch (error) {
+      logger.error('Failed to add WebSocket client', { clientId, error });
+      ws.close(1011, 'Server error');
+    }
+  });
+} else {
+  logger.warn('router.ws is unavailable; realtime websocket route not registered');
+}
 
 /**
  * GET /api/v1/realtime/stats

@@ -15,8 +15,8 @@
  * - Real-time alert capabilities
  */
 
-import { Logger } from '../utils/logger';
-import { db } from '../db';
+import { Logger } from '../../utils/logger';
+import { db } from '../../db';
 import { v4 as uuidv4 } from 'uuid';
 
 export type AuditEventType =

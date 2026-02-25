@@ -111,7 +111,7 @@ export class AnalyzerAgent extends BaseAgent {
     this.setStatus(AgentStatus.ACTIVE);
     
     // Register agent with health telemetry
-    healthTelemetry.registerAgent(this.config.id, 'ANALYZER');
+    healthRegistry.registerAgent(this.config.id, 'ANALYZER');
     
     logger.info('Analyzer Agent initialized successfully');
   }

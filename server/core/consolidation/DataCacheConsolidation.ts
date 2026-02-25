@@ -15,8 +15,8 @@
  * - Consistent cache eviction
  */
 
-import { Logger } from '../utils/logger';
-import { redis } from './redis';
+import { Logger } from '../../utils/logger';
+import { redis } from '../../services/redis';
 
 export type CacheLevel = 'memory' | 'redis' | 'both';
 export type CacheInvalidationStrategy = 'ttl' | 'event-driven' | 'lru' | 'manual';

@@ -1,0 +1,58 @@
+{
+  "service": "mtaa-dao-api",
+  "window": "30d",
+  "sloTargets": {
+    "apiAvailability": {
+      "objective": 99.9,
+      "indicator": "(successful_requests / total_requests) * 100",
+      "errorBudgetPercent": 0.1,
+      "burnAlerts": [
+        {
+          "name": "fast-burn",
+          "lookback": "5m",
+          "burnRateThreshold": 14.4,
+          "action": "page"
+        },
+        {
+          "name": "slow-burn",
+          "lookback": "1h",
+          "burnRateThreshold": 2,
+          "action": "ticket"
+        }
+      ]
+    },
+    "p95LatencyMs": {
+      "objective": 1200,
+      "indicator": "p95(http_request_duration_ms)",
+      "errorBudgetPercent": 5,
+      "burnAlerts": [
+        {
+          "name": "latency-regression",
+          "lookback": "15m",
+          "thresholdMs": 1800,
+          "action": "page"
+        }
+      ]
+    },
+    "websocketUptime": {
+      "objective": 99.5,
+      "indicator": "(healthy_ws_checks / total_ws_checks) * 100",
+      "errorBudgetPercent": 0.5,
+      "burnAlerts": [
+        {
+          "name": "websocket-burn",
+          "lookback": "30m",
+          "burnRateThreshold": 4,
+          "action": "ticket"
+        }
+      ]
+    }
+  },
+  "dashboardPanels": [
+    "availability-30d",
+    "error-budget-remaining",
+    "latency-p50-p95-p99",
+    "websocket-availability",
+    "http-5xx-rate"
+  ]
+}

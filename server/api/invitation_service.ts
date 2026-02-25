@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { db } from '../db';
-import { daoInvitations, daoMemberships, users } from '../../shared/schema';
+import { daoInvitations, daoMemberships, users, daos } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
@@ -384,14 +384,15 @@ export async function createInvitationHandler(req: Request, res: Response) {
         .then(rows => rows[0]);
 
       const daoRecord = await db
-        .select()
-        .from(daoInvitations as any)
-        .then(rows => rows[0]); // Get DAO name
+        .select({ name: daos.name })
+        .from(daos)
+        .where(eq(daos.id, daoId))
+        .then(rows => rows[0]);
 
       const appBaseUrl = process.env.APP_BASE_URL || 'https://app.mtaa.com';
       await sendInvitationEmail(
         invitation.id,
-        'Your DAO', // TODO: get actual DAO name
+        daoRecord?.name || 'Your DAO',
         inviterUser?.username || 'A community member',
         appBaseUrl
       );
