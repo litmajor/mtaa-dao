@@ -3,7 +3,7 @@ import { db } from '../../db';
 import { logger } from '../../utils/logger';
 import { daoMemberships, daos, users, auditLogs } from '../../../shared/schema';
 import { eq, desc, sql, and, count } from 'drizzle-orm';
-import { logAuditEvent, AuditEventType } from '../../services/auditLogging';
+import { logConsolidatedAuditEvent, AuditEventType } from '../../services/auditConsolidated';
 import * as agentsEldersService from '../../db/services/agentsEldersService';
 
 const router = Router();

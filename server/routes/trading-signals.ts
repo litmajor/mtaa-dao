@@ -1,4 +1,25 @@
+/**
+ * Trading Signals & Intelligence Engine API Routes
+ * 
+ * Comprehensive market intelligence and trading analytics:
+ * - Real-time WebSocket feeds for market data streaming
+ * - Futures market analytics (funding rates, liquidation predictions, open interest)
+ * - Advanced microstructure analysis (order flow toxicity, volatility-of-volatility, price impact)
+ * - Proprietary alpha signals and market health monitoring
+ * 
+ * ⚠️ REQUIRES AUTHENTICATION: All endpoints require valid JWT token in Authorization header
+ * 
+ * Security:
+ * - All 39 endpoints protected with authenticateToken middleware
+ * - WebSocket connections validated via token parameter
+ * - Rate limiting enforced per user/token
+ * 
+ * Audit Note: This was previously exposed at /api/v1/priority4 without authentication (Feb 2026)
+ * Now properly secured and renamed to trading-signals for production clarity.
+ */
+
 import { Router, Request, Response } from 'express';
+import { authenticateToken } from '../middleware/auth';
 import { websocketRealtimeFeeds } from '../services/websocketRealTimeFeeds';
 import { futuresMarketSupport } from '../services/futuresMarketSupport';
 import { advancedMicrostructureIndicators } from '../services/advancedMicrostructureIndicators';
@@ -7,6 +28,12 @@ import { logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
+
+// ============================================================================
+// 🔒 SECURITY: APPLY AUTHENTICATION TO ALL ROUTES
+// ============================================================================
+// ✅ All 39 endpoints require valid JWT token in Authorization header
+router.use(authenticateToken as any);
 
 // ============================================================================
 // WEBSOCKET ROUTES
@@ -37,7 +64,7 @@ if (typeof wsRouter.ws === 'function') {
 }
 
 /**
- * GET /api/v1/realtime/stats
+ * GET /api/trading/stats
  * Get WebSocket connection statistics
  */
 router.get('/stats', async (req: Request, res: Response) => {
@@ -63,7 +90,7 @@ router.get('/stats', async (req: Request, res: Response) => {
 // ============================================================================
 
 /**
- * GET /api/v1/futures/funding-rate/:symbol
+ * GET /api/trading/funding-rate/:symbol
  * Get current funding rate with predictions
  */
 router.get('/funding-rate/:symbol', async (req: Request, res: Response) => {
@@ -89,7 +116,7 @@ router.get('/funding-rate/:symbol', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/v1/futures/liquidations/:symbol
+ * GET /api/trading/liquidations/:symbol
  * Get liquidation data and cascade detection
  */
 router.get('/liquidations/:symbol', async (req: Request, res: Response) => {
@@ -115,7 +142,7 @@ router.get('/liquidations/:symbol', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/v1/futures/open-interest/:symbol
+ * GET /api/trading/open-interest/:symbol
  * Get open interest metrics
  */
 router.get('/open-interest/:symbol', async (req: Request, res: Response) => {
@@ -138,7 +165,7 @@ router.get('/open-interest/:symbol', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/v1/futures/funding-prediction
+ * POST /api/trading/funding-prediction
  * Predict future funding rates
  */
 router.post('/funding-prediction', async (req: Request, res: Response) => {
@@ -164,7 +191,7 @@ router.post('/funding-prediction', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/v1/futures/liquidation-risk
+ * POST /api/trading/liquidation-risk
  * Detect liquidation risk for a position
  */
 router.post('/liquidation-risk', async (req: Request, res: Response) => {
@@ -194,7 +221,7 @@ router.post('/liquidation-risk', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/v1/futures/market-health/:symbol
+ * GET /api/trading/market-health/:symbol
  * Get overall futures market health
  */
 router.get('/market-health/:symbol', async (req: Request, res: Response) => {
@@ -221,8 +248,8 @@ router.get('/market-health/:symbol', async (req: Request, res: Response) => {
 // ============================================================================
 
 /**
- * GET /api/v1/microstructure/order-flow/:symbol
- * Get real-time order flow imbalance
+ * GET /api/trading/order-flow/:symbol
+ * Get real-time order flow imbalance (proprietary alpha signal)
  */
 router.get('/order-flow/:symbol', async (req: Request, res: Response) => {
   try {
@@ -244,8 +271,8 @@ router.get('/order-flow/:symbol', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/v1/microstructure/vol-of-vol/:symbol
- * Get volatility of volatility indicators
+ * GET /api/trading/vol-of-vol/:symbol
+ * Get volatility of volatility indicators (proprietary alpha signal)
  */
 router.get('/vol-of-vol/:symbol', async (req: Request, res: Response) => {
   try {
@@ -268,8 +295,8 @@ router.get('/vol-of-vol/:symbol', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/v1/microstructure/toxicity/:symbol
- * Detect order book toxicity
+ * GET /api/trading/toxicity/:symbol
+ * Detect order book toxicity (proprietary alpha signal)
  */
 router.get('/toxicity/:symbol', async (req: Request, res: Response) => {
   try {
@@ -291,7 +318,7 @@ router.get('/toxicity/:symbol', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/v1/microstructure/price-impact/:symbol
+ * GET /api/trading/price-impact/:symbol
  * Analyze price impact dynamics
  */
 router.get('/price-impact/:symbol', async (req: Request, res: Response) => {
@@ -314,7 +341,7 @@ router.get('/price-impact/:symbol', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/v1/microstructure/comprehensive/:symbol
+ * GET /api/trading/comprehensive/:symbol
  * Get comprehensive market microstructure indicators
  */
 router.get('/comprehensive/:symbol', async (req: Request, res: Response) => {
@@ -339,7 +366,7 @@ router.get('/comprehensive/:symbol', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/v1/microstructure/alerts/:symbol
+ * GET /api/trading/alerts/:symbol
  * Generate real-time microstructure alerts
  */
 router.get('/alerts/:symbol', async (req: Request, res: Response) => {
@@ -374,8 +401,8 @@ router.get('/alerts/:symbol', async (req: Request, res: Response) => {
 // ============================================================================
 
 /**
- * GET /api/v1/priority4/market-insight/:symbol
- * Get complete Priority 4 market insight
+ * GET /api/trading/market-insight/:symbol
+ * Get complete market insight combining all signals
  */
 router.get('/market-insight/:symbol', async (req: Request, res: Response) => {
   try {

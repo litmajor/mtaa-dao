@@ -153,6 +153,13 @@ async function handleVote(chatId: number, telegramUserId: number, args: string[]
 // Webhook endpoint for Telegram updates
 router.post('/webhook', async (req, res) => {
   try {
+    // Verify Telegram Bot API Secret Token (X-Telegram-Bot-API-Secret-Token)
+    const secretToken = req.headers['x-telegram-bot-api-secret-token'] as string;
+    if (secretToken !== process.env.TELEGRAM_SECRET_TOKEN) {
+      console.warn('Unauthorized Telegram webhook request - invalid or missing secret token');
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     const update = req.body;
     
     if (update.message) {

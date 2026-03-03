@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Settings, Zap, Users, Shield, CreditCard, BarChart3, Bell } from 'lucide-react';
+import { Settings, Activity, Users, Shield, DollarSign, TrendingUp, AlertCircle, Wallet } from 'lucide-react';
+import TreasuryManagement from '@/components/TreasuryManagement';
 import styles from './settings.module.css';
 
 interface DAOSettings {
@@ -75,6 +76,7 @@ export default function DAOSettingsPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [usageData, setUsageData] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [userRole, setUserRole] = useState<'admin' | 'creator' | 'elder' | 'member'>('member');
 
   useEffect(() => {
     if (daoId) {
@@ -89,7 +91,18 @@ export default function DAOSettingsPage() {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       if (response.ok) {
+        const data = await response.json();
         setIsAdmin(true);
+        setUserRole(data.role || 'admin');
+      } else {
+        // Check if user has elder role
+        const roleResponse = await fetch(`/api/dao/${daoId}/user-role`, {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (roleResponse.ok) {
+          const roleData = await roleResponse.json();
+          setUserRole(roleData.role || 'member');
+        }
       }
     } catch (err) {
       console.error('Admin check failed:', err);
@@ -246,9 +259,9 @@ export default function DAOSettingsPage() {
       )}
 
       <Tabs defaultValue="rotation" className="w-full space-y-6">
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="rotation" title="Rotation">
-            <Zap className="w-4 h-4" />
+            <Activity className="w-4 h-4" />
           </TabsTrigger>
           <TabsTrigger value="referral" title="Referral">
             <Users className="w-4 h-4" />
@@ -257,13 +270,16 @@ export default function DAOSettingsPage() {
             <Shield className="w-4 h-4" />
           </TabsTrigger>
           <TabsTrigger value="financial" title="Financial">
-            <CreditCard className="w-4 h-4" />
+            <DollarSign className="w-4 h-4" />
+          </TabsTrigger>
+          <TabsTrigger value="treasury" title="Treasury">
+            <Wallet className="w-4 h-4" />
           </TabsTrigger>
           <TabsTrigger value="limits" title="Limits">
-            <BarChart3 className="w-4 h-4" />
+            <TrendingUp className="w-4 h-4" />
           </TabsTrigger>
           <TabsTrigger value="notifications" title="Alerts">
-            <Bell className="w-4 h-4" />
+            <AlertCircle className="w-4 h-4" />
           </TabsTrigger>
         </TabsList>
 
@@ -646,6 +662,11 @@ export default function DAOSettingsPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Treasury Management - PHASE 2 */}
+        <TabsContent value="treasury" className="space-y-4">
+          <TreasuryManagement daoId={daoId!} userRole={userRole} />
         </TabsContent>
       </Tabs>
 

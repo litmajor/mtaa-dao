@@ -4,7 +4,8 @@ import { db } from '../storage';
 import { 
   proposalExecutionQueue, 
   proposals,
-  daos
+  daos,
+  daoMemberships
 } from '../../shared/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { isAuthenticated } from '../auth';
@@ -13,14 +14,80 @@ import { rateLimitMiddleware, proposalVotingLimits } from '../middleware/rateLim
 
 const router = express.Router();
 
+// ============================================
+// PHASE 1 FIX: Access Control Helper
+// ============================================
+/**
+ * Verify user has permission to execute proposals for this DAO
+ * Only DAO admins, elders, and superusers can execute proposals
+ */
+async function validateExecutionPermission(userId: string, daoId: string): Promise<boolean> {
+  try {
+    // Check if user is DAO member with proper role
+    const membership = await db.select()
+      .from(daoMemberships)
+      .where(and(
+        eq(daoMemberships.userId, userId),
+        eq(daoMemberships.daoId, daoId)
+      ))
+      .limit(1);
+    
+    if (!membership.length) {
+      return false; // Not a DAO member
+    }
+    
+    const memberRole = membership[0].role || '';
+    const allowedRoles = ['creator', 'admin', 'elder', 'treasury_manager'];
+    
+    return allowedRoles.includes(memberRole);
+  } catch (error) {
+    console.error('Error validating execution permission:', error);
+    return false;
+  }
+}
+
+/**
+ * Verify user is a DAO member (read-only operations)
+ */
+async function isDAOMember(userId: string, daoId: string): Promise<boolean> {
+  try {
+    const membership = await db.select()
+      .from(daoMemberships)
+      .where(and(
+        eq(daoMemberships.userId, userId),
+        eq(daoMemberships.daoId, daoId)
+      ))
+      .limit(1);
+    
+    return membership.length > 0;
+  } catch (error) {
+    console.error('Error checking DAO membership:', error);
+    return false;
+  }
+}
+
 // Get execution queue for a DAO
 router.get('/:daoId/queue', isAuthenticated, async (req, res) => {
   try {
     const { daoId } = req.params;
+    const userId = (req.user as any)?.claims?.sub;
     
-    // Check if user has admin access
-    const userId = (req.user as any).claims.sub;
-    // Add permission check here
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+    
+    // Check if user is a DAO member (read permission)
+    const isMember = await isDAOMember(userId, daoId);
+    
+    if (!isMember) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to view this DAO\'s execution queue'
+      });
+    }
     
     const executions = await db.select()
       .from(proposalExecutionQueue)
@@ -42,13 +109,19 @@ router.get('/:daoId/queue', isAuthenticated, async (req, res) => {
 
 // Manually execute a proposal
 // PHASE 1: SAFETY - Rate limited to 100 proposal votes per day per user
-router.post('/:daoId/execute/:proposalId', [isAuthenticated, rateLimitMiddleware(proposalVotingLimits)], async (req, res) => {
+router.post('/:daoId/execute/:proposalId', [isAuthenticated, rateLimitMiddleware(proposalVotingLimits)], async (req: any, res: any) => {
   try {
     const { daoId, proposalId } = req.params;
     const userId = (req.user as any).claims.sub;
     
-    // Check permissions (admin/elder only)
-    // Add permission check here
+    // PHASE 1 FIX: Check permissions (admin/elder/treasury_manager only)
+    const hasPermission = await validateExecutionPermission(userId, daoId);
+    if (!hasPermission) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to execute proposals for this DAO. Only admins, elders, and treasury managers can execute proposals.'
+      });
+    }
     
     // Get the execution from queue
     const execution = await db.select()
@@ -67,8 +140,11 @@ router.post('/:daoId/execute/:proposalId', [isAuthenticated, rateLimitMiddleware
       });
     }
     
-    // Execute the proposal
-    await ProposalExecutionService.executeProposal(execution[0]);
+    // PHASE 1 FIX: Pass actual executor user ID instead of hardcoded 'system'
+    await ProposalExecutionService.executeProposal(execution[0], userId);
+    
+    // Log execution for audit trail
+    console.log(`[AUDIT] Proposal ${proposalId} executed by user ${userId} in DAO ${daoId}`);
     
     res.json({
       success: true,
@@ -89,8 +165,14 @@ router.delete('/:daoId/cancel/:executionId', isAuthenticated, async (req, res) =
     const { daoId, executionId } = req.params;
     const userId = (req.user as any).claims.sub;
     
-    // Check permissions
-    // Add permission check here
+    // PHASE 1 FIX: Check permissions
+    const hasPermission = await validateExecutionPermission(userId, daoId);
+    if (!hasPermission) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to cancel proposal executions'
+      });
+    }
     
     await db.update(proposalExecutionQueue)
       .set({ status: 'cancelled' })
@@ -98,6 +180,9 @@ router.delete('/:daoId/cancel/:executionId', isAuthenticated, async (req, res) =
         eq(proposalExecutionQueue.id, executionId),
         eq(proposalExecutionQueue.daoId, daoId)
       ));
+    
+    // Log cancellation for audit trail
+    console.log(`[AUDIT] Execution ${executionId} cancelled by user ${userId}`);
     
     res.json({
       success: true,

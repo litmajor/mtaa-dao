@@ -24,8 +24,9 @@ import { TodoScanner } from './scanners/TodoScanner';
 import { ImportValidator } from './scanners/ImportValidator';
 import { RouteAuditor } from './scanners/RouteAuditor';
 import { RuleEngine } from './engines/RuleEngine';
-import { ReportGenerator } from './generators/ReportGenerator';
+import { IntelligentReportGenerator } from './generators/route-intelligence-enricher';
 import { DiffProposer } from './proposers/DiffProposer';
+import { externalAPITracker } from '../services/externalAPITracker';
 
 export interface AuditResult {
   scanId: string;
@@ -58,7 +59,7 @@ export class BackgroundRefactorAgent {
   private importValidator: ImportValidator;
   private routeAuditor: RouteAuditor;
   private ruleEngine: RuleEngine;
-  private reportGenerator: ReportGenerator;
+  private reportGenerator: IntelligentReportGenerator;
   private diffProposer: DiffProposer;
   private userFiles: string[] = [];
 
@@ -70,7 +71,7 @@ export class BackgroundRefactorAgent {
     this.importValidator = new ImportValidator(projectRoot);
     this.routeAuditor = new RouteAuditor(projectRoot);
     this.ruleEngine = new RuleEngine(projectRoot);
-    this.reportGenerator = new ReportGenerator(projectRoot);
+    this.reportGenerator = new IntelligentReportGenerator(projectRoot);
     this.diffProposer = new DiffProposer(projectRoot);
 
     logger.info(`🤖 BackgroundRefactorAgent initialized`);
@@ -159,11 +160,55 @@ export class BackgroundRefactorAgent {
         patches,
       };
 
-      // Generate reports
-      logger.info('📄 Generating reports...');
-      await this.reportGenerator.generateAll(result);
+      // Generate reports using unified visibility architecture
+      logger.info('📄 Generating intelligence-enhanced reports...');
+      
+      // Initialize timestamped run directory and integrated tracking
+      const runId = await this.reportGenerator.startRun();
+      logger.info(`📊 Run ID: ${runId}`);
+      
+      // Set external API tracker to save to same run directory
+      const runDir = this.reportGenerator.getCurrentRunDir();
+      externalAPITracker.setLogDirectory(runDir);
+      
+      // NEW: Extract raw route data for intelligence enrichment
+      logger.info('🧠 Enriching route intelligence...');
+      const routeIntelligenceReport = await this.reportGenerator.saveRouteIntelligence(
+        routeViolations.map((v: any) => ({
+          path: v.path,
+          methods: v.method || 'UNKNOWN',
+          methodCount: 1,
+          middlewareCount: v.middlewareCount || 0,
+          domain: v.domain || 'unknown',
+          fullDomain: v.fullDomain || 'unknown.unknown',
+        }))
+      );
+      logger.info(
+        `✓ Route intelligence: ${routeIntelligenceReport.summary.totalRoutes} routes, ` +
+        `${routeIntelligenceReport.summary.criticalCount} critical, ` +
+        `${routeIntelligenceReport.summary.totalMiddlewareGap} middleware gaps`
+      );
+      
+      // NEW: Save audit results with enriched intelligence
+      await this.reportGenerator.saveAuditResultsWithIntelligence(result, routeIntelligenceReport);
+      
+      // Export API tracking analysis to run directory
+      externalAPITracker.exportAnalysis(runDir);
+      
+      // Finalize the run with additional metrics from intelligence
+      await this.reportGenerator.finalizeRun({
+        discoveryTimeMs: Date.now() - startTime,
+        modulesScanned: this.userFiles.length,
+        routeMetrics: {
+          totalRoutes: routeIntelligenceReport.summary.totalRoutes,
+          criticalRoutes: routeIntelligenceReport.summary.criticalCount,
+          highRiskRoutes: routeIntelligenceReport.summary.highCount,
+          middlewareGapTotal: routeIntelligenceReport.summary.totalMiddlewareGap,
+          financialRoutes: routeIntelligenceReport.summary.financialRoutes,
+        },
+      });
 
-      logger.info(`✅ Audit complete. Scan ID: ${scanId}`);
+      logger.info(`✅ Audit complete with enhanced intelligence. Scan ID: ${scanId}`);
       return result;
     } catch (error) {
       logger.error('❌ Audit failed:', error);

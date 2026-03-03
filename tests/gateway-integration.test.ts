@@ -291,11 +291,39 @@ describe("Gateway Agent Integration Tests", () => {
   describe("Cache Manager Integration", () => {
     let cacheManager: CacheManager;
 
-    beforeEach(() => {
+    beforeEach(async () => {
+      // Build Redis URL with authentication from environment
+      const host = process.env.REDIS_HOST || 'localhost';
+      const port = process.env.REDIS_PORT || '6379';
+      const password = process.env.REDIS_PASSWORD;
+      const db = process.env.REDIS_DB || '0';
+      
+      let redisUrl = process.env.REDIS_URL;
+      if (!redisUrl) {
+        if (password) {
+          redisUrl = `redis://:${encodeURIComponent(password)}@${host}:${port}/${db}`;
+        } else {
+          redisUrl = `redis://${host}:${port}/${db}`;
+        }
+      }
+
       cacheManager = new CacheManager({
-        redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
+        redisUrl,
         enableCache: true,
       });
+      
+      // Initialize connection
+      await cacheManager.initialize();
+    });
+
+    afterEach(async () => {
+      // Clean up test data after each test
+      try {
+        await cacheManager.invalidate("price:*");
+        await cacheManager.invalidate("apy:*");
+      } catch (error) {
+        // Silently handle cleanup errors
+      }
     });
 
     it("should cache price data", async () => {
@@ -337,11 +365,16 @@ describe("Gateway Agent Integration Tests", () => {
     });
 
     it("should invalidate by pattern", async () => {
+      // Preload test data
       await cacheManager.set("price:ETH", { price: 2000 }, 60);
       await cacheManager.set("price:BTC", { price: 50000 }, 60);
       await cacheManager.set("apy:aave", { apy: 5 }, 60);
 
-      await cacheManager.invalidateByPattern("price:*");
+      // Give cache a moment to persist
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Invalidate price:* keys
+      await cacheManager.invalidate("price:*");
 
       const price = await cacheManager.get("price:ETH");
       const apy = await cacheManager.get("apy:aave");
@@ -351,12 +384,20 @@ describe("Gateway Agent Integration Tests", () => {
     });
 
     it("should provide cache statistics", async () => {
+      // Preload test data
+      await cacheManager.set("price:ETH", { price: 2000 }, 60);
+      await cacheManager.set("price:BTC", { price: 50000 }, 60);
+      
+      // Trigger hits
+      await cacheManager.get("price:ETH");
+      await cacheManager.get("price:BTC");
+      
       const stats = await cacheManager.getStats();
 
       expect(stats).toBeDefined();
       expect(stats?.hitRate).toBeDefined();
-      expect(stats?.totalHits).toBeDefined();
-      expect(stats?.totalMisses).toBeDefined();
+      expect(stats?.totalHits).toBeGreaterThanOrEqual(0);
+      expect(stats?.totalMisses).toBeGreaterThanOrEqual(0);
     });
   });
 

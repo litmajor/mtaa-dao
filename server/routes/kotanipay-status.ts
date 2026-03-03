@@ -3,8 +3,16 @@ import express from 'express';
 import { z } from 'zod';
 import { db } from '../db';
 import { notificationService } from '../notificationService';
+import { authenticate } from '../auth';
 
 const router = express.Router();
+
+// ════════════════════════════════════════════════════════════════════════════════
+// AUTHENTICATION MIDDLEWARE
+// ════════════════════════════════════════════════════════════════════════════════
+
+// All KotaniPay status operations require authentication
+router.use(authenticate);
 
 // Database schema for payments (mock - replace with your actual schema)
 interface Payment {

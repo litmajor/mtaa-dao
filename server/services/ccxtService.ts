@@ -18,6 +18,7 @@ import pLimit from 'p-limit';
 import { logger } from '../utils/logger';
 import { assetOverrides } from '../../shared/config';
 import { externalAPITracker } from './externalAPITracker';
+import { unifiedCache } from './unifiedCacheService';
 
 /**
  * Type Definitions
@@ -74,15 +75,15 @@ export interface ExchangeMarket {
   maker: number;
   taker: number;
   limits: {
-    amount: {
+    amount?: {
       min: number;
       max: number;
     };
-    price: {
+    price?: {
       min: number;
       max: number;
     };
-    cost: {
+    cost?: {
       min: number;
       max: number;
     };
@@ -183,6 +184,7 @@ export class CCXTAggregator {
 
   /**
    * Fetch current ticker from single exchange
+   * Uses unified cache with stale-while-revalidate strategy
    * 
    * @param exchangeName - Exchange to query (binance, coinbase, etc)
    * @param symbol - Trading pair (CELO/USDC)
@@ -192,73 +194,69 @@ export class CCXTAggregator {
     exchangeName: string,
     symbol: string
   ): Promise<CachedPrice | null> {
-    const cacheKey = `ticker:${exchangeName}:${symbol}`;
-    const cached = this.priceCache.get<CachedPrice>(cacheKey);
+    const response = await unifiedCache.getOrFetchPrice(exchangeName, symbol, async () => {
+      return this.limiter(async () => {
+        try {
+          const exchange = this.exchanges.get(exchangeName);
+          if (!exchange) {
+            throw new Error(`Exchange ${exchangeName} not initialized`);
+          }
 
-    if (cached) {
-      return cached;
-    }
+          // Format symbol for this exchange
+          const formattedSymbol = await this.formatSymbolForExchange(exchangeName, symbol);
+          if (!formattedSymbol) {
+            logger.warn(`Symbol ${symbol} not supported on ${exchangeName}`);
+            return null;
+          }
 
-    return this.limiter(async () => {
-      try {
-        const exchange = this.exchanges.get(exchangeName);
-        if (!exchange) {
-          throw new Error(`Exchange ${exchangeName} not initialized`);
-        }
+          // 🔴 CCXT API CALL #1: fetchTicker (Price Discovery)
+          // See: CCXT_API_CALL_MAPPING.md - Location #1: getTickerFromExchange
+          const startTime = Date.now();
+          const ticker = await exchange.fetchTicker(formattedSymbol);
+          const duration = Date.now() - startTime;
 
-        // Format symbol for this exchange
-        const formattedSymbol = await this.formatSymbolForExchange(exchangeName, symbol);
-        if (!formattedSymbol) {
-          logger.warn(`Symbol ${symbol} not supported on ${exchangeName}`);
+          // Track external API call
+          externalAPITracker.recordCall({
+            timestamp: new Date().toISOString(),
+            type: 'ccxt',
+            service: exchangeName,
+            endpoint: `/fetchTicker/${formattedSymbol}`,
+            method: 'GET',
+            statusCode: 200,
+            duration,
+            dataSize: ticker ? JSON.stringify(ticker).length : 0
+          });
+
+          const price: CachedPrice = {
+            symbol: formattedSymbol,
+            exchange: exchangeName,
+            bid: ticker['bid'] || 0,
+            ask: ticker['ask'] || 0,
+            last: ticker['last'] || 0,
+            volume: ticker['quoteVolume'] || 0,
+            timestamp: ticker['timestamp'] || Date.now()
+          };
+
+          return price;
+        } catch (error: any) {
+          // Track failed API call
+          externalAPITracker.recordCall({
+            timestamp: new Date().toISOString(),
+            type: 'ccxt',
+            service: exchangeName,
+            endpoint: `/fetchTicker/${symbol}`,
+            method: 'GET',
+            statusCode: 500,
+            duration: 0,
+            error: error.message
+          });
+          logger.error(`Error fetching ${symbol} from ${exchangeName}: ${error.message}`);
           return null;
         }
-
-        // 🔴 CCXT API CALL #1: fetchTicker (Price Discovery)
-        // See: CCXT_API_CALL_MAPPING.md - Location #1: getTickerFromExchange
-        const startTime = Date.now();
-        const ticker = await exchange.fetchTicker(formattedSymbol);
-        const duration = Date.now() - startTime;
-
-        // Track external API call
-        externalAPITracker.recordCall({
-          timestamp: new Date().toISOString(),
-          type: 'ccxt',
-          service: exchangeName,
-          endpoint: `/fetchTicker/${formattedSymbol}`,
-          method: 'GET',
-          statusCode: 200,
-          duration,
-          dataSize: ticker ? JSON.stringify(ticker).length : 0
-        });
-
-        const price: CachedPrice = {
-          symbol: formattedSymbol,
-          exchange: exchangeName,
-          bid: ticker['bid'] || 0,
-          ask: ticker['ask'] || 0,
-          last: ticker['last'] || 0,
-          volume: ticker['quoteVolume'] || 0,
-          timestamp: ticker['timestamp'] || Date.now()
-        };
-
-        this.priceCache.set(cacheKey, price);
-        return price;
-      } catch (error: any) {
-        // Track failed API call
-        externalAPITracker.recordCall({
-          timestamp: new Date().toISOString(),
-          type: 'ccxt',
-          service: exchangeName,
-          endpoint: `/fetchTicker/${symbol}`,
-          method: 'GET',
-          statusCode: 500,
-          duration: 0,
-          error: error.message
-        });
-        logger.error(`Error fetching ${symbol} from ${exchangeName}: ${error.message}`);
-        return null;
-      }
+      });
     });
+    // Return the cached/fetched price data
+    return response.data;
   }
 
   /**
@@ -376,61 +374,63 @@ export class CCXTAggregator {
     timeframe: string = '1h',
     limit: number = 24
   ): Promise<any[] | null> {
-    const cacheKey = `ohlcv:${exchangeName}:${symbol}:${timeframe}:${limit}`;
-    const cached = this.ohlcvCache.get<any[]>(cacheKey);
+    const result = await unifiedCache.getOrFetchCandles(
+      symbol,
+      timeframe,
+      limit,
+      exchangeName,
+      async () => {
+        return this.limiter(async () => {
+          try {
+            const exchange = this.exchanges.get(exchangeName);
+            if (!exchange) {
+              throw new Error(`Exchange ${exchangeName} not initialized`);
+            }
 
-    if (cached) {
-      return cached;
-    }
+            const formattedSymbol = await this.formatSymbolForExchange(exchangeName, symbol);
+            if (!formattedSymbol) {
+              return [];
+            }
 
-    return this.limiter(async () => {
-      try {
-        const exchange = this.exchanges.get(exchangeName);
-        if (!exchange) {
-          throw new Error(`Exchange ${exchangeName} not initialized`);
-        }
+            // 🔴 CCXT API CALL #4: fetchOHLCV (Candle Data)
+            // See: CCXT_API_CALL_MAPPING.md - Location #4: getOHLCVFromExchange
+            const startTime = Date.now();
+            const ohlcv = await exchange.fetchOHLCV(formattedSymbol, timeframe, undefined, limit);
+            const duration = Date.now() - startTime;
 
-        const formattedSymbol = await this.formatSymbolForExchange(exchangeName, symbol);
-        if (!formattedSymbol) {
-          return null;
-        }
+            // Track external API call
+            externalAPITracker.recordCall({
+              timestamp: new Date().toISOString(),
+              type: 'ccxt',
+              service: exchangeName,
+              endpoint: `/fetchOHLCV/${formattedSymbol}/${timeframe}`,
+              method: 'GET',
+              statusCode: 200,
+              duration,
+              dataSize: ohlcv ? ohlcv.length * 100 : 0 // Approximate size
+            });
 
-        // 🔴 CCXT API CALL #4: fetchOHLCV (Candle Data)
-        // See: CCXT_API_CALL_MAPPING.md - Location #4: getOHLCVFromExchange
-        const startTime = Date.now();
-        const ohlcv = await exchange.fetchOHLCV(formattedSymbol, timeframe, undefined, limit);
-        const duration = Date.now() - startTime;
-
-        // Track external API call
-        externalAPITracker.recordCall({
-          timestamp: new Date().toISOString(),
-          type: 'ccxt',
-          service: exchangeName,
-          endpoint: `/fetchOHLCV/${formattedSymbol}/${timeframe}`,
-          method: 'GET',
-          statusCode: 200,
-          duration,
-          dataSize: ohlcv ? ohlcv.length * 100 : 0 // Approximate size
+            return ohlcv;
+          } catch (error: any) {
+            // Track failed API call
+            externalAPITracker.recordCall({
+              timestamp: new Date().toISOString(),
+              type: 'ccxt',
+              service: exchangeName,
+              endpoint: `/fetchOHLCV/${symbol}/${timeframe}`,
+              method: 'GET',
+              statusCode: 500,
+              duration: 0,
+              error: error.message
+            });
+            logger.error(`Error fetching OHLCV for ${symbol} from ${exchangeName}: ${error.message}`);
+            return [];
+          }
         });
-
-        this.ohlcvCache.set(cacheKey, ohlcv);
-        return ohlcv;
-      } catch (error: any) {
-        // Track failed API call
-        externalAPITracker.recordCall({
-          timestamp: new Date().toISOString(),
-          type: 'ccxt',
-          service: exchangeName,
-          endpoint: `/fetchOHLCV/${symbol}/${timeframe}`,
-          method: 'GET',
-          statusCode: 500,
-          duration: Date.now() - Date.now(),
-          error: error.message
-        });
-        logger.error(`Error fetching OHLCV for ${symbol} from ${exchangeName}: ${error.message}`);
-        return null;
       }
-    });
+    );
+
+    return result.data.length > 0 ? result.data : null;
   }
 
   /**
@@ -440,7 +440,7 @@ export class CCXTAggregator {
   async getOHLCV(
     symbol: string,
     timeframe: string = '1h',
-    limit: number = 24,
+    limit: number = 200,
     preferredExchanges: string[] = ['binance', 'coinbase', 'kraken']
   ): Promise<{
     data: any[] | null;
@@ -986,6 +986,16 @@ export class CCXTAggregator {
           return pair;
         }
       }
+      // fallback: search any market where base matches symbol
+      if (exchange.markets) {
+        const keys = Object.keys(exchange.markets);
+        for (const key of keys) {
+          if (key.toUpperCase().startsWith(symbol.toUpperCase() + '/')) {
+            logger.debug(`formatSymbolForExchange fallback found ${key} for ${symbol} on ${exchangeName}`);
+            return key;
+          }
+        }
+      }
 
       return null;
     } catch (error: any) {
@@ -1001,43 +1011,41 @@ export class CCXTAggregator {
    * @returns Array of market info
    */
   async getMarkets(exchangeName: string): Promise<ExchangeMarket[]> {
-    const cacheKey = `markets:${exchangeName}`;
-    const cached = this.marketsCache.get<ExchangeMarket[]>(cacheKey);
+    const result = await unifiedCache.getOrLoadMarkets(exchangeName, async () => {
+      return this.limiter(async () => {
+        try {
+          const exchange = this.exchanges.get(exchangeName);
+          if (!exchange) {
+            throw new Error(`Exchange ${exchangeName} not initialized`);
+          }
 
-    if (cached) {
-      return cached;
-    }
+          if (!exchange.markets || !Object.keys(exchange.markets).length) {
+            // 🔴 CCXT API CALL #8: loadMarkets (Market Discovery)
+            // See: CCXT_API_CALL_MAPPING.md - Location #8: getMarkets
+            await exchange.loadMarkets();
+          }
 
-    return this.limiter(async () => {
-      try {
-        const exchange = this.exchanges.get(exchangeName);
-        if (!exchange) {
-          throw new Error(`Exchange ${exchangeName} not initialized`);
+          const marketObjs = Object.values(exchange.markets);
+          logger.info(`📡 ${exchangeName} loadMarkets returned ${marketObjs.length} markets`);
+          const markets = marketObjs.map((market: any) => ({
+            id: market.id,
+            symbol: market.symbol,
+            base: market.base,
+            quote: market.quote,
+            maker: market.maker,
+            taker: market.taker,
+            limits: market.limits
+          }));
+
+          return markets;
+        } catch (error: any) {
+          logger.error(`Failed to load markets from ${exchangeName}: ${error.message}`);
+          throw new Error(`Failed to load markets: ${error.message}`);
         }
-
-        if (!exchange.markets || !Object.keys(exchange.markets).length) {
-          // 🔴 CCXT API CALL #8: loadMarkets (Market Discovery)
-          // See: CCXT_API_CALL_MAPPING.md - Location #8: getMarkets
-          await exchange.loadMarkets();
-        }
-
-        const markets = Object.values(exchange.markets).map((market: any) => ({
-          id: market.id,
-          symbol: market.symbol,
-          base: market.base,
-          quote: market.quote,
-          maker: market.maker,
-          taker: market.taker,
-          limits: market.limits
-        }));
-
-        this.marketsCache.set(cacheKey, markets);
-        return markets;
-      } catch (error: any) {
-        logger.error(`Failed to load markets from ${exchangeName}: ${error.message}`);
-        throw new Error(`Failed to load markets: ${error.message}`);
-      }
+      });
     });
+
+    return result.data;
   }
 
   /**

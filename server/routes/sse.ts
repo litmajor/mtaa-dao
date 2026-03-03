@@ -1,3 +1,19 @@
+/**
+ * ⚠️  DEPRECATED - CONSOLIDATED INTO system.ts
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 
+ * THIS FILE IS DEPRECATED (Sunset: 2026-09-01)
+ * 
+ * SSE notification endpoints have been consolidated into:
+ * 👉 server/routes/system.ts
+ * 
+ * Route Migration:
+ * GET /api/sse/notifications → GET /api/system/sse/notifications
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * This file will be DELETED on or after 2026-09-01.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
 
 import express, { Request, Response } from 'express';
 import { isAuthenticated } from '../nextAuthMiddleware';

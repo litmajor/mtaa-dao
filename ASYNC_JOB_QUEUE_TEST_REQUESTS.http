@@ -1,0 +1,280 @@
+### Async Job Queue Integration - Test Requests
+### Copy/paste these cURL commands or use in REST client (VS Code REST Client extension)
+
+### Configuration
+@baseUrl = http://localhost:5000/api
+@token = Bearer YOUR_JWT_TOKEN_HERE
+
+---
+
+### 1. STRATEGY BACKTEST - Queue Job
+POST {{baseUrl}}/strategies/strat123/backtest
+Authorization: {{token}}
+Content-Type: application/json
+
+{
+  "timerange": "20230101-20231231",
+  "pair": "BTC/USDT",
+  "timeframe": "1h",
+  "stakeAmount": 100
+}
+
+### Expected Response (202):
+### {
+###   "success": true,
+###   "message": "Backtest queued",
+###   "jobId": "strategy-backtest:abc-def-123",
+###   "statusUrl": "/api/strategies/strat123/backtest-status/abc-def-123"
+### }
+
+---
+
+### 2. STRATEGY OPTIMIZE - Queue Job
+POST {{baseUrl}}/strategies/strat456/optimize
+Authorization: {{token}}
+Content-Type: application/json
+
+{
+  "parameters": {
+    "buy_signal_threshold": 0.5,
+    "sell_signal_threshold": -0.5
+  },
+  "optimizer": "hyperopt"
+}
+
+### Expected Response (202):
+### {
+###   "success": true,
+###   "message": "Optimization queued",
+###   "jobId": "strategy-optimize:xyz-789-456",
+###   "statusUrl": "/api/strategies/strat456/optimize-status/xyz-789-456"
+### }
+
+---
+
+### 3. POOL REBALANCE - Queue Job
+POST {{baseUrl}}/investment-pools/pool123/trigger-rebalance
+Authorization: {{token}}
+Content-Type: application/json
+
+{
+  "force": false
+}
+
+### Expected Response (202):
+### {
+###   "success": true,
+###   "message": "Rebalancing initiated",
+###   "jobId": "pool-rebalance:rebalance-123",
+###   "statusUrl": "/api/investment-pools/pool123/rebalance-status/rebalance-123"
+### }
+
+---
+
+### 4. MORIO CHAT - Queue Job
+POST {{baseUrl}}/morio/chat
+Authorization: {{token}}
+Content-Type: application/json
+
+{
+  "daoId": "dao123",
+  "message": "What is the current DAO treasury balance?"
+}
+
+### Expected Response (202):
+### {
+###   "success": true,
+###   "jobId": "morio-chat:chat-job-001",
+###   "statusUrl": "/api/morio/chat-status/chat-job-001"
+### }
+
+---
+
+### 5. MORIO ANALYZE - Queue Job
+POST {{baseUrl}}/morio/analyze
+Authorization: {{token}}
+Content-Type: application/json
+
+{
+  "daoId": "dao123",
+  "analysisType": "full"
+}
+
+### Expected Response (202):
+### {
+###   "success": true,
+###   "jobId": "morio-analyze:analyze-001",
+###   "statusUrl": "/api/morio/analyze-status/analyze-001"
+### }
+
+---
+
+### 6. JOB STATUS - Get Full Status
+GET {{baseUrl}}/jobs/[REPLACE_WITH_JOB_ID]/status
+Authorization: {{token}}
+
+### Expected Response (200):
+### {
+###   "jobId": "strategy-backtest:abc-def-123",
+###   "status": "processing",
+###   "progress": 45,
+###   "error": null,
+###   "startedAt": "2026-03-03T10:00:00Z"
+### }
+
+---
+
+### 7. JOB RESULT - Get Result (202 if processing)
+GET {{baseUrl}}/jobs/[REPLACE_WITH_JOB_ID]/result
+Authorization: {{token}}
+
+### Expected Response (202 while processing):
+### {
+###   "message": "Job still processing",
+###   "status": "processing",
+###   "progress": 45,
+###   "jobId": "strategy-backtest:abc-def-123"
+### }
+
+### Expected Response (200 when completed):
+### {
+###   "jobId": "strategy-backtest:abc-def-123",
+###   "result": { /* backtest results */ },
+###   "completedAt": "2026-03-03T10:02:30Z"
+### }
+
+---
+
+### 8. QUEUE STATS - Monitor Job Queue Health
+GET {{baseUrl}}/jobs/queue/strategy-backtest/stats
+Authorization: {{token}}
+
+### Expected Response (200):
+### {
+###   "queueType": "strategy-backtest",
+###   "active": 1,
+###   "waiting": 3,
+###   "completed": 42,
+###   "failed": 0
+### }
+
+---
+
+### 9. RATE LIMITING TEST - Morio Chat (30/1min limit)
+### Try 31 requests in rapid succession
+### The 31st should return 429 Too Many Requests
+
+POST {{baseUrl}}/morio/chat
+Authorization: {{token}}
+Content-Type: application/json
+
+{
+  "daoId": "dao123",
+  "message": "Test message"
+}
+
+### Expected after 30 successful requests:
+### 429 Too Many Requests
+### {
+###   "error": "Rate limit exceeded"
+### }
+
+---
+
+### 10. Check Different Queue Types
+GET {{baseUrl}}/jobs/queue/strategy-optimize/stats
+GET {{baseUrl}}/jobs/queue/morio-analyze/stats
+GET {{baseUrl}}/jobs/queue/morio-chat/stats
+GET {{baseUrl}}/jobs/queue/pool-rebalance/stats
+
+---
+
+## Testing Workflow
+
+### 1. Queue a job
+POST /api/strategies/strat123/backtest → Save jobId
+
+### 2. Poll status (10 times, 5 second intervals)
+GET /api/jobs/{jobId}/status
+Watch "progress" go from 10 → 90
+
+### 3. Get result when complete
+GET /api/jobs/{jobId}/result
+Should return 200 with result object
+
+### 4. Check queue health
+GET /api/jobs/queue/strategy-backtest/stats
+Should show: active: 0, completed: 1
+
+### 5. Test rate limit
+POST /api/morio/chat (31 times in 1 minute)
+Should get 429 on 31st request
+
+---
+
+## Expected Performance Metrics
+
+| Endpoint | Before | After | Status |
+|----------|--------|-------|--------|
+| POST backtest | 20-30s | 50ms | ✅ 400-600x faster |
+| POST optimize | 60+s | 50ms | ✅ 1200+x faster |
+| POST analyze | 10s | 50ms | ✅ 200x faster |
+| POST chat | 5-10s | 50ms | ✅ 100-200x faster |
+| POST rebalance | 5s | 50ms | ✅ 100x faster |
+
+---
+
+## Debugging
+
+### Check Server Logs
+Look for:
+- ✅ "Job workers initialized"
+- ✅ "[StrategyBacktest] Starting for strategy..."
+- ✅ "[MorioChat] Processing message from user..."
+- ✅ "[PoolRebalance] Starting for pool..."
+
+### Check Redis
+```bash
+redis-cli keys "job:*"
+# Should show keys like: job:status:{jobId}, job:result:{jobId}
+
+redis-cli get "job:status:abc-123"
+# Returns: {"status": "processing", "progress": 45}
+
+redis-cli ttl "job:result:abc-123"
+# Should return: 3600 (1 hour TTL)
+```
+
+### Check Queue Depth
+```bash
+# Should show decreasing "waiting" count as workers process
+watch -n 1 'curl -s http://localhost:5000/api/jobs/queue/strategy-backtest/stats | jq'
+```
+
+---
+
+## Troubleshooting
+
+### Status shows "failed"
+Check error field in result:
+```bash
+curl http://localhost:5000/api/jobs/[jobId]/result | jq '.error'
+```
+
+### Retries not working
+Verify in server logs that retries are happening:
+```
+[JobQueue] Job failed, retry attempt 1/3
+[JobQueue] Job retry succeeded
+```
+
+### Rate limit too strict
+Temporarily increase in rateLimitPerUser() call:
+- From: `rateLimitPerUser('morio-chat', 30, '1min')`
+- To: `rateLimitPerUser('morio-chat', 60, '1min')`
+
+### Workers not processing jobs
+1. Check Redis: `redis-cli ping` → should return PONG
+2. Check logs: `npm run dev | grep "workers"`
+3. Verify initializeWorkers() is called in server startup
+

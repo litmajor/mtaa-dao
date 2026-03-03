@@ -7,6 +7,7 @@
  */
 
 import express, { Router, Request, Response, NextFunction } from 'express';
+import { authenticateToken } from '../middleware/auth';
 import ccxtService from '../services/ccxtService';
 import { logger } from '../utils/logger';
 import { calculateAllIndicators } from '../services/technicalIndicators';
@@ -17,6 +18,9 @@ import { findArbitrageOpportunities, findBestArbitrage, findProfitableSymbols, c
 import { getFearGreedIndex, getMarketChanges, getBtcDominance, getMarketSentiment, clearFearGreedCache } from '../services/fearGreedIndex';
 
 const router: Router = express.Router();
+
+// Protect ALL endpoints with authentication (market data is proprietary)
+router.use(authenticateToken);
 
 /**
  * Middleware: Error handler wrapper

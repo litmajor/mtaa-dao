@@ -134,7 +134,7 @@ export class EmergencyStopService {
     reason: string
   ): Promise<void> {
     // Verify actor has permission
-    const isAuthorized = ['SUPERUSER', 'GOVERNANCE'].includes(resetActor.role || '');
+    const isAuthorized = ['SUPER_ADMIN', 'GOVERNANCE'].includes(resetActor.role || '');
     if (!isAuthorized) {
       throw new Error(`Actor ${resetActor.id} with role ${resetActor.role} cannot reset circuit breaker`);
     }
@@ -318,7 +318,7 @@ export class EmergencyStopService {
    */
   private async checkEmergencyStopPermission(actor: { id: string; type: ActorType; role?: string }): Promise<boolean> {
     // Only superusers and governance can trigger emergency stop
-    if (actor.role === 'SUPERUSER' || actor.type === ActorType.DAO_GOVERNANCE) {
+    if (actor.role === 'SUPER_ADMIN' || actor.type === ActorType.DAO_GOVERNANCE) {
       return true;
     }
 

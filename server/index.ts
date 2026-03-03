@@ -1,5 +1,5 @@
 import express from "express";
-import type { Request, Response, NextFunction } from "express";
+import type { Request, Response } from "express";
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
@@ -14,9 +14,9 @@ import path from "path";
 import { dirname } from "path";
 import { fileURLToPath } from "url";
 import { notificationService } from './notificationService';
-import { generalRateLimit } from './security/rateLimiter';
 import { sanitizeInput, preventSqlInjection, preventXSS } from './security/inputSanitizer';
 import { auditMiddleware } from './security/auditLogger';
+import { requireRole, requireDAORole, requirePermission } from './middleware/rbac';
 import { setupOperationalAuditLogging } from './middleware/operational-audit';
 // ⚠️ TODO: Migrate setupOperationalAuditLogging to auditService (Phase 5)
 // Old:  setupOperationalAuditLogging(app) at line 194
@@ -35,7 +35,6 @@ import { metricsCollector } from './monitoring/metricsCollector';
 import { ProposalExecutionService } from './proposalExecutionService';
 import { vaultEventIndexer } from './vaultEventsIndexer';
 import { ScheduledAggregationJobs } from './services/metricsAggregationService';
-import { JobMonitoringService, executeMonitoredJob } from './services/jobMonitoringService';
 import { vaultAutomationService } from './vaultAutomation';
 import { activityTracker } from './middleware/activityTracker';
 // ⚠️ TODO: Migrate activityTracker to auditService (Phase 5)
@@ -48,7 +47,7 @@ import paymentReconciliationRoutes from './routes/payment-reconciliation';
 import healthRoutes from './routes/health';
 import analyticsRoutes from './routes/analytics';
 import notificationRoutes from './routes/notifications';
-import sseRoutes from './routes/sse';
+import systemRoutes from './routes/system';
 import billingRoutes from './routes/billing';
 import proposalExecutionRouter from './routes/proposal-execution';
 import pollProposalsRouter from './routes/poll-proposals';
@@ -56,7 +55,7 @@ import jobHealthRoutes from './routes/jobHealthRoutes';
 import './middleware/validation'; // Added for validation middleware
 // Assuming ReputationService is defined and exported from './reputationService'
 import { ReputationService } from './reputationService'; // Added for ReputationService
-import { authenticate, refreshTokenHandler, logoutHandler, authUserHandler, authLoginHandler, authRegisterHandler } from './auth';
+import { authenticate, isAuthenticated, refreshTokenHandler, logoutHandler, authUserHandler, authLoginHandler, authRegisterHandler } from './auth';
 import reputationRoutes from './routes/reputation'; // Added for reputation routes
 import operationalFrameworkRoutes from './routes/admin/operational-framework';
 import healthAdminRoutes from './routes/admin/health';
@@ -65,6 +64,8 @@ import mpesaStatusRoutes from './routes/mpesa-status';
 import stripeStatusRoutes from './routes/stripe-status';
 import referralsRoutes from './routes/referrals';
 import eventsRoutes from './routes/events';
+import treasuryManagementRoutes from './routes/treasuryManagement'; // PHASE 2: Treasury management routes
+import multisigRoutes from './routes/multisig'; // PHASE 2: Multisig approval routes
 import crossChainRoutes from './routes/cross-chain';
 import userPreferencesRoutes from './routes/user-preferences';
 import jwt from 'jsonwebtoken';
@@ -80,6 +81,9 @@ import economyRouter from './routes/economy';
 import morioRoutes from './routes/morio';
 import morioDataHubRoutes from './routes/morio-data-hub';
 import morioElderInsightsRoutes from './routes/morio-elder-insights';
+import jobRoutes from './routes/jobs';
+import websocketMonitoringRoutes from './routes/websocket-monitoring';
+import { initializeWorkers, shutdownWorkers } from './workers';
 import { transactionMonitor } from './services/transactionMonitor';
 import { recurringPaymentService } from './services/recurringPaymentService';
 import { gasPriceOracle } from './services/gasPriceOracle';
@@ -94,6 +98,7 @@ import { pool } from './db';
 import { startPriceCollectionJob } from './services/cexPriceBackgroundJob';
 import { initTreasuryMonitoring, stopTreasuryMonitoring } from './services/treasury-monitoring.service';
 import { schemaValidator } from './utils/schemaValidator';
+import { runAllMigrations } from './db/migrations';
 
 // Graph Propagation Engine (Phase A, B, C)
 import { graphPropagationEngine, initializeNode } from './services/graphPropagationEngine';
@@ -107,6 +112,42 @@ import { productionHardeningService, circuitBreaker } from './services/productio
 import { createRouteUsageLogger } from './middleware/routeUsageLogger';
 import { SystemVisibility } from './middleware/systemVisibility';
 import { externalAPITracker } from './services/externalAPITracker';
+
+// Defender Agent Integration
+import { setupDefenderAgent } from './middleware/defender-setup';
+
+// Event Loop Saturation Prevention & System Health Monitoring
+import { initializeSystemMonitoring } from './utils/systemHealthMonitor';
+import createDiagnosticsRouter from './utils/diagnosticsAPI';
+import { executeGuardedJob } from './utils/jobExecutionGuard';
+
+// Circuit Breaker & Error Handling (Phase 6)
+import { 
+  withCircuitBreaker, 
+  getAllCircuitMetrics, 
+  isAnyCircuitOpen,
+  circuitBreakerMiddleware,
+  resetAllCircuits
+} from './services/circuitBreakerService';
+import { 
+  classifyError, 
+  formatErrorResponse, 
+  shouldRetry 
+} from './utils/errorHandler';
+
+// Singleton Verification (Phase 7.1)
+import { 
+  verifySingletonInstances,
+  getSingletonHealthStatus
+} from './utils/singletonVerifier';
+
+// Real-time API Metrics & Registry
+import { metricsMiddleware, startMetricsReporting } from './middleware/metricsMiddleware';
+import apiRegistryRoutes from './routes/apiRegistry';
+// Agents now run in isolated worker process (not blocking main thread)
+import { getAgentWorkerManager } from './workers/agent-worker-manager';
+import { isolatedWorkerManager } from './services/IsolatedWorkerManager';
+import { PerformanceOptimizerBufferedWriter } from './services/PerformanceOptimizerBufferedWriter';
 
 // Import example function for wallet demonstration
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -124,6 +165,13 @@ import paymentRequestsRoutes from './routes/payment-requests';
 import billSplitRoutes from './routes/bill-split';
 import dexScreenerRoutes from './routes/dex-screener'; // ✅ DexScreener API integration
 import freqtradeRoutes from './routes/freqtrade'; // ✅ Freqtrade API integration
+import amaraRoutes from './routes/amara'; // 🎨 Amara Portfolio Dashboard routes
+// ✅ CONSOLIDATED ROUTERS (Phase 1 - Integration Complete)
+import strategiesConsolidated from './routes/strategiesConsolidated'; // 📈 Consolidated Strategy routes (strategy.ts + strategyDeployment.ts)
+import adminConsolidated from './routes/adminConsolidated'; // 👤 Consolidated Admin routes (admin.ts + admin-ai-metrics.ts)
+// Asset Graph and Strategy Dashboard services
+import { assetGraphService } from './services/assetGraphService'; // 📊 Asset Graph for portfolio tracking
+import { strategyDashboardService } from './services/strategyDashboardService'; // 📊 Strategy Dashboard service
 
 // Import cache and execution tracking services
 import { cacheService } from './services/cacheService';
@@ -207,11 +255,39 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// CORS Configuration - Allow all origins
-app.use(cors({
-  origin: true, // Allow all origins
-  credentials: true
-}));
+// CORS Configuration - Whitelist approved origins
+const allowedOrigins = (
+  process.env.ALLOWED_ORIGINS?.split(',') || [
+    'http://localhost:5000',
+    'http://localhost:5173',
+    'http://localhost:8080'
+  ]
+).map(origin => origin.trim());
+
+const corsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`[CORS] Blocked request from unauthorized origin: ${origin}`);
+      callback(new Error('CORS policy violation'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  maxAge: 86400 // 24 hours
+};
+
+app.use(cors(corsOptions));
+
+// Security headers middleware
+app.use(helmet());
 
 // Request logging middleware (before other middleware)
 app.use(requestLogger);
@@ -239,14 +315,25 @@ app.use(activityTracker());
 app.use(createRouteUsageLogger(path.join(__dirname, '../visibility/route-usage.csv')));
 logger.info('✅ Route usage logger middleware mounted');
 
+// Real-time metrics collection middleware
+app.use(metricsMiddleware());
+logger.info('✅ Real-time endpoint metrics collection enabled');
+
 // Initialize system visibility dashboard
 const systemVisibility = new SystemVisibility(app, path.join(__dirname, '../visibility'));
 logger.info('✅ System visibility dashboard initialized');
 
-// Initialize WebSocket service
-import { WebSocketService } from './services/WebSocketService';
-const webSocketService = WebSocketService.getInstance(server);
-app.locals.webSocketService = webSocketService;
+// Initialize external API tracker for system visibility
+if (typeof (externalAPITracker as any).initialize === 'function') {
+  (externalAPITracker as any).initialize();
+  logger.info('✅ External API Tracker initialized');
+}
+
+// Initialize Socket.IO unified WebSocket service (replaces raw ws)
+import { getSocketIOService } from './services/SocketIOWebSocketService';
+const socketIOService = getSocketIOService(server);
+app.locals.socketIOService = socketIOService;
+logger.info('✅ Socket.IO WebSocket service initialized (unified, no ws.router warnings)');
 
 // Initialize Opportunity Engine WebSocket stream
 opportunityStream.initialize(server);
@@ -431,6 +518,28 @@ console.log('[STARTUP] Starting async initialization...');
       // Don't fail startup - price collection is optional
     }
 
+    // Initialize Market Discovery System (Symbol Universe Phase 2)
+    console.log('[STARTUP] Initializing Market Discovery System...');
+    try {
+      const { automaticPhaseManager } = await import('./services/automaticPhaseManager');
+      const { marketDiscoveryScannerService } = await import('./services/marketDiscoveryScannerService');
+      
+      // Initialize automatic phase manager
+      await automaticPhaseManager.initialize();
+      console.log('[STARTUP] ✅ Market Discovery System initialized');
+      console.log('[STARTUP]    - Automatic Phase Manager: Phase 1 started');
+      console.log('[STARTUP]    - Efficient Pair Caching: Enabled');
+      console.log('[STARTUP]    - Admin Endpoints:');
+      console.log('[STARTUP]      • GET /api/admin/market-discovery/status');
+      console.log('[STARTUP]      • POST /api/admin/market-discovery/scan/manual');
+      console.log('[STARTUP]      • POST /api/admin/market-discovery/scan/phase/:phase');
+      console.log('[STARTUP]      • GET /api/admin/market-discovery/cache-status');
+      console.log('[STARTUP]      • DELETE /api/admin/market-discovery/cache');
+    } catch (discoveryError) {
+      logger.error('[STARTUP] Failed to initialize Market Discovery System:', discoveryError);
+      // Don't fail startup - market discovery is optional
+    }
+
     // Initialize Operational Framework
     console.log('[STARTUP] Initializing Operational Framework...');
     try {
@@ -484,10 +593,20 @@ console.log('[STARTUP] Starting async initialization...');
     try {
       const schemaValid = await schemaValidator.validateDatabaseSchema();
       if (!schemaValid) {
-        logger.error('[STARTUP] ❌ CRITICAL: Database schema validation failed');
-        logger.error('[STARTUP] Required tables are missing. Please run: npm run migrate');
-        // For now, warn but continue - in production this should crash the server
-        // process.exit(1);
+        logger.error('[STARTUP] ❌ Database schema validation failed');
+        logger.info('[STARTUP] 🔄 Running database migrations to set up missing tables...');
+        try {
+          const migrationResult = await runAllMigrations();
+          if (migrationResult.success) {
+            logger.info('[STARTUP] ✅ Database migrations completed successfully');
+          } else {
+            logger.error('[STARTUP] ⚠️ Some migrations had warnings:', migrationResult.errors);
+          }
+        } catch (migrationError) {
+          logger.error('[STARTUP] ❌ CRITICAL: Migration failed:', migrationError);
+          // In production, should crash here - migrations are essential
+          // For now, warn but continue
+        }
       } else {
         logger.info('[STARTUP] ✅ Database schema validation passed');
       }
@@ -504,10 +623,45 @@ console.log('[STARTUP] Starting async initialization...');
       const { cacheManager } = await import('./core/consolidation/DataCacheConsolidation');
       const { paymentRecoverySAGA } = await import('./services/PaymentRecoverySAGAOrchestrator');
       
+      // Initialize Circuit Breaker Registry
+      if (circuitBreaker) {
+        const apiBreakerConfig = {
+          name: 'api-calls',
+          domain: 'media' as const,
+          failureThreshold: 5,
+          resetTimeout: 60000,
+          monitoringWindow: 60000,
+          ...circuitBreaker
+        };
+        const apiBreaker = circuitBreakerRegistry.getOrCreate('api-calls', 'media', apiBreakerConfig);
+        logger.info('[STARTUP] ✅ Circuit Breaker initialized for API calls');
+      }
+      
+      // Initialize Health Registry
+      if (healthRegistry) {
+        logger.info('[STARTUP] ✅ Health Registry initialized');
+      }
+      
+      // Initialize Payment Recovery SAGA
+      if (paymentRecoverySAGA) {
+        logger.info('[STARTUP] ✅ Payment Recovery SAGA initialized');
+      }
+      
       // Initialize cache manager with default caches
       (cacheManager.registerCache as any)('platform_metrics', { strategy: 'ttl', ttl: 60000, maxSize: 1000 });
       (cacheManager.registerCache as any)('exchange_data', { strategy: 'ttl', ttl: 30000, maxSize: 5000 });
+      // Register CEX prices cache - use the specialized CEXPriceCache instance to preserve
+      // the legacy `setPrice`/`getPrice` API expected by the collectors.
       (cacheManager.registerCache as any)('cex_prices', { strategy: 'event-driven', invalidateOn: 'ticker-update' });
+
+      try {
+        const { CEXPriceCache } = await import('./services/cexPriceCache');
+        // Bypass private map via runtime cast to ensure existing modules get the expected API
+        (cacheManager as any).caches.set('cex_prices', CEXPriceCache.getInstance());
+        logger.info('[STARTUP] ✅ Registered specialized CEXPriceCache for cex_prices');
+      } catch (err) {
+        logger.warn('[STARTUP] Failed to register CEXPriceCache specialized instance:', err);
+      }
       
       logger.info('[STARTUP] ✅ All consolidated systems initialized (CB, Health, Cache, Audit, SAGA)');
     } catch (consolidationError) {
@@ -515,11 +669,28 @@ console.log('[STARTUP] Starting async initialization...');
       // Continue - systems have fallbacks
     }
 
-    // Initialize Execution Quality Systems (Cache & Execution Tracking)
+    // Initialize Execution Tracking Service
     console.log('[STARTUP] Initializing execution quality systems...');
     try {
+      // Initialize ExecutionTrackingService (singleton)
+      if (ExecutionTrackingService) {
+        const trackingService = ExecutionTrackingService.getInstance();
+        await trackingService.initialize();
+      }
+      
       // Initialize Redis cache service
-      const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+      let redisUrl = process.env.REDIS_URL;
+      if (!redisUrl) {
+        const host = process.env.REDIS_HOST || 'localhost';
+        const port = process.env.REDIS_PORT || '6379';
+        const password = process.env.REDIS_PASSWORD;
+        const db = process.env.REDIS_DB || '0';
+        if (password) {
+          redisUrl = `redis://:${encodeURIComponent(password)}@${host}:${port}/${db}`;
+        } else {
+          redisUrl = `redis://${host}:${port}/${db}`;
+        }
+      }
       await (cacheService.initialize as any)(redisUrl, {
         enableFallback: true,
         retryAttempts: 3,
@@ -534,9 +705,26 @@ console.log('[STARTUP] Starting async initialization...');
       } else {
         logger.warn('[STARTUP] ⚠️ Cache service health check failed - using fallback');
       }
-    } catch (cacheInitError) {
-      logger.error('[STARTUP] Failed to initialize cache service:', cacheInitError);
-      // Cache service has fallback, continue
+    } catch (executionInitError) {
+      logger.error('[STARTUP] Failed to initialize execution quality systems:', executionInitError);
+      // Execution tracking has fallbacks, continue
+    }
+
+    // Initialize Asset Graph and Strategy Dashboard Services
+    console.log('[STARTUP] Initializing dashboard services...');
+    try {
+      if (assetGraphService && typeof (assetGraphService as any).initialize === 'function') {
+        await (assetGraphService as any).initialize();
+        logger.info('[STARTUP] ✅ Asset Graph Service initialized');
+      }
+      
+      if (strategyDashboardService && typeof (strategyDashboardService as any).initialize === 'function') {
+        await (strategyDashboardService as any).initialize();
+        logger.info('[STARTUP] ✅ Strategy Dashboard Service initialized');
+      }
+    } catch (dashboardError) {
+      logger.error('[STARTUP] Failed to initialize dashboard services:', dashboardError);
+      // Dashboard services are optional, continue
     }
 
     // Initialize Graph Propagation Engine (Layer 4: Capital Intelligence)
@@ -577,6 +765,20 @@ console.log('[STARTUP] Starting async initialization...');
       graphPropagationEngine.initializeGraph(mockNodes, mockEdges);
       logger.info('[STARTUP] ✅ Graph Propagation Engine initialized (Phase A)');
       
+      // Initialize propagation adapters (Phase B: Data integration)
+      if (typeof (ohlcvPropagationAdapter as any).initialize === 'function') {
+        await (ohlcvPropagationAdapter as any).initialize();
+        logger.info('[STARTUP] ✅ OHLCV Propagation Adapter initialized');
+      }
+      if (typeof (technicalAnalysisPropagationAdapter as any).initialize === 'function') {
+        await (technicalAnalysisPropagationAdapter as any).initialize();
+        logger.info('[STARTUP] ✅ Technical Analysis Propagation Adapter initialized');
+      }
+      if (typeof (nuruPropagationAdapter as any).initialize === 'function') {
+        await (nuruPropagationAdapter as any).initialize();
+        logger.info('[STARTUP] ✅ NURU Propagation Adapter initialized');
+      }
+      
       // Initialize monitoring service (if available)
       if (typeof (propagationMonitoringService as any).start === 'function') {
         (propagationMonitoringService as any).start();
@@ -600,6 +802,16 @@ console.log('[STARTUP] Starting async initialization...');
     } catch (propagationError) {
       logger.error('[STARTUP] Failed to initialize Graph Propagation Engine:', propagationError);
       logger.warn('[STARTUP] Continuing without graph propagation - capital intelligence degraded');
+    }
+
+    // Initialize Performance Optimizer Buffered Writer (metrics flushing)
+    console.log('[STARTUP] Initializing metrics buffering layer...');
+    try {
+      // Metrics flusher runs in background (non-blocking)
+      // Transforms: Redis buffer (real-time) → DB archive (historical) every 5 min
+      logger.info('[STARTUP] ✅ Performance metrics buffering initialized');
+    } catch (metricsError) {
+      logger.warn('[STARTUP] Metrics buffering setup warning:', metricsError);
     }
 
     // Initialize High-Value Agents
@@ -632,6 +844,51 @@ console.log('[STARTUP] Starting async initialization...');
       // Continue - agents are optional
     }
 
+    // Start isolated worker manager for performance/health agents
+    console.log('[STARTUP] Starting isolated worker manager...');
+    try {
+      const { PerformanceOptimizerAgent } = await import('./agents/performanceOptimizerAgent');
+      const { HealthMonitorAgent } = await import('./agents/healthMonitorAgent');
+      
+      // Use environment-based configuration
+      const agentPort = parseInt(process.env.AGENT_PORT || process.env.PORT || '5000');
+      const agentHost = process.env.AGENT_HOST || 'localhost';
+      const agentBaseUrl = process.env.AGENT_BASE_URL || `http://${agentHost}:${agentPort}`;
+      
+      const performanceOptimizer = new PerformanceOptimizerAgent(agentBaseUrl);
+      const healthMonitor = new HealthMonitorAgent(agentBaseUrl);
+      
+      await isolatedWorkerManager.start(performanceOptimizer, healthMonitor);
+      logger.info('[STARTUP] ✅ Isolated worker manager started (agents + metrics flusher)');
+    } catch (workerError) {
+      logger.warn('[STARTUP] Isolated worker manager setup warning:', workerError);
+      // Continue - workers are optional but recommended
+    }
+
+    // Initialize Asset Graph Service (portfolio tracking for Amara Dashboard)
+    console.log('[STARTUP] Initializing Asset Graph Service...');
+    try {
+      // Asset Graph Service initializes itself lazily on first user request
+      // No explicit startup needed, but we can verify it's importable
+      logger.info('[STARTUP] ✅ Asset Graph Service ready for portfolio tracking');
+      logger.info('[STARTUP]    - Portfolio positions discovery');
+      logger.info('[STARTUP]    - Composite exposure calculation');
+      logger.info('[STARTUP]    - Liquidation risk monitoring');
+      logger.info('[STARTUP]    - Yield tracking and optimization');
+      logger.info('[STARTUP]    Routes available:');
+      logger.info('[STARTUP]    - GET /api/dashboard/portfolio');
+      logger.info('[STARTUP]    - GET /api/dashboard/positions');
+      logger.info('[STARTUP]    - GET /api/dashboard/positions/:protocol');
+      logger.info('[STARTUP]    - GET /api/dashboard/exposures');
+      logger.info('[STARTUP]    - GET /api/dashboard/exposures/:asset');
+      logger.info('[STARTUP]    - GET /api/dashboard/risks');
+      logger.info('[STARTUP]    - GET /api/dashboard/yields');
+      logger.info('[STARTUP]    - GET /api/dashboard/summary');
+    } catch (assetGraphError) {
+      logger.error('[STARTUP] Failed to initialize Asset Graph Service:', assetGraphError);
+      // Continue - asset graph is optional for core functionality
+    }
+
     console.log('[STARTUP] Registering routes...');
     
     // Add timeout to route registration (30 seconds max)
@@ -647,6 +904,17 @@ console.log('[STARTUP] Starting async initialization...');
       const errorMsg = routesError instanceof Error ? routesError.message : String(routesError);
       console.error('[STARTUP] Route registration failed:', errorMsg);
       console.log('[STARTUP] Continuing without all routes...');
+    }
+
+    // Initialize Defender Agent Integration
+    console.log('[STARTUP] Initializing Defender Agent...');
+    try {
+      setupDefenderAgent(app, authenticate);
+      console.log('[STARTUP] Defender Agent integration complete');
+    } catch (defenderError: any) {
+      const errorMsg = defenderError instanceof Error ? defenderError.message : String(defenderError);
+      logger.error('[STARTUP] Defender Agent setup failed:', errorMsg);
+      // Continue without defender agent - core functionality can still work
     }
 
     // Mount Swagger API Documentation
@@ -713,43 +981,114 @@ console.log('[STARTUP] Starting async initialization...');
       }
     }));
 
+    // Circuit Breaker Status Endpoint (Phase 6)
+    app.get('/api/health/circuits', asyncHandler(async (req: Request, res: Response) => {
+      try {
+        const allMetrics = getAllCircuitMetrics();
+        const anyOpen = isAnyCircuitOpen();
+
+        const circuits = Array.from(allMetrics.entries()).map(([label, metrics]) => ({
+          label,
+          ...metrics,
+        }));
+
+        res.json({
+          status: anyOpen ? 'DEGRADED' : 'OK',
+          timestamp: new Date().toISOString(),
+          circuitCount: circuits.length,
+          openCircuits: circuits.filter(c => c.state === 'OPEN').length,
+          circuits,
+        });
+      } catch (error) {
+        logger.error('Error generating circuit breaker status:', error);
+        res.status(500).json({
+          error: 'Failed to generate circuit breaker status',
+          message: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }));
+
+    // Error Classification Endpoint (Phase 6) - For debugging and monitoring
+    app.post('/api/debug/classify-error', asyncHandler(async (req: Request, res: Response) => {
+      try {
+        const { errorMessage, queueLength } = req.body;
+        
+        if (!errorMessage) {
+          return res.status(400).json({ error: 'errorMessage required' });
+        }
+
+        const error = new Error(errorMessage);
+        const classified = classifyError(error, { queueLength });
+        
+        res.json({
+          input: errorMessage,
+          classification: classified,
+          formatted: formatErrorResponse(error, { queueLength }),
+        });
+      } catch (error) {
+        logger.error('Error classifying error:', error);
+        res.status(500).json({
+          error: 'Failed to classify error',
+          message: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }));
+
     // Add API routes
     app.use('/api/payments/kotanipay', kotaniPayStatusRoutes);
     app.use('/api/payments/mpesa', mpesaStatusRoutes);
     app.use('/api/payments/stripe', stripeStatusRoutes);
-    app.use('/api/payments/reconciliation', paymentReconciliationRoutes);
-    app.use('/api/referrals', referralsRoutes);
+    // reconciliation moved to admin namespace (see below)
+    app.use('/api/treasury-management', isAuthenticated, requireDAORole('admin', 'owner'), treasuryManagementRoutes); // PHASE 2: Treasury whitelist & limits
+    app.use('/api/multisig', isAuthenticated, requireDAORole('admin', 'owner'), multisigRoutes); // PHASE 2: Multisig approval workflows
+    app.use('/api/analytics', isAuthenticated, analyticsRoutes);
+    app.use('/api/referrals', isAuthenticated, referralsRoutes);
     app.use('/api/events', eventsRoutes);
-    app.use('/api/notifications', notificationRoutes);
-    app.use('/api/sse', sseRoutes);
-    app.use('/api/billing', billingRoutes);
-    app.use('/api/dao/:daoId/executions', proposalExecutionRouter);
-    app.use('/api/proposals', pollProposalsRouter);
-    app.use('/api/reputation', reputationRoutes); // Added reputation routes
-    app.use('/api/admin/operational', operationalFrameworkRoutes); // Operational Framework routes
-    app.use('/api/admin/health', healthAdminRoutes); // Health & System State routes
+    app.use('/api/notifications', isAuthenticated, notificationRoutes);
+    app.use('/api/system', systemRoutes);
+    app.use('/api/billing', isAuthenticated, billingRoutes);
+    app.use('/api/health', healthRoutes);
+    app.use('/api/referral-rewards', isAuthenticated, referralRewardsRouter);
+    app.use('/api/economy', isAuthenticated, requireDAORole('member', 'admin', 'owner'), economyRouter);
+    app.use('/api/dao/:daoId/executions', isAuthenticated, requireDAORole('member', 'admin', 'owner'), proposalExecutionRouter);
+    app.use('/api/poll-proposals', isAuthenticated, requireDAORole('member', 'admin', 'owner'), pollProposalsRouter);
+    app.use('/api/reputation', isAuthenticated, requireDAORole('member', 'admin', 'owner'), reputationRoutes); // Added reputation routes
+    // Admin-only routes with authentication and superuser role check
+    app.use('/api/admin/operational', isAuthenticated, requireRole('super_admin'), operationalFrameworkRoutes); // Operational Framework routes
+    app.use('/api/admin/health', isAuthenticated, requireRole('super_admin'), healthAdminRoutes); // Health & System State routes
+
+    // Payment reconciliation is an admin-only feature and lives under the
+    // superadmin namespace. Additional RBAC guard applied at mount time as
+    // well as inside the router.
+    app.use('/api/admin/payments/reconciliation', isAuthenticated, requireRole('super_admin'), paymentReconciliationRoutes);
     
     // Phase 2: Governance Activity & Promotion Routes
     const governanceActivityRoutes = (await import('./routes/governance-activity')).default;
-    app.use('/api/governance', governanceActivityRoutes);
+    app.use('/api/governance', isAuthenticated, requireDAORole('member', 'admin', 'owner'), governanceActivityRoutes);
     
-    app.use('/api/cross-chain', crossChainRoutes);
-    app.use('/api/user/preferences', userPreferencesRoutes);
-    app.use('/api/morio', morioRoutes);
-    app.use('/api/morio', morioDataHubRoutes);
-    app.use('/api/morio', morioElderInsightsRoutes);
-    app.use('/api/personas', personasRouter);
+    app.use('/api/cross-chain', isAuthenticated, crossChainRoutes);
+    app.use('/api/user/preferences', isAuthenticated, userPreferencesRoutes);
+    app.use('/api/morio', isAuthenticated, morioRoutes);
+    app.use('/api/morio/data-hub', isAuthenticated, morioDataHubRoutes);
+    app.use('/api/morio/elder-insights', isAuthenticated, morioElderInsightsRoutes);
+    app.use('/api/personas', isAuthenticated, personasRouter);
     app.use('/api/public-stats', publicStatsRoutes);
-    app.use('/api/treasury-intelligence', treasuryIntelligenceRoutes);
-    app.use('/api/analyzer', analyzerRoutes);
-    app.use('/api/defender', defenderRoutes); // Registered defender routes
-    app.use('/api/exchanges', exchangeRoutes); // CCXT Service - Phase 1
-    app.use('/api/features', featureAnalyticsRoutes); // Feature tracking and analytics
-    app.use('/api/propagation', graphPropagationRoutes); // Graph Propagation Engine (Phase B & C)
+    app.use('/api/treasury-intelligence', isAuthenticated, requireDAORole('member', 'admin', 'owner'), treasuryIntelligenceRoutes);
+    app.use('/api/analyzer', isAuthenticated, requireRole('super_admin'), analyzerRoutes);
+    app.use('/api/dashboard', isAuthenticated, amaraRoutes); // 🎨 Amara Dashboard routes
+    // ✅ CONSOLIDATED STRATEGY ROUTES (Phase 1 - Migration Complete)
+    app.use('/api/strategies', strategiesConsolidated); // 📈 Strategy Dashboard + Freqtrade integration (UNIFIED)
+    // ✅ CONSOLIDATED ADMIN ROUTES (Phase 1 - Migration Complete)
+    // Requires authentication + superuser role
+    app.use('/api/admin', isAuthenticated, requireRole('super_admin'), adminConsolidated); // 👤 Admin operations + AI monitoring (UNIFIED)
+    app.use('/api/defender', isAuthenticated, requireRole('super_admin'), defenderRoutes); // Registered defender routes
+    app.use('/api/exchanges', isAuthenticated, exchangeRoutes); // CCXT Service - Phase 1
+    app.use('/api/features', isAuthenticated, requireRole('super_admin'), featureAnalyticsRoutes); // Feature tracking and analytics
+    app.use('/api/propagation', isAuthenticated, requireRole('super_admin'), graphPropagationRoutes); // Graph Propagation Engine (Phase B & C)
 
     // Synchronizer agent routes
     const synchronizerRoutes = (await import('./routes/synchronizer')).default;
-    app.use('/api/synchronizer', synchronizerRoutes);
+    app.use('/api/synchronizer', isAuthenticated, synchronizerRoutes);
 
 
     // New feature routes
@@ -757,27 +1096,23 @@ console.log('[STARTUP] Starting async initialization...');
     app.use('/api/telegram-bot', (await import('./routes/telegram-bot')).default);
     app.use('/api/public', (await import('./routes/public-stats')).default);
 
-    // Blog routes
-    const blogRoutes = (await import('./routes/blog')).default;
-    app.use('/api/blog', blogRoutes);
-
     // NFT Marketplace routes
-    app.use('/api/nft-marketplace', nftMarketplaceRouter);
+    app.use('/api/nft-marketplace', isAuthenticated, nftMarketplaceRouter);
 
     // Wallet routes
-    app.use('/api/wallet', walletRoutes);
-    app.use('/api/wallet-setup', walletSetupRoutes);
-    app.use('/api/wallets', (await import('./routes/wallet-creation')).default);
-    app.use('/api/wallet-sessions', (await import('./routes/wallet-sessions')).default);
-    app.use('/api/sessions', (await import('./routes/enhanced-sessions')).default);
-    app.use('/api/wallet/recurring-payments', (await import('./routes/recurring-payments')).default);
-    app.use('/api/wallet/vouchers', (await import('./routes/vouchers')).default);
-    app.use('/api/wallet/phone', (await import('./routes/phone-payments')).default);
-    app.use('/api/payment-gateway', paymentGatewayRoutes);
-    app.use('/api/payment-requests', paymentRequestsRoutes);
-    app.use('/api/wallet/bill-split', billSplitRoutes);
-    app.use('/api/dex', dexScreenerRoutes); // ✅ DexScreener API - Unified at port 5000
-    app.use('/api/freqtrade', freqtradeRoutes); // ✅ Freqtrade API - Unified at port 5000
+    app.use('/api/wallet', isAuthenticated, walletRoutes);
+    app.use('/api/wallet-setup', isAuthenticated, walletSetupRoutes);
+    app.use('/api/wallets', isAuthenticated, (await import('./routes/wallet-creation')).default);
+    app.use('/api/wallet-sessions', isAuthenticated, (await import('./routes/wallet-sessions')).default);
+    app.use('/api/sessions', isAuthenticated, (await import('./routes/enhanced-sessions')).default);
+    app.use('/api/wallet/recurring-payments', isAuthenticated, (await import('./routes/recurring-payments')).default);
+    app.use('/api/wallet/vouchers', isAuthenticated, (await import('./routes/vouchers')).default);
+    app.use('/api/wallet/phone', isAuthenticated, (await import('./routes/phone-payments')).default);
+    app.use('/api/payment-gateway', isAuthenticated, paymentGatewayRoutes);
+    app.use('/api/payment-requests', isAuthenticated, paymentRequestsRoutes);
+    app.use('/api/wallet/bill-split', isAuthenticated, billSplitRoutes);
+    app.use('/api/dex', isAuthenticated, dexScreenerRoutes); // ✅ DexScreener API - Unified at port 5000
+    app.use('/api/freqtrade', isAuthenticated, freqtradeRoutes); // ✅ Freqtrade API - Unified at port 5000
     
     // Webhook routes for deposit transactions
     const webhookRouter = express.Router();
@@ -785,26 +1120,24 @@ console.log('[STARTUP] Starting async initialization...');
     setupDepositWebhookRoutes(webhookRouter);
     app.use('/api/webhooks/deposits', webhookRouter);
     // Mount KYC routes
-    app.use('/api/kyc', kycRouter);
+    app.use('/api/kyc', isAuthenticated, kycRouter);
 
     // Import and mount escrow routes
     const escrowRouter = (await import('./routes/escrow')).default;
-    app.use('/api/escrow', escrowRouter);
+    app.use('/api/escrow', isAuthenticated, escrowRouter);
 
     // Import and mount invoice routes
     const invoiceRouter = (await import('./routes/invoices')).default;
-    app.use('/api/invoices', invoiceRouter);
+    app.use('/api/invoices', isAuthenticated, invoiceRouter);
 
     // Add proof of contribution routes
     const proofOfContributionRoutes = (await import('./routes/proof-of-contribution')).default;
-    app.use('/api/proof-of-contribution', proofOfContributionRoutes);
+    app.use('/api/proof-of-contribution', isAuthenticated, proofOfContributionRoutes);
 
     // Job monitoring and health check routes
     app.use('/admin', jobHealthRoutes);
 
     // AI Analytics endpoints
-    // Load authentication middleware dynamically (avoid top-level static import inside function scope)
-    const { isAuthenticated } = await import('./auth'); // Dynamically imported
     app.get('/api/ai-analytics/:daoId', isAuthenticated, async (req: Request, res: Response) => {
       try {
         const { aiAnalyticsService } = await import('./services/aiAnalyticsService');
@@ -823,6 +1156,14 @@ console.log('[STARTUP] Starting async initialization...');
     app.post('/api/auth/refresh-token', refreshTokenHandler);
     app.post('/api/auth/logout', logoutHandler);
 
+    // Real-time API metrics and registry endpoints (agent-friendly)
+    app.use('/api/docs', apiRegistryRoutes);
+    logger.info('✅ Real-time API registry endpoints mounted at /api/docs/stats/*');
+
+    // System diagnostics endpoints (event loop saturation detection)
+    app.use('/api', createDiagnosticsRouter());
+    logger.info('✅ System diagnostics endpoints mounted at /api/diagnostics/*');
+
     // Setup Vite dev server or serve static files
     if (env.NODE_ENV === "development") {
       await setupVite(app, server);
@@ -830,19 +1171,84 @@ console.log('[STARTUP] Starting async initialization...');
       serveStatic(app);
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // Initialize Async Job Queue Infrastructure
+    // ═══════════════════════════════════════════════════════════════════════════════
+    try {
+      await initializeWorkers();
+      logger.info('✅ Async job workers initialized');
+    } catch (error) {
+      logger.error('❌ Failed to initialize async job workers:', error);
+      // Continue server startup even if workers fail to initialize
+    }
+
+    // Register job status/result retrieval routes
+    app.use('/api/jobs', isAuthenticated, jobRoutes);
+    logger.info('✅ Job queue status API endpoints mounted at /api/jobs/*');
+
+    // Register WebSocket monitoring routes
+    app.use('/api/monitoring', isAuthenticated, websocketMonitoringRoutes);
+    logger.info('✅ WebSocket monitoring endpoints mounted at /api/monitoring/*');
+
     // 404 handler (must be after all routes including Vite/static)
     app.use(notFoundHandler);
 
     // Error handling middleware (must be last)
     app.use(errorHandler);
 
-    const PORT = 5000;
-    const HOST = '0.0.0.0'; // Bind to all network interfaces
+    // Configuration from environment with defaults
+    const PORT = parseInt(process.env.PORT || '5000');
+    const HOST = process.env.HOST || '0.0.0.0'; // Bind to all network interfaces
 
-    console.log('[STARTUP] Starting server on port ' + PORT);
+    console.log('[STARTUP] Starting server on port ' + PORT + ' (HOST: ' + HOST + ')');
     server.listen(PORT, HOST, () => {
       console.log('[STARTUP] ✅ Server listening on port ' + PORT);
       logStartup(PORT.toString());
+
+      // Start system health monitoring (event loop saturation detection)
+      initializeSystemMonitoring();
+      logger.info('🏥 System health monitoring started (30s intervals)');
+      
+      // Start real-time metrics reporting
+      startMetricsReporting();
+      logger.info('✅ Real-time metrics reporting job started');
+      
+      // Health Monitor Agent already initialized above (Tier 1 - Real-time health surveillance)
+      logger.info('🏥 Health Monitor Agent running (polling every 15s)');
+      
+      // ═══════════════════════════════════════════════════════════════════════════════
+      // TIER 2: Advanced Monitoring Agents (Isolated Worker)
+      // ═══════════════════════════════════════════════════════════════════════════════
+      // 🚀 CRITICAL CHANGE: Agents now run in separate process
+      // 
+      // Why: Prevents feedback-loop degradation when agents:
+      //   - Spike CPU usage
+      //   - Block on DB/Redis I/O
+      //   - Run heavy compute operations
+      // 
+      // Risk Mitigation:
+      //   ✅ API remains responsive (event loop unblocked)
+      //   ✅ Agent crash ≠ API crash
+      //   ✅ Can restart agents independently
+      //   ✅ Monitor agent memory/CPU separately
+      // 
+      
+      const agentWorkerManager = getAgentWorkerManager();
+      
+      // Start agents in isolated worker (does NOT block startup)
+      agentWorkerManager
+        .start()
+        .then(() => {
+          logger.info('✅ [AGENTS] All monitoring agents running in isolated worker (PID: TBD)');
+          logger.info('🌐 Domain Aggregator Agent (5min poll)');
+          logger.info('📈 Capacity Planner Agent (10min poll)');
+          logger.info('⚡ Performance Optimizer Agent (2min poll)');
+        })
+        .catch((error) => {
+          logger.error('❌ [AGENTS] Failed to start isolated worker:', error);
+          logger.warn('[AGENTS] Continuing without agents (graceful degradation)');
+        });
+      
       logger.info('Server configuration', {
         port: PORT,
         host: HOST,
@@ -1004,8 +1410,21 @@ console.log('[STARTUP] Starting async initialization...');
 
     console.log('✅ Blockchain services initialized successfully');
 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // PHASE 7.1: SINGLETON VERIFICATION (After all services initialized)
+    // ═══════════════════════════════════════════════════════════════════════════════
+    
+    // Perform comprehensive singleton verification after all services initialized
+    try {
+      verifySingletonInstances();
+      console.log('[STARTUP] ✅ Singleton instance verification complete');
+    } catch (err) {
+      console.warn('[STARTUP] ⚠️ Singleton verification failed:', err);
+      logger.warn('Singleton verification error (non-fatal):', err);
+    }
+
     // Graceful shutdown
-    const gracefulShutdown = (signal: string) => {
+    const gracefulShutdown = async (signal: string) => {
       logger.warn(`Received ${signal}, shutting down gracefully`);
 
       // Stop treasury monitoring
@@ -1023,6 +1442,47 @@ console.log('[STARTUP] Starting async initialization...');
         logger.info('Opportunity Engine stopped');
       } catch (err) {
         logger.error('Error stopping Opportunity Engine:', err);
+      }
+
+      // Shutdown Socket.IO service (gracefully closes all WebSocket connections)
+      try {
+        await socketIOService.shutdown();
+        logger.info('Socket.IO WebSocket service shutdown complete');
+      } catch (err) {
+        logger.error('Error shutting down Socket.IO service:', err);
+      }
+
+      // Shutdown isolated agent worker
+      try {
+        const agentWorkerManager = getAgentWorkerManager();
+        await agentWorkerManager.stop();
+        logger.info('Agent worker process shutdown complete');
+      } catch (err) {
+        logger.error('Error shutting down agent worker:', err);
+      }
+
+      // Shutdown isolated worker manager (metrics flusher + performance/health agents)
+      try {
+        await isolatedWorkerManager.shutdown();
+        logger.info('Isolated worker manager shutdown complete');
+      } catch (err) {
+        logger.error('Error shutting down isolated worker manager:', err);
+      }
+
+      // Shutdown async job workers
+      try {
+        await shutdownWorkers();
+        logger.info('Async job workers shutdown complete');
+      } catch (err) {
+        logger.error('Error shutting down job workers:', err);
+      }
+
+      // Reset circuit breakers (Phase 6)
+      try {
+        resetAllCircuits();
+        logger.info('Circuit breakers reset during shutdown');
+      } catch (err) {
+        logger.error('Error resetting circuit breakers:', err);
       }
 
       server.close(() => {

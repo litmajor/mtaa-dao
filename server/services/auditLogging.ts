@@ -1,3 +1,19 @@
+/**
+ * ⚠️  DEPRECATED - USE auditConsolidated.ts INSTEAD
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 
+ * This service is being consolidated into:
+ * 👉 server/services/auditConsolidated.ts
+ * 
+ * New code should use:
+ * import { logConsolidatedAuditEvent, AuditEventType } from '../services/auditConsolidated';
+ * 
+ * Existing code using this service will continue to work during transition period.
+ * Migration deadline: 2026-06-01
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
 import { Logger } from '../utils/logger';
 import { db } from '../db';
 import { auditLogs } from '../../shared/schema';

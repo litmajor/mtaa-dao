@@ -3,17 +3,17 @@
  * Run this migration to set up notification preferences and audit logging
  */
 
-import { db } from '../db';
+import { pool } from '../../db';
 
 export async function migrateNotificationTables() {
   try {
     console.log('🔄 Running notification table migrations...');
 
     // Create notification preferences table
-    await db.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS notification_preferences (
         id SERIAL PRIMARY KEY,
-        user_id UUID NOT NULL UNIQUE,
+        user_id VARCHAR(255) NOT NULL UNIQUE,
         email_enabled BOOLEAN DEFAULT true,
         sms_enabled BOOLEAN DEFAULT false,
         email_escrow_created BOOLEAN DEFAULT true,
@@ -34,10 +34,10 @@ export async function migrateNotificationTables() {
     console.log('✅ Created notification_preferences table');
 
     // Create notifications log table (audit trail)
-    await db.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS notifications_log (
         id SERIAL PRIMARY KEY,
-        user_id UUID NOT NULL,
+        user_id VARCHAR(255) NOT NULL,
         type VARCHAR(50) NOT NULL,
         channel VARCHAR(20) NOT NULL,
         target VARCHAR(255) NOT NULL,
@@ -52,7 +52,7 @@ export async function migrateNotificationTables() {
     console.log('✅ Created notifications_log table');
 
     // Create escrow events table (detailed event tracking)
-    await db.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS escrow_events (
         id SERIAL PRIMARY KEY,
         escrow_id UUID NOT NULL,
@@ -67,27 +67,27 @@ export async function migrateNotificationTables() {
     console.log('✅ Created escrow_events table');
 
     // Create indices for better query performance
-    await db.query(`
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_notification_prefs_user 
       ON notification_preferences(user_id);
     `);
 
-    await db.query(`
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_notifications_log_user 
       ON notifications_log(user_id);
     `);
 
-    await db.query(`
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_notifications_log_escrow 
       ON notifications_log(escrow_id);
     `);
 
-    await db.query(`
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_escrow_events_escrow 
       ON escrow_events(escrow_id);
     `);
 
-    await db.query(`
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_escrow_events_created 
       ON escrow_events(created_at);
     `);
@@ -106,9 +106,9 @@ export async function rollbackNotificationTables() {
   try {
     console.log('🔄 Rolling back notification tables...');
 
-    await db.query('DROP TABLE IF EXISTS escrow_events CASCADE;');
-    await db.query('DROP TABLE IF EXISTS notifications_log CASCADE;');
-    await db.query('DROP TABLE IF EXISTS notification_preferences CASCADE;');
+    await pool.query('DROP TABLE IF EXISTS escrow_events CASCADE;');
+    await pool.query('DROP TABLE IF EXISTS notifications_log CASCADE;');
+    await pool.query('DROP TABLE IF EXISTS notification_preferences CASCADE;');
 
     console.log('✅ Rollback completed');
     return true;

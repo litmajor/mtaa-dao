@@ -212,8 +212,58 @@ router.post('/accept/:inviteCode', authenticate, async (req, res) => {
   }
 });
 
+// ════════════════════════════════════════════════════════════════════════════════
+// NEW RESTful ENDPOINT (RECOMMENDED)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// POST /api/escrow - Create escrow
+router.post('/', authenticate, async (req, res) => {
+  try {
+    const { taskId, payeeId, amount, currency, milestones } = req.body;
+    const payerId = req.user!.id;
+
+    // Validation
+    if (!payeeId || !amount || !currency) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const numAmount = parseFloat(amount);
+    if (numAmount < 1) {
+      return res.status(400).json({ error: 'Amount must be at least $1' });
+    }
+
+    // Create escrow
+    const escrow = await escrowService.createEscrow({
+      payerId,
+      payeeId,
+      taskId,
+      amount: numAmount.toString(),
+      currency: currency || 'cUSD',
+      milestones: milestones || []
+    });
+
+    res.json({ success: true, escrow });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// DEPRECATED ENDPOINT (Keep for 6 months, then remove)
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @deprecated Use POST /api/escrow instead
+ * Sunset: 2026-09-01
+ */
 // Create escrow (original - kept for backward compatibility)
 router.post('/create', authenticate, async (req, res) => {
+  // Issue deprecation warning
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', 'Wed, 01 Sep 2026 00:00:00 GMT');
+  res.setHeader('Link', '</api/escrow>; rel="successor-version"');
+  res.setHeader('Warning', '299 - "POST /api/escrow/create is deprecated. Use POST /api/escrow instead"');
+
   try {
     const { taskId, payeeId, amount, currency, milestones } = req.body;
     const payerId = req.user!.id;
@@ -633,6 +683,115 @@ router.post('/:escrowId/guardians/approve-recovery', authenticate, async (req, r
     const guardianId = req.user!.id;
     const result = await escrowService.approveRecovery(escrowId, guardianId);
     res.json({ success: true, ...result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// LIST all escrows (with comprehensive filtering)
+router.get('/list/all', authenticate, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { status, role = 'all', daoId, limit = 50, offset = 0, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
+
+    let query = db.select()
+      .from(escrowAccounts);
+
+    // Filter by user's involvement (as payer, payee, or mediator)
+    if (role === 'all') {
+      query = query.where(or(
+        eq(escrowAccounts.payerId, userId),
+        eq(escrowAccounts.payeeId, userId),
+        eq(escrowAccounts.mediatorId, userId)
+      ));
+    } else if (role === 'payer') {
+      query = query.where(eq(escrowAccounts.payerId, userId));
+    } else if (role === 'payee') {
+      query = query.where(eq(escrowAccounts.payeeId, userId));
+    } else if (role === 'mediator') {
+      query = query.where(eq(escrowAccounts.mediatorId, userId));
+    }
+
+    // Apply additional filters
+    if (status) {
+      query = query.where(eq(escrowAccounts.status, String(status)));
+    }
+    if (daoId) {
+      query = query.where(eq(escrowAccounts.daoId, String(daoId)));
+    }
+
+    // Get total count
+    const allResults = await query;
+    const totalCount = allResults.length;
+
+    // Apply sorting and pagination
+    const results = await query
+      .orderBy(
+        escrowAccounts[sortBy as keyof typeof escrowAccounts] || escrowAccounts.createdAt,
+        sortOrder === 'asc' ? 'asc' : 'desc'
+      )
+      .limit(Number(limit))
+      .offset(Number(offset));
+
+    res.json({
+      success: true,
+      data: results,
+      pagination: {
+        total: totalCount,
+        limit: Number(limit),
+        offset: Number(offset),
+        hasMore: Number(offset) + Number(limit) < totalCount
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// DELETE an escrow (only for draft/pending status)
+router.delete('/:escrowId', authenticate, async (req, res) => {
+  try {
+    const { escrowId } = req.params;
+    const userId = req.user!.id;
+
+    const escrow = await db.select()
+      .from(escrowAccounts)
+      .where(eq(escrowAccounts.id, escrowId))
+      .limit(1);
+
+    if (!escrow.length) {
+      return res.status(404).json({ success: false, error: 'Escrow not found' });
+    }
+
+    const escrowData = escrow[0];
+
+    // Only payer can delete and only if in draft or pending status
+    if (escrowData.payerId !== userId) {
+      return res.status(403).json({ success: false, error: 'Only the payer can delete an escrow' });
+    }
+
+    // Can only delete if in draft or pending status
+    if (escrowData.status && !['pending', 'draft'].includes(escrowData.status)) {
+      return res.status(400).json({
+        success: false,
+        error: `Cannot delete escrow in ${escrowData.status} status. Only pending/draft escrows can be deleted.`,
+        currentStatus: escrowData.status
+      });
+    }
+
+    // Delete associated milestones
+    await db.delete(escrowMilestones)
+      .where(eq(escrowMilestones.escrowId, escrowId));
+
+    // Delete associated disputes
+    await db.delete(escrowDisputes)
+      .where(eq(escrowDisputes.escrowId, escrowId));
+
+    // Delete the escrow
+    await db.delete(escrowAccounts)
+      .where(eq(escrowAccounts.id, escrowId));
+
+    res.json({ success: true, message: 'Escrow deleted successfully' });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }

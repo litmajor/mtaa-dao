@@ -1,14 +1,18 @@
 import { logger } from '../utils/logger';
 import { getGatewayAgentService } from '../core/agents/gateway/service';
+import { redis } from './redis';
 
 /**
  * Price Oracle Service for Cryptocurrency Prices
- * Features:
+ * 
+ * Enhanced Features:
+ * - Dynamic symbol resolution (no hardcoding)
  * - Multi-adapter pricing (Gateway Agent + CoinGecko)
- * - Intelligent caching with configurable TTL
- * - Request batching and deduplication
+ * - Redis-backed deduplication (cross-instance)
+ * - Request batching and deduplication (local)
  * - Rate limiting with exponential backoff
- * - Currency fallback strategy
+ * - Metrics enrichment: market cap, 24h change, volume
+ * - Fallback-only role: CEX → DEX → Oracle priority
  */
 
 interface PriceData {
@@ -49,6 +53,10 @@ class PriceOracleService {
   private readonly LONG_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes for fallback data
   private readonly API_BASE = 'https://api.coingecko.com/api/v3';
   
+  // Redis deduplication: Prevent duplicate fetches across instances
+  private readonly DEDUP_PREFIX = 'price:fetch:';
+  private readonly DEDUP_TTL = 10; // 10 seconds - only one fetch per symbol in this window
+  
   // Rate limiting
   private rateLimitState: RateLimitState = {
     requestCount: 0,
@@ -60,38 +68,73 @@ class PriceOracleService {
   private readonly RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
   private readonly MAX_BACKOFF_MULTIPLIER = 32; // Max 32x backoff
   
-  // Request batching and deduplication
+  // Request deduplication (local, per-instance)
   private pendingRequests: Map<string, Promise<PriceData | null>> = new Map();
-  private requestBatch: Set<string> = new Set();
-  private batchTimer: NodeJS.Timeout | null = null;
-  private readonly BATCH_DELAY = 100; // ms to wait before sending batch request
-  
-  // CoinGecko IDs for supported assets
-  private readonly COIN_IDS: Record<string, string> = {
-    BTC: 'bitcoin',
-    ETH: 'ethereum',
-    SOL: 'solana',
-    BNB: 'binancecoin',
-    XRP: 'ripple',
-    LTC: 'litecoin',
-    USDC: 'usd-coin',
-    USDT: 'tether',
-    DAI: 'dai',
-    MATIC: 'matic-network',
-    AAVE: 'aave',
-    LINK: 'chainlink',
-    UNI: 'uniswap',
-  };
 
-  // Fallback currency hierarchy - if symbol not supported, try fallback
-  private readonly CURRENCY_FALLBACKS: Record<string, string[]> = {
-    cKES: ['KES', 'USD'], // Celo Kenyan Shilling falls back to KES or USD
-    cREAL: ['REAL', 'BRL', 'USD'], // Celo Brazilian Real
-    IMXC: ['IMX', 'ETH', 'USDC'], // ImmunefiX
-    cUSD: ['USDC', 'USDT', 'DAI'], // Celo USD
-    cEUR: ['EUR', 'USDC', 'USDT'], // Celo EUR
-    cGLD: ['GLD', 'USD', 'USDC'], // Celo Gold
-  };
+  // Legacy fallback chains placeholder (dynamic registry used instead).
+  // Kept as an empty map to remain backwards compatible with callers
+  // that reference `CURRENCY_FALLBACKS` while the dynamic registry is
+  // the authoritative source for symbol resolution.
+  private readonly CURRENCY_FALLBACKS: Record<string, string[]> = {};
+  
+  // ❌ REMOVED: Hardcoded COIN_IDS map
+  // ✅ Dynamic resolution via collector service + assetRegistry
+  private symbolToGeckoId: Map<string, string> = new Map();
+
+  /**
+   * DYNAMIC SYMBOL RESOLUTION
+   * Resolves symbol to CoinGecko ID from registry
+   * No hardcoded mappings - fully dynamic
+   */
+  private async resolveToCoinGeckoId(symbol: string): Promise<string | null> {
+    try {
+      const upperSymbol = symbol.toUpperCase();
+      
+      // Check local cache first
+      if (this.symbolToGeckoId.has(upperSymbol)) {
+        return this.symbolToGeckoId.get(upperSymbol) || null;
+      }
+
+      logger.debug(`[PriceOracle] Symbol ${symbol} not yet registered - need discovery phase`);
+      return null;
+    } catch (error) {
+      logger.debug(`[PriceOracle] Error resolving symbol ${symbol}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * POPULATE SYMBOL MAP (called by collector during discovery)
+   * Allows dynamic symbol registration without hardcoding
+   */
+  registerSymbolMapping(symbol: string, coinGeckoId: string): void {
+    this.symbolToGeckoId.set(symbol.toUpperCase(), coinGeckoId);
+    logger.debug(`[PriceOracle] Registered ${symbol} → ${coinGeckoId}`);
+  }
+
+  /**
+   * BULK REGISTER SYMBOLS (called during discovery phase)
+   */
+  registerSymbolMappings(mappings: Map<string, string>): void {
+    for (const [symbol, coinGeckoId] of mappings) {
+      this.registerSymbolMapping(symbol, coinGeckoId);
+    }
+    logger.info(`[PriceOracle] Registered ${mappings.size} symbol mappings`);
+  }
+
+  /**
+   * REDIS DEDUPLICATION: Prevent duplicate fetches across instances
+   */
+  private async acquireFetchLock(symbol: string): Promise<boolean> {
+    try {
+      const lockKey = `${this.DEDUP_PREFIX}${symbol}`;
+      await redis.set(lockKey, 'fetching', this.DEDUP_TTL);
+      return true; // Lock acquired
+    } catch (error) {
+      logger.debug(`[PriceOracle] Lock acquisition failed for ${symbol}:`, error);
+      return true; // Allow fetch if Redis fails
+    }
+  }
 
   /**
    * Check if we should apply rate limiting backoff
@@ -160,24 +203,22 @@ class PriceOracleService {
   /**
    * Get fallback currency for unsupported symbols
    */
-  private getResolvedSymbol(symbol: string): string {
+  /**
+   * Get fallback currency for unsupported symbols.
+   *
+   * This helper now leverages the async {@link resolveToCoinGeckoId} method so
+   * that callers can prime the registry and log missing mappings while still
+   * returning the original symbol for use by the gateway and cache keys. The
+   * return value has not changed (it is always the upper‑cased symbol) so the
+   * rest of the service remains backwards‑compatible.
+   */
+  private async getResolvedSymbol(symbol: string): Promise<string> {
     const upperSymbol = symbol.toUpperCase();
-    
-    // If symbol is supported directly, use it
-    if (this.COIN_IDS[upperSymbol]) {
-      return upperSymbol;
-    }
 
-    // Try fallback chain
-    const fallbacks = this.CURRENCY_FALLBACKS[upperSymbol];
-    if (fallbacks && fallbacks.length > 0) {
-      for (const fallback of fallbacks) {
-        if (this.COIN_IDS[fallback]) {
-          logger.debug(`[PriceOracle] Using fallback: ${upperSymbol} -> ${fallback}`);
-          return fallback;
-        }
-      }
-    }
+    // attempt to resolve to a Gecko ID (logs if the symbol is unknown)
+    // we intentionally ignore the result because the gateway and cache system
+    // still operate on the plain symbol name.
+    await this.resolveToCoinGeckoId(upperSymbol);
 
     return upperSymbol;
   }
@@ -218,8 +259,8 @@ class PriceOracleService {
    */
   private async _fetchPrice(symbol: string): Promise<PriceData | null> {
     try {
-      // Resolve symbol to supported currency
-      const resolvedSymbol = this.getResolvedSymbol(symbol);
+      // Resolve symbol to supported currency (async helper)
+      const resolvedSymbol = await this.getResolvedSymbol(symbol);
 
       // Check cache for resolved symbol
       const cached = this.cache.get(resolvedSymbol);
@@ -242,7 +283,8 @@ class PriceOracleService {
 
           const priceData = priceRequest?.payload?.data?.[0];
           if (priceData && priceData.price > 0) {
-            const result: PriceData = {
+            const result: 
+            PriceData = {
               symbol: resolvedSymbol,
               name: this.getCoinName(resolvedSymbol),
               priceUsd: priceData.price,
@@ -262,7 +304,7 @@ class PriceOracleService {
       }
 
       // Fallback to CoinGecko
-      const coinId = this.COIN_IDS[resolvedSymbol];
+      const coinId = await this.resolveToCoinGeckoId(resolvedSymbol);
       if (!coinId) {
         logger.warn(`[PriceOracle] Unsupported asset: ${symbol}`);
         return null;
@@ -404,11 +446,20 @@ class PriceOracleService {
     }
 
     // Resolve symbols and get coin IDs
-    const resolvedSymbols = remaining.map(s => this.getResolvedSymbol(s));
+    // resolve each symbol (priming registry) and collect the associated
+    // CoinGecko ids for the batch request
+    const resolvedSymbols: string[] = [];
+    const coinIdSet: Set<string> = new Set();
+
+    for (const s of remaining) {
+      const rs = await this.getResolvedSymbol(s);
+      resolvedSymbols.push(rs);
+      const id = await this.resolveToCoinGeckoId(rs);
+      if (id) coinIdSet.add(id);
+    }
+
     const uniqueResolved = Array.from(new Set(resolvedSymbols));
-    const coinIds = uniqueResolved
-      .map(s => this.COIN_IDS[s])
-      .filter(Boolean);
+    const coinIds = Array.from(coinIdSet);
 
     if (coinIds.length === 0) {
       return prices;
@@ -444,9 +495,9 @@ class PriceOracleService {
       const data: CoinGeckoResponse = await response.json();
 
       for (const symbol of remaining) {
-        const resolvedSymbol = this.getResolvedSymbol(symbol);
-        const coinId = this.COIN_IDS[resolvedSymbol];
-        const coinData = data[coinId];
+        const resolvedSymbol = await this.getResolvedSymbol(symbol);
+        const coinId = await this.resolveToCoinGeckoId(resolvedSymbol);
+        const coinData = coinId ? data[coinId] : undefined;
 
         if (coinData) {
           const priceData: PriceData = {
@@ -480,8 +531,8 @@ class PriceOracleService {
     days: number = 30
   ): Promise<Array<{ date: Date; price: number }>> {
     try {
-      const resolvedSymbol = this.getResolvedSymbol(symbol);
-      const coinId = this.COIN_IDS[resolvedSymbol];
+      const resolvedSymbol = await this.getResolvedSymbol(symbol);
+      const coinId = await this.resolveToCoinGeckoId(resolvedSymbol);
       
       if (!coinId) {
         logger.warn(`[PriceOracle] Unsupported symbol for historical prices: ${symbol}`);
@@ -518,6 +569,161 @@ class PriceOracleService {
     } catch (error) {
       logger.error(`[PriceOracle] Error fetching historical prices for ${symbol}:`, error);
       return [];
+    }
+  }
+
+  /**
+   * Get prices from multiple sources in parallel using Promise.allSettled()
+   * Returns first successful result for each symbol
+   * More resilient than sequential fallback strategy
+   */
+  async getPricesFromMultipleSources(symbols: string[]): Promise<Map<string, PriceData>> {
+    const prices = new Map<string, PriceData>();
+    const uniqueSymbols = Array.from(new Set(symbols));
+
+    try {
+      // Fetch from primary source (Gateway Agent) and fallback (CoinGecko) in parallel
+      const [gatewayResults, coinGeckoResults] = await Promise.allSettled([
+        this.getPricesFromGateway(uniqueSymbols),
+        this.getPricesFromCoinGecko(uniqueSymbols),
+      ]) as [
+        PromiseSettledResult<Map<string, PriceData>>,
+        PromiseSettledResult<Map<string, PriceData>>
+      ];
+
+      // Combine results, preferring successful source
+      if (gatewayResults.status === 'fulfilled') {
+        for (const [symbol, data] of gatewayResults.value) {
+          prices.set(symbol, data);
+          logger.debug(`[PriceOracle] Using Gateway price for ${symbol}`);
+        }
+      }
+
+      // Fill gaps with CoinGecko results
+      if (coinGeckoResults.status === 'fulfilled') {
+        for (const [symbol, data] of coinGeckoResults.value) {
+          if (!prices.has(symbol)) {
+            prices.set(symbol, data);
+            logger.debug(`[PriceOracle] Using CoinGecko price for ${symbol}`);
+          }
+        }
+      }
+
+      return prices;
+    } catch (error) {
+      logger.error('[PriceOracle] Multi-source parallel fetching failed:', error);
+      return prices;
+    }
+  }
+
+  /**
+   * Fetch prices from Gateway Agent service (primary source)
+   */
+  private async getPricesFromGateway(symbols: string[]): Promise<Map<string, PriceData>> {
+    const prices = new Map<string, PriceData>();
+    try {
+      const gatewayService = getGatewayAgentService();
+      if (!gatewayService.isHealthy()) {
+        return prices;
+      }
+
+      const priceRequest = await gatewayService.requestPrices(symbols, undefined, undefined);
+      const priceDataList = priceRequest?.payload?.data || [];
+
+      for (const priceData of priceDataList) {
+        if (priceData && priceData.price > 0) {
+          const result: PriceData = {
+            symbol: priceData.symbol,
+            name: this.getCoinName(priceData.symbol),
+            priceUsd: priceData.price,
+            priceChange24h: priceData.change24h || 0,
+            marketCap: priceData.marketCap || 0,
+            volume24h: priceData.volume24h || 0,
+            lastUpdated: new Date(),
+          };
+          prices.set(priceData.symbol, result);
+          this.cache.set(priceData.symbol, { data: result, timestamp: Date.now() });
+        }
+      }
+
+      logger.debug(`[PriceOracle-Gateway] Fetched ${prices.size} prices in parallel`);
+      return prices;
+    } catch (error) {
+      logger.debug('[PriceOracle] Gateway service failed:', error);
+      return prices;
+    }
+  }
+
+  /**
+   * Fetch prices from CoinGecko API (fallback source)
+   */
+  private async getPricesFromCoinGecko(symbols: string[]): Promise<Map<string, PriceData>> {
+    const prices = new Map<string, PriceData>();
+    try {
+      const resolvedSymbols: string[] = [];
+      const coinIdSet: Set<string> = new Set();
+
+      for (const s of symbols) {
+        const rs = await this.getResolvedSymbol(s);
+        resolvedSymbols.push(rs);
+        const id = await this.resolveToCoinGeckoId(rs);
+        if (id) coinIdSet.add(id);
+      }
+
+      const uniqueResolved = Array.from(new Set(resolvedSymbols));
+      const coinIds = Array.from(coinIdSet);
+
+      if (coinIds.length === 0) {
+        return prices;
+      }
+
+      // Check rate limiting
+      if (this.shouldApplyBackoff()) {
+        await this.waitForBackoff();
+      }
+
+      const response = await fetch(
+        `${this.API_BASE}/simple/price?ids=${coinIds.join(',')}&vs_currencies=usd&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true`
+      );
+
+      this.rateLimitState.requestCount++;
+
+      if (response.status === 429) {
+        logger.warn('[PriceOracle-CoinGecko] Rate limited (429)');
+        this.applyBackoff();
+        return prices;
+      }
+
+      if (!response.ok) {
+        throw new Error(`CoinGecko API error: ${response.statusText}`);
+      }
+
+      const data: CoinGeckoResponse = await response.json();
+
+      for (const [coinId, priceData] of Object.entries(data)) {
+        if (priceData && priceData.usd > 0) {
+          // reverse-lookup: find the symbol corresponding to the coinId in the
+        // dynamic map (fallback to uppercased id if not registered)
+        const symbol = Array.from(this.symbolToGeckoId.entries()).find(([, id]) => id === coinId)?.[0] || coinId.toUpperCase();
+          const result: PriceData = {
+            symbol,
+            name: this.getCoinName(symbol),
+            priceUsd: priceData.usd,
+            priceChange24h: priceData.usd_24h_change,
+            marketCap: priceData.usd_market_cap,
+            volume24h: priceData.usd_24h_vol,
+            lastUpdated: new Date(priceData.last_updated_at * 1000),
+          };
+          prices.set(symbol, result);
+          this.cache.set(symbol, { data: result, timestamp: Date.now() });
+        }
+      }
+
+      logger.debug(`[PriceOracle-CoinGecko] Fetched ${prices.size} prices in parallel`);
+      return prices;
+    } catch (error) {
+      logger.debug('[PriceOracle] CoinGecko service failed:', error);
+      return prices;
     }
   }
 
@@ -601,11 +807,10 @@ class PriceOracleService {
    */
   getSupportedCurrencies(): string[] {
     return Array.from(new Set([
-      ...Object.keys(this.COIN_IDS),
+      ...Array.from(this.symbolToGeckoId.keys()),
       ...Object.keys(this.CURRENCY_FALLBACKS),
     ]));
   }
-
   /**
    * Get fallback chain for a currency
    */

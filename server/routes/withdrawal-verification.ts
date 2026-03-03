@@ -14,14 +14,16 @@ import { wallets } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 
 export const router = Router();
+export const twoFARouter = Router();
+export const pinRouter = Router();
 
 /**
- * GET /api/2fa/config
+ * GET /config
  * Get current 2FA configuration
  */
-router.get('/api/2fa/config', authenticateToken, async (req: Request, res: Response) => {
+router.get('/config', authenticateToken as any, async (req: Request, res: Response) => {
   try {
-    const userId = req.userId as string;
+    const userId = req.user?.id as string;
 
     // Get user's primary wallet
     const userWallets = await db
@@ -64,12 +66,12 @@ router.get('/api/2fa/config', authenticateToken, async (req: Request, res: Respo
 });
 
 /**
- * POST /api/2fa/setup
+ * POST /setup
  * Enable 2FA for withdrawal verification
  */
-router.post('/api/2fa/setup', authenticateToken, async (req: Request, res: Response) => {
+router.post('/setup', authenticateToken as any, async (req: Request, res: Response) => {
   try {
-    const userId = req.userId as string;
+    const userId = req.user?.id as string;
     const { method, destination } = req.body;
 
     // Validate method
@@ -94,7 +96,7 @@ router.post('/api/2fa/setup', authenticateToken, async (req: Request, res: Respo
 
       if (otpResult.success && otpResult.otpId) {
         // In production, send OTP via SMS or email
-        console.log(`📱 Send setup OTP for ${method}: ${otpResult.code}`);
+        console.log(`📱 Setup OTP sent via ${method}`);
       }
     }
 
@@ -114,12 +116,12 @@ router.post('/api/2fa/setup', authenticateToken, async (req: Request, res: Respo
 });
 
 /**
- * POST /api/2fa/generate
+ * POST /generate
  * Generate OTP for withdrawal
  */
-router.post('/api/2fa/generate', authenticateToken, async (req: Request, res: Response) => {
+router.post('/generate', authenticateToken as any, async (req: Request, res: Response) => {
   try {
-    const userId = req.userId as string;
+    const userId = req.user?.id as string;
 
     // Check if 2FA is enabled
     const isEnabled = await twoFAService.is2FAEnabled(userId);
@@ -142,11 +144,11 @@ router.post('/api/2fa/generate', authenticateToken, async (req: Request, res: Re
     const config = await twoFAService.get2FAConfig(userId);
 
     // Send OTP via configured method
-    if (config.method) {
+    if (config?.config?.method) {
       const sendResult = await twoFAService.send2FAOTP(
         userId,
         result.otpId!,
-        config.method as any,
+        config.config.method as any,
         '' // destination would come from user profile
       );
 
@@ -171,12 +173,12 @@ router.post('/api/2fa/generate', authenticateToken, async (req: Request, res: Re
 });
 
 /**
- * POST /api/2fa/verify
- * Verify OTP code
+ * POST /verify
+ * Verify 2FA code
  */
-router.post('/api/2fa/verify', authenticateToken, async (req: Request, res: Response) => {
+router.post('/verify', authenticateToken as any, async (req: Request, res: Response) => {
   try {
-    const userId = req.userId as string;
+    const userId = req.user?.id as string;
     const { otpId, code, useBackupCode } = req.body;
 
     if (!otpId || !code) {
@@ -215,12 +217,12 @@ router.post('/api/2fa/verify', authenticateToken, async (req: Request, res: Resp
 });
 
 /**
- * POST /api/pin/setup
+ * POST /pin/setup
  * Setup PIN for wallet
  */
-router.post('/api/pin/setup', authenticateToken, async (req: Request, res: Response) => {
+router.post('/pin/setup', authenticateToken as any, async (req: Request, res: Response) => {
   try {
-    const userId = req.userId as string;
+    const userId = req.user?.id as string;
     const { pin, currentPin } = req.body;
 
     if (!pin) {
@@ -267,12 +269,12 @@ router.post('/api/pin/setup', authenticateToken, async (req: Request, res: Respo
 });
 
 /**
- * GET /api/pin/requirements
+ * GET /requirements
  * Get PIN requirements
  */
-router.get('/api/pin/requirements', authenticateToken, async (req: Request, res: Response) => {
+router.get('/requirements', authenticateToken as any, async (req: Request, res: Response) => {
   try {
-    const userId = req.userId as string;
+    const userId = req.user?.id as string;
 
     // Get user's primary wallet
     const userWallets = await db
@@ -304,12 +306,12 @@ router.get('/api/pin/requirements', authenticateToken, async (req: Request, res:
 });
 
 /**
- * POST /api/pin/verify
+ * POST /pin/verify
  * Verify PIN for withdrawal
  */
-router.post('/api/pin/verify', authenticateToken, async (req: Request, res: Response) => {
+router.post('/pin/verify', authenticateToken as any, async (req: Request, res: Response) => {
   try {
-    const userId = req.userId as string;
+    const userId = req.user?.id as string;
     const { pin } = req.body;
 
     if (!pin) {
@@ -357,12 +359,12 @@ router.post('/api/pin/verify', authenticateToken, async (req: Request, res: Resp
 });
 
 /**
- * POST /api/withdrawals/verify-2fa
+ * POST /verify-withdrawal
  * Create withdrawal with 2FA/PIN verification
  */
-router.post('/api/withdrawals/verify-2fa', authenticateToken, async (req: Request, res: Response) => {
+router.post('/verify-withdrawal', authenticateToken as any, async (req: Request, res: Response) => {
   try {
-    const userId = req.userId as string;
+    const userId = req.user?.id as string;
     const {
       accountId,
       toAddress,
@@ -463,9 +465,11 @@ router.post('/api/withdrawals/verify-2fa', authenticateToken, async (req: Reques
 
     // Step 3: Prepare withdrawal for signing
     const prepareResult = await withdrawalSigningService.prepareWithdrawalForSigning(
-      walletId,
+      userId,
+      accountId!,
       toAddress,
-      parseFloat(amount),
+      toAddress,
+      amount,
       currency
     );
 
@@ -475,8 +479,10 @@ router.post('/api/withdrawals/verify-2fa', authenticateToken, async (req: Reques
 
     // Step 4: Sign withdrawal transaction
     const signResult = await withdrawalSigningService.signWithdrawalTransaction(
+      userId,
       walletId,
-      prepareResult.transactionData!
+      prepareResult.withdrawalId!,
+      prepareResult.transaction!
     );
 
     if (!signResult.success) {
@@ -485,11 +491,9 @@ router.post('/api/withdrawals/verify-2fa', authenticateToken, async (req: Reques
 
     // Step 5: Execute signed withdrawal
     const executeResult = await withdrawalSigningService.executeSignedWithdrawal(
-      walletId,
-      signResult.signedTransaction!,
-      currency,
       userId,
-      accountId
+      prepareResult.withdrawalId!,
+      signResult.signedTransaction!.raw
     );
 
     if (!executeResult.success) {
@@ -500,7 +504,7 @@ router.post('/api/withdrawals/verify-2fa', authenticateToken, async (req: Reques
       success: true,
       message: 'Withdrawal initiated successfully',
       transactionHash: executeResult.transactionHash,
-      withdrawalId: executeResult.withdrawalId,
+      withdrawalId: prepareResult.withdrawalId,
     });
   } catch (error) {
     console.error('Error processing verified withdrawal:', error);
@@ -512,12 +516,12 @@ router.post('/api/withdrawals/verify-2fa', authenticateToken, async (req: Reques
 });
 
 /**
- * POST /api/pin/disable
+ * POST /pin/disable
  * Disable PIN requirement
  */
-router.post('/api/pin/disable', authenticateToken, async (req: Request, res: Response) => {
+router.post('/pin/disable', authenticateToken as any, async (req: Request, res: Response) => {
   try {
-    const userId = req.userId as string;
+    const userId = req.user?.id as string;
     const { pin } = req.body;
 
     if (!pin) {

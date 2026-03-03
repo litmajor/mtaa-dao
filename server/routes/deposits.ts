@@ -6,6 +6,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { authenticateToken } from '../middleware/auth';
+import { authenticate } from '../auth';
 import { validateRequest } from '../middleware/validation';
 import {
   initiateOffRampDeposit,
@@ -22,6 +23,13 @@ import {
 import { getAccount } from '../services/account-service';
 
 const router = Router();
+
+// ════════════════════════════════════════════════════════════════════════════════
+// AUTHENTICATION MIDDLEWARE
+// ════════════════════════════════════════════════════════════════════════════════
+
+// All deposit operations require authentication
+router.use(authenticate);
 
 // Validation schemas
 const initiateOffRampDepositSchema = z.object({

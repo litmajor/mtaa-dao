@@ -350,7 +350,7 @@ export class AnomalyDetectionAgent extends BaseAgent {
 
   private async checkHealthDegradation(): Promise<AnomalyAlert[]> {
     const alerts: AnomalyAlert[] = [];
-    const snapshot = healthRegistry.getSnapshot();
+    const snapshot = (healthRegistry.getLastSnapshot && healthRegistry.getLastSnapshot()) || (healthRegistry.takeSnapshot && healthRegistry.takeSnapshot());
 
     for (const [systemName, status] of Object.entries(snapshot.components || {})) {
       if (status.failureRate as any > 0.2) {

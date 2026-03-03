@@ -1,11 +1,19 @@
 import { Router } from 'express';
 import { db } from '../db';
+import { authenticate } from '../auth';
 import { paymentRequests, users, walletTransactions } from '../../shared/schema';
 import { eq, and, lte, desc, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { notificationService } from '../notificationService';
 
 const router = Router();
+
+// ════════════════════════════════════════════════════════════════════════════════
+// AUTHENTICATION MIDDLEWARE
+// ════════════════════════════════════════════════════════════════════════════════
+
+// All payment request operations require authentication
+router.use(authenticate);
 
 /**
  * Create a payment request

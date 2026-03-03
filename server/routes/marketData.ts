@@ -32,7 +32,7 @@ router.get('/orderbook/:symbol', async (req: Request, res: Response) => {
   try {
     const { symbol } = req.params;
     const limit = parseInt(req.query.limit as string) || 20;
-    const exchange = (req.query.exchange as string) || 'binance';
+    let exchange = (req.query.exchange as string) || 'binance';
 
     if (limit < 1 || limit > 100) {
       return res.status(400).json(
@@ -259,7 +259,7 @@ router.get('/optimal-routes/:symbol', [authenticateToken as any], async (req: Re
 router.get('/liquidity-depth/:symbol', async (req: Request, res: Response) => {
   try {
     const { symbol } = req.params;
-    const exchange = (req.query.exchange as string) || 'binance';
+    let exchange = (req.query.exchange as string) || 'binance';
     const priceRangesStr = (req.query.priceRanges as string) || '0.5,1,2,5,10';
     const priceRanges = priceRangesStr.split(',').map((r) => parseFloat(r)).filter((r) => !isNaN(r));
 

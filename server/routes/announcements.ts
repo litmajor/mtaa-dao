@@ -165,8 +165,12 @@ router.post('/:id/dismiss', async (req, res) => {
 
 const requireSuperAdmin = requireRole('super_admin');
 
-// GET /api/announcements/admin/list - List all announcements (admin only)
-router.get('/admin/list', requireSuperAdmin, async (req, res) => {
+// ════════════════════════════════════════════════════════════════════════════════
+// NEW RESTful ENDPOINTS (RECOMMENDED)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// GET /api/announcements/admin - List all announcements (admin only)
+router.get('/admin', requireSuperAdmin, async (req, res) => {
   try {
     const { page = '1', limit = '20', type = '', status = '' } = req.query;
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
@@ -253,8 +257,172 @@ router.get('/admin/list', requireSuperAdmin, async (req, res) => {
   }
 });
 
-// POST /api/announcements/admin/create - Create announcement (admin only)
+// ════════════════════════════════════════════════════════════════════════════════
+// DEPRECATED ENDPOINTS (Keep for 6 months, then remove)
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @deprecated Use GET /api/announcements/admin instead
+ * Sunset: 2026-09-01
+ */
+// GET /api/announcements/admin/list - List all announcements (admin only)
+router.get('/admin/list', requireSuperAdmin, async (req, res) => {
+  // Issue deprecation warning
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', 'Wed, 01 Sep 2026 00:00:00 GMT');
+  res.setHeader('Link', '</api/announcements/admin>; rel="successor-version"');
+  res.setHeader('Warning', '299 - "GET /api/announcements/admin/list is deprecated. Use GET /api/announcements/admin instead"');
+
+  try {
+    const { page = '1', limit = '20', type = '', status = '' } = req.query;
+    const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+
+    // Build where conditions
+    const conditions: any[] = [];
+    
+    if (type && typeof type === 'string') {
+      conditions.push(eq(platformAnnouncements.type, type));
+    }
+    
+    if (status === 'active') {
+      conditions.push(eq(platformAnnouncements.isActive, true));
+    } else if (status === 'inactive') {
+      conditions.push(eq(platformAnnouncements.isActive, false));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Get total count
+    const totalResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(platformAnnouncements)
+      .where(whereClause);
+
+    const total = totalResult[0].count;
+
+    // Get announcements with creator info
+    const announcements = await db
+      .select({
+        id: platformAnnouncements.id,
+        title: platformAnnouncements.title,
+        message: platformAnnouncements.message,
+        type: platformAnnouncements.type,
+        priority: platformAnnouncements.priority,
+        isActive: platformAnnouncements.isActive,
+        targetAudience: platformAnnouncements.targetAudience,
+        linkUrl: platformAnnouncements.linkUrl,
+        linkText: platformAnnouncements.linkText,
+        startsAt: platformAnnouncements.startsAt,
+        expiresAt: platformAnnouncements.expiresAt,
+        createdAt: platformAnnouncements.createdAt,
+        createdByEmail: users.email,
+        createdByName: users.username,
+      })
+      .from(platformAnnouncements)
+      .leftJoin(users, eq(platformAnnouncements.createdBy, users.id))
+      .where(whereClause)
+      .orderBy(desc(platformAnnouncements.createdAt))
+      .limit(parseInt(limit as string))
+      .offset(offset);
+
+    // Get view stats for each announcement
+    const announcementsWithStats = await Promise.all(
+      announcements.map(async (announcement) => {
+        const viewStats = await db
+          .select({
+            totalViews: sql<number>`count(*)`,
+            totalDismissed: sql<number>`count(*) FILTER (WHERE ${userAnnouncementViews.dismissed} = true)`,
+          })
+          .from(userAnnouncementViews)
+          .where(eq(userAnnouncementViews.announcementId, announcement.id));
+
+        return {
+          ...announcement,
+          views: viewStats[0].totalViews,
+          dismissed: viewStats[0].totalDismissed,
+        };
+      })
+    );
+
+    res.json({
+      announcements: announcementsWithStats,
+      pagination: {
+        page: parseInt(page as string),
+        limit: parseInt(limit as string),
+        total,
+        pages: Math.ceil(total / parseInt(limit as string)),
+      },
+    });
+  } catch (error) {
+    logger.error('Error listing announcements:', error);
+    res.status(500).json({ error: 'Failed to list announcements' });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// NEW RESTful ENDPOINT (RECOMMENDED)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// POST /api/announcements/admin - Create announcement (admin only)
+router.post('/admin', requireSuperAdmin, async (req, res) => {
+  try {
+    const userId = (req.user as any)?.id;
+    const {
+      title,
+      message,
+      type = 'info',
+      priority = 0,
+      targetAudience = 'all',
+      linkUrl,
+      linkText,
+      startsAt,
+      expiresAt,
+    } = req.body;
+
+    if (!title || !message) {
+      return res.status(400).json({ error: 'Title and message are required' });
+    }
+
+    const [announcement] = await db
+      .insert(platformAnnouncements)
+      .values({
+        title,
+        message,
+        type,
+        priority,
+        targetAudience,
+        linkUrl: linkUrl || null,
+        linkText: linkText || null,
+        startsAt: startsAt ? new Date(startsAt) : null,
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+        createdBy: userId,
+        isActive: true,
+      })
+      .returning();
+
+    logger.info(`Announcement created: ${announcement.id} by user ${userId}`);
+    res.json({ announcement });
+  } catch (error) {
+    logger.error('Error creating announcement:', error);
+    res.status(500).json({ error: 'Failed to create announcement' });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// DEPRECATED ENDPOINT (Keep for 6 months, then remove)
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @deprecated Use POST /api/announcements/admin instead
+ * Sunset: 2026-09-01
+ */
 router.post('/admin/create', requireSuperAdmin, async (req, res) => {
+  // Issue deprecation warning
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', 'Wed, 01 Sep 2026 00:00:00 GMT');
+  res.setHeader('Link', `</api/announcements/admin>; rel="successor-version"`);
+  res.setHeader('Warning', '299 - "POST /api/announcements/admin/create is deprecated. Use POST /api/announcements/admin instead"');
+
   try {
     const userId = (req.user as any)?.id;
     const {

@@ -162,6 +162,7 @@ export class CrossChainService {
       const [vault] = await db.insert(vaults).values({
         name: vaultName,
         userId,
+        creatorId: userId, // Track vault creator
         vaultType: 'yield',
         currency: 'cUSD',
         isActive: true,

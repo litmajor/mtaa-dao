@@ -1,6 +1,11 @@
   
- /**
+/**
  * 🔍 External API Call Tracking Service
+ * 
+ * Integrated with Visibility Architecture:
+ * - Saves to visibility/runs/run-{timestamp}/external-api-*
+ * - Tracks all external API calls with metadata
+ * - Provides anomaly detection and analysis
  * 
  * Monitors external API usage:
  * - CCXT calls (exchange data)
@@ -8,12 +13,6 @@
  * - DeFi protocol calls
  * - Blockchain RPC calls
  * - Any other external dependency
- * 
- * Provides visibility into:
- * - Call frequency (detect weird polling patterns)
- * - Response times (detect slow providers)
- * - Error rates (detect reliability issues)
- * - Cost estimation (if calls are metered)
  */
 
 import fs from 'fs';
@@ -55,34 +54,33 @@ export interface APIMetrics {
 }
 
 /**
- * External API Call Tracker
+ * External API Call Tracker with Visibility Integration
  */
 export class ExternalAPITracker {
   private calls: APICallMetric[] = [];
-  private logFilePath: string;
+  private logFileDir: string = '';
   private maxInMemory = 10000; // Keep last 10k calls in memory
   private callCounts: Map<string, number> = new Map(); // For tracking frequency
 
-  constructor(logFilePath?: string) {
-    this.logFilePath =
-      logFilePath || path.join(process.cwd(), 'external-api-calls.csv');
-    this.ensureLogFile();
+  constructor(logFileDir?: string) {
+    if (logFileDir) {
+      this.logFileDir = logFileDir;
+      this.ensureLogDir();
+    }
   }
 
-  private ensureLogFile() {
-    const dir = path.dirname(this.logFilePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+  /**
+   * Set log directory (called by ReportGenerator after run is initialized)
+   */
+  setLogDirectory(runDir: string): void {
+    this.logFileDir = runDir;
+    this.ensureLogDir();
+    logger.info(`[ExternalAPITracker] Log directory: ${this.logFileDir}`);
+  }
 
-    if (!fs.existsSync(this.logFilePath)) {
-      const header =
-        'TIMESTAMP,TYPE,SERVICE,ENDPOINT,METHOD,STATUS_CODE,DURATION_MS,DATA_SIZE_BYTES,ERROR\n';
-      try {
-        fs.writeFileSync(this.logFilePath, header);
-      } catch (error) {
-        logger.error('Failed to create API call log:', error);
-      }
+  private ensureLogDir() {
+    if (this.logFileDir && !fs.existsSync(this.logFileDir)) {
+      fs.mkdirSync(this.logFileDir, { recursive: true });
     }
   }
 
@@ -103,28 +101,50 @@ export class ExternalAPITracker {
       const key = `${metric.type}:${metric.service}`;
       this.callCounts.set(key, (this.callCounts.get(key) || 0) + 1);
 
-      // Write to CSV
-      this.writeToCSV(metric);
+      // Write to CSV (only if logFileDir is set)
+      if (this.logFileDir) {
+        this.writeToCSV(metric);
+      }
     } catch (error) {
       logger.error('Failed to record API call:', error);
     }
   }
 
+  /**
+   * Write API call to CSV in run directory
+   */
   private writeToCSV(metric: APICallMetric): void {
     try {
+      const csvPath = path.join(this.logFileDir, 'external-api-calls.csv');
+
+      // Ensure directory exists
+      if (!fs.existsSync(this.logFileDir)) {
+        fs.mkdirSync(this.logFileDir, { recursive: true });
+      }
+
+      // Ensure header exists
+      if (!fs.existsSync(csvPath)) {
+        const header =
+          'TIMESTAMP,TYPE,SERVICE,ENDPOINT,METHOD,STATUS_CODE,DURATION_MS,DATA_SIZE_BYTES,ERROR\n';
+        fs.writeFileSync(csvPath, header);
+      }
+
+      // Write row
+      const safe = (v: any) =>
+        v === undefined || v === null ? '' : String(v).replace(/"/g, "'");
       const line = [
-        metric.timestamp,
-        metric.type,
-        metric.service,
-        metric.endpoint,
-        metric.method,
-        metric.statusCode || '',
-        metric.duration,
-        metric.dataSize || '',
-        metric.error ? `"${metric.error.substring(0, 255)}"` : '',
+        `"${safe(metric.timestamp)}"`,
+        `"${safe(metric.type)}"`,
+        `"${safe(metric.service)}"`,
+        `"${safe(metric.endpoint)}"`,
+        `"${safe(metric.method)}"`,
+        `${metric.statusCode || ''}`,
+        `${metric.duration}`,
+        `${metric.dataSize || ''}`,
+        metric.error ? `"${safe(metric.error).substring(0, 255)}"` : '""',
       ].join(',');
 
-      fs.appendFileSync(this.logFilePath, line + '\n');
+      fs.appendFileSync(csvPath, line + '\n');
     } catch (error) {
       logger.error('Failed to write API call to CSV:', error);
     }
@@ -205,18 +225,25 @@ export class ExternalAPITracker {
   }
 
   /**
-   * Export analysis
+   * Export analysis to run directory
    */
-  exportAnalysis(outputDir = '.') {
+  exportAnalysis(outputDir?: string) {
+    // Use provided directory or fall back to configured log directory
+    const targetDir = outputDir || this.logFileDir || '.';
+
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
     const analysis = this.analyze();
 
     // Export JSON
-    const jsonPath = path.join(outputDir, 'external-api-analysis.json');
+    const jsonPath = path.join(targetDir, 'external-api-analysis.json');
     fs.writeFileSync(jsonPath, JSON.stringify(analysis, null, 2));
-    console.log(`✅ API analysis exported to: ${jsonPath}`);
+    logger.info(`[ExternalAPITracker] Analysis exported to: ${jsonPath}`);
 
     // Export summary CSV
-    const summaryPath = path.join(outputDir, 'external-api-summary.csv');
+    const summaryPath = path.join(targetDir, 'external-api-summary.csv');
     const summaryCSV = `METRIC,VALUE
 Total Calls,${analysis.summary.totalCalls}
 Total Duration (ms),${analysis.summary.totalDuration}
@@ -226,15 +253,15 @@ Error Rate (%),${analysis.summary.errorRate.toFixed(2)}
 Calls Per Minute,${analysis.summary.callsPerMinute.toFixed(2)}`;
 
     fs.writeFileSync(summaryPath, summaryCSV);
-    console.log(`✅ API summary exported to: ${summaryPath}`);
+    logger.info(`[ExternalAPITracker] Summary exported to: ${summaryPath}`);
 
     // Export by type CSV
-    const byTypePath = path.join(outputDir, 'external-api-by-type.csv');
+    const byTypePath = path.join(targetDir, 'external-api-by-type.csv');
     const byTypeCSV =
       'TYPE,COUNT,AVG_DURATION_MS,ERROR_COUNT,ERROR_RATE\n' +
       Object.entries(analysis.byType)
         .map(([type, calls]) => {
-          const errorCount = calls.filter(c => c.error).length;
+          const errorCount = calls.filter((c) => c.error).length;
           const avgDuration =
             calls.reduce((sum, c) => sum + c.duration, 0) / calls.length;
           const errorRate = (errorCount / calls.length) * 100;
@@ -243,15 +270,15 @@ Calls Per Minute,${analysis.summary.callsPerMinute.toFixed(2)}`;
         .join('\n');
 
     fs.writeFileSync(byTypePath, byTypeCSV);
-    console.log(`✅ API by-type exported to: ${byTypePath}`);
+    logger.info(`[ExternalAPITracker] By-type exported to: ${byTypePath}`);
 
     // Export by service CSV
-    const byServicePath = path.join(outputDir, 'external-api-by-service.csv');
+    const byServicePath = path.join(targetDir, 'external-api-by-service.csv');
     const byServiceCSV =
       'SERVICE,COUNT,AVG_DURATION_MS,ERROR_COUNT,ERROR_RATE\n' +
       Object.entries(analysis.byService)
         .map(([service, calls]) => {
-          const errorCount = calls.filter(c => c.error).length;
+          const errorCount = calls.filter((c) => c.error).length;
           const avgDuration =
             calls.reduce((sum, c) => sum + c.duration, 0) / calls.length;
           const errorRate = (errorCount / calls.length) * 100;
@@ -260,7 +287,7 @@ Calls Per Minute,${analysis.summary.callsPerMinute.toFixed(2)}`;
         .join('\n');
 
     fs.writeFileSync(byServicePath, byServiceCSV);
-    console.log(`✅ API by-service exported to: ${byServicePath}`);
+    logger.info(`[ExternalAPITracker] By-service exported to: ${byServicePath}`);
 
     // Console summary
     console.log('\n📊 External API Call Summary:');
@@ -274,7 +301,7 @@ Calls Per Minute,${analysis.summary.callsPerMinute.toFixed(2)}`;
     );
     console.log('\n   By Type:');
     Object.entries(analysis.byType).forEach(([type, calls]) => {
-      const errorCount = calls.filter(c => c.error).length;
+      const errorCount = calls.filter((c) => c.error).length;
       console.log(`      ${type}: ${calls.length} calls, ${errorCount} errors`);
     });
     console.log('\n   By Service (Top 10):');
@@ -282,7 +309,7 @@ Calls Per Minute,${analysis.summary.callsPerMinute.toFixed(2)}`;
       .sort((a, b) => b[1].length - a[1].length)
       .slice(0, 10)
       .forEach(([service, calls]) => {
-        const errorCount = calls.filter(c => c.error).length;
+        const errorCount = calls.filter((c) => c.error).length;
         console.log(
           `      ${service}: ${calls.length} calls, ${errorCount} errors`
         );

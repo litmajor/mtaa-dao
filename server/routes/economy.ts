@@ -1,7 +1,7 @@
 
 import { Router } from 'express';
 import { economyService } from '../services/economyService';
-import { requireAuth } from '../middleware/rbac';
+import { authenticateToken } from '../middleware/auth';
 
 const router = Router();
 
@@ -31,7 +31,7 @@ router.get('/gdp', async (req, res) => {
  * GET /api/economy/earn
  * Get available earning opportunities
  */
-router.get('/earn', requireAuth, async (req, res) => {
+router.get('/earn', authenticateToken, async (req, res) => {
   try {
     const opportunities = await economyService.getEarnOpportunities(req.user!.id);
     
@@ -92,7 +92,7 @@ router.get('/redeem/rates', async (req, res) => {
  * POST /api/economy/redeem
  * Merchant redemption of MTAA tokens
  */
-router.post('/redeem', requireAuth, async (req, res) => {
+router.post('/redeem', authenticateToken, async (req, res) => {
   try {
     const { amount, toCurrency, method } = req.body;
     
@@ -126,7 +126,7 @@ router.post('/redeem', requireAuth, async (req, res) => {
  * POST /api/economy/earn
  * Record an earning transaction
  */
-router.post('/earn', requireAuth, async (req, res) => {
+router.post('/earn', authenticateToken, async (req, res) => {
   try {
     const { amount, source, metadata } = req.body;
     
@@ -155,7 +155,7 @@ router.post('/earn', requireAuth, async (req, res) => {
  * POST /api/economy/spend
  * Record a spending transaction
  */
-router.post('/spend', requireAuth, async (req, res) => {
+router.post('/spend', authenticateToken, async (req, res) => {
   try {
     const { merchantId, amount, description } = req.body;
     

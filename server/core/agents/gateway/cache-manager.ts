@@ -38,8 +38,24 @@ export class CacheManager {
   };
 
   constructor(config: Partial<CacheConfig> = {}) {
-    const redisUrl = config.redisUrl || process.env.REDIS_URL || "";
-    const hasValidRedis = !!redisUrl && redisUrl !== "redis://localhost:6379";
+    // Build Redis URL with proper authentication if not already set
+    let redisUrl = config.redisUrl || process.env.REDIS_URL;
+    if (!redisUrl) {
+      const host = process.env.REDIS_HOST || 'localhost';
+      const port = process.env.REDIS_PORT || '6379';
+      const password = process.env.REDIS_PASSWORD;
+      const db = process.env.REDIS_DB || '0';
+      
+      // Construct URL with authentication
+      if (password) {
+        redisUrl = `redis://:${encodeURIComponent(password)}@${host}:${port}/${db}`;
+      } else {
+        redisUrl = `redis://${host}:${port}/${db}`;
+      }
+    }
+    
+    // Check if Redis is properly configured (not null/empty)
+    const hasValidRedis = !!redisUrl && redisUrl.trim().length > 0;
     
     this.config = {
       enabled: hasValidRedis && config.enabled !== false,

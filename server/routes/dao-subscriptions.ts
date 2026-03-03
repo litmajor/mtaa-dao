@@ -1,12 +1,18 @@
 
 import express from 'express';
 import { db } from '../storage';
-import { daos } from '../../shared/schema';
-// Ensure billingStatus and nextBillingDate are present in the DAO schema
-// If not, add them to the schema definition in shared/schema.ts
+import { daos, billingHistory } from '../../shared/schema';
+import { authenticate } from '../auth';
 import { eq } from 'drizzle-orm';
 
 const router = express.Router();
+
+// ════════════════════════════════════════════════════════════════════════════════
+// AUTHENTICATION MIDDLEWARE
+// ════════════════════════════════════════════════════════════════════════════════
+
+// All subscription operations require authentication
+router.use(authenticate);
 
 // DAO Subscription Plans
 const SUBSCRIPTION_PLANS = {
@@ -53,13 +59,14 @@ router.get('/:daoId/status', async (req, res) => {
     }
 
     const daoData = dao[0];
-    const currentPlan = daoData.subscriptionTier || 'free';
+    const currentPlan = (daoData as any).subscriptionTier || 'free';
     
+    const planKey = (currentPlan as keyof typeof SUBSCRIPTION_PLANS);
     res.json({
       success: true,
       daoId,
       currentPlan,
-      planName: SUBSCRIPTION_PLANS[currentPlan]?.name || 'Free',
+      planName: SUBSCRIPTION_PLANS[planKey]?.name || 'Free',
       expiresAt: daoData.planExpiresAt,
       status: daoData.planExpiresAt && new Date(daoData.planExpiresAt) < new Date() ? 'expired' : 'active'
     });

@@ -1,9 +1,12 @@
 import { useState, useCallback } from 'react';
+import { submitTransaction } from '../api';
 
 interface SendTransactionData {
+  walletId: string;        // PHASE 1 FIX: Required for wallet signature verification
   amount: number;
   recipientAddress: string;
   recipientName: string;
+  tokenSymbol?: string;    // PHASE 1 FIX: Required for signature message
 }
 
 interface SendFlowState {
@@ -38,26 +41,24 @@ export const useSendFlow = () => {
     return '30 seconds';
   }, []);
 
-  const submitTransaction = useCallback(async (data: SendTransactionData) => {
+  const submitTransaction_Hook = useCallback(async (data: SendTransactionData) => {
     setState((prev) => ({ ...prev, step: 'sending' }));
     try {
       const fee = await estimateFee(data.amount);
       
-      // In production, call API
-      // const response = await fetch('/api/transactions/send', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ ...data, fee })
-      // });
-      // const result = await response.json();
-      
-      // Mock for now - simulate success after 2 seconds
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // PHASE 1 FIX: Call real API with wallet signature verification
+      const result = await submitTransaction(
+        data.walletId,
+        data.recipientAddress,
+        data.amount.toString(),
+        data.tokenSymbol || 'ETH',
+        data.recipientName
+      );
       
       setState((prev) => ({
         ...prev,
         step: 'success',
-        transactionId: `tx_${Date.now()}`
+        transactionId: result.queueId || result.transactionHash
       }));
     } catch (error) {
       setState((prev) => ({
@@ -93,7 +94,7 @@ export const useSendFlow = () => {
     ...state,
     estimateFee,
     estimateTime,
-    submitTransaction,
+    submitTransaction: submitTransaction_Hook,
     goToPreview,
     goBack,
     reset

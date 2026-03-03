@@ -443,15 +443,6 @@ class FuturesMarketSupport {
     return oi;
   }
 
-  private predictFundingRate(
-    currentRate: number,
-    historicalRates: Array<{ timestamp: number; rate: number }>
-  ): number {
-    if (historicalRates.length < 2) return currentRate;
-    const trend = historicalRates[historicalRates.length - 1].rate - historicalRates[0].rate;
-    return currentRate + trend * 0.5;
-  }
-
   private detectLiquidationCascade(liquidations: any[]): boolean {
     // Cascade detected if many liquidations in short period
     const last10mins = liquidations.filter(

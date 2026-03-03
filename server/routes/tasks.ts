@@ -63,8 +63,61 @@ function requireRole(...roles: string[]) {
   };
 }
 
+// ════════════════════════════════════════════════════════════════════════════════
+// NEW RESTful ENDPOINT (RECOMMENDED)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// POST /api/tasks - Create task (DAO admin/moderator only)
+router.post('/', requireRole('admin', 'moderator'), async (req, res) => {
+  try {
+    const validatedData = createTaskSchema.parse(req.body);
+    const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    // Ensure reward is string for DB
+    const insertData: any = {
+      ...validatedData,
+      creatorId: userId,
+      status: 'open',
+      reward: String(validatedData.reward)
+    };
+    if (validatedData.deadline) {
+      insertData.deadline = new Date(validatedData.deadline);
+    }
+    const task = await db.insert(tasks).values(insertData).returning();
+    // Log task creation
+    await db.insert(taskHistory).values({
+      taskId: task[0].id,
+      userId,
+      action: 'created',
+      details: { category: validatedData.category, reward: String(validatedData.reward) }
+    });
+    res.status(201).json(task[0]);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Validation error', details: err.errors });
+    }
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// DEPRECATED ENDPOINT (Keep for 6 months, then remove)
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @deprecated Use POST /api/tasks instead
+ * Sunset: 2026-09-01
+ */
 // Create task (DAO admin/moderator only)
 router.post('/create', requireRole('admin', 'moderator'), async (req, res) => {
+  // Issue deprecation warning
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', 'Wed, 01 Sep 2026 00:00:00 GMT');
+  res.setHeader('Link', '</api/tasks>; rel="successor-version"');
+  res.setHeader('Warning', '299 - "POST /api/tasks/create is deprecated. Use POST /api/tasks instead"');
+
   try {
     const validatedData = createTaskSchema.parse(req.body);
     const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
@@ -455,6 +508,138 @@ router.get('/analytics', async (req, res) => {
     }
     const taskStats = await statsQuery;
     res.json(taskStats);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// UPDATE a task (DAO admin/moderator/creator only)
+router.put('/:taskId', requireRole('admin', 'moderator'), async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { title, description, reward, category, difficulty, estimatedTime, deadline } = req.body;
+    const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Get the task
+    const task = await db.select()
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .limit(1);
+
+    if (!task.length) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    const taskData = task[0];
+
+    // Only creator, admin, or moderator can update
+    const membership = await db.select()
+      .from(daoMemberships)
+      .where(and(
+        eq(daoMemberships.daoId, taskData.daoId),
+        eq(daoMemberships.userId, userId)
+      ))
+      .limit(1);
+
+    const isCreator = taskData.creatorId === userId;
+    const isAdmin = membership.length && ['admin', 'moderator'].includes(membership[0].role || '');
+
+    if (!isCreator && !isAdmin) {
+      return res.status(403).json({ error: 'You do not have permission to update this task' });
+    }
+
+    // Cannot update if task is already completed or disputed
+    if (taskData.status && ['completed', 'disputed'].includes(taskData.status)) {
+      return res.status(400).json({ error: 'Cannot update completed or disputed tasks' });
+    }
+
+    // Update task
+    const updateData: any = {};
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (reward !== undefined) updateData.reward = String(reward);
+    if (category !== undefined) updateData.category = category;
+    if (difficulty !== undefined) updateData.difficulty = difficulty;
+    if (estimatedTime !== undefined) updateData.estimatedTime = estimatedTime;
+    if (deadline !== undefined) updateData.deadline = new Date(deadline);
+    updateData.updatedAt = new Date();
+
+    const [updated] = await db.update(tasks)
+      .set(updateData)
+      .where(eq(tasks.id, taskId))
+      .returning();
+
+    // Log update
+    await db.insert(taskHistory).values({
+      taskId,
+      userId,
+      action: 'updated',
+      details: updateData
+    });
+
+    res.json({ success: true, task: updated });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Validation error', details: err.errors });
+    }
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// DELETE a task (DAO admin/creator only, before anyone claims it)
+router.delete('/:taskId', requireRole('admin', 'moderator'), async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Get the task
+    const task = await db.select()
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .limit(1);
+
+    if (!task.length) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    const taskData = task[0];
+
+    // Only creator or admin can delete
+    const membership = await db.select()
+      .from(daoMemberships)
+      .where(and(
+        eq(daoMemberships.daoId, taskData.daoId),
+        eq(daoMemberships.userId, userId)
+      ))
+      .limit(1);
+
+    const isCreator = taskData.creatorId === userId;
+    const isAdmin = membership.length && membership[0].role === 'admin';
+
+    if (!isCreator && !isAdmin) {
+      return res.status(403).json({ error: 'You do not have permission to delete this task' });
+    }
+
+    // Cannot delete if someone has claimed it
+    if (taskData.status && taskData.status !== 'open') {
+      return res.status(400).json({ error: 'Cannot delete tasks that have been claimed or completed' });
+    }
+
+    // Delete task history
+    await db.delete(taskHistory).where(eq(taskHistory.taskId, taskId));
+
+    // Delete task
+    await db.delete(tasks).where(eq(tasks.id, taskId));
+
+    res.json({ success: true, message: 'Task deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }

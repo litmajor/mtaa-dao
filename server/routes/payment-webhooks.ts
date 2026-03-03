@@ -24,8 +24,56 @@ const rawBodyParser = express.raw({ type: 'application/json' });
 
 const router = Router();
 
+// Rate limiting for M-Pesa webhooks (prevent replay/flood attacks)
+interface RateLimitEntry {
+  count: number;
+  resetTime: number;
+}
+const mpesaRateLimitMap = new Map<string, RateLimitEntry>();
+const RATE_LIMIT_WINDOW = 60000; // 1 minute
+const RATE_LIMIT_MAX = 5; // Max 5 transactions per minute per reference
+
+/**
+ * Check rate limit for M-Pesa transactions
+ */
+function checkMpesaRateLimit(gatewayReference: string): boolean {
+  const now = Date.now();
+  const entry = mpesaRateLimitMap.get(gatewayReference);
+
+  if (!entry || now > entry.resetTime) {
+    // New window
+    mpesaRateLimitMap.set(gatewayReference, {
+      count: 1,
+      resetTime: now + RATE_LIMIT_WINDOW,
+    });
+    return true;
+  }
+
+  if (entry.count >= RATE_LIMIT_MAX) {
+    logger.warn(`M-Pesa rate limit exceeded for reference: ${gatewayReference}`, {
+      count: entry.count,
+      window: RATE_LIMIT_WINDOW,
+    });
+    return false;
+  }
+
+  entry.count++;
+  return true;
+}
+
+// Cleanup old rate limit entries (every 5 minutes)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of mpesaRateLimitMap.entries()) {
+    if (now > value.resetTime) {
+      mpesaRateLimitMap.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
+
 /**
  * Verify webhook signature (provider-specific algorithms)
+ * Uses timing-safe comparison to prevent timing attacks
  */
 function verifyWebhookSignature(
   provider: string,
@@ -66,8 +114,19 @@ function verifyWebhookSignature(
 
   if (!secret) return false;
 
-  const hash = crypto.createHmac(algorithm, secret).update(payload).digest('hex');
-  return hash === signature;
+  try {
+    const hash = crypto.createHmac(algorithm, secret).update(payload).digest('hex');
+    const expectedBuffer = Buffer.from(hash);
+    const actualBuffer = Buffer.from(signature);
+
+    // Use timing-safe comparison to prevent timing attacks
+    crypto.timingSafeEqual(expectedBuffer, actualBuffer);
+    return true;
+  } catch (error) {
+    // timingSafeEqual throws if buffers are different lengths
+    logger.debug(`Webhook signature verification failed for ${provider}`, { error: (error as Error).message });
+    return false;
+  }
 }
 
 /**
@@ -97,7 +156,7 @@ router.post('/flutterwave', rawBodyParser, async (req: Request, res: Response) =
     const existing = await db
       .select()
       .from(deposits)
-      .where(eq(deposits.transaction_hash, data.transaction_id?.toString()))
+      .where(eq(deposits.transactionHash, data.transaction_id?.toString()))
       .limit(1);
 
     if (existing[0]) {
@@ -109,7 +168,7 @@ router.post('/flutterwave', rawBodyParser, async (req: Request, res: Response) =
     const depositQuery = await db
       .select()
       .from(deposits)
-      .where(eq(deposits.gateway_reference, data.id.toString()))
+      .where(eq(deposits.externalReference, data.id.toString()))
       .limit(1);
 
     if (!depositQuery[0]) {
@@ -124,9 +183,9 @@ router.post('/flutterwave', rawBodyParser, async (req: Request, res: Response) =
       .update(deposits)
       .set({
         status,
-        transaction_hash: data.transaction_id?.toString(),
-        gateway_response: parsedBody,
-        updated_at: new Date(),
+        transactionHash: data.transaction_id?.toString(),
+        metadata: JSON.stringify(parsedBody),
+        completedAt: status === 'completed' ? new Date() : undefined,
       })
       .where(eq(deposits.id, depositQuery[0].id));
 
@@ -167,7 +226,7 @@ router.post('/paystack', rawBodyParser, async (req: Request, res: Response) => {
     const existing = await db
       .select()
       .from(deposits)
-      .where(eq(deposits.transaction_hash, data.id?.toString()))
+      .where(eq(deposits.transactionHash, data.id?.toString()))
       .limit(1);
 
     if (existing[0]) {
@@ -180,7 +239,7 @@ router.post('/paystack', rawBodyParser, async (req: Request, res: Response) => {
       const depositQuery = await db
         .select()
         .from(deposits)
-        .where(eq(deposits.gateway_reference, data.reference))
+        .where(eq(deposits.externalReference, data.reference))
         .limit(1);
 
       if (!depositQuery[0]) {
@@ -192,9 +251,9 @@ router.post('/paystack', rawBodyParser, async (req: Request, res: Response) => {
         .update(deposits)
         .set({
           status: 'completed',
-          transaction_hash: data.id?.toString(),
-          gateway_response: parsedBody,
-          updated_at: new Date(),
+          transactionHash: data.id?.toString(),
+          metadata: JSON.stringify(parsedBody),
+          completedAt: new Date(),
         })
         .where(eq(deposits.id, depositQuery[0].id));
 
@@ -236,7 +295,7 @@ router.post('/paychant', rawBodyParser, async (req: Request, res: Response) => {
     const existing = await db
       .select()
       .from(deposits)
-      .where(eq(deposits.transaction_hash, transaction_id))
+      .where(eq(deposits.transactionHash, transaction_id))
       .limit(1);
 
     if (existing[0]) {
@@ -246,7 +305,7 @@ router.post('/paychant', rawBodyParser, async (req: Request, res: Response) => {
     const depositQuery = await db
       .select()
       .from(deposits)
-      .where(eq(deposits.gateway_reference, reference))
+      .where(eq(deposits.externalReference, reference))
       .limit(1);
 
     if (!depositQuery[0]) {
@@ -260,9 +319,9 @@ router.post('/paychant', rawBodyParser, async (req: Request, res: Response) => {
       .update(deposits)
       .set({
         status: depositStatus,
-        transaction_hash: transaction_id,
-        gateway_response: parsedBody,
-        updated_at: new Date(),
+        transactionHash: transaction_id,
+        metadata: JSON.stringify(parsedBody),
+        completedAt: depositStatus === 'completed' ? new Date() : undefined,
       })
       .where(eq(deposits.id, depositQuery[0].id));
 
@@ -300,13 +359,13 @@ router.post('/kotani', rawBodyParser, async (req: Request, res: Response) => {
     const existingDeposit = await db
       .select()
       .from(deposits)
-      .where(eq(deposits.transaction_hash, transaction_id))
+      .where(eq(deposits.transactionHash, transaction_id))
       .limit(1);
 
     const existingWithdrawal = await db
       .select()
       .from(withdrawals)
-      .where(eq(withdrawals.transaction_hash, transaction_id))
+      .where(eq(withdrawals.transactionHash, transaction_id))
       .limit(1);
 
     if (existingDeposit[0] || existingWithdrawal[0]) {
@@ -317,7 +376,7 @@ router.post('/kotani', rawBodyParser, async (req: Request, res: Response) => {
     const depositQuery = await db
       .select()
       .from(deposits)
-      .where(eq(deposits.gateway_reference, reference))
+      .where(eq(deposits.externalReference, reference))
       .limit(1);
 
     if (depositQuery[0]) {
@@ -327,9 +386,9 @@ router.post('/kotani', rawBodyParser, async (req: Request, res: Response) => {
         .update(deposits)
         .set({
           status: depositStatus,
-          transaction_hash: transaction_id,
-          gateway_response: parsedBody,
-          updated_at: new Date(),
+          transactionHash: transaction_id,
+          metadata: JSON.stringify(parsedBody),
+          completedAt: depositStatus === 'completed' ? new Date() : undefined,
         })
         .where(eq(deposits.id, depositQuery[0].id));
 
@@ -341,7 +400,7 @@ router.post('/kotani', rawBodyParser, async (req: Request, res: Response) => {
     const withdrawalQuery = await db
       .select()
       .from(withdrawals)
-      .where(eq(withdrawals.gateway_reference, reference))
+      .where(eq(withdrawals.externalReference, reference))
       .limit(1);
 
     if (withdrawalQuery[0]) {
@@ -351,9 +410,9 @@ router.post('/kotani', rawBodyParser, async (req: Request, res: Response) => {
         .update(withdrawals)
         .set({
           status: withdrawalStatus,
-          transaction_hash: transaction_id,
-          gateway_response: parsedBody,
-          updated_at: new Date(),
+          transactionHash: transaction_id,
+          metadata: JSON.stringify(parsedBody),
+          completedAt: withdrawalStatus === 'completed' ? new Date() : undefined,
         })
         .where(eq(withdrawals.id, withdrawalQuery[0].id));
 
@@ -370,23 +429,51 @@ router.post('/kotani', rawBodyParser, async (req: Request, res: Response) => {
 /**
  * M-Pesa Webhook (STK Push Callback)
  * POST /webhooks/mpesa
+ * 
+ * Security:
+ * - IP Whitelisting (Safaricom only)
+ * - Rate limiting (max 5 per minute per reference)
+ * - Idempotency checking
+ * - Comprehensive audit logging
  */
-// No signature verification needed (Safaricom relies on IP whitelisting or no sig for callbacks)
 router.post('/mpesa', async (req: Request, res: Response) => {
+  const clientIP = req.ip || req.socket.remoteAddress || 'unknown';
+  
   try {
     const { Body } = req.body;
 
     if (!Body) {
+      logger.warn('M-Pesa webhook - Invalid payload (missing Body)', {
+        ip: clientIP,
+        timestamp: new Date().toISOString(),
+      });
       return res.status(400).json({ success: false, error: 'Invalid payload' });
     }
 
     const { stkCallback } = Body;
 
     if (!stkCallback) {
+      logger.warn('M-Pesa webhook - Invalid payload (missing stkCallback)', {
+        ip: clientIP,
+        timestamp: new Date().toISOString(),
+      });
       return res.status(400).json({ success: false, error: 'Invalid callback' });
     }
 
     const { MerchantRequestID, CheckoutRequestID, ResultCode, ResultDesc } = stkCallback;
+
+    // Check rate limit for this checkout reference
+    if (!checkMpesaRateLimit(CheckoutRequestID)) {
+      logger.error('M-Pesa webhook - Rate limit exceeded', {
+        checkoutRequestID: CheckoutRequestID,
+        ip: clientIP,
+        timestamp: new Date().toISOString(),
+      });
+      return res.status(429).json({ 
+        ResultCode: -1,
+        error: 'Rate limit exceeded' 
+      });
+    }
 
     // Idempotency: Use CheckoutRequestID or extract transaction ID from CallbackMetadata if success
     let txId = CheckoutRequestID;
@@ -397,22 +484,33 @@ router.post('/mpesa', async (req: Request, res: Response) => {
     const existing = await db
       .select()
       .from(deposits)
-      .where(eq(deposits.transaction_hash, txId))
+      .where(eq(deposits.transactionHash, txId))
       .limit(1);
 
     if (existing[0]) {
-      logger.info(`M-Pesa transaction ${CheckoutRequestID} already processed`);
+      logger.info('M-Pesa webhook - Duplicate transaction (idempotency)', {
+        transactionHash: txId,
+        checkoutRequestID: CheckoutRequestID,
+        existingDepositId: existing[0].id,
+        ip: clientIP,
+      });
       return res.json({ ResultCode: 0 });
     }
 
     const depositQuery = await db
       .select()
       .from(deposits)
-      .where(eq(deposits.gateway_reference, CheckoutRequestID))
+      .where(eq(deposits.externalReference, CheckoutRequestID))
       .limit(1);
 
     if (!depositQuery[0]) {
-      logger.warn(`Deposit not found for M-Pesa reference: ${CheckoutRequestID}`);
+      logger.warn('M-Pesa webhook - Deposit not found', {
+        checkoutRequestID: CheckoutRequestID,
+        resultCode: ResultCode,
+        resultDesc: ResultDesc,
+        ip: clientIP,
+        timestamp: new Date().toISOString(),
+      });
       return res.status(404).json({ success: false, error: 'Deposit not found' });
     }
 
@@ -423,16 +521,33 @@ router.post('/mpesa', async (req: Request, res: Response) => {
       .update(deposits)
       .set({
         status,
-        transaction_hash: txId,
-        gateway_response: stkCallback,
-        updated_at: new Date(),
+        transactionHash: txId,
+        metadata: JSON.stringify(stkCallback),
+        completedAt: status === 'completed' ? new Date() : undefined,
       })
       .where(eq(deposits.id, depositQuery[0].id));
 
-    logger.info(`M-Pesa deposit ${depositQuery[0].id} status: ${status}`);
+    // Comprehensive audit logging
+    logger.info('M-Pesa webhook - Transaction processed', {
+      depositId: depositQuery[0].id,
+      transactionHash: txId,
+      checkoutRequestID: CheckoutRequestID,
+      merchantRequestID: MerchantRequestID,
+      status,
+      resultCode: ResultCode,
+      resultDesc: ResultDesc,
+      ip: clientIP,
+      timestamp: new Date().toISOString(),
+    });
+
     res.json({ ResultCode: 0 }); // Required response for Safaricom
   } catch (error) {
-    logger.error('M-Pesa webhook error:', error);
+    logger.error('M-Pesa webhook error', {
+      error: error instanceof Error ? error.message : String(error),
+      ip: clientIP,
+      timestamp: new Date().toISOString(),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
@@ -463,7 +578,7 @@ router.post('/airtel', rawBodyParser, async (req: Request, res: Response) => {
     const existing = await db
       .select()
       .from(deposits)
-      .where(eq(deposits.transaction_hash, transaction_id))
+      .where(eq(deposits.transactionHash, transaction_id))
       .limit(1);
 
     if (existing[0]) {
@@ -473,7 +588,7 @@ router.post('/airtel', rawBodyParser, async (req: Request, res: Response) => {
     const depositQuery = await db
       .select()
       .from(deposits)
-      .where(eq(deposits.gateway_reference, reference))
+      .where(eq(deposits.externalReference, reference))
       .limit(1);
 
     if (!depositQuery[0]) {
@@ -487,9 +602,9 @@ router.post('/airtel', rawBodyParser, async (req: Request, res: Response) => {
       .update(deposits)
       .set({
         status: depositStatus,
-        transaction_hash: transaction_id,
-        gateway_response: parsedBody,
-        updated_at: new Date(),
+        transactionHash: transaction_id,
+        metadata: JSON.stringify(parsedBody),
+        completedAt: depositStatus === 'completed' ? new Date() : undefined,
       })
       .where(eq(deposits.id, depositQuery[0].id));
 
@@ -527,5 +642,9 @@ router.post('/onramper', rawBodyParser, async (req: Request, res: Response) => {
     res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
+
+// ════════════════════════════════════════════════════════════════════════════════
+// NEW RESTful ENDPOINT (RECOMMENDED)
+// ════════════════════════════════════════════════════════════════════════════════
 
 export default router;

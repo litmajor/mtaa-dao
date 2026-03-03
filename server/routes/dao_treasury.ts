@@ -1,16 +1,15 @@
 import express, { Request, Response } from 'express';
 import { db } from '../db';
 import { config, walletTransactions } from '../../shared/schema';
-import { sql, eq, and } from 'drizzle-orm';
+import { sql, eq, and, desc } from 'drizzle-orm';
 import EnhancedAgentWallet, { NetworkConfig, DaoTreasuryManager } from '../agent_wallet';
 import { isAuthenticated } from '../nextAuthMiddleware';
 import { storage } from '../storage';
 import { treasuryMultisigService } from '../services/treasuryMultisigService';
-import { db } from '../db';
 import { treasuryMultisigTransactions, treasuryBudgetAllocations, treasuryAuditLog } from '../../shared/schema';
-import { eq, desc, and } from 'drizzle-orm';
 import { getGatewayAgentService } from '../core/agents/gateway/service';
 import { Logger } from '../utils/logger';
+import { sanitizeObject } from '../middleware/security';
 
 const router = express.Router();
 const logger = new Logger('dao-treasury');
@@ -44,7 +43,7 @@ function createPriceOracle(): (tokenSymbol: string) => Promise<number> {
 }
 
 // --- DAO Treasury: Monitor Treasury Balances ---
-router.get('/:daoId/balance', isAuthenticated, async (req: Request, res: Response) => {
+router.get('/balance', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const dao = await storage.getDao(daoId);
@@ -73,7 +72,7 @@ router.get('/:daoId/balance', isAuthenticated, async (req: Request, res: Respons
 });
 
 // --- DAO Treasury: Transfer Native Token ---
-router.post('/:daoId/transfer/native', isAuthenticated, async (req: Request, res: Response) => {
+router.post('/transfer/native', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const { toAddress, amount } = req.body;
@@ -99,7 +98,7 @@ router.post('/:daoId/transfer/native', isAuthenticated, async (req: Request, res
 });
 
 // --- DAO Treasury: Transfer ERC-20 Token ---
-router.post('/:daoId/transfer/token', isAuthenticated, async (req: Request, res: Response) => {
+router.post('/transfer/token', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const { tokenAddress, toAddress, amount } = req.body;
@@ -125,7 +124,7 @@ router.post('/:daoId/transfer/token', isAuthenticated, async (req: Request, res:
 });
 
 // --- DAO Treasury: Automate Payouts/Grants/Bounties ---
-router.post('/:daoId/automation/payout', isAuthenticated, async (req: Request, res: Response) => {
+router.post('/automation/payout', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const { payouts } = req.body; // [{ toAddress, amount, tokenAddress? }]
@@ -152,7 +151,7 @@ router.post('/:daoId/automation/payout', isAuthenticated, async (req: Request, r
 });
 
 // --- DAO Treasury: Advanced Snapshot & Report ---
-router.get('/:daoId/snapshot', isAuthenticated, async (req: Request, res: Response) => {
+router.get('/snapshot', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const dao = await storage.getDao(daoId);
@@ -178,7 +177,7 @@ router.get('/:daoId/snapshot', isAuthenticated, async (req: Request, res: Respon
 });
 
 // --- DAO Treasury: Generate Report ---
-router.get('/:daoId/report', isAuthenticated, async (req: Request, res: Response) => {
+router.get('/report', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const { period } = req.query;
@@ -205,7 +204,7 @@ router.get('/:daoId/report', isAuthenticated, async (req: Request, res: Response
 });
 
 // --- DAO Treasury: Get Treasury Analytics ---
-router.get('/:daoId/analytics', isAuthenticated, async (req: Request, res: Response) => {
+router.get('/analytics', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const { period = '30d' } = req.query;
@@ -277,7 +276,7 @@ router.get('/:daoId/analytics', isAuthenticated, async (req: Request, res: Respo
 });
 
 // --- DAO Treasury: Set Treasury Limits ---
-router.post('/:daoId/limits', isAuthenticated, async (req: Request, res: Response) => {
+router.post('/limits', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const { dailyLimit, transactionLimit, approvalThreshold } = req.body;
@@ -500,8 +499,8 @@ router.get('/yield-farming/:daoId', async (req, res) => {
 
 // --- CRITICAL: Multi-Sig Treasury Operations ---
 
-// POST /api/dao-treasury/:daoId/multisig/propose - Propose withdrawal
-router.post('/:daoId/multisig/propose', isAuthenticated, async (req: Request, res: Response) => {
+// POST /api/dao/treasury/multisig/propose - Propose withdrawal
+router.post('/multisig/propose', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const { amount, recipient, purpose, currency } = req.body;
@@ -533,8 +532,8 @@ router.post('/:daoId/multisig/propose', isAuthenticated, async (req: Request, re
   }
 });
 
-// POST /api/dao-treasury/:daoId/multisig/:txId/sign - Sign transaction
-router.post('/:daoId/multisig/:txId/sign', isAuthenticated, async (req: Request, res: Response) => {
+// POST /api/dao/treasury/multisig/:txId/sign - Sign transaction
+router.post('/multisig/:txId/sign', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { txId } = req.params;
     const userId = (req as any).user?.claims?.sub;
@@ -560,8 +559,8 @@ router.post('/:daoId/multisig/:txId/sign', isAuthenticated, async (req: Request,
   }
 });
 
-// POST /api/dao-treasury/:daoId/multisig/:txId/execute - Execute approved transaction
-router.post('/:daoId/multisig/:txId/execute', isAuthenticated, async (req: Request, res: Response) => {
+// POST /api/dao/treasury/multisig/:txId/execute - Execute approved transaction
+router.post('/multisig/:txId/execute', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { txId } = req.params;
     const userId = (req as any).user?.claims?.sub;
@@ -573,7 +572,6 @@ router.post('/:daoId/multisig/:txId/execute', isAuthenticated, async (req: Reque
     const result = await treasuryMultisigService.executeTransaction(txId, userId);
 
     res.json({
-      success: true,
       ...result,
       message: 'Withdrawal executed successfully'
     });
@@ -585,8 +583,8 @@ router.post('/:daoId/multisig/:txId/execute', isAuthenticated, async (req: Reque
   }
 });
 
-// GET /api/dao-treasury/:daoId/multisig/pending - Get pending transactions
-router.get('/:daoId/multisig/pending', isAuthenticated, async (req: Request, res: Response) => {
+// GET /api/dao/treasury/multisig/pending - Get pending transactions
+router.get('/multisig/pending', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
 
@@ -605,8 +603,8 @@ router.get('/:daoId/multisig/pending', isAuthenticated, async (req: Request, res
 
 // --- Budget Management ---
 
-// GET /api/dao-treasury/:daoId/budget - Get budget allocations
-router.get('/:daoId/budget', isAuthenticated, async (req: Request, res: Response) => {
+// GET /api/dao/treasury/budget - Get budget allocations
+router.get('/budget', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
 
@@ -625,20 +623,19 @@ router.get('/:daoId/budget', isAuthenticated, async (req: Request, res: Response
 
 // --- Audit Trail ---
 
-// GET /api/dao-treasury/:daoId/audit - Get audit logs
-router.get('/:daoId/audit', isAuthenticated, async (req: Request, res: Response) => {
+// GET /api/dao/treasury/audit - Get audit logs
+router.get('/audit', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const { limit = 100, severity } = req.query;
 
-    let query = db.select().from(treasuryAuditLog)
-      .where(eq(treasuryAuditLog.daoId, daoId));
-
+    const whereConditions = [eq(treasuryAuditLog.daoId, daoId)];
     if (severity) {
-      query = query.where(eq(treasuryAuditLog.severity, severity as string));
+      whereConditions.push(eq(treasuryAuditLog.severity, severity as string));
     }
 
-    const logs = await query
+    const logs = await db.select().from(treasuryAuditLog)
+      .where(and(...whereConditions))
       .orderBy(desc(treasuryAuditLog.timestamp))
       .limit(parseInt(limit as string));
 
@@ -686,6 +683,186 @@ router.get('/:daoId/audit', isAuthenticated, async (req: Request, res: Response)
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// --- PHASE 3: Enhanced Multisig Operations ---
+
+// GET /api/dao/treasury/multisig/:txId - Get transaction with approval details
+router.get('/multisig/:txId', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { txId } = req.params;
+    
+    const transaction = await treasuryMultisigService.getTransactionWithDetails(txId);
+    
+    res.json({ success: true, transaction });
+  } catch (error: any) {
+    logger.error('Failed to get transaction:', error);
+    res.status(error.statusCode || 500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// GET /api/dao/treasury/multisig/transactions/list - Get paginated transaction list
+router.get('/multisig/transactions/list', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { daoId } = req.params;
+    const { status, limit = '50', offset = '0' } = req.query;
+    
+    const transactions = await treasuryMultisigService.getTransactions(
+      daoId,
+      status as string | undefined,
+      parseInt(limit as string),
+      parseInt(offset as string)
+    );
+    
+    res.json({ 
+      success: true, 
+      transactions,
+      pagination: {
+        limit: parseInt(limit as string),
+        offset: parseInt(offset as string),
+        hasMore: transactions.length === parseInt(limit as string)
+      }
+    });
+  } catch (error: any) {
+    logger.error('Failed to get transactions:', error);
+    res.status(error.statusCode || 500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// GET /api/dao/treasury/multisig/pending/detailed - Get pending approvals with details
+router.get('/multisig/pending/detailed', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { daoId } = req.params;
+    
+    const pending = await treasuryMultisigService.getPendingApprovals(daoId);
+    
+    res.json({ success: true, pending });
+  } catch (error: any) {
+    logger.error('Failed to get pending approvals:', error);
+    res.status(error.statusCode || 500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// POST /api/dao/treasury/multisig/:txId/can-execute - Check if transaction can be executed
+router.post('/multisig/:txId/can-execute', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { txId } = req.params;
+    
+    const executability = await treasuryMultisigService.canExecuteTransaction(txId);
+    
+    res.json({ success: true, ...executability });
+  } catch (error: any) {
+    logger.error('Failed to check transaction executability:', error);
+    res.status(error.statusCode || 500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// GET /api/dao/treasury/multisig/audit-log - Get audit log with optional filtering
+router.get('/multisig/audit-log', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { daoId } = req.params;
+    const { actionType, limit = '50', offset = '0' } = req.query;
+    
+    const entries = await treasuryMultisigService.getAuditLog(
+      daoId,
+      actionType as string | undefined,
+      parseInt(limit as string),
+      parseInt(offset as string)
+    );
+    
+    res.json({ 
+      success: true, 
+      entries,
+      pagination: {
+        limit: parseInt(limit as string),
+        offset: parseInt(offset as string),
+        hasMore: entries.length === parseInt(limit as string)
+      }
+    });
+  } catch (error: any) {
+    logger.error('Failed to get audit log:', error);
+    res.status(error.statusCode || 500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// POST /api/dao/treasury/multisig/:txId/enable-smart-contract - Enable smart contract features
+router.post('/multisig/:txId/enable-smart-contract', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { txId } = req.params;
+    const { timelockDays = 2, votingSnapshotId, blockNumber } = req.body;
+    const userId = (req as any).user?.claims?.sub;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const result = await treasuryMultisigService.enableSmartContractFeatures(
+      txId,
+      timelockDays,
+      votingSnapshotId,
+      blockNumber
+    );
+
+    // Audit log
+    logger.info(`Smart contract features enabled for transaction ${txId}`);
+    
+    res.json({ 
+      ...result,
+      message: `Smart contract timelock set to ${timelockDays} days`
+    });
+  } catch (error: any) {
+    logger.error('Failed to enable smart contract features:', error);
+    res.status(error.statusCode || 500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// POST /api/dao/treasury/multisig/:txId/blockchain-execution - Record blockchain execution
+router.post('/multisig/:txId/blockchain-execution', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { txId } = req.params;
+    const { txHash, blockNumber } = req.body;
+
+    if (!txHash || !blockNumber) {
+      return res.status(400).json({ error: 'Transaction hash and block number are required' });
+    }
+
+    const result = await treasuryMultisigService.recordBlockchainExecution(
+      txId,
+      txHash,
+      blockNumber
+    );
+
+    logger.info(`Blockchain execution recorded for transaction ${txId}: ${txHash}`);
+    
+    res.json({ 
+      ...result,
+      message: 'On-chain execution recorded'
+    });
+  } catch (error: any) {
+    logger.error('Failed to record blockchain execution:', error);
+    res.status(error.statusCode || 500).json({ 
+      success: false, 
+      error: error.message 
+    });
   }
 });
 

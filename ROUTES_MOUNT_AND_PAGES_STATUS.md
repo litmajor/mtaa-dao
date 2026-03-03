@@ -118,7 +118,10 @@ Payment Routes:
   ✅ /api/payments/kotanipay
   ✅ /api/payments/mpesa
   ✅ /api/payments/stripe
-  ✅ /api/payments/reconciliation
+  ❌ /api/payments/reconciliation (moved to admin namespace)
+
+Admin Routes:
+  ✅ /api/admin/payments/reconciliation
 
 Session Routes:
   ✅ /api/wallet-sessions
@@ -214,21 +217,23 @@ if (req.user?.role !== 'superuser') {  // camelCase, no underscore
 
 ### HIGH PRIORITY
 
-**Bug Fix 1: Superuser Registration Role Consistency**
+**Bug Fix 1: Superuser Registration Role Consistency (resolved)**
 
-Need to verify and fix:
-1. Check `shared/schema.ts` for the actual column name (is it `roles` or `role`?)
-2. Verify what role value the database expects
-3. Ensure consistency across all middleware checks
-4. Update the enum/constants to use consistent naming
+The column is `roles` and the system now standardises on the value
+`'super_admin'` for platform‑wide administrators.  All registration,
+login, JWT generation, and authorization middleware have been updated
+accordingly.  The boolean `isSuperUser` is still populated for
+legacy consumers.
 
-**Bug Fix 2: Check all middleware**
+**Bug Fix 2: Role checks in middleware (completed)**
 
-Files to check:
-- `server/middleware/auth.ts` - Check role comparisons
-- `server/routes/morio-data-hub.ts` - Check role field name
-- `server/routes/coordinator.ts` - Check role comparisons
-- Any other middleware checking `req.user?.role`
+✅ `server/middleware/auth.ts` now checks for `'super_admin'` instead of
+`'superuser'` and `isDaoAdmin` accepts `'super_admin'` as well.
+`morio-data-hub.ts` and `coordinator.ts` rely on the updated
+`isSuperUser` helper.  All other internal comparisons have been
+refactored as part of the naming sweep.
+
+*No further action required unless new middleware is introduced.*
 
 ---
 

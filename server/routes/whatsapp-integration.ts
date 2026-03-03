@@ -1,5 +1,7 @@
 
 import { Router } from 'express';
+import crypto from 'crypto';
+import express from 'express';
 import { db } from '../db';
 import { users, daos } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
@@ -9,6 +11,11 @@ const router = Router();
 const WHATSAPP_API_URL = 'https://graph.facebook.com/v18.0';
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
+const WHATSAPP_APP_ID = process.env.WHATSAPP_APP_ID;
+const WHATSAPP_APP_SECRET = process.env.WHATSAPP_APP_SECRET;
+
+// Raw body parser for webhook verification
+const rawBodyParser = express.raw({ type: 'application/json' });
 
 // Send WhatsApp message
 async function sendWhatsAppMessage(to: string, message: string) {
@@ -65,6 +72,41 @@ async function sendInteractiveMessage(to: string, body: string, buttons: Array<{
   }
 }
 
+/**
+ * Verify WhatsApp webhook signature
+ * Meta (WhatsApp) sends X-Hub-Signature-256 header with HMAC SHA256 of raw body
+ */
+function verifyWhatsAppSignature(payload: Buffer | string, signature: string): boolean {
+  if (!WHATSAPP_APP_SECRET) {
+    console.warn('WHATSAPP_APP_SECRET not configured - skipping signature verification');
+    return false;
+  }
+
+  if (!signature) {
+    console.warn('Missing X-Hub-Signature-256 header');
+    return false;
+  }
+
+  const hash = crypto
+    .createHmac('sha256', WHATSAPP_APP_SECRET)
+    .update(payload)
+    .digest('hex');
+  
+  const expectedSignature = `sha256=${hash}`;
+
+  try {
+    // Use timing-safe comparison to prevent timing attacks
+    crypto.timingSafeEqual(
+      Buffer.from(expectedSignature),
+      Buffer.from(signature)
+    );
+    return true;
+  } catch {
+    console.warn('WhatsApp signature mismatch - possible tampering or invalid secret');
+    return false;
+  }
+}
+
 // Webhook verification
 router.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
@@ -79,9 +121,19 @@ router.get('/webhook', (req, res) => {
 });
 
 // Webhook for incoming messages
-router.post('/webhook', async (req, res) => {
+router.post('/webhook', rawBodyParser, async (req, res) => {
   try {
-    const body = req.body;
+    // Verify signature before processing
+    const signature = req.headers['x-hub-signature-256'] as string;
+    const rawPayload = req.body; // Buffer from raw parser
+
+    if (!verifyWhatsAppSignature(rawPayload, signature)) {
+      console.error('WhatsApp webhook signature verification failed');
+      return res.status(401).json({ error: 'Unauthorized - Invalid signature' });
+    }
+
+    // Parse JSON after signature verification
+    const body = JSON.parse(rawPayload.toString());
 
     if (body.object === 'whatsapp_business_account') {
       for (const entry of body.entry) {

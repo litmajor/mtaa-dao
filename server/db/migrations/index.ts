@@ -6,7 +6,7 @@
 import { migrateCEXTables, rollbackCEXTables } from './004-cex-tables';
 import { migrateNotificationTables } from './001-notification-system';
 import { migrateRulesEngine } from './002-rules-engine';
-import { migrateLimitOrders } from './003-limit-orders';
+import { migrateLimitOrdersTables } from './003-limit-orders';
 import { migrateCrossChainTables, rollbackCrossChainTables } from './007-cross-chain-support';
 
 export interface MigrationResult {
@@ -40,7 +40,7 @@ export async function runAllMigrations(): Promise<MigrationResult> {
     }
 
     try {
-      await migrateLimitOrders();
+      await migrateLimitOrdersTables();
     } catch (err: any) {
       errors.push(`Limit orders migration failed: ${err.message}`);
     }

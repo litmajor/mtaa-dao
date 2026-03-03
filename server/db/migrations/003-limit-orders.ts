@@ -3,14 +3,14 @@
  * Tracks persistent limit orders placed on centralized exchanges
  */
 
-import { db } from '../db';
+import { pool } from '../../db';
 
 export async function migrateLimitOrdersTables() {
   try {
     console.log('🔄 Running limit orders table migrations...');
 
     // Create limit_orders table
-    await db.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS limit_orders (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id VARCHAR NOT NULL,
@@ -36,27 +36,27 @@ export async function migrateLimitOrdersTables() {
     console.log('✅ Created limit_orders table');
 
     // Create index for user lookups
-    await db.query(`
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_limit_orders_user_id ON limit_orders(user_id);
     `);
 
     // Create index for status lookups
-    await db.query(`
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_limit_orders_status ON limit_orders(status);
     `);
 
     // Create index for expiration checks
-    await db.query(`
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_limit_orders_expires_at ON limit_orders(expires_at);
     `);
 
     // Create index for symbol lookups
-    await db.query(`
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_limit_orders_symbol ON limit_orders(symbol);
     `);
 
     // Create composite index for common queries
-    await db.query(`
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_limit_orders_user_status ON limit_orders(user_id, status);
     `);
 
@@ -71,7 +71,7 @@ export async function rollbackLimitOrdersTables() {
   try {
     console.log('🔄 Rolling back limit orders table...');
 
-    await db.query(`DROP TABLE IF EXISTS limit_orders CASCADE;`);
+    await pool.query(`DROP TABLE IF EXISTS limit_orders CASCADE;`);
 
     console.log('✅ Rolled back limit_orders table');
   } catch (error: any) {

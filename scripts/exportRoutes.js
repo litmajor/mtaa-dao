@@ -9,9 +9,9 @@
  * In backend setup: exportRoutes(app) after all routes registered
  */
 
-const listEndpoints = require('express-list-endpoints');
-const fs = require('fs');
-const path = require('path');
+import listEndpoints from 'express-list-endpoints';
+import fs from 'fs';
+import path from 'path';
 
 /**
  * Export routes to JSON and CSV files
@@ -111,4 +111,4 @@ function exportRoutes(app, outputDir = '.') {
   }
 }
 
-module.exports = exportRoutes;
+export default exportRoutes;

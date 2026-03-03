@@ -2,10 +2,16 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import type { Request, Response, NextFunction } from 'express';
 
-// ⚠️ CRITICAL: USE SAME ENVIRONMENT VARIABLE EVERYWHERE
-// All JWT generation and verification must use process.env.JWT_SECRET (or fallback)
-const JWT_SECRET = process.env.JWT_SECRET || process.env.JWT_SECRET_KEY || 'your-secret-key-change-in-production';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-change-in-production';
+// Validate JWT secrets are set
+if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
+  throw new Error(
+    `Missing required JWT secrets. Set JWT_SECRET and JWT_REFRESH_SECRET environment variables.`
+  );
+}
+
+// Use environment variables ONLY - no hardcoded fallbacks
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 const ACCESS_TOKEN_EXPIRY = '15m';
 const REFRESH_TOKEN_EXPIRY = '7d';
 
@@ -35,7 +41,7 @@ export interface AuthRequest extends Request {
 export const generateTokens = (payload: TokenPayload) => {
   const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
   const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
-  console.log('[JWT] Generated tokens with secret:', JWT_SECRET.substring(0, 10) + '***', 'Payload:', payload.sub);
+  console.log('[JWT] Generated tokens for user:', payload.sub);
   return { accessToken, refreshToken };
 };
 
@@ -45,7 +51,7 @@ export const verifyAccessToken = (token: string): TokenPayload | null => {
     const payload = jwt.verify(token, JWT_SECRET) as TokenPayload;
     return payload;
   } catch (error) {
-    console.error('[JWT] Token verification failed:', (error as any).message, 'Secret used:', JWT_SECRET.substring(0, 10) + '***');
+    console.error('[JWT] Token verification failed:', (error as any).message);
     return null;
   }
 };
@@ -107,6 +113,21 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
 
 // Alias for compatibility
 export const isAuthenticated = authenticate;
+
+// Authorization middleware factory
+export const authorize = (roles: string | string[]) => {
+  const allowed = Array.isArray(roles) ? roles : [roles];
+  return (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (!req.user || !req.user.claims) {
+      return res.status(401).json({ success: false, error: { message: 'Not authenticated' } });
+    }
+    const role = req.user.claims.role || '';
+    if (!allowed.includes(role)) {
+      return res.status(403).json({ success: false, error: { message: 'Forbidden: insufficient privileges' } });
+    }
+    next();
+  };
+};
 
 // Refresh token handler
 export const refreshTokenHandler = async (req: Request, res: Response) => {

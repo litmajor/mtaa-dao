@@ -8,12 +8,28 @@ export class RedisClient {
   private isEnabled = false;
   private hasLoggedDisabled = false;
 
-  constructor(redisUrl: string = process.env.REDIS_URL || '') {
-    this.isEnabled = !!redisUrl && redisUrl !== 'redis://localhost:6379';
+  constructor(redisUrl?: string) {
+    // Build REDIS_URL from environment variables if not provided
+    if (!redisUrl) {
+      const host = process.env.REDIS_HOST || 'localhost';
+      const port = process.env.REDIS_PORT || '6379';
+      const password = process.env.REDIS_PASSWORD;
+      const db = process.env.REDIS_DB || '0';
+      
+      if (password) {
+        redisUrl = `redis://:${encodeURIComponent(password)}@${host}:${port}/${db}`;
+      } else if (process.env.REDIS_URL) {
+        redisUrl = process.env.REDIS_URL;
+      } else {
+        redisUrl = `redis://${host}:${port}/${db}`;
+      }
+    }
+    
+    this.isEnabled = !!redisUrl && redisUrl.startsWith('redis://');
     
     if (!this.isEnabled) {
       if (!this.hasLoggedDisabled) {
-        console.log('Redis: Not configured (REDIS_URL not set). Using in-memory fallback.');
+        console.log('Redis: Not configured - using in-memory fallback.');
         this.hasLoggedDisabled = true;
       }
       return;

@@ -182,6 +182,120 @@ router.put("/update", authenticate, async (req, res) => {
   }
 });
 
+// ════════════════════════════════════════════════════════════════════════════════
+// NEW RESTful ENDPOINT (RECOMMENDED)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// PUT /api/profile/username - Update user username
+router.put("/username", authenticate, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { newUsername } = req.body;
+
+    if (!newUsername || typeof newUsername !== 'string' || newUsername.trim() === '') {
+      return res.status(400).json({ error: "Username cannot be empty" });
+    }
+
+    // Check if username is already taken
+    const existingUser = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.username, newUsername.trim()));
+
+    if (existingUser.length > 0 && existingUser[0].id !== userId) {
+      return res.status(409).json({ error: "Username is already taken" });
+    }
+
+    const updated = await db
+      .update(users)
+      .set({
+        username: newUsername.trim(),
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+
+    if (!updated.length) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const { password, ...userWithoutPassword } = updated[0];
+    res.json({ 
+      success: true,
+      message: "Username updated successfully",
+      user: userWithoutPassword 
+    });
+  } catch (error) {
+    console.error("Error updating username:", error);
+    res.status(500).json({ 
+      success: false,
+      error: "Failed to update username" 
+    });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// DEPRECATED ENDPOINT (Keep for 6 months, then remove)
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @deprecated Use PUT /api/profile/username instead
+ * Sunset: 2026-09-01
+ */
+// POST /api/profile/update-username - Update user username (legacy)
+router.post("/update-username", authenticate, async (req, res) => {
+  // Issue deprecation warning
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', 'Wed, 01 Sep 2026 00:00:00 GMT');
+  res.setHeader('Link', '</api/profile/username>; rel="successor-version"');
+  res.setHeader('Warning', '299 - "POST /api/profile/update-username is deprecated. Use PUT /api/profile/username instead"');
+
+  try {
+    const userId = req.user!.id;
+    const { newUsername } = req.body;
+
+    if (!newUsername || typeof newUsername !== 'string' || newUsername.trim() === '') {
+      return res.status(400).json({ error: "Username cannot be empty" });
+    }
+
+    // Check if username is already taken
+    const existingUser = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.username, newUsername.trim()));
+
+    if (existingUser.length > 0 && existingUser[0].id !== userId) {
+      return res.status(409).json({ error: "Username is already taken" });
+    }
+
+    const updated = await db
+      .update(users)
+      .set({
+        username: newUsername.trim(),
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+
+    if (!updated.length) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const { password, ...userWithoutPassword } = updated[0];
+    res.json({ 
+      success: true,
+      message: "Username updated successfully",
+      user: userWithoutPassword 
+    });
+  } catch (error) {
+    console.error("Error updating username:", error);
+    res.status(500).json({ 
+      success: false,
+      error: "Failed to update username" 
+    });
+  }
+});
+
 // GET user contributions
 router.get('/contributions', async (req, res) => {
   try {

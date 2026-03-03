@@ -2,10 +2,18 @@
 import express from 'express';
 import { db } from '../storage';
 import { tasks, walletTransactions, daoMemberships, taskHistory } from '../../shared/schema';
+import { authenticate } from '../auth';
 import { eq, and, desc } from 'drizzle-orm';
 import { z } from 'zod';
 
 const router = express.Router();
+
+// ════════════════════════════════════════════════════════════════════════════════
+// AUTHENTICATION MIDDLEWARE
+// ════════════════════════════════════════════════════════════════════════════════
+
+// All bounty escrow operations require authentication
+router.use(authenticate);
 
 // Escrow schemas
 const createEscrowSchema = z.object({
@@ -19,12 +27,91 @@ const releaseEscrowSchema = z.object({
   releaseToClaimant: z.boolean()
 });
 
-// Create escrow for task
-router.post('/create', async (req, res) => {
+// ════════════════════════════════════════════════════════════════════════════════
+// NEW RESTful ENDPOINT (RECOMMENDED)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// POST /api/bounty-escrow - Create escrow for task
+router.post('/', async (req, res) => {
   try {
     const validatedData = createEscrowSchema.parse(req.body);
     const { taskId, amount, currency } = validatedData;
-  const userId = req.user?.claims?.sub ?? '';
+    const userId = req.user?.claims?.sub ?? '';
+
+    // Verify task exists and user is creator
+    const task = await db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .limit(1);
+
+    if (!task.length) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    if (task[0].creatorId !== userId) {
+      return res.status(403).json({ error: 'Only task creator can fund escrow' });
+    }
+
+    // Check if escrow already exists
+    const existingEscrow = await db
+      .select()
+      .from(walletTransactions)
+      .where(and(
+        eq(walletTransactions.type, 'escrow_deposit'),
+        eq(walletTransactions.description, `Escrow for task: ${taskId}`)
+      ))
+      .limit(1);
+
+    if (existingEscrow.length > 0) {
+      return res.status(400).json({ error: 'Escrow already exists for this task' });
+    }
+
+    // Create escrow transaction
+    const escrow = await db.insert(walletTransactions).values({
+      walletAddress: userId,
+      amount: amount.toString(),
+      currency,
+      type: 'escrow_deposit',
+      status: 'held',
+      description: `Escrow for task: ${taskId}`
+    }).returning();
+
+    res.json({
+      success: true,
+      escrowId: escrow[0].id,
+      amount,
+      currency,
+      status: 'held'
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Validation error', details: err.errors });
+    }
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// DEPRECATED ENDPOINT (Keep for 6 months, then remove)
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @deprecated Use POST /api/bounty-escrow instead
+ * Sunset: 2026-09-01
+ */
+// Create escrow for task
+router.post('/create', async (req, res) => {
+  // Issue deprecation warning
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', 'Wed, 01 Sep 2026 00:00:00 GMT');
+  res.setHeader('Link', '</api/bounty-escrow>; rel="successor-version"');
+  res.setHeader('Warning', '299 - "POST /api/bounty-escrow/create is deprecated. Use POST /api/bounty-escrow instead"');
+
+  try {
+    const validatedData = createEscrowSchema.parse(req.body);
+    const { taskId, amount, currency } = validatedData;
+    const userId = req.user?.claims?.sub ?? '';
 
     // Verify task exists and user is creator
     const task = await db

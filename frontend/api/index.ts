@@ -4,6 +4,9 @@
  * This module handles all API calls for SendFlow, ProposalVoting, and SecuritySettings
  * Replace the API_BASE_URL and implement real endpoint calls here
  * 
+ * PHASE 1 FIX: Wallet Signature Verification
+ * All wallet transactions now require EIP-191 signed messages for security
+ * 
  * Mock → Real Transition:
  * 1. Update API_BASE_URL to your backend
  * 2. Replace mock response with real fetch calls
@@ -11,8 +14,31 @@
  * 4. Add auth headers if needed
  */
 
+import { BrowserProvider } from 'ethers';
+
+// Extend Window type for ethereum
+declare global {
+  interface Window {
+    ethereum?: any;
+  }
+}
+
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
 const AUTH_TOKEN = localStorage.getItem('auth_token'); // Example: get from auth context
+
+// PHASE 1 FIX: Helper to get signer from Ethereum provider
+async function getSigner() {
+  if (!window.ethereum) {
+    throw new Error('Web3 wallet not detected. Please install MetaMask or similar.');
+  }
+  const provider = new BrowserProvider(window.ethereum);
+  return provider.getSigner();
+}
+
+// PHASE 1 FIX: Helper to generate nonce for replay protection
+function generateNonce(): number {
+  return Math.floor(Math.random() * 1000000);
+}
 
 // ==================== SENDFLOW API ====================
 
@@ -26,62 +52,104 @@ export interface SendFlowSubmitResponse {
   transactionHash: string;
   success: boolean;
   timestamp: string;
+  queueId?: string; // PHASE 1 FIX: Queue ID for tracking
 }
 
 export async function estimateSendFee(amount: string): Promise<SendFlowEstimateResponse> {
   try {
-    // Real implementation:
-    // const response = await fetch(`${API_BASE_URL}/transactions/estimate-fee?amount=${amount}`, {
-    //   headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` }
-    // });
-    // return response.json();
-
-    // Mock implementation:
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          fee: (parseFloat(amount) * 0.002).toString(),
-          estimatedTime: '15-30 seconds',
-          gasPrice: '25 gwei'
-        });
-      }, 500);
-    });
+    const response = await fetch(
+      `${API_BASE_URL}/transactions/estimate-fee?amount=${amount}`,
+      {
+        headers: { 
+          'Authorization': `Bearer ${AUTH_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to estimate fee');
+    }
+    
+    return response.json();
   } catch (error) {
     console.error('Error estimating fee:', error);
-    throw new Error('Failed to estimate transaction fee');
+    throw new Error((error as Error).message || 'Failed to estimate transaction fee');
   }
 }
 
+/**
+ * PHASE 1 FIX: Submit wallet transaction with EIP-191 signature
+ * Required parameters for security:
+ * - walletId: The wallet connection ID from the backend
+ * - recipient: The recipient address
+ * - amount: The amount to send
+ * - tokenSymbol: The token to send (e.g., 'USDC', 'ETH')
+ * - walletAddress: User's wallet address (for signature verification)
+ */
 export async function submitTransaction(
+  walletId: string,
   recipient: string,
   amount: string,
+  tokenSymbol: string = 'ETH',
   recipientName?: string
 ): Promise<SendFlowSubmitResponse> {
   try {
-    // Real implementation:
-    // const response = await fetch(`${API_BASE_URL}/transactions/send`, {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json',
-    //     'Authorization': `Bearer ${AUTH_TOKEN}`
-    //   },
-    //   body: JSON.stringify({ recipient, amount, recipientName })
-    // });
-    // return response.json();
+    // PHASE 1 FIX: Get wallet signer for signature
+    const signer = await getSigner();
+    const walletAddress = await signer.getAddress();
+    const nonce = generateNonce();
 
-    // Mock implementation:
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          transactionHash: '0x' + Math.random().toString(16).slice(2),
-          success: true,
-          timestamp: new Date().toISOString()
-        });
-      }, 2000);
+    // PHASE 1 FIX: Create message to sign (includes nonce for replay protection)
+    const message = `Send ${amount} ${tokenSymbol} to ${recipient}\nWallet: ${walletAddress}\nNonce: ${nonce}\nTimestamp: ${Date.now()}`;
+    
+    // PHASE 1 FIX: Sign message with user's wallet
+    console.log('[SECURITY] Requesting wallet signature for transaction...');
+    const signature = await signer.signMessage(message);
+    console.log('[SECURITY] Transaction signed by wallet');
+
+    // Call backend with signature
+    const response = await fetch(`${API_BASE_URL}/wallets/${walletId}/send`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${AUTH_TOKEN}`
+      },
+      body: JSON.stringify({
+        toAddress: recipient,
+        amount,
+        tokenSymbol,
+        description: `Payment to ${recipientName || 'user'}`,
+        walletAddress,      // PHASE 1 FIX: Required for signature verification
+        signature,           // PHASE 1 FIX: EIP-191 signed message
+        nonce                // PHASE 1 FIX: Prevents replay attacks
+      })
     });
-  } catch (error) {
-    console.error('Error submitting transaction:', error);
-    throw new Error('Failed to submit transaction');
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to submit transaction');
+    }
+
+    const result = await response.json();
+    console.log('[SECURITY] Transaction queued:', result.data.queueId);
+    
+    return {
+      transactionHash: result.data.queueId || `tx_${Date.now()}`,
+      success: true,
+      timestamp: new Date().toISOString(),
+      queueId: result.data.queueId
+    };
+  } catch (error: any) {
+    console.error('[ERROR] Transaction submission failed:', error);
+    
+    // Handle signature rejection
+    if (error.message?.includes('User rejected') || error.message?.includes('signature')) {
+      throw new Error('You must sign the transaction with your wallet to proceed');
+    }
+    
+    throw new Error(error.message || 'Failed to submit transaction');
   }
 }
 
@@ -105,53 +173,25 @@ export interface ProposalImpactResponse {
 
 export async function getProposalImpact(proposalId: string): Promise<ProposalImpactResponse> {
   try {
-    // Real implementation:
-    // const response = await fetch(`${API_BASE_URL}/proposals/${proposalId}/impact`, {
-    //   headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` }
-    // });
-    // return response.json();
-
-    // Mock implementation:
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          proposalId,
-          impactIfYes: {
-            summary: 'If this proposal passes, the DAO will increase treasury allocation.',
-            changes: [
-              {
-                metric: 'Treasury Allocation',
-                current: '60% Operations, 40% Reserve',
-                proposed: '60% Operations, 35% Reserve, 25% Sustainability',
-                change: '+25% Sustainability'
-              }
-            ],
-            benefits: [
-              'Stronger long-term sustainability positioning',
-              'Attracts environmental-conscious partners',
-              'Competitive advantage in market'
-            ],
-            risks: ['Requires compliance approval', 'May impact short-term funds']
-          },
-          impactIfNo: {
-            summary: 'Current resource allocation will remain unchanged.',
-            changes: [
-              {
-                metric: 'Treasury Allocation',
-                current: '60% Operations, 40% Reserve',
-                proposed: '60% Operations, 40% Reserve (unchanged)',
-                change: 'No change'
-              }
-            ],
-            benefits: ['Maintains operational stability', 'Preserves contingency reserves'],
-            risks: ['Missed opportunity for growth', 'Competitors may capture share']
-          }
-        });
-      }, 800);
-    });
+    const response = await fetch(
+      `${API_BASE_URL}/proposals/${proposalId}/impact`,
+      {
+        headers: { 
+          'Authorization': `Bearer ${AUTH_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to fetch proposal impact');
+    }
+    
+    return response.json();
   } catch (error) {
     console.error('Error fetching proposal impact:', error);
-    throw new Error('Failed to fetch proposal impact');
+    throw new Error((error as Error).message || 'Failed to fetch proposal impact');
   }
 }
 
@@ -167,31 +207,27 @@ export async function submitVote(
   vote: 'yes' | 'no' | 'abstain'
 ): Promise<VoteSubmitResponse> {
   try {
-    // Real implementation:
-    // const response = await fetch(`${API_BASE_URL}/proposals/${proposalId}/vote`, {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json',
-    //     'Authorization': `Bearer ${AUTH_TOKEN}`
-    //   },
-    //   body: JSON.stringify({ vote })
-    // });
-    // return response.json();
-
-    // Mock implementation:
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          proposalId,
-          vote,
-          transactionHash: '0x' + Math.random().toString(16).slice(2),
-          success: true
-        });
-      }, 1500);
-    });
+    const response = await fetch(
+      `${API_BASE_URL}/proposals/${proposalId}/vote`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${AUTH_TOKEN}`
+        },
+        body: JSON.stringify({ vote })
+      }
+    );
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to submit vote');
+    }
+    
+    return response.json();
   } catch (error) {
     console.error('Error submitting vote:', error);
-    throw new Error('Failed to submit vote');
+    throw new Error((error as Error).message || 'Failed to submit vote');
   }
 }
 
@@ -213,42 +249,25 @@ export interface SecurityStatusResponse {
 
 export async function getSecurityStatus(): Promise<SecurityStatusResponse> {
   try {
-    // Real implementation:
-    // const response = await fetch(`${API_BASE_URL}/user/security/status`, {
-    //   headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` }
-    // });
-    // return response.json();
-
-    // Mock implementation:
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          overallRisk: 'medium',
-          accountAge: '1 year, 3 months',
-          lastLogin: '2 hours ago',
-          lastPasswordChange: '6 months ago',
-          features: [
-            {
-              id: 'two-fa',
-              name: 'Two-Factor Authentication',
-              enabled: false,
-              riskLevel: 'high',
-              lastUpdated: undefined
-            },
-            {
-              id: 'password',
-              name: 'Strong Password',
-              enabled: true,
-              riskLevel: 'low',
-              lastUpdated: '6 months ago'
-            }
-          ]
-        });
-      }, 800);
-    });
+    const response = await fetch(
+      `${API_BASE_URL}/user/security/status`,
+      {
+        headers: { 
+          'Authorization': `Bearer ${AUTH_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to fetch security status');
+    }
+    
+    return response.json();
   } catch (error) {
     console.error('Error fetching security status:', error);
-    throw new Error('Failed to fetch security status');
+    throw new Error((error as Error).message || 'Failed to fetch security status');
   }
 }
 
@@ -260,26 +279,26 @@ export interface TwoFASetupResponse {
 
 export async function setupTwoFA(): Promise<TwoFASetupResponse> {
   try {
-    // Real implementation:
-    // const response = await fetch(`${API_BASE_URL}/user/security/2fa/setup`, {
-    //   method: 'POST',
-    //   headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` }
-    // });
-    // return response.json();
-
-    // Mock implementation:
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          secret: 'JBSWY3DPEBLW64TMMQ======',
-          qrCode: 'data:image/png;base64,...',
-          backupCodes: ['ABCD-1234', 'EFGH-5678', 'IJKL-9012', 'MNOP-3456', 'QRST-7890']
-        });
-      }, 1000);
-    });
+    const response = await fetch(
+      `${API_BASE_URL}/user/security/2fa/setup`,
+      {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${AUTH_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to setup 2FA');
+    }
+    
+    return response.json();
   } catch (error) {
     console.error('Error setting up 2FA:', error);
-    throw new Error('Failed to setup 2FA');
+    throw new Error((error as Error).message || 'Failed to setup 2FA');
   }
 }
 
@@ -290,30 +309,27 @@ export interface TwoFAVerifyResponse {
 
 export async function verifyTwoFA(code: string): Promise<TwoFAVerifyResponse> {
   try {
-    // Real implementation:
-    // const response = await fetch(`${API_BASE_URL}/user/security/2fa/verify`, {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json',
-    //     'Authorization': `Bearer ${AUTH_TOKEN}`
-    //   },
-    //   body: JSON.stringify({ code })
-    // });
-    // return response.json();
-
-    // Mock implementation:
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const isValid = code.length === 6 && /^\d+$/.test(code);
-        resolve({
-          success: isValid,
-          message: isValid ? '2FA enabled successfully' : 'Invalid code'
-        });
-      }, 500);
-    });
+    const response = await fetch(
+      `${API_BASE_URL}/user/security/2fa/verify`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${AUTH_TOKEN}`
+        },
+        body: JSON.stringify({ code })
+      }
+    );
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to verify 2FA code');
+    }
+    
+    return response.json();
   } catch (error) {
     console.error('Error verifying 2FA:', error);
-    throw new Error('Failed to verify 2FA code');
+    throw new Error((error as Error).message || 'Failed to verify 2FA code');
   }
 }
 
@@ -324,29 +340,27 @@ export interface ChangePINResponse {
 
 export async function changePIN(currentPIN: string, newPIN: string): Promise<ChangePINResponse> {
   try {
-    // Real implementation:
-    // const response = await fetch(`${API_BASE_URL}/user/security/pin/change`, {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json',
-    //     'Authorization': `Bearer ${AUTH_TOKEN}`
-    //   },
-    //   body: JSON.stringify({ currentPIN, newPIN })
-    // });
-    // return response.json();
-
-    // Mock implementation:
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          success: true,
-          message: 'PIN changed successfully'
-        });
-      }, 1200);
-    });
+    const response = await fetch(
+      `${API_BASE_URL}/user/security/pin/change`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${AUTH_TOKEN}`
+        },
+        body: JSON.stringify({ currentPIN, newPIN })
+      }
+    );
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to change PIN');
+    }
+    
+    return response.json();
   } catch (error) {
     console.error('Error changing PIN:', error);
-    throw new Error('Failed to change PIN');
+    throw new Error((error as Error).message || 'Failed to change PIN');
   }
 }
 
@@ -357,29 +371,27 @@ export interface ExportKeysResponse {
 
 export async function exportKeys(password: string): Promise<ExportKeysResponse> {
   try {
-    // Real implementation:
-    // const response = await fetch(`${API_BASE_URL}/user/security/keys/export`, {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json',
-    //     'Authorization': `Bearer ${AUTH_TOKEN}`
-    //   },
-    //   body: JSON.stringify({ password })
-    // });
-    // return response.json();
-
-    // Mock implementation:
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          success: true,
-          downloadUrl: 'blob:http://localhost:3000/abc123'
-        });
-      }, 1500);
-    });
+    const response = await fetch(
+      `${API_BASE_URL}/user/security/keys/export`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${AUTH_TOKEN}`
+        },
+        body: JSON.stringify({ password })
+      }
+    );
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to export keys');
+    }
+    
+    return response.json();
   } catch (error) {
     console.error('Error exporting keys:', error);
-    throw new Error('Failed to export keys');
+    throw new Error((error as Error).message || 'Failed to export keys');
   }
 }
 
@@ -392,32 +404,27 @@ export async function enableSocialRecovery(
   guardianAddresses: string[]
 ): Promise<SocialRecoveryResponse> {
   try {
-    // Real implementation:
-    // const response = await fetch(`${API_BASE_URL}/user/security/social-recovery/enable`, {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json',
-    //     'Authorization': `Bearer ${AUTH_TOKEN}`
-    //   },
-    //   body: JSON.stringify({ guardianAddresses })
-    // });
-    // return response.json();
-
-    // Mock implementation:
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          success: true,
-          guardians: guardianAddresses.map((addr) => ({
-            address: addr,
-            confirmed: false
-          }))
-        });
-      }, 1500);
-    });
+    const response = await fetch(
+      `${API_BASE_URL}/user/security/social-recovery/enable`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${AUTH_TOKEN}`
+        },
+        body: JSON.stringify({ guardianAddresses })
+      }
+    );
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to enable social recovery');
+    }
+    
+    return response.json();
   } catch (error) {
     console.error('Error enabling social recovery:', error);
-    throw new Error('Failed to enable social recovery');
+    throw new Error((error as Error).message || 'Failed to enable social recovery');
   }
 }
 

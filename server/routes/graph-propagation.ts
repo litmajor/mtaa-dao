@@ -11,8 +11,16 @@ import { graphPropagationEngine } from '../services/graphPropagationEngine';
 import { propagationMonitoringService } from '../services/propagationMonitoringService';
 import { productionHardeningService, circuitBreaker } from '../services/productionHardeningService';
 import { logger } from '../utils/logger';
+import { authenticate } from '../auth';
 
 const router = Router();
+
+// ════════════════════════════════════════════════════════════════════════════════
+// AUTHENTICATION MIDDLEWARE
+// ════════════════════════════════════════════════════════════════════════════════
+
+// All graph propagation operations require authentication
+router.use(authenticate);
 
 /**
  * GET /api/propagation/status
@@ -259,24 +267,8 @@ router.get('/state', asyncHandler(async (req: Request, res: Response) => {
 }));
 
 /**
- * Health check for graph propagation system
+ * Graph Propagation System endpoints (health check consolidated to /api/health/propagation)
+ * See health.ts for /health endpoint
  */
-router.get('/health', asyncHandler(async (req: Request, res: Response) => {
-  const nodes = graphPropagationEngine.getAllNodes();
-  const health = propagationMonitoringService.getHealth();
-  const cbStats = circuitBreaker.getStats();
-  
-  const isHealthy = 
-    nodes.length > 0 &&
-    health.isHealthy === true &&
-    cbStats.state !== 'open';
-  
-  res.status(isHealthy ? 200 : 503).json({
-    success: isHealthy,
-    status: isHealthy ? 'healthy' : 'degraded',
-    health,
-    circuitBreaker: cbStats,
-  });
-}));
 
 export default router;
