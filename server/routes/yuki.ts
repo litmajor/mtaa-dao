@@ -40,7 +40,7 @@ const arbitrageDetector = new ArbitrageDetectionService();
  * GET /api/yuki/market/prices
  * Real-time price feeds for trading pairs
  */
-router.get('/market/prices', async (req, res) => {
+router.get('/market/prices', authenticateToken as any, async (req, res) => {
   try {
     const symbols = req.query.symbols ? (req.query.symbols as string).split(',') : ['BTC', 'ETH'];
     
@@ -75,7 +75,7 @@ router.get('/market/prices', async (req, res) => {
  * GET /api/yuki/market/opportunities
  * Trading opportunities: arbitrage, liquidations, etc.
  */
-router.get('/market/opportunities', async (req, res) => {
+router.get('/market/opportunities', authenticateToken as any, async (req, res) => {
   try {
     // Use arbitrage detector for opportunities
     const opportunities: any[] = [];  // Would need to scan all assets
@@ -94,7 +94,7 @@ router.get('/market/opportunities', async (req, res) => {
  * GET /api/yuki/market/liquidity/:symbol
  * Liquidity depth for a trading pair
  */
-router.get('/market/liquidity/:symbol', async (req, res) => {
+router.get('/market/liquidity/:symbol', authenticateToken as any, async (req, res) => {
   try {
     const { symbol } = req.params;
 

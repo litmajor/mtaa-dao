@@ -2,6 +2,7 @@ import express, { Express } from 'express';
 import { Server as HTTPServer } from 'http';
 import { isAuthenticated } from './nextAuthMiddleware';
 import Stripe from "stripe"; // Stripe integration
+import { validateDaoIdMiddleware, sanitizeObject } from './middleware/security';
 
 // Import route modules
 import healthRoutes from './routes/health';
@@ -20,7 +21,6 @@ import disbursementsRoutes from './routes/disbursements';
 import daoTreasuryRoutes from './routes/dao_treasury';
 import daoSubscriptionsRoutes from './routes/dao-subscriptions';
 import daosRoutes from './routes/daos';
-import bountyEscrowRoutes from './routes/bounty-escrow';
 import proposalExecutionRoutes from './routes/proposal-execution';
 import paymentReconciliationRoutes from './routes/payment-reconciliation';
 import stripeStatusRoutes from './routes/stripe-status';
@@ -29,7 +29,6 @@ import mpesaStatusRoutes from './routes/mpesa-status';
 import monitoringRoutes from './routes/monitoring';
 import taskTemplatesRoutes from './api/task_templates';
 import achievementsRouter from './api/achievements';
-import vaultRoutes from './routes/vault';
 import challengesRoutes from './routes/challenges';
 import morioRoutes from './routes/morio';
 import profileRoutes from './routes/profile';
@@ -54,6 +53,7 @@ import daoChatRoutes from './routes/dao-chat';
 import onboardingRoutes from './routes/onboarding';
 import subscriptionManagementRoutes from './routes/subscription-management'; // Import subscription management routes
 import dexRoutes from './routes/dex';
+import graphPropagationRoutes from './routes/graph-propagation';
 import userSubscriptionRoutes from './routes/user-subscription';
 import revenueRoutes from './routes/revenue';
 // Import savings routes
@@ -69,9 +69,12 @@ import yukiRoutes from './routes/yuki';
 import marketDataRoutes from './routes/marketData';
 import executionQualityRoutes from './routes/executionQuality';
 import marketInsightsRoutes from './routes/marketInsights';
-import priority4Routes from './routes/priority4';
+import tradingSignalsRoutes from './routes/trading-signals';
 import vaultsRoutes from './routes/vaults';
 import stakingRoutes from './routes/staking';
+
+// DAO Router (consolidated multi-sig, treasury, and escrow routes)
+import daoRouter from './routes/dao';
 
 // Import Telegram and WhatsApp routes
 import telegramBotRoutes from './routes/telegram-bot';
@@ -84,6 +87,9 @@ import daoTreasuryFlowsRouter from './routes/dao-treasury-flows';
 // Import User Follows routes
 import userFollowsRoutes from './routes/user-follows';
 
+// Import Symbol Universe routes for CEX integration
+import symbolUniverseRoutes from './routes/symbolUniverse';
+
 // Import P2P Transfers routes
 import p2pTransfersRoutes from './routes/p2p-transfers';
 
@@ -94,8 +100,14 @@ import orderRoutes from './routes/orders';
 // Import Withdrawal Verification routes (2FA and PIN)
 import { router as withdrawalVerificationRouter } from './routes/withdrawal-verification';
 
+// Import Job Status routes
+import jobsRoutes from './routes/jobs';
+
 // Import Phase 4 WebSocket Price Stream Server
 import { priceStreamServer } from './websocket/priceStream';
+
+// Import Market Discovery routes (Symbol Universe Phase 2)
+import marketDiscoveryRouter from './routes/marketDiscovery';
 
 // Import API handlers
 import { authUserHandler } from './api/auth_user';
@@ -160,6 +172,9 @@ import {
   updateWalletAddressHandler
 } from './api/user_profile';
 
+// Auth middleware (JWT token validation)
+import { authenticateToken } from './middleware/auth';
+
 // RBAC middleware
 import { requireRole, requireDAORole, requirePermission } from './middleware/rbac';
 
@@ -171,6 +186,9 @@ import {
   loginRateLimiter
 } from './middleware/rateLimiter';
 
+// Timeout middleware
+import { createTimeoutMiddleware } from './middleware/timeoutMiddleware';
+
 // Admin handlers
 import {getUsersHandler,updateUserRoleHandler } from './api/admin_users';
 
@@ -181,13 +199,69 @@ import {
   getDashboardPersonaHandler
 } from './api/week1_dashboard';
 
+// Import new strategy, rebalancing, and WebSocket routes
+import strategyDeploymentRoutes from './routes/strategyDeployment';
+import rebalancingRoutes from './routes/rebalancing';
+import { webSocketPriceStream } from './services/webSocketPriceStream';
 
 export async function registerRoutes(app: Express, server: HTTPServer) {
   console.log('[ROUTES] *** STARTING ROUTE REGISTRATION ***');
   
+  // Initialize timeout middleware for auto-queuing long-running operations
+  console.log('[ROUTES] Initializing timeout middleware...');
+  const timeoutMiddleware = createTimeoutMiddleware({
+    defaultTimeoutMs: 5000, // 5s default
+    heavyComputeTimeoutMs: 30000, // 30s for heavy compute
+  });
+  app.use(timeoutMiddleware);
+  console.log('[ROUTES] Timeout middleware activated (5s default, 30-60s for heavy compute)');
+  
   // Health check
   console.log('[ROUTES] Mounting health routes...');
   app.use('/api/health', healthRoutes);
+
+  // Backwards compatibility redirects for health check consolidation
+  // Route: /health → /api/health (rename)
+  app.get('/health', (req, res) => {
+    res.set('X-Deprecated', 'true');
+    res.set('X-Redirect-To', '/api/health');
+    res.status(301).redirect('/api/health');
+  });
+
+  // Route: /api-health → /api/health (rename)
+  app.get('/api-health', (req, res) => {
+    res.set('X-Deprecated', 'true');
+    res.set('X-Redirect-To', '/api/health');
+    res.status(301).redirect('/api/health');
+  });
+
+  // Route: /api/morio/health → /api/health/morio (move)
+  app.get('/api/morio/health', (req, res) => {
+    res.set('X-Deprecated', 'true');
+    res.set('X-Redirect-To', '/api/health/morio');
+    res.redirect(301, '/api/health/morio');
+  });
+
+  // Route: /api/dex/health → /api/health/dex (move)
+  app.get('/api/dex/health', (req, res) => {
+    res.set('X-Deprecated', 'true');
+    res.set('X-Redirect-To', '/api/health/dex');
+    res.redirect(301, '/api/health/dex');
+  });
+
+  // Route: /api/propagation/health → /api/health/propagation (move)
+  app.get('/api/propagation/health', (req, res) => {
+    res.set('X-Deprecated', 'true');
+    res.set('X-Redirect-To', '/api/health/propagation');
+    res.redirect(301, '/api/health/propagation');
+  });
+
+  // Route: /api/admin/operational/health → /api/health/operational (move)
+  app.get('/api/admin/operational/health', (req, res) => {
+    res.set('X-Deprecated', 'true');
+    res.set('X-Redirect-To', '/api/health/operational');
+    res.redirect(301, '/api/health/operational');
+  });
 
   // SSE routes
   console.log('[ROUTES] Mounting SSE routes...');
@@ -201,12 +275,50 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   app.use('/api/wallet/savings', savingsRoutes);
 
 
-  // Governance and DAO routes
-  console.log('[ROUTES] Mounting governance routes...');
-  app.use('/api/governance', governanceRoutes);
-  app.use('/api/governance', governanceQuorumRouter);
+  // Market Discovery routes (Symbol Universe Phase 2)
+  console.log('[ROUTES] Mounting market discovery routes...');
+  app.use(marketDiscoveryRouter);
+
+  // Governance and DAO routes - CONSOLIDATED UNDER /api/dao/:daoId/
+  console.log('[ROUTES] Mounting consolidated DAO routes...');
+  
+  // Main DAO route consolidation with security middleware
+  app.use('/api/dao/:daoId', validateDaoIdMiddleware);
+  
+  // Mount the consolidated DAO router (handles treasury, bounty-escrow, contributions)
+  app.use('/api/dao', daoRouter);
+  
+  // Mount disbursements under /api/dao/:daoId/disbursements (DAO admin/owner only)
+  app.use('/api/dao/:daoId/disbursements', isAuthenticated, requireDAORole('owner', 'admin'), disbursementsRoutes);
+  
+  // Legacy route redirects for backwards compatibility
+  console.log('[ROUTES] Setting up legacy DAO route redirects...');
+  app.use('/api/governance/:daoId', (req, res) => {
+    const newPath = `/api/dao/${req.params.daoId}/governance${req.path.replace(`/${req.params.daoId}`, '')}`;
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.setHeader('X-Deprecated-Route', `Please use ${newPath}`);
+    res.redirect(307, newPath);
+  });
+  
+  app.use('/api/dao-treasury/:daoId', (req, res) => {
+    const newPath = `/api/dao/${req.params.daoId}/treasury${req.path.replace(`/${req.params.daoId}`, '')}`;
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.setHeader('X-Deprecated-Route', `Please use ${newPath}`);
+    res.redirect(307, newPath);
+  });
+  
+  app.use('/api/disbursements/:daoId', (req, res) => {
+    const newPath = `/api/dao/${req.params.daoId}/disbursements${req.path.replace(`/${req.params.daoId}`, '')}`;
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.setHeader('X-Deprecated-Route', `Please use ${newPath}`);
+    res.redirect(307, newPath);
+  });
+  
+  // Regular DAO operations (meta endpoints)
   app.use('/api/daos', daosRoutes);
-  app.use('/api/dao-treasury', daoTreasuryRoutes);
   app.use('/api/dao-subscriptions', daoSubscriptionsRoutes);
   // DAO Treasury Flows routes
   app.use('/api/dao-treasury-flows', daoTreasuryFlowsRouter);
@@ -215,7 +327,19 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   console.log('[ROUTES] Mounting task routes...');
   app.use('/api/tasks', tasksRoutes);
   app.use('/api/task-templates', taskTemplatesRoutes);
-  app.use('/api/bounty-escrow', bountyEscrowRoutes);
+  
+  // Deprecated: Old bounty-escrow endpoint - use /api/dao/:daoId/bounty-escrow instead
+  app.use('/api/bounty-escrow', (req, res) => {
+    res.set('Deprecation', 'true');
+    res.set('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.set('X-API-Warn', 'This endpoint is deprecated. Use /api/dao/:daoId/bounty-escrow instead.');
+    res.status(410).json({
+      error: 'Gone',
+      message: 'The /api/bounty-escrow endpoint has been moved. Use /api/dao/:daoId/bounty-escrow instead.',
+      deprecation: 'Deprecated since March 2026',
+      sunsetting: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString()
+    });
+  });
 
   // Reputation and analytics
   console.log('[ROUTES] Mounting reputation routes...');
@@ -233,22 +357,55 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   // Proposal execution
   console.log('[ROUTES] Mounting proposal execution routes...');
 
-  // Payment and reconciliation
-  app.use('/api/payment-reconciliation', paymentReconciliationRoutes);
-  app.use('/api/stripe-status', stripeStatusRoutes);
-  app.use('/api/kotanipay-status', kotanipayStatusRoutes);
-  app.use('/api/mpesa-status', mpesaStatusRoutes);
+  // ============================================================================
+  // PAYMENT ROUTES - CONSOLIDATED
+  // ============================================================================
+  // Reconciliation endpoint has been moved into the admin namespace for
+  // additional assurance.  Provider-specific status routes remain here.
+  // (Old `/api/payment-reconciliation` redirect removed.)
+  app.use('/api/payments/stripe', stripeStatusRoutes);
+  app.use('/api/payments/kotanipay', kotanipayStatusRoutes);
+  app.use('/api/payments/mpesa', mpesaStatusRoutes);
+
+  app.use('/api/stripe-status', (req, res, next) => {
+    res.set('X-Deprecated', 'true');
+    res.set('X-Redirect-To', '/api/payments/stripe');
+    return stripeStatusRoutes(req, res, next);
+  });
+  app.use('/api/kotanipay-status', (req, res, next) => {
+    res.set('X-Deprecated', 'true');
+    res.set('X-Redirect-To', '/api/payments/kotanipay');
+    return kotanipayStatusRoutes(req, res, next);
+  });
+  app.use('/api/mpesa-status', (req, res, next) => {
+    res.set('X-Deprecated', 'true');
+    res.set('X-Redirect-To', '/api/payments/mpesa');
+    return mpesaStatusRoutes(req, res, next);
+  });
+
   app.use('/api/deposits', depositsWithdrawalsRoutes);
   app.use('/api/withdrawals', depositsWithdrawalsRoutes);
   app.use('/api/transactions', depositsWithdrawalsRoutes);
   app.use('/api/p2p-transfers', p2pTransfersRoutes);
 
-  // Withdrawal verification (2FA and PIN)
-  console.log('[ROUTES] Mounting withdrawal verification routes...');
-  app.use(withdrawalVerificationRouter);
+  // ============================================================================
+  // 2FA AND PIN VERIFICATION ROUTES - CONSOLIDATED
+  // ============================================================================
+  // All 2FA and PIN verification routes consolidated under /api/account/2fa
+  console.log('[ROUTES] Mounting 2FA and PIN verification routes...');
+  app.use('/api/account/2fa', withdrawalVerificationRouter);
+
+  // Backwards compatibility redirects (deprecated)
+  app.use('/api/2fa', withdrawalVerificationRouter);   // was /api/2fa/*
+  app.use('/api/pin', withdrawalVerificationRouter);   // was /api/pin/*
+  app.post('/api/withdrawals/verify-2fa', withdrawalVerificationRouter);  // was /api/withdrawals/verify-2fa
 
   // Monitoring
   app.use('/api/monitoring', monitoringRoutes);
+
+  // Job Status and Progress Tracking (Async Job Management)
+  console.log('[ROUTES] Mounting job status and progress routes...');
+  app.use('/api/jobs', jobsRoutes);
 
   // Agent management and control
   console.log('[ROUTES] Mounting agent management routes...');
@@ -269,27 +426,36 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   // Profile and Account management
   app.use('/api/profile', profileRoutes);
   app.use('/api/account', accountRoutes);
-  app.use('/api/admin', accountInitializationRoutes); // Account initialization endpoints
+  app.use('/api/admin', isAuthenticated, requireRole('super_admin', 'admin'), accountInitializationRoutes); // Account initialization endpoints
   app.delete('/api/account/delete', isAuthenticated, accountDeleteHandler); // Legacy endpoint
   app.use('/api/referral-rewards', referralRewardsRoutes);
   app.use('/api', proposalEngagementRoutes); // Proposal likes/comments/engagement
   app.use('/api/dao-chat', daoChatRoutes); // DAO chat messages and reactions
-  app.use('/api/admin', adminRoutes); // Admin/SuperUser management
-  app.use('/api/announcements', announcementsRoutes); // Platform announcements
-  app.use('/api/investment-pools', investmentPoolsRoutes); // Multi-asset investment pools
-  app.use('/api/pool-governance', poolGovernanceRoutes); // Pool weighted voting governance
+  app.use('/api/admin', isAuthenticated, requireRole('super_admin', 'admin'), adminRoutes); // Admin/SuperUser management (protected)
+  app.use('/api/announcements', isAuthenticated, announcementsRoutes); // Platform announcements (authenticated)
+  app.use('/api/investment-pools', isAuthenticated, investmentPoolsRoutes); // Multi-asset investment pools (authenticated)
+  app.use('/api/pool-governance', isAuthenticated, requireDAORole('owner', 'admin'), poolGovernanceRoutes); // Pool governance (DAO admin only)
   app.use('/api', rulesRoutes); // Phase 3 Custom Rules Engine
 
   // DeFi DEX Integration
   app.use('/api/dex', dexRoutes);
 
+  // Graph Propagation System
+  console.log('[ROUTES] Mounting graph propagation routes...');
+  app.use('/api/propagation', graphPropagationRoutes);
+
   // Yuki Trading Platform
   console.log('[ROUTES] Mounting Yuki trading platform routes...');
   app.use('/api/yuki', yukiRoutes);
 
+  // Symbol Universe & CEX Price Integration
+  console.log('[ROUTES] Mounting symbol universe routes...');
+  app.use('/api/symbol-universe', symbolUniverseRoutes);
+
   // Enhanced Market Data API
   console.log('[ROUTES] Mounting enhanced market data routes...');
   app.use('/api/v1/market', marketDataRoutes);
+
 
   // Execution Quality & Slippage Analysis API
   console.log('[ROUTES] Mounting execution quality routes...');
@@ -299,9 +465,21 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   console.log('[ROUTES] Mounting market insights routes...');
   app.use('/api/v1/analytics', marketInsightsRoutes);
 
-  // Real-Time Feeds, Futures, Microstructure - Priority 4
-  console.log('[ROUTES] Mounting priority 4 routes (WebSocket, Futures, Microstructure)...');
-  app.use('/api/v1/priority4', priority4Routes);
+  // Trading Intelligence Engine - Real-Time Feeds, Futures, Microstructure
+  console.log('[ROUTES] Mounting trading intelligence routes (Market signals, WebSocket, Futures)...');
+  app.use('/api/trading', authenticateToken as any, tradingSignalsRoutes);
+
+  // ⚠️ DEPRECATED: Legacy endpoint redirect
+  // Old path /api/v1/priority4 was exposed without authentication - now moved and secured
+  app.use('/api/v1/priority4', (req, res) => {
+    res.status(410).json({
+      error: 'Endpoint moved and secured',
+      message: 'The trading signals endpoints have been moved from /api/v1/priority4 (unprotected) to /api/trading (authenticated)',
+      newEndpoint: '/api/trading',
+      note: 'All requests now require Authorization: Bearer <token>',
+      timestamp: new Date().toISOString()
+    });
+  });
 
   // Strategy Vaults
   console.log('[ROUTES] Mounting strategy vaults routes...');
@@ -311,19 +489,35 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   console.log('[ROUTES] Mounting staking routes...');
   app.use('/api/staking', stakingRoutes);
 
-  // DAO deployment
-  app.post('/api/dao/deploy', isAuthenticated, daoDeployHandler);
-  app.post('/api/dao-deploy', isAuthenticated, daoDeployHandler); // Alias for client compatibility
+  // DAO deployment (canonical endpoint - requires canCreateDAO permission)
+  app.post('/api/dao/deploy', isAuthenticated, requireRole('admin', 'moderator'), async (req, res, next) => {
+    try {
+      await daoDeployHandler(req, res);
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  // Backwards compatibility (deprecated alias)
+  app.post('/api/dao-deploy', isAuthenticated, requireRole('admin', 'moderator'), async (req, res, next) => {
+    try {
+      res.set('X-Deprecated', 'true');
+      res.set('X-Redirect-To', '/api/dao/deploy');
+      await daoDeployHandler(req, res);
+    } catch (error) {
+      next(error);
+    }
+  });
 
-  // DAO Rotation Management
+  // DAO Rotation Management (DAO admin/owner only)
   app.get('/api/dao/:daoId/rotation/status', getRotationStatusHandler);
-  app.post('/api/dao/:daoId/rotation/process', isAuthenticated, processRotationHandler);
+  app.post('/api/dao/:daoId/rotation/process', isAuthenticated, requireDAORole('owner', 'admin'), processRotationHandler);
   app.get('/api/dao/:daoId/rotation/next-recipient', getNextRecipientHandler);
 
-  // DAO Invitation Management
-  app.post('/api/dao/:daoId/invitations', isAuthenticated, createInvitationHandler);
-  app.get('/api/dao/:daoId/invitations', getDaoInvitationsHandler);
-  app.delete('/api/dao/:daoId/invitations/:invitationId', isAuthenticated, revokeInvitationHandler);
+  // DAO Invitation Management (DAO admin/owner for managing, members for accepting)
+  app.post('/api/dao/:daoId/invitations', isAuthenticated, requireDAORole('owner', 'admin'), createInvitationHandler);
+  app.get('/api/dao/:daoId/invitations', isAuthenticated, requireDAORole('owner', 'admin', 'member'), getDaoInvitationsHandler);
+  app.delete('/api/dao/:daoId/invitations/:invitationId', isAuthenticated, requireDAORole('owner', 'admin'), revokeInvitationHandler);
   app.get('/api/invitations/pending', isAuthenticated, getPendingInvitationsHandler);
   app.post('/api/invitations/:inviteToken/accept', isAuthenticated, acceptInvitationHandler);
   app.post('/api/invitations/:inviteToken/reject', rejectInvitationHandler);
@@ -347,27 +541,14 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   app.get('/api/dashboard/complete', isAuthenticated, getDashboardCompleteHandler);
 
   // === MULTI-SIG ENDPOINTS ===
-  // Treasury multi-sig
-  app.post('/api/dao-treasury/:daoId/multisig/propose', isAuthenticated, async (req, res) => {
-    const { proposeWithdrawalHandler } = await import('./routes/dao_treasury');
-    return proposeWithdrawalHandler(req, res);
-  });
-
-  app.post('/api/dao-treasury/:daoId/multisig/:txId/sign', isAuthenticated, async (req, res) => {
-    const { signTransactionHandler } = await import('./routes/dao_treasury');
-    return signTransactionHandler(req, res);
-  });
-
-  app.get('/api/dao-treasury/:daoId/multisig/pending', isAuthenticated, async (req, res) => {
-    const { getPendingTransactionsHandler } = await import('./routes/dao_treasury');
-    return getPendingTransactionsHandler(req, res);
-  });
+  // Treasury multi-sig delegates to daoTreasuryRoutes
+  // Note: Multi-sig handlers are mounted via daoTreasuryRoutes at /api/dao/:daoId/treasury
 
   // === VAULT API ENDPOINTS ===
-  // Create vault
-  app.post('/api/vaults', isAuthenticated, createVaultHandler);
+  // Create vault (admin/superuser only - can create on behalf of DAOs)
+  app.post('/api/vaults', isAuthenticated, requireRole('admin', 'super_admin'), createVaultHandler);
 
-  // Allocate to vault (new endpoint)
+  // Allocate to vault (vault authorized users)
   app.post('/api/vaults/:vaultId/allocate', isAuthenticated, authorizeVaultAccess, allocateToVaultHandler);
 
   // Get user's vaults
@@ -376,10 +557,9 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   // Get vault details
   app.get('/api/vaults/:vaultId', isAuthenticated, authorizeVaultAccess, getVaultHandler);
 
-  // Vault operations
+  // Vault operations (vault authorized users - guards in handlers)
   app.post('/api/vaults/:vaultId/deposit', isAuthenticated, authorizeVaultAccess, depositToVaultHandler);
   app.post('/api/vaults/:vaultId/withdraw', isAuthenticated, authorizeVaultAccess, withdrawFromVaultHandler);
-  app.post('/api/vaults/:vaultId/allocate', isAuthenticated, authorizeVaultAccess, allocateToVaultHandler);
   app.post('/api/vaults/:vaultId/rebalance', isAuthenticated, authorizeVaultAccess, rebalanceVaultHandler);
 
   // Vault analytics
@@ -394,8 +574,8 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
 
   // === DAO SETTINGS API ===
   app.get('/api/dao/:daoId/settings', isAuthenticated, getDaoSettingsHandler);
-  app.patch('/api/dao/:daoId/settings', isAuthenticated, updateDaoSettingsHandler);
-  app.post('/api/dao/:daoId/settings/reset-invite', isAuthenticated, resetInviteCodeHandler);
+  app.patch('/api/dao/:daoId/settings', isAuthenticated, requireDAORole('owner', 'admin'), updateDaoSettingsHandler);
+  app.post('/api/dao/:daoId/settings/reset-invite', isAuthenticated, requireDAORole('owner', 'admin'), resetInviteCodeHandler);
   app.get('/api/dao/:daoId/analytics', isAuthenticated, getDaoAnalyticsHandler);
 
   // === REPUTATION API ===
@@ -409,7 +589,7 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   // === PROOF OF CONTRIBUTION API ===
   app.use('/api/proof-of-contribution', proofOfContributionRoutes);
 
-  // === USERPROFILE API ===
+  // === USER PROFILE API ===
   app.get('/api/user/profile', isAuthenticated, getUserProfileHandler);
   app.put('/api/user/profile', isAuthenticated, updateUserProfileHandler);
   app.put('/api/user/profile/password', isAuthenticated, changePasswordHandler);
@@ -505,6 +685,10 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   app.get('/api/admin/users', isAuthenticated, getUsersHandler);
   app.put('/api/admin/users/:userId/role', isAuthenticated, updateUserRoleHandler);
 
+  // === PAYMENT RECONCILIATION ADMIN API ===
+  console.log('[ROUTES] Mounting payment reconciliation admin routes...');
+  app.use('/api/admin/payments/reconciliation', isAuthenticated, requireRole('super_admin'), paymentReconciliationRoutes);
+
   // === TREASURY INTELLIGENCE API ===
   app.use('/api/treasury-intelligence', treasuryIntelligenceRoutes);
 
@@ -521,6 +705,26 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   app.use('/api/exchanges', exchangeRoutes);
   app.use('/api/orders', orderRoutes);
 
+  // === STRATEGY DEPLOYMENT AND FREQTRADE INTEGRATION ===
+  console.log('[ROUTES] Mounting strategy deployment routes...');
+  app.use('/api/strategies', strategyDeploymentRoutes);
+
+  // === REBALANCING AND DEX ROUTING EXECUTION ===
+  console.log('[ROUTES] Mounting rebalancing routes...');
+  app.use('/api/rebalancing', rebalancingRoutes);
+
+  // === WEBSOCKET PRICE STREAMING ===
+  console.log('[ROUTES] Initializing WebSocket price stream service...');
+  const io = (server as any).io || new (await import('socket.io')).Server(server);
+  webSocketPriceStream.initialize(io);
+  app.get('/api/websocket/price-stats', (req, res) => {
+    res.json({
+      status: 'active',
+      subscriptions: webSocketPriceStream.getSubscriptionCount(),
+      activeSubscriptions: webSocketPriceStream.getActiveSubscriptions(),
+    });
+  });
+
   // === PHASE 4: WEBSOCKET PRICE STREAMING ===
   priceStreamServer.initialize(server);
   app.get('/api/websocket/stats', (req, res) => {
@@ -530,7 +734,14 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
     });
   });
 
-  // DAO Abuse Prevention routes
+  // Admin AI Metrics routes (protected)
+  console.log('[ROUTES] Mounting admin AI metrics routes...');
+  app.use('/api/admin', isAuthenticated, requireRole('super_admin', 'admin'), adminAIMetricsRoutes);
+
+  // DAO Abuse Prevention routes (authenticated users)
+  app.use('/api/dao-abuse-prevention', isAuthenticated);
+
+  // Finalize remaining routes
   const daoAbusePreventionRouter = await import('./routes/dao-abuse-prevention');
   app.use('/api/dao-abuse-prevention', daoAbusePreventionRouter.default);
 

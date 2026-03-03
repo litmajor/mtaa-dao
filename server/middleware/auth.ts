@@ -9,15 +9,17 @@ export interface AuthRequest extends Request {
   user?: {
     id: string;
     email: string;
-    role: 'superuser' | 'dao-admin' | 'member' | 'guest';
+    // role strings are stored in users.roles column; global admin value is 'super_admin'
+    role: 'super_admin' | 'dao-admin' | 'member' | 'guest';
     daos: string[];
   };
 }
 
+
 /**
  * Authenticate JWT token
  */
-export const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
+export const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -44,11 +46,12 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
 /**
  * Check if user is superuser
  */
+// still named isSuperUser for backwards compatibility but checks for super_admin
 export const isSuperUser = (req: AuthRequest, res: Response, next: NextFunction) => {
-  if (req.user?.role !== 'superuser') {
+  if (req.user?.role !== 'super_admin') {
     return res.status(403).json({
       success: false,
-      error: 'Superuser access required'
+      error: 'Super-admin access required'
     });
   }
   next();
@@ -71,7 +74,7 @@ export const isDaoMember = (req: AuthRequest, res: Response, next: NextFunction)
  * Check if user is DAO admin
  */
 export const isDaoAdmin = (req: AuthRequest, res: Response, next: NextFunction) => {
-  if (req.user?.role !== 'superuser' && req.user?.role !== 'dao-admin') {
+  if (req.user?.role !== 'super_admin' && req.user?.role !== 'dao-admin') {
     return res.status(403).json({
       success: false,
       error: 'DAO admin access required'

@@ -56,7 +56,7 @@ export interface DeactivateAgentParams {
   daoId?: string;
   deactivatedBy: string;
   reason: string;
-  authority: 'superuser' | 'approval_board' | 'automated' | 'emergency';
+  authority: 'super_admin' | 'approval_board' | 'automated' | 'emergency';
 }
 
 export interface ActivateAgentParams {
@@ -258,7 +258,7 @@ export class AgentStatusService {
           })},
           ${JSON.stringify({ reason })},
           ${activatedBy},
-          'superuser',
+          'super_admin',
           true,
           null,
           ${now},

@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { logger } from '../utils/logger';
+import { authenticateToken } from '../middleware/auth';
+import { rateLimitPerUser } from '../middleware/rateLimit';
+import { jobQueueService } from '../services/jobQueueService';
 import {
   investmentPools,
   poolAssets,
@@ -21,13 +24,66 @@ import { investmentPoolPricingService } from '../services/investmentPoolPricingS
 
 const router = Router();
 
+// ════════════════════════════════════════════════════════════════════════════════
+// AUTHENTICATION MIDDLEWARE
+// ════════════════════════════════════════════════════════════════════════════════
+
+// All investment pool operations require authentication and DAO membership
+router.use(authenticateToken as any);
+
+// ════════════════════════════════════════════════════════════════════════════════
+// HELPER: DAO MEMBERSHIP VERIFICATION
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Verify that a user is a member of the DAO that owns the investment pool
+ */
+async function verifyPoolDaoMembership(poolId: string, userId: string): Promise<{ verified: boolean; pool?: any; error?: string }> {
+  try {
+    const [pool] = await db.select().from(investmentPools).where(eq(investmentPools.id, poolId));
+    
+    if (!pool) {
+      return { verified: false, error: 'Pool not found' };
+    }
+
+    if (!pool.daoId) {
+      // Pool not associated with a DAO, allow access
+      return { verified: true, pool };
+    }
+
+    // Import daoMemberships from schema
+    const { daoMemberships } = await import('../../shared/schema');
+    
+    const [membership] = await db
+      .select()
+      .from(daoMemberships)
+      .where(
+        and(
+          eq(daoMemberships.daoId, pool.daoId),
+          eq(daoMemberships.userId, userId)
+        )
+      )
+      .limit(1);
+
+    if (!membership) {
+      return { verified: false, error: 'User is not a member of the DAO that owns this pool' };
+    }
+
+    return { verified: true, pool };
+  } catch (error) {
+    logger.error('Error verifying pool DAO membership:', error);
+    return { verified: false, error: 'Failed to verify membership' };
+  }
+}
+
 // =====================================================
 // INVESTMENT POOL MANAGEMENT
 // =====================================================
 
-// GET /api/investment-pools - List all investment pools
-router.get('/', async (req, res) => {
+// GET /api/investment-pools - List all investment pools (user must verify membership per pool)
+router.get('/', async (req: any, res) => {
   try {
+    const userId = req.user?.id;
     const pools = await db
       .select({
         id: investmentPools.id,
@@ -54,16 +110,19 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/investment-pools/:id - Get pool details with assets
-router.get('/:id', async (req, res) => {
+// GET /api/investment-pools/:id - Get pool details with assets (DAO MEMBER ONLY)
+router.get('/:id', async (req: any, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.id;
 
-    // Get pool info
-    const [pool] = await db
-      .select()
-      .from(investmentPools)
-      .where(eq(investmentPools.id, id));
+    // Verify DAO membership
+    const memberCheck = await verifyPoolDaoMembership(id, userId);
+    if (!memberCheck.verified) {
+      return res.status(403).json({ error: memberCheck.error || 'Unauthorized' });
+    }
+
+    const pool = memberCheck.pool;
 
     if (!pool) {
       return res.status(404).json({ error: 'Pool not found' });
@@ -135,29 +194,27 @@ router.get('/:id/performance', async (req, res) => {
   }
 });
 
-// POST /api/investment-pools/:id/invest - Invest in a pool
-router.post('/:id/invest', async (req, res) => {
+// POST /api/investment-pools/:id/invest - Invest in a pool (DAO MEMBER ONLY)
+router.post('/:id/invest', [rateLimitPerUser('pool-invest', 20, '5min')], async (req: any, res: any) => {
   try {
     const { id } = req.params;
-    const userId = (req.user as any)?.id;
+    const userId = req.user?.id;
     const { amountUsd, paymentToken = 'cUSD' } = req.body;
 
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    if (!amountUsd || amountUsd <= 0) {
-      return res.status(400).json({ error: 'Invalid investment amount' });
+    // Verify DAO membership
+    const memberCheck = await verifyPoolDaoMembership(id, userId);
+    if (!memberCheck.verified) {
+      return res.status(403).json({ error: memberCheck.error || 'Unauthorized' });
     }
 
-    // Get pool
-    const [pool] = await db
-      .select()
-      .from(investmentPools)
-      .where(eq(investmentPools.id, id));
+    const pool = memberCheck.pool;
 
-    if (!pool) {
-      return res.status(404).json({ error: 'Pool not found' });
+    if (!amountUsd || amountUsd <= 0) {
+      return res.status(400).json({ error: 'Invalid investment amount' });
     }
 
     if (!pool.isActive) {
@@ -236,11 +293,11 @@ router.post('/:id/invest', async (req, res) => {
   }
 });
 
-// POST /api/investment-pools/:id/withdraw - Withdraw from a pool
-router.post('/:id/withdraw', async (req, res) => {
+// POST /api/investment-pools/:id/withdraw - Withdraw from a pool (DAO MEMBER ONLY)
+router.post('/:id/withdraw', [rateLimitPerUser('pool-withdraw', 20, '5min')], async (req: any, res: any) => {
   try {
     const { id } = req.params;
-    const userId = (req.user as any)?.id;
+    const userId = req.user?.id;
     const { shares } = req.body;
 
     if (!userId) {
@@ -251,15 +308,13 @@ router.post('/:id/withdraw', async (req, res) => {
       return res.status(400).json({ error: 'Invalid share amount' });
     }
 
-    // Get pool
-    const [pool] = await db
-      .select()
-      .from(investmentPools)
-      .where(eq(investmentPools.id, id));
-
-    if (!pool) {
-      return res.status(404).json({ error: 'Pool not found' });
+    // Verify DAO membership
+    const memberCheck = await verifyPoolDaoMembership(id, userId);
+    if (!memberCheck.verified) {
+      return res.status(403).json({ error: memberCheck.error || 'Unauthorized' });
     }
+
+    const pool = memberCheck.pool;
 
     // Calculate user's total shares
     const userInvestments = await db
@@ -381,14 +436,20 @@ router.post('/:id/withdraw', async (req, res) => {
   }
 });
 
-// GET /api/investment-pools/:id/my-investment - Get user's investment in a pool
-router.get('/:id/my-investment', async (req, res) => {
+// GET /api/investment-pools/:id/my-investment - Get user's investment in a pool (DAO MEMBER ONLY)
+router.get('/:id/my-investment', async (req: any, res) => {
   try {
     const { id } = req.params;
-    const userId = (req.user as any)?.id;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Verify DAO membership
+    const memberCheck = await verifyPoolDaoMembership(id, userId);
+    if (!memberCheck.verified) {
+      return res.status(403).json({ error: memberCheck.error || 'Unauthorized' });
     }
 
     // Get all user investments
@@ -511,10 +572,21 @@ router.get('/templates', async (req, res) => {
   }
 });
 
-// GET /api/investment-pools/:id/analytics - Get comprehensive analytics for a pool
-router.get('/:id/analytics', async (req, res) => {
+// GET /api/investment-pools/:id/analytics - Get comprehensive analytics for a pool (DAO MEMBER ONLY)
+router.get('/:id/analytics', async (req: any, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Verify DAO membership
+    const memberCheck = await verifyPoolDaoMembership(id, userId);
+    if (!memberCheck.verified) {
+      return res.status(403).json({ error: memberCheck.error || 'Unauthorized' });
+    }
 
     const analytics = await performanceTrackingService.getPoolAnalytics(id);
 
@@ -543,8 +615,8 @@ router.get('/:id/rebalancing-status', async (req, res) => {
   }
 });
 
-// POST /api/investment-pools/:id/trigger-rebalance - Manually trigger rebalancing (admin)
-router.post('/:id/trigger-rebalance', async (req, res) => {
+// POST /api/investment-pools/:id/trigger-rebalance - Manually trigger rebalancing (ASYNC)
+router.post('/:id/trigger-rebalance', [rateLimitPerUser('pool-rebalance', 5, '10min')], async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const userId = (req.user as any)?.id;
@@ -553,19 +625,22 @@ router.post('/:id/trigger-rebalance', async (req, res) => {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    // TODO: Add admin role check
-    // if (!isAdmin(userId)) {
-    //   return res.status(403).json({ error: 'Admin access required' });
-    // }
+    // Queue rebalancing job
+    const jobId = await jobQueueService.queueJob('pool-rebalance', {
+      poolId: id,
+      userId,
+      force: req.body?.force || false
+    }, {
+      priority: 7, // High priority
+      timeout: 300000 // 5 minute timeout
+    });
 
-    const result = await triggerManualRebalance(id);
-
-    res.json({
+    // Return immediately with job ID for polling
+    res.status(202).json({
       success: true,
-      rebalanced: result,
-      message: result 
-        ? 'Rebalancing completed successfully' 
-        : 'No rebalancing needed at this time',
+      message: 'Rebalancing initiated',
+      jobId,
+      statusUrl: `/api/investment-pools/${id}/rebalance-status/${jobId}`
     });
   } catch (error) {
     logger.error('Error triggering rebalance:', error);
@@ -625,8 +700,104 @@ router.get('/:id/performance-chart', async (req, res) => {
   }
 });
 
+// ════════════════════════════════════════════════════════════════════════════════
+// NEW RESTful ENDPOINT (RECOMMENDED)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// POST /api/investment-pools - Create a new investment pool (admin)
+router.post('/', [rateLimitPerUser('pool-create', 5, '10min')], async (req: any, res: any) => {
+  try {
+    const userId = (req.user as any)?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const {
+      name,
+      symbol,
+      description,
+      templateId,
+      minimumInvestment,
+      performanceFee,
+      autoRebalance,
+    } = req.body;
+
+    // Validate input
+    if (!name || !symbol) {
+      return res.status(400).json({ error: 'Name and symbol are required' });
+    }
+
+    // Create pool
+    const [pool] = await db
+      .insert(investmentPools)
+      .values({
+        name,
+        symbol,
+        description,
+        minimumInvestment: minimumInvestment?.toString() || '10.00',
+        performanceFee: performanceFee || 200,
+        createdBy: userId,
+      })
+      .returning();
+
+    // If template is provided, copy asset allocations
+    if (templateId) {
+      const allocations = await db
+        .select()
+        .from(templateAssetAllocations)
+        .where(eq(templateAssetAllocations.templateId, templateId));
+
+      for (const allocation of allocations) {
+        await db.insert(poolAssets).values({
+          poolId: pool.id,
+          assetSymbol: allocation.assetSymbol,
+          assetName: allocation.assetSymbol, // Will be enriched later
+          targetAllocation: allocation.targetAllocation,
+          isActive: true,
+        });
+      }
+
+    }
+
+    // Create rebalancing settings if auto-rebalance is enabled
+    if (autoRebalance) {
+      await db.insert(rebalancingSettings).values({
+        poolId: pool.id,
+        autoRebalanceEnabled: true,
+        rebalanceFrequency: 'weekly',
+        rebalanceThreshold: 500, // 5%
+      });
+    }
+
+    logger.info(`Pool created: ${name} (${symbol}) by user ${userId}`);
+
+    res.json({
+      pool,
+      message: 'Investment pool created successfully',
+    });
+  } catch (error) {
+    logger.error('Error creating pool:', error);
+    res.status(500).json({ error: 'Failed to create pool' });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// DEPRECATED ENDPOINT (Keep for 6 months, then remove)
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @deprecated Use POST /api/investment-pools instead
+ * Sunset: 2026-09-01
+ */
 // POST /api/investment-pools/create - Create a new investment pool (admin)
 router.post('/create', async (req, res) => {
+  // Issue deprecation warning
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', 'Wed, 01 Sep 2026 00:00:00 GMT');
+  res.setHeader('Link', '</api/investment-pools>; rel="successor-version"');
+  res.setHeader('Warning', '299 - "POST /api/investment-pools/create is deprecated. Use POST /api/investment-pools instead"');
+
   try {
     const userId = (req.user as any)?.id;
 

@@ -9,6 +9,7 @@ import {
   subscriptions,
 } from '../../shared/schema';
 import { eq, and, sql } from 'drizzle-orm';
+import { dbOptimizationLayer } from './databaseOptimizationLayer';
 
 /**
  * Investment Pool Pricing Service
@@ -55,45 +56,9 @@ class InvestmentPoolPricingService {
    */
   async getPlatformFee(poolId: string): Promise<PlatformFeeStructure> {
     try {
-      // Get pool and DAO
-      const [pool] = await db
-        .select({
-          poolId: investmentPools.id,
-          daoId: investmentPools.daoId,
-        })
-        .from(investmentPools)
-        .where(eq(investmentPools.id, poolId));
-
-      if (!pool || !pool.daoId) {
-        // Default to community tier
-        return PLATFORM_FEES.community;
-      }
-
-      // Get DAO's subscription tier from subscriptions table or dao plan
-      const [subscription] = await db
-        .select({
-          plan: subscriptions.plan,
-        })
-        .from(subscriptions)
-        .where(and(
-          eq(subscriptions.daoId, pool.daoId),
-          eq(subscriptions.status, 'active')
-        ))
-        .orderBy(sql`${subscriptions.startDate} DESC`)
-        .limit(1);
-
-      let tier = subscription?.plan || 'community';
-      
-      // Fallback to DAO plan if no active subscription
-      if (!subscription) {
-        const [dao] = await db
-          .select({ plan: daos.plan })
-          .from(daos)
-          .where(eq(daos.id, pool.daoId));
-        tier = dao?.plan || 'community';
-      }
-      
-      return PLATFORM_FEES[tier as keyof typeof PLATFORM_FEES] || PLATFORM_FEES.community;
+      // Optimized: Use batched JOIN query instead of 2-3 sequential queries (cached for 5 min)
+      const feeStructure = await dbOptimizationLayer.getPoolFeeOptimized(poolId);
+      return feeStructure || PLATFORM_FEES.community;
     } catch (error) {
       logger.error('Error getting platform fee:', error);
       return PLATFORM_FEES.community;

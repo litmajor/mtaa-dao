@@ -12,7 +12,7 @@ export async function up(db: PostgresDB) {
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS admin_action_log (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      admin_user_id UUID NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+      admin_user_id VARCHAR(255) NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
       
       action_type VARCHAR(100) NOT NULL,
       resource_type VARCHAR(50) NOT NULL,

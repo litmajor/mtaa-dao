@@ -13,13 +13,14 @@ import {
 import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
 import { isAuthenticated } from '../nextAuthMiddleware';
 import { evaluateGovernanceRules, formatRuleRejectionMessage, logRuleEvaluation } from '../services/rules-integration';
-import auditLoggingService from '../services/auditLoggingService';
+import { logConsolidatedAuditEvent, AuditEventType } from '../services/auditConsolidated';
 import { proposalSimulationService } from '../services/proposalSimulationService';
+import { sanitizeObject } from '../middleware/security';
 
 const router = express.Router();
 
 // Calculate dynamic quorum for a DAO
-router.get('/:daoId/quorum', isAuthenticated, async (req, res) => {
+router.get('/quorum', isAuthenticated, async (req, res) => {
   try {
     const { daoId } = req.params;
 
@@ -220,7 +221,7 @@ router.post('/proposals/:proposalId/execute', isAuthenticated, async (req, res) 
 // 1. Proposer: Can always cancel their own proposal
 // 2. DAO Admin: Can cancel any proposal with a reason
 // 3. Emergency Superuser: Can cancel for critical safety (requires approval board)
-router.post('/:daoId/proposals/:proposalId/cancel', isAuthenticated, async (req, res) => {
+router.post('/proposals/:proposalId/cancel', isAuthenticated, async (req, res) => {
   try {
     const { daoId, proposalId } = req.params;
     const { reason, approvalBoardApproved } = req.body;
@@ -288,16 +289,15 @@ router.post('/:daoId/proposals/:proposalId/cancel', isAuthenticated, async (req,
         .where(eq(proposalExecutionQueue.proposalId, proposalId));
 
       // Log the cancellation
-      await auditLoggingService.logAction({
+      await logConsolidatedAuditEvent({
         actorId: userId,
         actorType: 'user',
-        actionType: 'proposal_cancelled',
+        actionType: AuditEventType.PROPOSAL_CANCELLED,
         actionCategory: 'governance',
         targetType: 'proposal',
         targetId: proposalId,
         targetName: proposalData.title,
         result: 'success',
-        reversible: false,
         metadata: {
           permissionLevel: 'proposer',
           reason: reason || 'Cancelled by proposer',
@@ -351,16 +351,15 @@ router.post('/:daoId/proposals/:proposalId/cancel', isAuthenticated, async (req,
         .where(eq(proposalExecutionQueue.proposalId, proposalId));
 
       // Log the cancellation
-      await auditLoggingService.logAction({
+      await logConsolidatedAuditEvent({
         actorId: userId,
         actorType: 'admin',
-        actionType: 'proposal_cancelled',
+        actionType: AuditEventType.PROPOSAL_CANCELLED,
         actionCategory: 'governance',
         targetType: 'proposal',
         targetId: proposalId,
         targetName: proposalData.title,
         result: 'success',
-        reversible: false,
         metadata: {
           permissionLevel: 'admin',
           reason: reason,
@@ -429,17 +428,16 @@ router.post('/:daoId/proposals/:proposalId/cancel', isAuthenticated, async (req,
         .where(eq(proposalExecutionQueue.proposalId, proposalId));
 
       // Log the cancellation
-      await auditLoggingService.logAction({
+      await logConsolidatedAuditEvent({
         actorId: userId,
         actorType: 'superuser',
-        authority: 'superuser_emergency',
-        actionType: 'proposal_emergency_cancelled',
+        actionType: AuditEventType.PROPOSAL_CANCELLED,
         actionCategory: 'governance',
         targetType: 'proposal',
         targetId: proposalId,
         targetName: proposalData.title,
         result: 'success',
-        reversible: false,
+        severity: 'critical',
         metadata: {
           permissionLevel: 'superuser_emergency',
           reason: reason,
@@ -483,9 +481,7 @@ router.post('/:daoId/proposals/:proposalId/cancel', isAuthenticated, async (req,
 });
 
 // Simulate proposal execution (read-only)
-// Returns governance rules validation, treasury impact, contract calls, and execution prediction
-// Execution time: < 1 second, no state changes
-router.post('/:daoId/proposals/:proposalId/simulate', isAuthenticated, async (req, res) => {
+router.post('/proposals/:proposalId/simulate', isAuthenticated, async (req, res) => {
   try {
     const { daoId, proposalId } = req.params;
 
@@ -506,7 +502,7 @@ router.post('/:daoId/proposals/:proposalId/simulate', isAuthenticated, async (re
 });
 
 // Get proposal templates
-router.get('/:daoId/templates', isAuthenticated, async (req, res) => {
+router.get('/templates', isAuthenticated, async (req, res) => {
   try {
     const { daoId } = req.params;
 
@@ -534,7 +530,7 @@ router.get('/:daoId/templates', isAuthenticated, async (req, res) => {
 });
 
 // Create proposal template
-router.post('/:daoId/templates', isAuthenticated, async (req, res) => {
+router.post('/templates', isAuthenticated, async (req, res) => {
   try {
     const { daoId } = req.params;
     const userId = (req.user as any).claims.sub;
@@ -571,7 +567,7 @@ router.post('/:daoId/templates', isAuthenticated, async (req, res) => {
 });
 
 // Delegate vote
-router.post('/:daoId/delegate', isAuthenticated, async (req, res) => {
+router.post('/delegate', isAuthenticated, async (req, res) => {
   try {
     const { daoId } = req.params;
     const userId = (req.user as any).claims.sub;
@@ -653,7 +649,7 @@ router.post('/:daoId/delegate', isAuthenticated, async (req, res) => {
 });
 
 // Get user's delegations
-router.get('/:daoId/delegations', isAuthenticated, async (req, res) => {
+router.get('/delegations', isAuthenticated, async (req, res) => {
   try {
     const { daoId } = req.params;
     const userId = (req.user as any).claims.sub;
@@ -679,7 +675,7 @@ router.get('/:daoId/delegations', isAuthenticated, async (req, res) => {
 });
 
 // Revoke delegation
-router.delete('/:daoId/delegate/:delegationId', isAuthenticated, async (req, res) => {
+router.delete('/delegate/:delegationId', isAuthenticated, async (req, res) => {
   try {
     const { daoId, delegationId } = req.params;
     const userId = (req.user as any).claims.sub;
@@ -707,6 +703,12 @@ router.delete('/:daoId/delegate/:delegationId', isAuthenticated, async (req, res
 
 // Check proposal quorum and update status with enforcement
 router.post('/proposals/:proposalId/check-quorum', isAuthenticated, async (req, res) => {
+  // Issue deprecation warning
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', 'Wed, 01 Sep 2026 00:00:00 GMT');
+  res.setHeader('Link', '</api/dao/:daoId/quorum/check>; rel="successor-version"');
+  res.setHeader('Warning', '299 - "POST /api/governance/proposals/:proposalId/check-quorum is deprecated. Use POST /api/dao/:daoId/quorum/check instead"');
+
   try {
     const { proposalId } = req.params as { proposalId: string };
 

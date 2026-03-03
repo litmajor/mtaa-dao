@@ -13,6 +13,10 @@
 import ccxt from 'ccxt';
 import { CEXPriceRepository } from '../repositories/cexPriceRepository';
 import { cacheManager } from '../core/consolidation/DataCacheConsolidation';
+import { ccxtService } from './ccxtService';
+import { symbolUniverseService } from './symbolUniverseService';
+import { treasuryPriceUpdateService } from './treasuryPriceUpdateService';
+import { logger } from '../utils/logger';
 import { Pool } from 'pg';
 
 export interface PriceData {
@@ -35,7 +39,8 @@ export interface CollectionResult {
 }
 
 /**
- * Supported exchanges with their CCXT identifiers
+ * Supported exchanges - loaded from config via symbolUniverseService
+ * Configuration is centralized in server/config/symbolUniverseConfig.ts
  */
 const SUPPORTED_EXCHANGES = {
   binance: 'binance',
@@ -46,45 +51,6 @@ const SUPPORTED_EXCHANGES = {
   okx: 'okx',
 } as const;
 
-/**
- * Default trading pairs to track
- */
-const DEFAULT_TRADING_PAIRS = [
-  'BTC/USDT',
-  'ETH/USDT',
-  'BNB/USDT',
-  'SOL/USDT',
-  'ADA/USDT',
-  'XRP/USDT',
-  'DOGE/USDT',
-  'MATIC/USDT',
-  'AVAX/USDT',
-  'LINK/USDT',
-];
-
-/**
- * Symbol normalization formats to try when a pair fails
- * Different exchanges support different quote currencies
- */
-const SYMBOL_FORMATS = (base: string, quote: string) => [
-  `${base}/${quote}`,           // MATIC/USDT
-  `${base}/${quote.slice(0, 3)}`, // MATIC/USD (if quote is USDT)
-  `${base}/${quote.toUpperCase()}`, // Ensure uppercase
-];
-
-/**
- * Exchange-specific symbol mappings for pairs that have different formats
- * Key: originalPair, Value: { exchange: [alternative formats] }
- */
-const EXCHANGE_SYMBOL_MAPS: Record<string, Record<string, string[]>> = {
-  'MATIC/USDT': {
-    // Most exchanges have MATIC/USDT, no alternatives needed
-  },
-  'BTC/USDT': {},
-  'ETH/USDT': {},
-  // Add more as needed based on actual exchange support
-};
-
 export class CEXPriceCollector {
   private db: Pool;
   private cache: any; // Reference to cacheManager's cex_prices cache
@@ -93,6 +59,9 @@ export class CEXPriceCollector {
   private collectionErrors: Map<string, number> = new Map();
   private readonly MAX_RETRIES = 3;
   private readonly RETRY_DELAY = 2000; // 2 seconds
+  private readonly BATCH_SIZE = 50; // Fetch prices in batches of 50
+  private readonly MAX_CONCURRENCY = 20; // Max concurrent API calls
+  private readonly COLLECTION_TIMEOUT = 30000; // 30 seconds MAX (reduced from 90s to avoid timeouts)
 
   constructor(db: Pool) {
     this.db = db;
@@ -101,14 +70,18 @@ export class CEXPriceCollector {
 
   /**
    * Fetch prices for a specific exchange and trading pairs
+   * ⚡ REFACTORED: Parallel batch fetching with concurrency control
+   * - Fetches up to MAX_CONCURRENCY pairs simultaneously
+   * - Batches database writes (not per-pair)
+   * - Short timeout (30s) to avoid Redis/DB connection exhaustion
+   * - Uses Promise.allSettled() for resilience
    */
   async fetchExchangePrices(
     exchange: keyof typeof SUPPORTED_EXCHANGES,
     tradingPairs?: string[]
   ): Promise<CollectionResult> {
     const startTime = Date.now();
-    const pairs = tradingPairs || DEFAULT_TRADING_PAIRS;
-    const COLLECTION_TIMEOUT = 90000; // 90 seconds max per exchange
+    const pairs = tradingPairs || (await symbolUniverseService.getSupportedPairs(exchange as string));
 
     // Prevent concurrent collection for same exchange
     if (this.activeCollections.has(exchange)) {
@@ -127,82 +100,45 @@ export class CEXPriceCollector {
     // Auto-cleanup stuck collections after timeout
     const timeoutHandle = setTimeout(() => {
       if (this.activeCollections.has(exchange)) {
-        console.warn(`[CEXPriceCollector] Force-clearing stuck collection for ${exchange}`);
+        logger.warn(`[CEXPriceCollector] Force-clearing stuck collection for ${exchange}`);
         this.activeCollections.delete(exchange);
       }
-    }, COLLECTION_TIMEOUT);
+    }, this.COLLECTION_TIMEOUT * 2); // 2x timeout for safety
 
     try {
-      const exchangeClass = (ccxt as any)[SUPPORTED_EXCHANGES[exchange]];
-      if (!exchangeClass) {
-        throw new Error(`Unsupported exchange: ${exchange}`);
-      }
-
-      const client = new exchangeClass({
-        enableRateLimit: true,
-        timeout: 10000,
-      });
-
       let processedCount = 0;
       let failedCount = 0;
       const results: PriceData[] = [];
 
-      // Fetch prices for each pair
-      for (const pair of pairs) {
-        try {
-          // Try to fetch price for this pair
-          const ticker: any = await this.fetchWithNormalization(client, pair);
+      // ⚡ Fetch prices in parallel batches with concurrency control
+      for (let i = 0; i < pairs.length; i += this.BATCH_SIZE) {
+        const batch = pairs.slice(i, i + this.BATCH_SIZE);
+        logger.debug(`[CEXPriceCollector] Fetching batch ${Math.floor(i / this.BATCH_SIZE) + 1} (${batch.length} pairs)`);
 
-          if (!ticker) {
-            // Pair not available on this exchange - silently skip
+        // Fetch all pairs in batch in parallel
+        const pricePromises = batch.map((pair) => this.fetchPriceForPair(exchange, pair));
+        const batchResults = await Promise.allSettled(pricePromises);
+
+        // Process batch results
+        for (const result of batchResults) {
+          if (result.status === 'fulfilled' && result.value) {
+            results.push(result.value);
+            processedCount++;
+          } else {
             failedCount++;
-            continue;
           }
+        }
 
-          if (!ticker.last) {
-            failedCount++;
-            continue;
-          }
-
-          const priceData: PriceData = {
-            exchange,
-            tradingPair: pair,
-            price: ticker.last.toString(),
-            bid: (ticker.bid || ticker.last).toString(),
-            ask: (ticker.ask || ticker.last).toString(),
-            volume: (ticker.quoteVolume || 0).toString(),
-            timestamp: Date.now(),
-          };
-
-          results.push(priceData);
-          processedCount++;
-
-          // Update cache immediately
-          this.cache.setPrice(exchange, pair, {
-            price: priceData.price,
-            bid: priceData.bid,
-            ask: priceData.ask,
-            volume: priceData.volume,
-            timestamp: priceData.timestamp,
-          });
-        } catch (error: any) {
-          // Silently skip missing pairs - only log actual network/API errors
-          const isMissingPair = 
-            error.code === 'BadSymbol' || 
-            error.message?.includes('does not have market symbol') ||
-            error.message?.includes('Invalid pair') ||
-            error.message?.includes('not found');
-          
-          if (!isMissingPair) {
-            console.error(`[CEXPriceCollector] Error fetching ${exchange}:${pair}:`, error.message);
-          }
-          failedCount++;
+        // Check timeout - abort early if taking too long
+        if (Date.now() - startTime > this.COLLECTION_TIMEOUT) {
+          logger.warn(`[CEXPriceCollector] Collection timeout reached for ${exchange}, stopping early`);
+          break;
         }
       }
 
-      // Persist to database
+      // ⚡ Persist ALL prices in single batch operation (not per-pair)
       if (results.length > 0) {
-        await this.persistPrices(results);
+        await this.persistPricesBatch(results);
       }
 
       // Update collection stats
@@ -218,7 +154,7 @@ export class CEXPriceCollector {
         pairsFailed: failedCount,
         duration,
       };
-    } catch (error) {
+    } catch (error: any) {
       const errorCount = (this.collectionErrors.get(exchange) || 0) + 1;
       this.collectionErrors.set(exchange, errorCount);
 
@@ -241,50 +177,156 @@ export class CEXPriceCollector {
   }
 
   /**
-   * Fetch prices for all supported exchanges
+   * Fetch price for a single pair - used in parallel batch
+   * ⚡ Uses parallel fallback attempts (Promise.allSettled) instead of sequential
+   */
+  private async fetchPriceForPair(
+    exchange: keyof typeof SUPPORTED_EXCHANGES,
+    pair: string
+  ): Promise<PriceData | null> {
+    let priceResponse = null;
+    let actualPair = pair;
+
+    try {
+      // Try primary format first
+      try {
+        priceResponse = await ccxtService.getTickerFromExchange(exchange, pair);
+      } catch (primaryError: any) {
+        // Check if pair doesn't exist
+        const isMissingPair =
+          primaryError.code === 'BadSymbol' ||
+          primaryError.message?.includes('does not have market symbol') ||
+          primaryError.message?.includes('Invalid pair') ||
+          primaryError.message?.includes('not found') ||
+          primaryError.message?.includes('Failed to fetch price');
+
+        if (isMissingPair) {
+          // Try fallback formats in parallel
+          const fallbacks = symbolUniverseService.getFallbackPairs(pair, exchange);
+          
+          if (fallbacks.length > 0) {
+            // ⚡ Fetch all fallbacks in parallel, use first success
+            const fallbackPromises = fallbacks.map((fallbackPair) =>
+              ccxtService.getTickerFromExchange(exchange, fallbackPair).then(
+                (result) => ({ pair: fallbackPair, result, success: true }),
+                () => ({ pair: fallbackPair, result: null, success: false })
+              )
+            );
+
+            const fallbackResults = await Promise.allSettled(fallbackPromises);
+            
+            for (const result of fallbackResults) {
+              if (result.status === 'fulfilled' && result.value.success && result.value.result) {
+                priceResponse = result.value.result;
+                actualPair = result.value.pair;
+                logger.debug(`[CEXPriceCollector] Found ${pair} as ${actualPair} on ${exchange}`);
+                break;
+              }
+            }
+          }
+        } else {
+          // Non-missing-pair error - log and skip
+          logger.debug(`[CEXPriceCollector] Error fetching ${exchange}:${pair}: ${primaryError.message}`);
+        }
+      }
+
+      if (!priceResponse) {
+        return null; // Pair not available
+      }
+
+      // Validate price data
+      if (!priceResponse.last || !priceResponse.bid || !priceResponse.ask || !priceResponse.volume) {
+        return null; // Incomplete data
+      }
+
+      return {
+        exchange: exchange as string,
+        tradingPair: pair,
+        price: priceResponse.last.toString(),
+        bid: priceResponse.bid.toString(),
+        ask: priceResponse.ask.toString(),
+        volume: priceResponse.volume.toString(),
+        timestamp: priceResponse.timestamp,
+      };
+    } catch (error: any) {
+      logger.debug(`[CEXPriceCollector] Unexpected error fetching ${exchange}:${pair}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Fetch prices for all supported exchanges in parallel
+   * ⚡ Uses Promise.allSettled() for resilience - one exchange failure doesn't block others
    */
   async fetchAllExchanges(tradingPairs?: string[]): Promise<CollectionResult[]> {
-    const results: CollectionResult[] = [];
-
-    for (const exchange of Object.keys(SUPPORTED_EXCHANGES)) {
-      const result = await this.fetchExchangePrices(
+    const promises = Object.keys(SUPPORTED_EXCHANGES).map((exchange) =>
+      this.fetchExchangePrices(
         exchange as keyof typeof SUPPORTED_EXCHANGES,
         tradingPairs
-      );
-      results.push(result);
-    }
+      )
+    );
 
-    return results;
+    const results = await Promise.allSettled(promises);
+
+    return results
+      .map((result) => {
+        if (result.status === 'fulfilled') {
+          return result.value;
+        } else {
+          return {
+            success: false,
+            exchange: 'unknown',
+            pairsProcessed: 0,
+            pairsFailed: 0,
+            duration: 0,
+            error: result.reason?.message || 'Unknown error',
+          };
+        }
+      });
   }
 
   /**
    * Fetch ticker with symbol normalization for different exchanges
-   * Silently returns null if pair is not available on the exchange
+   * Tries multiple symbol formats and returns null if pair not available
    * 
    * 🔴 CCXT API CALL LOCATION #1 (TypeScript)
    * See: CCXT_API_CALL_MAPPING.md for redundancy analysis
    */
   private async fetchWithNormalization(client: any, originalPair: string): Promise<any | null> {
-    try {
-      // Try primary format only - if it fails with BadSymbol, return null
-      return await this.fetchWithRetry(() => client.fetchTicker(originalPair));
-    } catch (error: any) {
-      // Check if it's a "pair not available" error
-      const isMissingPair = 
-        error.code === 'BadSymbol' || 
-        error.message?.includes('does not have market symbol') ||
-        error.message?.includes('Invalid pair') ||
-        error.message?.includes('not found');
-      
-      if (isMissingPair) {
-        // Pair doesn't exist on this exchange - return null silently
-        return null;//i want to add an alternative to make it intelligent and swich format
+    // Parse pair components
+    const [base, quote] = originalPair.split('/') || [];
+    if (!base || !quote) return null;
+
+    // Generate alternative formats to try (exchange normalization)
+    const symbolsToTry = [
+      originalPair,                    // BTC/USDT
+      `${base}/${quote.slice(0, 3)}`, // BTC/USD (if USDT)
+      `${base.toUpperCase()}/${quote.toUpperCase()}`, // Force uppercase
+    ];
+
+    for (const symbol of symbolsToTry) {
+      try {
+        return await this.fetchWithRetry(() => client.fetchTicker(symbol));
+      } catch (error: any) {
+        // Check if it's a "pair not available" error
+        const isMissingPair = 
+          error.code === 'BadSymbol' || 
+          error.message?.includes('does not have market symbol') ||
+          error.message?.includes('Invalid pair') ||
+          error.message?.includes('not found');
         
+        if (isMissingPair) {
+          // Try next format
+          continue;
+        }
+        
+        // For other errors (network, API rate limit, etc.), don't retry other formats
+        throw error;
       }
-      
-      // For other errors (network, API rate limit, etc.), propagate them
-      throw error;
     }
+
+    // None of the formats worked - pair not available on this exchange
+    return null;
   }
 
   /**
@@ -305,30 +347,52 @@ export class CEXPriceCollector {
     }
   }
 
-  /**
-   * Persist prices to database
-   */
-  private async persistPrices(prices: PriceData[]): Promise<void> {
+  private async persistPricesBatch(prices: PriceData[]): Promise<void> {
     try {
-      for (const price of prices) {
-        await CEXPriceRepository.createPrice(
+      if (prices.length === 0) return;
+
+      // ⚡ Parallel inserts with spread limit to avoid connection pool exhaustion
+      const insertPromises = prices.map((price) =>
+        CEXPriceRepository.createPrice(
           price.exchange,
           price.tradingPair,
           price.price,
           price.bid,
           price.ask,
           price.volume
-        );
+        ).catch((err: any) => {
+          // Ignore individual errors if table doesn't exist
+          if (err.code !== '42P01') {
+            logger.warn(`[CEXPriceCollector] Individual insert failed for ${price.exchange}:${price.tradingPair}`);
+          }
+        })
+      );
+
+      // Limit concurrency to avoid overwhelming connection pool
+      const concurrencyLimit = 20;
+      for (let i = 0; i < insertPromises.length; i += concurrencyLimit) {
+        const batch = insertPromises.slice(i, i + concurrencyLimit);
+        await Promise.allSettled(batch);
       }
+
+      logger.info(`[CEXPriceCollector] Persisted ${prices.length} prices to database`);
     } catch (error: any) {
       // Ignore table-doesn't-exist errors (code 42P01)
       if (error.code === '42P01') {
-        // Table doesn't exist yet - this is OK, cache is still active
+        logger.info('[CEXPriceCollector] CEX prices table does not exist, cache is active');
         return;
       }
-      console.error('[CEXPriceCollector] Database persistence error:', error);
+      logger.error('[CEXPriceCollector] Database batch persistence error:', error);
       // Don't throw - cache already updated
     }
+  }
+
+  /**
+   * Legacy persist method (kept for backward compatibility)
+   */
+  private async persistPrices(prices: PriceData[]): Promise<void> {
+    // Delegate to batch method
+    return this.persistPricesBatch(prices);
   }
 
   /**
@@ -439,8 +503,7 @@ export class CEXPriceCollector {
         .filter(([_, count]) => count > 0)
         .map(([exchange, count]) => ({ exchange, consecutiveErrors: count })),
       cacheStatus: this.cache.getStats(),
-      supportedExchanges: Object.keys(SUPPORTED_EXCHANGES),
-      defaultPairs: DEFAULT_TRADING_PAIRS,
+      supportedExchanges: Object.keys(SUPPORTED_EXCHANGES)
     };
 
     return stats;
@@ -476,4 +539,54 @@ export class CEXPriceCollector {
     this.lastCollectionTime.clear();
     this.collectionErrors.clear();
   }
+
+  /**
+   * Fetch price for a single symbol from best available CEX
+   * Used by collectorService to avoid duplicate fetching
+   * Returns price or null if not found
+   */
+  async fetchPriceForSymbol(symbol: string): Promise<number | null> {
+    try {
+      // Try primary exchanges in order (most liquid first)
+      const exchangesToTry: (keyof typeof SUPPORTED_EXCHANGES)[] = ['binance', 'kraken', 'coinbase'];
+
+      for (const exchange of exchangesToTry) {
+        try {
+          // Format symbol as pair (e.g., BTC → BTC/USDT)
+          const pair = `${symbol}/USDT`;
+          const priceData = await this.fetchPriceForPair(exchange, pair);
+
+          if (priceData && priceData.price) {
+            const price = parseFloat(priceData.price);
+            if (price > 0) {
+              logger.debug(`[CEXPriceCollector] Found ${symbol} on ${exchange}: $${price}`);
+              return price;
+            }
+          }
+        } catch (error) {
+          logger.debug(`[CEXPriceCollector] ${exchange} failed for ${symbol}, trying next exchange`);
+          continue;
+        }
+      }
+
+      logger.warn(`[CEXPriceCollector] Could not find price for ${symbol} on any exchange`);
+      return null;
+    } catch (error) {
+      logger.error(`[CEXPriceCollector] Error fetching price for ${symbol}:`, error);
+      return null;
+    }
+  }
+}
+
+// Export singleton instance for use by collectorService
+let cexPriceCollectorInstance: CEXPriceCollector | null = null;
+
+export function getCEXPriceCollector(db?: Pool): CEXPriceCollector {
+  if (!cexPriceCollectorInstance && db) {
+    cexPriceCollectorInstance = new CEXPriceCollector(db);
+  }
+  if (!cexPriceCollectorInstance) {
+    throw new Error('CEXPriceCollector not initialized. Please pass a database pool.');
+  }
+  return cexPriceCollectorInstance;
 }

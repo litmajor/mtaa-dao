@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import type { Database } from 'better-sqlite3';
 
-export async function up(db: Database) {
+export async function migrateRulesEngine(db: Database) {
   // Rules templates (pre-built rule definitions)
   db.exec(`
     CREATE TABLE rule_templates (
@@ -172,7 +172,7 @@ export async function up(db: Database) {
   }
 }
 
-export async function down(db: Database) {
+export async function rollbackRulesEngine(db: Database) {
   db.exec('DROP TABLE IF EXISTS rule_executions');
   db.exec('DROP TABLE IF EXISTS dao_rules');
   db.exec('DROP TABLE IF EXISTS rule_templates');

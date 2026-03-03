@@ -1,4 +1,18 @@
 /**
+ * ⚠️  DEPRECATED - USE auditConsolidated.ts INSTEAD
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 
+ * This service is being consolidated into:
+ * 👉 server/services/auditConsolidated.ts
+ * 
+ * New code should use:
+ * import { logConsolidatedAuditEvent } from '../services/auditConsolidated';
+ * 
+ * Existing code using this service will continue to work during transition period.
+ * Migration deadline: 2026-06-01
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 
  * Audit Logging Service
  * Day 3 - Comprehensive Admin Action Audit Trail
  * 
@@ -15,7 +29,7 @@ import { v4 as uuid } from 'uuid';
 export interface AuditLogDTO {
   // Actor
   actorId: string;
-  actorType?: 'admin' | 'agent' | 'system' | 'user' | 'superuser';
+  actorType?: 'admin' | 'agent' | 'system' | 'user' | 'super_admin';
   actorRole?: string;
   
   // Action

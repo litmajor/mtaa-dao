@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { logger } from '../utils/logger';
+import { authenticate } from '../auth';
 import {
   poolProposals,
   poolVotes,
@@ -10,6 +11,13 @@ import { eq } from 'drizzle-orm';
 import { poolGovernanceService } from '../services/poolGovernanceService';
 
 const router = Router();
+
+// ════════════════════════════════════════════════════════════════════════════════
+// AUTHENTICATION MIDDLEWARE
+// ════════════════════════════════════════════════════════════════════════════════
+
+// All pool governance operations require authentication
+router.use(authenticate);
 
 // =====================================================
 // POOL GOVERNANCE - WEIGHTED VOTING

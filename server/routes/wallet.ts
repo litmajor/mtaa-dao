@@ -325,8 +325,83 @@ router.get('/savings', isAuthenticated, async (req, res) => {
   }
 });
 
+// ════════════════════════════════════════════════════════════════════════════════
+// NEW RESTful ENDPOINT (RECOMMENDED)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// POST /api/wallet/savings - Create savings account
+router.post('/savings', isAuthenticated, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const validatedData = createSavingsSchema.parse(req.body);
+    const { amount, lockPeriodDays } = validatedData;
+
+    // Calculate interest rate
+    let interestRate = '0.08'; // 8% for 30 days
+    if (lockPeriodDays >= 365) interestRate = '0.15';
+    else if (lockPeriodDays >= 180) interestRate = '0.12';
+    else if (lockPeriodDays >= 90) interestRate = '0.10';
+
+    // Get or create savings vault
+    let vault = await db.query.vaults.findFirst({
+      where: and(
+        eq(vaults.userId, userId),
+        eq(vaults.vaultType, 'savings')
+      )
+    });
+
+    if (!vault) {
+      const [newVault] = await db.insert(vaults).values({
+        userId,
+        name: 'Savings Vault',
+        currency: 'cUSD',
+        vaultType: 'savings',
+        isActive: true
+      }).returning();
+      vault = newVault;
+    }
+
+    const unlocksAt = new Date();
+    unlocksAt.setDate(unlocksAt.getDate() + lockPeriodDays);
+
+    const [lockedSaving] = await db.insert(lockedSavings).values({
+      userId,
+      vaultId: vault.id,
+      amount: amount.toString(),
+      currency: 'cUSD',
+      lockPeriod: lockPeriodDays,
+      interestRate,
+      unlocksAt,
+      status: 'locked'
+    }).returning();
+
+    res.json({ success: true, data: lockedSaving });
+  } catch (error) {
+    logger.error('Failed to create savings:', error);
+    res.status(500).json({ success: false, error: 'Failed to create savings account' });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// DEPRECATED ENDPOINT (Keep for 6 months, then remove)
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @deprecated Use POST /api/wallet/savings instead
+ * Sunset: 2026-09-01
+ */
 // POST /api/wallet/savings/create
 router.post('/savings/create', isAuthenticated, async (req, res) => {
+  // Issue deprecation warning
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', 'Wed, 01 Sep 2026 00:00:00 GMT');
+  res.setHeader('Link', '</api/wallet/savings>; rel="successor-version"');
+  res.setHeader('Warning', '299 - "POST /api/wallet/savings/create is deprecated. Use POST /api/wallet/savings instead"');
+
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -460,8 +535,61 @@ router.get('/network-info', requireWallet, async (req, res) => {
 });
 
 // --- Wallet-scoped Multisig Endpoints (lightweight, in-memory) ---
+
+// ════════════════════════════════════════════════════════════════════════════════
+// NEW RESTful ENDPOINT (RECOMMENDED)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// POST /api/wallet/multisig - Create multisig wallet
+router.post('/multisig', isAuthenticated, async (req, res) => {
+  try {
+    const { owners, threshold, name } = req.body;
+
+    if (!Array.isArray(owners) || owners.length === 0) {
+      return res.status(400).json({ success: false, error: 'Owners array required' });
+    }
+    const t = parseInt(threshold, 10) || Number(threshold) || threshold;
+    if (!t || t < 1 || t > owners.length) {
+      return res.status(400).json({ success: false, error: 'Invalid threshold' });
+    }
+
+    // Generate pseudo contract/address id
+    const address = '0x' + crypto.randomBytes(20).toString('hex');
+
+    const multisig: InMemoryMultisig = {
+      address,
+      name,
+      owners: owners.map((o: any) => String(o)),
+      threshold: t,
+      balance: '0',
+      transactionCount: 0,
+      createdAt: new Date().toISOString()
+    };
+
+    inMemoryMultisigs[address] = multisig;
+
+    res.json({ success: true, address: multisig.address, owners: multisig.owners, threshold: multisig.threshold, transactionCount: multisig.transactionCount });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || String(err) });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// DEPRECATED ENDPOINT (Keep for 6 months, then remove)
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @deprecated Use POST /api/wallet/multisig instead
+ * Sunset: 2026-09-01
+ */
 // POST /api/wallet/multisig/create
 router.post('/multisig/create', isAuthenticated, async (req, res) => {
+  // Issue deprecation warning
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', 'Wed, 01 Sep 2026 00:00:00 GMT');
+  res.setHeader('Link', '</api/wallet/multisig>; rel="successor-version"');
+  res.setHeader('Warning', '299 - "POST /api/wallet/multisig/create is deprecated. Use POST /api/wallet/multisig instead"');
+
   try {
     const { owners, threshold, name } = req.body;
 

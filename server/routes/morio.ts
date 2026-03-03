@@ -4,12 +4,17 @@
  * Endpoints for interacting with the Morio conversational assistant
  */
 
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
+import { authenticateToken } from '../middleware/auth';
+import { rateLimitPerUser } from '../middleware/rateLimit';
+import { jobQueueService } from '../services/jobQueueService';
 import { morio } from '../agents/morio';
 import { nuru } from '../core/nuru';
 import { checkFeatureGating } from '../services/gatingService';
 import { getUserPersona } from '../services/personaService';
 import { db } from '../db';
+import { daoMemberships, vaults } from '../../shared/schema';
+import { eq, and } from 'drizzle-orm';
 import type { ChatMessage } from '../agents/morio/types';
 import type { User } from '../../shared/schema';
 
@@ -17,44 +22,58 @@ const router = Router();
 
 /**
  * POST /api/morio/chat
- * Handle chat messages from users
+ * Queue chat message for processing (returns immediately with job ID)
+ * Rate limit: 5 requests per 1 minute per user to prevent LLM API abuse
  */
-router.post('/chat', async (req, res) => {
+router.post('/chat', [authenticateToken, rateLimitPerUser('morio-chat', 5, '1min')], async (req: any, res: Response) => {
   try {
-    const { userId, daoId, message } = req.body;
+    const userId = req.user?.id;
+    const { daoId, message } = req.body;
 
     if (!userId || !message) {
       return res.status(400).json({ 
-        error: 'Missing required fields: userId and message' 
+        error: 'Missing required fields: message (userId from auth)' 
       });
     }
 
-    const chatMessage: ChatMessage = {
+    // Queue chat job
+    const jobId = await jobQueueService.queueJob('morio-chat', {
       userId,
       daoId: daoId || '',
-      content: message,
+      message,
       timestamp: new Date()
-    };
+    }, {
+      priority: 7,
+      timeout: 60000 // 60 second timeout
+    });
 
-    const response = await morio.handleMessage(chatMessage);
-
-    res.json(response);
+    res.status(202).json({
+      success: true,
+      jobId,
+      statusUrl: `/api/morio/chat-status/${jobId}`
+    });
   } catch (error) {
-    console.error('Morio chat error:', error);
+    console.error('Morio chat queue error:', error);
     res.status(500).json({ 
-      error: 'Failed to process message',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      error: 'Failed to queue chat message'
     });
   }
 });
 
 /**
  * GET /api/morio/session/:userId
- * Get user session status
+ * Get user session status (AUTHENTICATED - only own session)
  */
-router.get('/session/:userId', async (req, res) => {
+router.get('/session/:userId', [authenticateToken], async (req: any, res: Response) => {
   try {
     const { userId } = req.params;
+    const requestingUserId = req.user?.id;
+
+    // Users can only access their own session
+    if (requestingUserId !== userId) {
+      return res.status(403).json({ error: 'Forbidden: can only access own session' });
+    }
+
     const session = await morio.getSessionStatus(userId);
     res.json(session);
   } catch (error) {
@@ -65,11 +84,18 @@ router.get('/session/:userId', async (req, res) => {
 
 /**
  * DELETE /api/morio/session/:userId
- * Clear user session
+ * Clear user session (AUTHENTICATED - only own session)
  */
-router.delete('/session/:userId', async (req, res) => {
+router.delete('/session/:userId', [authenticateToken], async (req: any, res: Response) => {
   try {
     const { userId } = req.params;
+    const requestingUserId = req.user?.id;
+
+    // Users can only clear their own session
+    if (requestingUserId !== userId) {
+      return res.status(403).json({ error: 'Forbidden: can only clear own session' });
+    }
+
     await morio.clearSession(userId);
     res.json({ success: true });
   } catch (error) {
@@ -80,10 +106,12 @@ router.delete('/session/:userId', async (req, res) => {
 
 /**
  * POST /api/morio/analyze
- * Request analytics from Nuru
+ * Queue DAO analysis job (returns immediately with job ID)
+ * Rate limit: 2 requests per 1 minute per user to prevent LLM API abuse
  */
-router.post('/analyze', async (req, res) => {
+router.post('/analyze', [authenticateToken, rateLimitPerUser('morio-analyze', 2, '1min')], async (req: any, res: Response) => {
   try {
+    const userId = req.user?.id;
     const { type, daoId, timeframe } = req.body;
 
     if (!type || !daoId) {
@@ -92,20 +120,55 @@ router.post('/analyze', async (req, res) => {
       });
     }
 
-    const analysis = await nuru.analyze({ type, daoId, timeframe });
-    res.json(analysis);
+    // Verify user has access to this DAO
+    const membership = await db
+      .select()
+      .from(daoMemberships)
+      .where(
+        and(
+          eq(daoMemberships.daoId, daoId),
+          eq(daoMemberships.userId, userId)
+        )
+      )
+      .limit(1);
+
+    if (!membership || membership.length === 0) {
+      return res.status(403).json({ 
+        error: 'User does not have access to analyze this DAO',
+        daoId
+      });
+    }
+
+    // Queue analysis job
+    const jobId = await jobQueueService.queueJob('morio-analyze', {
+      userId,
+      daoId,
+      analysisType: type,
+      timeframe
+    }, {
+      priority: 6,
+      timeout: 120000 // 2 minute timeout
+    });
+
+    res.status(202).json({
+      success: true,
+      jobId,
+      statusUrl: `/api/morio/analyze-status/${jobId}`
+    });
   } catch (error) {
-    console.error('Analysis error:', error);
-    res.status(500).json({ error: 'Failed to perform analysis' });
+    console.error('Analysis queue error:', error);
+    res.status(500).json({ error: 'Failed to queue analysis' });
   }
 });
 
 /**
  * POST /api/morio/assess-risk
- * Request risk assessment from Nuru
+ * Queue risk assessment job (returns immediately with job ID)
+ * Rate limit: 2 requests per 1 minute per user to prevent LLM API abuse
  */
-router.post('/assess-risk', async (req, res) => {
+router.post('/assess-risk', [authenticateToken, rateLimitPerUser('morio-risk', 2, '1min')], async (req: any, res: Response) => {
   try {
+    const userId = req.user?.id;
     const { proposalId, daoId } = req.body;
 
     if (!proposalId || !daoId) {
@@ -114,48 +177,60 @@ router.post('/assess-risk', async (req, res) => {
       });
     }
 
-    const riskAssessment = await nuru.assessRisk(proposalId, daoId);
-    res.json(riskAssessment);
+    // Verify user has access to this DAO before assessing risk
+    const membership = await db
+      .select()
+      .from(daoMemberships)
+      .where(
+        and(
+          eq(daoMemberships.daoId, daoId),
+          eq(daoMemberships.userId, userId)
+        )
+      )
+      .limit(1);
+
+    if (!membership || membership.length === 0) {
+      return res.status(403).json({ 
+        error: 'User does not have access to assess risk for this DAO',
+        daoId
+      });
+    }
+
+    // Queue risk assessment job
+    const jobId = await jobQueueService.queueJob('morio-analyze', {
+      userId,
+      daoId,
+      proposalId,
+      analysisType: 'risk-assessment'
+    }, {
+      priority: 6,
+      timeout: 120000 // 2 minute timeout
+    });
+
+    res.status(202).json({
+      success: true,
+      jobId,
+      statusUrl: `/api/morio/risk-status/${jobId}`
+    });
   } catch (error) {
-    console.error('Risk assessment error:', error);
-    res.status(500).json({ error: 'Failed to assess risk' });
+    console.error('Risk assessment queue error:', error);
+    res.status(500).json({ error: 'Failed to queue risk assessment' });
   }
 });
 
 /**
- * GET /api/morio/health
- * Health check for Morio system
+ * Morio AI Assistant endpoint (health check consolidated to /api/health/morio)
+ * See health.ts for /health endpoint
  */
-router.get('/health', async (req, res) => {
-  try {
-    const nuruHealth = await nuru.healthCheck();
-
-    res.json({
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      components: {
-        morio: 'active',
-        nuru: nuruHealth.status,
-        kwetu: 'active'
-      }
-    });
-  } catch (error) {
-    console.error('Health check error:', error);
-    res.status(500).json({ 
-      status: 'unhealthy',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
 
 /**
  * GET /api/morio/user-context
- * Get user's gating and persona context for Morio
- * Used by Morio to provide personalized guidance about feature access
+ * Get user's personalized context for Morio
+ * Includes: gating, persona, DAO roles, vault positions, activity summary
  */
-router.get('/user-context', async (req, res) => {
+router.get('/user-context', [authenticateToken], async (req: any, res: Response) => {
   try {
-    const userId = (req.user as any)?.id;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -172,6 +247,16 @@ router.get('/user-context', async (req, res) => {
     // Get user's persona
     const persona = await getUserPersona(userId);
 
+    // Get user's DAO memberships and roles
+    const userDaoMemberships = await db
+      .select({
+        daoId: daoMemberships.daoId,
+        role: daoMemberships.role,
+        joinedAt: daoMemberships.joinedAt,
+      })
+      .from(daoMemberships)
+      .where(eq(daoMemberships.userId, userId));
+
     // Get all gating statuses
     const gatingStatuses: Record<string, any> = {};
     const features = [
@@ -182,7 +267,10 @@ router.get('/user-context', async (req, res) => {
       'investment.pools',
       'ai.assistant',
       'dao.create',
-      'dao.join'
+      'dao.join',
+      'aave.flash-loans',
+      'cross-chain.operations',
+      'advanced.analytics'
     ];
 
     for (const feature of features) {
@@ -196,7 +284,7 @@ router.get('/user-context', async (req, res) => {
       };
     }
 
-    // Find locked features
+    // Find locked and available features
     const lockedFeatures = Object.entries(gatingStatuses)
       .filter(([, status]: any) => !status.isAvailable)
       .map(([feature]) => feature);
@@ -205,18 +293,41 @@ router.get('/user-context', async (req, res) => {
       .filter(([, status]: any) => status.isAvailable)
       .map(([feature]) => feature);
 
+    // Prepare user profile with enhanced personalization
     res.json({
       userId,
-      persona,
-      accountAge: user.joinedAt ? Math.floor((Date.now() - user.joinedAt.getTime()) / (1000 * 60 * 60 * 24)) : 0,
-      balance: user.mtaaTokenBalance ? Number(user.mtaaTokenBalance) : 0,
-      balanceCurrency: 'KES',
-      preferredCurrency: user.preferredCurrency || 'USD',
-      reputation: user.reputationScore ? Number(user.reputationScore) : 0,
-      advancedMode: user.isSuperUser || false, // Use isSuperUser for advanced mode
-      availableFeatures,
-      lockedFeatures,
-      gatingStatus: gatingStatuses,
+      profile: {
+        name: user.name || user.username,
+        persona,
+        accountAge: user.joinedAt ? Math.floor((Date.now() - user.joinedAt.getTime()) / (1000 * 60 * 60 * 24)) : 0,
+        reputation: user.reputationScore ? Number(user.reputationScore) : 0,
+        totalContributions: user.totalContributions ? Number(user.totalContributions) : 0,
+      },
+      portfolio: {
+        balance: user.mtaaTokenBalance ? Number(user.mtaaTokenBalance) : 0,
+        votingPower: user.votingPower ? Number(user.votingPower) : 0,
+        currentStreak: user.currentStreak || 0,
+        currency: 'MTAA'
+      },
+      governance: {
+        daoCount: userDaoMemberships.length,
+        roles: userDaoMemberships.map((m: any) => ({
+          daoId: m.daoId,
+          role: m.role,
+          joinedAt: m.joinedAt
+        })),
+        memberOf: userDaoMemberships.map((m: any) => m.daoId)
+      },
+      features: {
+        available: availableFeatures,
+        locked: lockedFeatures,
+        gatingStatus: gatingStatuses
+      },
+      preferences: {
+        preferredCurrency: user.preferredCurrency || 'USD',
+        darkMode: user.darkMode || false,
+        advancedMode: user.isSuperUser || false
+      },
       timestamp: new Date().toISOString()
     });
   } catch (error) {

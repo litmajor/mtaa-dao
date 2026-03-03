@@ -66,3 +66,47 @@ export const createUserRateLimit = (maxRequests: number, windowMs: number) => {
     }
   });
 };
+// ---------- convenience wrapper matching existing middleware API -----------
+// operation key + human readable window string
+export function rateLimitPerUser(
+  operation: string,
+  maxRequests: number,
+  window: string
+) {
+  // convert "1min"/"5min"/"30s" to ms
+  const parseWindow = (w: string) => {
+    const m = w.match(/^(\d+)(ms|s|min|h)$/);
+    if (!m) return parseInt(w, 10) || 0;
+    const n = parseInt(m[1], 10);
+    switch (m[2]) {
+      case 'ms':
+        return n;
+      case 's':
+        return n * 1000;
+      case 'min':
+        return n * 60 * 1000;
+      case 'h':
+        return n * 60 * 60 * 1000;
+      default:
+        return n;
+    }
+  };
+
+  const windowMs = parseWindow(window);
+  return rateLimit({
+    windowMs,
+    max: maxRequests,
+    keyGenerator: (req: Request) => {
+      const user = (req as any).user;
+      const id = user?.id || req.ip || 'anonymous';
+      return `${operation}:${id}`;
+    },
+    handler: (req: Request, res: Response) => {
+      res.status(429).json({
+        success: false,
+        error: 'Rate limit exceeded',
+        operation,
+      });
+    },
+  });
+}

@@ -341,6 +341,275 @@ export class TreasuryMultisigService {
 
     return result[0]?.total || 0;
   }
+
+  /**
+   * PHASE 3: Get transaction with approval details (for UI display)
+   * Includes timelock status, approval count, remaining approvals
+   */
+  async getTransactionWithDetails(txId: string) {
+    try {
+      const tx = await db.select().from(treasuryMultisigTransactions)
+        .where(eq(treasuryMultisigTransactions.id, txId))
+        .limit(1);
+
+      if (!tx.length) throw new NotFoundError('Transaction not found');
+      
+      const transaction = tx[0];
+      const signers = (transaction.signers as any[]) || [];
+      
+      const now = new Date();
+      const isExpired = new Date(transaction.expiresAt!) < now;
+      const isExecutable = transaction.status === 'approved' && !isExpired;
+
+      return {
+        ...transaction,
+        approvalCount: signers.length,
+        remainingApprovals: Math.max(0, transaction.requiredSignatures - signers.length),
+        isExecutable,
+        isExpired,
+        approvers: signers.map((s: any) => s.userId),
+        timeUntilExpiry: Math.max(0, new Date(transaction.expiresAt!).getTime() - now.getTime())
+      };
+    } catch (error: any) {
+      Logger.getLogger().error('Failed to get transaction details:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * PHASE 3: Get all transactions for a DAO with pagination
+   */
+  async getTransactions(daoId: string, status?: string, limit: number = 50, offset: number = 0) {
+    try {
+      const where = status 
+        ? and(
+            eq(treasuryMultisigTransactions.daoId, daoId),
+            eq(treasuryMultisigTransactions.status, status)
+          )
+        : eq(treasuryMultisigTransactions.daoId, daoId);
+
+      const transactions = await db.select()
+        .from(treasuryMultisigTransactions)
+        .where(where)
+        .orderBy(desc(treasuryMultisigTransactions.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      return transactions.map(tx => ({
+        ...tx,
+        approvalCount: ((tx.signers as any) || []).length,
+        remainingApprovals: Math.max(0, tx.requiredSignatures - ((tx.signers as any) || []).length)
+      }));
+    } catch (error: any) {
+      Logger.getLogger().error('Failed to get transactions:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * PHASE 3: Check if transaction can be executed (timelock elapsed + approvals met)
+   */
+  async canExecuteTransaction(txId: string): Promise<{ canExecute: boolean; reason?: string; timeRemaining?: number }> {
+    try {
+      const tx = await db.select().from(treasuryMultisigTransactions)
+        .where(eq(treasuryMultisigTransactions.id, txId))
+        .limit(1);
+
+      if (!tx.length) return { canExecute: false, reason: 'Transaction not found' };
+
+      const transaction = tx[0];
+      const signers = (transaction.signers as any[]) || [];
+      const now = new Date();
+
+      // Check approval count
+      if (signers.length < transaction.requiredSignatures) {
+        return { 
+          canExecute: false, 
+          reason: `Insufficient approvals. Have ${signers.length}, need ${transaction.requiredSignatures}` 
+        };
+      }
+
+      // Check status
+      if (transaction.status !== 'approved') {
+        return { canExecute: false, reason: `Transaction is ${transaction.status}` };
+      }
+
+      // Check expiry
+      const expiresAt = new Date(transaction.expiresAt!);
+      if (now > expiresAt) {
+        return { canExecute: false, reason: 'Transaction has expired' };
+      }
+
+      // Check for smart contract timelock (from metadata if Phase 3 enabled)
+      const metadata = transaction.metadata as any || {};
+      if (metadata.smartContractTimelock) {
+        const timelockEnd = new Date(metadata.smartContractTimelockEnd);
+        if (now < timelockEnd) {
+          const remaining = timelockEnd.getTime() - now.getTime();
+          return { 
+            canExecute: false, 
+            reason: `Smart contract timelock active. ${Math.ceil(remaining / 1000)} seconds remaining`,
+            timeRemaining: remaining
+          };
+        }
+      }
+
+      return { canExecute: true };
+    } catch (error: any) {
+      Logger.getLogger().error('Failed to check transaction executability:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * PHASE 3: Get audit log for a DAO with filtering
+   */
+  async getAuditLog(daoId: string, actionType?: string, limit: number = 50, offset: number = 0) {
+    try {
+      const where = actionType
+        ? and(
+            eq(treasuryAuditLog.daoId, daoId),
+            eq(treasuryAuditLog.action, actionType)
+          )
+        : eq(treasuryAuditLog.daoId, daoId);
+
+      const entries = await db.select()
+        .from(treasuryAuditLog)
+        .where(where)
+        .orderBy(desc(treasuryAuditLog.timestamp))
+        .limit(limit)
+        .offset(offset);
+
+      return entries;
+    } catch (error: any) {
+      Logger.getLogger().error('Failed to get audit log:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * PHASE 3: Enable smart contract features for a transaction
+   * Adds smart contract metadata: timelock, block number, voting snapshot ID
+   */
+  async enableSmartContractFeatures(
+    txId: string, 
+    timelockDays: number = 2,
+    votingSnapshotId?: string,
+    blockNumber?: number
+  ) {
+    try {
+      const tx = await db.select().from(treasuryMultisigTransactions)
+        .where(eq(treasuryMultisigTransactions.id, txId))
+        .limit(1);
+
+      if (!tx.length) throw new NotFoundError('Transaction not found');
+
+      const transaction = tx[0];
+      const metadata = (transaction.metadata as any) || {};
+      
+      const now = new Date();
+      const timelockEnd = new Date(now.getTime() + timelockDays * 24 * 60 * 60 * 1000);
+
+      // Update with smart contract metadata
+      await db.update(treasuryMultisigTransactions)
+        .set({
+          metadata: {
+            ...metadata,
+            smartContractEnabled: true,
+            smartContractTimelock: true,
+            smartContractTimelockEnd: timelockEnd.toISOString(),
+            timelockDays,
+            votingSnapshotId,
+            blockNumber,
+            enabledAt: now.toISOString()
+          } as any,
+          updatedAt: new Date()
+        })
+        .where(eq(treasuryMultisigTransactions.id, txId));
+
+      Logger.getLogger().info(`Smart contract features enabled for transaction ${txId}. Timelock: ${timelockDays} days`);
+
+      return { success: true, timelockEnd };
+    } catch (error: any) {
+      Logger.getLogger().error('Failed to enable smart contract features:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * PHASE 3: Record blockchain execution
+   * Stores tx hash and block number when transaction is executed on-chain
+   */
+  async recordBlockchainExecution(txId: string, txHash: string, blockNumber: number) {
+    try {
+      const tx = await db.select().from(treasuryMultisigTransactions)
+        .where(eq(treasuryMultisigTransactions.id, txId))
+        .limit(1);
+
+      if (!tx.length) throw new NotFoundError('Transaction not found');
+
+      const transaction = tx[0];
+
+      await db.update(treasuryMultisigTransactions)
+        .set({
+          executionTxHash: txHash,
+          metadata: {
+            ...(transaction.metadata as any),
+            blockNumber,
+            blockchainExecutedAt: new Date().toISOString()
+          } as any,
+          updatedAt: new Date()
+        })
+        .where(eq(treasuryMultisigTransactions.id, txId));
+
+      // Audit log for blockchain execution
+      await this.logAudit({
+        daoId: transaction.daoId,
+        actorId: 'smart_contract',
+        action: 'blockchain_execution',
+        amount: parseFloat(transaction.amount),
+        reason: `On-chain execution: ${txHash}`,
+        transactionHash: txHash,
+        multisigTxId: txId,
+        severity: 'high'
+      });
+
+      Logger.getLogger().info(`Blockchain execution recorded for transaction ${txId}. TxHash: ${txHash}, Block: ${blockNumber}`);
+
+      return { success: true, txHash, blockNumber };
+    } catch (error: any) {
+      Logger.getLogger().error('Failed to record blockchain execution:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * PHASE 3: Get pending approvals for a DAO
+   */
+  async getPendingApprovals(daoId: string) {
+    try {
+      const transactions = await db.select()
+        .from(treasuryMultisigTransactions)
+        .where(and(
+          eq(treasuryMultisigTransactions.daoId, daoId),
+          eq(treasuryMultisigTransactions.status, 'pending')
+        ))
+        .orderBy(desc(treasuryMultisigTransactions.createdAt));
+
+      return transactions.map(tx => {
+        const signers = (tx.signers as any[]) || [];
+        return {
+          ...tx,
+          approvalCount: signers.length,
+          remainingApprovals: Math.max(0, tx.requiredSignatures - signers.length),
+          approvers: signers.map((s: any) => s.userId)
+        };
+      });
+    } catch (error: any) {
+      Logger.getLogger().error('Failed to get pending approvals:', error);
+      throw error;
+    }
+  }
 }
 
 export const treasuryMultisigService = new TreasuryMultisigService();

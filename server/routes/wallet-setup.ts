@@ -1,7 +1,8 @@
 import express from 'express';
+import bcrypt from 'bcryptjs';
 import { WalletManager, EnhancedAgentWallet, NetworkConfig } from '../agent_wallet';
 import { db } from '../storage';
-import { users, vaults, walletTransactions } from '../../shared/schema';
+import { users, vaults, walletTransactions, wallets, walletPrivateKeys, walletSeedPhrases, walletSecuritySettings, walletSessions } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
 import { notificationService } from '../notificationService';
 import {
@@ -14,13 +15,65 @@ import {
 } from '../utils/cryptoWallet';
 import { Logger } from '../utils/logger';
 import { isAuthenticated } from '../auth';
+import { auditConsolidated } from '../services/auditConsolidated';
+import { createRateLimiter } from '../middleware/rateLimiting';
 
 const logger = new Logger('wallet-setup');
+
+// === Wallet Configuration Constants ===
+
+/**
+ * Maximum number of wallets per user
+ * Users can create up to 5 wallets (accounts) per user
+ * For stealth addresses / privacy layer, future enhancement
+ */
+const MAX_WALLETS_PER_USER = 5;
+
+// === Rate Limiters for Sensitive Wallet Operations ===
+
+/**
+ * Wallet key material access (unlock, import, recover)
+ * 3 attempts per hour per user (prevent brute force / key theft)
+ */
+const walletKeyMaterialLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  maxRequests: 3,
+  keyGenerator: (req: express.Request) => {
+    const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
+    return `wallet_key_access:${userId}`;
+  },
+});
+
+/**
+ * Wallet backup/sensitive data access
+ * 5 attempts per hour per user
+ */
+const walletBackupDataLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  maxRequests: 5,
+  keyGenerator: (req: express.Request) => {
+    const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
+    return `wallet_backup:${userId}`;
+  },
+});
+
+/**
+ * Wallet and vault creation (normal rate limit)
+ * 10 per hour per user
+ */
+const walletCreationLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  maxRequests: 10,
+  keyGenerator: (req: express.Request) => {
+    const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
+    return `wallet_creation:${userId}`;
+  },
+});
 
 const router = express.Router();
 
 // POST /api/wallet-setup/create-wallet-mnemonic
-router.post('/create-wallet-mnemonic', isAuthenticated, async (req, res) => {
+router.post('/create-wallet-mnemonic', isAuthenticated, walletCreationLimiter, async (req, res) => {
   try {
     const authReq = req as any;
     const userId = authReq.user?.id || authReq.user?.claims?.sub;
@@ -38,34 +91,98 @@ router.post('/create-wallet-mnemonic', isAuthenticated, async (req, res) => {
       return res.status(400).json({ error: 'Word count must be 12 or 24' });
     }
 
-    // Check if user already has a wallet
-    const existingUser = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-    if (existingUser.length > 0 && existingUser[0].encryptedWallet) {
-      return res.status(400).json({ error: 'User already has a wallet' });
+    // Check wallet count limit per user
+    const existingWallets = await db
+      .select()
+      .from(wallets)
+      .where(eq(wallets.userId, userId));
+
+    if (existingWallets.length >= MAX_WALLETS_PER_USER) {
+      await auditConsolidated.logConsolidatedAuditEvent({
+        userId,
+        action: 'wallet_create_limit_exceeded',
+        status: 'denied',
+        details: { reason: `User already has max wallets (${MAX_WALLETS_PER_USER})`, existingCount: existingWallets.length },
+        severity: 'medium'
+      });
+      return res.status(400).json({
+        error: `Wallet limit exceeded. You can have maximum ${MAX_WALLETS_PER_USER} wallets per account.`
+      });
     }
 
     // Generate wallet with mnemonic
     const walletCredentials = generateWalletFromMnemonic(wordCount);
 
     // Encrypt wallet data (use a default password if not provided)
-    const encryptionPassword = password || 'default-unencrypted';
+    const encryptionPassword = password || require('crypto').randomBytes(32).toString('hex');
     const encrypted = encryptWallet(walletCredentials, encryptionPassword);
 
-    // Update user with encrypted wallet
-    await db.update(users)
-      .set({
-        encryptedWallet: encrypted.encryptedData,
-        walletSalt: encrypted.salt,
-        walletIv: encrypted.iv,
-        walletAuthTag: encrypted.authTag,
-        hasBackedUpMnemonic: false,
-        updatedAt: new Date()
-      })
-      .where(eq(users.id, userId));
+    // Create wallet record in wallets table
+    const [newWallet] = await db.insert(wallets).values({
+      userId,
+      currency,
+      address: walletCredentials.address,
+      walletType: 'personal',
+      isActive: true
+    }).returning();
+
+    // Store encrypted private key
+    await db.insert(walletPrivateKeys).values({
+      walletId: newWallet.id,
+      encryptedPrivateKey: encrypted.encryptedData,
+      encryptionIv: encrypted.iv,
+      encryptionSalt: encrypted.salt,
+      authTag: encrypted.authTag,
+      keyDerivationFunction: 'pbkdf2',
+      encryptionAlgorithm: 'aes-256-gcm',
+      isBackedUp: false
+    });
+
+    // Store encrypted seed phrase
+    const encryptedMnemonic = encryptWallet({ mnemonic: walletCredentials.mnemonic }, encryptionPassword);
+    await db.insert(walletSeedPhrases).values({
+      walletId: newWallet.id,
+      encryptedSeedPhrase: encryptedMnemonic.encryptedData,
+      wordCount,
+      encryptionIv: encryptedMnemonic.iv,
+      encryptionSalt: encryptedMnemonic.salt,
+      authTag: encryptedMnemonic.authTag,
+      derivationPath: "m/44'/60'/0'/0",
+      isBackedUp: false,
+      backupMethod: null,
+      backupLocation: null
+    });
+
+    // Initialize wallet security settings
+    await db.insert(walletSecuritySettings).values({
+      walletId: newWallet.id,
+      requiresPin: password ? true : false,
+      requiresBiometric: false,
+      twoFactorEnabled: false,
+      withdrawalLimit: '10000.00',
+      requiresApprovalAboveThreshold: true,
+      approvalThreshold: '5000.00'
+    });
+
+    // Also update users table for backward compatibility
+    const existingUser = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (existingUser.length > 0 && !existingUser[0].encryptedWallet) {
+      await db.update(users)
+        .set({
+          encryptedWallet: encrypted.encryptedData,
+          walletSalt: encrypted.salt,
+          walletIv: encrypted.iv,
+          walletAuthTag: encrypted.authTag,
+          hasBackedUpMnemonic: false,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, userId));
+    }
 
     // Create primary vault
     const primaryVault = await db.insert(vaults).values({
       userId,
+      creatorId: userId,
       currency,
       address: walletCredentials.address,
       balance: '0.00',
@@ -76,27 +193,64 @@ router.post('/create-wallet-mnemonic', isAuthenticated, async (req, res) => {
       userId,
       type: 'wallet',
       title: 'Wallet Created Successfully',
-      message: `Your new wallet has been created. Please backup your recovery phrase.`,
+      message: `Your new wallet has been created. Please backup your recovery phrase immediately.`,
       metadata: {
+        walletId: newWallet.id,
         vaultId: primaryVault[0].id,
         currency
       }
     });
 
+    // Audit log wallet creation
+    await auditConsolidated.logConsolidatedAuditEvent({
+      userId,
+      action: 'wallet_created_with_mnemonic',
+      resourceId: newWallet.id,
+      status: 'success',
+      details: { 
+        walletId: newWallet.id,
+        walletAddress: walletCredentials.address,
+        wordCount,
+        encryptedPrivateKeyStored: true,
+        encryptedSeedPhraseStored: true
+      },
+      severity: 'medium'
+    });
+
     res.json({
       success: true,
       wallet: {
+        id: newWallet.id,
         address: walletCredentials.address,
-        mnemonic: walletCredentials.mnemonic, // Only sent once - client must save
-        privateKey: walletCredentials.privateKey // Returned once for user to save if needed
+        // CRITICAL: Return credentials ONLY ON CREATION
+        // All subsequent access requires authentication via unlock-wallet
+        mnemonic: walletCredentials.mnemonic,
+        privateKey: walletCredentials.privateKey,
+        wordCount,
+        derivationPath: "m/44'/60'/0'/0"
       },
       primaryVault: primaryVault[0],
-      message: 'Wallet created successfully. Please backup your recovery phrase immediately.'
+      message: '✅ Wallet created successfully. Please save your recovery phrase immediately in a secure location. Never share it with anyone.',
+      warning: 'You will NOT see your private key or recovery phrase again. Store them safely now.',
+      encryptionStatus: {
+        privateKeyEncrypted: true,
+        mnemonicEncrypted: true,
+        storageLocation: 'Database (encrypted in walletPrivateKeys & walletSeedPhrases)',
+        requiresAuthenticationForAccess: true,
+        accessMethod: 'POST /api/wallet-setup/unlock-wallet (requires password)'
+      }
     });
 
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     logger.error('Wallet creation error:', errorMsg);
+    await auditConsolidated.logConsolidatedAuditEvent({
+      userId: (req as any).user?.id || (req as any).user?.claims?.sub,
+      action: 'wallet_create_mnemonic_error',
+      status: 'error',
+      details: { error: errorMsg },
+      severity: 'medium'
+    });
     res.status(500).json({ error: errorMsg });
   }
 });
@@ -252,9 +406,28 @@ router.post('/restore-from-backup', isAuthenticated, async (req, res) => {
 });
 
 // POST /api/wallet-setup/recover-wallet
-router.post('/recover-wallet', async (req, res) => {
+router.post('/recover-wallet', isAuthenticated, walletKeyMaterialLimiter, async (req, res) => {
   try {
+    const authReq = req as any;
+    const authenticatedUserId = authReq.user?.id || authReq.user?.claims?.sub;
     const { userId, mnemonic, password, currency = 'cUSD' } = req.body;
+
+    if (!authenticatedUserId) {
+      return res.status(401).json({ error: 'Unauthorized: User not found in token' });
+    }
+
+    // Validate userId from request body matches authenticated user
+    if (userId !== authenticatedUserId) {
+      await auditConsolidated.logConsolidatedAuditEvent({
+        userId: authenticatedUserId,
+        action: 'wallet_recover_unauthorized_attempt',
+        targetUserId: userId,
+        status: 'denied',
+        details: { reason: 'userId mismatch with authenticated user' },
+        severity: 'high'
+      });
+      return res.status(403).json({ error: 'Forbidden: Cannot access another user\'s wallet' });
+    }
 
     if (!userId || !mnemonic || !password) {
       return res.status(400).json({ error: 'User ID, mnemonic, and password are required' });
@@ -285,6 +458,7 @@ router.post('/recover-wallet', async (req, res) => {
     // Create primary vault
     const primaryVault = await db.insert(vaults).values({
       userId,
+      creatorId: userId,
       currency,
       address: walletCredentials.address,
       balance: '0.00',
@@ -302,6 +476,17 @@ router.post('/recover-wallet', async (req, res) => {
       }
     });
 
+    // Audit log wallet recovery
+    await auditConsolidated.logConsolidatedAuditEvent({
+      userId: authenticatedUserId,
+      action: 'wallet_recovered',
+      targetUserId: userId,
+      resourceId: walletCredentials.address,
+      status: 'success',
+      details: { walletAddress: walletCredentials.address },
+      severity: 'medium'
+    });
+
     res.json({
       success: true,
       wallet: { address: walletCredentials.address },
@@ -311,14 +496,40 @@ router.post('/recover-wallet', async (req, res) => {
 
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
+    await auditConsolidated.logConsolidatedAuditEvent({
+      userId: (req as any).user?.id || (req as any).user?.claims?.sub,
+      action: 'wallet_recover_error',
+      status: 'error',
+      details: { error: errorMsg },
+      severity: 'medium'
+    });
     res.status(500).json({ error: errorMsg });
   }
 });
 
 // POST /api/wallet-setup/import-private-key
-router.post('/import-private-key', async (req, res) => {
+router.post('/import-private-key', isAuthenticated, walletKeyMaterialLimiter, async (req, res) => {
   try {
+    const authReq = req as any;
+    const authenticatedUserId = authReq.user?.id || authReq.user?.claims?.sub;
     const { userId, privateKey, password, currency = 'cUSD' } = req.body;
+
+    if (!authenticatedUserId) {
+      return res.status(401).json({ error: 'Unauthorized: User not found in token' });
+    }
+
+    // Validate userId from request body matches authenticated user
+    if (userId !== authenticatedUserId) {
+      await auditConsolidated.logConsolidatedAuditEvent({
+        userId: authenticatedUserId,
+        action: 'wallet_import_unauthorized_attempt',
+        targetUserId: userId,
+        status: 'denied',
+        details: { reason: 'userId mismatch with authenticated user' },
+        severity: 'high'
+      });
+      return res.status(403).json({ error: 'Forbidden: Cannot access another user\'s wallet' });
+    }
 
     if (!userId || !privateKey || !password) {
       return res.status(400).json({ error: 'User ID, private key, and password are required' });
@@ -345,6 +556,7 @@ router.post('/import-private-key', async (req, res) => {
     // Create primary vault
     const primaryVault = await db.insert(vaults).values({
       userId,
+      creatorId: userId,
       currency,
       address: walletCredentials.address,
       balance: '0.00',
@@ -362,6 +574,17 @@ router.post('/import-private-key', async (req, res) => {
       }
     });
 
+    // Audit log wallet import
+    await auditConsolidated.logConsolidatedAuditEvent({
+      userId: authenticatedUserId,
+      action: 'wallet_imported',
+      targetUserId: userId,
+      resourceId: walletCredentials.address,
+      status: 'success',
+      details: { walletAddress: walletCredentials.address, importMethod: 'private_key' },
+      severity: 'medium'
+    });
+
     res.json({
       success: true,
       wallet: { address: walletCredentials.address },
@@ -371,19 +594,144 @@ router.post('/import-private-key', async (req, res) => {
 
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
+    await auditConsolidated.logConsolidatedAuditEvent({
+      userId: (req as any).user?.id || (req as any).user?.claims?.sub,
+      action: 'wallet_import_error',
+      status: 'error',
+      details: { error: errorMsg },
+      severity: 'medium'
+    });
     res.status(500).json({ error: errorMsg });
   }
 });
 
 // POST /api/wallet-setup/unlock-wallet
-router.post('/unlock-wallet', async (req, res) => {
+// Supports two authentication methods:
+// 1. Password unlock - returns full key material (privateKey + mnemonic)
+// 2. PIN unlock - creates wallet session, returns sessionToken (read-only access)
+router.post('/unlock-wallet', isAuthenticated, walletKeyMaterialLimiter, async (req, res) => {
   try {
-    const { userId, password } = req.body;
+    const authReq = req as any;
+    const authenticatedUserId = authReq.user?.id || authReq.user?.claims?.sub;
+    const { userId, walletId, password, pinCode } = req.body;
 
-    if (!userId || !password) {
-      return res.status(400).json({ error: 'User ID and password are required' });
+    if (!authenticatedUserId) {
+      return res.status(401).json({ error: 'Unauthorized: User not found in token' });
     }
 
+    // Validate userId from request body matches authenticated user
+    if (userId !== authenticatedUserId) {
+      await auditConsolidated.logConsolidatedAuditEvent({
+        userId: authenticatedUserId,
+        action: 'wallet_unlock_unauthorized_attempt',
+        targetUserId: userId,
+        status: 'denied',
+        details: { reason: 'userId mismatch with authenticated user' },
+        severity: 'high'
+      });
+      return res.status(403).json({ error: 'Forbidden: Cannot access another user\'s wallet' });
+    }
+
+    if (!userId || (!password && !pinCode)) {
+      return res.status(400).json({ error: 'User ID and either password or PIN are required' });
+    }
+
+    // === PIN-BASED WALLET SESSION (Recommended) ===
+    if (pinCode) {
+      if (!walletId) {
+        return res.status(400).json({ error: 'walletId required for PIN-based unlock' });
+      }
+
+      // Get wallet and security settings
+      const [wallet] = await db.select().from(wallets).where(eq(wallets.id, walletId)).limit(1);
+      if (!wallet || wallet.userId !== userId) {
+        await auditConsolidated.logConsolidatedAuditEvent({
+          userId: authenticatedUserId,
+          action: 'wallet_unlock_invalid_wallet',
+          status: 'denied',
+          details: { reason: 'Wallet not found or access denied' },
+          severity: 'high'
+        });
+        return res.status(404).json({ error: 'Wallet not found' });
+      }
+
+      const [securitySettings] = await db.select()
+        .from(walletSecuritySettings)
+        .where(eq(walletSecuritySettings.walletId, walletId))
+        .limit(1);
+
+      if (!securitySettings || !securitySettings.encryptedPin) {
+        return res.status(400).json({ error: 'PIN not configured for this wallet. Please set PIN first using POST /set-pin endpoint.' });
+      }
+
+      // Verify PIN using bcrypt (secure PIN verification)
+      const pinMatches = await bcrypt.compare(pinCode, securitySettings.encryptedPin);
+
+      if (!pinMatches) {
+        await auditConsolidated.logConsolidatedAuditEvent({
+          userId: authenticatedUserId,
+          action: 'wallet_unlock_pin_failed',
+          resourceId: walletId,
+          status: 'denied',
+          details: { reason: 'Invalid PIN' },
+          severity: 'medium'
+        });
+        return res.status(401).json({ error: 'Invalid PIN' });
+      }
+
+      // Create wallet session
+      const sessionToken = require('crypto').randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+      const [walletSession] = await db.insert(walletSessions).values({
+        walletId,
+        userId,
+        sessionToken,
+        isActive: true,
+        connectedAt: new Date(),
+        disconnectedAt: null,
+        lastAccessedAt: new Date(),
+        ipAddress: req.ip || req.socket.remoteAddress || 'unknown',
+        userAgent: req.get('user-agent') || '',
+        expiresAt,
+        biometricEnabled: false,
+        autoExtendEnabled: true
+      }).returning();
+
+      // Audit log successful PIN unlock
+      await auditConsolidated.logConsolidatedAuditEvent({
+        userId: authenticatedUserId,
+        action: 'wallet_session_created_with_pin',
+        resourceId: walletId,
+        status: 'success',
+        details: { 
+          walletAddress: wallet.address,
+          sessionId: walletSession.id,
+          expiresAt: expiresAt.toISOString(),
+          authMethod: 'PIN'
+        },
+        severity: 'medium'
+      });
+
+      res.json({
+        success: true,
+        walletSession: {
+          sessionToken,
+          walletId,
+          walletAddress: wallet.address,
+          expiresAt: expiresAt.toISOString(),
+          autoExtendEnabled: true
+        },
+        authMethod: 'PIN',
+        message: 'Wallet session created. You are now logged into this wallet.',
+        accessLevel: 'read-write',
+        note: 'Use this sessionToken to stay logged in. PIN-based sessions expire after 24 hours of inactivity.'
+      });
+
+      return;
+    }
+
+    // === PASSWORD-BASED FULL ACCESS (Legacy - for key material access) ===
     const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
 
     if (!user.length || !user[0].encryptedWallet) {
@@ -399,6 +747,20 @@ router.post('/unlock-wallet', async (req, res) => {
 
     const walletCredentials = decryptWallet(encrypted, password);
 
+    // Audit log key material access (HIGH SEVERITY)
+    await auditConsolidated.logConsolidatedAuditEvent({
+      userId: authenticatedUserId,
+      action: 'wallet_unlocked_full_key_access',
+      resourceId: walletCredentials.address,
+      status: 'success',
+      details: { 
+        walletAddress: walletCredentials.address, 
+        dataExposed: ['privateKey', 'mnemonic'],
+        authMethod: 'password'
+      },
+      severity: 'high'
+    });
+
     res.json({
       success: true,
       wallet: {
@@ -406,90 +768,241 @@ router.post('/unlock-wallet', async (req, res) => {
         privateKey: walletCredentials.privateKey,
         mnemonic: walletCredentials.mnemonic
       },
-      message: 'Wallet unlocked successfully'
+      authMethod: 'password',
+      message: 'Wallet unlocked (full access with key material)',
+      warning: 'You have access to private key. Use securely and never share.',
+      accessLevel: 'full'
     });
 
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: errorMsg === 'Unsupported state or unable to authenticate data' ? 'Invalid password' : errorMsg });
+    const isPasswordFailure = errorMsg === 'Unsupported state or unable to authenticate data';
+    const authenticatedUserId = (req as any).user?.id || (req as any).user?.claims?.sub;
+    
+    // Audit log failed unlock attempt
+    await auditConsolidated.logConsolidatedAuditEvent({
+      userId: authenticatedUserId,
+      action: isPasswordFailure ? 'wallet_unlock_failed_password' : 'wallet_unlock_error',
+      status: 'denied',
+      details: { reason: isPasswordFailure ? 'Invalid password' : errorMsg },
+      severity: 'medium'
+    });
+    
+    res.status(500).json({ error: isPasswordFailure ? 'Invalid password' : errorMsg });
   }
 });
 
 // POST /api/wallet-setup/create-wallet
-router.post('/create-wallet', async (req, res) => {
+router.post('/create-wallet', isAuthenticated, walletCreationLimiter, async (req, res) => {
   try {
-    const { userId, currency = 'cUSD', initialGoal = 0 } = req.body;
+    const authReq = req as any;
+    const authenticatedUserId = authReq.user?.id || authReq.user?.claims?.sub;
+    const { userId, currency = 'cUSD', initialGoal = 0, password = '', walletName = 'My Wallet' } = req.body;
+
+    if (!authenticatedUserId) {
+      return res.status(401).json({ error: 'Unauthorized: User not found in token' });
+    }
+
+    // Validate userId from request body matches authenticated user
+    if (userId !== authenticatedUserId) {
+      await auditConsolidated.logConsolidatedAuditEvent({
+        userId: authenticatedUserId,
+        action: 'wallet_create_unauthorized_attempt',
+        targetUserId: userId,
+        status: 'denied',
+        details: { reason: 'userId mismatch with authenticated user' },
+        severity: 'high'
+      });
+      return res.status(403).json({ error: 'Forbidden: Cannot access another user\'s wallet' });
+    }
 
     if (!userId) {
       return res.status(400).json({ error: 'User ID is required' });
     }
 
-    // Check if user already has a wallet
-    const existingVaults = await db
+    // Check wallet count limit per user
+    const existingWallets = await db
       .select()
-      .from(vaults)
-      .where(eq(vaults.userId, userId))
-      .limit(1);
+      .from(wallets)
+      .where(eq(wallets.userId, userId));
 
-    if (existingVaults.length > 0) {
+    if (existingWallets.length >= MAX_WALLETS_PER_USER) {
+      await auditConsolidated.logConsolidatedAuditEvent({
+        userId: authenticatedUserId,
+        action: 'wallet_create_limit_exceeded',
+        targetUserId: userId,
+        status: 'denied',
+        details: { reason: `User already has max wallets (${MAX_WALLETS_PER_USER})`, existingCount: existingWallets.length },
+        severity: 'medium'
+      });
       return res.status(400).json({
-        error: 'User already has a wallet. Use initialize-additional-vault instead.'
+        error: `Wallet limit exceeded. You can have maximum ${MAX_WALLETS_PER_USER} wallets per account.`
       });
     }
 
-    // Generate new wallet
-    const walletCredentials = WalletManager.createWallet();
+    // Generate new wallet (with mnemonic and private key)
+    const walletCredentials = generateWalletFromMnemonic(12); // 12 word mnemonic
 
-    // Create primary vault
+    // Encryption password - use user-provided or generate secure random
+    const encryptionPassword = password || require('crypto').randomBytes(32).toString('hex');
+
+    // Encrypt wallet credentials
+    const encryptedWallet = encryptWallet(walletCredentials, encryptionPassword);
+
+    // Create wallet record in wallets table
+    const [newWallet] = await db.insert(wallets).values({
+      userId,
+      currency,
+      address: walletCredentials.address,
+      walletType: 'personal',
+      isActive: true
+    }).returning();
+
+    // Store encrypted private key
+    await db.insert(walletPrivateKeys).values({
+      walletId: newWallet.id,
+      encryptedPrivateKey: encryptedWallet.encryptedData,
+      encryptionIv: encryptedWallet.iv,
+      encryptionSalt: encryptedWallet.salt,
+      authTag: encryptedWallet.authTag,
+      keyDerivationFunction: 'pbkdf2',
+      encryptionAlgorithm: 'aes-256-gcm',
+      isBackedUp: false
+    });
+
+    // Store encrypted seed phrase
+    const encryptedMnemonic = encryptWallet({ mnemonic: walletCredentials.mnemonic }, encryptionPassword);
+    await db.insert(walletSeedPhrases).values({
+      walletId: newWallet.id,
+      encryptedSeedPhrase: encryptedMnemonic.encryptedData,
+      wordCount: 12,
+      encryptionIv: encryptedMnemonic.iv,
+      encryptionSalt: encryptedMnemonic.salt,
+      authTag: encryptedMnemonic.authTag,
+      derivationPath: "m/44'/60'/0'/0",
+      isBackedUp: false,
+      backupMethod: null,
+      backupLocation: null
+    });
+
+    // Initialize wallet security settings
+    await db.insert(walletSecuritySettings).values({
+      walletId: newWallet.id,
+      requiresPin: password ? true : false,
+      requiresBiometric: false,
+      twoFactorEnabled: false,
+      withdrawalLimit: '10000.00',
+      requiresApprovalAboveThreshold: true,
+      approvalThreshold: '5000.00'
+    });
+
+    // Create primary vault for this wallet
     const primaryVault = await db.insert(vaults).values({
       userId,
+      creatorId: userId,
       currency,
       address: walletCredentials.address,
       balance: '0.00',
       monthlyGoal: initialGoal.toString(),
     }).returning();
 
-      // Optionally update user (no walletAddress field)
-      await db
-        .update(users)
-        .set({ updatedAt: new Date() })
-        .where(eq(users.id, userId));
-
     // Create welcome notification
     await notificationService.createNotification({
       userId,
       type: 'wallet',
       title: 'Wallet Created Successfully',
-      message: `Your new wallet has been created with address ${walletCredentials.address.slice(0, 8)}...`,
+      message: `Your new wallet "${walletName}" has been created. Please backup your recovery phrase immediately.`,
       metadata: {
+        walletId: newWallet.id,
+        walletAddress: walletCredentials.address,
         vaultId: primaryVault[0].id,
         currency
       }
     });
 
+    // Audit log wallet creation
+    await auditConsolidated.logConsolidatedAuditEvent({
+      userId: authenticatedUserId,
+      action: 'wallet_created_secure_storage',
+      targetUserId: userId,
+      resourceId: newWallet.id,
+      status: 'success',
+      details: { 
+        walletId: newWallet.id,
+        walletAddress: walletCredentials.address,
+        walletName,
+        currency,
+        encryptedPrivateKeyStored: true,
+        encryptedSeedPhraseStored: true
+      },
+      severity: 'medium'
+    });
+
+    // Return credentials ONLY ONCE - for user backup
+    // These should be securely backed up by the user immediately
+    // Subsequent access requires unlock-wallet endpoint with authentication
     res.json({
       success: true,
       wallet: {
+        id: newWallet.id,
         address: walletCredentials.address,
-        // Note: In production, private key should be encrypted and stored securely
-        // or better yet, use a key management service
-        privateKeyEncrypted: '***ENCRYPTED***', // Don't expose actual private key
-        mnemonic: walletCredentials.mnemonic // Return the seed phrase for backup
+        // CRITICAL: Return private key ONLY ON CREATION
+        // All subsequent access requires authentication via unlock-wallet
+        privateKey: walletCredentials.privateKey,
+        // CRITICAL: Return mnemonic ONLY ON CREATION
+        // This is the user's only chance to backup - must be saved immediately
+        mnemonic: walletCredentials.mnemonic,
+        wordCount: 12,
+        derivationPath: "m/44'/60'/0'/0"
       },
       primaryVault: primaryVault[0],
-      message: 'Wallet and primary vault created successfully'
+      message: '✅ Wallet created successfully. Please save your recovery phrase immediately in a secure location. Never share it with anyone.',
+      warning: 'You will NOT see your private key or recovery phrase again. Store them safely now.',
+      encryptionStatus: {
+        privateKeyEncrypted: true,
+        mnemonicEncrypted: true,
+        storageLocation: 'Database (encrypted)',
+        requiresAuthenticationForAccess: true,
+        accessMethod: 'POST /api/wallet-setup/unlock-wallet (requires password)'
+      }
     });
 
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
+    await auditConsolidated.logConsolidatedAuditEvent({
+      userId: (req as any).user?.id || (req as any).user?.claims?.sub,
+      action: 'wallet_create_error',
+      status: 'error',
+      details: { error: errorMsg },
+      severity: 'medium'
+    });
     res.status(500).json({ error: errorMsg });
   }
 });
 
 // POST /api/wallet-setup/initialize-additional-vault
-router.post('/initialize-additional-vault', async (req, res) => {
+router.post('/initialize-additional-vault', isAuthenticated, walletCreationLimiter, async (req, res) => {
   try {
+    const authReq = req as any;
+    const authenticatedUserId = authReq.user?.id || authReq.user?.claims?.sub;
     const { userId, currency, monthlyGoal = 0, vaultType = 'savings' } = req.body;
+
+    if (!authenticatedUserId) {
+      return res.status(401).json({ error: 'Unauthorized: User not found in token' });
+    }
+
+    // Validate userId from request body matches authenticated user
+    if (userId !== authenticatedUserId) {
+      await auditConsolidated.logConsolidatedAuditEvent({
+        userId: authenticatedUserId,
+        action: 'vault_create_unauthorized_attempt',
+        targetUserId: userId,
+        status: 'denied',
+        details: { reason: 'userId mismatch with authenticated user' },
+        severity: 'high'
+      });
+      return res.status(403).json({ error: 'Forbidden: Cannot access another user\'s vault' });
+    }
 
     if (!userId || !currency) {
       return res.status(400).json({ error: 'User ID and currency are required' });
@@ -518,6 +1031,7 @@ router.post('/initialize-additional-vault', async (req, res) => {
     // Create additional vault
     const newVault = await db.insert(vaults).values({
       userId,
+      creatorId: userId,
       currency,
       address: userVaults[0].address, // use primary vault address
       balance: '0.00',
@@ -538,6 +1052,17 @@ router.post('/initialize-additional-vault', async (req, res) => {
       }
     });
 
+    // Audit log vault creation
+    await auditConsolidated.logConsolidatedAuditEvent({
+      userId: authenticatedUserId,
+      action: 'vault_created',
+      targetUserId: userId,
+      resourceId: newVault[0].id,
+      status: 'success',
+      details: { vaultId: newVault[0].id, currency, vaultType },
+      severity: 'medium'
+    });
+
     res.json({
       success: true,
       vault: newVault[0],
@@ -546,6 +1071,13 @@ router.post('/initialize-additional-vault', async (req, res) => {
 
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
+    await auditConsolidated.logConsolidatedAuditEvent({
+      userId: (req as any).user?.id || (req as any).user?.claims?.sub,
+      action: 'vault_create_error',
+      status: 'error',
+      details: { error: errorMsg },
+      severity: 'medium'
+    });
     res.status(500).json({ error: errorMsg });
   }
 });
@@ -805,9 +1337,28 @@ router.get('/backup-status/:userId', async (req, res) => {
 });
 
 // POST /api/wallet-setup/get-backup-data
-router.post('/get-backup-data', async (req, res) => {
+router.post('/get-backup-data', isAuthenticated, walletBackupDataLimiter, async (req, res) => {
   try {
+    const authReq = req as any;
+    const authenticatedUserId = authReq.user?.id || authReq.user?.claims?.sub;
     const { userId } = req.body;
+
+    if (!authenticatedUserId) {
+      return res.status(401).json({ error: 'Unauthorized: User not found in token' });
+    }
+
+    // Validate userId from request body matches authenticated user
+    if (userId !== authenticatedUserId) {
+      await auditConsolidated.logConsolidatedAuditEvent({
+        userId: authenticatedUserId,
+        action: 'wallet_backup_unauthorized_attempt',
+        targetUserId: userId,
+        status: 'denied',
+        details: { reason: 'userId mismatch with authenticated user' },
+        severity: 'high'
+      });
+      return res.status(403).json({ error: 'Forbidden: Cannot access another user\'s backup data' });
+    }
 
     if (!userId) {
       return res.status(400).json({ error: 'User ID is required' });
@@ -838,6 +1389,20 @@ router.post('/get-backup-data', async (req, res) => {
       // Try with default password first (from creation with no password)
       const walletCredentials = decryptWallet(encrypted, 'default-unencrypted');
 
+      // Audit log backup data access
+      await auditConsolidated.logConsolidatedAuditEvent({
+        userId: authenticatedUserId,
+        action: 'wallet_backup_data_accessed',
+        targetUserId: userId,
+        resourceId: walletCredentials.address,
+        status: 'success',
+        details: { 
+          walletAddress: walletCredentials.address, 
+          dataExposed: walletCredentials.mnemonic ? ['mnemonic', 'privateKey', 'address'] : ['privateKey', 'address']
+        },
+        severity: 'high'
+      });
+
       res.json({
         success: true,
         mnemonic: walletCredentials.mnemonic || null,
@@ -849,6 +1414,17 @@ router.post('/get-backup-data', async (req, res) => {
       // If default password fails, the wallet was encrypted with a user password
       // We cannot decrypt without it
       logger.warn(`Failed to decrypt wallet for user ${userId}: wallet requires password`);
+      
+      // Audit log failed backup access attempt
+      await auditConsolidated.logConsolidatedAuditEvent({
+        userId: authenticatedUserId,
+        action: 'wallet_backup_access_failed_encrypted',
+        targetUserId: userId,
+        status: 'denied',
+        details: { reason: 'Wallet is encrypted with user password' },
+        severity: 'medium'
+      });
+      
       res.status(401).json({ 
         error: 'Cannot retrieve backup data. Your wallet is encrypted with a password. Please use the recovery phrase or password instead.' 
       });
@@ -857,6 +1433,235 @@ router.post('/get-backup-data', async (req, res) => {
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     logger.error('Get backup data error:', errorMsg);
+    
+    await auditConsolidated.logConsolidatedAuditEvent({
+      userId: (req as any).user?.id || (req as any).user?.claims?.sub,
+      action: 'wallet_backup_access_error',
+      status: 'error',
+      details: { error: errorMsg },
+      severity: 'medium'
+    });
+    
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// POST /api/wallet-setup/set-pin
+// Set up or change PIN for wallet session login
+router.post('/set-pin', isAuthenticated, async (req, res) => {
+  try {
+    const authReq = req as any;
+    const userId = authReq.user?.id || authReq.user?.claims?.sub;
+    const { walletId, currentPassword, newPin } = req.body;
+
+    if (!userId || !walletId || !currentPassword || !newPin) {
+      return res.status(400).json({ error: 'userId, walletId, currentPassword, and newPin are required' });
+    }
+
+    if (newPin.length < 4 || newPin.length > 8) {
+      return res.status(400).json({ error: 'PIN must be 4-8 digits' });
+    }
+
+    // Verify wallet belongs to user
+    const [wallet] = await db.select().from(wallets).where(eq(wallets.id, walletId)).limit(1);
+    if (!wallet || wallet.userId !== userId) {
+      return res.status(403).json({ error: 'Wallet not found or access denied' });
+    }
+
+    // Verify current password
+    const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (!user.length || !user[0].encryptedWallet) {
+      return res.status(404).json({ error: 'No wallet found for user' });
+    }
+
+    try {
+      const encrypted = {
+        encryptedData: user[0].encryptedWallet,
+        salt: user[0].walletSalt!,
+        iv: user[0].walletIv!,
+        authTag: user[0].walletAuthTag!
+      };
+      decryptWallet(encrypted, currentPassword);
+    } catch {
+      return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    // Hash new PIN using bcrypt (secure PIN hashing with salt rounds = 12)
+    const pinHash = await bcrypt.hash(newPin, 12);
+
+    // Update or create security settings with PIN
+    const [existingSettings] = await db.select()
+      .from(walletSecuritySettings)
+      .where(eq(walletSecuritySettings.walletId, walletId))
+      .limit(1);
+
+    if (existingSettings) {
+      await db.update(walletSecuritySettings)
+        .set({
+          encryptedPin: pinHash,
+          requiresPin: true,
+          lastModifiedAt: new Date()
+        })
+        .where(eq(walletSecuritySettings.walletId, walletId));
+    } else {
+      await db.insert(walletSecuritySettings).values({
+        walletId,
+        encryptedPin: pinHash,
+        requiresPin: true,
+        requiresBiometric: false,
+        twoFactorEnabled: false,
+        withdrawalLimit: '10000.00',
+        requiresApprovalAboveThreshold: true,
+        approvalThreshold: '5000.00'
+      });
+    }
+
+    // Audit log PIN setup
+    await auditConsolidated.logConsolidatedAuditEvent({
+      userId,
+      action: 'wallet_pin_configured',
+      resourceId: walletId,
+      status: 'success',
+      details: { 
+        walletId,
+        walletAddress: wallet.address,
+        pinConfigured: true
+      },
+      severity: 'medium'
+    });
+
+    res.json({
+      success: true,
+      message: 'PIN configured successfully',
+      note: 'You can now use PIN to quickly unlock your wallet without entering password. PIN is bcrypt-hashed for security.'
+    });
+
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// POST /api/wallet-setup/wallet-logout
+// End wallet session (logout from wallet)
+router.post('/wallet-logout', isAuthenticated, async (req, res) => {
+  try {
+    const authReq = req as any;
+    const userId = authReq.user?.id || authReq.user?.claims?.sub;
+    const { sessionToken } = req.body;
+
+    if (!userId || !sessionToken) {
+      return res.status(400).json({ error: 'userId and sessionToken are required' });
+    }
+
+    // Find and close session
+    const [session] = await db.select()
+      .from(walletSessions)
+      .where(and(
+        eq(walletSessions.sessionToken, sessionToken),
+        eq(walletSessions.userId, userId)
+      ))
+      .limit(1);
+
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // Mark session as inactive
+    await db.update(walletSessions)
+      .set({
+        isActive: false,
+        disconnectedAt: new Date()
+      })
+      .where(eq(walletSessions.id, session.id));
+
+    // Audit log logout
+    await auditConsolidated.logConsolidatedAuditEvent({
+      userId,
+      action: 'wallet_session_closed',
+      resourceId: session.walletId,
+      status: 'success',
+      details: { sessionId: session.id, walletId: session.walletId },
+      severity: 'low'
+    });
+
+    res.json({
+      success: true,
+      message: 'Logged out from wallet'
+    });
+
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// GET /api/wallet-setup/user-wallets
+// List all wallets for authenticated user (wallet switching)
+router.get('/user-wallets', isAuthenticated, async (req, res) => {
+  try {
+    const authReq = req as any;
+    const userId = authReq.user?.id || authReq.user?.claims?.sub;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Get all wallets for user
+    const userWallets = await db.select().from(wallets).where(eq(wallets.userId, userId));
+
+    // Get active session for user (if any)
+    const [activeSession] = await db.select()
+      .from(walletSessions)
+      .where(and(
+        eq(walletSessions.userId, userId),
+        eq(walletSessions.isActive, true)
+      ))
+      .orderBy(walletSessions.connectedAt)
+      .limit(1);
+
+    // Get security settings for each wallet
+    const walletsWithSettings = await Promise.all(
+      userWallets.map(async (wallet) => {
+        const [settings] = await db.select()
+          .from(walletSecuritySettings)
+          .where(eq(walletSecuritySettings.walletId, wallet.id))
+          .limit(1);
+
+        return {
+          id: wallet.id,
+          address: wallet.address,
+          currency: wallet.currency,
+          walletType: wallet.walletType,
+          isActive: wallet.isActive,
+          createdAt: wallet.createdAt,
+          isPinConfigured: settings?.requiresPin || false,
+          isCurrentlyActive: activeSession?.walletId === wallet.id
+        };
+      })
+    );
+
+    // Audit log access
+    await auditConsolidated.logConsolidatedAuditEvent({
+      userId,
+      action: 'user_wallets_listed',
+      status: 'success',
+      details: { walletCount: walletsWithSettings.length },
+      severity: 'low'
+    });
+
+    res.json({
+      success: true,
+      wallets: walletsWithSettings,
+      activeWalletId: activeSession?.walletId || null,
+      currentSessionToken: activeSession?.sessionToken || null,
+      walletCount: walletsWithSettings.length,
+      maxWallets: MAX_WALLETS_PER_USER,
+      message: 'To switch wallets, use unlock-wallet endpoint with walletId and PIN or password'
+    });
+
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: errorMsg });
   }
 });

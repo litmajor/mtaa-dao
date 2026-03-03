@@ -13,21 +13,27 @@ class RedisService {
       return;
     }
 
-    // Only attempt Redis connection if REDIS_URL is configured
-    if (!process.env.REDIS_URL) {
-      if (!this.hasLoggedFallback) {
-        console.log('Redis: Not configured - using in-memory fallback.');
-        this.hasLoggedFallback = true;
+    // Build REDIS_URL from environment variables if not already set
+    let redisUrl = process.env.REDIS_URL;
+    if (!redisUrl) {
+      const host = process.env.REDIS_HOST || 'localhost';
+      const port = process.env.REDIS_PORT || '6379';
+      const password = process.env.REDIS_PASSWORD;
+      const db = process.env.REDIS_DB || '0';
+      
+      // Construct URL: redis://[:password@]host:port/db
+      if (password) {
+        redisUrl = `redis://:${encodeURIComponent(password)}@${host}:${port}/${db}`;
+      } else {
+        redisUrl = `redis://${host}:${port}/${db}`;
       }
-      this.isConnected = false;
-      return;
     }
 
     this.isConnecting = true;
 
     try {
       this.client = createClient({
-        url: process.env.REDIS_URL,
+        url: redisUrl,
       });
 
       this.client.on('error', (err) => {
@@ -60,6 +66,10 @@ class RedisService {
         }
       } else {
         // Fallback to in-memory store
+        if (!this.hasLoggedFallback) {
+          console.warn('Using in-memory fallback store for Redis - data will not persist across restarts');
+          this.hasLoggedFallback = true;
+        }
         this.fallbackStore.set(key, {
           value,
           expiresAt: expiresInSeconds

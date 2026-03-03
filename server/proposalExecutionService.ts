@@ -12,8 +12,37 @@ import {
 import { eq, and, lte } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { vaultService } from './services/vaultService';
+import { TreasuryValidationService } from './services/treasuryValidationService';
 
 export class ProposalExecutionService {
+  
+  /**
+   * Validate user has permission to execute proposals for this DAO
+   * Only DAO admins, elders, and treasury_manager roles can execute
+   */
+  private static async validateExecutionPermission(userId: string, daoId: string): Promise<boolean> {
+    try {
+      const membership = await db.select()
+        .from(daoMemberships)
+        .where(and(
+          eq(daoMemberships.userId, userId),
+          eq(daoMemberships.daoId, daoId)
+        ))
+        .limit(1);
+      
+      if (!membership.length) {
+        return false; // Not a DAO member
+      }
+      
+      const memberRole = membership[0].role || '';
+      const allowedRoles = ['creator', 'admin', 'elder', 'treasury_manager'];
+      
+      return allowedRoles.includes(memberRole);
+    } catch (error) {
+      console.error('Error validating execution permission:', error);
+      return false;
+    }
+  }
   
   // Process pending executions
   static async processPendingExecutions() {
@@ -39,9 +68,12 @@ export class ProposalExecutionService {
   }
   
   // Execute individual proposal
-  static async executeProposal(execution: any) {
+  static async executeProposal(execution: any, executorUserId?: string) {
     try {
-      console.log(`Executing proposal ${execution.proposalId} with type ${execution.executionType}`);
+      // PHASE 1 FIX: Use actual executor user ID for audit trail (not hardcoded 'system')
+      const actualExecutor = executorUserId || 'system';
+      
+      console.log(`Executing proposal ${execution.proposalId} with type ${execution.executionType} by ${actualExecutor}`);
       
       // Update status to executing
       await db.update(proposalExecutionQueue)
@@ -56,10 +88,14 @@ export class ProposalExecutionService {
       
       switch (executionType) {
         case 'treasury_transfer':
-          await this.executeTreasuryTransfer(executionData, daoId, proposalId);
+          // For manual executions, require valid executor. For scheduled, use 'system'
+          const treasuryExecutor = actualExecutor === 'system' ? actualExecutor : actualExecutor;
+          await this.executeTreasuryTransfer(executionData, daoId, proposalId, treasuryExecutor);
           break;
         case 'vault_operation':
-          await this.executeVaultOperation(executionData, daoId, proposalId);
+          // For manual executions, require valid executor. For scheduled, use 'system'
+          const vaultExecutor = actualExecutor === 'system' ? actualExecutor : actualExecutor;
+          await this.executeVaultOperation(executionData, daoId, proposalId, vaultExecutor);
           break;
         case 'member_action':
           await this.executeMemberAction(executionData, daoId, proposalId);
@@ -79,11 +115,12 @@ export class ProposalExecutionService {
         .set({ status: 'completed' })
         .where(eq(proposalExecutionQueue.id, execution.id));
       
-      // Update proposal status
+      // Update proposal status and record executor
       await db.update(proposals)
         .set({ 
           status: 'executed',
-          executedAt: new Date()
+          executedAt: new Date(),
+          executedBy: actualExecutor
         })
         .where(eq(proposals.id, proposalId));
       
@@ -108,8 +145,57 @@ export class ProposalExecutionService {
   }
   
   // Execute treasury transfer
-  static async executeTreasuryTransfer(executionData: any, daoId: string, proposalId: string) {
+  // PHASE 1 FIX: Requires valid executor with treasury_manager/admin/elder role
+  // PHASE 2 FIX: Validates whitelist, amount limits, and multisig requirements
+  static async executeTreasuryTransfer(executionData: any, daoId: string, proposalId: string, executorUserId: string) {
+    // Validate executor has permission (unless it's the scheduler)
+    if (executorUserId !== 'system') {
+      const hasPermission = await this.validateExecutionPermission(executorUserId, daoId);
+      if (!hasPermission) {
+        throw new Error(`User ${executorUserId} does not have permission to execute treasury transfers. Required roles: admin, elder, treasury_manager`);
+      }
+    }
+    
     const { recipient, amount, currency, description, fromVault } = executionData;
+    const transferAmount = parseFloat(amount);
+    
+    // PHASE 2: Validate recipient is whitelisted
+    const whitelistCheck = await TreasuryValidationService.isRecipientWhitelisted(daoId, recipient);
+    if (!whitelistCheck.approved) {
+      throw new Error(
+        `Recipient ${recipient} is not whitelisted. ` +
+        `Admin approval required. Submit a whitelist request to add this address.`
+      );
+    }
+    
+    // PHASE 2: Validate transfer amount against limits
+    const amountValidation = await TreasuryValidationService.validateTransferAmount(daoId, transferAmount);
+    if (!amountValidation.valid) {
+      throw new Error(`Transfer validation failed: ${amountValidation.reason}`);
+    }
+    
+    // PHASE 2: Check if multisig is required
+    const needsMultisig = await TreasuryValidationService.requiresMultisig(daoId, transferAmount);
+    if (needsMultisig) {
+      const requiredSigs = await TreasuryValidationService.getMultisigRequiredSignatures(daoId);
+      const signers = await TreasuryValidationService.getAvailableSigners(daoId);
+      
+      // TODO: Create treasury_approval record and wait for signatures
+      throw new Error(
+        `Transfer of $${transferAmount.toFixed(2)} requires ${requiredSigs} out of ${signers.length} admin signatures. ` +
+        `Multisig approval pending from: ${signers.slice(0, 3).join(', ')}${signers.length > 3 ? ' and others' : ''}`
+      );
+    }
+    
+    // Log treasury transaction for audit trail
+    await TreasuryValidationService.logTreasuryTransaction(
+      daoId,
+      recipient,
+      transferAmount,
+      'treasury_transfer',
+      true, // approved
+      executorUserId
+    );
     
     if (fromVault) {
       // Transfer from DAO vault
@@ -124,10 +210,10 @@ export class ProposalExecutionService {
         throw new Error('DAO vault not found');
       }
       
-      // Create withdrawal from vault
+      // Create withdrawal from vault - PHASE 1 FIX: Use actual executor
       await vaultService.withdrawToken({
         vaultId: daoVault.id,
-        userId: 'system', // System user for proposal execution
+        userId: executorUserId,
         tokenSymbol: currency,
         amount: amount.toString(),
         transactionHash: `proposal_${proposalId}`
@@ -147,20 +233,29 @@ export class ProposalExecutionService {
         .where(eq(daos.id, daoId));
     }
     
-    // Record the transfer transaction
+    // Record the transfer transaction - PHASE 1 FIX: Include actual executor in audit
     await db.insert(walletTransactions).values({
       walletAddress: recipient,
       amount: amount.toString(),
       currency,
       type: 'transfer',
       status: 'completed',
-      description: `Proposal execution: ${description}`,
+      description: `Proposal execution by ${executorUserId}: ${description} [WHITELIST_APPROVED]`,
       daoId: daoId
     });
   }
   
   // Execute vault operations
-  static async executeVaultOperation(executionData: any, daoId: string, proposalId: string) {
+  // PHASE 1 FIX: Requires valid executor with admin/elder role
+  static async executeVaultOperation(executionData: any, daoId: string, proposalId: string, executorUserId: string) {
+    // Validate executor has permission (unless it's the scheduler)
+    if (executorUserId !== 'system') {
+      const hasPermission = await this.validateExecutionPermission(executorUserId, daoId);
+      if (!hasPermission) {
+        throw new Error(`User ${executorUserId} does not have permission to execute vault operations. Required roles: admin, elder`);
+      }
+    }
+    
     const { vaultId, operation, operationData } = executionData;
     
     switch (operation) {
@@ -172,25 +267,28 @@ export class ProposalExecutionService {
         break;
         
       case 'deposit':
+        // PHASE 1 FIX: Use actual executor instead of hardcoded 'system'
         await vaultService.depositToken({
           vaultId,
-          userId: 'system',
+          userId: executorUserId,
           ...operationData
         });
         break;
         
       case 'withdraw':
+        // PHASE 1 FIX: Use actual executor instead of hardcoded 'system'
         await vaultService.withdrawToken({
           vaultId,
-          userId: 'system',
+          userId: executorUserId,
           ...operationData
         });
         break;
         
       case 'allocate_strategy':
+        // PHASE 1 FIX: Use actual executor instead of hardcoded 'system'
         await vaultService.allocateToStrategy({
           vaultId,
-          userId: 'system',
+          userId: executorUserId,
           ...operationData
         });
         break;

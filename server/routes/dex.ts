@@ -169,26 +169,9 @@ router.post('/multiple-swaps', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/dex/health
- * Check if DEX service is healthy
+ * DEX Integration endpoints (health check consolidated to /api/health/dex)
+ * See health.ts for /health endpoint
  */
-router.get('/health', async (req: Request, res: Response) => {
-  try {
-    const isAvailable = dexService.isAvailable();
-    const supportedDexes = dexService.getSupportedDEXes();
-
-    res.json({
-      available: isAvailable,
-      supportedCount: supportedDexes.length,
-      supportedDexes: supportedDexes.map(d => ({ id: d.id, name: d.name, chain: d.chain }))
-    });
-  } catch (error) {
-    logger.error('Error checking DEX health:', error);
-    res.status(500).json({
-      error: 'Failed to check DEX health'
-    });
-  }
-});
 
 /**
  * GET /api/dex/pools

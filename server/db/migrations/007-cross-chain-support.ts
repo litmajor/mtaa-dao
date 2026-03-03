@@ -4,14 +4,14 @@
  * Phase 5.2: Cross-chain governance and asset management
  */
 
-import { db } from '../db';
+import { pool } from '../../db';
 
 export async function migrateCrossChainTables() {
   try {
     console.log('🔄 Running cross-chain support migrations...');
 
     // Create cross_chain_chains table
-    await db.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS cross_chain_chains (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         chain_name VARCHAR(50) NOT NULL UNIQUE,
@@ -33,7 +33,7 @@ export async function migrateCrossChainTables() {
     console.log('✅ Created cross_chain_chains table');
 
     // Create cross_chain_tokens table
-    await db.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS cross_chain_tokens (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         symbol VARCHAR(20) NOT NULL,
@@ -59,7 +59,7 @@ export async function migrateCrossChainTables() {
     console.log('✅ Created cross_chain_tokens table');
 
     // Create cross_chain_bridges table
-    await db.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS cross_chain_bridges (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         bridge_name VARCHAR(100) NOT NULL,
@@ -86,7 +86,7 @@ export async function migrateCrossChainTables() {
     console.log('✅ Created cross_chain_bridges table');
 
     // Create cross_chain_dexes table
-    await db.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS cross_chain_dexes (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         dex_name VARCHAR(100) NOT NULL,
@@ -109,7 +109,7 @@ export async function migrateCrossChainTables() {
     console.log('✅ Created cross_chain_dexes table');
 
     // Create cross_chain_trading_pairs table
-    await db.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS cross_chain_trading_pairs (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         dex_id UUID NOT NULL,
@@ -131,7 +131,7 @@ export async function migrateCrossChainTables() {
     console.log('✅ Created cross_chain_trading_pairs table');
 
     // Create cross_chain_transfers table
-    await db.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS cross_chain_transfers (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         transfer_id VARCHAR(255) NOT NULL UNIQUE,
@@ -166,7 +166,7 @@ export async function migrateCrossChainTables() {
     console.log('✅ Created cross_chain_transfers table');
 
     // Create cross_chain_swaps table for tracking swaps
-    await db.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS cross_chain_swaps (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         swap_id VARCHAR(255) NOT NULL UNIQUE,
@@ -223,7 +223,7 @@ export async function rollbackCrossChainTables() {
     ];
 
     for (const table of tables) {
-      await db.query(`DROP TABLE IF EXISTS ${table} CASCADE`);
+      await pool.query(`DROP TABLE IF EXISTS ${table} CASCADE`);
       console.log(`✅ Dropped ${table} table`);
     }
 

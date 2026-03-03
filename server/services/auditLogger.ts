@@ -1,8 +1,23 @@
 /**
- * auditLogger.ts
+ * ⚠️  DEPRECATED - FILE-BASED LOGGING
+ * ═══════════════════════════════════════════════════════════════════════════════
  * 
- * Audit logging service for compliance and monitoring
- * Logs all simulator executions with parameters, results, and outcomes
+ * THIS SERVICE IS DEPRECATED AND SHOULD NOT BE USED
+ * 
+ * All audit logging must go to the database, not to files.
+ * Use auditConsolidated.ts instead:
+ * 👉 server/services/auditConsolidated.ts
+ * 
+ * Rationale:
+ * - File-based logs are not queryable
+ * - File-based logs are harder to search/analyze
+ * - Database audit_logs table is the single source of truth
+ * - File-based approach doesn't scale
+ * 
+ * New code should use:
+ * import { logConsolidatedAuditEvent } from '../services/auditConsolidated';
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import * as fs from 'fs';

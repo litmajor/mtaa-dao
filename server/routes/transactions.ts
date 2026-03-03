@@ -714,4 +714,98 @@ router.get(
   }
 );
 
+// ════════════════════════════════════════════════════════════════════════════════
+// NEW RESTful ENDPOINT (RECOMMENDED)
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * DELETE /api/transactions/:transactionId
+ * Remove/delete a transaction (soft delete)
+ */
+router.delete(
+  "/:transactionId",
+  validateRequest(z.object({ reason: z.string().optional() })),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { transactionId } = req.params;
+      const { reason } = req.body;
+
+      // Soft delete transaction
+      const result = await db
+        .update(transactions)
+        .set({
+          deletedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(transactions.id, transactionId))
+        .returning();
+
+      if (!result.length) {
+        return res.status(404).json({
+          success: false,
+          error: "Transaction not found",
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Transaction deleted successfully",
+        data: { id: transactionId },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ════════════════════════════════════════════════════════════════════════════════
+// DEPRECATED ENDPOINT (Keep for 6 months, then remove)
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @deprecated Use DELETE /api/transactions/:transactionId instead
+ * Sunset: 2026-09-01
+ */
+// POST /api/transactions/remove - Remove a transaction (legacy)
+router.post(
+  "/remove",
+  validateRequest(z.object({ transactionId: z.string().uuid(), reason: z.string().optional() })),
+  async (req: Request, res: Response, next: NextFunction) => {
+    // Issue deprecation warning
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', 'Wed, 01 Sep 2026 00:00:00 GMT');
+    res.setHeader('Link', '</api/transactions/:transactionId>; rel="successor-version"');
+    res.setHeader('Warning', '299 - "POST /api/transactions/remove is deprecated. Use DELETE /api/transactions/:transactionId instead"');
+
+    try {
+      const { transactionId, reason } = req.body;
+
+      // Soft delete transaction
+      const result = await db
+        .update(transactions)
+        .set({
+          deletedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(transactions.id, transactionId))
+        .returning();
+
+      if (!result.length) {
+        return res.status(404).json({
+          success: false,
+          error: "Transaction not found",
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Transaction deleted successfully",
+        data: { id: transactionId },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 export default router;

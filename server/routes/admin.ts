@@ -1,3 +1,17 @@
+/**
+ * ⚠️  DEPRECATED - CONSOLIDATED INTO adminConsolidated.ts
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 
+ * THIS FILE IS DEPRECATED (Sunset: 2026-09-01)
+ * 
+ * All endpoints from this file have been consolidated into:
+ * 👉 server/routes/adminConsolidated.ts
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * This file will be DELETED on or after 2026-09-01.
+ * Please use /api/admin/* endpoints
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
 
 import { Router } from 'express';
 import { db } from '../db';
@@ -102,7 +116,7 @@ router.post('/auth/admin-login', async (req, res) => {
 
 // POST /api/auth/superuser-register
 
-router.post('/auth/superuser-register', async (req, res) => {
+router.post('/auth/superuser-register', requireSuperAdmin, async (req, res) => {
   const { email, password, firstName, lastName, name } = req.body;
   if (!email || !password) {
     return res.status(400).json({ message: 'Email and password required' });
@@ -745,8 +759,99 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
 // USER MANAGEMENT
 // =====================================================
 
+// ════════════════════════════════════════════════════════════════════════════════
+// NEW RESTful ENDPOINTS (RECOMMENDED)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// GET /api/admin/users - List all users with pagination and filtering
+router.get('/users', requireSuperAdmin, async (req, res) => {
+  try {
+    const { page = '1', limit = '20', search = '', role = '', status = '' } = req.query;
+    const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+
+    // Build where conditions
+    const conditions: any[] = [];
+    
+    if (search && typeof search === 'string' && search.trim()) {
+      conditions.push(
+        or(
+          like(users.email, `%${search}%`),
+          like(users.firstName, `%${search}%`),
+          like(users.lastName, `%${search}%`),
+          like(users.username, `%${search}%`)
+        )
+      );
+    }
+    
+    if (role && typeof role === 'string') {
+      conditions.push(eq(users.roles, role));
+    }
+    
+    if (status === 'banned') {
+      conditions.push(eq(users.isBanned, true));
+    } else if (status === 'active') {
+      conditions.push(eq(users.isBanned, false));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Fetch users
+    const usersList = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        username: users.username,
+        roles: users.roles,
+        createdAt: users.createdAt,
+        lastLoginAt: users.lastLoginAt,
+        isBanned: users.isBanned,
+        votingTokenBalance: users.votingTokenBalance,
+      })
+      .from(users)
+      .where(whereClause)
+      .orderBy(desc(users.createdAt))
+      .limit(parseInt(limit as string))
+      .offset(offset);
+
+    // Get total count
+    const totalCount = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(users)
+      .where(whereClause);
+
+    res.json({
+      users: usersList,
+      pagination: {
+        page: parseInt(page as string),
+        limit: parseInt(limit as string),
+        total: totalCount[0].count,
+        pages: Math.ceil(totalCount[0].count / parseInt(limit as string)),
+      },
+    });
+  } catch (error) {
+    logger.error('Error listing users:', error);
+    res.status(500).json({ error: 'Failed to list users' });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// DEPRECATED ENDPOINTS (Keep for 6 months, then remove)
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @deprecated Use GET /api/admin/users instead
+ * Sunset: 2026-09-01
+ */
 // GET /api/admin/users/list - List all users with pagination and filtering
 router.get('/users/list', requireSuperAdmin, async (req, res) => {
+  // Issue deprecation warning
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', 'Wed, 01 Sep 2026 00:00:00 GMT');
+  res.setHeader('Link', '</api/admin/users>; rel="successor-version"');
+  res.setHeader('Warning', '299 - "GET /api/admin/users/list is deprecated. Use GET /api/admin/users instead"');
+
   try {
     const { page = '1', limit = '20', search = '', role = '', status = '' } = req.query;
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
@@ -882,8 +987,98 @@ router.delete('/users/:userId', requireSuperAdmin, async (req, res) => {
 // DAO MANAGEMENT
 // =====================================================
 
+// ════════════════════════════════════════════════════════════════════════════════
+// NEW RESTful ENDPOINTS (RECOMMENDED)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// GET /api/admin/daos - List all DAOs with pagination
+router.get('/daos', requireSuperAdmin, async (req, res) => {
+  try {
+    const { page = '1', limit = '20', search = '', status = '' } = req.query;
+    const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+
+    // Build where conditions
+    const conditions: any[] = [];
+    
+    if (search && typeof search === 'string' && search.trim()) {
+      conditions.push(like(daos.name, `%${search}%`));
+    }
+    
+    if (status && typeof status === 'string') {
+      conditions.push(eq(daos.status, status));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Fetch DAOs
+    const daosList = await db
+      .select({
+        id: daos.id,
+        name: daos.name,
+        description: daos.description,
+        status: daos.status,
+        subscriptionPlan: daos.subscriptionPlan,
+        createdAt: daos.createdAt,
+        founderId: daos.founderId,
+      })
+      .from(daos)
+      .where(whereClause)
+      .orderBy(desc(daos.createdAt))
+      .limit(parseInt(limit as string))
+      .offset(offset);
+
+    // Get member counts for each DAO
+    const daosWithMemberCounts = await Promise.all(
+      daosList.map(async (dao) => {
+        const memberCount = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(daoMemberships)
+          .where(eq(daoMemberships.daoId, dao.id));
+        
+        return {
+          ...dao,
+          memberCount: memberCount[0].count,
+        };
+      })
+    );
+
+    // Get total count
+    const totalCount = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(daos)
+      .where(whereClause);
+
+    res.json({
+      daos: daosWithMemberCounts,
+      pagination: {
+        page: parseInt(page as string),
+        limit: parseInt(limit as string),
+        total: totalCount[0].count,
+        pages: Math.ceil(totalCount[0].count / parseInt(limit as string)),
+      },
+    });
+  } catch (error) {
+    logger.error('Error listing DAOs:', error);
+    res.status(500).json({ error: 'Failed to list DAOs' });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// DEPRECATED ENDPOINTS (Keep for 6 months, then remove)
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @deprecated Use GET /api/admin/daos instead
+ * Sunset: 2026-09-01
+ */
 // GET /api/admin/daos/list - List all DAOs with pagination
 router.get('/daos/list', requireSuperAdmin, async (req, res) => {
+  // Issue deprecation warning
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', 'Wed, 01 Sep 2026 00:00:00 GMT');
+  res.setHeader('Link', '</api/admin/daos>; rel="successor-version"');
+  res.setHeader('Warning', '299 - "GET /api/admin/daos/list is deprecated. Use GET /api/admin/daos instead"');
+
   try {
     const { page = '1', limit = '20', search = '', status = '' } = req.query;
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string);

@@ -1,3 +1,20 @@
+/**
+ * ⚠️  DEPRECATED - CONSOLIDATED INTO system.ts
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 
+ * THIS FILE IS DEPRECATED (Sunset: 2026-09-01)
+ * 
+ * Blog content endpoints have been consolidated into:
+ * 👉 server/routes/system.ts
+ * 
+ * Route Migration:
+ * GET /api/blog → GET /api/system/blog
+ * GET /api/blog/:postId → GET /api/system/blog/:postId
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * This file will be DELETED on or after 2026-09-01.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
 
 import { Router } from 'express';
 

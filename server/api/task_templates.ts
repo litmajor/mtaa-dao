@@ -19,7 +19,11 @@ const createTaskTemplateSchema = z.object({
   acceptanceCriteria: z.array(z.string()),
 });
 
-// Get all task templates
+// ════════════════════════════════════════════════════════════════
+// PUBLIC READ ROUTES (listing & discovery)
+// ════════════════════════════════════════════════════════════════
+
+// Get all task templates (PUBLIC - for task discovery)
 router.get('/', async (req, res) => {
   try {
     const { category, difficulty, search } = req.query;
@@ -48,7 +52,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get specific task template
+// Get specific task template (PUBLIC - for task discovery)
 router.get('/:templateId', async (req, res) => {
   try {
     const { templateId } = req.params;
@@ -70,7 +74,12 @@ router.get('/:templateId', async (req, res) => {
   }
 });
 
-// Create new task template (authenticated users only)
+// ════════════════════════════════════════════════════════════════
+// AUTHENTICATED WRITE ROUTES (POST/PUT/DELETE)
+// All write operations REQUIRE authentication
+// ════════════════════════════════════════════════════════════════
+
+// Create new task template (AUTHENTICATED)
 router.post('/', isAuthenticated, async (req, res) => {
   try {
     const validatedData = createTaskTemplateSchema.parse(req.body);

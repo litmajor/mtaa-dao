@@ -24,6 +24,28 @@ import { logAuditEvent, AuditEventType } from '../services/auditLogging';
 
 describe('Week 2 Phase 2 - E2E Integration Tests', () => {
   
+  // Initialize Redis connection before tests
+  beforeAll(async () => {
+    try {
+      await redis.connect();
+      console.log('[TEST] Redis connected successfully');
+    } catch (error) {
+      console.error('[TEST] Failed to connect to Redis:', error);
+      // Tests can still run with fallback cache if Redis is unavailable
+    }
+  });
+
+  // Clean up Redis connection after tests
+  afterAll(async () => {
+    try {
+      // Optional: Clear test data from Redis
+      // await redis.flushdb?.();
+      console.log('[TEST] Redis cleanup completed');
+    } catch (error) {
+      console.error('[TEST] Redis cleanup error:', error);
+    }
+  });
+  
   describe('Audit Logging Integration', () => {
     
     it('should log successful login attempts', async () => {

@@ -87,7 +87,7 @@ export class ReversibilityService {
           ${dto.reversibilityScope.reversalDeadlineHours || null},
           ${dto.reversibilityScope.partialReversalAllowed},
           ${dto.emergencyStopConfig?.enabled ?? true},
-          ${JSON.stringify(dto.emergencyStopConfig?.allowedActors || ['SUPERUSER', 'GOVERNANCE'])},
+          ${JSON.stringify(dto.emergencyStopConfig?.allowedActors || ['SUPER_ADMIN', 'GOVERNANCE'])},
           ${dto.emergencyStopConfig?.requiresApproval ?? false},
           ${dto.emergencyStopConfig?.activeDurationHours ?? 24},
           ${dto.emergencyStopConfig?.stopAction || 'PAUSE'},

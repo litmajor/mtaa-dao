@@ -87,6 +87,28 @@ export class ExecutionTrackingService {
   }
 
   /**
+   * Initialize the Execution Tracking Service
+   */
+  async initialize(): Promise<void> {
+    logger.info('[STARTUP] Initializing Execution Tracking Service...');
+    try {
+      // Verify cache service is available
+      const testKey = `${this.cachePrefix}init-test`;
+      await cacheService.set(testKey, { initialized: true }, 60);
+      const testValue = await cacheService.get(testKey);
+      
+      if (testValue) {
+        logger.info('[STARTUP] ✅ Execution Tracking Service initialized successfully');
+      } else {
+        logger.warn('[STARTUP] ⚠️ Execution Tracking Service cache verification failed - using fallback');
+      }
+    } catch (error) {
+      logger.error('[STARTUP] Failed to initialize Execution Tracking Service:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Record a new execution quote (before filling)
    */
   async recordQuote(

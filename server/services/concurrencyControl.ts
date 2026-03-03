@@ -10,7 +10,7 @@
  * - Treasury transfers
  */
 
-import redis from 'ioredis';
+import { Redis } from 'ioredis';
 import { nanoid } from 'nanoid';
 import { logger } from '../utils/logger';
 
@@ -21,10 +21,10 @@ import { logger } from '../utils/logger';
  * Ensures only one instance can hold a lock at a time.
  */
 export class DistributedLockManager {
-  private client: redis.Redis;
+  private client: Redis;
   private locks: Map<string, string> = new Map(); // Lock key → token
 
-  constructor(redisClient: redis.Redis) {
+  constructor(redisClient: Redis) {
     this.client = redisClient;
   }
 
@@ -169,10 +169,10 @@ export class DistributedLockManager {
  * - Returns cached result instead of double-withdrawal
  */
 export class IdempotencyManager {
-  private client: redis.Redis;
+  private client: Redis;
   private ttl: number = 86400; // 24 hours default
 
-  constructor(redisClient: redis.Redis, ttlSeconds: number = 86400) {
+  constructor(redisClient: Redis, ttlSeconds: number = 86400) {
     this.client = redisClient;
     this.ttl = ttlSeconds;
   }
@@ -255,9 +255,9 @@ export class IdempotencyManager {
  * - Limit governance proposals to 5 per day per user
  */
 export class RateLimiter {
-  private client: redis.Redis;
+  private client: Redis;
 
-  constructor(redisClient: redis.Redis) {
+  constructor(redisClient: Redis) {
     this.client = redisClient;
   }
 
@@ -321,7 +321,7 @@ export let rateLimiter: RateLimiter;
 /**
  * Initialize managers (called from cacheService.initialize)
  */
-export function initializeConcurrencyManagers(redisClient: redis.Redis): void {
+export function initializeConcurrencyManagers(redisClient: Redis): void {
   distributedLockManager = new DistributedLockManager(redisClient);
   idempotencyManager = new IdempotencyManager(redisClient);
   rateLimiter = new RateLimiter(redisClient);

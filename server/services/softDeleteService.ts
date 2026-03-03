@@ -157,7 +157,7 @@ class SoftDeleteService {
       // Check if this is the last superuser
       const superuserCount = await db.execute(sql`
         SELECT COUNT(*) as count FROM admin_users
-        WHERE role = 'superuser' AND deleted_at IS NULL AND id != ${dto.targetId}
+        WHERE role = 'super_admin' AND deleted_at IS NULL AND id != ${dto.targetId}
       `);
 
       const count = parseInt(((superuserCount.rows?.[0] as any)?.count || '0'), 10);

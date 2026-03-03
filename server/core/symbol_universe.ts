@@ -942,19 +942,6 @@ export class SymbolUniverseService {
   }
 
   /**
-   * Get all assets in a specific category
-   */
-  getAssetsByCategory(category: TokenCategory): AssetMetadata[] {
-    const result = [];
-    for (const asset of this.universe.assets.values()) {
-      if (asset.category === category) {
-        result.push(asset);
-      }
-    }
-    return result;
-  }
-
-  /**
    * Get all assets matching multiple categories
    */
   getAssetsByCategories(categories: TokenCategory[]): AssetMetadata[] {

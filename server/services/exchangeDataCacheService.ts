@@ -41,13 +41,7 @@
  * Reduces API calls by 90% while keeping data fresh
  */
 
-let Redis: any;
-try {
-  Redis = require('ioredis');
-} catch {
-  // ioredis optional - fallback to memory cache
-  Redis = class { ping() { return Promise.resolve('PONG'); } };
-}
+import { getRedisInstance } from '../config/redisConnectionManager';
 
 // Mock database object since real DB may not be available
 const db = { 
@@ -93,15 +87,8 @@ export class ExchangeDataCacheService {
   };
 
   constructor() {
-    this.redis = new Redis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-      db: 0,
-      retryStrategy: (times: number) => Math.min(times * 50, 2000),
-    });
-
-    this.redis.on('error', (err: any) => console.error('Redis error:', err));
-    this.redis.on('connect', () => console.log('Redis connected'));
+    // Use singleton Redis instance from connection manager
+    this.redis = getRedisInstance();
   }
 
   /**

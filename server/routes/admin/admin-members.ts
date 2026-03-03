@@ -4,7 +4,7 @@ import { logger } from '../../utils/logger';
 import { daoMemberships, users, daos } from '../../../shared/schema';
 import { eq, desc, sql, and, or, like, inArray } from 'drizzle-orm';
 import { requireRole } from '../../middleware/rbac';
-import { logAuditEvent, AuditEventType } from '../../services/auditLogging';
+import { logConsolidatedAuditEvent, AuditEventType } from '../../services/auditConsolidated';
 
 const router = Router();
 const requireSuperAdmin = requireRole('super_admin');

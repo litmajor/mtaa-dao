@@ -4,6 +4,7 @@
  */
 
 import { Router, Request, Response, NextFunction } from "express";
+import { verifyMessage } from "ethers";
 import {
   connectWallet,
   disconnectWallet,
@@ -24,6 +25,60 @@ import { authenticateToken } from "../middleware/auth";
 import { walletValidation } from "../middleware/validation";
 
 const router = Router();
+
+// ============================================
+// PHASE 1 FIX: Signature Verification Helper
+// ============================================
+/**
+ * Verify EIP-191 signed message from wallet owner
+ * Prevents users from queueing transactions on wallets they don't own
+ */
+async function verifyWalletSignature(
+  walletAddress: string,
+  message: string,
+  signature: string
+): Promise<boolean> {
+  try {
+    const recoveredAddress = verifyMessage(message, signature);
+    // Compare addresses (case-insensitive)
+    return recoveredAddress.toLowerCase() === walletAddress.toLowerCase();
+  } catch (error) {
+    console.error('Error verifying wallet signature:', error);
+    return false;
+  }
+}
+
+/**
+ * Generate a nonce for signature verification
+ * Prevents replay attacks (same signature used multiple times)
+ */
+const nonceMap = new Map<string, { nonce: number; timestamp: number }>();
+
+function getNonce(walletAddress: string): number {
+  const key = walletAddress.toLowerCase();
+  const existing = nonceMap.get(key);
+  
+  if (existing && Date.now() - existing.timestamp < 3600000) { // 1 hour TTL
+    return existing.nonce;
+  }
+  
+  const nonce = Math.floor(Math.random() * 1000000);
+  nonceMap.set(key, { nonce, timestamp: Date.now() });
+  return nonce;
+}
+
+function verifyAndIncrementNonce(walletAddress: string, nonce: number): boolean {
+  const key = walletAddress.toLowerCase();
+  const existing = nonceMap.get(key);
+  
+  if (!existing || existing.nonce !== nonce) {
+    return false;
+  }
+  
+  // Increment nonce for next use
+  nonceMap.set(key, { nonce: nonce + 1, timestamp: Date.now() });
+  return true;
+}
 
 // ==================== WALLET CONNECTION ENDPOINTS ====================
 
@@ -176,20 +231,62 @@ router.get(
 
 /**
  * POST /api/wallets/:id/send
- * Queue transaction
+ * Queue transaction - PHASE 1: Requires wallet signature
  */
 router.post(
   "/:id/send",
   walletValidation.queueTransaction,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const walletId = req.params.id;
+      const { 
+        toAddress, 
+        amount, 
+        tokenSymbol, 
+        description,
+        walletAddress,      // PHASE 1: Wallet address (used for signature verification)
+        signature,           // PHASE 1: EIP-191 signed message
+        nonce                // PHASE 1: Nonce for replay protection
+      } = req.body;
+
+      // PHASE 1 FIX: Verify wallet ownership via signature
+      if (!walletAddress || !signature || nonce === undefined) {
+        return res.status(400).json({
+          success: false,
+          message: 'Transaction requires wallet signature for security. Please sign the transaction with your wallet.'
+        });
+      }
+
+      // Create message for signing (includes nonce to prevent replay)
+      const message = `Send ${amount} ${tokenSymbol} to ${toAddress}\nWallet: ${walletAddress}\nNonce: ${nonce}\nTimestamp: ${Date.now()}`;
+
+      // Verify the signature matches the wallet address
+      const isValidSignature = await verifyWalletSignature(walletAddress, message, signature);
+      if (!isValidSignature) {
+        return res.status(401).json({
+          success: false,
+          message: 'Wallet signature verification failed. Transaction rejected.'
+        });
+      }
+
+      // Verify nonce hasn't been used before (prevent replay)
+      if (!verifyAndIncrementNonce(walletAddress, nonce)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid or expired nonce. Please generate a new transaction.'
+        });
+      }
+
+      // Queue the transaction
       const queueId = await queueTransaction(
-        req.params.id,
-        req.body.toAddress,
-        req.body.amount.toString(),
-        req.body.tokenSymbol,
-        req.body.description
+        walletId,
+        toAddress,
+        amount.toString(),
+        tokenSymbol,
+        description
       );
+
+      console.log(`[AUDIT] Transaction queued for wallet ${walletAddress} by user ${(req.user as any)?.id}`);
 
       res.status(201).json({
         success: true,

@@ -12,6 +12,7 @@
 
 import { Pool } from 'pg';
 import { CEXPriceCollector, CollectionResult } from './cexPriceCollector';
+import { executeGuardedJob } from '../utils/jobExecutionGuard';
 
 export interface JobConfig {
   collectionIntervalSeconds: number; // How often to collect prices (default: 30)
@@ -30,6 +31,9 @@ export interface JobStats {
   lastCollectionTime: number | null;
   nextCollectionTime: number | null;
   uptime: number;
+  avgLatency?: number;
+  maxLatency?: number;
+  timingDriftMs?: number;
 }
 
 /**
@@ -41,11 +45,15 @@ export class CEXPriceBackgroundJob {
   private jobTimer: NodeJS.Timer | null = null;
   private isRunning: boolean = false;
   private startTime: number | null = null;
+  private nextScheduledRun: number | null = null;
+  private inMemoryCache = new Map<string, { value: any; expiresAt: number }>(); // Fallback cache
   private stats = {
     totalCollections: 0,
     successfulCollections: 0,
     failedCollections: 0,
     totalCollectionTime: 0,
+    totalLatency: 0,
+    maxLatency: 0,
     lastCollectionTime: 0,
   };
   private static instance: CEXPriceBackgroundJob;
@@ -91,6 +99,7 @@ export class CEXPriceBackgroundJob {
 
     this.isRunning = true;
     this.startTime = Date.now();
+    this.nextScheduledRun = Date.now();
 
     console.log(
       `[CEXPriceBackgroundJob] Starting with ${this.config.collectionIntervalSeconds}s interval`
@@ -99,11 +108,44 @@ export class CEXPriceBackgroundJob {
     // Run first collection immediately
     await this.runCollection();
 
-    // Schedule recurring collections
-    this.jobTimer = setInterval(() => this.runCollection(), this.config.collectionIntervalSeconds * 1000);
+    // Schedule recurring collections using promise chain (deterministic, not setInterval)
+    this.scheduleNextCollection();
 
     // Graceful shutdown on process signals
     this.setupSignalHandlers();
+  }
+
+  /**
+   * Schedule next collection with timeout guard to prevent blocking
+   */
+  private scheduleNextCollection(): void {
+    if (!this.isRunning) return;
+
+    const now = Date.now();
+    const nextRun = (this.nextScheduledRun || now) + this.config.collectionIntervalSeconds * 1000;
+    const delayMs = Math.max(0, nextRun - now);
+
+    // Timeout guard: never wait more than interval + 5s drift tolerance
+    const maxWaitMs = this.config.collectionIntervalSeconds * 1000 + 5000;
+    const actualDelayMs = Math.min(delayMs, maxWaitMs);
+
+    setTimeout(async () => {
+      if (this.isRunning) {
+        this.nextScheduledRun = Date.now();
+        
+        // Wrap collection with execution guard to prevent overlapping runs
+        await executeGuardedJob(
+          'cex-price-collection',
+          () => this.runCollection(),
+          {
+            skipIfRunning: true,
+            timeout: (this.config.collectionIntervalSeconds - 5) * 1000, // Leave 5s buffer
+          }
+        );
+        
+        this.scheduleNextCollection();
+      }
+    }, actualDelayMs);
   }
 
   /**
@@ -127,59 +169,154 @@ export class CEXPriceBackgroundJob {
   }
 
   /**
-   * Run a single collection cycle
+   * Run a single collection cycle with isolation and observability
    */
   private async runCollection(): Promise<void> {
     const collectionStartTime = Date.now();
 
     try {
-      console.log(`[CEXPriceBackgroundJob] Starting collection cycle...`);
-
-      const results = await this.collector.fetchAllExchanges(this.config.tradingPairs);
-
-      const duration = Date.now() - collectionStartTime;
-      const successCount = results.filter(r => r.success).length;
-      const failureCount = results.filter(r => !r.success).length;
-
-      this.stats.totalCollections++;
-      this.stats.successfulCollections += successCount;
-      this.stats.failedCollections += failureCount;
-      this.stats.totalCollectionTime += duration;
+      // Add timeout guard to prevent hanging collections
+      const collectionPromise = this.performCollection();
+      const timeoutPromise = new Promise<null>((_, reject) => 
+        setTimeout(() => reject(new Error('Collection timeout (90s)')), 90000)
+      );
+      
+      await Promise.race([collectionPromise, timeoutPromise]);
+      
+      const latency = Date.now() - collectionStartTime;
+      this.stats.totalLatency += latency;
+      this.stats.maxLatency = Math.max(this.stats.maxLatency, latency);
       this.stats.lastCollectionTime = Date.now();
 
-      // Log summary
-      console.log(`[CEXPriceBackgroundJob] Collection complete:`, {
-        duration,
-        successCount,
-        failureCount,
-        details: results.map(r => ({
-          exchange: r.exchange,
-          success: r.success,
-          pairsProcessed: r.pairsProcessed,
-          pairsFailed: r.pairsFailed,
-        })),
-      });
-
-      // Log detailed results
-      for (const result of results) {
-        if (!result.success) {
-          const error = new Error(`Collection failed for ${result.exchange}: ${result.error}`);
-          this.config.onError?.(error);
-          console.error(`[CEXPriceBackgroundJob] ${result.exchange} failed:`, result.error);
-        } else {
-          console.log(
-            `[CEXPriceBackgroundJob] ${result.exchange}: ${result.pairsProcessed}/${
-              result.pairsProcessed + result.pairsFailed
-            } pairs (${result.duration}ms)`
-          );
-        }
+      // Alert if latency approaches interval limit (25s of 30s max)
+      if (latency > 25000) {
+        console.warn(`[CEXPriceBackgroundJob] ⚠️ HIGH LATENCY: ${latency}ms (approaching 30s limit)`, {
+          collections: this.stats.totalCollections,
+          avgLatency: Math.round(this.stats.totalLatency / this.stats.totalCollections),
+          maxLatency: this.stats.maxLatency,
+        });
       }
+
+      // Log timing metrics every 10 collections for observability
+      if (this.stats.totalCollections % 10 === 0) {
+        const avgLatency = Math.round(this.stats.totalLatency / this.stats.totalCollections);
+        const timingDrift = latency > this.config.collectionIntervalSeconds * 1000 
+          ? latency - (this.config.collectionIntervalSeconds * 1000)
+          : 0;
+        
+        console.log(`[CEXPriceBackgroundJob] 📊 TIMING METRICS (every 10x):`, {
+          cycle: this.stats.totalCollections,
+          lastLatency: latency,
+          avgLatency,
+          maxLatency: this.stats.maxLatency,
+          timingDriftMs: timingDrift,
+          successRate: `${Math.round((this.stats.successfulCollections / this.stats.totalCollections) * 100)}%`,
+        });
+      }
+
     } catch (error) {
       this.stats.failedCollections++;
       const err = error instanceof Error ? error : new Error(String(error));
       this.config.onError?.(err);
       console.error('[CEXPriceBackgroundJob] Unexpected error during collection:', error);
     }
+  }
+
+  /**
+   * Perform the actual price collection with cache isolation
+   */
+  private async performCollection(): Promise<void> {
+    console.log(`[CEXPriceBackgroundJob] Starting collection cycle...`);
+
+    const results = await this.collector.fetchAllExchanges(this.config.tradingPairs);
+
+    const successCount = results.filter(r => r.success).length;
+    const failureCount = results.filter(r => !r.success).length;
+
+    this.stats.totalCollections++;
+    this.stats.successfulCollections += successCount;
+    this.stats.failedCollections += failureCount;
+
+    // Log summary
+    console.log(`[CEXPriceBackgroundJob] Collection complete:`, {
+      collections: this.stats.totalCollections,
+      successCount,
+      failureCount,
+      details: results.map(r => ({
+        exchange: r.exchange,
+        success: r.success,
+        pairsProcessed: r.pairsProcessed,
+        pairsFailed: r.pairsFailed,
+      })),
+    });
+
+    // Log detailed results
+    for (const result of results) {
+      if (!result.success) {
+        const error = new Error(`Collection failed for ${result.exchange}: ${result.error}`);
+        this.config.onError?.(error);
+        console.error(`[CEXPriceBackgroundJob] ${result.exchange} failed:`, result.error);
+      } else {
+        console.log(
+          `[CEXPriceBackgroundJob] ${result.exchange}: ${result.pairsProcessed}/${
+            result.pairsProcessed + result.pairsFailed
+          } pairs (${result.duration}ms)`
+        );
+      }
+    }
+
+    // Attempt cache persistence - ISOLATED from collection result
+    // If cache write fails, collection is still considered successful
+    try {
+      await this.persistCollectionToCache(results);
+    } catch (cacheError) {
+      console.warn('[CEXPriceBackgroundJob] ⚠️ Cache persistence failed (non-blocking):', cacheError);
+      // Cache failure does NOT fail the collection
+    }
+  }
+
+  /**
+   * Persist collection results to cache with fallback
+   * ISOLATED: failures here don't affect collection status
+   */
+  private async persistCollectionToCache(results: CollectionResult[]): Promise<void> {
+    // Implementation: write results to Redis cache + in-memory fallback
+    // This method intentionally swallows errors to isolate cache from collection
+    for (const result of results) {
+      if (result.success) {
+        const cacheKey = `cex:prices:${result.exchange}`;
+        const cacheValue = JSON.stringify(result);
+        const ttl = this.config.collectionIntervalSeconds; // TTL same as collection interval
+
+        try {
+          // Try to write to Redis (primary cache)
+          if (this.collector['cache']) {
+            await this.collector['cache'].set?.(cacheKey, cacheValue, ttl);
+          }
+        } catch (redisError) {
+          // Silently use in-memory fallback if Redis fails
+          this.inMemoryCache.set(cacheKey, {
+            value: cacheValue,
+            expiresAt: Date.now() + (ttl * 1000),
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * Get from in-memory fallback cache
+   */
+  private getFromFallbackCache(key: string): string | null {
+    const cached = this.inMemoryCache.get(key);
+    if (!cached) return null;
+    
+    if (Date.now() > cached.expiresAt) {
+      this.inMemoryCache.delete(key);
+      return null;
+    }
+
+    return cached.value;
   }
 
   /**
@@ -202,9 +339,17 @@ export class CEXPriceBackgroundJob {
    */
   getStats(): JobStats {
     const uptime = this.startTime ? Date.now() - this.startTime : 0;
-    const nextCollectionTime = this.isRunning
-      ? this.stats.lastCollectionTime + this.config.collectionIntervalSeconds * 1000
+    const nextCollectionTime = this.isRunning && this.nextScheduledRun
+      ? this.nextScheduledRun + this.config.collectionIntervalSeconds * 1000
       : null;
+
+    const avgLatency = this.stats.totalCollections > 0
+      ? Math.round(this.stats.totalLatency / this.stats.totalCollections)
+      : 0;
+
+    const timingDrift = this.stats.lastCollectionTime
+      ? Date.now() - this.stats.lastCollectionTime
+      : 0;
 
     return {
       isRunning: this.isRunning,
@@ -219,6 +364,9 @@ export class CEXPriceBackgroundJob {
       lastCollectionTime: this.stats.lastCollectionTime || null,
       nextCollectionTime,
       uptime,
+      avgLatency,
+      maxLatency: this.stats.maxLatency,
+      timingDriftMs: timingDrift,
     };
   }
 

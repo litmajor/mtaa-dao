@@ -1,3 +1,19 @@
+/**
+ * ⚠️  DEPRECATED - CONSOLIDATED INTO adminConsolidated.ts
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 
+ * THIS FILE IS DEPRECATED (Sunset: 2026-09-01)
+ * 
+ * AI metrics endpoints have been consolidated into:
+ * 👉 server/routes/adminConsolidated.ts
+ * 
+ * Route Migration:
+ * GET /api/admin/ai-metrics → GET /api/admin/ai-metrics (same, but in consolidated router)
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * This file will be DELETED on or after 2026-09-01.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
 
 import { Router } from 'express';
 import { nuru } from '../core/nuru';

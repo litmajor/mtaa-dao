@@ -1,7 +1,23 @@
 /**
- * Account Initialization Admin Endpoint
+ * ⚠️  DEPRECATED - CONSOLIDATED INTO system.ts
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 
+ * THIS FILE IS DEPRECATED (Sunset: 2026-09-01)
+ * 
+ * Account initialization endpoints have been consolidated into:
+ * 👉 server/routes/system.ts
+ * 
+ * Route Migration:
+ * POST /api/admin/initialize-accounts → POST /api/system/admin/initialize-accounts
+ * GET /api/admin/accounts/summary → GET /api/system/admin/accounts-summary
+ * 
+ * Original Description:
  * Initializes default multi-account structure for all users
  * Protected by superuser authentication
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * This file will be DELETED on or after 2026-09-01.
+ * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import { Router, Request, Response, NextFunction } from 'express';

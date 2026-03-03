@@ -2,8 +2,16 @@
 import express from 'express';
 import { z } from 'zod';
 import { notificationService } from '../notificationService';
+import { authenticate } from '../auth';
 
 const router = express.Router();
+
+// ════════════════════════════════════════════════════════════════════════════════
+// AUTHENTICATION MIDDLEWARE
+// ════════════════════════════════════════════════════════════════════════════════
+
+// All Stripe status operations require authentication
+router.use(authenticate);
 
 // Validation schema for Stripe webhook event
 const stripeWebhookSchema = z.object({

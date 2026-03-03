@@ -300,27 +300,14 @@ export async function assessVaultRiskHandler(req: Request, res: Response) {
 export const getVaultTransactionsHandler = [
   vaultValidation.getVaultTransactions,
   asyncHandler(async (req: Request, res: Response) => {
+    // isAuthenticated middleware guarantees req.user exists
+    const userId = req.user?.claims?.id!;
+
     const requestLogger = logger.child({
-  requestId: Array.isArray(req.headers['x-request-id']) ? req.headers['x-request-id'][0] : req.headers['x-request-id'],
-      userId: req.user?.claims?.id,
+      requestId: Array.isArray(req.headers['x-request-id']) ? req.headers['x-request-id'][0] : req.headers['x-request-id'],
+      userId,
       vaultId: req.params.vaultId,
     });
-
-    const userId = req.user?.claims?.id;
-    if (!userId) {
-      requestLogger.warn('Unauthorized access attempt');
-      return res.status(401).json({ 
-        success: false,
-        error: {
-          message: 'Authentication required',
-          code: 'UNAUTHORIZED',
-          statusCode: 401,
-          timestamp: new Date().toISOString(),
-          path: req.path,
-          method: req.method,
-        }
-      });
-    }
 
     const { vaultId } = req.params;
     const { page, limit } = req.query as { page?: number; limit?: number };

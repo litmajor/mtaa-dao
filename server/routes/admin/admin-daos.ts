@@ -4,8 +4,7 @@ import { logger } from '../../utils/logger';
 import { daos, daoMemberships, vaults, proposals, users } from '../../../shared/schema';
 import { eq, desc, sql, and, or, like, count, gte, lte } from 'drizzle-orm';
 import { requireRole } from '../../middleware/rbac';
-import { logAuditEvent, AuditEventType } from '../../services/auditLogging';
-import auditLoggingService from '../../services/auditLoggingService';
+import { logConsolidatedAuditEvent, AuditEventType } from '../../services/auditConsolidated';
 import softDeleteService from '../../services/softDeleteService';
 
 const router = Router();

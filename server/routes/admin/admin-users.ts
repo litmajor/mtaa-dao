@@ -4,8 +4,7 @@ import { logger } from '../../utils/logger';
 import { users, daoMemberships, userActivities } from '../../../shared/schema';
 import { eq, desc, sql, and, or, like, count, gte, lte, inArray } from 'drizzle-orm';
 import { requireRole } from '../../middleware/rbac';
-import { logAuditEvent, AuditEventType } from '../../services/auditLogging';
-import auditLoggingService from '../../services/auditLoggingService';
+import { logConsolidatedAuditEvent, AuditEventType } from '../../services/auditConsolidated';
 import softDeleteService from '../../services/softDeleteService';
 
 const router = Router();
@@ -109,12 +108,12 @@ router.put('/users/:userId/ban', requireSuperAdmin, async (req: Request, res: Re
       })
       .where(eq(users.id, userId));
 
-    // Log audit event using new service
-    await auditLoggingService.logAction({
+    // Log audit event
+    await logConsolidatedAuditEvent({
       actorId: adminId,
       actorType: 'admin',
       actorRole: 'admin',
-      actionType: banned ? 'user_banned' : 'user_unbanned',
+      actionType: banned ? AuditEventType.ACCOUNT_BANNED : AuditEventType.ACCOUNT_UNBANNED,
       actionCategory: 'admin',
       targetType: 'user',
       targetId: userId,
@@ -178,17 +177,20 @@ router.post('/users/:userId/role', requireSuperAdmin, async (req: Request, res: 
       })
       .where(eq(users.id, userId));
 
-    // Log audit event using new service
-    await auditLoggingService.logAction({
+    // Log audit event
+    await logConsolidatedAuditEvent({
       actorId: adminId,
       actorType: 'admin',
       actorRole: 'admin',
-      actionType: 'user_role_changed',
+      actionType: AuditEventType.ADMIN_ROLE_UPDATED,
       actionCategory: 'admin',
       targetType: 'user',
       targetId: userId,
       targetName: user[0].email || undefined,
       result: 'success',
+      beforeState: { role: oldRole },
+      afterState: { role: newRole },
+      changedFields: ['role'],
       metadata: {
         oldRole,
         newRole,
@@ -251,20 +253,22 @@ router.post('/users/bulk-action', requireSuperAdmin, async (req: Request, res: R
       result.message = `${filteredIds.length} users banned successfully`;
 
       // Log audit event
-      await logAuditEvent({
-        eventType: AuditEventType.USER_PERMISSIONS_CHANGED,
-        userId: adminId,
-        action: `Bulk ban: ${filteredIds.length} users`,
+      await logConsolidatedAuditEvent({
+        actorId: adminId,
+        actionType: AuditEventType.ACCOUNT_BANNED,
+        actionCategory: 'admin',
+        targetType: 'users',
+        targetId: 'bulk-' + filteredIds.join('-'),
+        result: 'success',
         severity: 'high',
-        endpoint: '/api/admin/users/bulk-action',
-        method: 'POST',
         ipAddress: req.ip,
         userAgent: req.get('user-agent'),
-        statusCode: 200,
+        endpoint: '/api/admin/users/bulk-action',
         metadata: {
           action: 'bulk-ban',
           count: filteredIds.length,
           reason,
+          userIds: filteredIds,
         }
       }).catch(err => console.error('Audit log failed:', err));
     }
@@ -278,20 +282,22 @@ router.post('/users/bulk-action', requireSuperAdmin, async (req: Request, res: R
       result.count = filteredIds.length;
       result.message = `${filteredIds.length} users unbanned successfully`;
 
-      await logAuditEvent({
-        eventType: AuditEventType.USER_PERMISSIONS_CHANGED,
-        userId: adminId,
-        action: `Bulk unban: ${filteredIds.length} users`,
+      await logConsolidatedAuditEvent({
+        actorId: adminId,
+        actionType: AuditEventType.ACCOUNT_UNBANNED,
+        actionCategory: 'admin',
+        targetType: 'users',
+        targetId: 'bulk-' + filteredIds.join('-'),
+        result: 'success',
         severity: 'medium',
-        endpoint: '/api/admin/users/bulk-action',
-        method: 'POST',
         ipAddress: req.ip,
         userAgent: req.get('user-agent'),
-        statusCode: 200,
+        endpoint: '/api/admin/users/bulk-action',
         metadata: {
           action: 'bulk-unban',
           count: filteredIds.length,
           reason,
+          userIds: filteredIds,
         }
       }).catch(err => console.error('Audit log failed:', err));
     }
@@ -305,21 +311,23 @@ router.post('/users/bulk-action', requireSuperAdmin, async (req: Request, res: R
       result.count = filteredIds.length;
       result.message = `${filteredIds.length} users role updated to ${value}`;
 
-      await logAuditEvent({
-        eventType: AuditEventType.USER_PERMISSIONS_CHANGED,
-        userId: adminId,
-        action: `Bulk role change: ${filteredIds.length} users to ${value}`,
+      await logConsolidatedAuditEvent({
+        actorId: adminId,
+        actionType: AuditEventType.ADMIN_ROLE_UPDATED,
+        actionCategory: 'admin',
+        targetType: 'users',
+        targetId: 'bulk-' + filteredIds.join('-'),
+        result: 'success',
         severity: 'high',
-        endpoint: '/api/admin/users/bulk-action',
-        method: 'POST',
         ipAddress: req.ip,
         userAgent: req.get('user-agent'),
-        statusCode: 200,
+        endpoint: '/api/admin/users/bulk-action',
         metadata: {
           action: 'bulk-role-change',
           count: filteredIds.length,
           newRole: value,
           reason,
+          userIds: filteredIds,
         }
       }).catch(err => console.error('Audit log failed:', err));
     }
@@ -552,16 +560,18 @@ router.post('/users/:userId/reset-password', requireSuperAdmin, async (req: Requ
     // await emailService.sendPasswordReset(user[0].email, tempPassword);
 
     // Log audit event
-    await logAuditEvent({
-      eventType: AuditEventType.USER_PERMISSIONS_CHANGED,
-      userId: adminId,
-      action: `Password reset initiated: ${user[0].email}`,
+    await logConsolidatedAuditEvent({
+      actorId: adminId,
+      actionType: AuditEventType.PASSWORD_CHANGED,
+      actionCategory: 'admin',
+      targetType: 'user',
+      targetId: userId,
+      targetName: user[0].email || undefined,
+      result: 'success',
       severity: 'high',
-      endpoint: '/api/admin/users/:userId/reset-password',
-      method: 'POST',
       ipAddress: req.ip,
       userAgent: req.get('user-agent'),
-      statusCode: 200,
+      endpoint: '/api/admin/users/:userId/reset-password',
       metadata: {
         targetUserId: userId,
         targetEmail: user[0].email,

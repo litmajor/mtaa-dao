@@ -279,21 +279,3 @@ export const schemaExtensions = {
   operationalStateSnapshots,
   validationReports,
 };
-
-// Export all types
-export type {
-  InsertAuditEvent,
-  SelectAuditEvent,
-  InsertSystemTopology,
-  SelectSystemTopology,
-  InsertArchitectureGap,
-  SelectArchitectureGap,
-  InsertRemediationAction,
-  SelectRemediationAction,
-  InsertDriftDetection,
-  SelectDriftDetection,
-  InsertOperationalStateSnapshot,
-  SelectOperationalStateSnapshot,
-  InsertValidationReport,
-  SelectValidationReport,
-};

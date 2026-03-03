@@ -102,6 +102,7 @@ export class VaultCreationService {
         description: validatedRequest.description,
         userId: validatedRequest.userId || null,
         daoId: validatedRequest.daoId || null,
+        creatorId: validatedRequest.userId, // Track vault creator
         currency: validatedRequest.primaryCurrency,
         vaultType: validatedRequest.vaultType,
         yieldStrategy: validatedRequest.yieldStrategy,

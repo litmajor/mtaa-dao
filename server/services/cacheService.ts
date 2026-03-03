@@ -12,7 +12,8 @@
  * - Graceful fallback if Redis unavailable
  */
 
-import redis, { Redis } from 'ioredis';
+import { getRedisInstance, getRedisInstanceAsync } from '../config/redisConnectionManager';
+import type { Redis } from 'ioredis';
 import { logger } from '../utils/logger';
 
 export interface CacheEntry<T = any> {
@@ -58,51 +59,27 @@ export class RedisCacheService {
   }
 
   /**
-   * Initialize Redis connection
+   * Initialize Redis connection via singleton manager
    * Gracefully falls back to in-memory cache if Redis unavailable
    */
   async initialize(): Promise<void> {
-    const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-
     try {
-      this.client = new redis(redisUrl, {
-        connectTimeout: 5000,
-        maxRetriesPerRequest: 3,
-        enableReadyCheck: true,
-        enableOfflineQueue: true,
-        lazyConnect: false,
-      });
-
-      this.client.on('error', (err) => {
-        logger.error('❌ Redis connection error:', err);
-        this.fallbackMode = true;
-      });
-
-      this.client.on('connect', () => {
-        logger.info('✅ Redis connected successfully');
-        this.fallbackMode = false;
-      });
-
-      this.client.on('ready', () => {
-        logger.info('🟢 Redis ready for commands');
-        // Initialize concurrency control managers when Redis is ready
-        if (this.client && !this.fallbackMode) {
-          const { initializeConcurrencyManagers } = require('./concurrencyControl');
-          initializeConcurrencyManagers(this.client);
-        }
-      });
-
+      // Use singleton Redis instance from connection manager
+      this.client = getRedisInstance() as any;
+      
       // Test connection
-      const pong = await this.client.ping();
+      const pong = await this.client!.ping();
       if (pong === 'PONG') {
-        logger.info('✅ Redis cache initialized');
+        logger.info('✅ Redis cache initialized via singleton');
+        this.fallbackMode = false;
         
         // Initialize concurrency managers
         const { initializeConcurrencyManagers } = require('./concurrencyControl');
         initializeConcurrencyManagers(this.client);
       }
     } catch (error: any) {
-      logger.warn('⚠️ Redis initialization failed, using in-memory cache:', error.message);
+      const errorMessage = error?.message || String(error) || 'Unknown Redis error';
+      logger.warn(`⚠️ Redis initialization failed, using in-memory cache: ${errorMessage}`);
       this.fallbackMode = true;
       this.client = null;
     }

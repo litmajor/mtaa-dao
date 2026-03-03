@@ -129,8 +129,8 @@ router.post('/award', isAuthenticated, async (req: Request, res: Response) => {
     const { userId, action, points, daoId, description, multiplier } = req.body;
     const authUser = req.user as any;
 
-    // Check if user is admin/superuser
-    if (authUser.role !== 'superuser' && authUser.role !== 'admin') {
+    // Check if user is admin/super_admin
+    if (authUser.role !== 'super_admin' && authUser.role !== 'admin') {
       return res.status(403).json({ message: 'Admin access required' });
     }
     await (ReputationService as any).awardPoints(userId, action, points, daoId, description, multiplier);
@@ -158,7 +158,7 @@ router.get('/economic-identity/:userId', isAuthenticated, async (req: Request, r
     const authUserId = (req.user as any).claims?.sub || (req.user as any).claims?.id;
 
     // Users can only view their own economic identity unless admin
-    if (userId !== authUserId && userId !== 'me' && (req.user as any).role !== 'superuser') {
+    if (userId !== authUserId && userId !== 'me' && (req.user as any).role !== 'super_admin') {
       return res.status(403).json({ error: 'Access denied' });
     }
 

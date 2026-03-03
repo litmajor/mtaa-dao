@@ -3,14 +3,14 @@
  * Run this migration to set up price tracking, orders, credentials, and arbitrage tracking
  */
 
-import { db } from '../db';
+import { pool } from '../../db';
 
 export async function migrateCEXTables() {
   try {
     console.log('🔄 Running CEX table migrations...');
 
     // Create cex_prices table for storing real-time and historical prices
-    await db.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS cex_prices (
         id SERIAL PRIMARY KEY,
         exchange VARCHAR(50) NOT NULL,
@@ -22,18 +22,16 @@ export async function migrateCEXTables() {
         timestamp TIMESTAMP NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(exchange, trading_pair, timestamp),
-        INDEX idx_exchange_pair (exchange, trading_pair),
-        INDEX idx_timestamp (timestamp)
+        UNIQUE(exchange, trading_pair, timestamp)
       );
     `);
     console.log('✅ Created cex_prices table');
 
     // Create cex_orders table for tracking user orders
-    await db.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS cex_orders (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID NOT NULL,
+        user_id VARCHAR(255) NOT NULL,
         exchange VARCHAR(50) NOT NULL,
         order_type VARCHAR(20) NOT NULL,
         order_side VARCHAR(10) NOT NULL,
@@ -49,19 +47,16 @@ export async function migrateCEXTables() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         completed_at TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        INDEX idx_user_exchange (user_id, exchange),
-        INDEX idx_status (status),
-        INDEX idx_pair (trading_pair)
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
     `);
     console.log('✅ Created cex_orders table');
 
     // Create cex_credentials table for storing encrypted API keys
-    await db.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS cex_credentials (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID NOT NULL UNIQUE,
+        user_id VARCHAR(255) NOT NULL UNIQUE,
         exchange VARCHAR(50) NOT NULL,
         api_key_encrypted BYTEA NOT NULL,
         api_secret_encrypted BYTEA NOT NULL,
@@ -71,14 +66,13 @@ export async function migrateCEXTables() {
         last_used_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        INDEX idx_user_exchange (user_id, exchange)
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
     `);
     console.log('✅ Created cex_credentials table');
 
     // Create arbitrage_opportunities table for tracking potential arbitrage
-    await db.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS arbitrage_opportunities (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         trading_pair VARCHAR(20) NOT NULL,
@@ -97,19 +91,16 @@ export async function migrateCEXTables() {
         status VARCHAR(20) DEFAULT 'detected',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        executed_at TIMESTAMP,
-        INDEX idx_pair (trading_pair),
-        INDEX idx_status (status),
-        INDEX idx_detected_at (detected_at)
+        executed_at TIMESTAMP
       );
     `);
     console.log('✅ Created arbitrage_opportunities table');
 
     // Create exchange_settings table for storing exchange-specific configurations
-    await db.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS exchange_settings (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID NOT NULL,
+        user_id VARCHAR(255) NOT NULL,
         exchange VARCHAR(50) NOT NULL,
         setting_key VARCHAR(100) NOT NULL,
         setting_value TEXT,
@@ -117,17 +108,26 @@ export async function migrateCEXTables() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        UNIQUE(user_id, exchange, setting_key),
-        INDEX idx_user_exchange (user_id, exchange)
+        UNIQUE(user_id, exchange, setting_key)
       );
     `);
     console.log('✅ Created exchange_settings table');
 
     // Create indexes for performance optimization
-    await db.query(`
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_cex_prices_exchange_pair ON cex_prices(exchange, trading_pair);
+      CREATE INDEX IF NOT EXISTS idx_cex_prices_timestamp ON cex_prices(timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_cex_orders_user_exchange ON cex_orders(user_id, exchange);
+      CREATE INDEX IF NOT EXISTS idx_cex_orders_status ON cex_orders(status);
+      CREATE INDEX IF NOT EXISTS idx_cex_orders_pair ON cex_orders(trading_pair);
       CREATE INDEX IF NOT EXISTS idx_cex_orders_created_at ON cex_orders(created_at);
       CREATE INDEX IF NOT EXISTS idx_cex_prices_exchange_pair_timestamp ON cex_prices(exchange, trading_pair, timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_cex_credentials_user_exchange ON cex_credentials(user_id, exchange);
+      CREATE INDEX IF NOT EXISTS idx_arbitrage_pair ON arbitrage_opportunities(trading_pair);
+      CREATE INDEX IF NOT EXISTS idx_arbitrage_status ON arbitrage_opportunities(status);
+      CREATE INDEX IF NOT EXISTS idx_arbitrage_detected_at ON arbitrage_opportunities(detected_at);
       CREATE INDEX IF NOT EXISTS idx_arbitrage_created_at ON arbitrage_opportunities(created_at);
+      CREATE INDEX IF NOT EXISTS idx_exchange_settings_user_exchange ON exchange_settings(user_id, exchange);
     `);
     console.log('✅ Created performance indexes');
 
@@ -143,11 +143,11 @@ export async function rollbackCEXTables() {
   try {
     console.log('🔄 Rolling back CEX tables...');
     
-    await db.query(`DROP TABLE IF EXISTS exchange_settings;`);
-    await db.query(`DROP TABLE IF EXISTS arbitrage_opportunities;`);
-    await db.query(`DROP TABLE IF EXISTS cex_credentials;`);
-    await db.query(`DROP TABLE IF EXISTS cex_orders;`);
-    await db.query(`DROP TABLE IF EXISTS cex_prices;`);
+    await pool.query(`DROP TABLE IF EXISTS exchange_settings;`);
+    await pool.query(`DROP TABLE IF EXISTS arbitrage_opportunities;`);
+    await pool.query(`DROP TABLE IF EXISTS cex_credentials;`);
+    await pool.query(`DROP TABLE IF EXISTS cex_orders;`);
+    await pool.query(`DROP TABLE IF EXISTS cex_prices;`);
     
     console.log('✅ CEX tables rolled back');
     return true;

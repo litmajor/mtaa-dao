@@ -2,9 +2,17 @@
 import express from 'express';
 import { db } from '../storage';
 import { walletTransactions, daos } from '../../shared/schema';
+import { authenticate } from '../auth';
 import { eq, and, desc } from 'drizzle-orm';
 
 const router = express.Router();
+
+// ════════════════════════════════════════════════════════════════════════════════
+// AUTHENTICATION MIDDLEWARE
+// ════════════════════════════════════════════════════════════════════════════════
+
+// All disbursement operations require authentication
+router.use(authenticate);
 
 interface DisbursementRequest {
   daoId: string;
@@ -20,8 +28,12 @@ interface DisbursementRequest {
   proposalId?: string;
 }
 
-// POST /api/disbursements/create
-router.post('/create', async (req, res) => {
+// ════════════════════════════════════════════════════════════════════════════════
+// NEW RESTful ENDPOINT (RECOMMENDED)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// POST /api/disbursements - Create disbursement
+router.post('/', async (req, res) => {
   try {
     const disbursement: DisbursementRequest = req.body;
     const { daoId, recipients, totalAmount, currency, description } = disbursement;
@@ -94,17 +106,103 @@ router.post('/create', async (req, res) => {
   }
 });
 
-// GET /api/disbursements/:daoId/history
-router.get('/:daoId/history', async (req, res) => {
+// ════════════════════════════════════════════════════════════════════════════════
+// DEPRECATED ENDPOINT (Keep for 6 months, then remove)
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @deprecated Use POST /api/disbursements instead
+ * Sunset: 2026-09-01
+ */
+router.post('/create', async (req, res) => {
+  // Issue deprecation warning
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', 'Wed, 01 Sep 2026 00:00:00 GMT');
+  res.setHeader('Link', '</api/disbursements>; rel="successor-version"');
+  res.setHeader('Warning', '299 - "POST /api/disbursements/create is deprecated. Use POST /api/disbursements instead"');
+
   try {
-    const { daoId } = req.params;
+    const disbursement: DisbursementRequest = req.body;
+    const { daoId, recipients, totalAmount, currency, description } = disbursement;
+    
+    if (!daoId || !recipients || recipients.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'DAO ID and recipients are required'
+      });
+    }
+    
+    // Validate total amount matches sum of recipient amounts
+    const calculatedTotal = recipients.reduce((sum, recipient) => sum + recipient.amount, 0);
+    if (Math.abs(calculatedTotal - totalAmount) > 0.01) {
+      return res.status(400).json({
+        success: false,
+        message: 'Total amount does not match sum of recipient amounts'
+      });
+    }
+    
+    const disbursementId = 'DISB-' + Date.now();
+    const feePercent = 0.01; // 1% platform fee for disbursements
+    const totalFee = Math.round(totalAmount * feePercent * 100) / 100;
+    const netAmount = totalAmount - totalFee;
+    
+    // Create disbursement record
+    const transactions = [];
+    for (const recipient of recipients) {
+      const transaction = {
+        id: `TXN-${disbursementId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        fromUserId: daoId,
+        toUserId: recipient.userId,
+        walletAddress: recipient.walletAddress,
+        amount: recipient.amount.toString(),
+        currency,
+        type: 'disbursement',
+        status: 'pending',
+        description: `${description} - ${recipient.reason}`,
+        disbursementId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      
+      await db.insert(walletTransactions).values(transaction);
+      transactions.push(transaction);
+    }
+    
+    res.json({
+      success: true,
+      disbursementId,
+      message: 'Disbursement created successfully',
+      totalAmount,
+      fee: totalFee,
+      netAmount,
+      recipientCount: recipients.length,
+      transactions: transactions.map(t => ({
+        id: t.id,
+        recipient: t.toUserId,
+        amount: t.amount,
+        status: t.status
+      }))
+    });
+    
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create disbursement',
+      error: error.message
+    });
+  }
+});
+// GET /api/disbursements/history
+router.get('/history', async (req, res) => {
+  try {
+    const { daoId } = req.query;
     const { limit = 50, offset = 0 } = req.query;
     
     const transactions = await db
       .select()
       .from(walletTransactions)
       .where(and(
-        eq(walletTransactions.fromUserId, daoId),
+        daoId ? eq(walletTransactions.fromUserId, String(daoId)) : undefined,
         eq(walletTransactions.type, 'disbursement')
       ))
       .orderBy(desc(walletTransactions.createdAt))
@@ -355,10 +453,10 @@ router.post('/schedule-recurring', async (req, res) => {
   }
 });
 
-// GET /api/disbursements/:daoId/templates
-router.get('/:daoId/templates', async (req, res) => {
+// GET /api/disbursements/templates
+router.get('/templates', async (req, res) => {
   try {
-    const { daoId } = req.params;
+    const { daoId } = req.query;
     
     // Predefined disbursement templates
     const templates = [
@@ -412,8 +510,6 @@ router.post('/bulk-approve', async (req, res) => {
         await db.update(walletTransactions)
           .set({
             status: 'approved',
-            approvedBy: approverUserId,
-            approvedAt: new Date(),
             updatedAt: new Date()
           })
           .where(eq(walletTransactions.disbursementId, disbursementId));

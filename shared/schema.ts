@@ -232,6 +232,17 @@ export const users = pgTable("users", {
   // votingtokenbalanceLegacy: decimal("votingtokenbalance", { precision: 10, scale: 2 }),
   // mtaatokenbalanceLegacy: decimal("mtaatokenbalance", { precision: 10, scale: 2 })
 
+  // ========================================
+  // TWO-FACTOR AUTHENTICATION (2FA)
+  // ========================================
+  twoFactorEnabled: boolean("two_factor_enabled").default(false), // Whether 2FA is active
+  twoFactorMethod: varchar("two_factor_method").default("totp"), // totp, sms, email
+  twoFactorSecret: text("two_factor_secret"), // Encrypted TOTP secret
+  twoFactorBackupCodes: text("two_factor_backup_codes"), // Encrypted JSON array of backup codes
+  twoFactorSetupAt: timestamp("two_factor_setup_at"), // When 2FA was set up
+  twoFactorVerifiedAt: timestamp("two_factor_verified_at"), // When 2FA was last verified
+  twoFactorRecoveryEmail: varchar("two_factor_recovery_email"), // Alternative recovery email
+
   // Soft delete fields (Day 3 Emergency Response)
   deleted_at: timestamp("deleted_at"),
   deleted_by: varchar("deleted_by"),
@@ -628,6 +639,7 @@ export const vaults = pgTable("vaults", {
   // Support both personal and DAO vaults
   userId: varchar("user_id").references(() => users.id), // nullable for DAO vaults
   daoId: uuid("dao_id").references(() => daos.id), // nullable for personal vaults
+  creatorId: varchar("creator_id").references(() => users.id), // who created this vault (can be delegated for strategies)
   name: varchar("name").default("Personal Vault"), // vault name with default for backward compatibility
   description: text("description"),
   currency: varchar("currency").notNull(), // primary currency, kept for backward compatibility
@@ -797,6 +809,103 @@ export const walletTransactions = pgTable("wallet_transactions", {
   metadata: jsonb("metadata"), // Added for transaction monitor compatibility
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// DAO MULTI-SIG & CONTRIBUTION CONFIGURATION TABLES
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * DAO Contribution Types Configuration
+ * Defines what types of contributions a DAO accepts (contribution, donation, investment)
+ * Examples:
+ *   - Contribution: Regular member payments to shared fund
+ *   - Donation: Voluntary contributions without equity stake
+ *   - Investment: Capital investment with ROI expectations
+ */
+export const daoContributionTypes = pgTable("dao_contribution_types", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }).notNull(),
+  name: varchar("name", { length: 50 }).notNull(), // 'contribution', 'donation', 'investment'
+  description: text("description"),
+  minimumAmount: decimal("minimum_amount", { precision: 18, scale: 2 }).default("0"),
+  maximumAmount: decimal("maximum_amount", { precision: 18, scale: 2 }), // null = no limit
+  requiresApproval: boolean("requires_approval").default(false), // if false, auto-accepted
+  approvalsNeeded: integer("approvals_needed").default(1), // N-of-M threshold
+  allowRecurring: boolean("allow_recurring").default(false),
+  trackEquity: boolean("track_equity").default(false), // for investment types
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+/**
+ * DAO Contribution Requests
+ * Tracks all contributions made by members
+ */
+export const daoContributions = pgTable("dao_contributions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }).notNull(),
+  contributorId: varchar("contributor_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  contributionTypeId: uuid("contribution_type_id").references(() => daoContributionTypes.id, { onDelete: 'cascade' }).notNull(),
+  amount: decimal("amount", { precision: 18, scale: 2 }).notNull(),
+  currency: varchar("currency").default("cUSD"),
+  status: varchar("status").default("pending"), // pending, approved, rejected, completed
+  approvalStatus: varchar("approval_status").default("awaiting"), // awaiting, unanimousApproval, majoritApproval, rejected
+  approvalsCount: integer("approvals_count").default(0),
+  requiredApprovals: integer("required_approvals").notNull(),
+  rejectionReason: text("rejection_reason"),
+  completedAt: timestamp("completed_at"),
+  description: text("description"),
+  metadata: jsonb("metadata").default({}), // Can store additional info like investment terms, equity %
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+/**
+ * Contribution Approvals Track
+ * Tracks individual approvals from DAO members/admins
+ */
+export const daoContributionApprovals = pgTable("dao_contribution_approvals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }).notNull(),
+  contributionId: uuid("contribution_id").references(() => daoContributions.id, { onDelete: 'cascade' }).notNull(),
+  approverId: varchar("approver_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  approved: boolean("approved").notNull(),
+  comment: text("comment"),
+  approvedAt: timestamp("approved_at").defaultNow(),
+});
+
+/**
+ * DAO Multi-Signature Configuration
+ * Separate from wallet transactions for treasury operations
+ * Links withdrawals to required approvals
+ */
+export const daoMultisigConfig = pgTable("dao_multisig_config", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }).notNull(),
+  requiredApprovals: integer("required_approvals").notNull().default(2), // N-of-M
+  totalSigners: integer("total_signers").notNull(), // M signers
+  signerAddresses: jsonb("signer_addresses").default([]), // Array of authorized signer user IDs
+  withdrawalThreshold: decimal("withdrawal_threshold", { precision: 18, scale: 2 }).default("1000.00"),
+  rolesAllowedToApprove: jsonb("roles_allowed_to_approve").default(["admin", "elder"]), // which roles can approve
+  autoCompleteOnThreshold: boolean("auto_complete_on_threshold").default(true), // auto-complete when threshold met
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+/**
+ * Treasury Withdrawal Approvals Track
+ * Separate from wallet transactions for multi-sig tracking
+ */
+export const treasuryWithdrawalApprovals = pgTable("treasury_withdrawal_approvals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }).notNull(),
+  withdrawalId: uuid("withdrawal_id").references(() => walletTransactions.id, { onDelete: 'cascade' }).notNull(),
+  approverId: varchar("approver_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  approved: boolean("approved").notNull(),
+  votedAt: timestamp("voted_at").defaultNow(),
+  comment: text("comment"),
 });
 
 // Phase 3: Vault Token Holdings table for multi-token support
@@ -2754,6 +2863,11 @@ export const insertVaultSchema = createInsertSchema(vaults);
 export const insertBudgetPlanSchema = createInsertSchema(budgetPlans);
 export const insertDaoMembershipSchema = createInsertSchema(daoMemberships);
 export const insertWalletTransactionSchema = createInsertSchema(walletTransactions);
+export const insertDaoContributionTypeSchema = createInsertSchema(daoContributionTypes);
+export const insertDaoContributionSchema = createInsertSchema(daoContributions);
+export const insertDaoContributionApprovalSchema = createInsertSchema(daoContributionApprovals);
+export const insertDaoMultisigConfigSchema = createInsertSchema(daoMultisigConfig);
+export const insertTreasuryWithdrawalApprovalSchema = createInsertSchema(treasuryWithdrawalApprovals);
 export const insertReferralRewardSchema = createInsertSchema(referralRewards);
 export const insertWalletSchema = createInsertSchema(wallets);
 export const insertUserBalanceSchema = createInsertSchema(userBalances);
@@ -2830,6 +2944,16 @@ export type Vault = typeof vaults.$inferSelect;
 export type BudgetPlan = typeof budgetPlans.$inferSelect;
 export type DaoMembership = typeof daoMemberships.$inferSelect;
 export type WalletTransaction = typeof walletTransactions.$inferSelect;
+export type DaoContributionType = typeof daoContributionTypes.$inferSelect;
+export type InsertDaoContributionType = typeof daoContributionTypes.$inferInsert;
+export type DaoContribution = typeof daoContributions.$inferSelect;
+export type InsertDaoContribution = typeof daoContributions.$inferInsert;
+export type DaoContributionApproval = typeof daoContributionApprovals.$inferSelect;
+export type InsertDaoContributionApproval = typeof daoContributionApprovals.$inferInsert;
+export type DaoMultisigConfig = typeof daoMultisigConfig.$inferSelect;
+export type InsertDaoMultisigConfig = typeof daoMultisigConfig.$inferInsert;
+export type TreasuryWithdrawalApproval = typeof treasuryWithdrawalApprovals.$inferSelect;
+export type InsertTreasuryWithdrawalApproval = typeof treasuryWithdrawalApprovals.$inferInsert;
 export type ReferralReward = typeof referralRewards.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type TaskHistory = typeof taskHistory.$inferSelect;
@@ -3384,6 +3508,148 @@ export type InsertBillSplitPayment = typeof billSplitPayments.$inferInsert;
 export type BridgeTransfer = typeof bridgeTransfers.$inferSelect;
 export type InsertBridgeTransfer = typeof bridgeTransfers.$inferInsert;
 
+// ============================================================================
+// PHASE 2: TREASURY CONTROLS - Whitelist, Amount Limits, Multisig Approvals
+// ============================================================================
+
+/**
+ * Treasury Whitelist - Recipient address approval (Ethereum addresses)
+ * Categories: charity, payments, team, disbursements, other
+ * All treasury transfers must be to whitelisted addresses
+ * Admin must approve new whitelist entries
+ */
+export const treasuryWhitelist = pgTable("treasury_whitelist", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").notNull().references(() => daos.id, { onDelete: 'cascade' }),
+  walletAddress: varchar("wallet_address", { length: 42 }).notNull(), // 0x + 40 hex chars
+  category: varchar("category", { length: 20 }).notNull(), // charity, payments, team, disbursements, other
+  recipientName: text("recipient_name"),
+  description: text("description"),
+  status: varchar("status", { length: 20 }).notNull().default("pending"), // pending, approved, rejected, revoked
+  approvedBy: varchar("approved_by").references(() => users.id), // Admin who approved
+  approvedAt: timestamp("approved_at"),
+  expiresAt: timestamp("expires_at"), // Optional: expiration date for temporary approvals
+  requestedBy: varchar("requested_by").notNull().references(() => users.id), // User who requested
+  rejectionReason: text("rejection_reason"), // Reason for rejection if status='rejected'
+  metadata: jsonb("metadata").default({}), // Additional context
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  daoIdIdx: index("treasury_whitelist_dao_id_idx").on(table.daoId),
+  walletAddressIdx: index("treasury_whitelist_wallet_address_idx").on(table.walletAddress),
+  statusIdx: index("treasury_whitelist_status_idx").on(table.status),
+  daoWalletUnique: sql`UNIQUE(dao_id, wallet_address)`, // One entry per address per DAO
+}));
+
+/**
+ * Treasury Limits - Per-DAO configuration for transfer restrictions
+ * Controls daily caps, single transfer maximums, multisig thresholds
+ * One record per DAO with configurable parameters
+ */
+export const treasuryLimits = pgTable("treasury_limits", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").notNull().references(() => daos.id, { onDelete: 'cascade' }),
+  dailyCapPercentage: decimal("daily_cap_percentage", { precision: 5, scale: 2 }).notNull().default("10"), // Max % of treasury per day
+  singleTransferMaxPercentage: decimal("single_transfer_max_percentage", { precision: 5, scale: 2 }).notNull().default("20"), // Max % per single transfer
+  multisigThresholdUSD: decimal("multisig_threshold_usd", { precision: 18, scale: 2 }).notNull().default("10000"), // Threshold in USD that requires multisig
+  multisigRequiredSignatures: integer("multisig_required_signatures").notNull().default(2), // Number of signatures needed (e.g., 2 of 3)
+  multisigWindowDays: integer("multisig_window_days").notNull().default(7), // Days to collect signatures (7 = 7-day expiration)
+  updatedBy: varchar("updated_by").references(() => users.id), // Admin who last updated
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  daoIdUnique: sql`UNIQUE(dao_id)`, // One config per DAO
+  daoIdIdx: index("treasury_limits_dao_id_idx").on(table.daoId),
+}));
+
+/**
+ * Treasury Approvals - Multisig approval tracking for large transfers
+ * Stores pending multisig requests and signature collection
+ * Transfers > multisigThresholdUSD need N signatures to execute
+ * Expires after multisigWindowDays with no execution
+ */
+export const treasuryApprovals = pgTable("treasury_approvals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").notNull().references(() => daos.id, { onDelete: 'cascade' }),
+  transactionId: varchar("transaction_id"), // Reference to original transaction/proposal
+  recipientAddress: varchar("recipient_address", { length: 42 }).notNull(),
+  amount: decimal("amount", { precision: 18, scale: 8 }).notNull(), // Amount in token
+  amountUSD: decimal("amount_usd", { precision: 18, scale: 2 }).notNull(), // Amount in USD for comparison
+  description: text("description"), // Purpose/reason for transfer
+  status: varchar("status", { length: 20 }).notNull().default("pending"), // pending, approved, rejected, executed, expired
+  requiredSignatures: integer("required_signatures").notNull(), // How many signatures needed (set at creation)
+  
+  // Signature tracking - stored as JSONB array of {signerId, signature, signedAt}
+  signatures: jsonb("signatures").default(sql`'[]'::jsonb`), 
+  
+  rejectionReason: text("rejection_reason"), // Reason if status='rejected'
+  rejectedBy: varchar("rejected_by").references(() => users.id), // Admin who rejected
+  rejectedAt: timestamp("rejected_at"),
+  
+  executedAt: timestamp("executed_at"), // When transfer was actually executed
+  executedBy: varchar("executed_by").references(() => users.id), // User who executed
+  
+  expiresAt: timestamp("expires_at").notNull(), // Approval expires (7 days from creation by default)
+  createdBy: varchar("created_by").notNull().references(() => users.id), // User who requested transfer
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  daoIdIdx: index("treasury_approvals_dao_id_idx").on(table.daoId),
+  statusIdx: index("treasury_approvals_status_idx").on(table.status),
+  expiresAtIdx: index("treasury_approvals_expires_at_idx").on(table.expiresAt),
+  recipientIdx: index("treasury_approvals_recipient_idx").on(table.recipientAddress),
+}));
+
+/**
+ * Treasury Transactions - Audit log of all treasury transfers
+ * Complete audit trail for compliance and forensics
+ * Every transfer (approved or rejected) is logged here
+ */
+export const treasuryTransactions = pgTable("treasury_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").notNull().references(() => daos.id, { onDelete: 'cascade' }),
+  transactionId: varchar("transaction_id"), // Blockchain or internal tx ID
+  recipientAddress: varchar("recipient_address", { length: 42 }).notNull(),
+  amount: decimal("amount", { precision: 18, scale: 8 }).notNull(),
+  amountUSD: decimal("amount_usd", { precision: 18, scale: 2 }),
+  description: text("description"),
+  status: varchar("status", { length: 20 }).notNull(), // approved, rejected, executed, pending
+  
+  // Validation results
+  whitelistApproved: boolean("whitelist_approved").notNull().default(false),
+  amountValidated: boolean("amount_validated").notNull().default(false),
+  multisigRequired: boolean("multisig_required").notNull().default(false),
+  multisigApproved: boolean("multisig_approved").notNull().default(false), // false = not yet decided or rejected or rejected
+  
+  // Executor information
+  executorUserId: varchar("executor_user_id").references(() => users.id),
+  executorRole: varchar("executor_role"), // Role of executor at time of execution
+  
+  // Approval reference
+  approvalId: uuid("approval_id").references(() => treasuryApprovals.id),
+  
+  // Error tracking
+  errorMessage: text("error_message"), // If rejected, why
+  
+  metadata: jsonb("metadata").default({}), // Additional context
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  daoIdIdx: index("treasury_transactions_dao_id_idx").on(table.daoId),
+  statusIdx: index("treasury_transactions_status_idx").on(table.status),
+  createdAtIdx: index("treasury_transactions_created_at_idx").on(table.createdAt),
+  recipientIdx: index("treasury_transactions_recipient_idx").on(table.recipientAddress),
+}));
+
+// Treasury Types for type safety
+export type TreasuryWhitelist = typeof treasuryWhitelist.$inferSelect;
+export type InsertTreasuryWhitelist = typeof treasuryWhitelist.$inferInsert;
+export type TreasuryLimits = typeof treasuryLimits.$inferSelect;
+export type InsertTreasuryLimits = typeof treasuryLimits.$inferInsert;
+export type TreasuryApproval = typeof treasuryApprovals.$inferSelect;
+export type InsertTreasuryApproval = typeof treasuryApprovals.$inferInsert;
+export type TreasuryTransaction = typeof treasuryTransactions.$inferSelect;
+export type InsertTreasuryTransaction = typeof treasuryTransactions.$inferInsert;
+
 export * from './vestingSchema';
 export * from './messageReactionsSchema';
 export * from './kycSchema';
@@ -3394,6 +3660,244 @@ export * from './invoiceSchema';
 export * from './securityEnhancedSchema';
 export * from './financialEnhancedSchema';
 export * from './onboardingSchema';
+
+// ============================================================================
+// METRICS TABLES
+// ============================================================================
+
+// Platform Metrics - Real-time system health tracking
+export const platformMetrics = pgTable('platform_metrics', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  timestamp: timestamp('timestamp').notNull().defaultNow(),
+  totalDaos: integer('total_daos').notNull().default(0),
+  activeDaos: integer('active_daos').notNull().default(0),
+  totalMembers: integer('total_members').notNull().default(0),
+  totalVaults: integer('total_vaults').notNull().default(0),
+  activeVaults: integer('active_vaults').notNull().default(0),
+  totalTvl: numeric('total_tvl', { precision: 20, scale: 8 }).notNull().default('0'),
+  totalTransactions: integer('total_transactions').notNull().default(0),
+  totalFees: numeric('total_fees', { precision: 20, scale: 8 }).notNull().default('0'),
+  totalRevenue: numeric('total_revenue', { precision: 20, scale: 8 }).notNull().default('0'),
+  cpuUsage: numeric('cpu_usage', { precision: 5, scale: 2 }).default('0'),
+  memoryUsage: numeric('memory_usage', { precision: 5, scale: 2 }).default('0'),
+  diskUsage: numeric('disk_usage', { precision: 5, scale: 2 }).default('0'),
+  networkLatency: integer('network_latency').default(0),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// DeFi Protocol Metrics
+export const defiProtocolMetrics = pgTable('defi_protocol_metrics', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  protocolName: varchar('protocol_name').notNull(),
+  timestamp: timestamp('timestamp').notNull().defaultNow(),
+  tvl: numeric('tvl', { precision: 20, scale: 8 }).default('0'),
+  totalUsers: integer('total_users').default(0),
+  status: varchar('status').default('active'),
+  lastUpdate: timestamp('last_update').notNull(),
+  metadata: jsonb('metadata').default({}),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// CeFi Exchange Metrics
+export const cefiExchangeMetrics = pgTable('cefi_exchange_metrics', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  exchangeName: varchar('exchange_name').notNull(),
+  timestamp: timestamp('timestamp').notNull().defaultNow(),
+  volume24h: numeric('volume_24h', { precision: 20, scale: 8 }).default('0'),
+  users: integer('users').default(0),
+  status: varchar('status').default('active'),
+  metadata: jsonb('metadata').default({}),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Blockchain Health Metrics
+export const blockchainHealthMetrics = pgTable('blockchain_health_metrics', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  chainName: varchar('chain_name').notNull(),
+  timestamp: timestamp('timestamp').notNull().defaultNow(),
+  blockHeight: integer('block_height').default(0),
+  transactionCount: integer('transaction_count').default(0),
+  averageBlockTime: numeric('average_block_time', { precision: 10, scale: 2 }).default('0'),
+  networkHealthScore: numeric('network_health_score', { precision: 5, scale: 2 }).default('100'),
+  status: varchar('status').default('healthy'),
+  metadata: jsonb('metadata').default({}),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Liquidity Pool Metrics
+export const liquidityPoolMetrics = pgTable('liquidity_pool_metrics', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  poolAddress: varchar('pool_address').notNull(),
+  chainId: varchar('chain_id').notNull(),
+  timestamp: timestamp('timestamp').notNull().defaultNow(),
+  totalLiquidity: numeric('total_liquidity', { precision: 20, scale: 8 }).default('0'),
+  volume24h: numeric('volume_24h', { precision: 20, scale: 8 }).default('0'),
+  fee24h: numeric('fee_24h', { precision: 20, scale: 8 }).default('0'),
+  tokenABalance: numeric('token_a_balance', { precision: 20, scale: 8 }).default('0'),
+  tokenBBalance: numeric('token_b_balance', { precision: 20, scale: 8 }).default('0'),
+  metadata: jsonb('metadata').default({}),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Revenue Metrics
+export const revenueMetrics = pgTable('revenue_metrics', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  date: text('date').notNull(),
+  totalRevenue: numeric('total_revenue', { precision: 20, scale: 8 }).notNull().default('0'),
+  transactionFees: numeric('transaction_fees', { precision: 20, scale: 8 }).notNull().default('0'),
+  platformFees: numeric('platform_fees', { precision: 20, scale: 8 }).notNull().default('0'),
+  otherRevenue: numeric('other_revenue', { precision: 20, scale: 8 }).notNull().default('0'),
+  revenueBySource: jsonb('revenue_by_source').default({}),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Payment Provider Metrics
+export const paymentProviderMetrics = pgTable('payment_provider_metrics', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  providerName: varchar('provider_name').notNull(),
+  timestamp: timestamp('timestamp').notNull().defaultNow(),
+  successRate: numeric('success_rate', { precision: 5, scale: 2 }).default('0'),
+  totalTransactions: integer('total_transactions').default(0),
+  totalVolume: numeric('total_volume', { precision: 20, scale: 8 }).default('0'),
+  status: varchar('status').default('active'),
+  metadata: jsonb('metadata').default({}),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Agent Performance Metrics
+export const agentPerformanceMetrics = pgTable('agent_performance_metrics', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  agentId: varchar('agent_id').notNull(),
+  date: text('date').notNull(),
+  tasksCompleted: integer('tasks_completed').notNull().default(0),
+  successRate: numeric('success_rate', { precision: 5, scale: 2 }).default('0'),
+  averageResponseTime: numeric('average_response_time', { precision: 10, scale: 2 }).default('0'),
+  userSatisfaction: numeric('user_satisfaction', { precision: 5, scale: 2 }).default('0'),
+  metadata: jsonb('metadata').default({}),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// API Usage Metrics
+export const apiUsageMetrics = pgTable('api_usage_metrics', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  date: text('date').notNull(),
+  totalRequests: integer('total_requests').notNull().default(0),
+  successfulRequests: integer('successful_requests').notNull().default(0),
+  failedRequests: integer('failed_requests').notNull().default(0),
+  averageResponseTime: numeric('average_response_time', { precision: 10, scale: 2 }).default('0'),
+  totalDataTransferred: numeric('total_data_transferred', { precision: 20, scale: 8 }).default('0'),
+  topEndpoints: jsonb('top_endpoints').default({}),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Platform Growth Metrics
+export const platformGrowthMetrics = pgTable('platform_growth_metrics', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  date: text('date').notNull(),
+  newUsers: integer('new_users').notNull().default(0),
+  totalUsers: integer('total_users').notNull().default(0),
+  userRetention: numeric('user_retention', { precision: 5, scale: 2 }).default('0'),
+  newDaos: integer('new_daos').notNull().default(0),
+  totalDaos: integer('total_daos').notNull().default(0),
+  monthlyActiveUsers: integer('monthly_active_users').notNull().default(0),
+  weeklyActiveUsers: integer('weekly_active_users').notNull().default(0),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Referral Metrics
+export const referralMetrics = pgTable('referral_metrics', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  date: text('date').notNull(),
+  totalReferrals: integer('total_referrals').notNull().default(0),
+  newReferralsToday: integer('new_referrals_today').notNull().default(0),
+  referredUsersCount: integer('referred_users_count').notNull().default(0),
+  referredUsersActive: integer('referred_users_active').notNull().default(0),
+  totalReferralRewards: numeric('total_referral_rewards', { precision: 20, scale: 8 }).notNull().default('0'),
+  rewardsDistributedToday: numeric('rewards_distributed_today', { precision: 20, scale: 8 }).notNull().default('0'),
+  averageRewardPerReferral: numeric('average_reward_per_referral', { precision: 20, scale: 8 }).notNull().default('0'),
+  topReferrerCount: integer('top_referrer_count').default(0),
+  averageReferralsPerUser: numeric('average_referrals_per_user', { precision: 10, scale: 2 }).default('0'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Leaderboard Rankings
+export const leaderboardRankings = pgTable('leaderboard_rankings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: varchar('user_id').notNull(),
+  rankingType: varchar('ranking_type').notNull(),
+  date: text('date').notNull(),
+  rank: integer('rank').notNull(),
+  score: numeric('score', { precision: 20, scale: 8 }).notNull().default('0'),
+  previousRank: integer('previous_rank').default(0),
+  rankChange: integer('rank_change').default(0),
+  metricValue: numeric('metric_value', { precision: 20, scale: 8 }).default('0'),
+  tier: varchar('tier').default('bronze'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Reward Distribution
+export const rewardDistribution = pgTable('reward_distribution', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  recipientId: varchar('recipient_id').notNull(),
+  rewardType: varchar('reward_type').notNull(),
+  date: text('date').notNull(),
+  amount: numeric('amount', { precision: 20, scale: 8 }).notNull().default('0'),
+  status: varchar('status').notNull().default('pending'),
+  distributionDate: timestamp('distribution_date'),
+  source: varchar('source').default('activities'),
+  metadata: jsonb('metadata').default({}),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// DAO Analytics
+export const daoAnalytics = pgTable('dao_analytics', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  daoId: uuid('dao_id').notNull().references(() => daos.id),
+  date: text('date').notNull(),
+  totalMembers: integer('total_members').notNull().default(0),
+  newMembersToday: integer('new_members_today').notNull().default(0),
+  activeMembers: integer('active_members').notNull().default(0),
+  membersByTier: jsonb('members_by_tier').default({}),
+  totalProposals: integer('total_proposals').notNull().default(0),
+  activeProposals: integer('active_proposals').notNull().default(0),
+  totalVotes: integer('total_votes').notNull().default(0),
+  averageParticipation: numeric('average_participation', { precision: 5, scale: 2 }).default('0'),
+  treasuryBalance: numeric('treasury_balance', { precision: 20, scale: 8 }).notNull().default('0'),
+  inflows: numeric('inflows', { precision: 20, scale: 8 }).notNull().default('0'),
+  outflows: numeric('outflows', { precision: 20, scale: 8 }).notNull().default('0'),
+  netFlow: numeric('net_flow', { precision: 20, scale: 8 }).notNull().default('0'),
+  daoType: varchar('dao_type'),
+  region: varchar('region'),
+  causeCategory: varchar('cause_category'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Support Ticket Metrics
+export const supportTicketMetrics = pgTable('support_ticket_metrics', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  date: text('date').notNull(),
+  totalTickets: integer('total_tickets').notNull().default(0),
+  openTickets: integer('open_tickets').notNull().default(0),
+  resolvedTickets: integer('resolved_tickets').notNull().default(0),
+  averageResolutionTime: numeric('average_resolution_time', { precision: 10, scale: 2 }).default('0'),
+  customerSatisfaction: numeric('customer_satisfaction', { precision: 5, scale: 2 }).default('0'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
 
 // Operational Framework Schema Extensions
 export * from '../server/services/operational/schema';

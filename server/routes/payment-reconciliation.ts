@@ -2,8 +2,23 @@
 import express from 'express';
 import { z } from 'zod';
 import { notificationService } from '../notificationService';
+import { authenticate, authorize } from '../auth';
+import { db } from '../storage';
+import { walletTransactions } from '../../shared/schema';
+import { eq, and, desc, gte, count, sum, sql } from 'drizzle-orm';
 
+// THIS ROUTER IS SECURITY‑SENSITIVE: only superadmin users should ever see it.
+// Recommended mount point in main app: app.use('/api/admin/payments/reconciliation', router);
 const router = express.Router();
+
+// ════════════════════════════════════════════════════════════════════════════════
+// AUTHENTICATION MIDDLEWARE
+// ════════════════════════════════════════════════════════════════════════════════
+
+// All reconciliation operations require authentication
+router.use(authenticate);
+// further restrict to superadmin users only – entire reconciliation API lives under admin namespace
+router.use(authorize('superadmin'));
 
 interface PaymentReconciliationReport {
   provider: string;
@@ -41,73 +56,50 @@ class PaymentReconciliationService {
   }
 
   private async getProviderReport(provider: string, startDate?: string, endDate?: string): Promise<PaymentReconciliationReport> {
-    // This would typically fetch from your database
-    // For now, we'll return mock data that would come from the actual provider stores
-    
-    switch (provider) {
-      case 'mpesa':
-        return {
-          provider: 'M-Pesa',
-          totalPayments: 150,
-          completed: 142,
-          failed: 6,
-          pending: 2,
-          cancelled: 0,
-          totalAmount: 50000,
-          successRate: '94.7%',
-          avgProcessingTime: 45, // seconds
-          failureReasons: [
-            { reason: 'Insufficient funds', count: 3, percentage: '50%' },
-            { reason: 'Invalid phone number', count: 2, percentage: '33%' },
-            { reason: 'Network timeout', count: 1, percentage: '17%' }
-          ],
-          inRetryQueue: 1,
-          reconciliationErrors: 0
-        };
-
-      case 'kotanipay':
-        return {
-          provider: 'KotaniPay',
-          totalPayments: 75,
-          completed: 68,
-          failed: 5,
-          pending: 2,
-          cancelled: 0,
-          totalAmount: 25000,
-          successRate: '90.7%',
-          avgProcessingTime: 60,
-          failureReasons: [
-            { reason: 'Bank account not found', count: 2, percentage: '40%' },
-            { reason: 'Insufficient balance', count: 2, percentage: '40%' },
-            { reason: 'Service unavailable', count: 1, percentage: '20%' }
-          ],
-          inRetryQueue: 2,
-          reconciliationErrors: 1
-        };
-
-      case 'stripe':
-        return {
-          provider: 'Stripe',
-          totalPayments: 200,
-          completed: 185,
-          failed: 12,
-          pending: 3,
-          cancelled: 0,
-          totalAmount: 75000,
-          successRate: '92.5%',
-          avgProcessingTime: 15,
-          failureReasons: [
-            { reason: 'card_declined', count: 5, percentage: '42%' },
-            { reason: 'insufficient_funds', count: 4, percentage: '33%' },
-            { reason: 'processing_error', count: 3, percentage: '25%' }
-          ],
-          inRetryQueue: 0,
-          reconciliationErrors: 0
-        };
-
-      default:
-        return this.getEmptyReport(provider);
+    // real implementation: aggregate data from walletTransactions
+    const whereClauses: any[] = [];
+    // provider stored in metadata JSON
+    whereClauses.push(sql`(metadata->>'provider') = ${provider}`);
+    if (startDate) {
+      whereClauses.push(gte(walletTransactions.createdAt, new Date(startDate)));
     }
+    if (endDate) {
+      whereClauses.push(gte(walletTransactions.createdAt, new Date(endDate)));
+    }
+
+    const rows = await db
+      .select({ status: walletTransactions.status, amount: walletTransactions.amount })
+      .from(walletTransactions)
+      .where(and(...whereClauses));
+
+    const totalPayments = rows.length;
+    const completed = rows.filter(r => r.status === 'completed').length;
+    const failed = rows.filter(r => r.status === 'failed').length;
+    const pending = rows.filter(r => r.status === 'pending').length;
+    const cancelled = rows.filter(r => r.status === 'cancelled').length;
+    const totalAmount = rows.reduce((sum, r) => sum + parseFloat(r.amount as any || '0'), 0);
+
+    const successRate = totalPayments > 0 ? ((completed / totalPayments) * 100).toFixed(1) + '%' : '0%';
+    // simple placeholders for more complex metrics
+    const avgProcessingTime = 0;
+    const failureReasons: { reason: string; count: number; percentage: string }[] = [];
+    const inRetryQueue = 0;
+    const reconciliationErrors = 0;
+
+    return {
+      provider,
+      totalPayments,
+      completed,
+      failed,
+      pending,
+      cancelled,
+      totalAmount,
+      successRate,
+      avgProcessingTime,
+      failureReasons,
+      inRetryQueue,
+      reconciliationErrors
+    };
   }
 
   private getEmptyReport(provider: string): PaymentReconciliationReport {
@@ -161,32 +153,30 @@ class PaymentReconciliationService {
     let resolved = 0;
 
     try {
-      // Auto-retry failed payments in retry queue
-      const retryResponse = await fetch(`/api/payments/${provider}/retry-all`, {
-        method: 'POST'
-      });
-      
-      if (retryResponse.ok) {
-        const result = await retryResponse.json();
-        resolved += result.retriedCount || 0;
-      } else {
-        errors.push(`Failed to retry ${provider} payments`);
-      }
+      // Mark failed payments in retry queue as retried
+      const updated1 = await db
+        .update(walletTransactions)
+        .set({ status: 'retrying', updatedAt: new Date() })
+        .where(and(
+          sql`(metadata->>'provider') = ${provider}`,
+          eq(walletTransactions.status, 'failed')
+        ));
+      resolved += updated1.rowCount || 0;
 
       // Clear stuck pending payments older than 1 hour
-      const clearResponse = await fetch(`/api/payments/${provider}/clear-stuck`, {
-        method: 'POST'
-      });
-      
-      if (clearResponse.ok) {
-        const result = await clearResponse.json();
-        resolved += result.clearedCount || 0;
-      } else {
-        errors.push(`Failed to clear stuck ${provider} payments`);
-      }
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const updated2 = await db
+        .update(walletTransactions)
+        .set({ status: 'completed', updatedAt: new Date() })
+        .where(and(
+          sql`(metadata->>'provider') = ${provider}`,
+          eq(walletTransactions.status, 'pending'),
+          gte(walletTransactions.createdAt, oneHourAgo)
+        ));
+      resolved += updated2.rowCount || 0;
 
-    } catch (error) {
-      errors.push(`Auto-resolve failed for ${provider}: ${error}`);
+    } catch (error: any) {
+      errors.push(`Auto-resolve failed for ${provider}: ${error.message || error}`);
     }
 
     return { resolved, errors };
@@ -195,7 +185,7 @@ class PaymentReconciliationService {
 
 const reconciliationService = new PaymentReconciliationService();
 
-// GET /api/payments/reconciliation/report
+// GET /api/admin/payments/reconciliation/report
 router.get('/report', async (req, res) => {
   try {
     const { startDate, endDate, provider } = req.query;
@@ -247,7 +237,7 @@ router.get('/report', async (req, res) => {
   }
 });
 
-// POST /api/payments/reconciliation/auto-resolve
+// POST /api/admin/payments/reconciliation/auto-resolve
 router.post('/auto-resolve', async (req, res) => {
   try {
     const { provider } = req.body;
@@ -285,7 +275,7 @@ router.post('/auto-resolve', async (req, res) => {
   }
 });
 
-// GET /api/payments/reconciliation/anomalies
+// GET /api/admin/payments/reconciliation/anomalies
 router.get('/anomalies', async (req, res) => {
   try {
     const reports = await reconciliationService.generateComprehensiveReport();
@@ -306,7 +296,7 @@ router.get('/anomalies', async (req, res) => {
   }
 });
 
-// POST /api/payments/reconciliation/notifications/subscribe
+// POST /api/admin/payments/reconciliation/notifications/subscribe
 router.post('/notifications/subscribe', async (req, res) => {
   try {
     const { recipient, channels, events } = req.body;
@@ -343,12 +333,8 @@ router.post('/notifications/subscribe', async (req, res) => {
     });
   }
 });
-import { db } from '../storage';
-import { walletTransactions } from '../../shared/schema';
-import { eq, and, desc, gte, count, sum } from 'drizzle-orm';
 
-
-// GET /api/payment-reconciliation/payments
+// GET /api/admin/payments/reconciliation/payments
 router.get('/payments', async (req, res) => {
   try {
     const {
@@ -401,7 +387,7 @@ router.get('/payments', async (req, res) => {
   }
 });
 
-// POST /api/payment-reconciliation/reconcile/:id
+// POST /api/admin/payment-reconciliation/reconcile/:id
 router.post('/reconcile/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -421,7 +407,7 @@ router.post('/reconcile/:id', async (req, res) => {
   }
 });
 
-// POST /api/payment-reconciliation/bulk-reconcile
+// POST /api/admin/payment-reconciliation/bulk-reconcile
 router.post('/bulk-reconcile', async (req, res) => {
   try {
     const { paymentIds } = req.body;
