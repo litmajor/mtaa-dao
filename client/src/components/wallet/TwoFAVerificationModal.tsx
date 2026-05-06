@@ -49,7 +49,7 @@ export function TwoFAVerificationModal({
     setError('');
 
     try {
-      const response = await fetch('/api/2fa/verify', {
+      const response = await fetch('/api/v1/wallets/security/2fa/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -83,7 +83,7 @@ export function TwoFAVerificationModal({
   const handleResendOTP = async () => {
     setVerifying(true);
     try {
-      const response = await fetch('/api/2fa/generate', {
+      const response = await fetch('/api/v1/wallets/security/2fa/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });

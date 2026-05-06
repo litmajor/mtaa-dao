@@ -14,6 +14,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
+import { authClient } from '@/utils/authClient';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -72,12 +73,7 @@ export function RecoveryDashboard() {
   const loadRecoveryItems = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/admin/soft-delete-recovery/items', {
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (!response.ok) throw new Error('Failed to fetch recovery items');
-      const data = await response.json();
+      const data = await authClient.get('/api/admin/soft-delete-recovery/items');
       setItems(data.items);
     } catch (error) {
       console.error('Error loading recovery items:', error);
@@ -95,19 +91,10 @@ export function RecoveryDashboard() {
     if (!selectedItem) return;
 
     try {
-      const response = await fetch(
+      await authClient.post(
         `/api/admin/soft-delete-recovery/items/${selectedItem.type}/${selectedItem.id}/restore`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reason: restoreReason || 'Admin restoration' }),
-        }
+        { reason: restoreReason || 'Admin restoration' }
       );
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to restore item');
-      }
 
       toast({
         title: 'Success',
@@ -130,22 +117,13 @@ export function RecoveryDashboard() {
     if (!selectedItem) return;
 
     try {
-      const response = await fetch(
+      await authClient.post(
         `/api/admin/soft-delete-recovery/items/${selectedItem.type}/${selectedItem.id}/force-delete`,
         {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            reason: deleteReason || 'Permanent deletion',
-            confirmDelete: true,
-          }),
+          reason: deleteReason || 'Permanent deletion',
+          confirmDelete: true,
         }
       );
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to permanently delete item');
-      }
 
       toast({
         title: 'Permanent Deletion',

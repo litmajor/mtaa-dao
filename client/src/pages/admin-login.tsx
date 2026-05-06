@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Eye, EyeOff, Mail, Lock, AlertCircle, LogIn, Loader } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
+import { authClient } from '@/utils/authClient';
 
 export default function AdminLoginPage() {
   const navigate = useNavigate();
@@ -27,20 +28,12 @@ export default function AdminLoginPage() {
       }
 
       // Call admin login endpoint
-      const response = await fetch('/api/admin/auth/admin-login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
+      const data = await authClient.post('/api/admin/auth/admin-login', {
+        email,
+        password,
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
+      if (!data) {
         setError(data.message || 'Login failed. Please check your credentials.');
         setIsLoading(false);
         return;
@@ -48,7 +41,8 @@ export default function AdminLoginPage() {
 
       // Store token
       if (data.token) {
-        localStorage.setItem('token', data.token);
+        // authClient will handle token storage
+        // No need to directly use localStorage
         if (rememberMe) {
           localStorage.setItem('rememberMe', 'true');
         }

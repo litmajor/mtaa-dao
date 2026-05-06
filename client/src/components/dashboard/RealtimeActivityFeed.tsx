@@ -1,14 +1,15 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-// Note: Some lucide-react icons are not available, using available alternatives
 import {
   TrendingUp,
   Activity,
   CheckCircle,
   ArrowUpRight,
+  AlertCircle,
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useWebSocket } from '@/hooks/useWebSocket';
 // Virtualized list for performance - using simple array map instead
 // import { FixedSizeList } from 'react-window';
 
@@ -285,16 +286,85 @@ export function RealtimeActivityFeed({
   loading = false,
   onActivityClick,
 }: RealtimeActivityFeedProps) {
+  const { socket, isConnected } = useWebSocket();
+  
   const [filterType, setFilterType] = useState<ActivityType | 'all'>('all');
   const [autoScroll, setAutoScroll] = useState(true);
+  const [wsConnected, setWsConnected] = useState(false);
+  const [liveActivities, setLiveActivities] = useState<Activity[]>(activities);
+
+  // Update live activities when prop changes
+  useEffect(() => {
+    setLiveActivities(activities);
+  }, [activities]);
+
+  // WebSocket real-time activity streaming
+  useEffect(() => {
+    if (!isConnected) {
+      setWsConnected(false);
+      return;
+    }
+
+    setWsConnected(true);
+
+    // Stream all activity events to feed
+    const handleActivityLog = (data: any) => {
+      try {
+        if (data.action && data.timestamp) {
+          // Convert activity:logged events to Activity format
+          const newActivity: Activity = {
+            id: `${Date.now()}-${Math.random()}`,
+            timestamp: data.timestamp || Date.now(),
+            type: 'activity',
+            daoId: data.daoId || '',
+            daoName: data.daoName || 'System',
+            action: data.action,
+            member: data.userId || 'System',
+            description: data.description || data.message || '',
+            status: data.status || 'completed',
+          };
+          setLiveActivities(prev => [newActivity, ...prev].slice(0, 100));
+        }
+      } catch (error) {
+        console.error('Error processing activity stream:', error);
+      }
+    };
+
+    // Stream analytics updates as market activities
+    const handleAnalyticsUpdate = (data: any) => {
+      try {
+        if (data.metrics) {
+          const analyticsActivity: Activity = {
+            id: `${Date.now()}-${Math.random()}`,
+            timestamp: Date.now(),
+            type: 'global',
+            metric: 'market-cap',
+            value: data.metrics.totalVolume || 0,
+            description: 'Market activity updated',
+          };
+          setLiveActivities(prev => [analyticsActivity, ...prev].slice(0, 100));
+        }
+      } catch (error) {
+        console.error('Error processing analytics stream:', error);
+      }
+    };
+
+    socket.on('activity:logged', handleActivityLog);
+    socket.on('analytics:updated', handleAnalyticsUpdate);
+
+    return () => {
+      socket.off('activity:logged', handleActivityLog);
+      socket.off('analytics:updated', handleAnalyticsUpdate);
+    };
+  }, [socket, isConnected]);
 
   // Filter activities
   const filteredActivities = useMemo(() => {
     if (filterType === 'all') {
-      return activities;
+      return liveActivities;
     }
-    return activities.filter(a => a.type === filterType);
-  }, [activities, filterType]);
+    return liveActivities.filter(a => a.type === filterType);
+  }, [liveActivities, filterType]);
 
   // Render activity item
   const renderActivityItem = useCallback((activity: Activity) => {
@@ -342,10 +412,23 @@ export function RealtimeActivityFeed({
     <Card className="bg-slate-800 border-slate-700">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between mb-4">
-          <CardTitle className="flex items-center gap-2">
-            <Activity className="w-5 h-5" />
-            Real-time Activity Feed
-          </CardTitle>
+          <div className="flex flex-col gap-2">
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="w-5 h-5" />
+              Real-time Activity Feed
+            </CardTitle>
+            {wsConnected ? (
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-green-500" />
+                <span className="text-xs text-green-600">Real-time • WebSocket Connected</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-gray-400" />
+                <span className="text-xs text-gray-500">Polling Mode</span>
+              </div>
+            )}
+          </div>
           <Button
             variant="outline"
             size="sm"

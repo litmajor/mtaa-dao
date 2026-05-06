@@ -5,6 +5,7 @@
 
 import { Router, Request, Response } from 'express';
 import { logger } from '../../utils/logger';
+import { getEventEmitter } from '../../middleware/websocket-event-emitter';
 import {
   getElderById,
   updateElder,
@@ -309,6 +310,18 @@ router.put('/elders/:elderId', async (req: Request, res: Response) => {
       },
     });
 
+    // Emit WebSocket event for real-time updates
+    try {
+      const wsEmitter = getEventEmitter();
+      wsEmitter.emitConfigChange('elder', elderId, adminId, {
+        configuration,
+        changedFields: Object.keys(configuration).filter(k => oldConfig[k] !== configuration[k]),
+        changeReason: 'Admin configuration edit',
+      });
+    } catch (wsError) {
+      logger.warn('Failed to emit WebSocket config change event:', wsError);
+    }
+
     res.json({
       success: true,
       message: `Configuration updated for ${elder.name}`,
@@ -434,6 +447,18 @@ router.put('/agents/:agentId', async (req: Request, res: Response) => {
       },
     });
 
+    // Emit WebSocket event for real-time updates
+    try {
+      const wsEmitter = getEventEmitter();
+      wsEmitter.emitConfigChange('agent', agentId, adminId, {
+        configuration,
+        changedFields: Object.keys(configuration).filter(k => oldConfig[k] !== configuration[k]),
+        changeReason: 'Admin configuration edit',
+      });
+    } catch (wsError) {
+      logger.warn('Failed to emit WebSocket config change event:', wsError);
+    }
+
     res.json({
       success: true,
       message: `Configuration updated for ${agent.name}`,
@@ -556,6 +581,20 @@ router.put('/system', async (req: Request, res: Response) => {
         },
       },
     });
+
+    // Emit WebSocket event for real-time updates
+    try {
+      const wsEmitter = getEventEmitter();
+      wsEmitter.emitConfigChange('system', 'system', adminId, {
+        systemSettings,
+        elderSettings,
+        agentSettings,
+        featureFlags,
+        changeReason: 'Admin system configuration edit',
+      });
+    } catch (wsError) {
+      logger.warn('Failed to emit WebSocket config change event:', wsError);
+    }
 
     res.json({
       success: true,

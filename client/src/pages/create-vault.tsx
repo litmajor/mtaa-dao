@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft, Lock, Shield, DollarSign, Target, Users, AlertTriangle, CheckCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
+import { authClient } from '@/utils/authClient';
 
 interface VaultConfig {
   name: string;
@@ -53,21 +54,7 @@ export default function CreateVaultPage() {
 
     setLoading(true);
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch('/api/vaults/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(config)
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to create vault');
-      }
-
-      const data = await response.json();
+      const data = await authClient.post('/api/v1/wallets/vaults', config);
       toast({ title: 'Success', description: 'Vault created successfully!' });
       setTimeout(() => window.location.href = '/vault-overview', 1500);
     } catch (err) {

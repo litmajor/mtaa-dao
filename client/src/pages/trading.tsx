@@ -16,12 +16,12 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Filter, Download, Settings, TrendingUp, AlertCircle } from 'lucide-react';
+import { Filter, Download, Settings, TrendingUp, AlertCircle } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
+import { authClient } from '@/utils/authClient';
 
 // Import tab components from YukiDashboard
 import YukiDashboard from '@/components/trading/YukiDashboard';
-import HeatmapView from '@/components/trading/HeatmapView';
 
 // View mode types
 type ViewMode = 'ranking' | 'heatmap' | 'comparison' | 'sparklines' | 'insights' | 'network';
@@ -92,17 +92,7 @@ export default function TradingPage() {
           params.append('regions', filters.regions.join(','));
         }
 
-        const response = await fetch(`/api/yuki/exchanges?${params.toString()}`, {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` },
-        });
-
-        if (!response.ok) throw new Error('Failed to fetch exchanges');
-        
-        const { data } = await response.json();
-        
-        // Transform API response to component format
-        // FIXED: Typed API response properly instead of 'any'
-        const transformedData: ExchangeData[] = data.exchanges.map((ex: {
+        const data = await authClient.get<{ exchanges: Array<{
           exchange: string;
           symbol: string;
           price: number;
@@ -113,7 +103,11 @@ export default function TradingPage() {
           uptime: number;
           region: string;
           rating: number;
-        }) => ({
+        }> }>(`/api/yuki/exchanges?${params.toString()}`);
+        
+        // Transform API response to component format
+        // FIXED: Typed API response properly instead of 'any'
+        const transformedData: ExchangeData[] = data.exchanges.map((ex) => ({
           name: ex.exchange,
           symbol: ex.symbol,
           price: ex.price,

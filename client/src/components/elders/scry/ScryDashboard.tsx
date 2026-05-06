@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, Eye, TrendingUp, Shield, Activity, Zap } from 'lucide-react';
 import { useAuth } from '@/pages/hooks/useAuth';
+import { authClient } from '@/utils/authClient';
 
 interface ThreatStats {
   totalThreatsDetected: number;
@@ -100,14 +101,7 @@ function SuperuserThreatDashboard() {
   const fetchThreatDashboard = async () => {
     try {
       setRefreshing(true);
-      const response = await fetch('/api/elders/scry/dashboard', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-
-      if (!response.ok) throw new Error('Failed to fetch dashboard');
-      const data = await response.json();
+      const data = await authClient.get('/api/elders/scry/dashboard');
 
       if (data.success) {
         setThreatStats(data.threatStats);
@@ -277,25 +271,13 @@ function DAOMemberThreatDashboard() {
     if (!daoId) return;
 
     try {
-      const token = localStorage.getItem('token');
-      const [threatsRes, forecastRes] = await Promise.all([
-        fetch(`/api/elders/scry/dao/${daoId}/threats`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }),
-        fetch(`/api/elders/scry/dao/${daoId}/forecast`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        })
+      const [threatsData, forecastData] = await Promise.all([
+        authClient.get<{ threats: any[] }>(`/api/elders/scry/dao/${daoId}/threats`),
+        authClient.get<{ forecast: any }>(`/api/elders/scry/dao/${daoId}/forecast`)
       ]);
 
-      if (threatsRes.ok) {
-        const threatsData = await threatsRes.json();
-        setThreats(threatsData.threats || []);
-      }
-
-      if (forecastRes.ok) {
-        const forecastData = await forecastRes.json();
-        setForecast(forecastData.forecast);
-      }
+      setThreats(threatsData.threats || []);
+      setForecast(forecastData.forecast);
     } catch (error) {
       console.error('Failed to fetch DAO data:', error);
     } finally {

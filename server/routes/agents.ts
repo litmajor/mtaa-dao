@@ -1,22 +1,44 @@
 /**
  * Agent Management API Routes
  * Endpoints for managing and monitoring system agents
+ * 
+ * SECURITY:
+ * ✅ All GET endpoints require authentication
+ * ✅ All mutation endpoints rate-limited (10/min for admins)
+ * ✅ Sensitive metrics endpoints require auth to prevent enumeration
  */
 
 import { Router, Request, Response } from 'express';
 import { agentRegistry } from '../services/AgentRegistry';
 import { Logger } from '../utils/logger';
 import { requireRole } from '../middleware/rbac';
+import { isAuthenticated } from '../nextAuthMiddleware';
+import { createRateLimiter } from '../middleware/rateLimiting';
 
 const logger = new Logger('agent-api');
 const router = Router();
 const requireAdmin = requireRole('admin');
 
+// 🔴 CRITICAL: Rate limiting for agent management operations
+const agentMutationLimiter = createRateLimiter({
+  windowMs: 60 * 1000, // 1 minute
+  maxRequests: 10,
+  keyGenerator: (req) => `agent:mutation:${(req as any).user?.id || req.ip}`,
+});
+
+// 🔴 CRITICAL: Rate limiting for metric queries (expensive operations)
+const agentMetricsLimiter = createRateLimiter({
+  windowMs: 60 * 1000, // 1 minute
+  maxRequests: 5,
+  keyGenerator: (req) => `agent:metrics:${(req as any).user?.id || req.ip}`,
+});
+
 /**
  * GET /api/agents
  * Get all agents with status
+ * 🔴 CRITICAL: Requires authentication - prevents agent enumeration
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const agents = agentRegistry.getAllAgents();
     const summary = agentRegistry.getStatusSummary();
@@ -42,8 +64,9 @@ router.get('/', async (req: Request, res: Response) => {
 /**
  * GET /api/agents/:agentId
  * Get specific agent details
+ * 🔴 CRITICAL: Requires authentication - prevents agent profiling
  */
-router.get('/:agentId', async (req: Request, res: Response) => {
+router.get('/:agentId', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { agentId } = req.params;
     const agent = agentRegistry.getAgent(agentId);
@@ -74,8 +97,9 @@ router.get('/:agentId', async (req: Request, res: Response) => {
 /**
  * POST /api/agents
  * Create a new agent
+ * 🔴 CRITICAL: Rate limited - prevents agent creation spam
  */
-router.post('/', requireAdmin, async (req: Request, res: Response) => {
+router.post('/', requireAdmin, agentMutationLimiter, async (req: Request, res: Response) => {
   try {
     const { type, agentId } = req.body;
 
@@ -111,8 +135,9 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
 /**
  * POST /api/agents/:agentId/pause
  * Pause an agent
+ * 🔴 CRITICAL: Rate limited - prevents operational disruption
  */
-router.post('/:agentId/pause', requireAdmin, async (req: Request, res: Response) => {
+router.post('/:agentId/pause', requireAdmin, agentMutationLimiter, async (req: Request, res: Response) => {
   try {
     const { agentId } = req.params;
     const agent = agentRegistry.getAgent(agentId);
@@ -140,8 +165,9 @@ router.post('/:agentId/pause', requireAdmin, async (req: Request, res: Response)
 /**
  * POST /api/agents/:agentId/resume
  * Resume a paused agent
+ * 🔴 CRITICAL: Rate limited - prevents operational disruption
  */
-router.post('/:agentId/resume', requireAdmin, async (req: Request, res: Response) => {
+router.post('/:agentId/resume', requireAdmin, agentMutationLimiter, async (req: Request, res: Response) => {
   try {
     const { agentId } = req.params;
     const agent = agentRegistry.getAgent(agentId);
@@ -169,8 +195,9 @@ router.post('/:agentId/resume', requireAdmin, async (req: Request, res: Response
 /**
  * POST /api/agents/:agentId/shutdown
  * Shutdown an agent
+ * 🔴 CRITICAL: Rate limited - prevents operational disruption
  */
-router.post('/:agentId/shutdown', requireAdmin, async (req: Request, res: Response) => {
+router.post('/:agentId/shutdown', requireAdmin, agentMutationLimiter, async (req: Request, res: Response) => {
   try {
     const { agentId } = req.params;
     const agent = agentRegistry.getAgent(agentId);
@@ -198,8 +225,9 @@ router.post('/:agentId/shutdown', requireAdmin, async (req: Request, res: Respon
 /**
  * GET /api/agents/status/summary
  * Get agent status summary
+ * 🔴 CRITICAL: Requires authentication - prevents system reconnaissance
  */
-router.get('/status/summary', async (req: Request, res: Response) => {
+router.get('/status/summary', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const summary = agentRegistry.getStatusSummary();
     res.json({
@@ -215,8 +243,9 @@ router.get('/status/summary', async (req: Request, res: Response) => {
 /**
  * GET /api/agents/type/:type
  * Get all agents of a specific type
+ * 🔴 CRITICAL: Requires authentication - prevents agent enumeration by type
  */
-router.get('/type/:type', async (req: Request, res: Response) => {
+router.get('/type/:type', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { type } = req.params;
     const validTypes = ['trading', 'anomaly_detection', 'compliance', 'governance_analytics', 'synchronizer'];
@@ -249,8 +278,9 @@ router.get('/type/:type', async (req: Request, res: Response) => {
 /**
  * GET /api/agents/metrics/trading
  * Get trading agent metrics
+ * 🔴 CRITICAL: Requires authentication + rate limited - prevents sensitive metrics exposure
  */
-router.get('/metrics/trading', async (req: Request, res: Response) => {
+router.get('/metrics/trading', isAuthenticated, agentMetricsLimiter, async (req: Request, res: Response) => {
   try {
     const agents = agentRegistry.getAgentsByType('trading');
 
@@ -279,8 +309,9 @@ router.get('/metrics/trading', async (req: Request, res: Response) => {
 /**
  * GET /api/agents/metrics/anomalies
  * Get anomaly detection alerts
+ * 🔴 CRITICAL: Requires authentication + rate limited - prevents alert enumeration
  */
-router.get('/metrics/anomalies', async (req: Request, res: Response) => {
+router.get('/metrics/anomalies', isAuthenticated, agentMetricsLimiter, async (req: Request, res: Response) => {
   try {
     const { hours = '24' } = req.query;
     const agents = agentRegistry.getAgentsByType('anomaly_detection');
@@ -310,8 +341,9 @@ router.get('/metrics/anomalies', async (req: Request, res: Response) => {
 /**
  * GET /api/agents/metrics/governance
  * Get DAO governance health metrics
+ * 🔴 CRITICAL: Requires authentication + rate limited - prevents governance metrics exposure
  */
-router.get('/metrics/governance', async (req: Request, res: Response) => {
+router.get('/metrics/governance', isAuthenticated, agentMetricsLimiter, async (req: Request, res: Response) => {
   try {
     const agents = agentRegistry.getAgentsByType('governance_analytics');
 

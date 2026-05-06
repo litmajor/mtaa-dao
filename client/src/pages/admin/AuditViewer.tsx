@@ -16,6 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 import {
   Select,
   SelectContent,
@@ -126,22 +127,14 @@ export function AuditViewer() {
       params.append('limit', limit.toString());
       params.append('offset', ((page - 1) * limit).toString());
 
-      // Fetch logs
-      const logsResponse = await fetch(`/api/admin/audit-logs?${params}`, {
-        headers: { 'Content-Type': 'application/json' },
-      });
+      // Fetch logs and stats in parallel
+      const [logsData, statsData] = await Promise.all([
+        authClient.get(`/api/admin/audit-logs?${params}`),
+        authClient.get('/api/admin/audit-logs/stats/period')
+      ]);
 
-      if (!logsResponse.ok) throw new Error('Failed to fetch audit logs');
-      const logsData = await logsResponse.json();
       setLogs(logsData.logs);
-
-      // Fetch stats
-      const statsResponse = await fetch('/api/admin/audit-logs/stats/period', {
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (statsResponse.ok) {
-        const statsData = await statsResponse.json();
+      if (statsData.stats) {
         setStats(statsData.stats);
       }
     } catch (error) {
@@ -167,12 +160,7 @@ export function AuditViewer() {
       if (resultFilter) params.append('result', resultFilter);
       params.append('limit', '10000');
 
-      const response = await fetch(`/api/admin/audit-logs?${params}`, {
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (!response.ok) throw new Error('Failed to export logs');
-      const data = await response.json();
+      const data = await authClient.get(`/api/admin/audit-logs?${params}`);
 
       // Convert to CSV
       const csv = convertToCSV(data.logs);

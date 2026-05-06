@@ -1,14 +1,15 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Calendar, Plus, Trash2, Pause, Play } from 'lucide-react';
+import { Plus, Trash2, Pause, Play, AlertCircle, CheckCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiPost, apiDelete, apiPut } from '@/lib/api';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface RecurringPayment {
   id: string;
@@ -21,8 +22,11 @@ interface RecurringPayment {
 }
 
 export default function RecurringPaymentsManager() {
+  const { socket, isConnected } = useWebSocket();
+  
   const [payments, setPayments] = useState<RecurringPayment[]>([]);
   const [isOpen, setIsOpen] = useState(false);
+  const [wsConnected, setWsConnected] = useState(false);
   const { toast } = useToast();
 
   const [formData, setFormData] = useState({
@@ -35,7 +39,7 @@ export default function RecurringPaymentsManager() {
 
   const handleCreateRecurring = async () => {
     try {
-      const result = await apiPost('/api/wallet/recurring-payments', formData);
+      const result = await apiPost('/api/v1/wallets/payments/recurring', formData);
       toast({ title: 'Success', description: 'Recurring payment created' });
       setPayments([...payments, result.payment]);
       setIsOpen(false);
@@ -45,10 +49,76 @@ export default function RecurringPaymentsManager() {
     }
   };
 
+  // WebSocket real-time updates for recurring payments
+  useEffect(() => {
+    if (!isConnected) {
+      setWsConnected(false);
+      return;
+    }
+
+    setWsConnected(true);
+
+    // Handle recurring payment creation/modification via WebSocket
+    const handleActivityLog = (data: any) => {
+      try {
+        if (data.action?.includes('recurring') || data.entityType === 'recurring_payment') {
+          // Someone else created/modified a recurring payment
+          if (data.action === 'created' && data.newData) {
+            setPayments(prev => [...prev, data.newData]);
+          }
+        }
+      } catch (error) {
+        console.error('Error processing recurring payment activity:', error);
+      }
+    };
+
+    // Handle status changes for recurring payments
+    const handleStatusChange = (data: any) => {
+      try {
+        if (data.entityType === 'recurring_payment' && data.entityId) {
+          // Update payment status
+          setPayments(prev => prev.map(p => 
+            p.id === data.entityId 
+              ? { ...p, status: data.status }
+              : p
+          ));
+        }
+      } catch (error) {
+        console.error('Error processing recurring payment status change:', error);
+      }
+    };
+
+    // Handle alerts about recurring payment issues
+    const handleAlert = (data: any) => {
+      try {
+        if (data.entityType === 'recurring_payment') {
+          toast({ 
+            title: 'Payment Alert', 
+            description: data.message,
+            variant: data.severity === 'critical' ? 'destructive' : 'default'
+          });
+        }
+      } catch (error) {
+        console.error('Error processing recurring payment alert:', error);
+      }
+    };
+
+    socket.on('activity:logged', handleActivityLog);
+    socket.on('status:changed', handleStatusChange);
+    socket.on('alert:new', handleAlert);
+
+    // Cleanup
+    return () => {
+      socket.off('activity:logged', handleActivityLog);
+      socket.off('status:changed', handleStatusChange);
+      socket.off('alert:new', handleAlert);
+    };
+  }, [socket, isConnected, toast]);
+
   const handleToggleStatus = async (id: string, currentStatus: string) => {
     try {
       const newStatus = currentStatus === 'active' ? 'paused' : 'active';
-      await apiPut(`/api/wallet/recurring-payments/${id}`, { status: newStatus });
+      await apiPut(`/api/v1/wallets/payments/recurring/${id}`, { status: newStatus });
       setPayments(payments.map(p => p.id === id ? { ...p, status: newStatus } : p));
       toast({ title: 'Success', description: `Payment ${newStatus}` });
     } catch (error: any) {
@@ -58,7 +128,7 @@ export default function RecurringPaymentsManager() {
 
   const handleDelete = async (id: string) => {
     try {
-      await apiDelete(`/api/wallet/recurring-payments/${id}`);
+      await apiDelete(`/api/v1/wallets/payments/recurring/${id}`);
       setPayments(payments.filter(p => p.id !== id));
       toast({ title: 'Success', description: 'Recurring payment deleted' });
     } catch (error: any) {
@@ -72,6 +142,20 @@ export default function RecurringPaymentsManager() {
         <div>
           <CardTitle>Recurring Payments</CardTitle>
           <CardDescription>Manage your subscription and recurring payments</CardDescription>
+          {/* WebSocket Status */}
+          <div className="flex items-center gap-1 mt-2">
+            {wsConnected ? (
+              <>
+                <CheckCircle className="h-3 w-3 text-green-500" />
+                <span className="text-xs text-green-600">Real-time updates</span>
+              </>
+            ) : (
+              <>
+                <AlertCircle className="h-3 w-3 text-gray-400" />
+                <span className="text-xs text-gray-500">Offline mode</span>
+              </>
+            )}
+          </div>
         </div>
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
           <DialogTrigger asChild>

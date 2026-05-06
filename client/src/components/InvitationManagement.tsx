@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Mail, Phone, RefreshCw, Trash2, Copy, Share2 } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 
 interface Invitation {
   id: string;
@@ -45,13 +46,7 @@ export function InvitationManagement({ daoId, isAdmin }: InvitationManagementPro
   const fetchInvitations = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/dao/${daoId}/invitations`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
-
-      if (!response.ok) throw new Error('Failed to fetch invitations');
-
-      const data = await response.json();
+      const data = await authClient.get(`/api/dao/${daoId}/invitations`);
       setInvitations(data);
       setError(null);
     } catch (err) {
@@ -68,20 +63,11 @@ export function InvitationManagement({ daoId, isAdmin }: InvitationManagementPro
         return;
       }
 
-      const response = await fetch(`/api/dao/${daoId}/invitations`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          invitedEmail: newInviteEmail,
-          invitedPhone: newInvitePhone,
-          role: newInviteRole
-        })
+      await authClient.post(`/api/dao/${daoId}/invitations`, {
+        invitedEmail: newInviteEmail,
+        invitedPhone: newInvitePhone,
+        role: newInviteRole
       });
-
-      if (!response.ok) throw new Error('Failed to create invitation');
 
       setSuccess('Invitation sent successfully!');
       setNewInviteEmail('');
@@ -96,13 +82,7 @@ export function InvitationManagement({ daoId, isAdmin }: InvitationManagementPro
 
   const handleRevokeInvitation = async (invitationId: string) => {
     try {
-      const response = await fetch(`/api/dao/${daoId}/invitations/${invitationId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
-
-      if (!response.ok) throw new Error('Failed to revoke invitation');
-
+      await authClient.delete(`/api/dao/${daoId}/invitations/${invitationId}`);
       setSuccess('Invitation revoked');
       fetchInvitations();
       setTimeout(() => setSuccess(null), 3000);
@@ -113,13 +93,7 @@ export function InvitationManagement({ daoId, isAdmin }: InvitationManagementPro
 
   const handleGetPeerInviteLink = async () => {
     try {
-      const response = await fetch(`/api/dao/${daoId}/peer-invite-link`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
-
-      if (!response.ok) throw new Error('Failed to generate peer invite link');
-
-      const data = await response.json();
+      const data = await authClient.get(`/api/dao/${daoId}/peer-invite-link`);
       setPeerInviteLink(data.peerInviteLink);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate peer invite link');

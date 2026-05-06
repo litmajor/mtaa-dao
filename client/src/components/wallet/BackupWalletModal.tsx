@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { authClient } from '@/utils/authClient';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Alert, AlertDescription } from '../ui/alert';
@@ -31,20 +32,19 @@ export default function BackupWalletModal({ isOpen, onClose, userAddress }: Back
   const requestBackupExport = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('accessToken');
-      const resp = await fetch('/api/wallet-setup/export-encrypted-backup', {
+      const resp = await fetch('/api/v1/wallets/setup/backup/export', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
+          ...(await authClient.getAuthHeaders())
         },
         body: JSON.stringify({ password })
       });
 
       const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || 'Export failed');
+      if (!resp.ok) throw new Error(data.error || data.message || 'Export failed');
 
-      setExportPayload({ backup: data.backup, filename: data.filename });
+      setExportPayload({ backup: data.data?.backup || data.data, filename: data.data?.filename });
       setStep('done');
       toast({ title: 'Backup Ready', description: 'You can download your encrypted backup file now' });
     } catch (err: any) {

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Settings, LogOut, Calendar, TrendingUp, Users, Award, Crown, Star, Zap, Target, Trophy } from "lucide-react";
 import { useAuth } from "./hooks/useAuth";
+import { authClient } from "@/utils/authClient";
 
 interface ContributionData {
   id: number;
@@ -48,20 +49,7 @@ export default function Profile() {
   const { data: profileData, isLoading, error } = useQuery<ProfileData>({
     queryKey: ["/api/profile"],
     queryFn: async () => {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch("/api/profile", {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch profile data");
-      }
-
-      return response.json();
+      return authClient.get<ProfileData>("/api/profile");
     },
     enabled: !!authUser,
     staleTime: 1 * 60 * 1000,

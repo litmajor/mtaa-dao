@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { authClient } from '@/utils/authClient';
 
 /**
  * API Configuration
@@ -80,7 +81,7 @@ export async function fetchAPI(endpoint: string, options?: RequestInit) {
     const response = await fetch(endpoint, {
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
+        ...(await authClient.getAuthHeaders()),
       },
       ...options,
     });

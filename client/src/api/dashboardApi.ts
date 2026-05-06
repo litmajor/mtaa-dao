@@ -292,11 +292,12 @@ export async function getReferralStats() {
 
 /**
  * Get DAO chat messages
- * GET /api/dao-chat/{daoId}
+ * GET /api/v1/daos/{daoId}/chat/messages
  */
 export async function getDAOChat(daoId: string) {
   try {
-    const res = await fetch(`/api/dao-chat/${daoId}`, {
+    // V1 endpoint: GET /api/v1/daos/:daoId/chat/messages
+    const res = await fetch(`/api/v1/daos/${daoId}/chat/messages`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',

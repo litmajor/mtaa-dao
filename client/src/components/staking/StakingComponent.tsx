@@ -7,6 +7,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Lock, Unlock, Gift, TrendingUp } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 
 interface StakeOption {
   duration: number; // days
@@ -90,16 +91,12 @@ export default function StakingComponent() {
     const fetchStakingData = async () => {
       try {
         // Fetch user stakes
-        const stakesRes = await fetch('/api/staking/my-stakes', {
-          headers: { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` },
-        }).then((r) => r.json());
-        setUserStakes(stakesRes.data || []);
+        const stakesRes = await authClient.get('/api/v1/yuki/staking/my-stakes');
+        setUserStakes(stakesRes || []);
 
         // Fetch staking stats
-        const statsRes = await fetch('/api/staking/stats', {
-          headers: { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` },
-        }).then((r) => r.json());
-        setStakingStats(statsRes.data);
+        const statsRes = await authClient.get('/api/v1/yuki/staking/stats');
+        setStakingStats(statsRes);
       } catch (err) {
         console.error('Failed to fetch staking data:', err);
       } finally {
@@ -118,29 +115,17 @@ export default function StakingComponent() {
 
     setIsStaking(true);
     try {
-      const response = await fetch('/api/staking/stake', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          amount: parseFloat(stakeAmount),
-          duration: selectedDuration,
-        }),
+      await authClient.post('/api/v1/yuki/staking/stake', {
+        amount: parseFloat(stakeAmount),
+        duration: selectedDuration,
       });
 
-      if (!response.ok) throw new Error('Staking failed');
-
-      const result = await response.json();
       alert(`Successfully staked ${stakeAmount} MTAA for ${selectedDuration} days!`);
       setStakeAmount('');
 
       // Refresh stakes
-      const stakesRes = await fetch('/api/staking/my-stakes', {
-        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` },
-      }).then((r) => r.json());
-      setUserStakes(stakesRes.data || []);
+      const stakesRes = await authClient.get('/api/v1/yuki/staking/my-stakes');
+      setUserStakes(stakesRes || []);
     } catch (err) {
       console.error('Staking error:', err);
       alert('Failed to stake MTAA tokens');
@@ -151,22 +136,13 @@ export default function StakingComponent() {
 
   const handleClaimRewards = async (stakeId: string) => {
     try {
-      const response = await fetch(`/api/staking/claim/${stakeId}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-        },
-      });
-
-      if (!response.ok) throw new Error('Claim failed');
+      await authClient.post(`/api/v1/yuki/staking/claim/${stakeId}`);
 
       alert('Rewards claimed successfully!');
 
       // Refresh stakes
-      const stakesRes = await fetch('/api/staking/my-stakes', {
-        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` },
-      }).then((r) => r.json());
-      setUserStakes(stakesRes.data || []);
+      const stakesRes = await authClient.get('/api/v1/yuki/staking/my-stakes');
+      setUserStakes(stakesRes || []);
     } catch (err) {
       console.error('Claim error:', err);
       alert('Failed to claim rewards');
@@ -177,22 +153,13 @@ export default function StakingComponent() {
     if (!window.confirm('Are you sure? You may lose unclaimed rewards.')) return;
 
     try {
-      const response = await fetch(`/api/staking/unstake/${stakeId}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-        },
-      });
-
-      if (!response.ok) throw new Error('Unstake failed');
+      await authClient.post(`/api/v1/yuki/staking/unstake/${stakeId}`);
 
       alert('Successfully unstaked!');
 
       // Refresh stakes
-      const stakesRes = await fetch('/api/staking/my-stakes', {
-        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` },
-      }).then((r) => r.json());
-      setUserStakes(stakesRes.data || []);
+      const stakesRes = await authClient.get('/api/v1/yuki/staking/my-stakes');
+      setUserStakes(stakesRes || []);
     } catch (err) {
       console.error('Unstake error:', err);
       alert('Failed to unstake');

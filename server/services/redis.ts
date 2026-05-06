@@ -1,177 +1,248 @@
-import { createClient, RedisClientType } from 'redis';
+import Redis, { RedisOptions } from 'ioredis'; // Switch to ioredis for stability
+import { logger } from '../utils/logger';
 
 class RedisService {
-  private client: RedisClientType | null = null;
+  private client: Redis | null = null;
   private fallbackStore = new Map<string, { value: string; expiresAt: number }>();
   private isConnected = false;
   private hasLoggedFallback = false;
   private isConnecting = false;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private redisOptions: RedisOptions = {};
 
   async connect(): Promise<void> {
-    // Prevent multiple simultaneous connection attempts
-    if (this.isConnecting || this.isConnected) {
-      return;
-    }
+    if (this.isConnecting || this.isConnected) return;
 
-    // Build REDIS_URL from environment variables if not already set
-    let redisUrl = process.env.REDIS_URL;
-    if (!redisUrl) {
-      const host = process.env.REDIS_HOST || 'localhost';
-      const port = process.env.REDIS_PORT || '6379';
-      const password = process.env.REDIS_PASSWORD;
-      const db = process.env.REDIS_DB || '0';
-      
-      // Construct URL: redis://[:password@]host:port/db
-      if (password) {
-        redisUrl = `redis://:${encodeURIComponent(password)}@${host}:${port}/${db}`;
-      } else {
-        redisUrl = `redis://${host}:${port}/${db}`;
-      }
+    // Build but ioredis prefers object)
+    const host = process.env.REDIS_HOST || 'localhost';
+    const port = Number(process.env.REDIS_PORT) || 6379;
+    const password = process.env.REDIS_PASSWORD;
+    const db = Number(process.env.REDIS_DB) || 0;
+
+    this.redisOptions = {
+      host,
+      port,
+      password,
+      db,
+      connectTimeout: 5000, // Fail fast per attempt
+      enableReadyCheck: false, // Skip ready check, use connect event
+      autoResubscribe: true,
+      maxRetriesPerRequest: null, // Retry forever
+      retryStrategy: (times: number) => {
+        const delay = Math.min(times * 50, 2000); // 50ms×N, max 2s (faster than 5s)
+        if (times <= 1 || times % 5 === 0) { // Log less frequently
+          logger.debug(`[Redis] Reconnect attempt ${times} (delay ${delay}ms)`);
+        }
+        return delay;
+      },
+      reconnectOnError: (err: Error) => {
+        const targets = [/ECONNRESET/, /ETIMEDOUT/, /Socket closed/];
+        return targets.some((regex) => regex.test(err.message));
+      },
+      // Keepalive options
+      keepAlive: 30000, // Ping every 30s
+      noDelay: true,
+      connectionName: 'mtaa-dao-server', // For debugging in Redis logs
+    };
+
+    // TLS for secure connections (enable if using cloud Redis)
+    if (process.env.REDIS_TLS === 'true') {
+      this.redisOptions.tls = { rejectUnauthorized: false }; // Self-signed certs
     }
 
     this.isConnecting = true;
 
     try {
-      this.client = createClient({
-        url: redisUrl,
+      this.client = new Redis(this.redisOptions);
+
+      this.client.on('error', (err: Error) => {
+        logger.warn('[Redis] Error:', err.message);
       });
 
-      this.client.on('error', (err) => {
-        // Silently handle Redis errors - fallback is already in use
-        this.isConnected = false;
+      this.client.on('connect', () => {
+        logger.info('[Redis] Connected');
+        this.isConnected = true;
+        this.isConnecting = false;
       });
 
       this.client.on('ready', () => {
-        if (!this.isConnected) {
-          console.log('Redis connected successfully');
-          this.isConnected = true;
-        }
+        // Don't ping - ioredis already confirmed connection via 'connect' event
+        logger.info('[Redis] Ready and responsive');
+        this.isConnected = true;
       });
 
-      await this.client.connect();
-      this.isConnecting = false;
+      this.client.on('end', () => {
+        logger.warn('[Redis] Connection ended');
+        this.isConnected = false;
+        this.isConnecting = false;
+        // ioredis auto-reconnects, don't double-schedule
+      });
+
+      this.client.on('reconnecting', () => {
+        this.isConnecting = true;
+        this.isConnected = false;
+      });
+
+      // Don't await ping - let ioredis handle connection lifecycle
+      // The 'connect' and 'ready' event handlers above will confirm status
+      logger.debug('[Redis] Client created, waiting for connection...');
     } catch (error) {
+      logger.error('[Redis] Failed to create client:', (error as Error).message);
       this.isConnecting = false;
       this.isConnected = false;
     }
   }
 
+  // Lazy connect: Call this before any op
+  private async ensureConnected(): Promise<void> {
+    if (!this.isConnected) {
+      await this.connect();
+    }
+  }
+
   async set(key: string, value: string, expiresInSeconds?: number): Promise<void> {
+    await this.ensureConnected();
     try {
-      if (this.isConnected && this.client) {
+      if (this.client && this.isConnected) {
         if (expiresInSeconds) {
-          await this.client.setEx(key, expiresInSeconds, value);
+          await this.client.set(key, value, 'EX', expiresInSeconds);
         } else {
           await this.client.set(key, value);
         }
       } else {
-        // Fallback to in-memory store
-        if (!this.hasLoggedFallback) {
-          console.warn('Using in-memory fallback store for Redis - data will not persist across restarts');
-          this.hasLoggedFallback = true;
-        }
-        this.fallbackStore.set(key, {
-          value,
-          expiresAt: expiresInSeconds
-            ? Date.now() + expiresInSeconds * 1000
-            : Number.MAX_SAFE_INTEGER,
-        });
+        this.useFallback('set', key, value, expiresInSeconds);
       }
     } catch (error) {
-      console.error('Redis SET error:', error);
-      // Fallback to in-memory on error
-      this.fallbackStore.set(key, {
-        value,
-        expiresAt: expiresInSeconds
-          ? Date.now() + expiresInSeconds * 1000
-          : Number.MAX_SAFE_INTEGER,
-      });
+      logger.debug('[Redis] SET failed:', (error as Error).message);
+      this.isConnected = false;
+      this.useFallback('set', key, value, expiresInSeconds);
     }
   }
 
   async get(key: string): Promise<string | null> {
+    await this.ensureConnected();
     try {
-      if (this.isConnected && this.client) {
+      if (this.client && this.isConnected) {
         return await this.client.get(key);
       } else {
-        // Fallback to in-memory store
-        const data = this.fallbackStore.get(key);
-        if (!data) return null;
-        
-        if (Date.now() > data.expiresAt) {
-          this.fallbackStore.delete(key);
-          return null;
-        }
-        
-        return data.value;
+        return this.getFromFallback(key);
       }
     } catch (error) {
-      console.error('Redis GET error:', error);
-      return null;
+      logger.debug('[Redis] GET failed:', (error as Error).message);
+      this.isConnected = false;
+      return this.getFromFallback(key);
     }
   }
 
-  async delete(key: string): Promise<void> {
+  async del(key: string): Promise<void> {
+    await this.ensureConnected();
     try {
-      if (this.isConnected && this.client) {
+      if (this.client && this.isConnected) {
         await this.client.del(key);
       } else {
         this.fallbackStore.delete(key);
       }
     } catch (error) {
-      console.error('Redis DELETE error:', error);
+      logger.debug('[Redis] DEL failed:', (error as Error).message);
+      this.isConnected = false;
       this.fallbackStore.delete(key);
     }
   }
 
-  async increment(key: string): Promise<number> {
+  async incr(key: string): Promise<number> {
+    await this.ensureConnected();
     try {
-      if (this.isConnected && this.client) {
-        return await this.client.incr(key);
+      if (this.client && this.isConnected) {
+        return Number(await this.client.incr(key));
       } else {
-        const current = this.fallbackStore.get(key);
-        const newValue = (current ? parseInt(current.value) : 0) + 1;
-        this.fallbackStore.set(key, {
-          value: newValue.toString(),
-          expiresAt: current?.expiresAt || Number.MAX_SAFE_INTEGER,
-        });
-        return newValue;
+        return this.incrFallback(key);
       }
     } catch (error) {
-      console.error('Redis INCREMENT error:', error);
-      return 1;
+      logger.debug('[Redis] INCR failed:', (error as Error).message);
+      this.isConnected = false;
+      return this.incrFallback(key);
     }
   }
 
   async expire(key: string, seconds: number): Promise<void> {
+    await this.ensureConnected();
     try {
-      if (this.isConnected && this.client) {
+      if (this.client && this.isConnected) {
         await this.client.expire(key, seconds);
       } else {
-        const current = this.fallbackStore.get(key);
-        if (current) {
-          this.fallbackStore.set(key, {
-            ...current,
-            expiresAt: Date.now() + seconds * 1000,
-          });
-        }
+        this.expireFallback(key, seconds);
       }
     } catch (error) {
-      console.error('Redis EXPIRE error:', error);
+      logger.debug('[Redis] EXPIRE failed:', (error as Error).message);
+      this.isConnected = false;
+      this.expireFallback(key, seconds);
     }
+  }
+
+  // Alias for set with EX
+  async setex(key: string, seconds: number, value: string): Promise<void> {
+    await this.set(key, value, seconds);
+  }
+
+  private useFallback(op: 'set', key: string, value: string, expires?: number): void {
+    if (!this.hasLoggedFallback) {
+      logger.warn('[Redis] Using in-memory fallback - data not persistent!');
+      this.hasLoggedFallback = true;
+    }
+    this.fallbackStore.set(key, {
+      value,
+      expiresAt: expires ? Date.now() + expires * 1000 : Number.MAX_SAFE_INTEGER,
+    });
+  }
+
+  private getFromFallback(key: string): string | null {
+    const data = this.fallbackStore.get(key);
+    if (!data || Date.now() > data.expiresAt) {
+      this.fallbackStore.delete(key);
+      return null;
+    }
+    return data.value;
+  }
+
+  private incrFallback(key: string): number {
+    const data = this.fallbackStore.get(key);
+    const num = data ? parseInt(data.value, 10) || 0 : 0;
+    const newVal = num + 1;
+    this.fallbackStore.set(key, {
+      value: newVal.toString(),
+      expiresAt: data?.expiresAt || Number.MAX_SAFE_INTEGER,
+    });
+    return newVal;
+  }
+
+  private expireFallback(key: string, seconds: number): void {
+    const data = this.fallbackStore.get(key);
+    if (data) {
+      data.expiresAt = Date.now() + seconds * 1000;
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(async () => {
+      logger.info('[Redis] Scheduled reconnect attempt');
+      this.client = null;
+      this.isConnecting = false;
+      await this.connect();
+    }, 5000);
   }
 
   async disconnect(): Promise<void> {
-    if (this.client && this.isConnected) {
+    if (this.client) {
       await this.client.quit();
       this.isConnected = false;
+      this.client = null;
     }
   }
 
-  // Cleanup expired keys in fallback store (run periodically)
   cleanupFallbackStore(): void {
     const now = Date.now();
-    for (const [key, data] of this.fallbackStore.entries()) {
+    for (const [key, data] of [...this.fallbackStore.entries()]) {
       if (now > data.expiresAt) {
         this.fallbackStore.delete(key);
       }
@@ -181,8 +252,17 @@ class RedisService {
 
 export const redis = new RedisService();
 
-// Cleanup fallback store every 5 minutes
-setInterval(() => {
-  redis.cleanupFallbackStore();
-}, 5 * 60 * 1000);
+// Auto-clean fallback every 5min
+setInterval(() => redis.cleanupFallbackStore(), 300000);
 
+// Global unhandled rejection handler to close Redis gracefully
+process.on('unhandledRejection', async (reason) => {
+  logger.error('Unhandled rejection:', reason);
+  await redis.disconnect();
+  process.exit(1);
+});
+
+process.on('SIGTERM', async () => {
+  await redis.disconnect();
+  process.exit(0);
+});

@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertTriangle, Clock, Users, DollarSign, TrendingUp } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 
 interface FreeTierLimitWarningProps {
   daoId: string;
@@ -20,12 +21,7 @@ export function FreeTierLimitWarning({ daoId, onUpgrade }: FreeTierLimitWarningP
 
   const fetchLimitStatus = async () => {
     try {
-      const response = await fetch(`/api/dao-subscriptions/${daoId}/check-limits`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      const data = await response.json();
+      const data = await authClient.get(`/api/v1/daos/${daoId}/subscriptions/check-limits`);
       
       if (data.success && data.isFreeTier) {
         setLimitStatus(data);

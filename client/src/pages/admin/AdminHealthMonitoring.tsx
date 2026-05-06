@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 
 interface ChainHealth {
   chain: string;
@@ -54,34 +55,16 @@ export default function AdminHealthMonitoring() {
   const fetchHealthData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
-      const [chainsRes, metricsRes, alertsRes] = await Promise.all([
-        fetch('/api/admin/health/chains', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/health/node-metrics', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/health/alerts', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
+      const [chainsData, metricsData, alertsData] = await Promise.all([
+        authClient.get('/api/admin/health/chains'),
+        authClient.get('/api/admin/health/node-metrics'),
+        authClient.get('/api/admin/health/alerts'),
       ]);
 
-      if (chainsRes.ok) {
-        const data = await chainsRes.json();
-        setChains(data.chains || []);
-      }
-
-      if (metricsRes.ok) {
-        const data = await metricsRes.json();
-        setNodeMetrics(data.metrics || []);
-      }
-
-      if (alertsRes.ok) {
-        const data = await alertsRes.json();
-        setAlerts(data.alerts || []);
-      }
+      setChains(chainsData.chains || []);
+      setNodeMetrics(metricsData.metrics || []);
+      setAlerts(alertsData.alerts || []);
     } catch (error) {
       console.error('Failed to fetch health data:', error);
     } finally {

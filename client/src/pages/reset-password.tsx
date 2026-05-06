@@ -4,6 +4,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { authClient } from '@/utils/authClient';
 
 export default function ResetPassword() {
   const navigate = useNavigate();
@@ -24,8 +25,7 @@ export default function ResetPassword() {
 
   const verifyToken = async () => {
     try {
-      const response = await fetch(`/api/auth/verify-reset-token?token=${token}`);
-      const data = await response.json();
+      const data = await authClient.get(`/api/auth/verify-reset-token?token=${token}`);
       setTokenValid(data.valid);
       if (!data.valid) {
         setError(data.error || 'Invalid or expired reset token');
@@ -55,27 +55,15 @@ export default function ResetPassword() {
     }
 
     try {
-      const response = await fetch('/api/auth/reset-password', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          token,
-          newPassword: password,
-        }),
+      const data = await authClient.post('/api/auth/reset-password', {
+        token,
+        newPassword: password,
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        setMessage('Password reset successful! Redirecting to login...');
-        setTimeout(() => {
-          navigate('/login');
-        }, 2000);
-      } else {
-        setError(data.error || 'Password reset failed');
-      }
+      setMessage('Password reset successful! Redirecting to login...');
+      setTimeout(() => {
+        navigate('/login');
+      }, 2000);
     } catch (err) {
       setError('Password reset failed');
     } finally {

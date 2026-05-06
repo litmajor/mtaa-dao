@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 
 interface Announcement {
   id: string;
@@ -47,16 +48,8 @@ export default function AdminAnnouncements() {
   const fetchAnnouncements = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
-
-      const response = await fetch('/api/admin/announcements', {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setAnnouncements(data.announcements || []);
-      }
+      const data = await authClient.get('/api/admin/announcements');
+      setAnnouncements(data.announcements || []);
     } catch (error) {
       console.error('Failed to fetch announcements:', error);
     } finally {
@@ -72,15 +65,8 @@ export default function AdminAnnouncements() {
 
   const handlePublish = async (id: string) => {
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`/api/admin/announcements/${id}/publish`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-
-      if (response.ok) {
-        fetchAnnouncements();
-      }
+      await authClient.post(`/api/admin/announcements/${id}/publish`, {});
+      fetchAnnouncements();
     } catch (error) {
       console.error('Failed to publish:', error);
     }
@@ -89,15 +75,8 @@ export default function AdminAnnouncements() {
   const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this announcement?')) {
       try {
-        const token = localStorage.getItem('accessToken');
-        const response = await fetch(`/api/admin/announcements/${id}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-
-        if (response.ok) {
-          fetchAnnouncements();
-        }
+        await authClient.delete(`/api/admin/announcements/${id}`);
+        fetchAnnouncements();
       } catch (error) {
         console.error('Failed to delete:', error);
       }
@@ -107,21 +86,10 @@ export default function AdminAnnouncements() {
   const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch('/api/admin/announcements', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-      });
-
-      if (response.ok) {
-        setFormData({ title: '', content: '', type: 'info', audience: 'all', expiresAt: '' });
-        setShowForm(false);
-        fetchAnnouncements();
-      }
+      await authClient.post('/api/admin/announcements', formData);
+      setFormData({ title: '', content: '', type: 'info', audience: 'all', expiresAt: '' });
+      setShowForm(false);
+      fetchAnnouncements();
     } catch (error) {
       console.error('Failed to create announcement:', error);
     }

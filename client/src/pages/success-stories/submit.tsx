@@ -11,6 +11,7 @@ import { useAuth } from '@/pages/hooks/useAuth';
 import { useMutation } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { useLocation } from 'wouter';
+import { authClient } from '@/utils/authClient';
 
 export default function SubmitSuccessStory() {
   const { user } = useAuth();
@@ -37,13 +38,7 @@ export default function SubmitSuccessStory() {
 
   const submitStory = useMutation({
     mutationFn: async (data: typeof formData) => {
-      const response = await fetch('/api/success-stories/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-      if (!response.ok) throw new Error('Failed to submit story');
-      return response.json();
+      return authClient.post('/api/success-stories/submit', data);
     },
     onSuccess: () => {
       toast({

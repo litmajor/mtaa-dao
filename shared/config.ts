@@ -82,11 +82,22 @@ const envSchema = z.object({
   MPESA_PASSKEY: z.string().optional(),
   MPESA_SHORTCODE: z.string().optional(),
 
-  // Blockchain
+  // Blockchain & RPC URLs
   CELO_RPC_URL: z.string().url().optional(),
   CELO_ALFAJORES_RPC_URL: z.string().url().optional(),
+  ETHEREUM_RPC_URL: z.string().url().optional(),
+  POLYGON_RPC_URL: z.string().url().optional(),
+  ARBITRUM_RPC_URL: z.string().url().optional(),
+  OPTIMISM_RPC_URL: z.string().url().optional(),
+  BASE_RPC_URL: z.string().url().optional(),
   WALLET_PRIVATE_KEY: z.string().optional(),
   CUSD_CONTRACT_ADDRESS: z.string().optional(),
+  
+  // Treasury Reconciliation
+  TREASURY_RECONCILIATION_ENABLED: z.string().optional(),
+  TREASURY_RECONCILIATION_INTERVAL_MS: z.string().optional(),
+  TREASURY_CRITICAL_DISCREPANCY_THRESHOLD: z.string().optional(),
+  TREASURY_WARNING_DISCREPANCY_THRESHOLD: z.string().optional(),
 
   // Security Configuration
   RATE_LIMIT_WINDOW_MS: z.string().optional(),
@@ -194,6 +205,25 @@ export const rateLimitConfig = {
 export const corsConfig = {
   origin: env.ALLOWED_ORIGINS?.split(",") || [env.FRONTEND_URL],
   credentials: true,
+};
+
+// Blockchain RPC URLs
+export const blockchainRPCUrls = {
+  ethereum: env.ETHEREUM_RPC_URL || 'https://eth-mainnet.g.alchemy.com/v2/demo',
+  polygon: env.POLYGON_RPC_URL || 'https://polygon-mainnet.g.alchemy.com/v2/demo',
+  arbitrum: env.ARBITRUM_RPC_URL || 'https://arb-mainnet.g.alchemy.com/v2/demo',
+  optimism: env.OPTIMISM_RPC_URL || 'https://opt-mainnet.g.alchemy.com/v2/demo',
+  base: env.BASE_RPC_URL || 'https://base-mainnet.g.alchemy.com/v2/demo',
+  celo: env.CELO_RPC_URL || 'https://forno.celo.org',
+  celoAlfajores: env.CELO_ALFAJORES_RPC_URL || 'https://alfajores-forno.celo-testnet.org',
+};
+
+// Treasury reconciliation configuration
+export const treasuryReconciliationConfig = {
+  enabled: env.TREASURY_RECONCILIATION_ENABLED === 'true',
+  intervalMs: parseInt(env.TREASURY_RECONCILIATION_INTERVAL_MS || '3600000'), // Default 1 hour
+  criticalDiscrepancyThreshold: parseFloat(env.TREASURY_CRITICAL_DISCREPANCY_THRESHOLD || '0.05'), // 5%
+  warningDiscrepancyThreshold: parseFloat(env.TREASURY_WARNING_DISCREPANCY_THRESHOLD || '0.01'), // 1%
 };
 
 // ========================================

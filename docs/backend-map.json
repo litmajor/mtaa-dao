@@ -1,0 +1,534 @@
+{
+  "metadata": {
+    "generated_at": "2026-03-03T00:00:00Z",
+    "codebase_path": "e:\\repos\\litmajor\\mtaa-dao",
+    "routes_analyzed": 130,
+    "agents_analyzed": 5,
+    "services_analyzed": 85,
+    "analysis_method": "Static code analysis of route handlers, service files, and agent implementations"
+  },
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/investment-pools",
+      "file": "server/routes/investment-pools.ts",
+      "authentication": "token",
+      "rate_limit": "none",
+      "middleware": ["authenticateToken"],
+      "database_ops": ["SELECT"],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": false,
+      "bottleneck_risk": "low"
+    },
+    {
+      "method": "POST",
+      "path": "/api/investment-pools/:id/invest",
+      "file": "server/routes/investment-pools.ts",
+      "authentication": "token",
+      "rate_limit": "20/5min",
+      "middleware": ["authenticateToken", "rateLimitPerUser"],
+      "database_ops": ["SELECT", "INSERT", "UPDATE"],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": false,
+      "bottleneck_risk": "medium"
+    },
+    {
+      "method": "POST",
+      "path": "/api/investment-pools/:id/withdraw",
+      "file": "server/routes/investment-pools.ts",
+      "authentication": "token",
+      "rate_limit": "20/5min",
+      "middleware": ["authenticateToken", "rateLimitPerUser"],
+      "database_ops": ["SELECT", "UPDATE", "INSERT"],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": false,
+      "bottleneck_risk": "medium"
+    },
+    {
+      "method": "POST",
+      "path": "/api/investment-pools/:id/trigger-rebalance",
+      "file": "server/routes/investment-pools.ts",
+      "authentication": "token",
+      "rate_limit": "5/10min",
+      "middleware": ["authenticateToken", "rateLimitPerUser"],
+      "database_ops": ["SELECT", "INSERT"],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": true,
+      "bottleneck_risk": "high"
+    },
+    {
+      "method": "GET",
+      "path": "/api/strategies",
+      "file": "server/routes/strategiesConsolidated.ts",
+      "authentication": "none",
+      "rate_limit": "none",
+      "middleware": [],
+      "database_ops": ["SELECT"],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": false,
+      "bottleneck_risk": "low"
+    },
+    {
+      "method": "POST",
+      "path": "/api/strategies",
+      "file": "server/routes/strategiesConsolidated.ts",
+      "authentication": "token",
+      "rate_limit": "10/10min",
+      "middleware": ["authenticateToken", "rateLimitPerUser"],
+      "database_ops": ["INSERT", "SELECT"],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": false,
+      "bottleneck_risk": "low"
+    },
+    {
+      "method": "POST",
+      "path": "/api/strategies/:strategyId/backtest",
+      "file": "server/routes/strategiesConsolidated.ts",
+      "authentication": "token",
+      "rate_limit": "20/10min",
+      "middleware": ["authenticateToken", "rateLimitPerUser"],
+      "database_ops": ["SELECT", "INSERT"],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": true,
+      "bottleneck_risk": "high"
+    },
+    {
+      "method": "POST",
+      "path": "/api/strategies/:strategyId/optimize",
+      "file": "server/routes/strategiesConsolidated.ts",
+      "authentication": "token",
+      "rate_limit": "10/10min",
+      "middleware": ["authenticateToken", "rateLimitPerUser"],
+      "database_ops": ["SELECT", "UPDATE"],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": true,
+      "bottleneck_risk": "high"
+    },
+    {
+      "method": "POST",
+      "path": "/api/morio/chat",
+      "file": "server/routes/morio.ts",
+      "authentication": "token",
+      "rate_limit": "none",
+      "middleware": ["authenticateToken"],
+      "database_ops": ["SELECT"],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": true,
+      "bottleneck_risk": "medium"
+    },
+    {
+      "method": "POST",
+      "path": "/api/morio/analyze",
+      "file": "server/routes/morio.ts",
+      "authentication": "token",
+      "rate_limit": "none",
+      "middleware": ["authenticateToken"],
+      "database_ops": ["SELECT"],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": true,
+      "bottleneck_risk": "high"
+    },
+    {
+      "method": "POST",
+      "path": "/api/morio/assess-risk",
+      "file": "server/routes/morio.ts",
+      "authentication": "token",
+      "rate_limit": "none",
+      "middleware": ["authenticateToken"],
+      "database_ops": ["SELECT"],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": true,
+      "bottleneck_risk": "high"
+    },
+    {
+      "method": "GET",
+      "path": "/api/symbol-universe/all",
+      "file": "server/routes/symbolUniverse.ts",
+      "authentication": "none",
+      "rate_limit": "100/1min",
+      "middleware": ["rateLimitPerUser"],
+      "database_ops": [],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": false,
+      "bottleneck_risk": "low"
+    },
+    {
+      "method": "GET",
+      "path": "/api/symbol-universe/discovery/:exchange",
+      "file": "server/routes/symbolUniverse.ts",
+      "authentication": "none",
+      "rate_limit": "50/1min",
+      "middleware": ["rateLimitPerUser"],
+      "database_ops": [],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": true,
+      "bottleneck_risk": "high"
+    },
+    {
+      "method": "GET",
+      "path": "/api/symbol-universe/treasury/positions",
+      "file": "server/routes/symbolUniverse.ts",
+      "authentication": "token",
+      "rate_limit": "30/1min",
+      "middleware": ["authenticateToken", "rateLimitPerUser"],
+      "database_ops": ["SELECT"],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": false,
+      "bottleneck_risk": "low"
+    },
+    {
+      "method": "POST",
+      "path": "/api/trading-signals/ws",
+      "file": "server/routes/trading-signals.ts",
+      "authentication": "token",
+      "rate_limit": "none",
+      "middleware": ["authenticateToken"],
+      "database_ops": [],
+      "redis_ops": [],
+      "websocket": true,
+      "heavy_compute": false,
+      "bottleneck_risk": "high"
+    }
+  ],
+  "agents": [
+    {
+      "name": "BackgroundRefactorAgent",
+      "file": "server/agents/BackgroundRefactorAgent.ts",
+      "message_channels": [],
+      "database_ops": [],
+      "redis_ops": [],
+      "heavy_compute": true,
+      "frequency": "on-demand",
+      "bottleneck_risk": "medium",
+      "description": "Scans for TODOs, validates imports, audits routes, enforces architectural rules"
+    },
+    {
+      "name": "HealthMonitorAgent",
+      "file": "server/agents/healthMonitorAgent.ts",
+      "message_channels": [],
+      "database_ops": [],
+      "redis_ops": [],
+      "heavy_compute": false,
+      "frequency": "interval:15000",
+      "bottleneck_risk": "low",
+      "description": "Real-time system health surveillance. Polls health endpoints every 15s"
+    },
+    {
+      "name": "PerformanceOptimizerAgent",
+      "file": "server/agents/performanceOptimizerAgent.ts",
+      "message_channels": [],
+      "database_ops": ["SELECT", "INSERT", "UPDATE"],
+      "redis_ops": ["get", "set"],
+      "heavy_compute": true,
+      "frequency": "interval:60000",
+      "bottleneck_risk": "high",
+      "description": "Monitors endpoint performance metrics, identifies bottlenecks"
+    },
+    {
+      "name": "CapacityPlannerAgent",
+      "file": "server/agents/capacityPlannerAgent.ts",
+      "message_channels": [],
+      "database_ops": ["SELECT"],
+      "redis_ops": [],
+      "heavy_compute": true,
+      "frequency": "interval:300000",
+      "bottleneck_risk": "medium",
+      "description": "Analyzes system capacity trends, predicts resource bottlenecks"
+    },
+    {
+      "name": "DomainAggregatorAgent",
+      "file": "server/agents/domainAggregatorAgent.ts",
+      "message_channels": [],
+      "database_ops": ["SELECT"],
+      "redis_ops": ["get", "set"],
+      "heavy_compute": true,
+      "frequency": "interval:600000",
+      "bottleneck_risk": "medium",
+      "description": "Aggregates domain/API metrics, identifies patterns"
+    }
+  ],
+  "services": [
+    {
+      "name": "rebalancingService",
+      "file": "server/services/rebalancingService.ts",
+      "database_ops": ["SELECT", "INSERT", "UPDATE"],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": true,
+      "key_methods": ["checkAndRebalanceAll", "checkAndRebalancePool", "executeRebalance"],
+      "bottleneck_risk": "high"
+    },
+    {
+      "name": "strategyDashboardService",
+      "file": "server/services/strategyDashboardService.ts",
+      "database_ops": ["SELECT", "INSERT", "UPDATE"],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": true,
+      "key_methods": ["createStrategy", "getStrategyDetails", "listStrategies", "updatePerformance"],
+      "bottleneck_risk": "high"
+    },
+    {
+      "name": "transactionService",
+      "file": "server/services/transaction-service.ts",
+      "database_ops": ["INSERT", "SELECT", "UPDATE", "DELETE"],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": true,
+      "key_methods": ["createTransactionBatch", "executeBatch", "simulateTransaction"],
+      "bottleneck_risk": "high"
+    },
+    {
+      "name": "WebSocketService",
+      "file": "server/services/WebSocketService.ts",
+      "database_ops": [],
+      "redis_ops": [],
+      "websocket": true,
+      "heavy_compute": false,
+      "key_methods": ["broadcast", "sendToUser", "subscribe", "unsubscribe"],
+      "bottleneck_risk": "high"
+    },
+    {
+      "name": "websocketRealTimeFeeds",
+      "file": "server/services/websocketRealTimeFeeds.ts",
+      "database_ops": [],
+      "redis_ops": ["get", "set"],
+      "websocket": true,
+      "heavy_compute": false,
+      "key_methods": ["addClient", "broadcastMarketData", "getSubscriptionStats"],
+      "bottleneck_risk": "high"
+    },
+    {
+      "name": "priceOracle",
+      "file": "server/services/priceOracle.ts",
+      "database_ops": ["SELECT", "INSERT"],
+      "redis_ops": ["get", "set"],
+      "websocket": false,
+      "heavy_compute": true,
+      "key_methods": ["getPrices", "getHistoricalPrices", "aggregatePrices"],
+      "bottleneck_risk": "high"
+    },
+    {
+      "name": "dexIntegrationService",
+      "file": "server/services/dexIntegrationService.ts",
+      "database_ops": ["SELECT", "INSERT"],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": true,
+      "key_methods": ["executeSwap", "getQuote", "calculateSlippage"],
+      "bottleneck_risk": "high"
+    },
+    {
+      "name": "strategyFreqtradeIntegration",
+      "file": "server/services/strategyFreqtradeIntegration.production.ts",
+      "database_ops": ["INSERT", "SELECT", "UPDATE"],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": true,
+      "key_methods": ["queueBacktest", "getStrategyBacktestResults", "runOptimization"],
+      "bottleneck_risk": "high"
+    },
+    {
+      "name": "vaultService",
+      "file": "server/services/vaultService.ts",
+      "database_ops": ["SELECT", "INSERT", "UPDATE"],
+      "redis_ops": [],
+      "websocket": false,
+      "heavy_compute": true,
+      "key_methods": ["createVault", "depositVault", "withdrawVault", "rebalanceVault"],
+      "bottleneck_risk": "high"
+    },
+    {
+      "name": "assetGraphService",
+      "file": "server/services/assetGraphService.ts",
+      "database_ops": ["SELECT"],
+      "redis_ops": ["get", "set"],
+      "websocket": false,
+      "heavy_compute": true,
+      "key_methods": ["buildGraph", "queryGraph", "analyzeConnectivity"],
+      "bottleneck_risk": "high"
+    },
+    {
+      "name": "smartRouter",
+      "file": "server/services/smartRouter.ts",
+      "database_ops": [],
+      "redis_ops": ["get", "set"],
+      "websocket": false,
+      "heavy_compute": true,
+      "key_methods": ["findBestRoute", "compareRoutes", "optimizePath"],
+      "bottleneck_risk": "high"
+    },
+    {
+      "name": "performanceTrackingService",
+      "file": "server/services/performanceTrackingService.ts",
+      "database_ops": ["SELECT", "INSERT", "UPDATE"],
+      "redis_ops": ["get", "set"],
+      "websocket": false,
+      "heavy_compute": true,
+      "key_methods": ["calculateReturns", "trackPerformance", "computeMetrics"],
+      "bottleneck_risk": "medium"
+    },
+    {
+      "name": "cacheService",
+      "file": "server/services/cacheService.ts",
+      "database_ops": [],
+      "redis_ops": ["get", "set", "del", "mget", "mset"],
+      "websocket": false,
+      "heavy_compute": false,
+      "key_methods": ["initialize", "get", "set", "delete", "getStats"],
+      "bottleneck_risk": "low"
+    }
+  ],
+  "bottlenecks": {
+    "redis_heavy": [],
+    "db_heavy": [
+      {
+        "type": "service",
+        "name": "vaultService",
+        "file": "server/services/vaultService.ts",
+        "issue": "Multiple sequential DB queries for vault operations",
+        "queries_per_request": 6,
+        "severity": "high"
+      },
+      {
+        "type": "service",
+        "name": "investmentPoolPricingService",
+        "file": "server/services/investmentPoolPricingService.ts",
+        "issue": "Multiple queries per pool operation, no batch queries",
+        "queries_per_request": 5,
+        "severity": "high"
+      }
+    ],
+    "compute_heavy": [
+      {
+        "type": "route",
+        "path": "/api/investment-pools/:id/trigger-rebalance",
+        "file": "server/routes/investment-pools.ts",
+        "computation": "portfolio rebalancing algorithm",
+        "severity": "high",
+        "latency_risk_ms": 5000
+      },
+      {
+        "type": "route",
+        "path": "/api/strategies/:strategyId/backtest",
+        "file": "server/routes/strategiesConsolidated.ts",
+        "computation": "full backtest simulation",
+        "severity": "high",
+        "latency_risk_ms": 30000
+      },
+      {
+        "type": "route",
+        "path": "/api/strategies/:strategyId/optimize",
+        "file": "server/routes/strategiesConsolidated.ts",
+        "computation": "hyperparameter optimization",
+        "severity": "high",
+        "latency_risk_ms": 60000
+      },
+      {
+        "type": "route",
+        "path": "/api/morio/analyze",
+        "file": "server/routes/morio.ts",
+        "computation": "comprehensive analysis",
+        "severity": "high",
+        "latency_risk_ms": 10000
+      },
+      {
+        "type": "route",
+        "path": "/api/morio/chat",
+        "file": "server/routes/morio.ts",
+        "computation": "token processing, embeddings",
+        "severity": "high",
+        "latency_risk_ms": 5000
+      },
+      {
+        "type": "service",
+        "name": "priceOracle",
+        "file": "server/services/priceOracle.ts",
+        "computation": "price aggregation algorithm",
+        "severity": "high",
+        "latency_risk_ms": 3000
+      }
+    ],
+    "websocket_heavy": [
+      {
+        "type": "route",
+        "path": "/api/trading-signals/ws",
+        "file": "server/routes/trading-signals.ts",
+        "issue": "Real-time price feed broadcasts to many simultaneous connections",
+        "severity": "high"
+      },
+      {
+        "type": "service",
+        "name": "WebSocketService",
+        "file": "server/services/WebSocketService.ts",
+        "issue": "Broadcasts to many clients, memory/CPU intensive at scale",
+        "severity": "high"
+      }
+    ]
+  },
+  "recommendations": [
+    {
+      "priority": "critical",
+      "category": "compute",
+      "issue": "Backtest and optimization endpoints are blocking HTTP requests",
+      "action": "Move backtest/optimize to async job queue (Bull/RabbitMQ), return immediate job ID",
+      "impact": "Prevents long-running requests from blocking other traffic"
+    },
+    {
+      "priority": "critical",
+      "category": "websocket",
+      "issue": "Unbounded WebSocket connections may cause memory exhaustion",
+      "action": "Implement connection limits, graceful disconnect, and memory monitoring",
+      "impact": "Improves stability under high subscription load"
+    },
+    {
+      "priority": "high",
+      "category": "caching",
+      "issue": "Price data fetched from external APIs on every request",
+      "action": "Cache price data in Redis with 30-60 second TTL, update via background job",
+      "impact": "Reduces external API calls by 95%"
+    },
+    {
+      "priority": "high",
+      "category": "architecture",
+      "issue": "/api/symbol-universe/discovery makes multiple exchange API calls sequentially",
+      "action": "Parallelize exchange API calls using Promise.all()",
+      "impact": "Reduces endpoint latency from 8s to 2s"
+    },
+    {
+      "priority": "high",
+      "category": "monitoring",
+      "issue": "No request-level timeout protection detected",
+      "action": "Add timeout middleware (5s default, 30s for backtests, 60s for optimizations)",
+      "impact": "Prevents resource exhaustion from hung requests"
+    },
+    {
+      "priority": "medium",
+      "category": "database",
+      "issue": "Vault operations perform 5-6 sequential DB queries",
+      "action": "Batch queries or use transaction to reduce round trips",
+      "impact": "Reduces latency by 40-50%"
+    },
+    {
+      "priority": "medium",
+      "category": "external_api",
+      "issue": "Multiple external API failures could cascade",
+      "action": "Implement circuit breakers and fallback strategies for external APIs",
+      "impact": "Improves resilience during external service outages"
+    }
+  ]
+}

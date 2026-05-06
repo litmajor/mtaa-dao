@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { authClient } from '@/utils/authClient';
 import io, { Socket } from 'socket.io-client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -67,7 +68,7 @@ export function useMorioDashboard(daoId?: string, enabled: boolean = true) {
       
       const response = await fetch(url.toString(), {
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('auth_token')}`
+          ...(await authClient.getAuthHeaders())
         }
       });
 
@@ -104,7 +105,7 @@ export function useMorioSection(
 
       const response = await fetch(url.toString(), {
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('auth_token')}`
+          ...(await authClient.getAuthHeaders())
         }
       });
 
@@ -132,7 +133,7 @@ export function useMorioRealTime(daoId?: string) {
 
   useEffect(() => {
     // Only establish connection if user is authenticated
-    const token = localStorage.getItem('auth_token');
+    const token = authClient.getToken();
     if (!token) return;
 
     // Initialize WebSocket connection

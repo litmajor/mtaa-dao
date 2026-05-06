@@ -23,6 +23,7 @@ import {
 } from '../services/paymentExecutionService';
 import { ReversibilityService } from '../services/reversibilityService';
 import { ReversalReason } from '../types/reversibility';
+import { getEventEmitter } from '../middleware/websocket-event-emitter';
 
 const router = Router();
 const reversibilityService = new ReversibilityService(process.env.DATABASE_URL || '');
@@ -91,6 +92,22 @@ router.post('/deposit', async (req: Request, res: Response) => {
       action.gracePeriodConfig.durationHours
     );
 
+    // Emit WebSocket event for deposit execution
+    try {
+      const wsEmitter = getEventEmitter();
+      wsEmitter.emitActivity('payment', action.id, userId, 'deposit_executed', {
+        amount,
+        currency,
+        paymentMethod,
+        exchangeRate,
+        status: action.status,
+        gracePeriodDeadline: gracePeriodInfo.deadline,
+        approvalRequired: action.confirmationRequirement?.type === 'MULTI_SIG'
+      });
+    } catch (wsError) {
+      console.warn('Failed to emit WebSocket event for deposit execution', wsError);
+    }
+
     return res.json({
       success: true,
       action: {
@@ -153,6 +170,21 @@ router.post('/withdraw', async (req: Request, res: Response) => {
       action.gracePeriodConfig.durationHours
     );
 
+    // Emit WebSocket event for withdrawal execution
+    try {
+      const wsEmitter = getEventEmitter();
+      wsEmitter.emitActivity('payment', action.id, userId, 'withdrawal_executed', {
+        amount,
+        currency,
+        destination,
+        status: action.status,
+        gracePeriodDeadline: gracePeriodInfo.deadline,
+        approvalRequired: action.confirmationRequirement?.type === 'MULTI_SIG'
+      });
+    } catch (wsError) {
+      console.warn('Failed to emit WebSocket event for withdrawal execution', wsError);
+    }
+
     return res.json({
       success: true,
       action: {
@@ -213,6 +245,21 @@ router.post('/transfer-p2p', async (req: Request, res: Response) => {
       new Date(action.initiatedAt),
       action.gracePeriodConfig.durationHours
     );
+
+    // Emit WebSocket event for P2P transfer execution
+    try {
+      const wsEmitter = getEventEmitter();
+      wsEmitter.emitActivity('payment', action.id, userId, 'transfer_p2p_executed', {
+        recipientId,
+        amount,
+        memo,
+        status: action.status,
+        gracePeriodDeadline: gracePeriodInfo.deadline,
+        approvalRequired: action.confirmationRequirement?.type === 'MULTI_SIG'
+      });
+    } catch (wsError) {
+      console.warn('Failed to emit WebSocket event for P2P transfer execution', wsError);
+    }
 
     return res.json({
       success: true,

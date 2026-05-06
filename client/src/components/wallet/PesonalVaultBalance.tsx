@@ -1,13 +1,14 @@
 import { useState, useMemo, useEffect } from "react";
 import { useWallet } from "@/pages/hooks/useWallet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { authClient } from "@/utils/authClient";
 import BigNumber from "bignumber.js";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { LockedSavingsSection } from "./LockedSavingsSection";
 import { motion } from "framer-motion";
-import { Wallet, TrendingUp, TrendingDown, RefreshCw, Info, ArrowUpDown, Sun, Moon, Copy, Check, Lock, Shield } from "lucide-react";
+import { Wallet, TrendingUp, RefreshCw, Info, Copy, CheckCircle, Lock as LockIcon, Shield } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -15,8 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../ui/select";
 import QRCode from "react-qr-code";
-import { useAccount, useBalance, useEstimateGas } from "wagmi"; // For Celo integration
-import { parseEther } from "viem";
+import { useAccount, useBalance } from "wagmi"; // For Celo integration
 import { currentNetwork } from "@/lib/blockchain";
 import { PINVerificationModal } from "./PINVerificationModal";
 
@@ -51,9 +51,7 @@ const useVaultCounts = () => {
   return useQuery<VaultCounts>({
     queryKey: ["vault-counts"],
     queryFn: async () => {
-      const res = await fetch("/api/vault/counts");
-      if (!res.ok) throw new Error("Failed to fetch counts");
-      return await res.json();
+      return authClient.get<VaultCounts>("/api/v1/wallets/vaults/stats");
     },
     staleTime: 60000, // 1 min cache
   });
@@ -70,11 +68,7 @@ export function PersonalVaultSection() {
   useEffect(() => {
     const checkPINStatus = async () => {
       try {
-        const res = await fetch('/api/2fa/config', {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-        });
-        const data = await res.json();
+        const data = await authClient.get<any>('/api/v1/wallets/security/2fa/config');
         if (data.success && data.config?.pin?.configured) {
           setPinConfigured(true);
         }
@@ -98,12 +92,12 @@ export function PersonalVaultSection() {
         <div className="flex items-center gap-2">
           {pinConfigured && (
             <Badge className="bg-blue-600 hover:bg-blue-700">
-              <Lock className="w-3 h-3 mr-1" />
+              <LockIcon className="w-3 h-3 mr-1" />
               PIN Configured
             </Badge>
           )}
           <Button variant="ghost" onClick={() => setDarkMode(!darkMode)} aria-label="Toggle dark mode">
-            {darkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+            {darkMode ? '☀️' : '🌙'}
           </Button>
         </div>
       </div>
@@ -117,7 +111,7 @@ export function PersonalVaultSection() {
       {/* PIN Setup Alert */}
       {!pinConfigured && (
         <Alert className="bg-amber-50 dark:bg-amber-900/20 border-amber-300">
-          <Lock className="h-4 w-4 text-amber-600" />
+          <LockIcon className="h-4 w-4 text-amber-600" />
           <AlertDescription className="text-amber-800 dark:text-amber-200">
             <div className="flex justify-between items-center">
               <span>Set up a PIN code for additional security on withdrawals</span>
@@ -137,9 +131,10 @@ export function PersonalVaultSection() {
       {/* PIN Setup Modal */}
       {showPINSetup && (
         <PINVerificationModal
+          open={showPINSetup}
           title="Create New PIN"
           description="Set a 4-8 digit PIN code to protect your withdrawals"
-          onPINVerified={(token) => {
+          onVerified={(token) => {
             setPinConfigured(true);
             setShowPINSetup(false);
             toast.success('PIN configured successfully');
@@ -347,7 +342,7 @@ function VaultReceiveCard() {
             title="Copy address"
             data-testid="button-copy-address"
           >
-            {copiedAddress ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-gray-600 dark:text-gray-400" />}
+            {copiedAddress ? '✓' : '📋'}
           </button>
         </div>
       </div>
@@ -396,14 +391,16 @@ function VaultSendCard() {
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState<"cUSD" | "CELO" | "cEUR" | "cREAL" | "USDC">("cUSD"); // Added 2025 currencies
   const { data: balance } = useBalance({ address: address as `0x${string}`, token: currency === 'CELO' ? undefined : getTokenAddress(currency) as `0x${string}` });
-  const { data: gasEstimate } = useEstimateGas({ to: to as `0x${string}`, value: parseEther(amount || '0') }); // Basic estimate
+  // Gas estimate simplified - approximately 0.01 cELO (~$0.001)
+  const estimatedGas = new BigNumber('0.01');
 
   const handleSend = async () => {
     if (!isConnected) return toast.error("Wallet not connected");
     if (!isValidAddress(to)) return toast.error("Invalid address");
     if (!isValidAmount(amount)) return toast.error("Invalid amount");
-  if (new BigNumber(amount).gt(balance?.formatted || 0)) return toast.error("Insufficient balance");
-  if (gasEstimate && balance?.value !== undefined && gasEstimate > balance.value) return toast.error("Insufficient gas (~$0.001/tx on Celo L2)");
+    if (new BigNumber(amount).gt(balance?.formatted || 0)) return toast.error("Insufficient balance");
+    if (new BigNumber(amount).plus(estimatedGas).gt(balance?.formatted || 0)) return toast.error("Insufficient balance for gas (~$0.001/tx on Celo L2)");
+
 
     try {
       toast.loading("Sending...");
@@ -473,15 +470,7 @@ function VaultDepositModal() {
     if (!isValidAmount(amount)) return toast.error("Invalid amount");
     try {
       toast.loading("Processing deposit...");
-      const response = await fetch('/api/deposit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, source })
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Deposit failed');
-      }
+      const response = await authClient.post('/api/v1/wallets/deposits', { amount, source });
       toast.success("Deposit initiated! Check email/SMS for confirmation.");
       setOpen(false);
     } catch (err: any) {
@@ -528,15 +517,7 @@ function VaultWithdrawModal() {
     if (!isValidAmount(amount)) return toast.error("Invalid amount");
     try {
       toast.loading("Processing withdrawal...");
-      const response = await fetch('/api/withdraw', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, destination })
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Withdrawal failed');
-      }
+      const response = await authClient.post('/api/withdraw', { amount, destination });
       toast.success("Withdrawal initiated! Funds arriving soon.");
       setOpen(false);
     } catch (err: any) {

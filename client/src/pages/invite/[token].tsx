@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { authClient } from '@/utils/authClient';
 import { CheckCircle, XCircle, AlertCircle, Lock } from 'lucide-react';
 
 interface InviteDetails {
@@ -37,10 +38,7 @@ export default function InviteAcceptancePage() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
-    // Check if user is logged in
-    const authToken = localStorage.getItem('token');
-    setIsLoggedIn(!!authToken);
-
+    // User is logged in if token exists, let authClient handle it
     if (token) {
       fetchInviteDetails();
     }
@@ -49,18 +47,7 @@ export default function InviteAcceptancePage() {
   const fetchInviteDetails = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/invitations/${token}/details`);
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error('Invitation not found or invalid');
-        } else if (response.status === 410) {
-          throw new Error('Invitation has expired');
-        }
-        throw new Error('Failed to load invitation');
-      }
-
-      const data = await response.json();
+      const data = await authClient.get(`/api/invitations/${token}/details`);
       setInviteDetails(data);
       setError(null);
     } catch (err) {
@@ -79,18 +66,7 @@ export default function InviteAcceptancePage() {
 
     try {
       setProcessing(true);
-      const response = await fetch(`/api/invitations/${token}/accept`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({})
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to accept invitation');
-      }
+      await authClient.post(`/api/invitations/${token}/accept`, {});
 
       setCompleted('accepted');
       setTimeout(() => {
@@ -108,18 +84,7 @@ export default function InviteAcceptancePage() {
 
     try {
       setProcessing(true);
-      const response = await fetch(`/api/invitations/${token}/reject`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({})
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to reject invitation');
-      }
+      await authClient.post(`/api/invitations/${token}/reject`, {});
 
       setCompleted('rejected');
       setTimeout(() => {

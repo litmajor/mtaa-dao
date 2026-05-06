@@ -84,7 +84,7 @@ export function useOrderStatus(orderId: string, exchange: string = 'binance', po
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['orderStatus', orderId, exchange],
     queryFn: async () => {
-      const response = await fetch(`/api/orders/${orderId}?exchange=${exchange}`);
+      const response = await fetch(`/api/v1/yuki/orders/${orderId}?exchange=${exchange}`);
       if (!response.ok) throw new Error('Failed to fetch order status');
       const data = await response.json();
       return data.order as OrderStatus;
@@ -108,7 +108,7 @@ export function useOpenOrders(exchange?: string, pollInterval: number = 10000) {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['openOrders', exchange],
     queryFn: async () => {
-      const url = exchange ? `/api/orders?exchange=${exchange}` : '/api/orders';
+      const url = exchange ? `/api/v1/yuki/orders?exchange=${exchange}` : '/api/v1/yuki/orders';
       const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch open orders');
       const data = await response.json();
@@ -150,7 +150,7 @@ export function useOrderHistory(options?: {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['orderHistory', options],
     queryFn: async () => {
-      const url = `/api/orders/history?${queryParams.toString()}`;
+      const url = `/api/v1/yuki/orders/limit?${queryParams.toString()}`;
       const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch order history');
       const data = await response.json();
@@ -175,7 +175,7 @@ export function useTradingMetrics() {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['tradingMetrics'],
     queryFn: async () => {
-      const response = await fetch('/api/orders/metrics');
+      const response = await fetch('/api/v1/yuki/orders');
       if (!response.ok) throw new Error('Failed to fetch metrics');
       const data = await response.json();
       return data.metrics as TradingMetrics;
@@ -202,7 +202,7 @@ export function useCancelOrder() {
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: async ({ orderId, exchange }: { orderId: string; exchange: string }) => {
-      const response = await fetch(`/api/orders/${orderId}?exchange=${exchange}`, {
+      const response = await fetch(`/api/v1/yuki/orders/${orderId}?exchange=${exchange}`, {
         method: 'DELETE',
       });
 
@@ -234,8 +234,8 @@ export function useCloseOrder() {
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: async ({ orderId, finalPrice }: { orderId: string; finalPrice: number }) => {
-      const response = await fetch(`/api/orders/${orderId}/close`, {
-        method: 'POST',
+      const response = await fetch(`/api/v1/yuki/orders/${orderId}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ finalPrice }),
       });

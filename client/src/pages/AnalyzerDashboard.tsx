@@ -10,15 +10,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Shield, AlertTriangle, Activity, TrendingUp } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
+import { authClient } from '@/utils/authClient';
 
 export default function AnalyzerDashboard() {
   const { data: status } = useQuery({
     queryKey: ['analyzer-status'],
     queryFn: async () => {
-      const res = await fetch('/api/analyzer/status', {
-        credentials: 'include'
-      });
-      return res.json();
+      return authClient.get('/api/analyzer/status');
     },
     refetchInterval: 5000 // Refresh every 5 seconds
   });

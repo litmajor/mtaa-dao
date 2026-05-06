@@ -9,6 +9,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
+import { authClient } from '@/utils/authClient';
 import { 
   CreditCard, 
   Vault, 
@@ -45,11 +46,7 @@ export default function SubscriptionManagement() {
   const { data: subscription, isLoading } = useQuery<SubscriptionDetails>({
     queryKey: ['subscription', daoId],
     queryFn: async () => {
-      const res = await fetch(`/api/subscription-management/${daoId}`, {
-        credentials: 'include'
-      });
-      if (!res.ok) throw new Error('Failed to fetch subscription');
-      return res.json();
+      return await authClient.get(`/api/subscription-management/${daoId}`);
     }
   });
 
@@ -57,28 +54,14 @@ export default function SubscriptionManagement() {
   const { data: vaults } = useQuery({
     queryKey: ['dao-vaults', daoId],
     queryFn: async () => {
-      const res = await fetch(`/api/dao-treasury/${daoId}/vaults`, {
-        credentials: 'include'
-      });
-      if (!res.ok) throw new Error('Failed to fetch vaults');
-      return res.json();
+      return await authClient.get(`/api/v1/daos/${daoId}/treasury/vaults`);
     }
   });
 
   // Upgrade mutation
   const upgradeMutation = useMutation({
     mutationFn: async (data: any) => {
-      const res = await fetch(`/api/subscription-management/${daoId}/upgrade`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(data)
-      });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Upgrade failed');
-      }
-      return res.json();
+      return await authClient.post(`/api/subscription-management/${daoId}/upgrade`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['subscription', daoId] });

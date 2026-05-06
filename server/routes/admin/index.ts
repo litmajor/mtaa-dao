@@ -22,6 +22,7 @@ import adminErrorAlertsRouter from './admin-error-alerts';
 import adminErrorAnalyticsRouter from './admin-error-analytics';
 import adminNotificationsRouter from './admin-notifications';
 import adminRecoveryRouter from './admin-recovery';
+import adminBillingRouter from './admin-billing';
 
 const router = Router();
 
@@ -47,5 +48,6 @@ router.use(adminErrorAlertsRouter);  // Error Alerts: /api/admin/alerts/* (Phase
 router.use(adminErrorAnalyticsRouter); // Error Analytics: /api/admin/analytics/* (Phase 3c Part 3)
 router.use(adminNotificationsRouter); // Notifications: /api/admin/notifications/* (Phase 3c Part 4)
 router.use(adminRecoveryRouter); // Recovery Workflows: /api/admin/recovery/* (Phase 3c Part 5)
+router.use(adminBillingRouter);      // Billing: /api/admin/billing/* (Platform analytics)
 
 export default router;

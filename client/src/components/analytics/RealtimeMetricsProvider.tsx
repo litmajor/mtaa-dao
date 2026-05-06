@@ -475,6 +475,8 @@ export const RealtimeMetricsProvider: React.FC<RealtimeMetricsProviderProps> = (
     // Fetch function for polling
     const fetchData = async (channel: string) => {
       try {
+        // Get auth headers from authClient
+        const authHeaders = await authClient.getAuthHeaders();
         // Parse channel to determine endpoint
         const parts = channel.split(':');
         let endpoint = '/system/health';
@@ -489,7 +491,7 @@ export const RealtimeMetricsProvider: React.FC<RealtimeMetricsProviderProps> = (
           endpoint = `/analyzer/contributions/${parts[1]}`;
         }
 
-        const token = localStorage.getItem('accessToken');
+        // Token is now handled by authClient.getAuthHeaders()
         const response = await fetch(`${apiBaseUrl}${endpoint}`, {
           headers: {
             'Authorization': `Bearer ${token}`,

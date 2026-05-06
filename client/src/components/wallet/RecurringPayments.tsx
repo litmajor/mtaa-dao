@@ -7,8 +7,9 @@ import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Badge } from '../ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
-import { Calendar, Clock, DollarSign, Pause, Play, Trash2, Plus } from 'lucide-react';
+import { Clock, DollarSign, Trash2, Plus, AlertCircle, CheckCircle } from 'lucide-react';
 import { Switch } from '../ui/switch';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface RecurringPayment {
   id: string;
@@ -32,9 +33,12 @@ interface RecurringPaymentsProps {
 }
 
 export default function RecurringPayments({ walletAddress, onPaymentCreated }: RecurringPaymentsProps) {
+  const { socket, isConnected } = useWebSocket();
+  
   const [recurringPayments, setRecurringPayments] = useState<RecurringPayment[]>([]);
   const [loading, setLoading] = useState(true);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [wsConnected, setWsConnected] = useState(false);
   const [newPayment, setNewPayment] = useState({
     title: '',
     description: '',
@@ -48,11 +52,67 @@ export default function RecurringPayments({ walletAddress, onPaymentCreated }: R
     fetchRecurringPayments();
   }, [walletAddress]);
 
+  // WebSocket real-time recurring payment updates
+  useEffect(() => {
+    if (!isConnected) {
+      setWsConnected(false);
+      return;
+    }
+
+    setWsConnected(true);
+
+    // Handle recurring payment activity updates
+    const handleActivityLog = (data: any) => {
+      try {
+        if (data.action?.includes('recurring') || data.entityType === 'recurring_payment') {
+          fetchRecurringPayments();
+        }
+      } catch (error) {
+        console.error('Error processing recurring payment activity:', error);
+      }
+    };
+
+    // Handle recurring payment alerts (failures, balance issues, etc.)
+    const handleAlert = (data: any) => {
+      try {
+        if (data.message?.toLowerCase().includes('recurring') || 
+            data.message?.toLowerCase().includes('payment') ||
+            data.entityType === 'recurring_payment') {
+          fetchRecurringPayments();
+        }
+      } catch (error) {
+        console.error('Error processing recurring payment alert:', error);
+      }
+    };
+
+    // Handle status updates for recurring payments
+    const handleStatusChange = (data: any) => {
+      try {
+        if (data.entityType === 'recurring_payment' || data.status?.includes('recurring')) {
+          fetchRecurringPayments();
+        }
+      } catch (error) {
+        console.error('Error processing recurring payment status change:', error);
+      }
+    };
+
+    socket.on('activity:logged', handleActivityLog);
+    socket.on('alert:new', handleAlert);
+    socket.on('status:changed', handleStatusChange);
+
+    // Cleanup
+    return () => {
+      socket.off('activity:logged', handleActivityLog);
+      socket.off('alert:new', handleAlert);
+      socket.off('status:changed', handleStatusChange);
+    };
+  }, [socket, isConnected]);
+
   const fetchRecurringPayments = async () => {
     try {
-      const response = await fetch(`/api/wallet/recurring-payments?walletAddress=${walletAddress}`);
+      const response = await fetch(`/api/v1/wallets/payments/recurring?walletAddress=${walletAddress}`);
       const data = await response.json();
-      setRecurringPayments(data.payments || []);
+      setRecurringPayments(data.data?.payments || data.data || []);
     } catch (error) {
       console.error('Error fetching recurring payments:', error);
     }
@@ -61,7 +121,7 @@ export default function RecurringPayments({ walletAddress, onPaymentCreated }: R
 
   const createRecurringPayment = async () => {
     try {
-      const response = await fetch('/api/wallet/recurring-payments', {
+      const response = await fetch('/api/v1/wallets/payments/recurring', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -89,7 +149,7 @@ export default function RecurringPayments({ walletAddress, onPaymentCreated }: R
 
   const togglePayment = async (id: string, isActive: boolean) => {
     try {
-      await fetch(`/api/wallet/recurring-payments/${id}/toggle`, {
+      await fetch(`/api/v1/wallets/payments/recurring/${id}/toggle`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive })
@@ -104,7 +164,7 @@ export default function RecurringPayments({ walletAddress, onPaymentCreated }: R
     if (!confirm('Are you sure you want to delete this recurring payment?')) return;
     
     try {
-      await fetch(`/api/wallet/recurring-payments/${id}`, {
+      await fetch(`/api/v1/wallets/payments/recurring/${id}`, {
         method: 'DELETE'
       });
       fetchRecurringPayments();
@@ -153,6 +213,20 @@ export default function RecurringPayments({ walletAddress, onPaymentCreated }: R
             <CardDescription>
               Automate your regular transactions
             </CardDescription>
+            {/* WebSocket Status */}
+            <div className="flex items-center gap-1 mt-2">
+              {wsConnected ? (
+                <>
+                  <CheckCircle className="h-3 w-3 text-green-500" />
+                  <span className="text-xs text-green-600">Real-time updates</span>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="h-3 w-3 text-gray-400" />
+                  <span className="text-xs text-gray-500">Polling mode</span>
+                </>
+              )}
+            </div>
           </div>
           
           <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
@@ -290,7 +364,7 @@ export default function RecurringPayments({ walletAddress, onPaymentCreated }: R
                       </span>
                       <span>To: {formatAddress(payment.toAddress)}</span>
                       <span className="flex items-center gap-1">
-                        <Calendar className="h-4 w-4" />
+                        <Clock className="h-4 w-4" />
                         Next: {new Date(payment.nextPayment).toLocaleDateString()}
                       </span>
                     </div>

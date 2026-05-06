@@ -40,7 +40,7 @@ export default function WithdrawalModal({
 
     try {
       // TODO: Integrate with actual withdrawal service
-      const response = await fetch('/api/withdrawals/initiate', {
+      const response = await fetch('/api/v1/wallets/withdrawals/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

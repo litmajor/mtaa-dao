@@ -31,7 +31,7 @@ export default function PhonePaymentModal({ isOpen, onClose, userAddress }: Phon
     setIsLoading(true);
     try {
       const fullPhone = `${countryCode}${phoneNumber}`;
-      const response = await fetch('/api/wallet/send-to-phone', {
+      const response = await fetch('/api/v1/wallets/payments/phone', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

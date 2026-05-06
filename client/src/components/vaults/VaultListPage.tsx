@@ -32,7 +32,7 @@ export default function VaultListPage() {
     const fetchVaults = async () => {
       try {
         // This would call our vault API
-        const data = await fetch('/api/vaults').then(r => r.json());
+        const data = await fetch('/api/v1/wallets/vaults').then(r => r.json());
         setVaults(data.data || []);
       } catch (err) {
         console.error('Failed to fetch vaults:', err);

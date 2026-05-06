@@ -23,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { authClient } from '@/utils/authClient';
 
 interface PinResetFlowProps {
   isOpen: boolean;
@@ -66,23 +67,10 @@ export const PinResetFlow: React.FC<PinResetFlowProps> = ({
     setState((prev) => ({ ...prev, loading: true, error: null }));
 
     try {
-      const response = await fetch('/api/sessions/pin-reset/request', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify({
-          walletId,
-          resetMethod: method,
-        }),
+      const data = await authClient.post('/api/sessions/pin-reset/request', {
+        walletId,
+        resetMethod: method,
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to initiate PIN reset');
-      }
-
-      const data = await response.json();
 
       setState((prev) => ({
         ...prev,

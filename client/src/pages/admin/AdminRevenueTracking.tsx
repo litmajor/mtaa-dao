@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 
 interface RevenueMetric {
   date: string;
@@ -51,34 +52,16 @@ export default function AdminRevenueTracking() {
   const fetchRevenueData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
-      const [historyRes, breakdownRes, providersRes] = await Promise.all([
-        fetch(`/api/admin/revenue/history?range=${dateRange}`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/revenue/breakdown', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/payments/providers', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
+      const [historyData, breakdownData, providersData] = await Promise.all([
+        authClient.get(`/api/admin/revenue/history?range=${dateRange}`),
+        authClient.get('/api/admin/revenue/breakdown'),
+        authClient.get('/api/admin/payments/providers'),
       ]);
 
-      if (historyRes.ok) {
-        const data = await historyRes.json();
-        setRevenueHistory(data.history || []);
-      }
-
-      if (breakdownRes.ok) {
-        const data = await breakdownRes.json();
-        setBreakdown(data.breakdown || []);
-      }
-
-      if (providersRes.ok) {
-        const data = await providersRes.json();
-        setProviders(data.providers || []);
-      }
+      setRevenueHistory(historyData.history || []);
+      setBreakdown(breakdownData.breakdown || []);
+      setProviders(providersData.providers || []);
     } catch (error) {
       console.error('Failed to fetch revenue data:', error);
     } finally {

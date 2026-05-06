@@ -5,24 +5,22 @@ import { Badge } from '../components/ui/badge';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Progress } from '../components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 import { 
   RefreshCw, 
-  AlertTriangle, 
+  AlertCircle, 
   CheckCircle, 
-  XCircle, 
   Clock, 
   DollarSign,
   TrendingUp,
-  AlertCircle,
-  Play,
-  Eye
+  Send,
+  CheckCircle as Check
 } from 'lucide-react';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerWithRange } from "../components/ui/date-picker-with-range";
 import { addDays } from "date-fns";
-
 interface PaymentReconciliationReport {
   provider: string;
   totalPayments: number;
@@ -98,68 +96,64 @@ export default function PaymentReconciliation() {
         dateRange: JSON.stringify(dateRange)
       });
 
-      const response = await fetch(`/api/payment-reconciliation/payments?${params}`);
-      const data = await response.json();
+      const data = await authClient.get(`/api/payment-reconciliation/payments?${params}`);
 
-      if (response.ok) {
-        setPayments(data.payments || []);
-        setStats(data.stats || {
+      setPayments(data.payments || []);
+      setStats(data.stats || {
           total: 0,
           reconciled: 0,
           pending: 0,
           discrepancies: 0,
           totalAmount: '0'
         });
-      } else {
-        // Fallback to demo data
-        setPayments([
-          {
-            id: '1',
-            txHash: '0xabc123...',
-            amount: '100.50',
-            currency: 'cUSD',
-            status: 'completed',
-            provider: 'stripe',
-            daoId: 'dao-001',
-            createdAt: '2024-01-15T10:30:00Z',
-            reconciled: true,
-            expectedAmount: '100.50'
-          },
-          {
-            id: '2',
-            txHash: '0xdef456...',
-            amount: '75.25',
-            currency: 'cUSD',
-            status: 'pending',
-            provider: 'paystack',
-            daoId: 'dao-002',
-            createdAt: '2024-01-14T15:45:00Z',
-            reconciled: false,
-            expectedAmount: '75.25'
-          },
-          {
-            id: '3',
-            txHash: '0x789abc...',
-            amount: '150.00',
-            currency: 'CELO',
-            status: 'completed',
-            provider: 'kotanipay',
-            daoId: 'dao-003',
-            createdAt: '2024-01-13T09:20:00Z',
-            reconciled: false,
-            expectedAmount: '155.00', // Discrepancy
-            discrepancy: true
-          }
-        ]);
-        setStats({
-          total: 3,
-          reconciled: 1,
-          pending: 1,
-          discrepancies: 1,
-          totalAmount: '325.75'
-        });
-      }
     } catch (error) {
+      // Fallback to demo data
+      setPayments([
+        {
+          id: '1',
+          txHash: '0xabc123...',
+          amount: '100.50',
+          currency: 'cUSD',
+          status: 'completed',
+          provider: 'stripe',
+          daoId: 'dao-001',
+          createdAt: '2024-01-15T10:30:00Z',
+          reconciled: true,
+          expectedAmount: '100.50'
+        },
+        {
+          id: '2',
+          txHash: '0xdef456...',
+          amount: '75.25',
+          currency: 'cUSD',
+          status: 'pending',
+          provider: 'paystack',
+          daoId: 'dao-002',
+          createdAt: '2024-01-14T15:45:00Z',
+          reconciled: false,
+          expectedAmount: '75.25'
+        },
+        {
+          id: '3',
+          txHash: '0x789abc...',
+          amount: '150.00',
+          currency: 'CELO',
+          status: 'completed',
+          provider: 'kotanipay',
+          daoId: 'dao-003',
+          createdAt: '2024-01-13T09:20:00Z',
+          reconciled: false,
+          expectedAmount: '155.00', // Discrepancy
+          discrepancy: true
+        }
+      ]);
+      setStats({
+        total: 3,
+        reconciled: 1,
+        pending: 1,
+        discrepancies: 1,
+        totalAmount: '325.75'
+      });
       console.error('Error loading payments:', error);
     } finally {
       setIsLoading(false);
@@ -168,16 +162,8 @@ export default function PaymentReconciliation() {
 
   const handleReconcile = async (paymentId: string) => {
     try {
-      const response = await fetch(`/api/payment-reconciliation/reconcile/${paymentId}`, {
-        method: 'POST'
-      });
-
-      if (response.ok) {
-        await loadPayments(); // Refresh the list
-      } else {
-        const error = await response.json();
-        alert(`Reconciliation failed: ${error.message}`);
-      }
+      await authClient.post(`/api/payment-reconciliation/reconcile/${paymentId}`, {});
+      await loadPayments(); // Refresh the list
     } catch (error) {
       console.error('Reconciliation error:', error);
       alert('Reconciliation failed');
@@ -193,21 +179,11 @@ export default function PaymentReconciliation() {
     }
 
     try {
-      const response = await fetch('/api/payment-reconciliation/bulk-reconcile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          paymentIds: unreconciled.map(p => p.id)
-        })
+      const data = await authClient.post('/api/payment-reconciliation/bulk-reconcile', {
+        paymentIds: unreconciled.map(p => p.id)
       });
-
-      const data = await response.json();
-      if (response.ok) {
-        alert(`Bulk reconciliation successful: ${data.processed} payments processed.`);
-        await loadPayments();
-      } else {
-        alert(`Bulk reconciliation failed: ${data.message}`);
-      }
+      alert(`Bulk reconciliation successful: ${data.processed} payments processed.`);
+      await loadPayments();
     } catch (error) {
       console.error('Bulk reconciliation error:', error);
       alert('Bulk reconciliation failed');
@@ -281,23 +257,14 @@ export default function PaymentReconciliation() {
   async function handleAutoResolve(provider?: string): Promise<void> {
     setAutoResolving(true);
     try {
-      const response = await fetch('/api/payment-reconciliation/auto-resolve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider: provider || filterProvider,
-          status: filterStatus,
-          reconciled: filterReconciled,
-          dateRange,
-        }),
+      const data = await authClient.post('/api/payment-reconciliation/auto-resolve', {
+        provider: provider || filterProvider,
+        status: filterStatus,
+        reconciled: filterReconciled,
+        dateRange,
       });
-      const data = await response.json();
-      if (response.ok) {
-        alert(data.message || 'Auto resolve completed.');
-        await loadPayments();
-      } else {
-        alert(data.message || 'Auto resolve failed.');
-      }
+      alert(data.message || 'Auto resolve completed.');
+      await loadPayments();
     } catch (error) {
       console.error('Auto resolve error:', error);
       alert('Auto resolve failed.');
@@ -328,7 +295,7 @@ export default function PaymentReconciliation() {
               onClick={() => handleAutoResolve()} 
               disabled={autoResolving}
             >
-              <Play className={`h-4 w-4 mr-2 ${autoResolving ? 'animate-spin' : ''}`} />
+              <Send className={`h-4 w-4 mr-2 ${autoResolving ? 'animate-spin' : ''}`} />
               Auto Resolve
             </Button>
           </div>
@@ -398,7 +365,7 @@ export default function PaymentReconciliation() {
         {/* Anomalies Alert */}
         {anomalies.length > 0 && (
           <Alert className="border-red-200 bg-red-50">
-            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <AlertCircle className="h-4 w-4 text-red-600" />
             <AlertDescription className="text-red-800">
               <strong>{anomalies.length} anomalies detected:</strong>
               <ul className="mt-2 space-y-1">
@@ -456,7 +423,7 @@ export default function PaymentReconciliation() {
                     <p className="text-sm text-gray-600">Discrepancies</p>
                     <p className="text-2xl font-bold text-red-600">{stats.discrepancies}</p>
                   </div>
-                  <AlertTriangle className="h-8 w-8 text-red-600" />
+                  <AlertCircle className="h-8 w-8 text-red-600" />
                 </div>
               </CardContent>
             </Card>
@@ -513,7 +480,7 @@ export default function PaymentReconciliation() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{payment.currency}</td>
                       <td className={`px-6 py-4 whitespace-nowrap text-sm font-semibold ${getStatusColor(payment.status)}`}>
                         {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
-                        {payment.discrepancy && <AlertTriangle className="inline-block ml-1 h-4 w-4 text-red-500" />}
+                        {payment.discrepancy && <AlertCircle className="inline-block ml-1 h-4 w-4 text-red-500" />}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{payment.provider}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{payment.daoId}</td>
@@ -532,7 +499,7 @@ export default function PaymentReconciliation() {
                           </Button>
                         )}
                         <Button size="sm" variant="ghost">
-                          <Eye className="h-4 w-4" />
+                          <CheckCircle className="h-4 w-4" />
                         </Button>
                       </td>
                     </tr>
@@ -579,11 +546,11 @@ export default function PaymentReconciliation() {
                         onClick={() => handleAutoResolve(report.provider.toLowerCase())}
                         disabled={autoResolving}
                       >
-                        <Play className="h-4 w-4 mr-1" />
+                        <Send className="h-4 w-4 mr-1" />
                         Resolve
                       </Button>
                       <Button size="sm" variant="outline">
-                        <Eye className="h-4 w-4 mr-1" />
+                        <CheckCircle className="h-4 w-4 mr-1" />
                         Details
                       </Button>
                     </div>

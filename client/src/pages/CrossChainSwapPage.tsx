@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowRight, Loader2, ChevronLeft } from 'lucide-react';
+import { ArrowRight, LoaderCircle, ChevronLeft } from 'lucide-react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiGet, apiPost } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
@@ -45,7 +45,7 @@ export default function CrossChainSwapPage() {
   const { data: chains } = useQuery({
     queryKey: ['cross-chain-chains'],
     queryFn: async () => {
-      const res = await apiGet('/api/cross-chain/chains');
+      const res = await apiGet('/api/v1/yuki/bridge/chains');
       return res.data;
     }
   });
@@ -60,7 +60,7 @@ export default function CrossChainSwapPage() {
         if (!fromToken || !toToken) {
           throw new Error('Please select both tokens');
         }
-        const res = await apiPost('/api/cross-chain/swap/quote', {
+        const res = await apiPost('/api/v1/yuki/bridge/quote', {
           fromChain: sourceChain,
           toChain: destinationChain,
           fromToken: fromToken.toUpperCase(),
@@ -92,7 +92,7 @@ export default function CrossChainSwapPage() {
       if (!swapQuote) {
         throw new Error('No swap quote available');
       }
-      const res = await apiPost('/api/cross-chain/swap/execute', {
+      const res = await apiPost('/api/v1/yuki/bridge/swap', {
         quote: swapQuote,
         userAddress: destinationAddress
       });

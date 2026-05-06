@@ -609,7 +609,7 @@ export class VaultService {
         return transaction;
       }, { isolationLevel: 'serializable' });
         },
-        { timeout: 30000, retries: 3 }
+        { timeout: 5000, retries: 3 }  // CRITICAL FIX: Reduced from 30s to prevent lock timeout race condition
       );
 
       // Invalidate related caches after successful deposit

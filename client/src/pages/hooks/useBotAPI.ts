@@ -6,6 +6,7 @@
 
 import { useCallback } from 'react';
 import { useAuth } from './useAuth';
+import { authClient } from '@/utils/authClient';
 
 interface BotConfig {
   strategyId: string;
@@ -27,18 +28,7 @@ export function useBotAPI() {
   const { user } = useAuth();
 
   /**
-   * Get auth headers with token
-   */
-  const getHeaders = useCallback(() => {
-    const token = localStorage.getItem('accessToken');
-    return {
-      'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
-    };
-  }, []);
-
-  /**
-   * Generic API call wrapper
+   * Generic API call wrapper using authClient
    */
   const apiCall = useCallback(
     async <T,>(
@@ -51,28 +41,25 @@ export function useBotAPI() {
       }
 
       const url = `/api/bots${endpoint}`;
-      const options: RequestInit = {
-        method,
-        headers: getHeaders(),
-        credentials: 'include',
-      };
-
-      if (body && (method === 'POST' || method === 'PUT')) {
-        options.body = JSON.stringify(body);
+      
+      try {
+        switch (method) {
+          case 'GET':
+            return await authClient.get<T>(url);
+          case 'POST':
+            return await authClient.post<T>(url, body || {});
+          case 'PUT':
+            return await authClient.put<T>(url, body || {});
+          case 'DELETE':
+            return await authClient.delete<T>(url);
+          default:
+            throw new Error(`Unsupported method: ${method}`);
+        }
+      } catch (error) {
+        throw error;
       }
-
-      const response = await fetch(url, options);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          errorData.error || `API error: ${response.statusText}`
-        );
-      }
-
-      return response.json();
     },
-    [user, getHeaders]
+    [user]
   );
 
   /**
@@ -172,39 +159,3 @@ export function useBotAPI() {
     getPerformance,
   };
 }
-
-/**
- * Usage Examples:
- *
- * // In a component
- * function MyBotDashboard() {
- *   const botAPI = useBotAPI();
- *   const [bots, setBots] = React.useState([]);
- *   const [loading, setLoading] = React.useState(false);
- *
- *   React.useEffect(() => {
- *     setLoading(true);
- *     botAPI
- *       .listBots()
- *       .then(setBots)
- *       .catch(console.error)
- *       .finally(() => setLoading(false));
- *   }, [botAPI]);
- *
- *   if (loading) return <div>Loading...</div>;
- *
- *   return (
- *     <div>
- *       {bots.map(bot => (
- *         <div key={bot.id}>
- *           <h3>{bot.botName}</h3>
- *           <p>Status: {bot.status}</p>
- *           <button onClick={() => botAPI.pauseBot(bot.id)}>
- *             Pause
- *           </button>
- *         </div>
- *       ))}
- *     </div>
- *   );
- * }
- */

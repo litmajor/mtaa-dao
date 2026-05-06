@@ -267,14 +267,20 @@ export class FinancialStorage {
     service: string = 'api', 
     metadata?: any
   ): Promise<any> {
-    const result = await this.db.insert(systemLogs).values({
-      level,
-      message,
-      service,
-      metadata,
-      timestamp: new Date(),
-    }).returning();
-    return result[0];
+    try {
+      const result = await this.db.insert(systemLogs).values({
+        level,
+        message,
+        service,
+        metadata,
+        timestamp: new Date(),
+      }).returning();
+      return result[0];
+    } catch (error) {
+      // Silently fail - database logging errors shouldn't crash the server
+      // If logging is broken, the system should still function
+      return null;
+    }
   }
 
   /**

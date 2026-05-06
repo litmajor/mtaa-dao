@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { authClient } from '@/utils/authClient';
 import {
   Select,
   SelectContent,
@@ -30,7 +31,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Search, UserX, UserCheck, Trash2, Shield, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, UserX, UserCheck, Trash2, Shield, LoaderCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface User {
   id: string;
@@ -61,7 +62,6 @@ export default function UserManagement() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['/api/admin/users/list', page, search, roleFilter, statusFilter],
     queryFn: async () => {
-      const token = localStorage.getItem('accessToken');
       const params = new URLSearchParams({
         page: page.toString(),
         limit: '20',
@@ -70,16 +70,7 @@ export default function UserManagement() {
         ...(statusFilter && { status: statusFilter }),
       });
 
-      const res = await fetch(`/api/admin/users/list?${params}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-
-      if (!res.ok) throw new Error('Failed to fetch users');
-      return res.json();
+      return authClient.get(`/api/admin/users/list?${params}`);
     },
     staleTime: 1 * 60 * 1000,
   });
@@ -87,19 +78,7 @@ export default function UserManagement() {
   // Ban/unban user mutation
   const banMutation = useMutation({
     mutationFn: async ({ userId, banned }: { userId: string; banned: boolean }) => {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch(`/api/admin/users/${userId}/ban`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ banned }),
-        credentials: 'include',
-      });
-
-      if (!res.ok) throw new Error('Failed to update user ban status');
-      return res.json();
+      return authClient.put(`/api/admin/users/${userId}/ban`, { banned });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/users/list'] });
@@ -122,18 +101,7 @@ export default function UserManagement() {
   // Delete user mutation
   const deleteMutation = useMutation({
     mutationFn: async (userId: string) => {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch(`/api/admin/users/${userId}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-
-      if (!res.ok) throw new Error('Failed to delete user');
-      return res.json();
+      return authClient.delete(`/api/admin/users/${userId}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/users/list'] });
@@ -156,19 +124,7 @@ export default function UserManagement() {
   // Update role mutation
   const roleUpdateMutation = useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: string }) => {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch(`/api/admin/users/${userId}/role`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ role }),
-        credentials: 'include',
-      });
-
-      if (!res.ok) throw new Error('Failed to update user role');
-      return res.json();
+      return authClient.put(`/api/admin/users/${userId}/role`, { role });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/users/list'] });

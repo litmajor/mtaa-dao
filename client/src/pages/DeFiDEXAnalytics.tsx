@@ -85,7 +85,7 @@ const DeFiDEXAnalytics: React.FC = () => {
   const { data: dexList } = useQuery({
     queryKey: ['dex-list'],
     queryFn: async () => {
-      return await apiGet<DEXInfo[]>('/api/dex/supported');
+      return await apiGet<DEXInfo[]>('/api/v1/yuki/dex/supported');
     },
   });
 
@@ -97,7 +97,7 @@ const DeFiDEXAnalytics: React.FC = () => {
         chain: selectedChain,
         ...(selectedDEX !== 'all' && { dex: selectedDEX }),
       });
-      return await apiGet<LiquidityPool[]>(`/api/dex/pools?${params}`);
+      return await apiGet<LiquidityPool[]>(`/api/v1/yuki/dex/pools?${params}`);
     },
   });
 
@@ -105,9 +105,9 @@ const DeFiDEXAnalytics: React.FC = () => {
   const { data: opportunities } = useQuery({
     queryKey: ['swap-opportunities', selectedChain],
     queryFn: async () => {
-      return await apiGet<SwapOpportunity[]>(`/api/dex/opportunities?chain=${selectedChain}`);
+      return await apiGet<SwapOpportunity[]>(`/api/v1/yuki/dex/opportunities?chain=${selectedChain}`);
     },
-    gcTime: 60 * 1000, // 1 minute - opportunities change frequently
+    staleTime: 60 * 1000, // 1 minute - opportunities change frequently
   });
 
   // Calculate chain TVL

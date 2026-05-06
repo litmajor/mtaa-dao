@@ -54,7 +54,7 @@ export default function RecurringPaymentsPage() {
   const fetchRecurringPayments = async () => {
     try {
       setLoading(true);
-      const response = await apiGet('/api/wallet/recurring-payments?status=');
+      const response = await apiGet('/api/v1/wallets/payments/recurring?status=');
       setPayments(response.payments || []);
     } catch (error: any) {
       console.error('Error loading recurring payments:', error);
@@ -68,7 +68,7 @@ export default function RecurringPaymentsPage() {
   const handleTogglePause = async (id: string, currentStatus: string) => {
     try {
       const newStatus = currentStatus === 'active' ? 'paused' : 'active';
-      await apiPut(`/api/wallet/recurring-payments/${id}`, { status: newStatus });
+      await apiPut(`/api/v1/wallets/payments/recurring/${id}`, { status: newStatus });
       
       setPayments(payments.map(p =>
         p.id === id ? { ...p, status: newStatus } : p
@@ -91,7 +91,7 @@ export default function RecurringPaymentsPage() {
     if (!confirm('Are you sure you want to delete this recurring payment?')) return;
 
     try {
-      await apiDelete(`/api/wallet/recurring-payments/${id}`);
+      await apiDelete(`/api/v1/wallets/payments/recurring/${id}`);
       setPayments(payments.filter(p => p.id !== id));
       
       toast({

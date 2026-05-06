@@ -109,13 +109,20 @@ services:
   redis:
     image: redis:7-alpine
     container_name: mtaadao-redis
-    restart: always
+    restart: unless-stopped
     expose:
       - "6379"
     volumes:
       - redis-data:/data
       - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
-    command: redis-server /usr/local/etc/redis/redis.conf
+    command: 
+      redis-server /usr/local/etc/redis/redis.conf
+      redis-server
+       --save ""
+       --appendonly no
+       --timeout 0
+       --tcp-keepalive 60
+       --maxclients 10000
     networks:
       - mtaadao-network
     logging:

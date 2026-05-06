@@ -18,7 +18,7 @@ export function DaoTreasuryOverview({ daoId = "root-dao" }: { daoId?: string }) 
       setError("");
       try {
         // Expanded API: fetch treasury snapshot, vaults, and recent activity
-        const res = await fetch(`/api/dao/treasury/${daoId}/snapshot`);
+        const res = await fetch(`/api/v1/daos/${daoId}/treasury/balance`);
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
         setTreasury(data);

@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import { HelmetProvider } from 'react-helmet-async';
 import { Route, Routes, Navigate, Outlet } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
@@ -12,6 +12,7 @@ import { AuthProvider } from './contexts/auth-context';
 import { NavigationProvider } from './contexts/navigation-context';
 import { PersonaProvider } from './contexts/persona-context';
 import MorioFloatingChat from './components/MorioFloatingChat';
+import { AlertToastManager } from './components/notifications/AlertToastManager';
 
 // Lazy load heavy components that are only shown to authenticated users
 // WEEK 1 UPDATE: Use new GlobalNav instead of Navigation
@@ -48,6 +49,7 @@ const TaskBountyBoardPageLazy = lazy(() => import('./pages/TaskBountyBoardPage')
 const RewardsHubLazy = lazy(() => import('./pages/RewardsHub'));
 const MyRewardsLazy = lazy(() => import('./pages/my-rewards'));
 const TradingPageLazy = lazy(() => import('./pages/trading'));
+const YukiDashboardPageLazy = lazy(() => import('./pages/YukiDashboard'));
 const OpportunitiesPageLazy = lazy(() => import('./pages/opportunities'));
 const UserManagementLazy = lazy(() => import('./pages/admin/UserManagement'));
 const DaoModerationLazy = lazy(() => import('./pages/admin/DaoModeration'));
@@ -215,6 +217,33 @@ const DaoLayout = () => <Outlet />; // Can add shared UI here
 const WalletLayout = () => <Outlet />;
 
 function App() {
+  // 🔐 Security: Clear old auth tokens from localStorage/sessionStorage on app startup
+  // These should only be stored in httpOnly cookies now
+  useEffect(() => {
+    const keysToRemove = [
+      'token',
+      'authToken',
+      'auth-token',
+      'refresh-token',
+      'refreshToken',
+      'jwtToken',
+      'accessToken',
+      'user',
+      'userId',
+    ];
+
+    keysToRemove.forEach(key => {
+      if (localStorage.getItem(key)) {
+        console.log(`🔐 Clearing legacy localStorage key: ${key}`);
+        localStorage.removeItem(key);
+      }
+      if (sessionStorage.getItem(key)) {
+        console.log(`🔐 Clearing legacy sessionStorage key: ${key}`);
+        sessionStorage.removeItem(key);
+      }
+    });
+  }, []);
+
   try {
     console.log('App component rendering');
     const authData = useAuth();
@@ -237,6 +266,9 @@ function App() {
               <PersonaProvider>
                 <MorioProvider userId={userId} daoId={user?.currentDaoId}>
                   <div className="min-h-screen bg-background text-foreground">
+                    {/* Real-time Alert/Toast Manager */}
+                    <AlertToastManager />
+
                     <Helmet>
                       <title>{isAuthenticated ? "Dashboard | Mtaa DAO" : "Welcome | Mtaa DAO"}</title>
                       <meta name="description" content="Mtaa DAO — decentralized community finance platform" />
@@ -398,6 +430,7 @@ function App() {
                         <Route path="/subprofile-selection" element={<ProtectedRoute><SubprofileSelectionPage /></ProtectedRoute>} />
                         {/* Unified Trading Hub - Scalable to 100+ exchanges */}
                         <Route path="/trading" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><TradingPageLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/yuki-dashboard" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><YukiDashboardPageLazy /></Suspense></ProtectedRoute>} />
                         {/* Legacy Exchange Markets - Phase 1 & 2 CCXT Integration */}
                         <Route path="/exchange-markets" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><ExchangeMarketsLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/defi-dex" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><DeFiDEXAnalyticsLazy /></Suspense></ProtectedRoute>} />

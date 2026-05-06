@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 
 interface WithdrawalMethod {
   id: string;
@@ -54,12 +55,8 @@ export default function WithdrawTab({ methods, accounts }: WithdrawTabProps) {
   const { data: withdrawalHistory, refetch: refetchHistory } = useQuery<WithdrawalHistory[]>({
     queryKey: ['withdrawalHistory'],
     queryFn: async () => {
-      const response = await fetch('/api/withdrawals/user/history', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      });
-      if (!response.ok) throw new Error('Failed to fetch withdrawal history');
-      const result = await response.json();
-      return result.data;
+      const data = await authClient.get('/api/v1/wallets/withdrawals/user/history');
+      return data.data;
     },
   });
 
@@ -70,20 +67,7 @@ export default function WithdrawTab({ methods, accounts }: WithdrawTabProps) {
       amount: string;
       currency: string;
     }) => {
-      const response = await fetch('/api/withdrawals/preview', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify(data),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to get fee estimate');
-      }
-
-      return response.json();
+      return authClient.post('/api/v1/wallets/withdrawals/preview', data);
     },
     onSuccess: (data) => {
       setFeeEstimate(data.data);
@@ -100,26 +84,12 @@ export default function WithdrawTab({ methods, accounts }: WithdrawTabProps) {
     }) => {
       const endpoint =
         selectedMethod?.destination === 'external_wallet'
-          ? '/api/withdrawals/external'
+          ? '/api/v1/wallets/withdrawals/external'
           : selectedMethod?.destination === 'micro_withdrawal'
-            ? '/api/withdrawals/micro'
-            : '/api/withdrawals/offramp';
+            ? '/api/v1/wallets/withdrawals/micro'
+            : '/api/v1/wallets/withdrawals/offramp';
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify(data),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to initiate withdrawal');
-      }
-
-      return response.json();
+      return authClient.post(endpoint, data);
     },
     onSuccess: () => {
       refetchHistory();

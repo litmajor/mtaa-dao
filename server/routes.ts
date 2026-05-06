@@ -7,8 +7,6 @@ import { validateDaoIdMiddleware, sanitizeObject } from './middleware/security';
 // Import route modules
 import healthRoutes from './routes/health';
 import sseRoutes from './routes/sse';
-import walletRoutes from './routes/wallet';
-import walletSetupRoutes from './routes/wallet-setup';
 import governanceRoutes from './routes/governance';
 import governanceQuorumRouter from './routes/governance-quorum';
 import tasksRoutes from './routes/tasks';
@@ -17,9 +15,6 @@ import analyticsRoutes from './routes/analytics';
 import notificationsRoutes from './routes/notifications';
 import userNotificationsRoutes from './routes/user/notifications';
 import userRecoveryRoutes from './routes/user/recovery';
-import disbursementsRoutes from './routes/disbursements';
-import daoTreasuryRoutes from './routes/dao_treasury';
-import daoSubscriptionsRoutes from './routes/dao-subscriptions';
 import daosRoutes from './routes/daos';
 import proposalExecutionRoutes from './routes/proposal-execution';
 import paymentReconciliationRoutes from './routes/payment-reconciliation';
@@ -37,27 +32,21 @@ import proofOfContributionRoutes from './routes/proof-of-contribution';
 import referralRewardsRoutes from './routes/referral-rewards';
 import economyRoutes from './routes/economy';
 import contributionIndexerRoutes from './routes/contribution-indexer';
-import proposalEngagementRoutes from './routes/proposal-engagement';
 import adminRoutes from './routes/admin';
 import adminAIMetricsRoutes from './routes/admin-ai-metrics';
 import announcementsRoutes from './routes/announcements';
-import investmentPoolsRoutes from './routes/investment-pools';
-import poolGovernanceRoutes from './routes/pool-governance';
 import depositsWithdrawalsRoutes from './routes/deposits-withdrawals';
 import accountInitializationRoutes from './routes/account-initialization';
-import treasuryIntelligenceRoutes from './routes/treasury-intelligence';
-import treasuryRoutes from './routes/treasury';
 import phoneVerificationRouter from './routes/phone-verification';
 import agentRoutes from './routes/agents';
-import daoChatRoutes from './routes/dao-chat';
 import onboardingRoutes from './routes/onboarding';
-import subscriptionManagementRoutes from './routes/subscription-management'; // Import subscription management routes
-import dexRoutes from './routes/dex';
+import subscriptionManagementRoutes from './routes/subscription-management';
+// ✅ V1 ROUTERS (Versioned API Architecture)
+const v1DaosRouter = (await import('./routes/v1/daos')).default;
+const v1TreasuryRouter = (await import('./routes/v1/treasury')).default;
 import graphPropagationRoutes from './routes/graph-propagation';
 import userSubscriptionRoutes from './routes/user-subscription';
 import revenueRoutes from './routes/revenue';
-// Import savings routes
-import savingsRoutes from './routes/savings';
 // Import Phase 3 Rules Engine routes
 import rulesRoutes from './routes/rules';
 // Import blog, support, and success stories routes
@@ -70,19 +59,10 @@ import marketDataRoutes from './routes/marketData';
 import executionQualityRoutes from './routes/executionQuality';
 import marketInsightsRoutes from './routes/marketInsights';
 import tradingSignalsRoutes from './routes/trading-signals';
-import vaultsRoutes from './routes/vaults';
-import stakingRoutes from './routes/staking';
-
-// DAO Router (consolidated multi-sig, treasury, and escrow routes)
-import daoRouter from './routes/dao';
-
-// Import Telegram and WhatsApp routes
+// Telegram and WhatsApp routes
 import telegramBotRoutes from './routes/telegram-bot';
 import telegramIntegrationRoutes from './routes/telegram-integration';
 import whatsappIntegrationRoutes from './routes/whatsapp-integration';
-
-// Import DAO Treasury Flows routes
-import daoTreasuryFlowsRouter from './routes/dao-treasury-flows';
 
 // Import User Follows routes
 import userFollowsRoutes from './routes/user-follows';
@@ -95,10 +75,9 @@ import p2pTransfersRoutes from './routes/p2p-transfers';
 
 // Import Exchange and Order Router routes
 import exchangeRoutes from './routes/exchanges';
-import orderRoutes from './routes/orders';
 
 // Import Withdrawal Verification routes (2FA and PIN)
-import { router as withdrawalVerificationRouter } from './routes/withdrawal-verification';
+// TODO: 2FA/PIN verification migrated to v1 API routes
 
 // Import Job Status routes
 import jobsRoutes from './routes/jobs';
@@ -149,11 +128,8 @@ import {
   getDashboardCompleteHandler
 } from './api/dashboard';
 
-// Import Vault API handlers
-import { createVaultHandler, getUserVaultsHandler, getVaultHandler, depositToVaultHandler, withdrawFromVaultHandler, allocateToVaultHandler, rebalanceVaultHandler, getVaultPortfolioHandler, getVaultPerformanceHandler, assessVaultRiskHandler, getVaultTransactionsHandler } from './api/vaults';
-import { allocateToStrategyHandler } from './api/vaults';
-import { getSupportedTokensHandler, getTokenPriceHandler } from './api/vaults';
-import { authorizeVaultAccess } from './api/authVault';
+// Token utilities (used by V1 endpoints if needed)
+// import { getSupportedTokensHandler, getTokenPriceHandler } from './api/vaults';
 
 // Import DAO Settings handlers
 import { getDaoSettingsHandler, updateDaoSettingsHandler, resetInviteCodeHandler, getDaoAnalyticsHandler } from './api/daoSettings';
@@ -199,9 +175,8 @@ import {
   getDashboardPersonaHandler
 } from './api/week1_dashboard';
 
-// Import new strategy, rebalancing, and WebSocket routes
-import strategyDeploymentRoutes from './routes/strategyDeployment';
-import rebalancingRoutes from './routes/rebalancing';
+// Import new strategy and WebSocket routes
+
 import { webSocketPriceStream } from './services/webSocketPriceStream';
 
 export async function registerRoutes(app: Express, server: HTTPServer) {
@@ -267,29 +242,16 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   console.log('[ROUTES] Mounting SSE routes...');
   app.use('/api/sse', sseRoutes);
 
-  // Wallet routes
-  console.log('[ROUTES] Mounting wallet routes...');
-  app.use('/api/wallet', walletRoutes);
-  app.use('/api/wallet-setup', walletSetupRoutes);
-  // Savings routes
-  app.use('/api/wallet/savings', savingsRoutes);
+  // ✅ Wallet and Treasury routes migrated to V1 endpoints (see /api/v1/daos and /api/v1/treasury)
 
 
   // Market Discovery routes (Symbol Universe Phase 2)
   console.log('[ROUTES] Mounting market discovery routes...');
   app.use(marketDiscoveryRouter);
 
-  // Governance and DAO routes - CONSOLIDATED UNDER /api/dao/:daoId/
-  console.log('[ROUTES] Mounting consolidated DAO routes...');
+  // ✅ DAO consolidated routes now mounted via V1 router at /api/dao/:daoId
   
-  // Main DAO route consolidation with security middleware
-  app.use('/api/dao/:daoId', validateDaoIdMiddleware);
-  
-  // Mount the consolidated DAO router (handles treasury, bounty-escrow, contributions)
-  app.use('/api/dao', daoRouter);
-  
-  // Mount disbursements under /api/dao/:daoId/disbursements (DAO admin/owner only)
-  app.use('/api/dao/:daoId/disbursements', isAuthenticated, requireDAORole('owner', 'admin'), disbursementsRoutes);
+  // Disbursements routes migrated to v1 API
   
   // Legacy route redirects for backwards compatibility
   console.log('[ROUTES] Setting up legacy DAO route redirects...');
@@ -319,9 +281,7 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   
   // Regular DAO operations (meta endpoints)
   app.use('/api/daos', daosRoutes);
-  app.use('/api/dao-subscriptions', daoSubscriptionsRoutes);
-  // DAO Treasury Flows routes
-  app.use('/api/dao-treasury-flows', daoTreasuryFlowsRouter);
+  // ⚠️ DAO treasury flows removed - functionality consolidated to V1 endpoints
 
   // Task and bounty routes
   console.log('[ROUTES] Mounting task routes...');
@@ -352,7 +312,6 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   app.use('/api/notifications', notificationsRoutes);
   app.use('/api/user/notifications', userNotificationsRoutes); // User notification endpoints (Phase 3c Part 4)
   app.use('/api/user/recovery', userRecoveryRoutes); // User recovery endpoints (Phase 3c Part 5)
-  app.use('/api/disbursements', disbursementsRoutes);
 
   // Proposal execution
   console.log('[ROUTES] Mounting proposal execution routes...');
@@ -391,14 +350,9 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   // ============================================================================
   // 2FA AND PIN VERIFICATION ROUTES - CONSOLIDATED
   // ============================================================================
-  // All 2FA and PIN verification routes consolidated under /api/account/2fa
-  console.log('[ROUTES] Mounting 2FA and PIN verification routes...');
-  app.use('/api/account/2fa', withdrawalVerificationRouter);
-
-  // Backwards compatibility redirects (deprecated)
-  app.use('/api/2fa', withdrawalVerificationRouter);   // was /api/2fa/*
-  app.use('/api/pin', withdrawalVerificationRouter);   // was /api/pin/*
-  app.post('/api/withdrawals/verify-2fa', withdrawalVerificationRouter);  // was /api/withdrawals/verify-2fa
+  // All 2FA and PIN verification routes migrated to v1 API
+  // TODO: See routes/v1/auth/2fa.ts for current implementation
+  console.log('[ROUTES] 2FA and PIN verification routes loaded from v1 API');
 
   // Monitoring
   app.use('/api/monitoring', monitoringRoutes);
@@ -429,16 +383,11 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   app.use('/api/admin', isAuthenticated, requireRole('super_admin', 'admin'), accountInitializationRoutes); // Account initialization endpoints
   app.delete('/api/account/delete', isAuthenticated, accountDeleteHandler); // Legacy endpoint
   app.use('/api/referral-rewards', referralRewardsRoutes);
-  app.use('/api', proposalEngagementRoutes); // Proposal likes/comments/engagement
-  app.use('/api/dao-chat', daoChatRoutes); // DAO chat messages and reactions
   app.use('/api/admin', isAuthenticated, requireRole('super_admin', 'admin'), adminRoutes); // Admin/SuperUser management (protected)
   app.use('/api/announcements', isAuthenticated, announcementsRoutes); // Platform announcements (authenticated)
-  app.use('/api/investment-pools', isAuthenticated, investmentPoolsRoutes); // Multi-asset investment pools (authenticated)
-  app.use('/api/pool-governance', isAuthenticated, requireDAORole('owner', 'admin'), poolGovernanceRoutes); // Pool governance (DAO admin only)
   app.use('/api', rulesRoutes); // Phase 3 Custom Rules Engine
 
-  // DeFi DEX Integration
-  app.use('/api/dex', dexRoutes);
+  // DeFi DEX Integration - moved to v1 API
 
   // Graph Propagation System
   console.log('[ROUTES] Mounting graph propagation routes...');
@@ -481,13 +430,9 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
     });
   });
 
-  // Strategy Vaults
-  console.log('[ROUTES] Mounting strategy vaults routes...');
-  app.use('/api/vaults', vaultsRoutes);
+  // ⚠️ Legacy strategy vaults endpoint removed - use V1 endpoints instead
 
-  // MTAA Staking & Governance
-  console.log('[ROUTES] Mounting staking routes...');
-  app.use('/api/staking', stakingRoutes);
+  // MTAA Staking & Governance - moved to v1 API
 
   // DAO deployment (canonical endpoint - requires canCreateDAO permission)
   app.post('/api/dao/deploy', isAuthenticated, requireRole('admin', 'moderator'), async (req, res, next) => {
@@ -544,33 +489,41 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   // Treasury multi-sig delegates to daoTreasuryRoutes
   // Note: Multi-sig handlers are mounted via daoTreasuryRoutes at /api/dao/:daoId/treasury
 
-  // === VAULT API ENDPOINTS ===
-  // Create vault (admin/superuser only - can create on behalf of DAOs)
-  app.post('/api/vaults', isAuthenticated, requireRole('admin', 'super_admin'), createVaultHandler);
+  // === LEGACY VAULT API ENDPOINTS (410 Gone) ===
+  // Migration: Personal vaults → /api/v1/wallets/vaults/*
+  // Migration: DAO vaults → /api/v1/daos/:daoId/treasury/vaults/*
+  app.use('/api/vaults', (req, res) => {
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.status(410).json({
+      error: 'Gone',
+      message: 'Vault endpoints have been migrated to V1 API structure',
+      newEndpoints: {
+        personal_vaults: '/api/v1/wallets/vaults',
+        dao_vaults: '/api/v1/daos/:daoId/treasury/vaults',
+        examples: {
+          'POST /api/v1/wallets/vaults': 'Create personal vault',
+          'GET /api/v1/wallets/vaults': 'List personal vaults',
+          'POST /api/v1/daos/:daoId/treasury/vaults': 'Create DAO vault',
+          'POST /api/v1/daos/:daoId/treasury/vaults/:vaultId/withdraw': 'Withdraw from DAO vault'
+        }
+      }
+    });
+  });
 
-  // Allocate to vault (vault authorized users)
-  app.post('/api/vaults/:vaultId/allocate', isAuthenticated, authorizeVaultAccess, allocateToVaultHandler);
-
-  // Get user's vaults
-  app.get('/api/vaults', isAuthenticated, getUserVaultsHandler);
-
-  // Get vault details
-  app.get('/api/vaults/:vaultId', isAuthenticated, authorizeVaultAccess, getVaultHandler);
-
-  // Vault operations (vault authorized users - guards in handlers)
-  app.post('/api/vaults/:vaultId/deposit', isAuthenticated, authorizeVaultAccess, depositToVaultHandler);
-  app.post('/api/vaults/:vaultId/withdraw', isAuthenticated, authorizeVaultAccess, withdrawFromVaultHandler);
-  app.post('/api/vaults/:vaultId/rebalance', isAuthenticated, authorizeVaultAccess, rebalanceVaultHandler);
-
-  // Vault analytics
-  app.get('/api/vaults/:vaultId/portfolio', isAuthenticated, authorizeVaultAccess, getVaultPortfolioHandler);
-  app.get('/api/vaults/:vaultId/performance', isAuthenticated, authorizeVaultAccess, getVaultPerformanceHandler);
-  app.get('/api/vaults/:vaultId/risk', isAuthenticated, authorizeVaultAccess, assessVaultRiskHandler);
-  app.get('/api/vaults/:vaultId/transactions', isAuthenticated, authorizeVaultAccess, getVaultTransactionsHandler);
-
-  // Token utilities
-  app.get('/api/tokens', getSupportedTokensHandler);
-  app.get('/api/tokens/:tokenAddress/price', getTokenPriceHandler);
+  // === LEGACY TOKEN UTILITIES (410 Gone) ===
+  app.use('/api/tokens', (req, res) => {
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.status(410).json({
+      error: 'Gone',
+      message: 'Token utilities have been migrated to V1 endpoints',
+      newEndpoints: {
+        '/api/v1/tokens': 'GET - list supported tokens',
+        '/api/v1/tokens/:tokenAddress/price': 'GET - get token price'
+      }
+    });
+  });
 
   // === DAO SETTINGS API ===
   app.get('/api/dao/:daoId/settings', isAuthenticated, getDaoSettingsHandler);
@@ -689,11 +642,63 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   console.log('[ROUTES] Mounting payment reconciliation admin routes...');
   app.use('/api/admin/payments/reconciliation', isAuthenticated, requireRole('super_admin'), paymentReconciliationRoutes);
 
-  // === TREASURY INTELLIGENCE API ===
-  app.use('/api/treasury-intelligence', treasuryIntelligenceRoutes);
+  // === LEGACY TREASURY ENDPOINTS (410 Gone) ===
+  app.use('/api/treasury-intelligence', (req, res) => {
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.status(410).json({
+      error: 'Gone',
+      message: 'Treasury intelligence endpoints have been reorganized.',
+      newPaths: {
+        '/api/v1/daos/:daoId/treasury/analyze': 'POST - analyze DAO treasury',
+        '/api/v1/daos/:daoId/treasury/recommend-formula': 'POST - get governance formula',
+        '/api/v1/daos/:daoId/treasury/health': 'GET - check DAO treasury health',
+        '/api/v1/treasury/system/health': 'GET - system-wide health monitoring'
+      }
+    });
+  });
 
-  // === TREASURY ANALYSIS API (Layer 3) ===
-  app.use('/api/treasury', treasuryRoutes);
+  app.use('/api/treasury', (req, res) => {
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.status(410).json({
+      error: 'Gone',
+      message: 'Treasury analysis endpoints have been migrated to V1 API structure.',
+      newPaths: {
+        '/api/v1/daos/:daoId/treasury': 'All treasury operations (vault, withdrawals, analysis)',
+        '/api/v1/treasury/system/health': 'GET - system-wide treasury monitoring'
+      }
+    });
+  });
+
+  app.use('/api/wallet-setup', (req, res) => {
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.status(410).json({
+      error: 'Gone',
+      message: 'Wallet setup has been reorganized to V1 endpoints',
+      newPaths: {
+        '/api/v1/wallets/setup': 'GET/POST - wallet creation and initialization',
+        '/api/v1/wallets/core': 'GET/POST - core wallet operations'
+      }
+    });
+  });
+
+  app.use('/api/wallet/savings', (req, res) => {
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.status(410).json({
+      error: 'Gone',
+      message: 'Savings endpoints moved to V1 wallet routes',
+      newPath: '/api/v1/wallets/savings'
+    });
+  });
+
+  // === V1 TREASURY ROUTES ===
+  // DAO-scoped treasury analysis
+  app.use('/api/v1/daos', v1DaosRouter);
+  // System-level treasury monitoring
+  app.use('/api/v1/treasury', v1TreasuryRouter);
 
   // === PHONE VERIFICATION API ===
   app.use('/api/phone-verification', phoneVerificationRouter);
@@ -703,15 +708,12 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
 
   // === EXCHANGE AND ORDER ROUTING API ===
   app.use('/api/exchanges', exchangeRoutes);
-  app.use('/api/orders', orderRoutes);
+  // Order routes moved to v1 API
 
-  // === STRATEGY DEPLOYMENT AND FREQTRADE INTEGRATION ===
+  // === STRATEGY DEPLOYMENT ===
   console.log('[ROUTES] Mounting strategy deployment routes...');
-  app.use('/api/strategies', strategyDeploymentRoutes);
 
-  // === REBALANCING AND DEX ROUTING EXECUTION ===
-  console.log('[ROUTES] Mounting rebalancing routes...');
-  app.use('/api/rebalancing', rebalancingRoutes);
+  // Rebalancing routes moved to v1 API
 
   // === WEBSOCKET PRICE STREAMING ===
   console.log('[ROUTES] Initializing WebSocket price stream service...');

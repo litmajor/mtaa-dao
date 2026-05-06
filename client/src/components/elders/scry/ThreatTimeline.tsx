@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { AlertTriangle, AlertCircle, Clock, Filter } from 'lucide-react';
+import { TriangleAlert, AlertCircle, Clock, Filter } from 'lucide-react';
 
 interface TimelineEvent {
   id: string;

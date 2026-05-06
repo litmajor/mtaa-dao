@@ -11,7 +11,7 @@ import { Avatar, AvatarImage, AvatarFallback } from './ui/index';
 import { Button } from './ui/index';
 import { Badge } from './ui/index';
 import { Input } from './ui/index';
-import { Loader2, Users } from 'lucide-react';
+import { LoaderCircle, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface FollowUser {
@@ -47,13 +47,7 @@ export function FollowersFollowingModal({
   const { data: followersList = [], isLoading: followersLoading } = useQuery({
     queryKey: [`/api/user-follows/${userId}/followers-list`],
     queryFn: async () => {
-      const response = await fetch(`/api/user-follows/${userId}/followers-list`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-        },
-      });
-      if (!response.ok) throw new Error('Failed to fetch followers');
-      return response.json();
+      return authClient.get(`/api/user-follows/${userId}/followers-list`);
     },
     enabled: isOpen && activeTab === 'followers',
   });
@@ -62,13 +56,7 @@ export function FollowersFollowingModal({
   const { data: followingList = [], isLoading: followingLoading } = useQuery({
     queryKey: [`/api/user-follows/${userId}/following-list`],
     queryFn: async () => {
-      const response = await fetch(`/api/user-follows/${userId}/following-list`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-        },
-      });
-      if (!response.ok) throw new Error('Failed to fetch following');
-      return response.json();
+      return authClient.get(`/api/user-follows/${userId}/following-list`);
     },
     enabled: isOpen && activeTab === 'following',
   });

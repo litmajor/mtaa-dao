@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, TrendingUp, Wallet, ArrowDownLeft, ArrowUpRight, Bitcoin, Activity, BarChart3 } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
+import { Loader, ArrowDownLeft, ArrowUpRight, Activity, BarChart3 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, Area, AreaChart } from 'recharts';
 
 const COLORS = ['#F7931A', '#627EEA', '#14F195', '#F3BA2F', '#23292F', '#345D9D'];
@@ -18,75 +19,65 @@ export default function InvestmentPoolDetail() {
   const { id } = useParams();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [daoId, setDaoId] = useState<string | null>(null);
   const [showInvestModal, setShowInvestModal] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [investAmount, setInvestAmount] = useState('');
   const [withdrawShares, setWithdrawShares] = useState('');
 
-  // Fetch pool details
+  // Fetch pool details - V1 endpoint (DAO-scoped)
+  // Currently extracting daoId from pool response
   const { data: poolData, isLoading } = useQuery({
-    queryKey: [`/api/investment-pools/${id}`],
+    queryKey: [`/api/v1/daos/*/investment-pools/${id}`],
     queryFn: async () => {
-      const res = await fetch(`/api/investment-pools/${id}`, {
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to fetch pool');
-      return res.json();
+      const data = await authClient.get(`/api/v1/daos/*/investment-pools/${id}`);
+      if (data.daoId) setDaoId(data.daoId);
+      return data;
     },
   });
 
-  // Fetch user's investment
+  // Fetch user's investment - V1 endpoint
   const { data: myInvestment } = useQuery({
-    queryKey: [`/api/investment-pools/${id}/my-investment`],
+    queryKey: daoId ? [daoId, `/api/v1/daos/${daoId}/investment-pools/${id}/my-investment`] : ['myInvestment-disabled'],
     queryFn: async () => {
-      const res = await fetch(`/api/investment-pools/${id}/my-investment`, {
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to fetch investment');
-      return res.json();
+      if (!daoId) return null;
+      return authClient.get(`/api/v1/daos/${daoId}/investment-pools/${id}/my-investment`);
     },
+    enabled: !!daoId,
   });
 
-  // Fetch pool analytics
+  // Fetch pool analytics - V1 endpoint
   const { data: analyticsData } = useQuery({
-    queryKey: [`/api/investment-pools/${id}/analytics`],
+    queryKey: daoId ? [daoId, `/api/v1/daos/${daoId}/investment-pools/${id}/analytics`] : ['analyticsData-disabled'],
     queryFn: async () => {
-      const res = await fetch(`/api/investment-pools/${id}/analytics`, {
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to fetch analytics');
-      return res.json();
+      if (!daoId) return null;
+      return authClient.get(`/api/v1/daos/${daoId}/investment-pools/${id}/analytics`);
     },
+    enabled: !!daoId,
   });
 
-  // Fetch performance chart data
+  // Fetch performance chart data - V1 endpoint
   const [chartPeriod, setChartPeriod] = useState('30');
   const { data: chartData } = useQuery({
-    queryKey: [`/api/investment-pools/${id}/performance-chart`, chartPeriod],
+    queryKey: daoId ? [daoId, `/api/v1/daos/${daoId}/investment-pools/${id}/performance-chart`, chartPeriod] : ['chartData-disabled'],
     queryFn: async () => {
-      const res = await fetch(`/api/investment-pools/${id}/performance-chart?days=${chartPeriod}`, {
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to fetch chart data');
-      return res.json();
+      if (!daoId) return null;
+      return authClient.get(`/api/v1/daos/${daoId}/investment-pools/${id}/performance-chart?days=${chartPeriod}`);
     },
+    enabled: !!daoId,
   });
 
-  // Invest mutation
+  // Invest mutation - V1 endpoint
   const investMutation = useMutation({
     mutationFn: async (amount: number) => {
-      const res = await fetch(`/api/investment-pools/${id}/invest`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amountUsd: amount }),
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to invest');
-      return res.json();
+      if (!daoId) throw new Error('DAO context not loaded');
+      return authClient.post(`/api/v1/daos/${daoId}/investment-pools/${id}/invest`, { amountUsd: amount });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/investment-pools/${id}`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/investment-pools/${id}/my-investment`] });
+      if (daoId) {
+        queryClient.invalidateQueries({ queryKey: [daoId, `/api/v1/daos/${daoId}/investment-pools/${id}`] });
+        queryClient.invalidateQueries({ queryKey: [daoId, `/api/v1/daos/${daoId}/investment-pools/${id}/my-investment`] });
+      }
       toast({
         title: 'Investment Successful!',
         description: 'Your shares have been minted',
@@ -103,21 +94,17 @@ export default function InvestmentPoolDetail() {
     },
   });
 
-  // Withdraw mutation
+  // Withdraw mutation - V1 endpoint
   const withdrawMutation = useMutation({
     mutationFn: async (shares: number) => {
-      const res = await fetch(`/api/investment-pools/${id}/withdraw`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shares }),
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to withdraw');
-      return res.json();
+      if (!daoId) throw new Error('DAO context not loaded');
+      return authClient.post(`/api/v1/daos/${daoId}/investment-pools/${id}/withdraw`, { shares });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/investment-pools/${id}`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/investment-pools/${id}/my-investment`] });
+      if (daoId) {
+        queryClient.invalidateQueries({ queryKey: [daoId, `/api/v1/daos/${daoId}/investment-pools/${id}`] });
+        queryClient.invalidateQueries({ queryKey: [daoId, `/api/v1/daos/${daoId}/investment-pools/${id}/my-investment`] });
+      }
       toast({
         title: 'Withdrawal Successful!',
         description: 'Funds sent to your wallet',
@@ -163,7 +150,7 @@ export default function InvestmentPoolDetail() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 to-purple-900 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-purple-400" />
+        <LoaderCircle className="w-8 h-8 animate-spin text-purple-400" />
       </div>
     );
   }
@@ -295,7 +282,7 @@ export default function InvestmentPoolDetail() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-white flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5" />
+                    <ChartColumn className="w-5 h-5" />
                     Performance History
                   </CardTitle>
                   <Tabs value={chartPeriod} onValueChange={setChartPeriod} className="w-auto">
@@ -529,8 +516,10 @@ export default function InvestmentPoolDetail() {
                         </div>
                         <div className="h-2 bg-white/10 rounded-full overflow-hidden">
                           <div className="flex h-full">
-                            <div className="bg-green-500" style={{ width: '42.5%' }} />
-                            <div className="bg-red-500" style={{ width: '15.2%' }} />
+                            {/* eslint-disable-next-line @next/next/no-style-component-with-dynamic-styles */}
+                            <div className="bg-green-500" style={{ width: '42.5%' }} suppressHydrationWarning />
+                            {/* eslint-disable-next-line @next/next/no-style-component-with-dynamic-styles */}
+                            <div className="bg-red-500" style={{ width: '15.2%' }} suppressHydrationWarning />
                           </div>
                         </div>
                       </div>
@@ -704,7 +693,7 @@ export default function InvestmentPoolDetail() {
                 disabled={investMutation.isPending}
                 className="bg-purple-600 hover:bg-purple-700"
               >
-                {investMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                {investMutation.isPending ? <LoaderCircle className="w-4 h-4 animate-spin mr-2" /> : null}
                 Confirm Investment
               </Button>
             </DialogFooter>
@@ -771,7 +760,7 @@ export default function InvestmentPoolDetail() {
                 disabled={withdrawMutation.isPending}
                 className="bg-red-600 hover:bg-red-700"
               >
-                {withdrawMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                {withdrawMutation.isPending ? <LoaderCircle className="w-4 h-4 animate-spin mr-2" /> : null}
                 Confirm Withdrawal
               </Button>
             </DialogFooter>

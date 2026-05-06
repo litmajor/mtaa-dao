@@ -251,10 +251,10 @@ export default function TransactionHistory({ userId, walletAddress }: Transactio
   const { data: exchangeRates = {} } = useQuery({
     queryKey: ['exchange-rates'],
     queryFn: async () => {
-      const response = await fetch('/api/wallet/exchange-rates');
+      const response = await fetch('/api/v1/wallets/balance/exchange-rates');
       if (!response.ok) throw new Error('Failed to fetch rates');
       const data = await response.json();
-      return data.rates || {};
+      return data.data?.rates || {};
     },
     staleTime: 30000, // 30 seconds
     retry: 1
@@ -310,12 +310,14 @@ export default function TransactionHistory({ userId, walletAddress }: Transactio
         dateRange: filter.dateRange
       });
 
-      const response = await fetch(`/api/wallet/transactions?${params}`);
+      // Use v1/wallets endpoint with query parameters for flexibility
+      // Backend will resolve walletId from userId or walletAddress
+      const response = await fetch(`/api/v1/wallets/transfers/history?${params}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       const data = await response.json();
-      setTransactions(data.transactions || []);
+      setTransactions(data.data?.transactions || data.data || []);
     } catch (err: any) {
       console.error('Error fetching transactions:', err);
       setError('Failed to load transactions. Please try again later.');

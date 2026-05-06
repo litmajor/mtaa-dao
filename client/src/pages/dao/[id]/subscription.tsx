@@ -4,7 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CreditCard, Check, AlertCircle, Calendar, Zap, Users, BarChart3 } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
+import { CreditCard, Check, AlertCircle, Calendar, Zap, Users, ChartColumn } from 'lucide-react';
 
 interface SubscriptionTier {
   name: 'free' | 'pro' | 'enterprise';
@@ -106,10 +107,8 @@ export default function SubscriptionManagementPage() {
 
   const checkAdminStatus = async () => {
     try {
-      const response = await fetch(`/api/dao/${daoId}/admin-check`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
-      if (response.ok) {
+      const data = await authClient.get(`/api/dao/${daoId}/admin-check`);
+      if (data) {
         setIsAdmin(true);
       }
     } catch (err) {
@@ -120,13 +119,8 @@ export default function SubscriptionManagementPage() {
   const fetchSubscription = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/dao/${daoId}/subscription`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
+      const data = await authClient.get(`/api/dao/${daoId}/subscription`);
 
-      if (!response.ok) throw new Error('Failed to fetch subscription');
-
-      const data = await response.json();
       setSubscription(data.subscription);
       setInvoiceHistory(data.invoiceHistory || []);
       setError(null);
@@ -142,18 +136,8 @@ export default function SubscriptionManagementPage() {
 
     try {
       setUpgradeProcessing(true);
-      const response = await fetch(`/api/dao/${daoId}/subscription/upgrade`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({ newTier })
-      });
+      const data = await authClient.post(`/api/dao/${daoId}/subscription/upgrade`, { newTier });
 
-      if (!response.ok) throw new Error('Failed to upgrade');
-
-      const data = await response.json();
       if (data.checkoutUrl) {
         window.location.href = data.checkoutUrl;
       } else {
@@ -170,13 +154,7 @@ export default function SubscriptionManagementPage() {
     if (!isAdmin || !confirm('Are you sure you want to cancel? You will lose access to premium features.')) return;
 
     try {
-      const response = await fetch(`/api/dao/${daoId}/subscription/cancel`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
-
-      if (!response.ok) throw new Error('Failed to cancel');
-
+      await authClient.post(`/api/dao/${daoId}/subscription/cancel`, {});
       fetchSubscription();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to cancel subscription');
@@ -350,7 +328,7 @@ export default function SubscriptionManagementPage() {
                       <span className="text-sm">{tier.limits.maxMembers} Members</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <BarChart3 className="w-4 h-4 text-teal-600" />
+                      <ChartColumn className="w-4 h-4 text-teal-600" />
                       <span className="text-sm">${tier.limits.maxMonthlyVolume.toLocaleString()} Volume</span>
                     </div>
                     <div className="flex items-center gap-2">

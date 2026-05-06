@@ -10,6 +10,7 @@ import {
   Trophy, Star, Award, TrendingUp, Phone, Shield, 
   CheckCircle, Clock, Flame, Gift
 } from "lucide-react";
+import { authClient } from "@/utils/authClient";
 
 export default function ReputationDashboard() {
   const [reputation, setReputation] = useState<any>(null);
@@ -27,32 +28,17 @@ export default function ReputationDashboard() {
 
   const fetchReputationData = async () => {
     try {
-      const token = localStorage.getItem('accessToken');
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      };
-
-      const [repRes, identityRes, contribRes, badgesRes] = await Promise.all([
-        fetch('/api/reputation/user/me', { headers, credentials: 'include' }),
-        fetch('/api/reputation/economic-identity/me', { headers, credentials: 'include' }),
-        fetch('/api/reputation/contributions/me?limit=20', { headers, credentials: 'include' }),
-        fetch('/api/reputation/badges/me', { headers, credentials: 'include' })
+      const [rep, identity, contribs, badgesList] = await Promise.all([
+        authClient.get<any>('/api/reputation/user/me'),
+        authClient.get<{ identity: any }>('/api/reputation/economic-identity/me'),
+        authClient.get<{ contributions: any[] }>('/api/reputation/contributions/me?limit=20'),
+        authClient.get<{ badges: any[] }>('/api/reputation/badges/me')
       ]);
 
-      if (repRes.ok) setReputation(await repRes.json());
-      if (identityRes.ok) {
-        const data = await identityRes.json();
-        setEconomicIdentity(data.identity);
-      }
-      if (contribRes.ok) {
-        const data = await contribRes.json();
-        setContributions(data.contributions);
-      }
-      if (badgesRes.ok) {
-        const data = await badgesRes.json();
-        setBadges(data.badges);
-      }
+      setReputation(rep);
+      if (identity) setEconomicIdentity(identity.identity);
+      if (contribs) setContributions(contribs.contributions);
+      if (badgesList) setBadges(badgesList.badges);
     } catch (error) {
       console.error('Error fetching reputation:', error);
     } finally {
@@ -62,53 +48,25 @@ export default function ReputationDashboard() {
 
   const requestPhoneOTP = async () => {
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch('/api/phone-verification/request-otp', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        credentials: 'include',
-        body: JSON.stringify({ phoneNumber })
-      });
-
-      if (response.ok) {
-        setOtpSent(true);
-        alert('OTP sent to your phone!');
-      } else {
-        const error = await response.json();
-        alert(error.error);
-      }
+      await authClient.post('/api/phone-verification/request-otp', { phoneNumber });
+      setOtpSent(true);
+      alert('OTP sent to your phone!');
     } catch (error) {
       console.error('Error requesting OTP:', error);
+      alert((error as Error).message || 'Failed to send OTP');
     }
   };
 
   const verifyPhoneOTP = async () => {
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch('/api/phone-verification/verify-otp', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        credentials: 'include',
-        body: JSON.stringify({ phoneNumber, otp })
-      });
-
-      if (response.ok) {
-        alert('Phone verified! You earned reputation points.');
-        fetchReputationData();
-        setOtpSent(false);
-        setOtp('');
-      } else {
-        const error = await response.json();
-        alert(error.error);
-      }
+      await authClient.post('/api/phone-verification/verify-otp', { phoneNumber, otp });
+      alert('Phone verified! You earned reputation points.');
+      fetchReputationData();
+      setOtpSent(false);
+      setOtp('');
     } catch (error) {
       console.error('Error verifying OTP:', error);
+      alert((error as Error).message || 'Failed to verify OTP');
     }
   };
 

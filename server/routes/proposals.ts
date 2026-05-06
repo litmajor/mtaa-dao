@@ -2,13 +2,28 @@ import express from 'express';
 import { db } from '../storage';
 import { proposals, votes, daoMemberships } from '../../shared/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
-import { isAuthenticated } from '../middleware/auth';
+import { isAuthenticated } from '../nextAuthMiddleware';
+import { createRateLimiter } from '../middleware/rateLimiting';
 import { z } from 'zod';
 
 const router = express.Router();
 
+// 🔴 CRITICAL: Rate limiters for proposal operations
+const proposalCreationLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  maxRequests: 10, // Max 10 proposals per hour per user
+  keyGenerator: (req) => `proposal:create:${(req as any).user?.id || req.ip}`,
+});
+
+const proposalVoteLimiter = createRateLimiter({
+  windowMs: 60 * 1000, // 1 minute
+  maxRequests: 30, // Max 30 votes per minute (prevents voting spam)
+  keyGenerator: (req) => `proposal:vote:${(req as any).user?.id || req.ip}`,
+});
+
 // LIST all proposals for a DAO
-router.get('/', async (req, res) => {
+// 🔴 CRITICAL: Requires authentication - prevents proposal enumeration attack
+router.get('/', isAuthenticated, async (req: express.Request, res: express.Response) => {
   try {
     const { daoId, status, proposer, sortBy = 'createdAt', sortOrder = 'desc', limit = 50, offset = 0 } = req.query;
 
@@ -16,19 +31,21 @@ router.get('/', async (req, res) => {
       return res.status(400).json({ error: 'daoId is required' });
     }
 
-    let query = db.select().from(proposals).where(eq(proposals.daoId, String(daoId)));
-
+    let conditions = [eq(proposals.daoId, String(daoId))];
+    
     // Apply filters
     if (status) {
-      query = query.where(eq(proposals.status, String(status)));
+      conditions.push(eq(proposals.status, String(status)));
     }
     if (proposer) {
-      query = query.where(eq(proposals.proposerId, String(proposer)));
+      conditions.push(eq(proposals.proposerId, String(proposer)));
     }
 
-    const totalCount = await query;
-    const items = await query
-      .orderBy(proposals[sortBy as keyof typeof proposals] || proposals.createdAt, sortOrder === 'asc' ? 'asc' : 'desc')
+    const totalData = await db.select().from(proposals).where(and(...conditions));
+    const items = await db.select()
+      .from(proposals)
+      .where(and(...conditions))
+      .orderBy(desc(proposals.createdAt))
       .limit(Number(limit))
       .offset(Number(offset));
 
@@ -36,10 +53,10 @@ router.get('/', async (req, res) => {
       success: true,
       data: items,
       pagination: {
-        total: totalCount.length,
+        total: totalData.length,
         limit: Number(limit),
         offset: Number(offset),
-        hasMore: Number(offset) + Number(limit) < totalCount.length
+        hasMore: Number(offset) + Number(limit) < totalData.length
       }
     });
   } catch (error: any) {
@@ -48,7 +65,8 @@ router.get('/', async (req, res) => {
 });
 
 // GET a single proposal
-router.get('/:proposalId', async (req, res) => {
+// 🔴 CRITICAL: Requires authentication - prevents proposal reconnaissance
+router.get('/:proposalId', isAuthenticated, async (req: express.Request, res: express.Response) => {
   try {
     const { proposalId } = req.params;
 
@@ -84,7 +102,8 @@ router.get('/:proposalId', async (req, res) => {
 });
 
 // CREATE a new proposal
-router.post('/', isAuthenticated, async (req, res) => {
+// 🔴 CRITICAL: Rate limited to prevent proposal spam
+router.post('/', isAuthenticated, proposalCreationLimiter, async (req, res) => {
   try {
     const {
       daoId,
@@ -154,7 +173,8 @@ router.post('/', isAuthenticated, async (req, res) => {
 });
 
 // UPDATE a proposal (only draft status or by proposer)
-router.put('/:proposalId', isAuthenticated, async (req, res) => {
+// 🔴 CRITICAL: Rate limited to prevent proposal update spam
+router.put('/:proposalId', isAuthenticated, proposalCreationLimiter, async (req, res) => {
   try {
     const { proposalId } = req.params;
     const userId = (req.user as any)?.claims?.sub;
@@ -200,7 +220,8 @@ router.put('/:proposalId', isAuthenticated, async (req, res) => {
 });
 
 // DELETE a proposal (only draft status or by proposer)
-router.delete('/:proposalId', isAuthenticated, async (req, res) => {
+// 🔴 CRITICAL: Rate limited to prevent denial of service
+router.delete('/:proposalId', isAuthenticated, proposalCreationLimiter, async (req, res) => {
   try {
     const { proposalId } = req.params;
     const userId = (req.user as any)?.claims?.sub;
@@ -248,14 +269,17 @@ router.delete('/:proposalId', isAuthenticated, async (req, res) => {
 });
 
 // Emoji voting endpoint
-router.post('/:proposalId/emoji-vote', async (req, res) => {
+// 🔴 CRITICAL: Requires auth + rate limited to prevent voting spam
+// Emoji voting endpoint
+// 🔴 CRITICAL: Requires auth + rate limited to prevent voting spam
+router.post('/:proposalId/emoji-vote', isAuthenticated, proposalVoteLimiter, async (req: express.Request, res: express.Response) => {
   try {
     const { proposalId } = req.params;
-    const { vote, isAnonymous } = req.body;
+    const { vote, isAnonymous = false } = req.body;
     const userId = (req.user as any)?.claims?.sub;
 
     if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
+      return res.status(401).json({ error: 'User not authenticated' });
     }
 
     if (!['yes', 'maybe', 'no'].includes(vote)) {
@@ -263,30 +287,31 @@ router.post('/:proposalId/emoji-vote', async (req, res) => {
     }
 
     // Check if already voted
-    const existing = await db.query.votes.findFirst({
-      where: and(
-        eq(votes.proposalId, proposalId),
-        eq(votes.userId, userId)
+    const existing = await db.select().from(votes)
+      .where(
+        and(
+          eq(votes.proposalId, proposalId),
+          eq(votes.userId, userId)
+        )
       )
-    });
+      .limit(1);
 
-    if (existing) {
+    if (existing.length > 0) {
       return res.status(400).json({ error: 'Already voted on this proposal' });
     }
 
     // Get proposal details for activity award
-    const proposalData = await db.query.proposals.findFirst({
-      where: eq(proposals.id, proposalId)
-    });
+    const proposalData = await db.select().from(proposals)
+      .where(eq(proposals.id, proposalId))
+      .limit(1);
 
     // Record vote (only happens once per user per proposal - DB constraint)
     await db.insert(votes).values({
       proposalId,
       userId: isAnonymous ? 'guest' : userId,
-      daoId: req.body.daoId || proposalData?.daoId || '',
+      daoId: req.body.daoId || (proposalData.length > 0 ? proposalData[0].daoId : ''),
       voteType: vote,
       votingPower: '1',
-      metadata: { isAnonymous, originalUserId: isAnonymous ? userId : undefined }
     });
 
     // Update proposal counts
@@ -297,13 +322,13 @@ router.post('/:proposalId/emoji-vote', async (req, res) => {
 
     // Award activity points (fire and forget)
     // Points are awarded once per vote since votes are unique per user per proposal (enforced by DB)
-    if (!isAnonymous && proposalData?.daoId) {
+    if (!isAnonymous && proposalData.length > 0 && proposalData[0].daoId) {
       const { awardActivityDirect } = await import('../services/activity-award-helper');
       awardActivityDirect({
         userId,
-        daoId: proposalData.daoId,
+        daoId: proposalData[0].daoId,
         type: 'vote' as any,
-        description: `Voted ${vote} on proposal: ${proposalData.title || proposalId}`,
+        description: `Voted ${vote} on proposal: ${proposalData[0].title || proposalId}`,
         metadata: { proposalId, vote },
       }).catch((error) => {
         console.error('Error awarding activity for vote:', error);
@@ -311,7 +336,7 @@ router.post('/:proposalId/emoji-vote', async (req, res) => {
     }
 
     res.json({ success: true, vote, isAnonymous, pointsAwarded: !isAnonymous ? 5 : 0 });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Emoji vote error:', error);
     res.status(500).json({ error: 'Failed to submit vote' });
   }

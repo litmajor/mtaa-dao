@@ -4,6 +4,7 @@ import { Shield, AlertTriangle, Lock, Eye, Activity, Users } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { authClient } from '@/utils/authClient';
 
 interface DefenderMetrics {
   agentId: string;
@@ -41,8 +42,7 @@ export default function DefenderMonitor() {
 
   const fetchMetrics = async () => {
     try {
-      const response = await fetch('/api/defender/status');
-      const data = await response.json();
+      const data = await authClient.get('/api/defender/status');
       setMetrics(data);
     } catch (error) {
       console.error('Failed to fetch defender metrics:', error);

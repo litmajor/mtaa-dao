@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 import {
   Users,
   DollarSign,
@@ -66,32 +67,27 @@ export function BillSplitPage() {
       setLoading(true);
       setError(null);
 
-      const res = await fetch('/api/wallet/bill-split');
-      if (res.ok) {
-        const data = await res.json();
-        setBills(data.billSplits || []);
+      const data = await authClient.get('/api/v1/wallets/payments/bill-split');
+      setBills(data.billSplits || []);
 
-        // Calculate stats
-        const active = data.billSplits.filter((b: any) => b.status === 'active').length;
-        const settled = data.billSplits.filter((b: any) => b.status === 'settled').length;
-        const total = data.billSplits.reduce((sum: number, b: any) => sum + parseFloat(b.totalAmount), 0);
-        const paid = data.billSplits.reduce((sum: number, b: any) => {
-          if (b.status === 'settled') return sum + parseFloat(b.totalAmount);
-          return sum;
-        }, 0);
-        const owed = total - paid;
+      // Calculate stats
+      const active = data.billSplits.filter((b: any) => b.status === 'active').length;
+      const settled = data.billSplits.filter((b: any) => b.status === 'settled').length;
+      const total = data.billSplits.reduce((sum: number, b: any) => sum + parseFloat(b.totalAmount), 0);
+      const paid = data.billSplits.reduce((sum: number, b: any) => {
+        if (b.status === 'settled') return sum + parseFloat(b.totalAmount);
+        return sum;
+      }, 0);
+      const owed = total - paid;
 
-        setStats({
-          totalBills: data.billSplits.length,
-          activeBills: active,
-          settledBills: settled,
-          totalAmount: total,
-          totalPaid: paid,
-          totalOwed: owed,
-        });
-      } else {
-        throw new Error('Failed to fetch bills');
-      }
+      setStats({
+        totalBills: data.billSplits.length,
+        activeBills: active,
+        settledBills: settled,
+        totalAmount: total,
+        totalPaid: paid,
+        totalOwed: owed,
+      });
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Failed to load bills';
       setError(errorMsg);
@@ -117,31 +113,22 @@ export function BillSplitPage() {
    */
   const handleCreateBill = async (billData: any) => {
     try {
-      const res = await fetch('/api/wallet/bill-split', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(billData),
+      await authClient.post('/api/v1/wallets/payments/bill-split', billData);
+
+      setShowModal(false);
+      toast({
+        title: 'Success',
+        description: `Bill "${billData.title}" created successfully!`,
+        variant: 'success',
       });
+      loadBills();
 
-      if (res.ok) {
-        setShowModal(false);
-        toast({
-          title: 'Success',
-          description: `Bill "${billData.title}" created successfully!`,
-          variant: 'success',
+      // Track analytics
+      if (window?.analytics) {
+        window.analytics.track('Bill Split Created', {
+          participantCount: billData.participants.length,
+          totalAmount: billData.totalAmount,
         });
-        loadBills();
-
-        // Track analytics
-        if (window?.analytics) {
-          window.analytics.track('Bill Split Created', {
-            participantCount: billData.participants.length,
-            totalAmount: billData.totalAmount,
-          });
-        }
-      } else {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to create bill');
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Failed to create bill';
@@ -159,19 +146,13 @@ export function BillSplitPage() {
   const handleSendReminders = async (billId: string, billTitle: string) => {
     try {
       setActionLoading(billId);
-      const res = await fetch(`/api/wallet/bill-split/${billId}/remind`, {
-        method: 'POST',
-      });
+      await authClient.post(`/api/v1/wallets/payments/bill-split/${billId}/remind`, {});
 
-      if (res.ok) {
-        toast({
-          title: 'Reminders Sent',
-          description: 'Payment reminders sent to all participants!',
-          variant: 'success',
-        });
-      } else {
-        throw new Error('Failed to send reminders');
-      }
+      toast({
+        title: 'Reminders Sent',
+        description: 'Payment reminders sent to all participants!',
+        variant: 'success',
+      });
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Failed to send reminders';
       toast({
@@ -190,20 +171,14 @@ export function BillSplitPage() {
   const handleSettleBill = async (billId: string, billTitle: string) => {
     try {
       setActionLoading(billId);
-      const res = await fetch(`/api/wallet/bill-split/${billId}/settle`, {
-        method: 'POST',
-      });
+      await authClient.post(`/api/v1/wallets/payments/bill-split/${billId}/settle`, {});
 
-      if (res.ok) {
-        toast({
-          title: 'Bill Settled',
-          description: `"${billTitle}" has been marked as settled.`,
-          variant: 'success',
-        });
-        loadBills();
-      } else {
-        throw new Error('Failed to settle bill');
-      }
+      toast({
+        title: 'Bill Settled',
+        description: `"${billTitle}" has been marked as settled.`,
+        variant: 'success',
+      });
+      loadBills();
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Failed to settle bill';
       toast({
@@ -224,20 +199,14 @@ export function BillSplitPage() {
 
     try {
       setActionLoading(billId);
-      const res = await fetch(`/api/wallet/bill-split/${billId}/cancel`, {
-        method: 'POST',
-      });
+      await authClient.post(`/api/v1/wallets/payments/bill-split/${billId}/cancel`, {});
 
-      if (res.ok) {
-        toast({
-          title: 'Bill Cancelled',
-          description: `"${billTitle}" has been cancelled.`,
-          variant: 'success',
-        });
-        loadBills();
-      } else {
-        throw new Error('Failed to cancel bill');
-      }
+      toast({
+        title: 'Bill Cancelled',
+        description: `"${billTitle}" has been cancelled.`,
+        variant: 'success',
+      });
+      loadBills();
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Failed to cancel bill';
       toast({

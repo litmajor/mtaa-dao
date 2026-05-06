@@ -16,33 +16,35 @@ export default function PoolDiscovery() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  // Fetch all pools
+  // Fetch all pools - V1 endpoint
+  // TODO: Create root-level pool discovery endpoint or aggregate from accessible DAOs
   const { data: pools = [], isLoading } = useQuery({
-    queryKey: ['/api/investment-pools'],
+    queryKey: ['/api/v1/daos/*/investment-pools'],
     queryFn: async () => {
-      return await apiGet<any[]>('/api/investment-pools');
+      return await apiGet<any[]>('/api/v1/daos/*/investment-pools');
     },
   });
 
-  // Fetch my pool invitations
+  // Fetch my pool invitations - V1 endpoint
+  // TODO: Migrate to V1 endpoint structure
   const { data: invitations = [] } = useQuery({
-    queryKey: ['/api/investment-pools/my-invitations'],
+    queryKey: ['/api/v1/daos/*/investment-pools/my-invitations'],
     queryFn: async () => {
       try {
-        return await apiGet<any[]>('/api/investment-pools/my-invitations');
+        return await apiGet<any[]>('/api/v1/daos/*/investment-pools/my-invitations');
       } catch {
         return [];
       }
     },
   });
 
-  // Accept invitation mutation
+  // Accept invitation mutation - V1 endpoint
   const acceptInvitation = useMutation({
     mutationFn: async (inviteId: string) => {
-      return await apiPost<any>(`/api/investment-pools/invitations/${inviteId}/accept`, {});
+      return await apiPost<any>(`/api/v1/daos/*/investment-pools/invitations/${inviteId}/accept`, {});
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/investment-pools/my-invitations'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/v1/daos/*/investment-pools/my-invitations'] });
       toast({ title: 'Joined Pool!', description: `You can now invest in ${data.poolName}` });
       navigate(`/investment-pools/${data.poolId}`);
     },

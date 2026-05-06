@@ -57,7 +57,7 @@ export async function migrateNotificationTables() {
         id SERIAL PRIMARY KEY,
         escrow_id UUID NOT NULL,
         event_type VARCHAR(50) NOT NULL,
-        triggered_by UUID NOT NULL,
+        triggered_by VARCHAR(255) NOT NULL,
         data JSONB,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (escrow_id) REFERENCES escrow_accounts(id) ON DELETE CASCADE,

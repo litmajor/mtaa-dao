@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle, XCircle, Clock, Mail } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 
 interface DaoInvitation {
   id: string;
@@ -29,13 +30,7 @@ export function PendingInvites() {
   const fetchPendingInvitations = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/invitations/pending', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
-
-      if (!response.ok) throw new Error('Failed to fetch invitations');
-
-      const data = await response.json();
+      const data = await authClient.get('/api/invitations/pending');
       setInvitations(data);
       setError(null);
     } catch (err) {
@@ -47,16 +42,7 @@ export function PendingInvites() {
 
   const handleAcceptInvite = async (inviteLink: string) => {
     try {
-      const response = await fetch(`/api/invitations/${inviteLink}/accept`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-
-      if (!response.ok) throw new Error('Failed to accept invitation');
-
+      await authClient.post(`/api/invitations/${inviteLink}/accept`, {});
       // Remove from list
       setInvitations(invitations.filter(inv => inv.inviteLink !== inviteLink));
       fetchPendingInvitations();
@@ -67,16 +53,7 @@ export function PendingInvites() {
 
   const handleRejectInvite = async (inviteLink: string) => {
     try {
-      const response = await fetch(`/api/invitations/${inviteLink}/reject`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-
-      if (!response.ok) throw new Error('Failed to reject invitation');
-
+      await authClient.post(`/api/invitations/${inviteLink}/reject`, {});
       // Remove from list
       setInvitations(invitations.filter(inv => inv.inviteLink !== inviteLink));
     } catch (err) {

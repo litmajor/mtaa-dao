@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Progress } from '../components/ui/progress';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Progress } from '../components/ui/progress';import { authClient } from '@/utils/authClient';import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import {
   Lock,
@@ -110,26 +109,17 @@ export default function AchievementSystemPage() {
       setLoading(true);
       
       // Fetch user progress
-      const progressRes = await fetch('/api/achievements/user/progress');
-      if (progressRes.ok) {
-        const data = await progressRes.json();
-        setAchievements(data.progress || []);
-        setStats(data.stats);
-      }
+      const progressData = await authClient.get('/api/achievements/user/progress');
+      setAchievements(progressData.progress || []);
+      setStats(progressData.stats);
 
       // Fetch badges
-      const badgesRes = await fetch('/api/achievements/user/badges');
-      if (badgesRes.ok) {
-        const data = await badgesRes.json();
-        setBadges(data.badges || []);
-      }
+      const badgesData = await authClient.get('/api/achievements/user/badges');
+      setBadges(badgesData.badges || []);
 
       // Fetch leaderboard
-      const leaderboardRes = await fetch('/api/achievements/leaderboard?limit=10');
-      if (leaderboardRes.ok) {
-        const data = await leaderboardRes.json();
-        setLeaderboard(data.leaderboard || []);
-      }
+      const leaderboardData = await authClient.get('/api/achievements/leaderboard?limit=10');
+      setLeaderboard(leaderboardData.leaderboard || []);
     } catch (error) {
       console.error('Error fetching data:', error);
       toast({
@@ -146,28 +136,17 @@ export default function AchievementSystemPage() {
     try {
       setClaimingRewardId(achievementId);
       
-      const response = await fetch(`/api/achievements/${achievementId}/claim`, {
-        method: 'POST'
-      });
+      await authClient.post(`/api/achievements/${achievementId}/claim`, {});
 
-      if (response.ok) {
-        toast({
-          title: 'Success',
-          description: 'Reward claimed successfully!'
-        });
-        fetchData();
-      } else {
-        const error = await response.json();
-        toast({
-          title: 'Error',
-          description: error.error || 'Failed to claim reward',
-          variant: 'destructive'
-        });
-      }
+      toast({
+        title: 'Success',
+        description: 'Reward claimed successfully!'
+      });
+      fetchData();
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to claim reward',
+        description: error instanceof Error ? error.message : 'Failed to claim reward',
         variant: 'destructive'
       });
     } finally {
@@ -189,27 +168,13 @@ export default function AchievementSystemPage() {
         return;
       }
 
-      const response = await fetch(`/api/achievements/${achievementId}/mint-nft`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ walletAddress })
+      const data = await authClient.post(`/api/achievements/${achievementId}/mint-nft`, { walletAddress });
+      
+      toast({
+        title: 'Success',
+        description: `NFT minted! Token ID: ${data.nft.tokenId}`
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        toast({
-          title: 'Success',
-          description: `NFT minted! Token ID: ${data.nft.tokenId}`
-        });
-        fetchData();
-      } else {
-        const error = await response.json();
-        toast({
-          title: 'Error',
-          description: error.error || 'Failed to mint NFT',
-          variant: 'destructive'
-        });
-      }
+      fetchData();
     } catch (error) {
       toast({
         title: 'Error',

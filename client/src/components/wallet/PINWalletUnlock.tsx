@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
-import { Lock, Unlock, Loader2 } from 'lucide-react';
+import { Lock, Unlock, LoaderCircle } from 'lucide-react';
 
 interface PINWalletUnlockProps {
   walletId: string;
@@ -53,7 +53,7 @@ export default function PINWalletUnlock({ walletId, onUnlocked, onError }: PINWa
 
     setLoading(true);
     try {
-      const response = await fetch('/api/wallet-sessions/connect', {
+      const response = await fetch('/api/v1/wallets/sessions/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

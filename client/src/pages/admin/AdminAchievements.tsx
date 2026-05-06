@@ -5,10 +5,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Badge, Target, Trophy, Plus, RefreshCw, Edit2, Trash2, CheckCircle } from 'lucide-react';
+import { Lightbulb, Target, Award, Plus, RefreshCw, Edit, Trash2, CheckCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {authClient} from '@/utils/authClient';
 
 interface Achievement {
   id: string;
@@ -61,36 +63,18 @@ export default function AdminAchievements() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
-      const [achievementsRes, tasksRes, metricsRes] = await Promise.all([
-        fetch('/api/admin/achievements', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/tasks', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/achievements/metrics', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
+      const [achievementsData, tasksData, metricsData] = await Promise.all([
+        authClient.get('/api/admin/achievements'),
+        authClient.get('/api/admin/tasks'),
+        authClient.get('/api/admin/achievements/metrics'),
       ]);
 
-      if (achievementsRes.ok) {
-        const data = await achievementsRes.json();
-        setAchievements(data.achievements || []);
-      }
-
-      if (tasksRes.ok) {
-        const data = await tasksRes.json();
-        setTasks(data.tasks || []);
-      }
-
-      if (metricsRes.ok) {
-        const data = await metricsRes.json();
-        setMetrics(data.metrics || []);
-      }
+      setAchievements(achievementsData.achievements || []);
+      setTasks(tasksData.tasks || []);
+      setMetrics(metricsData.metrics || []);
     } catch (error) {
-      console.error('Failed to fetch data:', error);
+      console.error('Failed to fetch achievements data:', error);
     } finally {
       setLoading(false);
     }
@@ -102,9 +86,9 @@ export default function AdminAchievements() {
     return () => clearInterval(interval);
   }, []);
 
-  const totalPoints = achievements.reduce((sum, a) => sum + (a.points * a.earnedCount), 0);
-  const activeAchievements = achievements.filter(a => a.earnedCount > 0).length;
-  const activeTasks = tasks.filter(t => t.status === 'active').length;
+  const totalPoints = achievements.reduce((sum: number, a: Achievement) => sum + (a.points * a.earnedCount), 0);
+  const activeAchievements = achievements.filter((a: Achievement) => a.earnedCount > 0).length;
+  const activeTasks = tasks.filter((t: Task) => t.status === 'active').length;
 
   return (
     <div className="min-h-screen bg-slate-950 p-6">
@@ -240,11 +224,11 @@ export default function AdminAchievements() {
                       </div>
                     </div>
                     <div className="w-full bg-slate-600 rounded-full h-2">
-                      <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${Math.min(achievement.earnedPercentage, 100)}%` }} />
+                      <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${Math.min(achievement.earnedPercentage, 100)}%` }} suppressHydrationWarning />
                     </div>
                     <div className="flex gap-2 mt-3">
                       <Button className="flex-1 bg-slate-600 hover:bg-slate-500 h-8 text-sm">
-                        <Edit2 className="h-3 w-3 mr-1" /> Edit
+                        <Edit className="h-3 w-3 mr-1" /> Edit
                       </Button>
                       <Button className="flex-1 bg-red-600 hover:bg-red-700 h-8 text-sm">
                         <Trash2 className="h-3 w-3 mr-1" /> Delete

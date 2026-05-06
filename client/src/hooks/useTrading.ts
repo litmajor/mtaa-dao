@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { authClient } from '@/utils/authClient';
 import { useTradingAccount } from '../contexts/trading-account-context';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
@@ -88,11 +89,10 @@ export function useTradeHistory() {
   const fetchTradeHistory = useCallback(async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
       
       const response = await fetch(`${API_BASE_URL}/orders/history`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          ...(await authClient.getAuthHeaders()),
           'Content-Type': 'application/json',
         },
       });
@@ -215,12 +215,11 @@ export function useSmartRouting(symbol: string, amount: number, side: 'buy' | 's
 
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
       const response = await fetch(`${API_BASE_URL}/orders/route`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          ...(await authClient.getAuthHeaders()),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -276,12 +275,11 @@ export function useOrderSplitting(symbol: string, amount: number, side: 'buy' | 
 
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
       const response = await fetch(`${API_BASE_URL}/orders/split`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          ...(await authClient.getAuthHeaders()),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -336,11 +334,10 @@ export function useBestVenue(symbol: string, amount: number, side: 'buy' | 'sell
 
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
       const response = await fetch(`${API_BASE_URL}/orders/best-venue?symbol=${symbol}&amount=${amount}&side=${side}`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          ...(await authClient.getAuthHeaders()),
           'Content-Type': 'application/json',
         },
       });

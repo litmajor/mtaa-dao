@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowRight, Loader2, ChevronLeft } from 'lucide-react';
+import { ArrowUpRight, LoaderCircle, ChevronDown } from 'lucide-react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiGet, apiPost } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
@@ -32,7 +32,7 @@ export default function CrossChainBridgePage() {
   const { data: chains } = useQuery({
     queryKey: ['cross-chain-chains'],
     queryFn: async () => {
-      const res = await apiGet('/api/cross-chain/chains');
+      const res = await apiGet('/api/v1/yuki/bridge/chains');
       return res.data;
     }
   });
@@ -44,7 +44,7 @@ export default function CrossChainBridgePage() {
       if (!amount || parseFloat(amount) <= 0) return null;
       
       try {
-        const res = await apiPost('/api/cross-chain/estimate-fees', { 
+        const res = await apiPost('/api/v1/yuki/bridge/fees', { 
           sourceChain, 
           destinationChain, 
           amount 
@@ -72,7 +72,7 @@ export default function CrossChainBridgePage() {
       if (!tokenAddress || !tokenAddress.startsWith('0x')) {
         throw new Error('Invalid token address');
       }
-      const res = await apiPost('/api/cross-chain/transfer', {
+      const res = await apiPost('/api/v1/yuki/bridge/transfer', {
         sourceChain,
         destinationChain,
         tokenAddress,
@@ -190,9 +190,8 @@ export default function CrossChainBridgePage() {
               placeholder="0x..."
               value={tokenAddress}
               onChange={(e) => setTokenAddress(e.target.value)}
-              description="The contract address of the token you want to bridge"
             />
-            <p className="text-xs text-gray-500 mt-1">Enter the token contract address on the source chain</p>
+            <p className="text-xs text-gray-500 mt-1">The contract address of the token you want to bridge</p>
           </div>
 
           <div>
@@ -265,7 +264,7 @@ export default function CrossChainBridgePage() {
 
           {/* Submit Button */}
           <Button
-            onClick={() => transferMutation.mutate()}
+            onClick={() => transferMutation.mutate({} as any)}
             disabled={
               !amount || 
               !destinationAddress || 
@@ -278,12 +277,12 @@ export default function CrossChainBridgePage() {
           >
             {transferMutation.isPending ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
                 Initiating Bridge...
               </>
             ) : loadingFees ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
                 Calculating Fees...
               </>
             ) : (

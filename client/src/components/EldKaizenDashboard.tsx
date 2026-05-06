@@ -10,6 +10,7 @@
 import React, { useEffect, useState } from 'react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { AlertCircle, TrendingUp, Users, Zap, Shield, DollarSign } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 
 interface DAOMetrics {
   daoId: string;
@@ -81,15 +82,7 @@ export default function EldKaizenDashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/elders/kaizen/dashboard', {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-
-      if (!response.ok) throw new Error('Failed to fetch dashboard data');
-      const data = await response.json();
+      const data = await authClient.get<DashboardData>('/api/elders/kaizen/dashboard');
       setDashboardData(data);
       setError(null);
     } catch (err) {

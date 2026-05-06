@@ -40,7 +40,7 @@ export function LockedSavingsSection({ userId }: { userId: string }) {
   const { data: lockedSavings = [] } = useQuery<LockedSaving[]>({
     queryKey: ['locked-savings', userId],
     queryFn: async () => {
-      const res = await fetch(`/api/wallet/locked-savings/${userId}`);
+      const res = await fetch(`/api/v1/wallets/savings?userId=${userId}&type=locked`);
       return res.json();
     },
     enabled: !!userId,
@@ -50,7 +50,7 @@ export function LockedSavingsSection({ userId }: { userId: string }) {
   const { data: savingsGoals = [] } = useQuery<SavingsGoal[]>({
     queryKey: ['savings-goals', userId],
     queryFn: async () => {
-      const res = await fetch(`/api/wallet/savings-goals/${userId}`);
+      const res = await fetch(`/api/v1/wallets/savings?userId=${userId}&type=goal`);
       return res.json();
     },
     enabled: !!userId,
@@ -113,7 +113,7 @@ function LockedSavingCard({ saving, userId }: { saving: LockedSaving; userId: st
 
   const withdrawMutation = useMutation({
     mutationFn: async (isEarlyWithdrawal: boolean) => {
-      const res = await fetch(`/api/wallet/locked-savings/withdraw/${saving.id}`, {
+      const res = await fetch(`/api/v1/wallets/savings/${saving.id}/withdraw`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isEarlyWithdrawal }),
@@ -218,7 +218,7 @@ function CreateLockedSavingForm({ userId, onClose }: { userId: string; onClose: 
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      const res = await fetch('/api/wallet/locked-savings/create', {
+      const res = await fetch('/api/v1/wallets/savings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -322,7 +322,7 @@ function CreateSavingsGoalForm({ userId, onClose }: { userId: string; onClose: (
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      const res = await fetch('/api/wallet/savings-goals/create', {
+      const res = await fetch('/api/v1/wallets/savings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),

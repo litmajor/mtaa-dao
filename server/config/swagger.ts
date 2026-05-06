@@ -167,6 +167,10 @@ const swaggerOptions = {
         description: 'Treasury management, allocations, and finances'
       },
       {
+        name: 'Strategies',
+        description: 'Trading strategy CRUD, backtesting, deployment, and social features'
+      },
+      {
         name: 'Analytics',
         description: 'System analytics, metrics, and reporting'
       },
@@ -179,6 +183,7 @@ const swaggerOptions = {
   // Path to route files for JSDoc parsing
   apis: [
     './server/routes/**/*.ts',
+    './server/routes/v1/**/*.ts',
     './server/api/**/*.ts',
     './server/routes/user/**/*.ts',
     './server/routes/admin/**/*.ts'

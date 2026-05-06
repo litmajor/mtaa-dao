@@ -10,27 +10,25 @@ import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'; // Assuming Shadcn has Tooltip or add Radix
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { 
-  ArrowRight, 
-  ArrowLeft, 
+  ArrowDownLeft,
+  ArrowUpRight, 
   CheckCircle, 
   AlertCircle, 
   Info,
   TrendingUp,
   Shield,
   Users,
-  Lock,
   Wallet,
   Settings,
-  Sparkles,
+  Plus,
   DollarSign
 } from 'lucide-react';
 import { useAccount, useBalance } from 'wagmi';
-import { parseEther } from 'viem';
 
 interface VaultFormData {
   name: string;
   description: string;
-  vaultType: 'regular' | 'savings' | 'locked_savings' | 'yield' | 'dao_treasury';
+  vaultType: 'regular' | 'savings' | 'locIUSE ALL IMPORTS AND UPDATE THE WIZARD TO ANDLE BOTH THE DAO/USER VAULT CREATION, DEPENDS WITH CONTEXTked_savings' | 'yield' | 'dao_treasury';
   primaryCurrency: 'CELO' | 'cUSD' | 'cEUR' | 'cREAL' | 'USDT' | 'USDC' | 'VEUR' | 'MTAA';
   yieldStrategy?: string;
   riskLevel: 'low' | 'medium' | 'high';
@@ -62,7 +60,7 @@ const VAULT_TYPES = [
     id: 'locked_savings' as const,
     name: 'Locked Savings',
     description: 'Time-locked vault with bonus rewards',
-    icon: Lock,
+    icon: Shield,
     color: 'purple',
     features: ['Time-locked', 'Bonus rewards', 'Goal-based saving']
   },
@@ -189,7 +187,7 @@ export function VaultCreationWizard({
       setError('Please connect your wallet');
       return;
     }
-    if (balance && balance.value < parseEther('0.01')) { // Example fee check
+    if (balance && balance.value < BigInt('10000000000000000')) { // 0.01 CELO/ETH in wei
       setError('Insufficient balance for gas/fees');
       return;
     }
@@ -199,7 +197,7 @@ export function VaultCreationWizard({
     setShowConfirm(false);
 
     try {
-      const response = await fetch('/api/vaults', {
+      const response = await fetch('/api/v1/wallets/vaults', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -255,7 +253,7 @@ export function VaultCreationWizard({
       <Card className="shadow-xl">
         <CardHeader>
           <CardTitle className="text-2xl flex items-center gap-2">
-            <Sparkles className="w-6 h-6 text-blue-600" />
+            <Plus className="w-6 h-6 text-blue-600" />
             Create Investment Vault (Celo L2 Powered)
           </CardTitle>
           <CardDescription>
@@ -646,7 +644,7 @@ export function VaultCreationWizard({
                   onClick={handleBack}
                   disabled={isSubmitting}
                 >
-                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  <ArrowDownLeft className="w-4 h-4 mr-2" />
                   Back
                 </Button>
               )}
@@ -664,7 +662,7 @@ export function VaultCreationWizard({
               {step < 4 ? (
                 <Button onClick={handleNext}>
                   Next
-                  <ArrowRight className="w-4 h-4 ml-2" />
+                  <ArrowUpRight className="w-4 h-4 ml-2" />
                 </Button>
               ) : (
                 <Dialog open={showConfirm} onOpenChange={setShowConfirm}>

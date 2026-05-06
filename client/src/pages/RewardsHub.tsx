@@ -6,6 +6,7 @@ import { Badge } from '../components/ui/badge';
 import { Progress } from '../components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { useToast } from '../components/ui/use-toast';
+import { authClient } from '@/utils/authClient';
 
 interface Achievement {
   id: string;
@@ -56,25 +57,16 @@ export default function RewardsHub() {
       setLoading(true);
       
       // Fetch achievements
-      const achievementsRes = await fetch('/api/reputation/achievements/user/me');
-      if (achievementsRes.ok) {
-        const achievementsData = await achievementsRes.json();
-        setAchievements(achievementsData.achievements);
-      }
+      const achievementsData = await authClient.get('/api/reputation/achievements/user/me');
+      setAchievements(achievementsData.achievements);
 
       // Fetch airdrops
-      const airdropsRes = await fetch('/api/reputation/airdrops/eligible');
-      if (airdropsRes.ok) {
-        const airdropsData = await airdropsRes.json();
-        setAirdrops(airdropsData.airdrops);
-      }
+      const airdropsData = await authClient.get('/api/reputation/airdrops/eligible');
+      setAirdrops(airdropsData.airdrops);
 
       // Fetch vesting
-      const vestingRes = await fetch('/api/reputation/vesting/overview');
-      if (vestingRes.ok) {
-        const vestingData = await vestingRes.json();
-        setVesting(vestingData);
-      }
+      const vestingData = await authClient.get('/api/reputation/vesting/overview');
+      setVesting(vestingData);
     } catch (error) {
       console.error('Error fetching rewards data:', error);
       toast({
@@ -89,19 +81,13 @@ export default function RewardsHub() {
 
   const claimAchievementReward = async (achievementId: string) => {
     try {
-      const response = await fetch(`/api/reputation/achievements/claim/${achievementId}`, {
-        method: 'POST',
-      });
+      await authClient.post(`/api/reputation/achievements/claim/${achievementId}`, {});
 
-      if (response.ok) {
-        toast({
-          title: "Success",
-          description: "Achievement reward claimed!",
-        });
-        fetchRewardsData();
-      } else {
-        throw new Error('Failed to claim reward');
-      }
+      toast({
+        title: "Success",
+        description: "Achievement reward claimed!",
+      });
+      fetchRewardsData();
     } catch (error) {
       toast({
         title: "Error",
@@ -113,20 +99,13 @@ export default function RewardsHub() {
 
   const claimAirdrop = async (airdropId: string) => {
     try {
-      const response = await fetch(`/api/reputation/airdrops/claim/${airdropId}`, {
-        method: 'POST',
-      });
+      const data = await authClient.post(`/api/reputation/airdrops/claim/${airdropId}`, {});
 
-      if (response.ok) {
-        const data = await response.json();
-        toast({
-          title: "Airdrop Claimed!",
-          description: `Transaction: ${data.transactionHash.slice(0, 10)}...`,
-        });
-        fetchRewardsData();
-      } else {
-        throw new Error('Failed to claim airdrop');
-      }
+      toast({
+        title: "Airdrop Claimed!",
+        description: `Transaction: ${data.transactionHash.slice(0, 10)}...`,
+      });
+      fetchRewardsData();
     } catch (error) {
       toast({
         title: "Error",
@@ -138,20 +117,13 @@ export default function RewardsHub() {
 
   const claimVestedTokens = async (scheduleId: string) => {
     try {
-      const response = await fetch(`/api/reputation/vesting/claim/${scheduleId}`, {
-        method: 'POST',
-      });
+      const data = await authClient.post(`/api/reputation/vesting/claim/${scheduleId}`, {});
 
-      if (response.ok) {
-        const data = await response.json();
-        toast({
-          title: "Tokens Claimed!",
-          description: `Transaction: ${data.transactionHash.slice(0, 10)}...`,
-        });
-        fetchRewardsData();
-      } else {
-        throw new Error('Failed to claim tokens');
-      }
+      toast({
+        title: "Tokens Claimed!",
+        description: `Transaction: ${data.transactionHash.slice(0, 10)}...`,
+      });
+      fetchRewardsData();
     } catch (error) {
       toast({
         title: "Error",

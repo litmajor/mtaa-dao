@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 
 interface DeFiProtocol {
   name: string;
@@ -40,26 +41,14 @@ export default function AdminDeFiMonitoring() {
   const fetchDeFiData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
-      const [protocolsRes, poolsRes] = await Promise.all([
-        fetch('/api/admin/defi/protocols', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/defi/liquidity-pools', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
+      const [protocolsData, poolsData] = await Promise.all([
+        authClient.get('/api/admin/defi/protocols'),
+        authClient.get('/api/admin/defi/liquidity-pools'),
       ]);
 
-      if (protocolsRes.ok) {
-        const data = await protocolsRes.json();
-        setProtocols(data.protocols || []);
-      }
-
-      if (poolsRes.ok) {
-        const data = await poolsRes.json();
-        setPools(data.pools || []);
-      }
+      setProtocols(protocolsData.protocols || []);
+      setPools(poolsData.pools || []);
     } catch (error) {
       console.error('Failed to fetch DeFi data:', error);
     } finally {

@@ -18,6 +18,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { authClient } from '@/utils/authClient';
 import {
   Tabs,
   TabsContent,
@@ -73,19 +74,13 @@ export default function AdminSecuritySettings() {
    */
   const loadTwoFAStatus = async () => {
     try {
-      const response = await fetch('/api/admin/2fa/backup-codes', {
-        credentials: 'include'
+      const data = await authClient.get('/api/admin/2fa/backup-codes');
+      setTwoFAStatus({
+        enabled: true,
+        method: 'totp',
+        backupCodesRemaining: data.data.backupCodesRemaining
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        setTwoFAStatus({
-          enabled: true,
-          method: 'totp',
-          backupCodesRemaining: data.data.backupCodesRemaining
-        });
-        setBackupCodes(data.data);
-      }
+      setBackupCodes(data.data);
     } catch (err) {
       // 2FA not set up yet, which is fine
       console.debug('2FA not yet configured');
@@ -104,15 +99,7 @@ export default function AdminSecuritySettings() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/admin/2fa/backup-codes?showCodes=true', {
-        credentials: 'include'
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to retrieve backup codes');
-      }
-
-      const data = await response.json();
+      const data = await authClient.get('/api/admin/2fa/backup-codes?showCodes=true');
       setBackupCodes(data.data);
       setShowBackupCodes(true);
       setPassword('');
@@ -135,19 +122,7 @@ export default function AdminSecuritySettings() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/admin/2fa/backup-codes/regenerate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ password })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Regeneration failed');
-      }
-
-      const data = await response.json();
+      const data = await authClient.post('/api/admin/2fa/backup-codes/regenerate', { password });
       setBackupCodes(data.data);
       setSuccess('Backup codes regenerated successfully');
       setPassword('');
@@ -175,18 +150,7 @@ export default function AdminSecuritySettings() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/admin/2fa/disable', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ password })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Disable failed');
-      }
-
+      await authClient.post('/api/admin/2fa/disable', { password });
       setTwoFAStatus(null);
       setBackupCodes(null);
       setShowDisable2FA(false);

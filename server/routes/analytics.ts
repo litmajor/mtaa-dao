@@ -6,11 +6,15 @@ import { metricsCollector } from '../monitoring/metricsCollector';
 import { analyticsService } from '../analyticsService';
 import { isAuthenticated } from '../auth';
 import PDFDocument from 'pdfkit';
+import { analyticLimiter, pdfLimiter } from '../middleware/rateLimiter';
+import { requireDAOMembership, requireDAOMembershipFromQuery } from '../middleware/daoMembershipValidator';
 
 const router = express.Router();
 
 // GET /api/analytics/metrics - Real-time metrics
-router.get('/metrics', isAuthenticated, async (req, res) => {
+// ⚠️ RATE LIMITED: Aggregates data across potentially many DAOs
+// ⚠️ AUTHORIZED: If daoId provided, checks DAO membership
+router.get('/metrics', isAuthenticated, requireDAOMembershipFromQuery, analyticLimiter, async (req, res) => {
   try {
     const { daoId } = req.query;
     const metrics = await analyticsService.getRealTimeMetrics(daoId as string);
@@ -30,7 +34,9 @@ router.get('/metrics', isAuthenticated, async (req, res) => {
 });
 
 // GET /api/analytics/historical - Historical data analysis
-router.get('/historical', isAuthenticated, async (req, res) => {
+// ⚠️ RATE LIMITED: Multi-period complex queries
+// ⚠️ AUTHORIZED: If daoId provided, checks DAO membership
+router.get('/historical', isAuthenticated, requireDAOMembershipFromQuery, analyticLimiter, async (req, res) => {
   try {
     const { period = 'month', daoId } = req.query;
     
@@ -81,7 +87,8 @@ router.get('/benchmarks', isAuthenticated, async (req, res) => {
 });
 
 // GET /api/analytics/export/csv - Export data as CSV
-router.get('/export/csv', isAuthenticated, async (req, res) => {
+// ⚠️ RATE LIMITED: Prevents bulk export abuse
+router.get('/export/csv', isAuthenticated, analyticLimiter, async (req, res) => {
   try {
     const { type = 'metrics', period = 'month', daoId } = req.query;
     
@@ -113,9 +120,21 @@ router.get('/export/csv', isAuthenticated, async (req, res) => {
 });
 
 // GET /api/analytics/export/pdf - Export data as PDF report
-router.get('/export/pdf', isAuthenticated, async (req, res) => {
+// 🔴 CRITICAL: Heavy resource consumption (500KB-1MB per PDF)
+// ⚠️ RATE LIMITED: 2 per 10 minutes to prevent disk exhaustion DoS
+// ⚠️ TIMEOUT: 30 second timeout to prevent hanging requests
+router.get('/export/pdf', isAuthenticated, pdfLimiter, async (req, res) => {
   try {
     const { daoId, period = 'month' } = req.query;
+    
+    // Set timeout for PDF generation (30 seconds max)
+    const timeout = setTimeout(() => {
+      res.status(504).json({
+        success: false,
+        message: 'PDF generation timeout. Please try again with a shorter period.'
+      });
+      res.end();
+    }, 30000);
     
     // Get data for PDF
     const [metrics, historical, benchmarks] = await Promise.all([
@@ -123,6 +142,8 @@ router.get('/export/pdf', isAuthenticated, async (req, res) => {
       analyticsService.getHistoricalData(period as any, daoId as string),
       analyticsService.getPerformanceBenchmarks()
     ]);
+    
+    clearTimeout(timeout);
     
     // Create PDF document
     const doc = new PDFDocument();
@@ -187,7 +208,8 @@ router.get('/export/pdf', isAuthenticated, async (req, res) => {
 });
 
 // GET /api/analytics/live - Live metrics with WebSocket support
-router.get('/live', isAuthenticated, async (req, res) => {
+// ⚠️ RATE LIMITED: Prevents connection spam
+router.get('/live', isAuthenticated, analyticLimiter, async (req, res) => {
   try {
     const { daoId } = req.query;
     
@@ -337,7 +359,9 @@ router.get('/system-health', isAuthenticated, async (req, res) => {
 });
 
 // GET /api/analytics/dao/:daoId/summary - DAO-specific analytics summary
-router.get('/dao/:daoId/summary', isAuthenticated, async (req, res) => {
+// ⚠️ RATE LIMITED: Multiple parallel queries
+// ⚠️ AUTHORIZED: Requires DAO membership
+router.get('/dao/:daoId/summary', isAuthenticated, analyticLimiter, requireDAOMembership, async (req, res) => {
   try {
     const { daoId } = req.params;
     const { period = 'month' } = req.query;

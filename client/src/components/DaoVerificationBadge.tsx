@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { authClient } from '@/utils/authClient';
 
 interface VerificationStatus {
   isVerified: boolean;
@@ -29,7 +30,8 @@ export function DaoVerificationBadge({ daoId, onVerify }: DaoVerificationBadgePr
 
   const fetchVerificationStatus = async () => {
     try {
-      const response = await fetch(`/api/dao-abuse-prevention/status/${daoId}`);
+      // V1 endpoint: GET /api/v1/daos/:daoId/abuse/status
+      const response = await fetch(`/api/v1/daos/${daoId}/abuse/status`);
       const data = await response.json();
       if (data.success) {
         setStatus(data.data);
@@ -43,16 +45,7 @@ export function DaoVerificationBadge({ daoId, onVerify }: DaoVerificationBadgePr
 
   const handleVerify = async () => {
     try {
-      const response = await fetch(`/api/dao-abuse-prevention/verify/${daoId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({ verificationType: 'member_invite' })
-      });
-
-      const data = await response.json();
+      const data = await authClient.post(`/api/v1/daos/${daoId}/abuse/verify`, { verificationType: 'member_invite' });
       if (data.success) {
         fetchVerificationStatus();
         onVerify?.();

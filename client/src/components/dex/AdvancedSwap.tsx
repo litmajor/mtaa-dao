@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { AlertCircle, Info, ArrowRight, Loader2, CheckCircle2, XCircle, Zap } from 'lucide-react';
+import { AlertCircle, Info, ArrowUpRight, LoaderCircle, CheckCircle, XCircle, Zap } from 'lucide-react';
 
 export default function AdvancedSwap() {
   const { toast } = useToast();
@@ -20,7 +20,7 @@ export default function AdvancedSwap() {
 
   const { data: dexList = [] } = useQuery({
     queryKey: ['dex-list-advanced'],
-    queryFn: async () => await apiGet('/api/dex/supported'),
+    queryFn: async () => await apiGet('/api/v1/yuki/dex/supported'),
   });
 
   const chains = useMemo(() => {
@@ -33,19 +33,25 @@ export default function AdvancedSwap() {
     return dexList.filter((d: any) => d.chain === selectedChain);
   }, [dexList, selectedChain]);
 
-  const quoteMutation = useMutation(async () => {
-    const body = { fromAsset, toAsset, amountIn: Number(amountIn), preferredDex: preferredDex === 'all' ? undefined : preferredDex, chain: selectedChain };
-    return await apiPost('/api/dex/quote', body);
+  const quoteMutation = useMutation({
+    mutationFn: async () => {
+      const body = { fromAsset, toAsset, amountIn: Number(amountIn), preferredDex: preferredDex === 'all' ? undefined : preferredDex, chain: selectedChain };
+      return await apiPost('/api/v1/yuki/dex/quote', body);
+    }
   });
 
-  const bestRouteMutation = useMutation(async () => {
-    const body = { fromAsset, toAsset, amountIn: Number(amountIn), chain: selectedChain };
-    return await apiPost('/api/dex/best-route', body);
+  const bestRouteMutation = useMutation({
+    mutationFn: async () => {
+      const body = { fromAsset, toAsset, amountIn: Number(amountIn), chain: selectedChain };
+      return await apiPost('/api/v1/yuki/dex/best-route', body);
+    }
   });
 
-  const swapMutation = useMutation(async (dex: string) => {
-    const body = { fromAsset, toAsset, amountIn: Number(amountIn), slippageTolerance: Number(slippage), dex };
-    return await apiPost('/api/dex/swap', body);
+  const swapMutation = useMutation({
+    mutationFn: async (dex: string) => {
+      const body = { fromAsset, toAsset, amountIn: Number(amountIn), slippageTolerance: Number(slippage), dex };
+      return await apiPost('/api/v1/yuki/dex/swap', body);
+    }
   });
 
   const handleQuote = async () => {
@@ -102,9 +108,9 @@ export default function AdvancedSwap() {
 
   const quote = quoteMutation.data;
   const bestRoute = bestRouteMutation.data;
-  const isLoadingQuote = quoteMutation.isLoading;
-  const isLoadingRoute = bestRouteMutation.isLoading;
-  const isExecuting = swapMutation.isLoading;
+  const isLoadingQuote = quoteMutation.isPending;
+  const isLoadingRoute = bestRouteMutation.isPending;
+  const isExecuting = swapMutation.isPending;
 
   return (
     <Card className="bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700">
@@ -266,7 +272,7 @@ export default function AdvancedSwap() {
         {quote && (
           <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg space-y-2">
             <div className="flex items-center gap-2 mb-2">
-              <CheckCircle2 className="h-4 w-4 text-green-600" />
+              <CheckCircle className="h-4 w-4 text-green-600" />
               <p className="font-semibold text-green-900 dark:text-green-100">Quote Details</p>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
@@ -329,7 +335,7 @@ export default function AdvancedSwap() {
                     onClick={() => handleExecute(r.dex || r.preferredDex || (r.dexPath?.[0]))}
                     disabled={isExecuting}
                   >
-                    {isExecuting ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                    {isExecuting ? <Loader className="h-3 w-3 animate-spin mr-1" /> : null}
                     Execute Route {i + 1}
                   </Button>
                 </div>
@@ -345,7 +351,7 @@ export default function AdvancedSwap() {
             disabled={isLoadingQuote || !fromAsset || !toAsset || !amountIn}
             className="flex-1 md:flex-none"
           >
-            {isLoadingQuote ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : '📊'}
+            {isLoadingQuote ? <Loader className="h-4 w-4 animate-spin mr-2" /> : '📊'}
             Get Quote
           </Button>
           <Button 
@@ -354,7 +360,7 @@ export default function AdvancedSwap() {
             disabled={isLoadingRoute || !fromAsset || !toAsset || !amountIn}
             className="flex-1 md:flex-none"
           >
-            {isLoadingRoute ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : '🎯'}
+            {isLoadingRoute ? <Loader className="h-4 w-4 animate-spin mr-2" /> : '🎯'}
             Find Best Route
           </Button>
           <Button 
@@ -362,7 +368,7 @@ export default function AdvancedSwap() {
             disabled={isExecuting || !fromAsset || !toAsset || !amountIn}
             className="flex-1 md:flex-none bg-green-600 hover:bg-green-700"
           >
-            {isExecuting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : '⚡'}
+            {isExecuting ? <Loader className="h-4 w-4 animate-spin mr-2" /> : '⚡'}
             Execute Swap
           </Button>
         </div>

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 import {
   Copy,
   Check,
@@ -75,18 +76,12 @@ export function PaymentRequestPage() {
       setLoading(true);
 
       // Load sent requests
-      const sentRes = await fetch('/api/payment-requests?type=sent');
-      if (sentRes.ok) {
-        const data = await sentRes.json();
-        setSentRequests(data.requests || []);
-      }
+      const sentData = await authClient.get('/api/payment-requests?type=sent');
+      setSentRequests(sentData.requests || []);
 
       // Load received requests
-      const receivedRes = await fetch('/api/payment-requests?type=received');
-      if (receivedRes.ok) {
-        const data = await receivedRes.json();
-        setReceivedRequests(data.requests || []);
-      }
+      const receivedData = await authClient.get('/api/payment-requests?type=received');
+      setReceivedRequests(receivedData.requests || []);
     } catch (error) {
       console.error('Failed to load requests:', error);
     } finally {
@@ -99,11 +94,8 @@ export function PaymentRequestPage() {
    */
   const loadStats = useCallback(async () => {
     try {
-      const res = await fetch('/api/payment-requests/stats/summary');
-      if (res.ok) {
-        const data = await res.json();
-        setStats(data);
-      }
+      const data = await authClient.get('/api/payment-requests/stats/summary');
+      setStats(data);
     } catch (error) {
       console.error('Failed to load stats:', error);
     }
@@ -114,15 +106,11 @@ export function PaymentRequestPage() {
    */
   const handleCancel = useCallback(async (requestId: string) => {
     try {
-      const res = await fetch(`/api/payment-requests/${requestId}/cancel`, {
-        method: 'POST',
-      });
+      await authClient.post(`/api/payment-requests/${requestId}/cancel`, {});
 
-      if (res.ok) {
-        // Reload requests
-        loadRequests();
-        loadStats();
-      }
+      // Reload requests
+      loadRequests();
+      loadStats();
     } catch (error) {
       console.error('Failed to cancel request:', error);
     }

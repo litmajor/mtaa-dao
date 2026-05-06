@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 
 interface TokenMetric {
   timestamp: string;
@@ -47,34 +48,16 @@ export default function AdminTokenomics() {
   const fetchTokenomicsData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
-      const [metricsRes, distRes, holdersRes] = await Promise.all([
-        fetch('/api/admin/tokenomics/metrics', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/tokenomics/distribution', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/tokenomics/holders', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
+      const [metricsData, distData, holdersData] = await Promise.all([
+        authClient.get('/api/admin/tokenomics/metrics'),
+        authClient.get('/api/admin/tokenomics/distribution'),
+        authClient.get('/api/admin/tokenomics/holders'),
       ]);
 
-      if (metricsRes.ok) {
-        const data = await metricsRes.json();
-        setMetrics(data.metrics || []);
-      }
-
-      if (distRes.ok) {
-        const data = await distRes.json();
-        setDistribution(data.distribution || []);
-      }
-
-      if (holdersRes.ok) {
-        const data = await holdersRes.json();
-        setHolders(data.holders || []);
-      }
+      setMetrics(metricsData.metrics || []);
+      setDistribution(distData.distribution || []);
+      setHolders(holdersData.holders || []);
     } catch (error) {
       console.error('Failed to fetch tokenomics data:', error);
     } finally {

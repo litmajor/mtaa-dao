@@ -54,7 +54,7 @@ export function useWalletSession() {
   const connectWallet = useCallback(async (walletId: string, pin: string) => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     try {
-      const response = await fetch('/api/wallet-sessions/connect', {
+      const response = await fetch('/api/v1/wallets/sessions/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -109,7 +109,7 @@ export function useWalletSession() {
     }
 
     try {
-      const response = await fetch('/api/wallet-sessions/verify', {
+      const response = await fetch('/api/v1/wallets/sessions/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionToken }),
@@ -148,7 +148,7 @@ export function useWalletSession() {
     }
 
     try {
-      const response = await fetch('/api/wallet-sessions/extend', {
+      const response = await fetch('/api/v1/wallets/sessions/extend', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -185,7 +185,7 @@ export function useWalletSession() {
     
     try {
       if (sessionToken) {
-        await fetch('/api/wallet-sessions/disconnect', {
+        await fetch('/api/v1/wallets/sessions/disconnect', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -216,7 +216,7 @@ export function useWalletSession() {
   // Disconnect all wallets
   const disconnectAll = useCallback(async () => {
     try {
-      await fetch('/api/wallet-sessions/disconnect-all', {
+      await fetch('/api/v1/wallets/sessions/disconnect-all', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

@@ -5,11 +5,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { AlertTriangle, CheckCircle, TrendingUp, DollarSign, RefreshCw } from 'lucide-react';
+import { CheckCircle, TrendingUp, DollarSign, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {authClient} from '@/utils/authClient';
 
 interface ExchangeStatus {
   exchange: string;
@@ -37,26 +38,14 @@ export default function AdminCeFiMonitoring() {
   const fetchCeFiData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
-      const [exchangesRes, tradingRes] = await Promise.all([
-        fetch('/api/admin/cefi/exchanges', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/cefi/trading-metrics', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
+      const [exchangesData, tradingData] = await Promise.all([
+        authClient.get('/api/admin/cefi/exchanges'),
+        authClient.get('/api/admin/cefi/trading-metrics'),
       ]);
 
-      if (exchangesRes.ok) {
-        const data = await exchangesRes.json();
-        setExchanges(data.exchanges || []);
-      }
-
-      if (tradingRes.ok) {
-        const data = await tradingRes.json();
-        setTradingData(data.metrics || []);
-      }
+      setExchanges(exchangesData.exchanges || []);
+      setTradingData(tradingData.metrics || []);
     } catch (error) {
       console.error('Failed to fetch CeFi data:', error);
     } finally {

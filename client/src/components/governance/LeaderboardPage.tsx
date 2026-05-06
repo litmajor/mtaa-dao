@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Trophy, TrendingUp, Users, Award, Calendar, Flame } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 
 export interface LeaderboardEntry {
   userId: string;
@@ -62,20 +63,10 @@ export function LeaderboardPage({
       setError(null);
 
       try {
-        const response = await fetch(
-          `/api/governance/${daoId}/leaderboard?limit=${limit}&timeframe=${selectedTimeframe}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            },
-          }
+        const data = await authClient.get(
+          `/api/governance/${daoId}/leaderboard?limit=${limit}&timeframe=${selectedTimeframe}`
         );
 
-        if (!response.ok) {
-          throw new Error('Failed to fetch leaderboard');
-        }
-
-        const data = await response.json();
         const entriesWithRank = (data.leaderboard || []).map((entry: any, index: number) => ({
           ...entry,
           rank: index + 1,

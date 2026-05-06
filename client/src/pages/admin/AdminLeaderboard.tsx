@@ -5,11 +5,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter, LineChart, Line } from 'recharts';
-import { Trophy, Medal, Star, Zap, RefreshCw, Filter } from 'lucide-react';
+import { Activity, TrendingUp, AlertCircle, RefreshCw, Filter } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 
 interface LeaderboardMember {
   rank: number;
@@ -48,26 +49,14 @@ export default function AdminLeaderboard() {
   const fetchLeaderboardData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
-      const [membersRes, achievementsRes] = await Promise.all([
-        fetch(`/api/admin/leaderboard/members?type=${filterType}`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/leaderboard/achievements', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
+      const [membersData, achievementsData] = await Promise.all([
+        authClient.get(`/api/admin/leaderboard/members?type=${filterType}`),
+        authClient.get('/api/admin/leaderboard/achievements'),
       ]);
 
-      if (membersRes.ok) {
-        const data = await membersRes.json();
-        setMembers(data.members || []);
-      }
-
-      if (achievementsRes.ok) {
-        const data = await achievementsRes.json();
-        setAchievements(data.achievements || []);
-      }
+      setMembers(membersData.members || []);
+      setAchievements(achievementsData.achievements || []);
     } catch (error) {
       console.error('Failed to fetch leaderboard data:', error);
     } finally {
@@ -192,7 +181,7 @@ export default function AdminLeaderboard() {
                             <p className="text-white font-bold">{member.name}</p>
                             <div className="flex gap-1">
                               {Array.from({ length: member.level }).map((_, i) => (
-                                <Star key={i} className="h-4 w-4 text-yellow-500 fill-yellow-500" />
+                                <Activity key={i} className="h-4 w-4 text-yellow-500 fill-yellow-500" />
                               ))}
                             </div>
                           </div>

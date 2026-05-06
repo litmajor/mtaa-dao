@@ -1,5 +1,6 @@
 
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 import { db } from '../storage';
 import { users } from '../../shared/schema';
 import { eq, or } from 'drizzle-orm';
@@ -150,18 +151,41 @@ export async function authLoginHandler(req: Request, res: Response) {
       role: typeof user.roles === 'string' ? user.roles : 'user',
     });
 
-    // Set refresh token cookie
-    res.cookie('refreshToken', tokens.refreshToken, {
+    // 🔐 Set access token as httpOnly cookie (not in JSON response)
+    // This prevents XSS attacks from stealing tokens via JavaScript
+    res.cookie('access_token', tokens.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 15 * 60 * 1000, // 15 minutes
+      path: '/',
+    });
+
+    // Set refresh token cookie (long-lived)
+    res.cookie('refresh_token', tokens.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: '/',
+    });
+
+    // Set CSRF token cookie (not httpOnly - has to be readable by JS)
+    const csrfToken = crypto.randomBytes(32).toString('hex');
+    res.cookie('csrf_token', csrfToken, {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 15 * 60 * 1000, // 15 minutes
+      path: '/',
     });
 
     // Log successful login for security monitoring
     console.log(`✅ Successful login: ${user.id} (${email || phone}) from IP: ${req.ip}`);
 
     console.log('[LOGIN] Sending response...');
+    // ✅ NO accessToken in JSON response - it's now in httpOnly cookie
+    // Frontend will NOT store anything, will use cookies automatically via credentials: 'include'
     res.json({
       success: true,
       data: {
@@ -177,7 +201,7 @@ export async function authLoginHandler(req: Request, res: Response) {
           isPhoneVerified: user.isPhoneVerified,
           profilePicture: user.profileImageUrl,
         },
-        accessToken: tokens.accessToken,
+        csrfToken,
       },
     });
   } catch (error) {

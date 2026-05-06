@@ -1,82 +1,51 @@
-// Simple API client for server endpoints
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 
-  (import.meta.env.PROD ? window.location.origin : 'http://localhost:5000');
+/**
+ * @deprecated Use authClient from '@/utils/authClient' instead
+ * 
+ * This module is deprecated and maintained only for backward compatibility.
+ * All new code should use authClient instead, which provides:
+ * - Secure httpOnly cookie-based authentication
+ * - Automatic token refresh on 401
+ * - CSRF protection
+ * - Single-flight refresh lock
+ * 
+ * Migration guide: Replace apiGet/apiPost/etc with authClient.get/post/etc
+ */
 
-// Helper to get auth headers
-function getAuthHeaders(): HeadersInit {
-  // Check multiple possible token keys for backward compatibility
-  const token = localStorage.getItem('accessToken') || 
-                localStorage.getItem('token') || 
-                localStorage.getItem('mtaa_dao_auth_token');
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
-  
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  
-  return headers;
-}
+import { authClient } from '@/utils/authClient';
 
 // Generic API request function
 export async function apiRequest(path: string, options?: RequestInit) {
-  const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
-  const headers = {
-    ...getAuthHeaders(),
-    ...(options?.headers || {}),
-  };
+  const method = (options?.method || 'GET') as 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  const body = options?.body ? JSON.parse(options.body as string) : undefined;
   
-  const res = await fetch(url, {
-    credentials: 'include',
-    ...(options || {}),
-    headers,
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  switch (method) {
+    case 'GET':
+      return authClient.get(path);
+    case 'POST':
+      return authClient.post(path, body);
+    case 'PUT':
+      return authClient.put(path, body);
+    case 'PATCH':
+      return authClient.patch(path, body);
+    case 'DELETE':
+      return authClient.delete(path);
+    default:
+      throw new Error(`Unsupported method: ${method}`);
+  }
 }
 
 export async function apiGet<T = any>(path: string): Promise<T> {
-  const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
-  const res = await fetch(url, { 
-    credentials: 'include',
-    headers: getAuthHeaders(),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  return authClient.get<T>(path);
 }
 
 export async function apiPost<T = any>(path: string, body: any): Promise<T> {
-  const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  return authClient.post<T>(path, body);
 }
 
-export async function apiPut(path: string, body: any) {
-  const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
-  const res = await fetch(url, {
-    method: 'PUT',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+export async function apiPut<T = any>(path: string, body: any): Promise<T> {
+  return authClient.put<T>(path, body);
 }
 
-export async function apiDelete(path: string) {
-  const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
-  const res = await fetch(url, {
-    method: 'DELETE',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+export async function apiDelete<T = any>(path: string): Promise<T> {
+  return authClient.delete<T>(path);
 }

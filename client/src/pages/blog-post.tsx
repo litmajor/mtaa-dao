@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar, Clock, User, ArrowLeft, Share2 } from 'lucide-react';
 import { Link } from 'wouter';
+import { authClient } from '@/utils/authClient';
 
 export default function BlogPostPage() {
   const [, params] = useRoute('/blog/:id');
@@ -14,9 +15,7 @@ export default function BlogPostPage() {
   const { data: post, isLoading } = useQuery({
     queryKey: ['blog-post', postId],
     queryFn: async () => {
-      const response = await fetch(`/api/blog/posts/${postId}`);
-      if (!response.ok) throw new Error('Failed to fetch post');
-      return response.json();
+      return authClient.get(`/api/blog/posts/${postId}`);
     },
     enabled: !!postId
   });

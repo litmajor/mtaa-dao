@@ -130,3 +130,55 @@ export async function attachWalletIfExists(
     next();
   }
 }
+
+/**
+ * Middleware: Wallet Ownership Guard
+ * 
+ * Verifies that the :userId parameter in the URL matches the authenticated user's ID.
+ * Prevents users from accessing other users' wallets, vaults, or backup data.
+ * 
+ * Should be applied to routes that access user-specific resources like:
+ * - GET /api/wallet-setup/backup-status/:userId
+ * - GET /api/wallet-setup/user-vaults/:userId
+ */
+export async function walletOwnershipGuard(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const authenticatedUserId = (req.user as any)?.claims?.id || (req.user as any)?.id;
+    const paramUserId = req.params.userId;
+
+    // Check authentication
+    if (!authenticatedUserId) {
+      logger.warn(`Wallet ownership check attempted without authentication from IP: ${req.ip}`);
+      return res.status(401).json({
+        error: 'Authentication required',
+        code: 'NO_AUTH',
+        message: 'Please log in first'
+      });
+    }
+
+    // Verify ownership
+    if (authenticatedUserId !== paramUserId) {
+      logger.warn(
+        `Unauthorized wallet access attempt: user ${authenticatedUserId} tried to access resources for user ${paramUserId} from IP: ${req.ip}`
+      );
+      return res.status(403).json({
+        error: 'Access denied',
+        code: 'OWNERSHIP_MISMATCH',
+        message: 'You do not have permission to access this resource'
+      });
+    }
+
+    next();
+  } catch (error) {
+    logger.error('Error in wallet ownership guard middleware:', error);
+    res.status(500).json({
+      error: 'Ownership check failed',
+      code: 'OWNERSHIP_CHECK_ERROR',
+      message: 'An error occurred while validating resource ownership. Please try again.'
+    });
+  }
+}

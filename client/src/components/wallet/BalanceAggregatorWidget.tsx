@@ -50,10 +50,10 @@ const BalanceAggregatorWidget: React.FC = () => {
   const { data: exchangeRates = {} } = useQuery({
     queryKey: ['exchange-rates'],
     queryFn: async () => {
-      const response = await fetch('/api/wallet/exchange-rates');
+      const response = await fetch('/api/v1/wallets/balance/exchange-rates');
       if (!response.ok) throw new Error('Failed to fetch rates');
       const data = await response.json();
-      return data.rates || {};
+      return data.data?.rates || {};
     },
     staleTime: 30000, // 30 seconds
     retry: 1

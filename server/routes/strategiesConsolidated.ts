@@ -332,51 +332,6 @@ router.delete('/:strategyId', [requireAuth, rateLimitPerUser('strategy-delete', 
 // USER INTERACTIONS - My Strategies & Following
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/**
- * GET /api/strategies/my/created
- * Get user's created strategies
- */
-router.get('/my/created', requireAuth, async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).userId;
-
-    const strategies = await strategyDashboardService.getUserCreatedStrategies(userId);
-
-    res.json({
-      success: true,
-      data: strategies
-    });
-  } catch (error) {
-    logger.error('[Strategies] My created error:', error);
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to fetch created strategies'
-    });
-  }
-});
-
-/**
- * GET /api/strategies/my/followed
- * Get user's followed strategies
- */
-router.get('/my/followed', requireAuth, async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).userId;
-
-    const strategies = await strategyDashboardService.getUserFollowedStrategies(userId);
-
-    res.json({
-      success: true,
-      data: strategies
-    });
-  } catch (error) {
-    logger.error('[Strategies] My followed error:', error);
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to fetch followed strategies'
-    });
-  }
-});
 
 /**
  * POST /api/strategies/:strategyId/follow
@@ -519,6 +474,55 @@ router.post('/:strategyId/backtest', [requireAuth, rateLimitPerUser('strategy-ba
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to queue backtest'
+    });
+  }
+});
+
+/**
+ * GET /api/strategies/:strategyId/backtest-status/:jobId
+ * Poll backtest job status
+ */
+router.get('/:strategyId/backtest-status/:jobId', async (req: Request, res: Response) => {
+  try {
+    const { strategyId, jobId } = req.params;
+
+    const jobStatus = await jobQueueService.getJobResult(jobId);
+
+    if (!jobStatus) {
+      return res.status(404).json({
+        success: false,
+        error: 'Job not found'
+      });
+    }
+
+    // Check job is for requested strategy (security)
+    if (jobStatus.result?.strategyId !== strategyId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Unauthorized: Job does not belong to this strategy'
+      });
+    }
+
+    if (jobStatus.status === 'completed') {
+      return res.json({
+        success: true,
+        status: 'completed',
+        progress: 100,
+        data: jobStatus.result
+      });
+    }
+
+    res.status(202).json({
+      success: true,
+      status: jobStatus.status,
+      progress: jobStatus.progress || 0,
+      message: `Backtest ${jobStatus.status}`
+    });
+  } catch (error) {
+    logger.error('[Strategies] Backtest status error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get backtest status'
     });
   }
 });
@@ -688,43 +692,6 @@ router.get('/search', async (req: Request, res: Response) => {
   }
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// DEPRECATED ENDPOINTS - For backwards compatibility
-// ═══════════════════════════════════════════════════════════════════════════════
 
-const DEPRECATION_DATE = 'Wed, 01 Sep 2026 00:00:00 GMT';
-
-/**
- * @deprecated Use POST /api/strategies instead
- * POST /api/strategies/create
- */
-router.post('/create', addDeprecationHeaders(DEPRECATION_DATE), requireAuth, async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).userId;
-    const { name, description, allocations, rebalanceFrequencyDays = 7, tags = [], riskLevel = 'medium' } = req.body;
-
-    const strategy = await strategyDashboardService.createStrategy({
-      creatorId: userId,
-      name,
-      description,
-      allocations,
-      rebalanceFrequencyDays,
-      tags,
-      riskLevel
-    });
-
-    res.status(201).json({
-      success: true,
-      message: 'Strategy created successfully',
-      data: strategy
-    });
-  } catch (error) {
-    logger.error('[Strategies] Create (deprecated) error:', error);
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to create strategy'
-    });
-  }
-});
 
 export default router;

@@ -35,7 +35,7 @@ export const SessionTimeoutWarning: React.FC<
     const checkExpiry = async () => {
       try {
         const response = await fetch(
-          `/api/sessions/expiry-check?sessionToken=${sessionToken}`,
+          `/api/v1/wallets/sessions/verify?sessionToken=${sessionToken}`,
           {
             headers: {
               'Authorization': `Bearer ${sessionToken}`,
@@ -73,7 +73,7 @@ export const SessionTimeoutWarning: React.FC<
 
     setIsExtending(true);
     try {
-      const response = await fetch('/api/sessions/extend', {
+      const response = await fetch('/api/v1/wallets/sessions/extend', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

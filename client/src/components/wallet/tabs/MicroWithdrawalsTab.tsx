@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 
 interface MicroWithdrawal {
   id: string;
@@ -41,25 +42,17 @@ export default function MicroWithdrawalsTab({ accounts = [] }: MicroWithdrawalsT
   const { data: pendingMicroWithdrawals = [], refetch: refetchPending } = useQuery<MicroWithdrawal[]>({
     queryKey: ['pendingMicroWithdrawals'],
     queryFn: async () => {
-      const response = await fetch('/api/withdrawals/micro/pending', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      });
-      if (!response.ok) throw new Error('Failed to fetch pending micro-withdrawals');
-      const result = await response.json();
+      const result = await authClient.get('/api/v1/wallets/withdrawals/micro/pending');
       return result.data;
     },
-    pollInterval: 10000, // Poll every 10 seconds
+    refetchInterval: 10000, // Poll every 10 seconds
   });
 
   // Fetch completed micro-withdrawals history
   const { data: microWithdrawalHistory = [] } = useQuery<MicroWithdrawal[]>({
     queryKey: ['microWithdrawalHistory'],
     queryFn: async () => {
-      const response = await fetch('/api/withdrawals/user/history?type=micro', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      });
-      if (!response.ok) throw new Error('Failed to fetch micro-withdrawal history');
-      const result = await response.json();
+      const result = await authClient.get('/api/v1/wallets/withdrawals/user/history?type=micro');
       return result.data?.filter((w: any) => w.destination === 'micro_withdrawal') || [];
     },
   });
@@ -71,21 +64,7 @@ export default function MicroWithdrawalsTab({ accounts = [] }: MicroWithdrawalsT
       destinationAddress: string;
       amount: string;
     }) => {
-      const response = await fetch('/api/withdrawals/micro', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify(data),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to create micro-withdrawal');
-      }
-
-      return response.json();
+      return authClient.post('/api/v1/wallets/withdrawals/micro', data);
     },
     onSuccess: () => {
       refetchPending();

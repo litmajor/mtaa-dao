@@ -67,7 +67,7 @@ const useVaults = () => {
   return useQuery<Vault[]>({
     queryKey: ["vaults"],
     queryFn: async () => {
-      const res = await fetch("/api/vault/list");
+      const res = await fetch("/api/v1/wallets/vaults");
       if (!res.ok) throw new Error("Failed to fetch vaults");
       return await res.json();
     },
@@ -119,7 +119,7 @@ const useVaultHistory = (vaultAddress: string | undefined) => {
   return useQuery<any[]>({
     queryKey: ["vault-history", vaultAddress],
     queryFn: async () => {
-      const res = await fetch(`/api/vault/history?address=${vaultAddress}`);
+      const res = await fetch(`/api/v1/wallets/vaults/transactions?address=${vaultAddress}`);
       if (!res.ok) throw new Error("History fetch failed");
       return await res.json();
     },

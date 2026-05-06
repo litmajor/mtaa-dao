@@ -3,11 +3,12 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, TrendingUp, TrendingDown, Wallet, PieChart, Plus, ArrowUpRight, Crown, AlertTriangle, RefreshCw, Lock, Users, Zap } from 'lucide-react';
+import { LoaderCircle, TrendingUp, TrendingDown, Wallet, PieChart, Plus, ArrowUpRight, Crown, AlertTriangle, RefreshCw, Lock, Users, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { useWallet } from './hooks/useWallet';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { authClient } from '@/utils/authClient';
 
 interface InvestmentPool {
   id: string;
@@ -35,17 +36,14 @@ export default function InvestmentPools() {
   const [showWalletConnect, setShowWalletConnect] = useState(false);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['/api/investment-pools', { chainId, userAddress: address }],
+    queryKey: ['/api/v1/daos/*/investment-pools', { chainId, userAddress: address }],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (chainId) params.append('chainId', chainId.toString());
       if (address) params.append('userAddress', address);
       
-      const res = await fetch(`/api/investment-pools?${params.toString()}`, {
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to fetch pools');
-      return res.json();
+      // TODO: Create V1 root-level pool listing endpoint or aggregate from accessible DAOs
+      return authClient.get(`/api/v1/daos/*/investment-pools?${params.toString()}`);
     },
     enabled: isConnected, // Only fetch when wallet is connected
   });

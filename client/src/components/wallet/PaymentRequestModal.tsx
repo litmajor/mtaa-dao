@@ -57,7 +57,7 @@ export default function PaymentRequestModal({ isOpen, onClose, userAddress }: Pa
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + parseInt(expiryHours));
 
-      const response = await fetch('/api/wallet/payment-requests', {
+      const response = await fetch('/api/v1/wallets/payments/requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -83,7 +83,7 @@ export default function PaymentRequestModal({ isOpen, onClose, userAddress }: Pa
 
       // Send email if recipient provided
       if (recipientEmail) {
-        await fetch('/api/wallet/payment-requests/send-email', {
+        await fetch('/api/v1/wallets/payments/requests/send-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ requestId: data.id })

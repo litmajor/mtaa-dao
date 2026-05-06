@@ -72,11 +72,7 @@ export function CoordinatorDashboard() {
 
   // Initialize WebSocket connection
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) return;
-
     const newSocket = io(window.location.origin, {
-      auth: { token },
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,

@@ -47,7 +47,7 @@ export function rateLimiter(options: RateLimitOptions) {
         });
       }
 
-      await redis.increment(key);
+      await redis.incr(key);
       res.setHeader('X-RateLimit-Limit', max.toString());
       res.setHeader('X-RateLimit-Remaining', (max - count - 1).toString());
       
@@ -99,5 +99,74 @@ export const apiRateLimiter = rateLimiter({
   windowMs: 60 * 1000, // 1 minute
   max: 100, // 100 requests per minute per IP
   message: 'Too many API requests. Please slow down.',
+});
+
+// Heavy compute endpoints - Analyzer
+// 🔴 CRITICAL: Reduced from 5/min to 1/min to prevent LLM token exhaustion ($0.10-0.30 per call)
+export const analyzerLimiter = rateLimiter({
+  windowMs: 60 * 1000, // 1 minute
+  max: 1, // 1 analysis request per minute per user (prevent token exhaustion and cost abuse)
+  message: 'Too many analysis requests. Complex AI analysis is rate-limited. Please try again in 1 minute.',
+  keyGenerator: (req) => {
+    // Rate limit per user, not IP (authenticated endpoint)
+    return `analyzer:${(req as any).user?.id || req.ip}`;
+  },
+});
+
+// Analytics and reporting endpoints
+export const analyticLimiter = rateLimiter({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10, // 10 analytics queries per minute
+  message: 'Too many analytics requests. Please slow down.',
+  keyGenerator: (req) => `analytics:${(req as any).user?.id || req.ip}`,
+});
+
+// PDF export (heavy resource consumption)
+// 🔴 CRITICAL: Reduced from 2/10min to 1/hour to prevent disk exhaustion DOS
+export const pdfLimiter = rateLimiter({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 1, // 1 PDF export per hour per user (prevent disk exhaustion)
+  message: 'Too many PDF export requests. PDF generation is resource-intensive. Please try again in 1 hour.',
+  keyGenerator: (req) => `pdf:${(req as any).user?.id || req.ip}`,
+});
+
+// Trading execution endpoints (financial operations)
+export const yukiSwapLimiter = rateLimiter({
+  windowMs: 60 * 1000, // 1 minute
+  max: 20, // 20 swaps per minute per user
+  message: 'Too many swap requests. Please slow down.',
+  keyGenerator: (req) => `yuki_swap:${(req as any).user?.id || req.ip}`,
+});
+
+// Cross-chain bridge operations (critical operations)
+export const yukiBridgeLimiter = rateLimiter({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10, // 10 bridges per minute
+  message: 'Too many bridge requests. Cross-chain operations are rate-limited. Please try again later.',
+  keyGenerator: (req) => `yuki_bridge:${(req as any).user?.id || req.ip}`,
+});
+
+// Flash loan execution (very high risk)
+export const yukiFlashLoanLimiter = rateLimiter({
+  windowMs: 60 * 1000, // 1 minute
+  max: 5, // 5 flash loans per minute per user
+  message: 'Too many flash loan requests. High-risk operations are rate-limited.',
+  keyGenerator: (req) => `yuki_flashloan:${(req as any).user?.id || req.ip}`,
+});
+
+// Strategy backtesting (heavy ML compute)
+export const yukiBacktestLimiter = rateLimiter({
+  windowMs: 60 * 1000, // 1 minute
+  max: 3, // 3 backtest jobs per minute (prevent ML model training abuse)
+  message: 'Too many backtest requests. Model training is computationally expensive. Please try again in 1 minute.',
+  keyGenerator: (req) => `yuki_backtest:${(req as any).user?.id || req.ip}`,
+});
+
+// Agent operations
+export const agentLimiter = rateLimiter({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10, // 10 agent operations per minute
+  message: 'Too many agent requests. Please slow down.',
+  keyGenerator: (req) => `agent:${(req as any).user?.id || req.ip}`,
 });
 

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Mail, Lock, AlertCircle, UserPlus, Loader, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { authClient } from '@/utils/authClient';
 
 export default function AdminRegisterPage() {
   const navigate = useNavigate();
@@ -64,19 +65,11 @@ export default function AdminRegisterPage() {
       }
 
       // Call admin register endpoint
-      const response = await fetch('/api/admin/auth/superuser-register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email,
-          password,
-          name,
-        }),
+      const data = await authClient.post('/api/admin/auth/superuser-register', {
+        email,
+        password,
+        name,
       });
-
-      const data = await response.json();
 
       if (!response.ok) {
         setError(data.message || 'Registration failed. Please try again.');

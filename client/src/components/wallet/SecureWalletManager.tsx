@@ -45,21 +45,13 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
 
     setLoading(true);
     try {
-      // Get auth token from localStorage
-      const token = localStorage.getItem('accessToken');
-      if (!token) {
-        toast({ title: 'Error', description: 'Not authenticated. Please log in.', variant: 'destructive' });
-        setLoading(false);
-        return;
-      }
-
       console.log('Creating wallet with:', { wordCount, useEncryption });
 
-      const response = await fetch('/api/wallet-setup/create-wallet-mnemonic', {
+      const response = await fetch('/api/v1/wallets/setup/create-mnemonic', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          ...(await authClient.getAuthHeaders())
         },
         body: JSON.stringify({ 
           password: useEncryption ? password : '', 
@@ -108,7 +100,7 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
 
     setLoading(true);
     try {
-      const response = await fetch('/api/wallet-setup/recover-wallet', {
+      const response = await fetch('/api/v1/wallets/setup/recover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, mnemonic: mnemonic.trim(), password })
@@ -142,7 +134,7 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
 
     setLoading(true);
     try {
-      const response = await fetch('/api/wallet-setup/import-private-key', {
+      const response = await fetch('/api/v1/wallets/setup/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, privateKey: privateKey.trim(), password })
@@ -170,12 +162,11 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
 
   const confirmBackup = async () => {
     try {
-      const token = localStorage.getItem('accessToken');
-      await fetch('/api/wallet-setup/backup-confirmed', {
+      await fetch('/api/v1/wallets/setup/backup-confirm', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          ...(await authClient.getAuthHeaders())
         },
         body: JSON.stringify({ userId })
       });

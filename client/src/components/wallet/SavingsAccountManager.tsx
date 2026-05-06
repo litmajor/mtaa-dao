@@ -39,7 +39,7 @@ export function SavingsAccountManager() {
   const { data: savingsData, isLoading } = useQuery({
     queryKey: ['savings'],
     queryFn: async () => {
-      const res = await fetch('/api/wallet/savings', { credentials: 'include' });
+      const res = await fetch('/api/v1/wallets/savings', { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch savings');
       return res.json();
     }
@@ -47,7 +47,7 @@ export function SavingsAccountManager() {
 
   const createSavingsMutation = useMutation({
     mutationFn: async (data: { amount: string; lockPeriodDays: number }) => {
-      const res = await fetch('/api/wallet/savings/create', {
+      const res = await fetch('/api/v1/wallets/savings/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -65,7 +65,7 @@ export function SavingsAccountManager() {
 
   const withdrawMutation = useMutation({
     mutationFn: async ({ savingsId, force }: { savingsId: string; force: boolean }) => {
-      const res = await fetch(`/api/wallet/savings/withdraw/${savingsId}`, {
+      const res = await fetch(`/api/v1/wallets/savings/${savingsId}/withdraw`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

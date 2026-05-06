@@ -103,10 +103,9 @@ export default function SuperUserDashboard() {
       setLoading(true);
       setError('');
       try {
-        const token = localStorage.getItem('accessToken');
         const res = await fetch('/api/admin/analytics', {
           headers: {
-            'Authorization': `Bearer ${token}`,
+            ...(await authClient.getAuthHeaders()),
             'Content-Type': 'application/json',
           },
           credentials: 'include',

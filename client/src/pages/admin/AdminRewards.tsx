@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 
 interface RewardMetric {
   week: string;
@@ -50,34 +51,16 @@ export default function AdminRewards() {
   const fetchRewardData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
-      const [metricsRes, tiersRes, userRes] = await Promise.all([
-        fetch('/api/admin/rewards/metrics', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/rewards/tiers', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/rewards/users', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
+      const [metricsData, tiersData, userData] = await Promise.all([
+        authClient.get('/api/admin/rewards/metrics'),
+        authClient.get('/api/admin/rewards/tiers'),
+        authClient.get('/api/admin/rewards/users'),
       ]);
 
-      if (metricsRes.ok) {
-        const data = await metricsRes.json();
-        setMetrics(data.metrics || []);
-      }
-
-      if (tiersRes.ok) {
-        const data = await tiersRes.json();
-        setTiers(data.tiers || []);
-      }
-
-      if (userRes.ok) {
-        const data = await userRes.json();
-        setUserRewards(data.users || []);
-      }
+      setMetrics(metricsData.metrics || []);
+      setTiers(tiersData.tiers || []);
+      setUserRewards(userData.users || []);
     } catch (error) {
       console.error('Failed to fetch reward data:', error);
     } finally {

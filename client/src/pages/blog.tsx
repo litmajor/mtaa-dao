@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Calendar, Clock, User, ArrowRight, Search, TrendingUp, BookOpen, MessageCircle } from 'lucide-react';
 import { Link } from 'wouter';
 import { useState } from 'react';
+import { authClient } from '@/utils/authClient';
 
 interface BlogPost {
   id: string;
@@ -28,9 +29,7 @@ export default function BlogPage() {
   const { data: posts, isLoading } = useQuery<BlogPost[]>({
     queryKey: ['blog-posts'],
     queryFn: async () => {
-      const response = await fetch('/api/blog/posts');
-      if (!response.ok) throw new Error('Failed to fetch posts');
-      return response.json();
+      return authClient.get('/api/blog/posts');
     }
   });
 

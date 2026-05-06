@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { BarChart2, AlertTriangle, Download, Calendar, TrendingUp, TrendingDown, DollarSign, Loader2 } from "lucide-react"
+import { BarChart2, AlertTriangle, Download, Calendar, TrendingUp, TrendingDown, DollarSign, LoaderCircle } from "lucide-react"
+import { authClient } from '@/utils/authClient'
 
 interface Transaction {
   id: string;
@@ -23,9 +24,8 @@ export default function VaultAnalyticsDashboard() {
 
   // Fetch real transaction data
   const { data: transactionsData, isLoading, error } = useQuery<{ transactions: Transaction[]; count: number }>({
-    queryKey: ["/api/vault/transactions", currency, dateRange],
+    queryKey: ["/api/v1/wallets/vaults/transactions", currency, dateRange],
     queryFn: async () => {
-      const token = localStorage.getItem('accessToken');
       const params = new URLSearchParams({
         currency: currency.toLowerCase(),
         startDate: dateRange.startDate.toISOString(),
@@ -33,19 +33,7 @@ export default function VaultAnalyticsDashboard() {
         limit: '100',
       });
       
-      const response = await fetch(`/api/vault/transactions?${params}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        throw new Error("Failed to fetch transactions");
-      }
-      
-      return response.json();
+      return authClient.get(`/api/v1/wallets/vaults/transactions?${params}`);
     },
     staleTime: 1 * 60 * 1000, // 1 minute
   });

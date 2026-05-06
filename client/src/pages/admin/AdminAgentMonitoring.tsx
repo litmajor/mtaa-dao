@@ -1,3 +1,4 @@
+/* eslint-disable jsx-a11y/no-static-element-interactions */
 /**
  * Admin - Agent Monitoring
  * Track AI agents, task execution, performance, and resource usage
@@ -5,11 +6,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ScatterChart, Scatter } from 'recharts';
-import { Bot, Activity, Zap, AlertTriangle, CheckCircle, RefreshCw, TrendingUp } from 'lucide-react';
+import { Bot, Activity, Zap, TriangleAlert, CheckCircle, RefreshCw, TrendingUp } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 
 interface Agent {
   id: string;
@@ -56,37 +58,20 @@ export default function AdminAgentMonitoring() {
   const fetchAgentData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
-      const [agentsRes, logsRes, perfRes] = await Promise.all([
-        fetch('/api/admin/agents', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/agents/task-logs', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/agents/performance', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
+      const [agentsData, logsData, perfData] = await Promise.all([
+        authClient.get('/api/admin/agents'),
+        authClient.get('/api/admin/agents/task-logs'),
+        authClient.get('/api/admin/agents/performance'),
       ]);
 
-      if (agentsRes.ok) {
-        const data = await agentsRes.json();
-        setAgents(data.agents || []);
-        if (!selectedAgent && data.agents.length > 0) {
-          setSelectedAgent(data.agents[0].id);
-        }
+      setAgents(agentsData.agents || []);
+      if (!selectedAgent && agentsData.agents.length > 0) {
+        setSelectedAgent(agentsData.agents[0].id);
       }
 
-      if (logsRes.ok) {
-        const data = await logsRes.json();
-        setTaskLogs(data.logs || []);
-      }
-
-      if (perfRes.ok) {
-        const data = await perfRes.json();
-        setPerformance(data.metrics || []);
-      }
+      setTaskLogs(logsData.logs || []);
+      setPerformance(perfData.metrics || []);
     } catch (error) {
       console.error('Failed to fetch agent data:', error);
     } finally {

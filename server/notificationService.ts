@@ -5,6 +5,7 @@ import { db } from './db';
 import { notifications } from '../shared/schema';
 import type { InferSelectModel } from 'drizzle-orm';
 import { storage } from './storage';
+import { getEventEmitter } from './middleware/websocket-event-emitter';
 
 interface PaymentNotification {
   type: 'payment_pending' | 'payment_success' | 'payment_failed' | 'payment_retry';
@@ -181,6 +182,24 @@ class NotificationService extends EventEmitter {
         ...dbNotification,
         userId: notification.userId
       });
+
+      // Emit WebSocket event for real-time dashboard updates
+      try {
+        const wsEmitter = getEventEmitter();
+        wsEmitter.emitAlert(
+          notification.type,
+          notification.priority as any || 'medium',
+          notification.message,
+          notification.userId,
+          {
+            notificationId: dbNotification.id,
+            title: notification.title,
+            metadata: notification.metadata,
+          }
+        );
+      } catch (wsError) {
+        console.warn('Failed to emit WebSocket notification event:', wsError);
+      }
 
       console.log(`Notification created for user ${notification.userId}: ${notification.type}`);
       return dbNotification;

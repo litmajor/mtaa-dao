@@ -11,6 +11,7 @@ import { MorioChat } from '@/components/morio/MorioChat';
 import { useAuth } from '@/pages/hooks/useAuth';
 import { useMutation } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
+import { authClient } from '@/utils/authClient';
 
 export default function SupportPage() {
   const { user } = useAuth();
@@ -27,13 +28,7 @@ export default function SupportPage() {
 
   const submitTicket = useMutation({
     mutationFn: async (data: typeof formData) => {
-      const response = await fetch('/api/support/tickets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-      if (!response.ok) throw new Error('Failed to submit ticket');
-      return response.json();
+      return authClient.post('/api/support/tickets', data);
     },
     onSuccess: () => {
       toast({

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { authClient } from '@/utils/authClient';
 
 interface ActivityLog {
   id: string;
@@ -37,15 +38,7 @@ export const SessionActivityLog: React.FC = () => {
     const fetchActivityLog = async () => {
       try {
         setLoading(true);
-        const response = await fetch('/api/sessions/activity-log?limit=50', {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          },
-        });
-
-        if (!response.ok) throw new Error('Failed to fetch activity log');
-
-        const data = await response.json();
+        const data = await authClient.get('/api/sessions/activity-log?limit=50');
         setLogs(data.data);
         setError(null);
       } catch (err) {

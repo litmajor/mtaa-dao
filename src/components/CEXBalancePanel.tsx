@@ -6,6 +6,7 @@
 
 import React, { useState, useEffect } from 'react';
 import './CEXBalancePanel.css';
+import authClient from '@/services/authClient';
 
 interface BalanceItem {
   exchange: string;
@@ -41,20 +42,10 @@ export const CEXBalancePanel: React.FC<CEXBalancePanelProps> = ({
       setLoading(true);
       setError(null);
 
-      const response = await fetch(
-        `/api/exchanges/balances?exchanges=${exchanges.join(',')}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          },
-        }
+      const data = await authClient.get(
+        `/api/exchanges/balances?exchanges=${exchanges.join(',')}`
       );
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
       setBalances(data.balances || []);
       setTotalValue(data.total_value || 0);
       setLoading(false);
