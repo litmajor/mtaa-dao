@@ -8,7 +8,8 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { Settings, Globe, Zap, Shield, DollarSign, Loader2, Save, RefreshCw } from 'lucide-react';
+import { Settings, Globe, Zap, Shield, DollarSign, LoaderCircle, Save, RefreshCw } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 
 export default function SystemSettings() {
   const { toast } = useToast();
@@ -18,17 +19,7 @@ export default function SystemSettings() {
   const { data: settings, isLoading } = useQuery({
     queryKey: ['/api/admin/settings'],
     queryFn: async () => {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch('/api/admin/settings', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-
-      if (!res.ok) throw new Error('Failed to fetch settings');
-      return res.json();
+      return authClient.get('/api/admin/settings');
     },
     staleTime: 5 * 60 * 1000,
   });
@@ -36,19 +27,7 @@ export default function SystemSettings() {
   // Update settings mutation
   const updateMutation = useMutation({
     mutationFn: async (data: { section: string; key: string; value: any }) => {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch('/api/admin/settings', {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-        credentials: 'include',
-      });
-
-      if (!res.ok) throw new Error('Failed to update settings');
-      return res.json();
+      return authClient.put('/api/admin/settings', data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/settings'] });

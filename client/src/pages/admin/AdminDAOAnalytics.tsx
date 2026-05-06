@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 
 interface DAOSegment {
   name: string;
@@ -42,42 +43,18 @@ export default function AdminDAOAnalytics() {
   const fetchDAOAnalytics = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
-      const [typeRes, regionRes, causeRes, metricsRes] = await Promise.all([
-        fetch('/api/admin/daos/analytics/by-type', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch(`/api/admin/daos/analytics/by-region?region=${filterRegion}`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/daos/analytics/by-cause', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/daos/analytics/metrics', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
+      const [typeData, regionData, causeData, metricsData] = await Promise.all([
+        authClient.get('/api/admin/daos/analytics/by-type'),
+        authClient.get(`/api/admin/daos/analytics/by-region?region=${filterRegion}`),
+        authClient.get('/api/admin/daos/analytics/by-cause'),
+        authClient.get('/api/admin/daos/analytics/metrics'),
       ]);
 
-      if (typeRes.ok) {
-        const data = await typeRes.json();
-        setByType(data.segments || []);
-      }
-
-      if (regionRes.ok) {
-        const data = await regionRes.json();
-        setByRegion(data.segments || []);
-      }
-
-      if (causeRes.ok) {
-        const data = await causeRes.json();
-        setByCause(data.segments || []);
-      }
-
-      if (metricsRes.ok) {
-        const data = await metricsRes.json();
-        setMetrics(data.metrics || []);
-      }
+      setByType(typeData.segments || []);
+      setByRegion(regionData.segments || []);
+      setByCause(causeData.segments || []);
+      setMetrics(metricsData.metrics || []);
     } catch (error) {
       console.error('Failed to fetch DAO analytics:', error);
     } finally {
@@ -254,7 +231,7 @@ export default function AdminDAOAnalytics() {
                         <span className="text-blue-400 font-bold">{region.count}</span>
                       </div>
                       <div className="w-full bg-slate-600 rounded-full h-2">
-                        <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${(region.count / Math.max(...byRegion.map(r => r.count))) * 100}%` }} />
+                        <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${(region.count / Math.max(...byRegion.map(r => r.count))) * 100}%` }} suppressHydrationWarning />
                       </div>
                       <p className="text-slate-400 text-xs mt-1">
                         {(region.members / 1000).toFixed(1)}K members • {region.growth > 0 ? '+' : ''}{region.growth.toFixed(1)}% growth

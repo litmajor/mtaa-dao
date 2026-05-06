@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Shield, Plus, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Shield, Plus, Trash2, AlertCircle } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 
 interface Rule {
   id: string;
@@ -91,13 +92,7 @@ export function CustomRules({ daoId, isAdmin }: CustomRulesProps) {
   const fetchRules = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/dao/${daoId}/rules`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
-
-      if (!response.ok) throw new Error('Failed to fetch rules');
-
-      const data = await response.json();
+      const data = await authClient.get(`/api/dao/${daoId}/rules`);
       setRules(data);
       setError(null);
     } catch (err) {
@@ -109,23 +104,13 @@ export function CustomRules({ daoId, isAdmin }: CustomRulesProps) {
 
   const handleCreateRule = async (template?: any) => {
     try {
-      const response = await fetch(`/api/dao/${daoId}/rules`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          name: newRuleName || template?.name,
-          ruleType: newRuleType || template?.type,
-          conditions: template?.conditions || [],
-          actions: template?.actions || []
-        })
+      const newRule = await authClient.post(`/api/dao/${daoId}/rules`, {
+        name: newRuleName || template?.name,
+        ruleType: newRuleType || template?.type,
+        conditions: template?.conditions || [],
+        actions: template?.actions || []
       });
 
-      if (!response.ok) throw new Error('Failed to create rule');
-
-      const newRule = await response.json();
       setRules([...rules, newRule]);
       setNewRuleName('');
       setShowBuilder(false);
@@ -139,13 +124,7 @@ export function CustomRules({ daoId, isAdmin }: CustomRulesProps) {
     if (!confirm('Are you sure you want to delete this rule?')) return;
 
     try {
-      const response = await fetch(`/api/dao/${daoId}/rules/${ruleId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
-
-      if (!response.ok) throw new Error('Failed to delete rule');
-
+      await authClient.delete(`/api/dao/${daoId}/rules/${ruleId}`);
       setRules(rules.filter(r => r.id !== ruleId));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete rule');
@@ -154,16 +133,9 @@ export function CustomRules({ daoId, isAdmin }: CustomRulesProps) {
 
   const handleToggleRule = async (ruleId: string, enabled: boolean) => {
     try {
-      const response = await fetch(`/api/dao/${daoId}/rules/${ruleId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({ enabled: !enabled })
+      await authClient.put(`/api/dao/${daoId}/rules/${ruleId}`, {
+        enabled: !enabled
       });
-
-      if (!response.ok) throw new Error('Failed to update rule');
 
       setRules(
         rules.map(r =>
@@ -346,7 +318,7 @@ export function CustomRules({ daoId, isAdmin }: CustomRulesProps) {
                           onClick={() => handleToggleRule(rule.id, rule.enabled)}
                           className="text-green-600"
                         >
-                          <ToggleRight className="w-5 h-5" />
+                          <AlertCircle className="w-5 h-5" />
                         </Button>
                         <Button
                           size="sm"
@@ -393,7 +365,7 @@ export function CustomRules({ daoId, isAdmin }: CustomRulesProps) {
                           onClick={() => handleToggleRule(rule.id, rule.enabled)}
                           className="text-gray-400"
                         >
-                          <ToggleLeft className="w-5 h-5" />
+                          <AlertCircle className="w-5 h-5" />
                         </Button>
                         <Button
                           size="sm"

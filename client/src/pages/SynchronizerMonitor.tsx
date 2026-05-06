@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Activity, Database, GitBranch, RefreshCw } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 
 export default function SynchronizerMonitor() {
   const { data: status, refetch } = useQuery({
@@ -27,11 +28,7 @@ export default function SynchronizerMonitor() {
 
   const handleResolveDrift = async () => {
     try {
-      const res = await fetch('/api/synchronizer/resolve-drift', {
-        method: 'POST',
-        credentials: 'include'
-      });
-      const result = await res.json();
+      const result = await authClient.post('/api/synchronizer/resolve-drift', {});
       if (result.success) {
         refetch();
       }

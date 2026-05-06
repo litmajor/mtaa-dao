@@ -97,7 +97,7 @@ export function useVaultBalance(userAddress: string, vaultAddress: string) {
       if (!shares || !assets) return null;
 
       // Get USD value from API
-      const response = await fetch(`/api/vault/balance-usd?shares=${shares}&vault=${vaultAddress}`);
+      const response = await fetch(`/api/v1/wallets/vaults/balance-usd?shares=${shares}&vault=${vaultAddress}`);
       const { valueUSD } = await response.json();
 
       return {
@@ -173,7 +173,7 @@ export function useVaultDeposit() {
       vaultAddress: string;
     }) => {
       // Call backend API to handle deposit
-      const response = await fetch("/api/vault/deposit", {
+      const response = await fetch("/api/v1/wallets/vaults/deposit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount, currency, vaultAddress }),
@@ -207,7 +207,7 @@ export function useVaultWithdraw() {
       currency: string; 
       destination: string;
     }) => {
-      const response = await fetch("/api/vault/withdraw", {
+      const response = await fetch("/api/v1/wallets/vaults/withdraw", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount, currency, destination }),
@@ -236,7 +236,7 @@ export function useVaultPerformance(vaultAddress: string, period: "24h" | "7d" |
   return useQuery({
     queryKey: ["vaultPerformance", vaultAddress, period],
     queryFn: async () => {
-      const response = await fetch(`/api/vault/performance?vault=${vaultAddress}&period=${period}`);
+      const response = await fetch(`/api/v1/wallets/vaults/performance?vault=${vaultAddress}&period=${period}`);
       return response.json();
     },
     enabled: !!vaultAddress,
@@ -249,7 +249,7 @@ export function useVaultTransactions(vaultAddress: string, page: number = 1) {
   return useQuery({
     queryKey: ["vaultTransactions", vaultAddress, page],
     queryFn: async () => {
-      const response = await fetch(`/api/vault/transactions?vault=${vaultAddress}&page=${page}`);
+      const response = await fetch(`/api/v1/wallets/vaults/transactions?vault=${vaultAddress}&page=${page}`);
       return response.json();
     },
     enabled: !!vaultAddress,

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Trophy, Star, Medal, Crown, Gem, Loader2, AlertTriangle } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { authClient } from "@/utils/authClient";
 
 interface LeaderboardEntry {
   userId: string;
@@ -47,16 +48,7 @@ export default function ReputationLeaderboard() {
   const fetchLeaderboard = async () => {
     try {
       setError(null);
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch('/api/reputation/leaderboard?limit=10', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      if (!response.ok) throw new Error('Failed to fetch leaderboard');
-      const data = await response.json();
+      const data = await authClient.get<{ leaderboard: LeaderboardEntry[] }>('/api/reputation/leaderboard?limit=10');
       setLeaderboard(data.leaderboard || []);
     } catch (error) {
       console.error('Error fetching leaderboard:', error);
@@ -68,18 +60,8 @@ export default function ReputationLeaderboard() {
 
   const fetchUserReputation = async () => {
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch('/api/reputation/user/me', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setUserReputation(data);
-      }
+      const data = await authClient.get<any>('/api/reputation/user/me');
+      setUserReputation(data);
     } catch (error) {
       console.error('Error fetching user reputation:', error);
     }

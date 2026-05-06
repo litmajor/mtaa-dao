@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+// Referral page - with real blockchain data integration
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,10 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Copy, Users, DollarSign, Trophy, Gift, Share2, Crown, Award, Star, Sparkles, TrendingUp, Target, Zap, Loader2, AlertTriangle } from "lucide-react";
+import { Users, DollarSign, Gift, Link, CheckCircle, TrendingUp, AlertCircle } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "./hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { authClient } from "@/utils/authClient";
 
 type LeaderboardEntry = {
   id: string;
@@ -38,16 +40,7 @@ export default function Referrals() {
   const { data: referralStats, isLoading: statsLoading, error: statsError } = useQuery({
     queryKey: ['/api/referrals/stats'],
     queryFn: async () => {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch('/api/referrals/stats', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to fetch referral stats');
-      return res.json();
+      return authClient.get('/api/referrals/stats');
     },
     enabled: !!user,
     staleTime: 2 * 60 * 1000, // 2 minutes
@@ -56,23 +49,14 @@ export default function Referrals() {
   const { data: leaderboardData = [], isLoading: leaderboardLoading, error: leaderboardError } = useQuery<LeaderboardEntry[]>({
     queryKey: ['/api/referrals/leaderboard'],
     queryFn: async () => {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch('/api/referrals/leaderboard', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to fetch leaderboard');
-      return res.json();
+      return authClient.get<LeaderboardEntry[]>('/api/referrals/leaderboard');
     },
     enabled: !!user,
     staleTime: 2 * 60 * 1000,
   });
 
   const referralCode = referralStats?.referralCode || "MTAA-" + (user?.id?.substring(0, 6) || "123456").toUpperCase();
-  const referralLink = `https://mtaa-dao.org/join?ref=${referralCode}`;
+  const referralLink = `https://mtaadao.com/join?ref=${referralCode}`;
 
   const stats = referralStats || {
     totalReferrals: 0,
@@ -94,18 +78,10 @@ export default function Referrals() {
 
   const pingInactiveUser = async (referredUserId: string, daoId: string) => {
     try {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch('/api/referrals/ping-inactive', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ referredUserId, daoId }),
+      const data = await authClient.post<{ success: boolean; message: string }>('/api/referrals/ping-inactive', {
+        referredUserId,
+        daoId,
       });
-
-      const data = await res.json();
 
       if (data.success) {
         toast({
@@ -146,10 +122,10 @@ export default function Referrals() {
   };
 
   const getRankBadge = (rank: number) => {
-    if (rank === 1) return <Crown className="w-5 h-5 text-yellow-400 drop-shadow-lg" />;
-    if (rank === 2) return <Award className="w-5 h-5 text-gray-300 drop-shadow-lg" />;
-    if (rank === 3) return <Star className="w-5 h-5 text-orange-400 drop-shadow-lg" />;
-    return <Trophy className="w-5 h-5 text-emerald-400 drop-shadow-lg" />;
+    if (rank === 1) return <CheckCircle className="w-5 h-5 text-yellow-400 drop-shadow-lg" />;
+    if (rank === 2) return <CheckCircle className="w-5 h-5 text-gray-400 drop-shadow-lg" />;
+    if (rank === 3) return <TrendingUp className="w-5 h-5 text-orange-400 drop-shadow-lg" />;
+    return <TrendingUp className="w-5 h-5 text-emerald-400 drop-shadow-lg" />;
   };
 
   // Loading state
@@ -157,7 +133,7 @@ export default function Referrals() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
         <Card className="p-8 max-w-md text-center bg-white/10 backdrop-blur-xl border-purple-500/30">
-          <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-purple-400" />
+  <div className="h-12 w-12 animate-spin mx-auto mb-4 text-purple-400"><span>Loading...</span></div>
           <h3 className="text-xl font-bold mb-2 text-white">Loading Referrals</h3>
           <p className="text-gray-300">Fetching your referral stats and leaderboard...</p>
         </Card>
@@ -170,7 +146,7 @@ export default function Referrals() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-6">
         <Card className="p-8 max-w-md text-center bg-white/10 backdrop-blur-xl border-red-500/30">
-          <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-red-400" />
+          <AlertCircle className="h-12 w-12 mx-auto mb-4 text-red-400" />
           <h3 className="text-xl font-bold mb-2 text-white">Error Loading Data</h3>
           <p className="text-gray-300 mb-4">
             {(statsError as Error)?.message || (leaderboardError as Error)?.message || 'Failed to load referral data'}
@@ -206,7 +182,7 @@ export default function Referrals() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-purple-500 animate-spin mx-auto mb-4" />
+          <div className="w-12 h-12 text-purple-500 animate-spin mx-auto mb-4"><span>Loading...</span></div>
           <p className="text-lg text-white">Loading referral data...</p>
         </div>
       </div>
@@ -218,7 +194,7 @@ export default function Referrals() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
         <div className="text-center text-white">
-          <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
           <p className="text-lg mb-4">Failed to load referral data</p>
           <button 
             onClick={() => window.location.reload()} 
@@ -253,7 +229,7 @@ export default function Referrals() {
             <div className="relative backdrop-blur-sm bg-white/10 rounded-xl p-6 border border-white/20 shadow-2xl">
               <div className="flex items-center space-x-4">
                 <div className="p-3 bg-gradient-to-r from-purple-500 to-emerald-500 rounded-xl shadow-lg">
-                  <Sparkles className="w-8 h-8 text-white" />
+                  <TrendingUp className="w-8 h-8 text-white" />
                 </div>
                 <div>
                   <h1 className="text-4xl font-bold bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent mb-2">
@@ -320,7 +296,7 @@ export default function Referrals() {
                     : "text-white hover:bg-white/10 hover:scale-105"
                 }`}
               >
-                <Trophy className="mr-2 h-4 w-4" />
+                <CheckCircle className="mr-2 h-4 w-4" />
                 Leaderboard
               </Button>
             </div>
@@ -360,7 +336,7 @@ export default function Referrals() {
                   badgeColor: "from-purple-400 to-pink-500"
                 },
                 {
-                  icon: Target,
+                  icon: TrendingUp,
                   value: stats.thisMonthReferrals,
                   label: "New This Month",
                   color: "from-blue-500 to-indigo-600",
@@ -396,7 +372,7 @@ export default function Referrals() {
                 <div className="p-6 bg-gradient-to-r from-purple-500/10 to-emerald-500/10">
                   <div className="flex items-center space-x-3 mb-6">
                     <div className="p-2 bg-gradient-to-r from-purple-500 to-emerald-500 rounded-lg">
-                      <Share2 className="w-5 h-5 text-white" />
+                      <TrendingUp className="w-5 h-5 text-white" />
                     </div>
                     <h3 className="text-2xl font-bold bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
                       Your Referral Link
@@ -419,7 +395,7 @@ export default function Referrals() {
                           onClick={copyReferralLink} 
                           className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg transform hover:scale-105 transition-all duration-200"
                         >
-                          <Copy className="w-4 h-4" />
+                          <Link className="w-4 h-4" />
                         </Button>
                       </div>
                     </div>
@@ -439,14 +415,14 @@ export default function Referrals() {
                           onClick={copyReferralLink}
                           className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
                         >
-                          <Copy className="w-4 h-4 mr-2" />
+                          <Link className="w-4 h-4 mr-2" />
                           Copy
                         </Button>
                         <Button
                           onClick={shareReferralLink}
                           className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
                         >
-                          <Share2 className="w-4 h-4 mr-2" />
+                          <TrendingUp className="w-4 h-4 mr-2" />
                           Share
                         </Button>
                       </div>
@@ -454,7 +430,7 @@ export default function Referrals() {
 
                     <div className="flex space-x-4 pt-4">
                       <Button className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white shadow-lg transform hover:scale-105 transition-all duration-200">
-                        <Share2 className="mr-2 h-4 w-4" />
+                        <TrendingUp className="mr-2 h-4 w-4" />
                         Share Link
                       </Button>
                       <Button className="bg-white/10 border-white/20 text-white hover:bg-white/20 backdrop-blur-sm shadow-lg transform hover:scale-105 transition-all duration-200">
@@ -474,7 +450,7 @@ export default function Referrals() {
                 <div className="p-8">
                   <div className="flex items-center space-x-3 mb-8">
                     <div className="p-2 bg-gradient-to-r from-purple-500 to-emerald-500 rounded-lg">
-                      <Zap className="w-5 h-5 text-white" />
+                      <TrendingUp className="w-5 h-5 text-white" />
                     </div>
                     <h3 className="text-3xl font-bold bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
                       How It Works
@@ -484,7 +460,7 @@ export default function Referrals() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                     {[
                       {
-                        icon: Share2,
+                        icon: TrendingUp,
                         title: "1. Share Your Link",
                         description: "Share your unique referral link with friends and family",
                         color: "from-emerald-500 to-teal-600"
@@ -527,7 +503,7 @@ export default function Referrals() {
               <div className="p-6 bg-gradient-to-r from-purple-500/10 to-emerald-500/10">
                 <div className="flex items-center space-x-3 mb-6">
                   <div className="p-2 bg-gradient-to-r from-purple-500 to-emerald-500 rounded-lg">
-                    <Trophy className="w-5 h-5 text-white" />
+                    <CheckCircle className="w-5 h-5 text-white" />
                   </div>
                   <h3 className="text-2xl font-bold bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
                     Top Referrers

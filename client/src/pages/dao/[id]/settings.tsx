@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 import { Settings, Activity, Users, Shield, DollarSign, TrendingUp, AlertCircle, Wallet } from 'lucide-react';
 import TreasuryManagement from '@/components/TreasuryManagement';
 import styles from './settings.module.css';
@@ -87,22 +88,14 @@ export default function DAOSettingsPage() {
 
   const checkAdminStatus = async () => {
     try {
-      const response = await fetch(`/api/dao/${daoId}/admin-check`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
+      const data = await authClient.get(`/api/dao/${daoId}/admin-check`);
+      if (data) {
         setIsAdmin(true);
         setUserRole(data.role || 'admin');
       } else {
         // Check if user has elder role
-        const roleResponse = await fetch(`/api/dao/${daoId}/user-role`, {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-        });
-        if (roleResponse.ok) {
-          const roleData = await roleResponse.json();
-          setUserRole(roleData.role || 'member');
-        }
+        const roleData = await authClient.get(`/api/dao/${daoId}/user-role`);
+        setUserRole(roleData.role || 'member');
       }
     } catch (err) {
       console.error('Admin check failed:', err);
@@ -112,13 +105,8 @@ export default function DAOSettingsPage() {
   const fetchSettings = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/dao/${daoId}/settings`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
+      const data = await authClient.get(`/api/dao/${daoId}/settings`);
 
-      if (!response.ok) throw new Error('Failed to fetch settings');
-
-      const data: DaoSettingsResponse = await response.json();
       setSettings(data.settings);
       setUsageData(data.usage);
       setError(null);
@@ -134,16 +122,7 @@ export default function DAOSettingsPage() {
 
     try {
       setSaving(true);
-      const response = await fetch(`/api/dao/${daoId}/settings`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify(settings)
-      });
-
-      if (!response.ok) throw new Error('Failed to save settings');
+      await authClient.put(`/api/dao/${daoId}/settings`, settings);
 
       setSuccess('Settings saved successfully!');
       setTimeout(() => setSuccess(null), 3000);

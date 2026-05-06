@@ -78,9 +78,9 @@ const EnhancedWalletPage = () => {
     async function fetchWalletData() {
       try {
         // Native balance
-        const balanceData = await apiGet('/api/wallet/balance');
+        const balanceData = await apiGet('/api/v1/wallets/balance');
         // Portfolio (tokens)
-        const portfolioData = await apiPost('/api/wallet/portfolio', { tokenAddresses: [] });
+        const portfolioData = await apiPost('/api/v1/wallets/balance/portfolio', { tokenAddresses: [] });
         // Compose vaults array for UI
         const vaultsArr = [
           {
@@ -127,7 +127,7 @@ const EnhancedWalletPage = () => {
     setActionLoading(true);
     setActionError('');
     try {
-      await apiPost('/api/wallet/send-native', { toAddress: sendTo, amount: sendAmount });
+      await apiPost('/api/v1/wallets/transfers/send-native', { toAddress: sendTo, amount: sendAmount });
       setSendAmount('');
       setSendTo('');
     } catch (e: any) {
@@ -141,8 +141,8 @@ const EnhancedWalletPage = () => {
     setActionLoading(true);
     setActionError('');
     try {
-      // For demo, treat deposit as send-native (or use /api/wallet/send-native)
-      await apiPost('/api/wallet/send-native', { toAddress: sendTo, amount: depositAmount });
+      // For demo, treat deposit as send-native (or use /api/v1/wallets/transfers/send-native)
+      await apiPost('/api/v1/wallets/transfers/send-native', { toAddress: sendTo, amount: depositAmount });
       setDepositAmount('');
       setPaymentOpen(false);
     } catch (e: any) {
@@ -153,8 +153,8 @@ const EnhancedWalletPage = () => {
   async function handleWithdraw() {
     setActionLoading(true); setActionError('');
     try {
-      // For demo, treat withdraw as send-native (or use /api/wallet/send-native)
-      await apiPost('/api/wallet/send-native', { toAddress: sendTo, amount: withdrawAmount });
+      // For demo, treat withdraw as send-native (or use /api/v1/wallets/transfers/send-native)
+      await apiPost('/api/v1/wallets/transfers/send-native', { toAddress: sendTo, amount: withdrawAmount });
       setWithdrawAmount(''); setWithdrawOpen(false);
     } catch (e: any) {
       setActionError(e.message);

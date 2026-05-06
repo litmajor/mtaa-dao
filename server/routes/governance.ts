@@ -12,12 +12,22 @@ import {
 } from '../../shared/schema';
 import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
 import { isAuthenticated } from '../nextAuthMiddleware';
+import { createRateLimiter } from '../middleware/rateLimiting';
 import { evaluateGovernanceRules, formatRuleRejectionMessage, logRuleEvaluation } from '../services/rules-integration';
 import { logConsolidatedAuditEvent, AuditEventType } from '../services/auditConsolidated';
 import { proposalSimulationService } from '../services/proposalSimulationService';
 import { sanitizeObject } from '../middleware/security';
+import { governanceLeaderboardService } from '../services/governanceLeaderboardService';
+import { logger } from '../utils/logger';
 
 const router = express.Router();
+
+// 🔴 CRITICAL: Rate limiter for proposal execution (critical governance operation)
+const proposalExecutionLimiter = createRateLimiter({
+  windowMs: 60 * 1000, // 1 minute
+  maxRequests: 5, // Max 5 executions per minute per user
+  keyGenerator: (req) => `gov:execute:${(req as any).user?.id || req.ip}`,
+});
 
 // Calculate dynamic quorum for a DAO
 router.get('/quorum', isAuthenticated, async (req, res) => {
@@ -66,7 +76,8 @@ router.get('/quorum', isAuthenticated, async (req, res) => {
 });
 
 // Execute passed proposals with quorum enforcement
-router.post('/proposals/:proposalId/execute', isAuthenticated, async (req, res) => {
+// 🔴 CRITICAL: Rate limited - proposal execution is critical governance operation
+router.post('/proposals/:proposalId/execute', isAuthenticated, proposalExecutionLimiter, async (req, res) => {
   try {
     const { proposalId } = req.params;
     const userId = (req.user as any).claims.sub;
@@ -430,7 +441,7 @@ router.post('/proposals/:proposalId/cancel', isAuthenticated, async (req, res) =
       // Log the cancellation
       await logConsolidatedAuditEvent({
         actorId: userId,
-        actorType: 'superuser',
+        actorType: 'super_admin',
         actionType: AuditEventType.PROPOSAL_CANCELLED,
         actionCategory: 'governance',
         targetType: 'proposal',
@@ -843,5 +854,312 @@ router.post('/proposals/:proposalId/check-quorum', isAuthenticated, async (req, 
     });
   }
 });
+
+// ════════════════════════════════════════════════════════════════════════════════
+// PHASE 2: GOVERNANCE LEADERBOARDS (DUAL-SCOPE: SYSTEM-WIDE + DAO-SPECIFIC)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// ████████████████████████████████████████████████████████████████████████████████
+// SYSTEM-WIDE LEADERBOARDS (No daoId - Global metrics)
+// ████████████████████████████████████████████████████████████████████████████████
+
+/**
+ * GET /api/v1/governance/leaderboard/referrals
+ * Global referral leaderboard - ranks users by total referrals across platform
+ */
+router.get('/leaderboard/referrals', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 1000);
+    const offset = parseInt(req.query.offset as string) || 0;
+
+    const result = await governanceLeaderboardService.getSystemRefferalLeaderboard(limit, offset);
+
+    res.json({
+      success: true,
+      type: 'system-referral-leaderboard',
+      data: result,
+      pagination: { limit, offset, total: result.totalParticipants },
+    });
+  } catch (error) {
+    logger.error('Error fetching system referral leaderboard:', error);
+    res.status(500).json({ error: 'Failed to fetch referral leaderboard' });
+  }
+});
+
+/**
+ * GET /api/v1/governance/leaderboard/contributors
+ * Global contributors leaderboard - ranks users by total contribution amount
+ */
+router.get('/leaderboard/contributors', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 1000);
+    const offset = parseInt(req.query.offset as string) || 0;
+
+    const result = await governanceLeaderboardService.getSystemContributorsLeaderboard(limit, offset);
+
+    res.json({
+      success: true,
+      type: 'system-contributors-leaderboard',
+      data: result,
+      pagination: { limit, offset, total: result.totalParticipants },
+    });
+  } catch (error) {
+    logger.error('Error fetching system contributors leaderboard:', error);
+    res.status(500).json({ error: 'Failed to fetch contributors leaderboard' });
+  }
+});
+
+/**
+ * GET /api/v1/governance/leaderboard/consolidated
+ * Global consolidated governance statistics
+ */
+router.get('/leaderboard/consolidated', async (req, res) => {
+  try {
+    const stats = await governanceLeaderboardService.getSystemConsolidatedStats();
+
+    res.json({
+      success: true,
+      type: 'system-consolidated-stats',
+      data: stats,
+    });
+  } catch (error) {
+    logger.error('Error fetching system consolidated stats:', error);
+    res.status(500).json({ error: 'Failed to fetch consolidated stats' });
+  }
+});
+
+/**
+ * GET /api/v1/governance/leaderboard
+ * Main system leaderboard endpoint (returns top referrers and contributors)
+ */
+router.get('/leaderboard', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
+
+    const [referrals, contributors, stats] = await Promise.all([
+      governanceLeaderboardService.getSystemRefferalLeaderboard(limit, 0),
+      governanceLeaderboardService.getSystemContributorsLeaderboard(limit, 0),
+      governanceLeaderboardService.getSystemConsolidatedStats(),
+    ]);
+
+    res.json({
+      success: true,
+      type: 'system-leaderboard',
+      data: {
+        referrals: referrals.leaderboard,
+        contributors: contributors.leaderboard,
+        stats,
+      },
+    });
+  } catch (error) {
+    logger.error('Error fetching system leaderboard:', error);
+    res.status(500).json({ error: 'Failed to fetch leaderboard' });
+  }
+});
+
+/**
+ * GET /api/v1/governance/stats
+ * Overall governance metrics (system-wide)
+ */
+router.get('/stats', async (req, res) => {
+  try {
+    const stats = await governanceLeaderboardService.getSystemConsolidatedStats();
+
+    res.json({
+      success: true,
+      type: 'governance-stats',
+      data: stats,
+    });
+  } catch (error) {
+    logger.error('Error fetching governance stats:', error);
+    res.status(500).json({ error: 'Failed to fetch governance stats' });
+  }
+});
+
+/**
+ * GET /api/v1/governance/me/referral-rank
+ * Get current authenticated user's referral rank (system-wide)
+ */
+router.get('/me/referral-rank', isAuthenticated, async (req: any, res) => {
+  try {
+    const userId = req.user?.id || req.user?.claims?.sub;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const rank = await governanceLeaderboardService.getUserReferralRank(userId);
+
+    res.json({
+      success: true,
+      type: 'user-referral-rank',
+      data: rank,
+    });
+  } catch (error) {
+    logger.error('Error fetching user referral rank:', error);
+    res.status(500).json({ error: 'Failed to fetch user rank' });
+  }
+});
+
+// ████████████████████████████████████████████████████████████████████████████████
+// DAO-SPECIFIC LEADERBOARDS (With daoId - Per-DAO metrics)
+// ████████████████████████████████████████████████████████████████████████████████
+
+/**
+ * GET /api/v1/daos/:daoId/governance/leaderboard
+ * Main DAO leaderboard - returns top contributors and voters
+ */
+router.get('/daos/:daoId/governance/leaderboard', isAuthenticated, async (req: any, res) => {
+  try {
+    const { daoId } = req.params;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
+
+    const [activity, contributions] = await Promise.all([
+      governanceLeaderboardService.getDAOActivityLeaderboard(daoId, limit, 0),
+      governanceLeaderboardService.getDAOContributionsLeaderboard(daoId, limit, 0),
+    ]);
+
+    res.json({
+      success: true,
+      type: 'dao-leaderboard',
+      daoId,
+      data: {
+        activity: activity.leaderboard,
+        contributions: contributions.leaderboard,
+      },
+    });
+  } catch (error) {
+    logger.error(`Error fetching DAO ${req.params.daoId} leaderboard:`, error);
+    res.status(500).json({ error: 'Failed to fetch DAO leaderboard' });
+  }
+});
+
+/**
+ * GET /api/v1/daos/:daoId/governance/leaderboard/activity
+ * DAO activity leaderboard - ranks members by contributions, proposals, and votes
+ */
+router.get('/daos/:daoId/governance/leaderboard/activity', isAuthenticated, async (req: any, res) => {
+  try {
+    const { daoId } = req.params;
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 1000);
+    const offset = parseInt(req.query.offset as string) || 0;
+
+    const result = await governanceLeaderboardService.getDAOActivityLeaderboard(daoId, limit, offset);
+
+    res.json({
+      success: true,
+      type: 'dao-activity-leaderboard',
+      daoId,
+      data: result,
+      pagination: { limit, offset, total: result.totalParticipants },
+    });
+  } catch (error) {
+    logger.error(`Error fetching DAO ${req.params.daoId} activity leaderboard:`, error);
+    res.status(500).json({ error: 'Failed to fetch activity leaderboard' });
+  }
+});
+
+/**
+ * GET /api/v1/daos/:daoId/governance/leaderboard/contributions
+ * DAO contributions leaderboard - ranks members by total contributions
+ */
+router.get('/daos/:daoId/governance/leaderboard/contributions', isAuthenticated, async (req: any, res) => {
+  try {
+    const { daoId } = req.params;
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 1000);
+    const offset = parseInt(req.query.offset as string) || 0;
+
+    const result = await governanceLeaderboardService.getDAOContributionsLeaderboard(daoId, limit, offset);
+
+    res.json({
+      success: true,
+      type: 'dao-contributions-leaderboard',
+      daoId,
+      data: result,
+      pagination: { limit, offset, total: result.totalParticipants },
+    });
+  } catch (error) {
+    logger.error(`Error fetching DAO ${req.params.daoId} contributions leaderboard:`, error);
+    res.status(500).json({ error: 'Failed to fetch contributions leaderboard' });
+  }
+});
+
+/**
+ * GET /api/v1/daos/:daoId/governance/leaderboard/voting
+ * DAO voting leaderboard - ranks members by voting participation
+ */
+router.get('/daos/:daoId/governance/leaderboard/voting', isAuthenticated, async (req: any, res) => {
+  try {
+    const { daoId } = req.params;
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 1000);
+    const offset = parseInt(req.query.offset as string) || 0;
+
+    const result = await governanceLeaderboardService.getDAOVotingLeaderboard(daoId, limit, offset);
+
+    res.json({
+      success: true,
+      type: 'dao-voting-leaderboard',
+      daoId,
+      data: result,
+      pagination: { limit, offset, total: result.totalParticipants },
+    });
+  } catch (error) {
+    logger.error(`Error fetching DAO ${req.params.daoId} voting leaderboard:`, error);
+    res.status(500).json({ error: 'Failed to fetch voting leaderboard' });
+  }
+});
+
+/**
+ * GET /api/v1/daos/:daoId/governance/stats
+ * DAO consolidated governance statistics
+ */
+router.get('/daos/:daoId/governance/stats', isAuthenticated, async (req: any, res) => {
+  try {
+    const { daoId } = req.params;
+
+    const stats = await governanceLeaderboardService.getDAOConsolidatedStats(daoId);
+
+    res.json({
+      success: true,
+      type: 'dao-governance-stats',
+      daoId,
+      data: stats,
+    });
+  } catch (error) {
+    logger.error(`Error fetching DAO ${req.params.daoId} stats:`, error);
+    res.status(500).json({ error: 'Failed to fetch DAO stats' });
+  }
+});
+
+/**
+ * GET /api/v1/daos/:daoId/governance/me/rank
+ * Get current authenticated user's rank in DAO activity leaderboard
+ */
+router.get('/daos/:daoId/governance/me/rank', isAuthenticated, async (req: any, res) => {
+  try {
+    const { daoId } = req.params;
+    const userId = req.user?.id || req.user?.claims?.sub;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const rank = await governanceLeaderboardService.getUserDAOActivityRank(userId, daoId);
+
+    res.json({
+      success: true,
+      type: 'user-dao-activity-rank',
+      daoId,
+      data: rank,
+    });
+  } catch (error) {
+    logger.error(`Error fetching user DAO ${req.params.daoId} activity rank:`, error);
+    res.status(500).json({ error: 'Failed to fetch user rank' });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// END PHASE 2: GOVERNANCE LEADERBOARDS
+// ════════════════════════════════════════════════════════════════════════════════
 
 export default router;

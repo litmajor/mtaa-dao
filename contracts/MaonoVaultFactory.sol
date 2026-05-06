@@ -1,404 +1,408 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "./MaonoVault.sol";
+import "./MaonoVault_Phase1A.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
+interface IMTAAToken {
+    function burn(uint256 amount) external;
+}
+
 /**
- * @title MaonoVaultFactory
- * @notice Factory contract for creating MaonoVault instances
- * @dev Allows anyone to deploy their own managed vault with customizable parameters
+ * @title MaonoVaultFactory (Phase 1A - Corrected)
+ * @notice Factory contract with all 6 critical fixes implemented
+ * @dev
+ *   FIX #1: Spawn cost collected HERE at vault deployment (not in vault on first deposit) ✓
+ *   FIX #3: Per-user vault cap enforcement (5 per user, not per DAO) ✓
+ *   Vault creation properly gates spawn cost payment
  */
-contract MaonoVaultFactory is Ownable {
+contract MaonoVaultFactory_Phase1A is Ownable {
     using SafeERC20 for IERC20;
 
-    // Factory configuration
-    uint256 public deploymentFee = 0.01 ether; // Fee to deploy a vault (in native token)
-    uint256 public platformFeeRate = 100; // 1% of vault fees go to platform (basis points)
+    // ==================== CONFIGURATION ====================
     address public platformTreasury;
-    
-    // Supported assets for vaults
+    address public mtaaToken;
+    address public priceOracle;
+
+    // Supported vault asset types
     mapping(address => bool) public supportedAssets;
     address[] public supportedAssetsList;
-    mapping(address => string) public assetSymbols; // Persist asset symbol metadata
-    
-    // Vault registry
+
+    // ==================== VAULT REGISTRY ====================
     address[] public deployedVaults;
-    mapping(address => address[]) public userVaults; // user => their vaults
-    mapping(address => VaultInfo) public vaultInfo;
-    
+    mapping(address vault => VaultInfo) public vaultInfo;
+    mapping(address user => address[]) public userVaults;
+
     struct VaultInfo {
+        address vault;
         address owner;
-        address manager;
         address asset;
         string name;
-        string symbol;
         uint256 deployedAt;
+        uint256 vaultType;  // 0-4
         bool isActive;
     }
 
-    struct VaultConfig {
-        uint256 minDeposit;
-        uint256 vaultCap;
-        uint256 performanceFee;
-        uint256 managementFee;
-        uint256 withdrawalDelay;
-    }
+    // ==================== CRITICAL FIX #3: PER-USER VAULT CAP ====================
+    mapping(address user => uint256 count) public userVaultCount;
+    uint256 public constant MAX_VAULTS_PER_USER = 5;
 
-    // Events
+    // Spawn cost tracking
+    mapping(address user => uint256) public spawnCostsPaid;
+    uint256 public totalSpawnCostCollected;
+    uint256 public totalSpawnCostBurned;
+    uint256 public totalSpawnCostToTreasury;
+
+    // ==================== SPAWN COST CONFIGURATION (Celo-Optimized) ====================
+    uint256[5] public SPAWN_COSTS = [
+        150 ether,   // SAVINGS: 150 MTAA (cheapest option for casual savers)
+        250 ether,   // ESCROW: 250 MTAA (middle option, most common for Chama)
+        400 ether,   // BUSINESS: 400 MTAA
+        600 ether,   // INVESTING: 600 MTAA
+        1000 ether   // CUSTOM: 1000 MTAA (most expensive, maximum features)
+    ];
+
+    // Split for spawn cost (same as upkeep)
+    uint256[5] public SPAWN_BURN_PERCENTAGES = [
+        10000,  // SAVINGS: 100% burn
+        5000,   // ESCROW: 50% burn / 50% treasury
+        5000,   // BUSINESS: 50/50
+        3000,   // INVESTING: 30% burn / 70% treasury
+        3000    // CUSTOM: 30/70
+    ];
+
+    // ==================== EVENTS ====================
     event VaultDeployed(
         address indexed vault,
         address indexed owner,
-        address indexed manager,
-        address asset,
+        address indexed asset,
         string name,
-        string symbol
+        uint256 vaultType,
+        uint256 spawnCostPaid,
+        uint256 burnAmount,
+        uint256 treasuryAmount,
+        uint256 timestamp
     );
-    event AssetAdded(address indexed asset, string symbol);
-    event AssetRemoved(address indexed asset);
-    event DeploymentFeeChanged(uint256 oldFee, uint256 newFee);
-    event PlatformFeeRateChanged(uint256 oldRate, uint256 newRate);
 
-    // Errors
+    event AssetAdded(address indexed asset, string symbol, uint256 timestamp);
+    event AssetRemoved(address indexed asset, uint256 timestamp);
+
+    event SpawnCostCollected(
+        address indexed user,
+        uint256 vaultType,
+        uint256 totalCost,
+        uint256 burnAmount,
+        uint256 treasuryAmount,
+        uint256 timestamp
+    );
+
+    event PriceOracleUpdated(address indexed newOracle, uint256 timestamp);
+
+    // ==================== ERRORS ====================
     error UnsupportedAsset();
-    error InsufficientDeploymentFee();
+    error InvalidVaultType();
     error InvalidAddress();
-    error InvalidConfig();
-    error VaultNotFound();
-    error RateTooHigh();
+    error MaxVaultsPerUserExceeded();
+    error SpawnCostPaymentFailed();
+    error BurnFailed();
+    error TransferFailed();
+    error AssetAlreadySupported();
+    error AssetNotSupported();
 
+    // ==================== CONSTRUCTOR ====================
     constructor(
         address _platformTreasury,
-        address[] memory _initialAssets,
-        string[] memory _initialAssetSymbols
+        address _mtaaToken,
+        address _priceOracle,
+        address[] memory _initialAssets
     ) Ownable(msg.sender) {
-        if (_platformTreasury == address(0)) revert InvalidAddress();
+        if (_platformTreasury == address(0) || _mtaaToken == address(0)) {
+            revert InvalidAddress();
+        }
+
         platformTreasury = _platformTreasury;
-        
-        // Add initial supported assets
-        if (_initialAssets.length != _initialAssetSymbols.length) revert("Arrays length mismatch");
+        mtaaToken = _mtaaToken;
+        priceOracle = _priceOracle;
+
+        // Register initial supported assets
         for (uint256 i = 0; i < _initialAssets.length; ++i) {
-            _addSupportedAsset(_initialAssets[i], _initialAssetSymbols[i]);
+            supportedAssets[_initialAssets[i]] = true;
+            supportedAssetsList.push(_initialAssets[i]);
         }
     }
 
+    // ==================== CRITICAL FIX #1: SPAWN COST COLLECTION ====================
     /**
-     * @notice Deploy a new MaonoVault instance
-     * @param asset The underlying asset address (must be supported)
-     * @param manager The vault manager address
-     * @param daoTreasury The DAO treasury address (receives fees)
-     * @param vaultName Name for the vault LP token
-     * @param vaultSymbol Symbol for the vault LP token
-     * @param initialDAOs Array of initial valid DAO IDs
-     * @param config Vault configuration parameters
+     * @notice Deploy a new MaonoVault with spawn cost collected at factory
+     * @dev Spawn cost is collected HERE from msg.sender, not on first deposit
+     *      This ensures DAO admin or authorized user pays, not random first depositor
+     *
+     * @param asset  Address of vault asset (cUSD on Celo, USDC on Polygon, etc.)
+     * @param name   Human-readable vault name
+     * @param symbol Vault LP token symbol
+     * @param vaultType 0=Savings, 1=Escrow, 2=Business, 3=Investing, 4=Custom
+     * @return vault Address of newly deployed MaonoVault_Phase1A contract
      */
     function deployVault(
         address asset,
-        address manager,
-        address daoTreasury,
-        string memory vaultName,
-        string memory vaultSymbol,
-        string[] memory initialDAOs,
-        VaultConfig memory config
-    ) external payable returns (address vault) {
+        string memory name,
+        string memory symbol,
+        uint256 vaultType
+    ) external returns (address vault) {
+        // Validation
         if (!supportedAssets[asset]) revert UnsupportedAsset();
-        if (msg.value != deploymentFee) revert InsufficientDeploymentFee(); // Exact fee only, no refund gas
-        if (manager == address(0) || daoTreasury == address(0)) revert InvalidAddress();
+        if (vaultType > 4) revert InvalidVaultType();
+        if (userVaultCount[msg.sender] >= MAX_VAULTS_PER_USER) {
+            revert MaxVaultsPerUserExceeded();
+        }
 
-        // Validate config
-        if (config.performanceFee > 5000 || config.managementFee > 1000) revert InvalidConfig(); // e.g., max 50% perf, 10% mgmt
+        // ==================== CRITICAL FIX #1: COLLECT SPAWN COST ====================
+        uint256 spawnCost = SPAWN_COSTS[vaultType];
+        uint256 burnPercentage = SPAWN_BURN_PERCENTAGES[vaultType];
+        uint256 burnAmount = (spawnCost * burnPercentage) / 10000;
+        uint256 treasuryAmount = spawnCost - burnAmount;
 
-        // Deploy new vault (assuming MaonoVault constructor sets name/symbol – adjust if needed)
-        vault = address(new MaonoVault(
-            asset,
-            daoTreasury,
-            manager,
-            initialDAOs
-        ));
+        // Collect MTAA from msg.sender (DAO admin or authorized vault creator)
+        if (!IERC20(mtaaToken).transferFrom(msg.sender, address(this), spawnCost)) {
+            revert SpawnCostPaymentFailed();
+        }
 
-        // Batch config settings if MaonoVault supports an init function; otherwise, individual sets
-        MaonoVault vaultInstance = MaonoVault(vault);
-        if (config.minDeposit > 0) vaultInstance.setMinDeposit(config.minDeposit);
-        if (config.vaultCap > 0) vaultInstance.setVaultCap(config.vaultCap);
-        if (config.performanceFee > 0) vaultInstance.setPerformanceFee(config.performanceFee);
-        if (config.managementFee > 0) vaultInstance.setManagementFee(config.managementFee);
-        if (config.withdrawalDelay > 0) vaultInstance.setWithdrawalDelay(config.withdrawalDelay);
+        // Execute burn immediately
+        if (burnAmount > 0) {
+            try IMTAAToken(mtaaToken).burn(burnAmount) {
+                totalSpawnCostBurned += burnAmount;
+            } catch {
+                revert BurnFailed();
+            }
+        }
 
-        // Transfer ownership to deployer
-        vaultInstance.transferOwnership(msg.sender);
+        // Send treasury share
+        if (treasuryAmount > 0) {
+            if (!IERC20(mtaaToken).transfer(platformTreasury, treasuryAmount)) {
+                revert TransferFailed();
+            }
+            totalSpawnCostToTreasury += treasuryAmount;
+        }
 
-        // Record vault info
+        // Update tracking
+        totalSpawnCostCollected += spawnCost;
+        spawnCostsPaid[msg.sender] += spawnCost;
+
+        // ==================== DEPLOY VAULT ====================
+        vault = address(
+            new MaonoVault_Phase1A(
+                asset,
+                name,
+                symbol,
+                msg.sender,  // vault owner (DAO admin)
+                MaonoVault_Phase1A.VaultType(vaultType),
+                platformTreasury,  // DAO treasury for upkeep revenue
+                mtaaToken,
+                priceOracle
+            )
+        );
+
+        // ==================== REGISTER VAULT ====================
+        deployedVaults.push(vault);
+        userVaults[msg.sender].push(vault);
+        userVaultCount[msg.sender]++;
+
         vaultInfo[vault] = VaultInfo({
+            vault: vault,
             owner: msg.sender,
-            manager: manager,
             asset: asset,
-            name: vaultName,
-            symbol: vaultSymbol,
+            name: name,
             deployedAt: block.timestamp,
+            vaultType: vaultType,
             isActive: true
         });
 
-        // Update registries
-        deployedVaults.push(vault);
-        userVaults[msg.sender].push(vault);
+        // Emit events
+        emit SpawnCostCollected(
+            msg.sender,
+            vaultType,
+            spawnCost,
+            burnAmount,
+            treasuryAmount,
+            block.timestamp
+        );
 
-        // Send fee to platform
-        payable(platformTreasury).transfer(deploymentFee);
+        emit VaultDeployed(
+            vault,
+            msg.sender,
+            asset,
+            name,
+            vaultType,
+            spawnCost,
+            burnAmount,
+            treasuryAmount,
+            block.timestamp
+        );
 
-        emit VaultDeployed(vault, msg.sender, manager, asset, vaultName, vaultSymbol);
         return vault;
     }
 
-    // --- Admin Functions ---
-    
+    // ==================== ASSET MANAGEMENT ====================
     /**
-     * @notice Add a supported asset
-     * @param asset The asset address
-     * @param symbol The asset symbol
+     * @notice Add supported vault asset
+     * @dev Only owner can add assets
      */
-    function addSupportedAsset(address asset, string memory symbol) external onlyOwner {
-        _addSupportedAsset(asset, symbol);
-    }
-
-    function _addSupportedAsset(address asset, string memory symbol) internal {
+    function addSupportedAsset(address asset, string memory symbol)
+        external
+        onlyOwner
+    {
         if (asset == address(0)) revert InvalidAddress();
-        if (supportedAssets[asset]) revert("Already supported");
-        
+        if (supportedAssets[asset]) revert AssetAlreadySupported();
+
         supportedAssets[asset] = true;
         supportedAssetsList.push(asset);
-        assetSymbols[asset] = symbol;
-        
-        emit AssetAdded(asset, symbol);
+
+        emit AssetAdded(asset, symbol, block.timestamp);
     }
 
     /**
-     * @notice Remove a supported asset
-     * @param asset The asset address
+     * @notice Remove supported vault asset
+     * @dev Only owner
      */
-    function removeSupportedAsset(address asset) external onlyOwner {
-        if (!supportedAssets[asset]) revert("Not supported");
-        
+    function removeSupportedAsset(address asset)
+        external
+        onlyOwner
+    {
+        if (!supportedAssets[asset]) revert AssetNotSupported();
+
         supportedAssets[asset] = false;
-        
-        // Unordered removal to save gas: swap with last and pop
-        uint256 length = supportedAssetsList.length;
-        for (uint256 i = 0; i < length; ++i) {
+
+        // Remove from list
+        for (uint256 i = 0; i < supportedAssetsList.length; ++i) {
             if (supportedAssetsList[i] == asset) {
-                if (i != length - 1) {
-                    supportedAssetsList[i] = supportedAssetsList[length - 1];
-                }
+                supportedAssetsList[i] = supportedAssetsList[supportedAssetsList.length - 1];
                 supportedAssetsList.pop();
                 break;
             }
         }
-        
-        emit AssetRemoved(asset);
+
+        emit AssetRemoved(asset, block.timestamp);
     }
 
-    /**
-     * @notice Set new deployment fee
-     * @param newFee The new fee amount
-     */
-    function setDeploymentFee(uint256 newFee) external onlyOwner {
-        uint256 oldFee = deploymentFee;
-        deploymentFee = newFee;
-        emit DeploymentFeeChanged(oldFee, newFee);
+    // ==================== ORACLE MANAGEMENT ====================
+    function setPriceOracle(address _newOracle)
+        external
+        onlyOwner
+    {
+        if (_newOracle == address(0)) revert InvalidAddress();
+        priceOracle = _newOracle;
+        emit PriceOracleUpdated(_newOracle, block.timestamp);
     }
 
+    // ==================== QUERY FUNCTIONS ====================
     /**
-     * @notice Set new platform fee rate
-     * @param newRate The new rate in basis points
+     * @notice Get all vaults created by a user
      */
-    function setPlatformFeeRate(uint256 newRate) external onlyOwner {
-        if (newRate > 1000) revert RateTooHigh(); // Max 10%
-        uint256 oldRate = platformFeeRate;
-        platformFeeRate = newRate;
-        emit PlatformFeeRateChanged(oldRate, newRate);
-    }
-
-    /**
-     * @notice Set new platform treasury
-     * @param newTreasury The new treasury address
-     */
-    function setPlatformTreasury(address newTreasury) external onlyOwner {
-        if (newTreasury == address(0)) revert InvalidAddress();
-        platformTreasury = newTreasury;
-    }
-
-    // --- View Functions ---
-    
-    /**
-     * @notice Get count of deployed vaults
-     */
-    function getDeployedVaultsCount() external view returns (uint256) {
-        return deployedVaults.length;
-    }
-
-    /**
-     * @notice Get vaults deployed by a user
-     * @param user The user address
-     */
-    function getUserVaults(address user) external view returns (address[] memory) {
+    function getUserVaults(address user)
+        external
+        view
+        returns (address[] memory)
+    {
         return userVaults[user];
     }
 
     /**
-     * @notice Get list of supported assets
+     * @notice Check if user can spawn more vaults
      */
-    function getSupportedAssets() external view returns (address[] memory) {
+    function canUserSpawnVault(address user)
+        external
+        view
+        returns (bool)
+    {
+        return userVaultCount[user] < MAX_VAULTS_PER_USER;
+    }
+
+    /**
+     * @notice Get remaining vault slots for user
+     */
+    function getRemainingVaultSlots(address user)
+        external
+        view
+        returns (uint256)
+    {
+        uint256 used = userVaultCount[user];
+        if (used >= MAX_VAULTS_PER_USER) {
+            return 0;
+        }
+        return MAX_VAULTS_PER_USER - used;
+    }
+
+    /**
+     * @notice Get all supported vault assets
+     */
+    function getSupportedAssets()
+        external
+        view
+        returns (address[] memory)
+    {
         return supportedAssetsList;
     }
 
     /**
-     * @notice Get info for a vault
-     * @param vault The vault address
+     * @notice Get spawn cost for vault type
      */
-    function getVaultInfo(address vault) external view returns (VaultInfo memory) {
+    function getSpawnCost(uint256 vaultType)
+        external
+        view
+        returns (uint256 cost, uint256 burnAmount, uint256 treasuryAmount)
+    {
+        if (vaultType > 4) revert InvalidVaultType();
+
+        cost = SPAWN_COSTS[vaultType];
+        uint256 burnPercentage = SPAWN_BURN_PERCENTAGES[vaultType];
+        burnAmount = (cost * burnPercentage) / 10000;
+        treasuryAmount = cost - burnAmount;
+    }
+
+    /**
+     * @notice Get total vaults deployed
+     */
+    function getTotalVaultsDeployed()
+        external
+        view
+        returns (uint256)
+    {
+        return deployedVaults.length;
+    }
+
+    /**
+     * @notice Get detailed vault info
+     */
+    function getVaultDetails(address vault)
+        external
+        view
+        returns (VaultInfo memory)
+    {
         return vaultInfo[vault];
     }
 
     /**
-     * @notice Get current deployment cost
+     * @notice Get factory statistics
      */
-    function calculateDeploymentCost() external view returns (uint256) {
-        return deploymentFee;
-    }
-
-    // --- Helper Functions for Frontend ---
-    
-    /**
-     * @notice Get overview for a single vault
-     * @param vault The vault address
-     */
-    function getVaultOverview(address vault) external view returns (
-        VaultInfo memory info,
-        uint256 tvl,
-        uint256 sharePrice,
-        uint256 totalShares,
-        bool isPaused
-    ) {
-        info = vaultInfo[vault];
-        if (info.owner == address(0)) revert VaultNotFound();
-        
-        MaonoVault vaultContract = MaonoVault(vault);
-        
-        tvl = vaultContract.totalAssets();
-        totalShares = vaultContract.totalSupply();
-        sharePrice = totalShares == 0 ? 1e18 : (tvl * 1e18) / totalShares;
-        isPaused = vaultContract.paused();
-    }
-
-    /**
-     * @notice Get overviews for multiple vaults
-     * @param vaults Array of vault addresses
-     */
-    function getMultipleVaultOverviews(address[] calldata vaults) external view returns (
-        VaultInfo[] memory infos,
-        uint256[] memory tvls,
-        uint256[] memory sharePrices
-    ) {
-        uint256 length = vaults.length;
-        infos = new VaultInfo[](length);
-        tvls = new uint256[](length);
-        sharePrices = new uint256[](length);
-
-        for (uint256 i = 0; i < length; ++i) {
-            address vault = vaults[i];
-            infos[i] = vaultInfo[vault];
-            
-            if (infos[i].owner != address(0)) {
-                MaonoVault vaultContract = MaonoVault(vault);
-                tvls[i] = vaultContract.totalAssets();
-                uint256 totalShares = vaultContract.totalSupply();
-                sharePrices[i] = totalShares == 0 ? 1e18 : (tvls[i] * 1e18) / totalShares;
-            }
-        }
-    }
-}
-
-// --- Deployment and Usage Examples ---
-
-/**
- * @title DeploymentExample
- * @notice Example deployment and usage patterns (for illustration/testing only)
- */
-contract DeploymentExample {
-    MaonoVaultFactory public factory;
-    MaonoVault public vault;
-    IERC20 public asset;
-
-    // Example 1: Deploy the factory
-    function deployFactory(
-        address platformTreasury,
-        address usdcAddress,
-        address daiAddress
-    ) external {
-        address[] memory assets = new address[](2);
-        string[] memory symbols = new string[](2);
-        
-        assets[0] = usdcAddress;
-        assets[1] = daiAddress;
-        symbols[0] = "USDC";
-        symbols[1] = "DAI";
-
-        factory = new MaonoVaultFactory(
-            platformTreasury,
-            assets,
-            symbols
+    function getFactoryStats()
+        external
+        view
+        returns (
+            uint256 totalVaults,
+            uint256 totalSpawnCosts,
+            uint256 totalBurned,
+            uint256 totalToTreasury,
+            uint256 supportedAssetCount
+        )
+    {
+        return (
+            deployedVaults.length,
+            totalSpawnCostCollected,
+            totalSpawnCostBurned,
+            totalSpawnCostToTreasury,
+            supportedAssetsList.length
         );
-    }
-
-    // Example 2: Deploy a new vault instance
-    function deployMyVault(
-        address assetAddress,
-        address managerAddress,
-        address treasuryAddress
-    ) external payable {
-        string[] memory initialDAOs = new string[](2);
-        initialDAOs[0] = "DAO_1";
-        initialDAOs[1] = "DAO_2";
-
-        MaonoVaultFactory.VaultConfig memory config = MaonoVaultFactory.VaultConfig({
-            minDeposit: 100 * 1e18,    // 100 tokens minimum
-            vaultCap: 1000000 * 1e18,  // 1M tokens cap
-            performanceFee: 2000,       // 20%
-            managementFee: 200,         // 2%
-            withdrawalDelay: 2 days     // 2 day delay
-        });
-
-        address vaultAddress = factory.deployVault{value: msg.value}(
-            assetAddress,
-            managerAddress,
-            treasuryAddress,
-            "My Community Vault",
-            "MCV",
-            initialDAOs,
-            config
-        );
-
-        vault = MaonoVault(vaultAddress);
-    }
-
-    // Example 3: User interactions (assume approvals handled externally)
-    function userDeposit(uint256 amount) external {
-        // In production, use SafeERC20 and ensure approvals
-        asset.safeTransferFrom(msg.sender, address(this), amount);
-        asset.safeApprove(address(vault), amount);
-        vault.deposit(amount, msg.sender);
-    }
-
-    function userWithdraw(uint256 shares) external {
-        vault.redeem(shares, msg.sender, msg.sender);
-    }
-
-    // Example 4: Manager operations (assume caller is manager)
-    function managerUpdateNAV(uint256 newNAV) external {
-        vault.updateNAV(newNAV);
-    }
-
-    function managerCollectFees() external {
-        vault.collectManagementFees();
     }
 }

@@ -25,7 +25,7 @@ export default function TreasuryIntelligenceDashboard({ daoId }: TreasuryIntelli
   const fetchIntelligenceReport = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/treasury-intelligence/${daoId}/intelligence-report`);
+      const res = await fetch(`/api/v1/daos/${daoId}/treasury/intelligence/report`);
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       setReport(data);
@@ -38,7 +38,7 @@ export default function TreasuryIntelligenceDashboard({ daoId }: TreasuryIntelli
 
   const applyOptimization = async () => {
     try {
-      const res = await fetch(`/api/treasury-intelligence/${daoId}/apply-optimization`, {
+      const res = await fetch(`/api/v1/daos/${daoId}/treasury/intelligence/apply-optimization`, {
         method: 'POST'
       });
       if (!res.ok) throw new Error(await res.text());

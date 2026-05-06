@@ -9,13 +9,60 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import { distributedLockManager } from '../services/concurrencyControl';
-import { logger } from '../utils/logger';
+import { Logger } from '../utils/logger';
+import { redis } from '../services/redis';
+
+const logger = new Logger('rate-limit-config');
 
 export interface RateLimitConfig {
   limit: number;           // Max operations
   windowSeconds: number;   // Time window
   key?: string;           // Custom window key
+}
+
+/**
+ * Redis-based rate limiter using simple counter pattern
+ */
+async function checkRateLimit(
+  key: string,
+  limit: number,
+  windowSeconds: number
+): Promise<{ allowed: boolean; remaining: number; retryAfter: number }> {
+  try {
+    const fullKey = `rl:${key}:${Math.floor(Date.now() / (windowSeconds * 1000))}`;
+    
+    // Get current count
+    const countStr = await redis.get(fullKey);
+    const count = countStr ? parseInt(countStr) : 0;
+    
+    if (count < limit) {
+      // Increment counter
+      await redis.incr(fullKey);
+      // Set expiry if this is the first request in this window
+      if (count === 0) {
+        await redis.expire(fullKey, windowSeconds + 1);
+      }
+      
+      return {
+        allowed: true,
+        remaining: limit - count - 1,
+        retryAfter: 0
+      };
+    }
+    
+    // Rate limit exceeded
+    const retryAfter = Math.max(1, windowSeconds);
+    
+    return {
+      allowed: false,
+      remaining: 0,
+      retryAfter
+    };
+  } catch (error) {
+    logger.error('[RATE LIMIT CHECK ERROR]', error);
+    // Fail open on error
+    return { allowed: true, remaining: limit - 1, retryAfter: 0 };
+  }
 }
 
 /**
@@ -30,9 +77,9 @@ export function rateLimitMiddleware(config: RateLimitConfig) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = req.user?.id || req.ip;
-      const windowKey = config.key || `${req.method}:${req.path}:${userId}`;
+      const windowKey = config.key || `rl:${req.method}:${req.path}:${userId}`;
 
-      const { allowed, remaining, retryAfter } = await distributedLockManager.rateLimiter.checkLimit(
+      const { allowed, remaining, retryAfter } = await checkRateLimit(
         windowKey,
         config.limit,
         config.windowSeconds
@@ -70,6 +117,12 @@ export function rateLimitMiddleware(config: RateLimitConfig) {
 // Withdrawals: 10 per hour per user
 export const withdrawalLimits: RateLimitConfig = {
   limit: 10,
+  windowSeconds: 3600, // 1 hour
+};
+
+// 🔴 CRITICAL: Deposits: 20 per hour per user (prevent deposit spam)
+export const depositLimits: RateLimitConfig = {
+  limit: 20,
   windowSeconds: 3600, // 1 hour
 };
 
@@ -155,8 +208,8 @@ export async function applyAdaptiveRateLimit(
       return { allowed: true };
   }
 
-  const windowKey = `${operationType}:${userId}`;
-  const result = await distributedLockManager.rateLimiter.checkLimit(
+  const windowKey = `rl:${operationType}:${userId}`;
+  const result = await checkRateLimit(
     windowKey,
     config.limit,
     config.windowSeconds
@@ -176,8 +229,8 @@ export async function checkGlobalRateLimit(
   limit: number,
   windowSeconds: number
 ): Promise<{ allowed: boolean; remaining: number; retryAfter: number }> {
-  return await distributedLockManager.rateLimiter.checkLimit(
-    `global:${operationName}`,
+  return await checkRateLimit(
+    `rl:global:${operationName}`,
     limit,
     windowSeconds
   );

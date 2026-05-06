@@ -1,6 +1,24 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { API_CONFIG } from '@/config/apiConfig';
 
+/**
+ * Event Listener callback
+ */
+type EventCallback = (data: any) => void;
+
+/**
+ * Socket-like object that mimics Socket.IO API
+ */
+interface Socket {
+  on(event: string, callback: EventCallback): void;
+  off(event: string, callback?: EventCallback): void;
+  emit(event: string, data?: any): void;
+  connected: boolean;
+}
+
+/**
+ * WebSocket Event structure
+ */
 interface WebSocketEvent {
   type: string;
   data: any;
@@ -17,6 +35,11 @@ interface UseWebSocketOptions {
   maxReconnectAttempts?: number;
 }
 
+/**
+ * Enhanced WebSocket Hook with Socket.IO-like API
+ * Provides: socket.on(), socket.off(), socket.emit(), socket.connected
+ * Maintains backward compatibility with WebSocketEvent interface
+ */
 export function useWebSocket(options: UseWebSocketOptions = {}) {
   const {
     onMessage,
@@ -32,6 +55,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const reconnectCount = useRef(0);
   const reconnectTimer = useRef<NodeJS.Timeout | null>(null);
   const messageQueue = useRef<WebSocketEvent[]>([]);
+  
+  // Event listeners: Map<eventType, Set<callbacks>>
+  const eventListeners = useRef<Map<string, Set<EventCallback>>>(new Map());
 
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -69,7 +95,22 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       ws.current.onmessage = (event) => {
         try {
           const wsEvent: WebSocketEvent = JSON.parse(event.data);
+          
+          // Call legacy callback if provided
           onMessage?.(wsEvent);
+          
+          // Emit to registered event listeners (Socket.IO pattern)
+          const eventType = wsEvent.type || 'message';
+          const callbacks = eventListeners.current.get(eventType);
+          if (callbacks) {
+            callbacks.forEach(callback => {
+              try {
+                callback(wsEvent.data || wsEvent);
+              } catch (err) {
+                console.error(`Error in event listener for ${eventType}:`, err);
+              }
+            });
+          }
         } catch (error) {
           console.error('Failed to parse WebSocket message:', error);
         }
@@ -150,6 +191,50 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     });
   }, [send]);
 
+  /**
+   * Socket.IO-style event listener (ADD event handler)
+   * Usage: socket.on('config:changed', (data) => { ... })
+   */
+  const on = useCallback((event: string, callback: EventCallback) => {
+    if (!eventListeners.current.has(event)) {
+      eventListeners.current.set(event, new Set());
+    }
+    eventListeners.current.get(event)?.add(callback);
+  }, []);
+
+  /**
+   * Socket.IO-style event unlistener (REMOVE event handler)
+   * Usage: socket.off('config:changed', callback)
+   */
+  const off = useCallback((event: string, callback?: EventCallback) => {
+    if (!callback) {
+      // Remove all listeners for this event
+      eventListeners.current.delete(event);
+    } else {
+      // Remove specific listener
+      eventListeners.current.get(event)?.delete(callback);
+    }
+  }, []);
+
+  /**
+   * Socket.IO-style event emitter (SEND event to server)
+   * Usage: socket.emit('subscribe', { room: 'alerts' })
+   */
+  const emit = useCallback((event: string, data?: any) => {
+    send({
+      type: event,
+      data: data || {},
+    });
+  }, [send]);
+
+  // Create socket object with Socket.IO-like API
+  const socket: Socket = {
+    on,
+    off,
+    emit,
+    connected: isConnected,
+  };
+
   // Auto-connect on mount
   useEffect(() => {
     if (autoConnect) {
@@ -164,6 +249,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   }, [autoConnect, connect]);
 
   return {
+    // Socket.IO-like API (primary)
+    socket,
+    
+    // Legacy API (for backward compatibility)
     isConnected,
     isConnecting,
     lastError,
@@ -172,6 +261,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     unsubscribe,
     connect,
     disconnect,
+    
+    // Event methods for direct consumption
+    on,
+    off,
+    emit,
   };
 }
 

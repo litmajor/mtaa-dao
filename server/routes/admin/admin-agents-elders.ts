@@ -5,6 +5,7 @@ import { daoMemberships, daos, users, auditLogs } from '../../../shared/schema';
 import { eq, desc, sql, and, count } from 'drizzle-orm';
 import { logConsolidatedAuditEvent, AuditEventType } from '../../services/auditConsolidated';
 import * as agentsEldersService from '../../db/services/agentsEldersService';
+import { getEventEmitter } from '../../middleware/websocket-event-emitter';
 
 const router = Router();
 
@@ -638,6 +639,19 @@ router.put('/config/elders/:elderId', async (req: Request, res: Response) => {
       severity: 'medium',
     });
 
+    // Emit WebSocket event for real-time updates
+    try {
+      const wsEmitter = getEventEmitter();
+      wsEmitter.emitConfigChange('elder', elderId, adminId, {
+        versionNumber: 1,
+        changedFields: Object.keys(configuration),
+        changeReason: 'Elder configuration update',
+        configuration
+      });
+    } catch (wsError) {
+      logger.warn('Failed to emit WebSocket event for elder config update:', wsError);
+    }
+
     res.json({
       success: true,
       message: 'Elder configuration updated successfully',
@@ -723,6 +737,19 @@ router.put('/config/agents/:agentId', async (req: Request, res: Response) => {
       severity: 'medium',
     });
 
+    // Emit WebSocket event for real-time updates
+    try {
+      const wsEmitter = getEventEmitter();
+      wsEmitter.emitConfigChange('agent', agentId, adminId, {
+        versionNumber: 1,
+        changedFields: Object.keys(configuration),
+        changeReason: 'Agent configuration update',
+        configuration
+      });
+    } catch (wsError) {
+      logger.warn('Failed to emit WebSocket event for agent config update:', wsError);
+    }
+
     res.json({
       success: true,
       message: 'Agent configuration updated successfully',
@@ -802,6 +829,24 @@ router.put('/config/system', async (req: Request, res: Response) => {
       },
       severity: 'high',
     });
+
+    // Emit WebSocket event for real-time updates (critical system change)
+    try {
+      const wsEmitter = getEventEmitter();
+      wsEmitter.emitSystemEvent(
+        'system_config_updated',
+        'System configuration updated by administrator',
+        adminId,
+        {
+          changedFields: Object.keys(settings),
+          changeReason: 'System configuration update',
+          severity: 'high',
+          settings
+        }
+      );
+    } catch (wsError) {
+      logger.warn('Failed to emit WebSocket event for system config update:', wsError);
+    }
 
     res.json({
       success: true,

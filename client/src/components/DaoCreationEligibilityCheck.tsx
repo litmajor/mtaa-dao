@@ -4,6 +4,7 @@ import { AlertTriangle, Clock, Shield, Phone } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { authClient } from '@/utils/authClient';
 
 interface EligibilityCheck {
   canCreate: boolean;
@@ -21,10 +22,7 @@ export function DaoCreationEligibilityCheck() {
 
   const checkEligibility = async () => {
     try {
-      const response = await fetch('/api/dao-abuse-prevention/check-eligibility', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
-      const data = await response.json();
+      const data = await authClient.get('/api/v1/daos/*/abuse/eligibility');
       if (data.success) {
         setEligibility(data.data);
       }

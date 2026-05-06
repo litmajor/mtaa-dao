@@ -1,4 +1,4 @@
-import { ArrowRight, TrendingUp, Lock, BarChart3, Users, Shield, DollarSign, Zap, CheckCircle } from 'lucide-react';
+import { ArrowRight, TrendingUp, Lock, ChartColumn, Users, Shield, DollarSign, Zap, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -19,7 +19,7 @@ export default function MaanoVaultLanding() {
       gradient: "from-blue-400 to-cyan-500"
     },
     {
-      icon: BarChart3,
+      icon: ChartColumn,
       title: "Real-Time Analytics",
       description: "Track every deposit, return, and transaction. Transparency you can trust.",
       gradient: "from-purple-400 to-pink-500"

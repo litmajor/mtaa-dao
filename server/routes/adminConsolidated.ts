@@ -102,7 +102,7 @@ import {
 } from '../../shared/schema';
 import { eq, desc, sql, and, gte, or, like, count } from 'drizzle-orm';
 import { createRateLimiter } from '../middleware/rateLimiting';
-import { auditConsolidated } from '../services/auditConsolidated';
+import { logConsolidatedAuditEvent } from '../services/auditConsolidated';
 
 const logger = Logger.getLogger();
 const router = Router();
@@ -139,6 +139,35 @@ const adminLoginIpLimiter = createRateLimiter({
   }
 });
 
+/**
+ * 🔴 CRITICAL: Admin destructive operations rate limiter
+ * Limits ban/delete/suspend operations to 1 per day per action type per admin
+ * Prevents accidental or malicious bulk account termination
+ */
+const adminDestructiveOpsLimiter = createRateLimiter({
+  windowMs: 24 * 60 * 60 * 1000, // 24 hours
+  maxRequests: 1,
+  keyGenerator: (req: Request) => {
+    const adminId = (req as any).user?.id || 'unknown';
+    const action = req.path.split('/')[3] || 'unknown'; // Extract action from path
+    return `admin_destructive:${adminId}:${action}`;
+  },
+  skipSuccessfulRequests: false, // Count all attempts
+});
+
+/**
+ * Admin operations rate limiter: 50 requests per 10 minutes
+ * Applies to general admin operations like user enumeration, data export
+ */
+const adminOpsLimiter = createRateLimiter({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  maxRequests: 50,
+  keyGenerator: (req: Request) => {
+    const adminId = (req as any).user?.id || 'unknown';
+    return `admin_ops:${adminId}`;
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // AUTHENTICATION - Admin Login & Registration (SECURED)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -171,12 +200,15 @@ router.post('/auth/login', adminLoginLimiter, adminLoginIpLimiter, async (req: R
 
     if (!user) {
       // Log failed login attempt
-      await auditConsolidated.logConsolidatedAuditEvent({
-        userId: 'unknown',
-        action: 'admin_login_failed_user_not_found',
-        resourceId: email,
-        status: 'denied',
-        details: { email, ip: req.ip },
+      await logConsolidatedAuditEvent({
+        actorId: 'unknown',
+        actionType: 'ADMIN_LOGIN_FAILED_USER_NOT_FOUND',
+        targetType: 'user_email',
+        targetId: email,
+        result: 'failed',
+        resultReason: 'User not found',
+        ipAddress: req.ip,
+        metadata: { email },
         severity: 'high'
       });
 
@@ -190,12 +222,15 @@ router.post('/auth/login', adminLoginLimiter, adminLoginIpLimiter, async (req: R
     const roles = user.roles ? user.roles.split(',') : [];
     if (!roles.includes('super_admin')) {
       // Log unauthorized access attempt
-      await auditConsolidated.logConsolidatedAuditEvent({
-        userId: user.id,
-        action: 'admin_login_failed_insufficient_role',
-        resourceId: user.id,
-        status: 'denied',
-        details: { email, userRoles: roles, ip: req.ip },
+      await logConsolidatedAuditEvent({
+        actorId: user.id,
+        actionType: 'ADMIN_LOGIN_FAILED_INSUFFICIENT_ROLE',
+        targetType: 'user',
+        targetId: user.id,
+        result: 'failed',
+        resultReason: 'Insufficient role permissions',
+        ipAddress: req.ip,
+        metadata: { email, userRoles: roles },
         severity: 'high'
       });
 
@@ -209,12 +244,15 @@ router.post('/auth/login', adminLoginLimiter, adminLoginIpLimiter, async (req: R
     const passwordMatch = await bcrypt.compare(password, user.password || '');
     if (!passwordMatch) {
       // Log failed password attempt
-      await auditConsolidated.logConsolidatedAuditEvent({
-        userId: user.id,
-        action: 'admin_login_failed_invalid_password',
-        resourceId: user.id,
-        status: 'denied',
-        details: { email, ip: req.ip },
+      await logConsolidatedAuditEvent({
+        actorId: user.id,
+        actionType: 'ADMIN_LOGIN_FAILED_INVALID_PASSWORD',
+        targetType: 'user',
+        targetId: user.id,
+        result: 'failed',
+        resultReason: 'Invalid password',
+        ipAddress: req.ip,
+        metadata: { email },
         severity: 'high'
       });
 
@@ -263,12 +301,15 @@ router.post('/auth/login', adminLoginLimiter, adminLoginIpLimiter, async (req: R
 
       // TODO: Implement 2FA verification with TOTP or backup codes
       // For now, log that 2FA would be verified here
-      await auditConsolidated.logConsolidatedAuditEvent({
-        userId: user.id,
-        action: 'admin_login_2fa_verification_required',
-        resourceId: user.id,
-        status: 'pending',
-        details: { email, hasTwoFactorCode: !!twoFactorCode },
+      await logConsolidatedAuditEvent({
+        actorId: user.id,
+        actionType: 'ADMIN_LOGIN_2FA_VERIFICATION_REQUIRED',
+        targetType: 'user',
+        targetId: user.id,
+        result: 'partial',
+        resultReason: '2FA verification pending',
+        ipAddress: req.ip,
+        metadata: { email, hasTwoFactorCode: !!twoFactorCode },
         severity: 'medium'
       });
 
@@ -288,12 +329,14 @@ router.post('/auth/login', adminLoginLimiter, adminLoginIpLimiter, async (req: R
     );
 
     // Log successful admin login
-    await auditConsolidated.logConsolidatedAuditEvent({
-      userId: user.id,
-      action: 'admin_login_success',
-      resourceId: user.id,
-      status: 'success',
-      details: { email, ip: req.ip, twoFactorVerified: twoFaEnabled },
+    await logConsolidatedAuditEvent({
+      actorId: user.id,
+      actionType: 'ADMIN_LOGIN_SUCCESS',
+      targetType: 'user',
+      targetId: user.id,
+      result: 'success',
+      ipAddress: req.ip,
+      metadata: { email, twoFactorVerified: twoFaEnabled },
       severity: 'medium'
     });
 
@@ -338,15 +381,15 @@ router.post('/auth/register', requireSuperAdmin, async (req: Request, res: Respo
     if (!allowSuperuserReg) {
       // Log unauthorized registration attempt
       const actorId = (req as any).user?.id || 'unknown';
-      await auditConsolidated.logConsolidatedAuditEvent({
-        userId: actorId,
-        action: 'admin_register_attempt_disabled',
-        resourceId: 'superuser_registration',
-        status: 'denied',
-        details: { 
-          reason: 'ALLOW_SUPERUSER_REGISTRATION not enabled',
-          ip: req.ip 
-        },
+      await logConsolidatedAuditEvent({
+        actorId: actorId,
+        actionType: 'ADMIN_REGISTER_ATTEMPT_DISABLED',
+        targetType: 'admin_registration',
+        targetId: 'superuser_registration',
+        result: 'failed',
+        resultReason: 'ALLOW_SUPERUSER_REGISTRATION not enabled',
+        ipAddress: req.ip,
+        metadata: { attemptedBy: actorId },
         severity: 'critical'
       });
 
@@ -382,12 +425,15 @@ router.post('/auth/register', requireSuperAdmin, async (req: Request, res: Respo
     if (existing) {
       // Log duplicate registration attempt
       const actorId = (req as any).user?.id || 'unknown';
-      await auditConsolidated.logConsolidatedAuditEvent({
-        userId: actorId,
-        action: 'admin_register_failed_duplicate',
-        resourceId: email,
-        status: 'denied',
-        details: { email, ip: req.ip },
+      await logConsolidatedAuditEvent({
+        actorId: actorId,
+        actionType: 'ADMIN_REGISTER_FAILED_DUPLICATE',
+        targetType: 'admin_email',
+        targetId: email,
+        result: 'failed',
+        resultReason: 'Email already registered',
+        ipAddress: req.ip,
+        metadata: { email },
         severity: 'high'
       });
 
@@ -415,15 +461,16 @@ router.post('/auth/register', requireSuperAdmin, async (req: Request, res: Respo
 
     // Log successful superuser registration
     const actorId = (req as any).user?.id || 'unknown';
-    await auditConsolidated.logConsolidatedAuditEvent({
-      userId: actorId,
-      action: 'admin_register_success',
-      resourceId: newUser[0].id,
-      status: 'success',
-      details: { 
+    await logConsolidatedAuditEvent({
+      actorId: actorId,
+      actionType: 'ADMIN_REGISTER_SUCCESS',
+      targetType: 'admin_user',
+      targetId: newUser[0].id,
+      result: 'success',
+      ipAddress: req.ip,
+      metadata: { 
         newAdminEmail: email,
-        createdBy: actorId,
-        ip: req.ip 
+        createdBy: actorId
       },
       severity: 'critical'
     });
@@ -533,9 +580,11 @@ router.get('/users/:userId', requireSuperAdmin, async (req: Request, res: Respon
 
 /**
  * PUT /api/admin/users/:userId/ban
- * Ban or unban a user
+ * 🔴 CRITICAL: Ban or unban a user - RATE LIMITED (1/day)
+ * Prevents accidental or malicious account termination
+ * Requires: super_admin role
  */
-router.put('/users/:userId/ban', requireSuperAdmin, async (req: Request, res: Response) => {
+router.put('/users/:userId/ban', requireSuperAdmin, adminDestructiveOpsLimiter, async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
     const { banned, reason } = req.body;

@@ -10,6 +10,7 @@ import { setupWeeklyRewardsDistribution } from "./jobs/weeklyRewardsDistribution
 import { setupInvestmentPoolsAutomation } from "./jobs/investmentPoolsAutomation";
 import { setupVite, serveStatic } from './vite';
 import { logger, requestLogger, logStartup } from './utils/logger';
+import { initializeConsoleLogger, getConsoleLogger } from './utils/console-logger';
 import path from "path";
 import { dirname } from "path";
 import { fileURLToPath } from "url";
@@ -48,12 +49,10 @@ import healthRoutes from './routes/health';
 import analyticsRoutes from './routes/analytics';
 import notificationRoutes from './routes/notifications';
 import systemRoutes from './routes/system';
-import billingRoutes from './routes/billing';
 import proposalExecutionRouter from './routes/proposal-execution';
 import pollProposalsRouter from './routes/poll-proposals';
 import jobHealthRoutes from './routes/jobHealthRoutes';
 import './middleware/validation'; // Added for validation middleware
-// Assuming ReputationService is defined and exported from './reputationService'
 import { ReputationService } from './reputationService'; // Added for ReputationService
 import { authenticate, isAuthenticated, refreshTokenHandler, logoutHandler, authUserHandler, authLoginHandler, authRegisterHandler } from './auth';
 import reputationRoutes from './routes/reputation'; // Added for reputation routes
@@ -66,13 +65,10 @@ import referralsRoutes from './routes/referrals';
 import eventsRoutes from './routes/events';
 import treasuryManagementRoutes from './routes/treasuryManagement'; // PHASE 2: Treasury management routes
 import multisigRoutes from './routes/multisig'; // PHASE 2: Multisig approval routes
-import crossChainRoutes from './routes/cross-chain';
 import userPreferencesRoutes from './routes/user-preferences';
 import jwt from 'jsonwebtoken';
 // Import NFT Marketplace routes
 import nftMarketplaceRouter from './routes/nft-marketplace';
-import walletRoutes from './routes/wallet';
-import walletSetupRoutes from './routes/wallet-setup';
 import paymentGatewayRoutes from './routes/payment-gateway';
 // Import KYC routes
 import kycRouter from './routes/kyc';
@@ -83,6 +79,7 @@ import morioDataHubRoutes from './routes/morio-data-hub';
 import morioElderInsightsRoutes from './routes/morio-elder-insights';
 import jobRoutes from './routes/jobs';
 import websocketMonitoringRoutes from './routes/websocket-monitoring';
+import logsRoutes from './routes/logs';
 import { initializeWorkers, shutdownWorkers } from './workers';
 import { transactionMonitor } from './services/transactionMonitor';
 import { recurringPaymentService } from './services/recurringPaymentService';
@@ -154,7 +151,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Import public stats routes
 import publicStatsRoutes from './routes/public-stats';
-import treasuryIntelligenceRoutes from './routes/treasury-intelligence';
 import analyzerRoutes from './routes/analyzer';
 import defenderRoutes from './routes/defender'; // Added for defender routes
 import exchangeRoutes from './routes/exchanges'; // CCXT Service Phase 1
@@ -162,12 +158,10 @@ import featureAnalyticsRoutes from './routes/featureAnalytics';
 import graphPropagationRoutes from './routes/graph-propagation'; // Graph Propagation Engine monitoring
 import personasRouter from './routes/personas';
 import paymentRequestsRoutes from './routes/payment-requests';
-import billSplitRoutes from './routes/bill-split';
 import dexScreenerRoutes from './routes/dex-screener'; // ✅ DexScreener API integration
-import freqtradeRoutes from './routes/freqtrade'; // ✅ Freqtrade API integration
 import amaraRoutes from './routes/amara'; // 🎨 Amara Portfolio Dashboard routes
-// ✅ CONSOLIDATED ROUTERS (Phase 1 - Integration Complete)
-import strategiesConsolidated from './routes/strategiesConsolidated'; // 📈 Consolidated Strategy routes (strategy.ts + strategyDeployment.ts)
+// ✅ V1 ROUTERS (Architecture Modernization - Phase 2)
+import strategiesRouter from './routes/v1/strategies'; // 📈 V1 Strategies (core + execution + social)
 import adminConsolidated from './routes/adminConsolidated'; // 👤 Consolidated Admin routes (admin.ts + admin-ai-metrics.ts)
 // Asset Graph and Strategy Dashboard services
 import { assetGraphService } from './services/assetGraphService'; // 📊 Asset Graph for portfolio tracking
@@ -432,27 +426,50 @@ app.use((req, res, next) => {
 
 console.log('[STARTUP] Starting async initialization...');
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// GLOBAL ERROR HANDLERS (Must be set up BEFORE any async operations)
+// ═══════════════════════════════════════════════════════════════════════════════
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('🚨 Unhandled Promise Rejection:', {
+    reason: reason instanceof Error ? reason.message : String(reason),
+    stack: reason instanceof Error ? reason.stack : undefined,
+    promise: String(promise),
+  });
+  console.error('[CRITICAL] Unhandled rejection:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error('🚨 Uncaught Exception:', {
+    message: error.message,
+    stack: error.stack,
+  });
+  console.error('[CRITICAL] Uncaught exception:', error);
+  // Give time to log before exit
+  setTimeout(() => {
+    process.exit(1);
+  }, 1000);
+});
+
+// Mark server as starting to skip non-critical logging during initialization
+(global as any).isServerStarting = true;
+
 (async () => {
   try {
+    // Initialize console logger (captures all output to timestamped log file)
+    const consoleLogger = initializeConsoleLogger();
+    console.log('[STARTUP] Console logging to:', consoleLogger.getCurrentLogPath());
+    
     console.log('[STARTUP] Initializing server...');
     
-    // Initialize Redis connection
+    // Initialize Redis connection (NON-BLOCKING - fire and forget)
     console.log('[STARTUP] Connecting to Redis...');
     const { redis } = await import('./services/redis');
     
-    // Add timeout to Redis connection (10 seconds max)
-    const redisConnectPromise = redis.connect();
-    const redisTimeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Redis connection timeout')), 10000)
-    );
-    
-    try {
-      await Promise.race([redisConnectPromise, redisTimeout]);
-      console.log('[STARTUP] Redis connection complete');
-    } catch (redisError) {
-      console.log('[STARTUP] Redis connection failed or timed out - using fallback store');
-      // Continue without Redis - the service handles fallback
-    }
+    // Fire off Redis connection WITHOUT blocking startup (runs in background)
+    redis.connect()
+      .then(() => console.log('[STARTUP] ✅ Redis connected successfully'))
+      .catch(() => console.log('[STARTUP] Redis unavailable - using in-memory fallback'));
+    // NOTE: Non-blocking, startup continues immediately
 
     // Initialize backup system
     console.log('[STARTUP] Initializing backup system...');
@@ -510,6 +527,11 @@ console.log('[STARTUP] Starting async initialization...');
       const priceJobConfig = {
         collectionIntervalSeconds: 30,
         maxConcurrentExchanges: 6,
+        tradingPairs: [
+          'BTC/USDT', 'ETH/USDT', 'USDC/USDT', 'USDT/USDT',
+          'DAI/USDT', 'cUSD/USDT', 'cEUR/USDT', 'CELO/USDT',
+          'MATIC/USDT', 'AAVE/USDT', 'LINK/USDT', 'UNI/USDT', 'SUSHI/USDT'
+        ],
       };
       await startPriceCollectionJob(pool, priceJobConfig);
       console.log('[STARTUP] ✅ CEX Price Background Job initialized');
@@ -1046,8 +1068,9 @@ console.log('[STARTUP] Starting async initialization...');
     app.use('/api/events', eventsRoutes);
     app.use('/api/notifications', isAuthenticated, notificationRoutes);
     app.use('/api/system', systemRoutes);
-    app.use('/api/billing', isAuthenticated, billingRoutes);
+    // Billing routes migrated to v1 API
     app.use('/api/health', healthRoutes);
+    app.use('/api/logs', logsRoutes);
     app.use('/api/referral-rewards', isAuthenticated, referralRewardsRouter);
     app.use('/api/economy', isAuthenticated, requireDAORole('member', 'admin', 'owner'), economyRouter);
     app.use('/api/dao/:daoId/executions', isAuthenticated, requireDAORole('member', 'admin', 'owner'), proposalExecutionRouter);
@@ -1066,18 +1089,18 @@ console.log('[STARTUP] Starting async initialization...');
     const governanceActivityRoutes = (await import('./routes/governance-activity')).default;
     app.use('/api/governance', isAuthenticated, requireDAORole('member', 'admin', 'owner'), governanceActivityRoutes);
     
-    app.use('/api/cross-chain', isAuthenticated, crossChainRoutes);
+    // Cross-chain routes moved to v1 API
     app.use('/api/user/preferences', isAuthenticated, userPreferencesRoutes);
     app.use('/api/morio', isAuthenticated, morioRoutes);
     app.use('/api/morio/data-hub', isAuthenticated, morioDataHubRoutes);
     app.use('/api/morio/elder-insights', isAuthenticated, morioElderInsightsRoutes);
     app.use('/api/personas', isAuthenticated, personasRouter);
     app.use('/api/public-stats', publicStatsRoutes);
-    app.use('/api/treasury-intelligence', isAuthenticated, requireDAORole('member', 'admin', 'owner'), treasuryIntelligenceRoutes);
+    // Treasury intelligence routes moved to v1 API
     app.use('/api/analyzer', isAuthenticated, requireRole('super_admin'), analyzerRoutes);
     app.use('/api/dashboard', isAuthenticated, amaraRoutes); // 🎨 Amara Dashboard routes
-    // ✅ CONSOLIDATED STRATEGY ROUTES (Phase 1 - Migration Complete)
-    app.use('/api/strategies', strategiesConsolidated); // 📈 Strategy Dashboard + Freqtrade integration (UNIFIED)
+    // ✅ V1 STRATEGY ROUTES (Modular Architecture - Phase 2)
+    app.use('/api/v1/strategies', strategiesRouter); // 📈 V1 Strategies (core CRUD + execution + social)
     // ✅ CONSOLIDATED ADMIN ROUTES (Phase 1 - Migration Complete)
     // Requires authentication + superuser role
     app.use('/api/admin', isAuthenticated, requireRole('super_admin'), adminConsolidated); // 👤 Admin operations + AI monitoring (UNIFIED)
@@ -1090,36 +1113,36 @@ console.log('[STARTUP] Starting async initialization...');
     const synchronizerRoutes = (await import('./routes/synchronizer')).default;
     app.use('/api/synchronizer', isAuthenticated, synchronizerRoutes);
 
-
     // New feature routes
-    app.use('/api/dao-of-the-week', (await import('./routes/dao-of-the-week')).default);
     app.use('/api/telegram-bot', (await import('./routes/telegram-bot')).default);
     app.use('/api/public', (await import('./routes/public-stats')).default);
 
     // NFT Marketplace routes
     app.use('/api/nft-marketplace', isAuthenticated, nftMarketplaceRouter);
 
-    // Wallet routes
-    app.use('/api/wallet', isAuthenticated, walletRoutes);
-    app.use('/api/wallet-setup', isAuthenticated, walletSetupRoutes);
-    app.use('/api/wallets', isAuthenticated, (await import('./routes/wallet-creation')).default);
-    app.use('/api/wallet-sessions', isAuthenticated, (await import('./routes/wallet-sessions')).default);
+    // ✅ V1 WALLETS ROUTER - Canonical versioned wallet endpoints
+    // All legacy /api/wallet* routes have been migrated to /api/v1/wallets hierarchy
+    // Migration completed on: 2026-03-13
+    // ~  Core wallet CRUD: sub-router 'core'
+    // - Balance & rates: sub-router 'balance'
+    // - Setup & initialization: sub-router 'setup'
+    // - Sessions: sub-router 'sessions' 
+    // - Payments (recurring, split, vouchers): sub-router 'payments'
+    // - Multisig/DAO: sub-router (included in main v1 router)
+    // - Transfers: sub-router 'transfers'
+    // - Savings: sub-router 'savings'
+    const v1WalletsRouter = (await import('./routes/v1/wallets')).default;
+    app.use('/api/v1/wallets', isAuthenticated, v1WalletsRouter);
+    
     app.use('/api/sessions', isAuthenticated, (await import('./routes/enhanced-sessions')).default);
-    app.use('/api/wallet/recurring-payments', isAuthenticated, (await import('./routes/recurring-payments')).default);
-    app.use('/api/wallet/vouchers', isAuthenticated, (await import('./routes/vouchers')).default);
-    app.use('/api/wallet/phone', isAuthenticated, (await import('./routes/phone-payments')).default);
     app.use('/api/payment-gateway', isAuthenticated, paymentGatewayRoutes);
     app.use('/api/payment-requests', isAuthenticated, paymentRequestsRoutes);
-    app.use('/api/wallet/bill-split', isAuthenticated, billSplitRoutes);
-    app.use('/api/dex', isAuthenticated, dexScreenerRoutes); // ✅ DexScreener API - Unified at port 5000
-    app.use('/api/freqtrade', isAuthenticated, freqtradeRoutes); // ✅ Freqtrade API - Unified at port 5000
     
-    // Webhook routes for deposit transactions
+    app.use('/api/dex', isAuthenticated, dexScreenerRoutes); // ✅ DexScreener API - Unified at port 5000
+    
+    // Webhook routes for deposit transactions - handled via v1 routes
     const webhookRouter = express.Router();
-    const { setupDepositWebhookRoutes } = await import('./services/transaction-webhook-service');
-    setupDepositWebhookRoutes(webhookRouter);
     app.use('/api/webhooks/deposits', webhookRouter);
-    // Mount KYC routes
     app.use('/api/kyc', isAuthenticated, kycRouter);
 
     // Import and mount escrow routes
@@ -1328,9 +1351,18 @@ console.log('[STARTUP] Starting async initialization...');
       logger.error('Error starting vault automation service:', error);
     }
 
-    // Start contribution indexer
+    // Start contribution indexer with error handling
     console.log('Starting contribution indexer...');
-    await contributionIndexer.start();
+    try {
+      await contributionIndexer.start().catch(err => {
+        logger.error('⚠️ Contribution indexer failed to start:', err.message);
+        console.error('Contribution indexer error:', err);
+        // Don't crash the server, just log the error
+      });
+    } catch (error) {
+      logger.error('Error starting contribution indexer:', error);
+      console.error('Error starting contribution indexer:', error);
+    }
 
     // Start transaction monitor with error handling
     try {
@@ -1410,6 +1442,9 @@ console.log('[STARTUP] Starting async initialization...');
 
     console.log('✅ Blockchain services initialized successfully');
 
+    // STARTUP COMPLETE: Clear flag to enable INFO logging now that services are running
+    (global as any).isServerStarting = false;
+
     // ═══════════════════════════════════════════════════════════════════════════════
     // PHASE 7.1: SINGLETON VERIFICATION (After all services initialized)
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -1483,6 +1518,15 @@ console.log('[STARTUP] Starting async initialization...');
         logger.info('Circuit breakers reset during shutdown');
       } catch (err) {
         logger.error('Error resetting circuit breakers:', err);
+      }
+
+      // Finalize console logging
+      try {
+        const consoleLogger = getConsoleLogger();
+        consoleLogger.closeLogging();
+        logger.info('Console logging finalized');
+      } catch (err) {
+        logger.error('Error finalizing console logging:', err);
       }
 
       server.close(() => {

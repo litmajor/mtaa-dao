@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 
 interface SupportTicket {
   id: string;
@@ -85,34 +86,16 @@ export default function AdminSupportTickets() {
   const fetchTicketData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
       const [ticketsRes, metricsRes, statsRes] = await Promise.all([
-        fetch('/api/admin/support/tickets', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/support/metrics', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/support/stats', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
+        authClient.get('/api/admin/support/tickets'),
+        authClient.get('/api/admin/support/metrics'),
+        authClient.get('/api/admin/support/stats'),
       ]);
 
-      if (ticketsRes.ok) {
-        const data = await ticketsRes.json();
-        setTickets(data.tickets || []);
-      }
-
-      if (metricsRes.ok) {
-        const data = await metricsRes.json();
-        setMetrics(data.metrics || []);
-      }
-
-      if (statsRes.ok) {
-        const data = await statsRes.json();
-        setStats(data.stats || {});
-      }
+      setTickets(ticketsRes.tickets || []);
+      setMetrics(metricsRes.metrics || []);
+      setStats(statsRes.stats || {});
     } catch (error) {
       console.error('Failed to fetch ticket data:', error);
     } finally {
@@ -128,19 +111,8 @@ export default function AdminSupportTickets() {
 
   const updateTicketStatus = async (ticketId: string, newStatus: string) => {
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`/api/admin/support/tickets/${ticketId}`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ status: newStatus }),
-      });
-
-      if (response.ok) {
-        fetchTicketData();
-      }
+      await authClient.patch(`/api/admin/support/tickets/${ticketId}`, { status: newStatus });
+      fetchTicketData();
     } catch (error) {
       console.error('Failed to update ticket:', error);
     }
@@ -267,7 +239,7 @@ export default function AdminSupportTickets() {
                       <span className="text-white font-semibold">{stats.avgResolutionTime.toFixed(1)} hours</span>
                     </div>
                     <div className="w-full bg-slate-700 rounded-full h-2">
-                      <div className="bg-blue-500 h-2 rounded-full" style={{ width: '75%' }} />
+                      <div className="bg-blue-500 h-2 rounded-full" style={{ width: '75%' }} suppressHydrationWarning />
                     </div>
                   </div>
 
@@ -279,7 +251,7 @@ export default function AdminSupportTickets() {
                       </span>
                     </div>
                     <div className="w-full bg-slate-700 rounded-full h-2">
-                      <div className="bg-green-500 h-2 rounded-full" style={{ width: `${(stats.resolved / stats.total) * 100}%` }} />
+                      <div className="bg-green-500 h-2 rounded-full" style={{ width: `${(stats.resolved / stats.total) * 100}%` }} suppressHydrationWarning />
                     </div>
                   </div>
 

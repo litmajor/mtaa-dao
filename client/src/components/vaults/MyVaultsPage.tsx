@@ -15,7 +15,8 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { TrendingUp, TrendingDown, Wallet, Edit2, Trash2 } from 'lucide-react';
+import { TrendingUp, Wallet, AlertCircle, CheckCircle } from 'lucide-react';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface VaultPosition {
   vaultId: string;
@@ -40,6 +41,8 @@ interface PortfolioStats {
 }
 
 export default function MyVaultsPage() {
+  const { socket, isConnected } = useWebSocket();
+  
   const [positions, setPositions] = useState<VaultPosition[]>([]);
   const [stats, setStats] = useState<PortfolioStats | null>(null);
   const [performanceData, setPerformanceData] = useState<any[]>([]);
@@ -47,60 +50,112 @@ export default function MyVaultsPage() {
   const [sortBy, setSortBy] = useState<'return' | 'value' | 'aum'>('value');
   const [selectedVault, setSelectedVault] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [wsConnected, setWsConnected] = useState(false);
+
+  // Fetch vault data
+  const fetchVaultData = async () => {
+    try {
+      const posRes = await fetch('/api/v1/wallets/vaults/my-positions', {
+        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` },
+      }).then((r) => r.json());
+
+      setPositions(posRes.data || []);
+
+      const totalDeposited = posRes.data.reduce(
+        (sum: number, p: VaultPosition) => sum + p.depositAmount,
+        0
+      );
+      const totalValue = posRes.data.reduce(
+        (sum: number, p: VaultPosition) => sum + p.currentValue,
+        0
+      );
+      const totalProfitLoss = totalValue - totalDeposited;
+      const totalReturn = ((totalProfitLoss / totalDeposited) * 100).toFixed(2);
+
+      const best = posRes.data.reduce((max: VaultPosition, p: VaultPosition) =>
+        p.profitLossPercent > max.profitLossPercent ? p : max
+      );
+      const worst = posRes.data.reduce((min: VaultPosition, p: VaultPosition) =>
+        p.profitLossPercent < min.profitLossPercent ? p : min
+      );
+
+      setStats({
+        totalDeposited,
+        totalValue,
+        totalProfitLoss,
+        totalReturn,
+        bestVault: best.vaultName,
+        worstVault: worst.vaultName,
+      });
+
+      const perfRes = await fetch('/api/v1/wallets/vaults/portfolio-performance?days=90', {
+        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` },
+      }).then((r) => r.json());
+
+      setPerformanceData(perfRes.data || []);
+    } catch (err) {
+      console.error('Failed to fetch vault data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchData = async () => {
+    fetchVaultData();
+  }, []);
+
+  // WebSocket real-time vault updates
+  useEffect(() => {
+    if (!isConnected) {
+      setWsConnected(false);
+      return;
+    }
+
+    setWsConnected(true);
+
+    // Handle vault balance/value changes
+    const handleStatusChange = (data: any) => {
       try {
-        // Fetch user positions across all vaults
-        const posRes = await fetch('/api/vaults/my-positions', {
-          headers: { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` },
-        }).then((r) => r.json());
-
-        setPositions(posRes.data || []);
-
-        // Calculate portfolio stats
-        const totalDeposited = posRes.data.reduce(
-          (sum: number, p: VaultPosition) => sum + p.depositAmount,
-          0
-        );
-        const totalValue = posRes.data.reduce(
-          (sum: number, p: VaultPosition) => sum + p.currentValue,
-          0
-        );
-        const totalProfitLoss = totalValue - totalDeposited;
-        const totalReturn = ((totalProfitLoss / totalDeposited) * 100).toFixed(2);
-
-        const best = posRes.data.reduce((max: VaultPosition, p: VaultPosition) =>
-          p.profitLossPercent > max.profitLossPercent ? p : max
-        );
-        const worst = posRes.data.reduce((min: VaultPosition, p: VaultPosition) =>
-          p.profitLossPercent < min.profitLossPercent ? p : min
-        );
-
-        setStats({
-          totalDeposited,
-          totalValue,
-          totalProfitLoss,
-          totalReturn,
-          bestVault: best.vaultName,
-          worstVault: worst.vaultName,
-        });
-
-        // Fetch performance data
-        const perfRes = await fetch('/api/vaults/portfolio-performance?days=90', {
-          headers: { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` },
-        }).then((r) => r.json());
-
-        setPerformanceData(perfRes.data || []);
-      } catch (err) {
-        console.error('Failed to fetch vault data:', err);
-      } finally {
-        setLoading(false);
+        if (data.entityType === 'vault' || data.status?.includes('vault')) {
+          fetchVaultData();
+        }
+      } catch (error) {
+        console.error('Error processing vault status change:', error);
       }
     };
 
-    fetchData();
-  }, []);
+    // Handle vault activity (deposits, withdrawals)
+    const handleActivityLog = (data: any) => {
+      try {
+        if (data.entityType === 'vault' || data.action?.includes('vault')) {
+          fetchVaultData();
+        }
+      } catch (error) {
+        console.error('Error processing vault activity:', error);
+      }
+    };
+
+    // Handle vault alerts (low balance, performance issues)
+    const handleAlert = (data: any) => {
+      try {
+        if (data.entityType === 'vault' || data.message?.toLowerCase().includes('vault')) {
+          fetchVaultData();
+        }
+      } catch (error) {
+        console.error('Error processing vault alert:', error);
+      }
+    };
+
+    socket.on('status:changed', handleStatusChange);
+    socket.on('activity:logged', handleActivityLog);
+    socket.on('alert:new', handleAlert);
+
+    return () => {
+      socket.off('status:changed', handleStatusChange);
+      socket.off('activity:logged', handleActivityLog);
+      socket.off('alert:new', handleAlert);
+    };
+  }, [socket, isConnected]);
 
   if (loading) {
     return (
@@ -123,6 +178,20 @@ export default function MyVaultsPage() {
         <div>
           <h1 className="text-4xl font-bold">My Vaults</h1>
           <p className="text-slate-400 mt-2">Manage your vault deposits and monitor returns</p>
+          {/* WebSocket Status */}
+          <div className="flex items-center gap-2 mt-3">
+            {wsConnected ? (
+              <>
+                <CheckCircle className="h-4 w-4 text-green-500" />
+                <span className="text-xs text-green-600 font-semibold">Real-time • WebSocket Connected</span>
+              </>
+            ) : (
+              <>
+                <AlertCircle className="h-4 w-4 text-gray-400" />
+                <span className="text-xs text-gray-500 font-semibold">Polling Mode</span>
+              </>
+            )}
+          </div>
         </div>
 
         {/* PORTFOLIO STATS */}
@@ -295,7 +364,7 @@ export default function MyVaultsPage() {
                   {/* Actions */}
                   <div className="flex gap-2">
                     <button className="flex-1 bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded text-sm font-semibold flex items-center justify-center gap-2 transition-colors">
-                      <Edit2 className="h-3 w-3" />
+                      <Wallet className="h-3 w-3" />
                       Manage
                     </button>
                     <button className="flex-1 bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded text-sm font-semibold flex items-center justify-center gap-2 transition-colors">
@@ -339,6 +408,7 @@ export default function MyVaultsPage() {
                           pos.profitLoss >= 0 ? 'bg-green-500' : 'bg-red-500'
                         }`}
                         style={{ width: `${allocation}%` }}
+                        suppressHydrationWarning
                       />
                     </div>
                   </div>

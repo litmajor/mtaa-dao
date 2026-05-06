@@ -3,344 +3,202 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
 
 /**
  * @title MultiSigTreasury
- * @notice 2-of-3 multisig vault for DAO treasury with whitelisted recipients and timelocks
- * @dev Addresses CRITICAL security issues from Phase 2 (unilateral access + no audit trail)
+ * @notice 3-of-5 multisig treasury with 48-hour timelock
+ * @dev Addresses CRITICAL centralization issue: replaces single owner wallet
+ * 
+ * Key Features:
+ *  - 3 of 5 signatures required for any transaction
+ *  - 48-hour timelock between approval and execution (community reaction window)
+ *  - All transactions permanently recorded on-chain
+ *  - Signers: founder, 2 advisors, 2 community delegates (rotated annually)
+ * 
+ * Example Flow:
+ *  Week 1 Monday: Signer 1 proposes "Pay 50K MTAA to dev"
+ *  Week 1 Tuesday: Signers 2, 3 confirm
+ *  Week 1 Wednesday: 48 hours elapsed, Signer 1 executes
+ *  → 50K MTAA transferred to developer
+ *  → Community verified on Etherscan (full transparency)
  */
-contract MultiSigTreasury is ReentrancyGuard, AccessControl, Pausable {
+contract MultiSigTreasury is ReentrancyGuard {
     
-    // ==== CONFIGURATION ====
-    bytes32 public constant SIGNER_ROLE = keccak256("SIGNER_ROLE");
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    // ─────────────────────────────────────────────────────
+    // Constants
+    // ─────────────────────────────────────────────────────
     
-    uint256 public constant REQUIRED_APPROVALS = 2;
-    uint256 public constant TIMELOCK_DELAY = 48 hours;
-    uint256 public constant MAX_TRANSFER_PERCENTAGE = 5; // 5% per transaction
+    uint256 public constant REQUIRED_CONFIRMATIONS = 3;
+    uint256 public constant NUM_SIGNERS = 5;
+    uint256 public constant TIMELOCK = 48 hours;
     
-    address public treasuryAddress;
-    uint256 public treasuryBalance;
-    uint256 public dailySpentAmount;
-    uint256 public dailySpentReset;
+    // ─────────────────────────────────────────────────────
+    // State
+    // ─────────────────────────────────────────────────────
     
-    // ==== STATE ====
-    enum TransactionState { Pending, Approved, Executed, Rejected, Cancelled }
+    IERC20 public mtaaToken;
+    address[NUM_SIGNERS] public signers;
     
     struct Transaction {
-        uint256 id;
-        address to;
-        uint256 amount;
-        address token;
-        string description;
-        uint256 createdAt;
-        uint256 approvedAt;
-        uint256 executedAt;
-        TransactionState state;
-        uint256 approvalCount;
-        address proposedBy;
+        address target;         // Where to send tokens or call
+        uint256 value;          // MTAA amount
+        bytes data;             // Function call data (if any)
+        uint256 confirmations;  // Number of signatures so far
+        bool executed;
+        uint256 scheduledFor;   // Unix timestamp when executable
+        
+        mapping(address => bool) confirmedBy;  // Who has signed
     }
     
-    struct Whitelist {
-        address recipient;
-        string category;
-        bool isActive;
-        uint256 createdAt;
-    }
-    
-    // ==== STORAGE ====
+    uint256 public transactionCount;
     mapping(uint256 => Transaction) public transactions;
-    mapping(uint256 => mapping(address => bool)) public transactionApprovals;
-    mapping(address => Whitelist) public whitelistedRecipients;
-    mapping(uint256 => address[]) public transactionApprovers;
     
-    uint256 public nextTransactionId = 1;
-    address[] public signers;
+    // ─────────────────────────────────────────────────────
+    // Events
+    // ─────────────────────────────────────────────────────
     
-    // ==== EVENTS ====
-    event TransactionProposed(
-        uint256 indexed transactionId,
-        address indexed proposedBy,
-        address indexed to,
-        uint256 amount,
-        address token,
-        string description
-    );
+    event DepositReceived(address indexed from, uint256 amount);
+    event TransactionSubmitted(uint256 indexed txnId, address target, uint256 value);
+    event TransactionConfirmed(uint256 indexed txnId, address confirmedBy, uint256 totalConfirmations);
+    event TransactionExecuted(uint256 indexed txnId);
+    event TransactionRevoked(uint256 indexed txnId, address revokedBy);
     
-    event TransactionApproved(
-        uint256 indexed transactionId,
-        address indexed approver,
-        uint256 approvalCount
-    );
+    // ─────────────────────────────────────────────────────
+    // Constructor
+    // ─────────────────────────────────────────────────────
     
-    event TransactionExecuted(
-        uint256 indexed transactionId,
-        address indexed executor,
-        address indexed to,
-        uint256 amount,
-        address token
-    );
-    
-    event TransactionRejected(
-        uint256 indexed transactionId,
-        address indexed rejectedBy,
-        string reason
-    );
-    
-    event RecipientWhitelisted(
-        address indexed recipient,
-        string category,
-        uint256 timestamp
-    );
-    
-    event RecipientRemovedFromWhitelist(
-        address indexed recipient,
-        uint256 timestamp
-    );
-    
-    event TreasuryBalanceUpdated(
-        uint256 newBalance,
-        uint256 timestamp
-    );
-    
-    // ==== CONSTRUCTOR ====
-    constructor(address[] memory initialSigners, address _treasuryAddress) {
-        require(initialSigners.length >= 3, "Minimum 3 signers required");
-        require(_treasuryAddress != address(0), "Invalid treasury address");
+    constructor(
+        address _mtaaToken,
+        address[5] memory _signers
+    ) {
+        mtaaToken = IERC20(_mtaaToken);
+        signers = _signers;
         
-        treasuryAddress = _treasuryAddress;
-        signers = initialSigners;
-        dailySpentReset = block.timestamp;
-        
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(ADMIN_ROLE, msg.sender);
-        
-        for (uint256 i = 0; i < initialSigners.length; i++) {
-            _grantRole(SIGNER_ROLE, initialSigners[i]);
+        // Validate signers are unique
+        for (uint i = 0; i < NUM_SIGNERS; i++) {
+            require(signers[i] != address(0), "Invalid signer");
+            for (uint j = i + 1; j < NUM_SIGNERS; j++) {
+                require(signers[i] != signers[j], "Duplicate signer");
+            }
         }
     }
     
-    // ==== RECIPIENT WHITELIST ====
-    function addWhitelistRecipient(
-        address recipient,
-        string memory category
-    ) external onlyRole(ADMIN_ROLE) {
-        require(recipient != address(0), "Invalid recipient address");
-        require(bytes(category).length > 0, "Category required");
-        
-        whitelistedRecipients[recipient] = Whitelist({
-            recipient: recipient,
-            category: category,
-            isActive: true,
-            createdAt: block.timestamp
-        });
-        
-        emit RecipientWhitelisted(recipient, category, block.timestamp);
-    }
     
-    function removeWhitelistRecipient(address recipient) external onlyRole(ADMIN_ROLE) {
-        require(whitelistedRecipients[recipient].isActive, "Recipient not whitelisted");
-        whitelistedRecipients[recipient].isActive = false;
-        emit RecipientRemovedFromWhitelist(recipient, block.timestamp);
-    }
+    // ─────────────────────────────────────────────────────
+    // Core Functions
+    // ─────────────────────────────────────────────────────
     
-    function isRecipientWhitelisted(address recipient) public view returns (bool) {
-        return whitelistedRecipients[recipient].isActive;
-    }
-    
-    // ==== TRANSACTION PROPOSAL ====
-    function proposeTransaction(
-        address to,
-        uint256 amount,
-        address token,
-        string memory description
-    ) external onlyRole(SIGNER_ROLE) returns (uint256) {
-        require(to != address(0), "Invalid recipient");
-        require(amount > 0, "Amount must be positive");
-        require(isRecipientWhitelisted(to), "Recipient not whitelisted");
-        require(bytes(description).length > 0, "Description required");
-        
-        // Validate amount limits
-        _validateAmountLimits(amount);
-        
-        uint256 txId = nextTransactionId++;
-        Transaction storage tx = transactions[txId];
-        
-        tx.id = txId;
-        tx.to = to;
-        tx.amount = amount;
-        tx.token = token;
-        tx.description = description;
-        tx.createdAt = block.timestamp;
-        tx.state = TransactionState.Pending;
-        tx.approvalCount = 0;
-        tx.proposedBy = msg.sender;
-        
-        emit TransactionProposed(txId, msg.sender, to, amount, token, description);
-        return txId;
-    }
-    
-    // ==== APPROVAL & EXECUTION ====
-    function approveTransaction(uint256 transactionId) 
-        external 
-        onlyRole(SIGNER_ROLE) 
-        returns (bool) 
-    {
-        Transaction storage tx = transactions[transactionId];
-        
-        require(tx.id != 0, "Transaction does not exist");
-        require(tx.state == TransactionState.Pending, "Transaction not pending");
-        require(!transactionApprovals[transactionId][msg.sender], "Already approved");
-        require(block.timestamp >= tx.createdAt + TIMELOCK_DELAY, "Timelock not elapsed");
-        
-        transactionApprovals[transactionId][msg.sender] = true;
-        tx.approvalCount++;
-        transactionApprovers[transactionId].push(msg.sender);
-        
-        emit TransactionApproved(transactionId, msg.sender, tx.approvalCount);
-        
-        if (tx.approvalCount >= REQUIRED_APPROVALS) {
-            tx.state = TransactionState.Approved;
-            tx.approvedAt = block.timestamp;
-            return true;
+    modifier onlySigner() {
+        bool isSigner = false;
+        for (uint i = 0; i < NUM_SIGNERS; i++) {
+            if (signers[i] == msg.sender) {
+                isSigner = true;
+                break;
+            }
         }
-        
-        return false;
+        require(isSigner, "Only signer can call");
+        _;
     }
     
-    function executeTransaction(uint256 transactionId) 
-        external 
-        onlyRole(SIGNER_ROLE) 
-        nonReentrant 
-        whenNotPaused 
-        returns (bool) 
-    {
-        Transaction storage tx = transactions[transactionId];
+    /**
+     * @notice Submit a transaction (spending MTAA from treasury)
+     * @param target Address of MTAA token (or contract to call)
+     * @param data Encoded function call (e.g., transfer(recipient, amount))
+     */
+    function submitTransaction(
+        address target,
+        bytes calldata data
+    ) external onlySigner {
+        require(target != address(0), "Invalid target");
         
-        require(tx.state == TransactionState.Approved, "Transaction not approved");
-        require(tx.approvalCount >= REQUIRED_APPROVALS, "Insufficient approvals");
+        uint256 txnId = transactionCount++;
         
-        tx.state = TransactionState.Executed;
-        tx.executedAt = block.timestamp;
+        Transaction storage txn = transactions[txnId];
+        txn.target = target;
+        txn.data = data;
+        txn.scheduledFor = block.timestamp + TIMELOCK;
         
-        // Execute transfer
-        _executeTransfer(tx.to, tx.amount, tx.token);
-        
-        emit TransactionExecuted(transactionId, msg.sender, tx.to, tx.amount, tx.token);
-        return true;
+        emit TransactionSubmitted(txnId, target, 0);
     }
     
-    // ==== INTERNAL HELPERS ====
-    function _validateAmountLimits(uint256 amount) internal {
-        uint256 maxAmount = (treasuryBalance * MAX_TRANSFER_PERCENTAGE) / 100;
-        require(amount <= maxAmount, "Amount exceeds single transaction limit");
+    /**
+     * @notice Approve a transaction (add a signature)
+     */
+    function confirmTransaction(uint256 txnId) external onlySigner {
+        Transaction storage txn = transactions[txnId];
         
-        // Reset daily limit if day has passed
-        if (block.timestamp > dailySpentReset + 1 days) {
-            dailySpentAmount = 0;
-            dailySpentReset = block.timestamp;
-        }
+        require(!txn.executed, "Already executed");
+        require(!txn.confirmedBy[msg.sender], "Already confirmed by you");
+        require(txn.scheduledFor > 0, "Transaction not found");
         
-        // Check daily limit (5% of treasury per day)
-        uint256 dailyLimit = (treasuryBalance * 5) / 100;
-        require(dailySpentAmount + amount <= dailyLimit, "Daily spending limit exceeded");
+        txn.confirmedBy[msg.sender] = true;
+        txn.confirmations++;
+        
+        emit TransactionConfirmed(txnId, msg.sender, txn.confirmations);
     }
     
-    function _executeTransfer(
-        address to,
-        uint256 amount,
-        address token
-    ) internal {
-        require(to != address(0), "Invalid recipient");
+    /**
+     * @notice Revoke confirmation (remove a signature)
+     */
+    function revokeConfirmation(uint256 txnId) external onlySigner {
+        Transaction storage txn = transactions[txnId];
         
-        if (token == address(0)) {
-            // Native token transfer
-            (bool success, ) = payable(to).call{value: amount}("");
-            require(success, "Native transfer failed");
-        } else {
-            // ERC20 token transfer
-            require(
-                IERC20(token).transfer(to, amount),
-                "Token transfer failed"
-            );
-        }
+        require(!txn.executed, "Already executed");
+        require(txn.confirmedBy[msg.sender], "Not confirmed by you");
         
-        treasuryBalance -= amount;
-        dailySpentAmount += amount;
+        txn.confirmedBy[msg.sender] = false;
+        txn.confirmations--;
         
-        emit TreasuryBalanceUpdated(treasuryBalance, block.timestamp);
+        emit TransactionRevoked(txnId, msg.sender);
     }
     
-    // ==== GETTERS ====
-    function getTransaction(uint256 transactionId) 
-        external 
-        view 
+    /**
+     * @notice Execute transaction (after timelock expires + 3 confirmations)
+     */
+    function executeTransaction(uint256 txnId) external nonReentrant {
+        Transaction storage txn = transactions[txnId];
+        
+        require(!txn.executed, "Already executed");
+        require(txn.confirmations >= REQUIRED_CONFIRMATIONS, "Need 3+ confirmations");
+        require(block.timestamp >= txn.scheduledFor, "Timelock not expired (48 hours required)");
+        
+        txn.executed = true;
+        
+        // Execute the call
+        (bool success,) = txn.target.call(txn.data);
+        require(success, "Transaction failed");
+        
+        emit TransactionExecuted(txnId);
+    }
+    
+    // ─────────────────────────────────────────────────────
+    // View Functions
+    // ─────────────────────────────────────────────────────
+    
+    function getTreasuryBalance() external view returns (uint256) {
+        return mtaaToken.balanceOf(address(this));
+    }
+    
+    function getTransactionStatus(uint256 txnId)
+        external
+        view
         returns (
-            address to,
-            uint256 amount,
-            address token,
-            string memory description,
-            TransactionState state,
-            uint256 approvalCount,
-            uint256 createdAt,
-            address proposedBy
-        ) 
+            address target,
+            uint256 confirmations,
+            bool executed,
+            uint256 scheduledFor
+        )
     {
-        Transaction storage tx = transactions[transactionId];
-        return (
-            tx.to,
-            tx.amount,
-            tx.token,
-            tx.description,
-            tx.state,
-            tx.approvalCount,
-            tx.createdAt,
-            tx.proposedBy
-        );
+        Transaction storage txn = transactions[txnId];
+        return (txn.target, txn.confirmations, txn.executed, txn.scheduledFor);
     }
     
-    function getTransactionApprovers(uint256 transactionId) 
-        external 
-        view 
-        returns (address[] memory) 
-    {
-        return transactionApprovers[transactionId];
+    function hasConfirmed(uint256 txnId, address signer) external view returns (bool) {
+        return transactions[txnId].confirmedBy[signer];
     }
     
-    function getSigners() external view returns (address[] memory) {
+    function getSigners() external view returns (address[5] memory) {
         return signers;
     }
-    
-    function hasApproved(uint256 transactionId, address signer) 
-        external 
-        view 
-        returns (bool) 
-    {
-        return transactionApprovals[transactionId][signer];
-    }
-    
-    function getWhitelistedRecipient(address recipient) 
-        external 
-        view 
-        returns (Whitelist memory) 
-    {
-        return whitelistedRecipients[recipient];
-    }
-    
-    // ==== PAUSE & EMERGENCY ====
-    function pause() external onlyRole(ADMIN_ROLE) {
-        _pause();
-    }
-    
-    function unpause() external onlyRole(ADMIN_ROLE) {
-        _unpause();
-    }
-    
-    // ==== RECEIVE NATIVE TOKEN ====
-    receive() external payable {
-        treasuryBalance += msg.value;
-        emit TreasuryBalanceUpdated(treasuryBalance, block.timestamp);
-    }
 }
+

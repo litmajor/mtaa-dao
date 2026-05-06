@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react';
+import { authClient } from '@/utils/authClient';
 import { User } from '../../types/user';
 
 
 // Fetch user from API (replace with your actual endpoint and logic)
 const fetchCurrentUser = async (): Promise<User | null> => {
-  const token = localStorage.getItem('accessToken');
+  const token = authClient.getToken();
   if (!token) return null;
 
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`,
+    ...(await authClient.getAuthHeaders()),
   };
 
   const res = await fetch('/api/auth/user', {

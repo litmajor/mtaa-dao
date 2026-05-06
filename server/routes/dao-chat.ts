@@ -5,6 +5,7 @@ import { db } from '../db';
 import { logger } from '../utils/logger';
 import { daoMessages, users, daos, messageReactions, messageAttachments } from '../../shared/schema';
 import { eq, desc, and, like, inArray, sql } from 'drizzle-orm';
+import { chatService } from '../services/chatService';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -79,135 +80,111 @@ router.get('/dao/:daoId/messages', async (req, res) => {
   try {
     const { daoId } = req.params;
     const { limit = 50, search } = req.query;
-    
-    // Build where condition
-    let whereCondition: any = eq(daoMessages.daoId, daoId);
-    let searchStr: string | undefined = undefined;
-    if (typeof search === 'string' && search.trim().length > 0) {
-      searchStr = search;
-      whereCondition = and(whereCondition, like(daoMessages.content, `%${searchStr}%`));
-    } else if (Array.isArray(search) && typeof search[0] === 'string' && search[0].trim().length > 0) {
-      searchStr = search[0];
-      whereCondition = and(whereCondition, like(daoMessages.content, `%${searchStr}%`));
-    }
 
-    const messages = await db
-      .select({
-        id: daoMessages.id,
-        content: daoMessages.content,
-        userId: daoMessages.userId,
-        userName: users.username,
-        userFirstName: users.firstName,
-        userLastName: users.lastName,
-        createdAt: daoMessages.createdAt,
-        updatedAt: daoMessages.updatedAt,
-        messageType: daoMessages.messageType,
-        replyToMessageId: daoMessages.replyToMessageId,
-        isPinned: daoMessages.isPinned,
-        pinnedAt: daoMessages.pinnedAt,
-        pinnedBy: daoMessages.pinnedBy,
-      })
-      .from(daoMessages)
-      .leftJoin(users, eq(daoMessages.userId, users.id))
-      .where(whereCondition)
-      .orderBy(desc(daoMessages.createdAt))
-      .limit(parseInt(limit as string));
-    
-    // Fetch reactions for all messages
-    const messageIds = messages.map(m => m.id);
-    const reactions = messageIds.length > 0 ? await db
-      .select({
-        messageId: messageReactions.messageId,
-        emoji: messageReactions.emoji,
-        userId: messageReactions.userId,
-        userName: users.username,
-      })
-      .from(messageReactions)
-      .leftJoin(users, eq(messageReactions.userId, users.id))
-      .where(inArray(messageReactions.messageId, messageIds)) : [];
-    
-    // Fetch attachments for all messages
-    const attachments = messageIds.length > 0 ? await db
-      .select()
-      .from(messageAttachments)
-      .where(inArray(messageAttachments.messageId, messageIds)) : [];
-    
-    // Fetch reply-to messages
-    const replyToMessageIds = messages
-      .filter(m => m.replyToMessageId)
-      .map(m => m.replyToMessageId as string);
-    
-    const replyToMessages = replyToMessageIds.length > 0 ? await db
-      .select({
-        id: daoMessages.id,
-        content: daoMessages.content,
-        userName: users.username,
-      })
-      .from(daoMessages)
-      .leftJoin(users, eq(daoMessages.userId, users.id))
-      .where(inArray(daoMessages.id, replyToMessageIds)) : [];
-    
-    // Build reaction groups for each message
-    const reactionGroups = reactions.reduce((acc, r) => {
-      if (!acc[r.messageId]) acc[r.messageId] = {};
-      if (!acc[r.messageId][r.emoji]) {
-        acc[r.messageId][r.emoji] = { count: 0, users: [] };
-      }
-      acc[r.messageId][r.emoji].count++;
-      acc[r.messageId][r.emoji].users.push({
-        id: r.userId,
-        name: r.userName || 'Unknown',
-      });
-      return acc;
-    }, {} as Record<string, Record<string, { count: number; users: any[] }>>);
-    
-    // Enhance messages with real data
-    const enhancedMessages = messages.map(msg => ({
-      ...msg,
-      userName: msg.userName || `${msg.userFirstName || ''} ${msg.userLastName || ''}`.trim() || 'Anonymous',
-      reactions: reactionGroups[msg.id] || {},
-      attachment: attachments.find(a => a.messageId === msg.id) || null,
-      isPinned: msg.isPinned || false,
-      replyTo: msg.replyToMessageId
-        ? replyToMessages.find(r => r.id === msg.replyToMessageId) || null
-        : null,
-    }));
-    
-    res.json({ messages: enhancedMessages });
+    const messages = await chatService.getDAOMessages({
+      daoId,
+      limit: parseInt(limit as string),
+      search: (search as string) || undefined,
+    });
+
+    res.json({ messages });
   } catch (error) {
-    console.error('Error fetching messages:', error);
+    logger.error('Error fetching messages:', error);
     res.status(500).json({ error: 'Failed to fetch messages' });
   }
 });
 
 // Create message
-router.post('/dao/:daoId/messages', async (req, res) => {
+router.post('/dao/:daoId/messages', async (req: any, res) => {
   try {
     const { daoId } = req.params;
-    const { content, messageType = 'text', replyTo } = req.body;
-  const userId = req.user?.claims?.sub;
-    
+    const { content, messageType = 'text', replyToMessageId } = req.body;
+    const userId = req.user?.claims?.sub;
+
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    
-    const [newMessage] = await db.insert(daoMessages).values({
+
+    const newMessage = await chatService.createMessage(
       daoId,
       userId,
       content,
       messageType,
-      replyToMessageId: replyTo?.id || null
-    }).returning();
-    
-    res.json({ message: newMessage });
+      replyToMessageId
+    );
+
+    res.status(201).json({ message: newMessage });
   } catch (error) {
-    console.error('Error creating message:', error);
+    const errorMsg = error instanceof Error ? error.message : 'Failed to create message';
+    logger.error('Error creating message:', error);
+
+    if (errorMsg.includes('not a member')) {
+      return res.status(403).json({ error: errorMsg });
+    }
+    if (errorMsg.includes('not found') || errorMsg.includes('empty') || errorMsg.includes('exceeds')) {
+      return res.status(400).json({ error: errorMsg });
+    }
     res.status(500).json({ error: 'Failed to create message' });
   }
 });
 
+// Delete message
+router.delete('/dao/:daoId/messages/:messageId', async (req: any, res) => {
+  try {
+    const { daoId, messageId } = req.params;
+    const userId = req.user?.claims?.sub;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    await chatService.deleteMessage(daoId, messageId, userId);
+
+    res.json({ success: true, message: 'Message deleted' });
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Failed to delete message';
+    logger.error('Error deleting message:', error);
+
+    if (errorMsg.includes('Not authorized')) {
+      return res.status(403).json({ error: errorMsg });
+    }
+    if (errorMsg.includes('not found')) {
+      return res.status(404).json({ error: errorMsg });
+    }
+    res.status(500).json({ error: 'Failed to delete message' });
+  }
+});
+
+// Edit message
+router.patch('/dao/:daoId/messages/:messageId', async (req: any, res) => {
+  try {
+    const { daoId, messageId } = req.params;
+    const { content } = req.body;
+    const userId = req.user?.claims?.sub;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const updatedMessage = await chatService.editMessage(daoId, messageId, userId, content);
+
+    res.json({ message: updatedMessage[0] });
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Failed to edit message';
+    logger.error('Error editing message:', error);
+
+    if (errorMsg.includes('Not authorized')) {
+      return res.status(403).json({ error: errorMsg });
+    }
+    if (errorMsg.includes('not found') || errorMsg.includes('empty') || errorMsg.includes('exceeds')) {
+      return res.status(400).json({ error: errorMsg });
+    }
+    res.status(500).json({ error: 'Failed to edit message' });
+  }
+});
+
 // File upload endpoint with enhanced validation and database persistence
-router.post('/dao/:daoId/upload', upload.single('file'), async (req, res) => {
+router.post('/dao/:daoId/upload', upload.single('file'), async (req: any, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -215,16 +192,17 @@ router.post('/dao/:daoId/upload', upload.single('file'), async (req, res) => {
 
     const { daoId } = req.params;
     const userId = req.user?.claims?.sub;
-    
+
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    // Verify DAO membership (optional - if needed for access control)
-    // const daoMember = await db.select().from(daos).where(eq(daos.id, daoId)).limit(1);
-    // if (!daoMember.length) {
-    //   return res.status(403).json({ error: 'Access denied: Not a member of this DAO' });
-    // }
+    // Verify DAO membership
+    try {
+      await chatService.verifyDAOMembership(daoId, userId);
+    } catch (error) {
+      return res.status(403).json({ error: 'Access denied: Not a member of this DAO' });
+    }
 
     // Validate file wasn't modified by middleware
     if (!req.file.mimetype || !req.file.size || req.file.size === 0) {
@@ -237,29 +215,25 @@ router.post('/dao/:daoId/upload', upload.single('file'), async (req, res) => {
     }
 
     // Store attachment metadata in database
-    const [attachment] = await db
-      .insert(messageAttachments)
-      .values({
-        messageId: null, // Will be linked when message is created
-        fileName: req.file.originalname,
-        fileSize: req.file.size,
-        fileType: req.file.mimetype,
-        filePath: `/uploads/${req.file.filename}`,
-        uploadedBy: userId,
-      })
-      .returning();
+    const attachment = await chatService.createAttachment(
+      req.file.originalname,
+      req.file.size,
+      req.file.mimetype,
+      `/uploads/${req.file.filename}`,
+      userId
+    );
 
-    logger.info(`File uploaded: ${req.file.originalname} (${req.file.size} bytes) by user ${userId}`);
+    logger.info(`File uploaded: ${req.file.originalname} (${req.file.size} bytes) by user ${userId} to DAO ${daoId}`);
 
-    res.json({
+    res.status(201).json({
       success: true,
       file: {
         id: attachment.id,
         name: attachment.fileName,
         size: attachment.fileSize,
         type: attachment.fileType,
-        url: attachment.filePath,
-        uploadedAt: attachment.uploadedAt,
+        url: attachment.fileUrl,
+        uploadedAt: attachment.createdAt,
       },
     });
   } catch (error) {
@@ -275,181 +249,88 @@ router.post('/dao/:daoId/upload', upload.single('file'), async (req, res) => {
         return res.status(400).json({ error: error.message });
       }
     }
-    
+
     logger.error('Error uploading file:', error);
     res.status(500).json({ error: 'Failed to upload file' });
   }
 });
 
 // Add/Toggle reaction to message (POST - adds or removes reaction)
-router.post('/messages/:messageId/reactions', async (req, res) => {
+router.post('/dao/:daoId/messages/:messageId/reactions', async (req: any, res) => {
   try {
-    const { messageId } = req.params;
+    const { daoId, messageId } = req.params;
     const { emoji } = req.body;
     const userId = req.user?.claims?.sub;
-    
+
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    
-    if (!emoji || typeof emoji !== 'string' || emoji.trim().length === 0) {
-      return res.status(400).json({ error: 'Valid emoji is required' });
-    }
 
-    // Validate message exists
-    const message = await db
-      .select({ id: daoMessages.id })
-      .from(daoMessages)
-      .where(eq(daoMessages.id, messageId))
-      .limit(1);
-
-    if (!message.length) {
-      return res.status(404).json({ error: 'Message not found' });
-    }
-    
-    // Check if user already reacted with this emoji
-    const existingReaction = await db
-      .select()
-      .from(messageReactions)
-      .where(
-        and(
-          eq(messageReactions.messageId, messageId),
-          eq(messageReactions.userId, userId),
-          eq(messageReactions.emoji, emoji)
-        )
-      )
-      .limit(1);
-    
-    if (existingReaction.length > 0) {
-      // Remove reaction (toggle off)
-      await db
-        .delete(messageReactions)
-        .where(eq(messageReactions.id, existingReaction[0].id));
-      
-      logger.info(`User ${userId} removed reaction ${emoji} from message ${messageId}`);
-      
-      res.json({ 
-        success: true, 
-        action: 'removed', 
-        emoji,
-        message: 'Reaction removed'
-      });
-    } else {
-      // Add reaction
-      const [newReaction] = await db
-        .insert(messageReactions)
-        .values({
-          messageId,
-          userId,
-          emoji,
-        })
-        .returning();
-      
-      logger.info(`User ${userId} added reaction ${emoji} to message ${messageId}`);
-      
-      res.json({ 
-        success: true, 
-        action: 'added', 
-        emoji,
-        reactionId: newReaction.id,
-        message: 'Reaction added'
-      });
-    }
+    const result = await chatService.toggleReaction(daoId, messageId, userId, emoji);
+    res.json(result);
   } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Failed to toggle reaction';
     logger.error('Error toggling reaction:', error);
+
+    if (errorMsg.includes('not found') || errorMsg.includes('emoji')) {
+      return res.status(400).json({ error: errorMsg });
+    }
     res.status(500).json({ error: 'Failed to toggle reaction' });
   }
 });
 
 // Remove reaction from message (DELETE - explicit removal)
-router.delete('/messages/:messageId/reactions/:emoji', async (req, res) => {
+router.delete('/dao/:daoId/messages/:messageId/reactions/:emoji', async (req: any, res) => {
   try {
-    const { messageId, emoji: encodedEmoji } = req.params;
+    const { daoId, messageId, emoji: encodedEmoji } = req.params;
     const userId = req.user?.claims?.sub;
-    
+
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
     const emoji = decodeURIComponent(encodedEmoji);
 
-    if (!emoji || emoji.trim().length === 0) {
-      return res.status(400).json({ error: 'Valid emoji is required' });
-    }
+    await chatService.removeReaction(daoId, messageId, userId, emoji);
 
-    // Find and delete the reaction
-    const reaction = await db
-      .select()
-      .from(messageReactions)
-      .where(
-        and(
-          eq(messageReactions.messageId, messageId),
-          eq(messageReactions.userId, userId),
-          eq(messageReactions.emoji, emoji)
-        )
-      )
-      .limit(1);
-
-    if (!reaction.length) {
-      return res.status(404).json({ error: 'Reaction not found' });
-    }
-
-    await db
-      .delete(messageReactions)
-      .where(eq(messageReactions.id, reaction[0].id));
-
-    logger.info(`User ${userId} deleted reaction ${emoji} from message ${messageId}`);
-    
-    res.json({ 
+    res.json({
       success: true,
-      message: 'Reaction removed'
+      message: 'Reaction removed',
     });
   } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Failed to remove reaction';
     logger.error('Error removing reaction:', error);
+
+    if (errorMsg.includes('not found') || errorMsg.includes('emoji')) {
+      return res.status(400).json({ error: errorMsg });
+    }
     res.status(500).json({ error: 'Failed to remove reaction' });
   }
 });
 
 // Pin/Unpin message
-router.post('/messages/:messageId/pin', async (req, res) => {
+router.post('/dao/:daoId/messages/:messageId/pin', async (req: any, res) => {
   try {
-    const { messageId } = req.params;
+    const { daoId, messageId } = req.params;
     const userId = req.user?.claims?.sub;
-    
+
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    
-    // Get the message to check DAO membership
-    const message = await db
-      .select({ daoId: daoMessages.daoId, isPinned: daoMessages.isPinned })
-      .from(daoMessages)
-      .where(eq(daoMessages.id, messageId))
-      .limit(1);
-    
-    if (!message.length) {
-      return res.status(404).json({ error: 'Message not found' });
-    }
-    
-    // Toggle pin status
-    const newPinStatus = !message[0].isPinned;
-    
-    await db
-      .update(daoMessages)
-      .set({
-        isPinned: newPinStatus,
-        pinnedAt: newPinStatus ? new Date() : null,
-        pinnedBy: newPinStatus ? userId : null,
-      })
-      .where(eq(daoMessages.id, messageId));
-    
-    res.json({ 
-      success: true, 
-      isPinned: newPinStatus,
-      message: newPinStatus ? 'Message pinned' : 'Message unpinned'
+
+    const result = await chatService.togglePinMessage(daoId, messageId, userId);
+    res.json({
+      success: result.success,
+      isPinned: result.isPinned,
+      message: result.isPinned ? 'Message pinned' : 'Message unpinned',
     });
   } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Failed to pin message';
     logger.error('Error pinning message:', error);
+
+    if (errorMsg.includes('not found')) {
+      return res.status(404).json({ error: errorMsg });
+    }
     res.status(500).json({ error: 'Failed to pin message' });
   }
 });
@@ -536,47 +417,43 @@ router.get('/dao/:daoId/presence', async (req, res) => {
 });
 
 // Delete attachment
-router.delete('/attachments/:attachmentId', async (req, res) => {
+router.delete('/dao/:daoId/attachments/:attachmentId', async (req, res) => {
   try {
-    const { attachmentId } = req.params;
+    const { daoId, attachmentId } = req.params;
     const userId = req.user?.claims?.sub;
-    
+
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    // Get attachment to check ownership
-    const attachment = await db
-      .select()
-      .from(messageAttachments)
-      .where(eq(messageAttachments.id, attachmentId))
-      .limit(1);
+    await chatService.deleteAttachment(attachmentId, userId);
 
-    if (!attachment.length) {
-      return res.status(404).json({ error: 'Attachment not found' });
+    // Delete file from disk (async, non-blocking)
+    const attachment = await chatService.getAttachment(attachmentId);
+    if (attachment && attachment.fileUrl) {
+      const filePath = path.join('uploads/', path.basename(attachment.fileUrl));
+      setImmediate(() => {
+        if (fs.existsSync(filePath)) {
+          fs.unlink(filePath, (err) => {
+            if (err) {
+              logger.error(`Error deleting file ${filePath}:`, err);
+            }
+          });
+        }
+      });
     }
-
-    // Only allow deletion by uploader or admin
-    if (attachment[0].uploadedBy !== userId) {
-      return res.status(403).json({ error: 'Not authorized to delete this attachment' });
-    }
-
-    // Delete file from disk
-    const filePath = path.join('uploads/', attachment[0].fileName);
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-
-    // Delete database record
-    await db
-      .delete(messageAttachments)
-      .where(eq(messageAttachments.id, attachmentId));
-
-    logger.info(`Attachment ${attachmentId} deleted by user ${userId}`);
 
     res.json({ success: true, message: 'Attachment deleted' });
   } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Failed to delete attachment';
     logger.error('Error deleting attachment:', error);
+
+    if (errorMsg.includes('Not authorized')) {
+      return res.status(403).json({ error: errorMsg });
+    }
+    if (errorMsg.includes('not found')) {
+      return res.status(404).json({ error: errorMsg });
+    }
     res.status(500).json({ error: 'Failed to delete attachment' });
   }
 });

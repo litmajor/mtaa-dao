@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Plus, Loader } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 import RuleCard from '@/components/rules/RuleCard';
 import RuleBuilder from '@/components/rules/RuleBuilder';
 import TemplatesGallery from '@/components/rules/TemplatesGallery';
@@ -25,11 +26,7 @@ export default function RulesDashboard() {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(`/api/daos/${daoId}/rules`);
-      if (!response.ok) {
-        throw new Error('Failed to load rules');
-      }
-      const data = await response.json();
+      const data = await authClient.get(`/api/daos/${daoId}/rules`);
       setRules(data.data || data.rules || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load rules');

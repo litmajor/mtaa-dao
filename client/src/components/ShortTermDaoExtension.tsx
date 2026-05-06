@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Clock, TrendingUp, AlertTriangle, CheckCircle } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 
 interface ExtensionInfo {
   number: number;
@@ -46,15 +47,7 @@ export function ShortTermDaoExtension({
   const handleExtend = async () => {
     setIsExtending(true);
     try {
-      const response = await fetch(`/api/dao-subscriptions/${daoId}/extend`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      
-      const data = await response.json();
+      const data = await authClient.post(`/api/v1/daos/${daoId}/subscriptions/extend`, {});
       
       if (data.success) {
         setExtensionResult(data.extension);
@@ -71,16 +64,7 @@ export function ShortTermDaoExtension({
   
   const handleUpgrade = async () => {
     try {
-      const response = await fetch(`/api/dao-subscriptions/${daoId}/upgrade-to-collective`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({ paymentMethod: 'treasury' })
-      });
-      
-      const data = await response.json();
+      const data = await authClient.post(`/api/v1/daos/${daoId}/subscriptions/upgrade-to-collective`, { paymentMethod: 'treasury' });
       
       if (data.success) {
         window.location.reload();

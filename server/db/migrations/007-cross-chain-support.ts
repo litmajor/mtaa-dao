@@ -25,12 +25,14 @@ export async function migrateCrossChainTables() {
         is_supported BOOLEAN DEFAULT true,
         min_gas_price NUMERIC(20, 8),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_chain_name (chain_name),
-        INDEX idx_is_active (is_active)
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
     console.log('✅ Created cross_chain_chains table');
+
+    // Create indices for cross_chain_chains
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_chain_name ON cross_chain_chains(chain_name)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_is_active ON cross_chain_chains(is_active)`);
 
     // Create cross_chain_tokens table
     await pool.query(`
@@ -50,13 +52,15 @@ export async function migrateCrossChainTables() {
         price_updated_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (chain_name) REFERENCES cross_chain_chains(chain_name),
-        INDEX idx_symbol (symbol),
-        INDEX idx_chain (chain_name),
-        INDEX idx_bridge (is_bridgeable)
+        FOREIGN KEY (chain_name) REFERENCES cross_chain_chains(chain_name)
       )
     `);
     console.log('✅ Created cross_chain_tokens table');
+
+    // Create indices for cross_chain_tokens
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_symbol ON cross_chain_tokens(symbol)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_chain ON cross_chain_tokens(chain_name)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_bridge ON cross_chain_tokens(is_bridgeable)`);
 
     // Create cross_chain_bridges table
     await pool.query(`
@@ -78,12 +82,14 @@ export async function migrateCrossChainTables() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (source_chain) REFERENCES cross_chain_chains(chain_name),
-        FOREIGN KEY (destination_chain) REFERENCES cross_chain_chains(chain_name),
-        INDEX idx_bridge_name (bridge_name),
-        INDEX idx_chains (source_chain, destination_chain)
+        FOREIGN KEY (destination_chain) REFERENCES cross_chain_chains(chain_name)
       )
     `);
     console.log('✅ Created cross_chain_bridges table');
+
+    // Create indices for cross_chain_bridges
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_bridge_name ON cross_chain_bridges(bridge_name)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_chains ON cross_chain_bridges(source_chain, destination_chain)`);
 
     // Create cross_chain_dexes table
     await pool.query(`
@@ -101,12 +107,14 @@ export async function migrateCrossChainTables() {
         is_active BOOLEAN DEFAULT true,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (chain_name) REFERENCES cross_chain_chains(chain_name),
-        INDEX idx_dex_name (dex_name),
-        INDEX idx_chain (chain_name)
+        FOREIGN KEY (chain_name) REFERENCES cross_chain_chains(chain_name)
       )
     `);
     console.log('✅ Created cross_chain_dexes table');
+
+    // Create indices for cross_chain_dexes
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_dex_name ON cross_chain_dexes(dex_name)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_chain_dex ON cross_chain_dexes(chain_name)`);
 
     // Create cross_chain_trading_pairs table
     await pool.query(`
@@ -123,12 +131,14 @@ export async function migrateCrossChainTables() {
         is_active BOOLEAN DEFAULT true,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (dex_id) REFERENCES cross_chain_dexes(id) ON DELETE CASCADE,
-        INDEX idx_pair (base_token, quote_token),
-        INDEX idx_dex (dex_id)
+        FOREIGN KEY (dex_id) REFERENCES cross_chain_dexes(id) ON DELETE CASCADE
       )
     `);
     console.log('✅ Created cross_chain_trading_pairs table');
+
+    // Create indices for cross_chain_trading_pairs
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_pair ON cross_chain_trading_pairs(base_token, quote_token)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_dex_pair ON cross_chain_trading_pairs(dex_id)`);
 
     // Create cross_chain_transfers table
     await pool.query(`
@@ -156,14 +166,44 @@ export async function migrateCrossChainTables() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id),
         FOREIGN KEY (source_chain) REFERENCES cross_chain_chains(chain_name),
-        FOREIGN KEY (destination_chain) REFERENCES cross_chain_chains(chain_name),
-        INDEX idx_user (user_id),
-        INDEX idx_status (status),
-        INDEX idx_chains (source_chain, destination_chain),
-        INDEX idx_tx_hash (source_transaction_hash)
+        FOREIGN KEY (destination_chain) REFERENCES cross_chain_chains(chain_name)
       )
     `);
     console.log('✅ Created cross_chain_transfers table');
+
+    // Create indices for cross_chain_transfers - with existence checks
+    try {
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_transfer ON cross_chain_transfers(user_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_status ON cross_chain_transfers(status)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_chains_transfer ON cross_chain_transfers(source_chain, destination_chain)`);
+      
+      // Check if source_transaction_hash column exists before creating index
+      const hashColumnExists = await pool.query(`
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_schema = 'public'
+          AND table_name = 'cross_chain_transfers' 
+          AND column_name = 'source_transaction_hash'
+        )
+      `);
+      
+      if (hashColumnExists.rows[0]?.exists) {
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_tx_hash ON cross_chain_transfers(source_transaction_hash)`);
+      } else {
+        console.warn('⚠️ source_transaction_hash column not found, adding it now...');
+        try {
+          await pool.query(`ALTER TABLE cross_chain_transfers ADD COLUMN source_transaction_hash VARCHAR(255)`);
+          await pool.query(`CREATE INDEX IF NOT EXISTS idx_tx_hash ON cross_chain_transfers(source_transaction_hash)`);
+        } catch (alterError: any) {
+          if (!alterError.message?.includes('already exists')) {
+            throw alterError;
+          }
+        }
+      }
+    } catch (indexError: any) {
+      console.warn('⚠️ Error creating indices for cross_chain_transfers:', indexError.message);
+      // Continue anyway - indices are not critical for table functionality
+    }
 
     // Create cross_chain_swaps table for tracking swaps
     await pool.query(`
@@ -192,13 +232,15 @@ export async function migrateCrossChainTables() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id),
         FOREIGN KEY (from_chain) REFERENCES cross_chain_chains(chain_name),
-        FOREIGN KEY (to_chain) REFERENCES cross_chain_chains(chain_name),
-        INDEX idx_user (user_id),
-        INDEX idx_status (status),
-        INDEX idx_chains (from_chain, to_chain)
+        FOREIGN KEY (to_chain) REFERENCES cross_chain_chains(chain_name)
       )
     `);
     console.log('✅ Created cross_chain_swaps table');
+
+    // Create indices for cross_chain_swaps
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_swap ON cross_chain_swaps(user_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_status_swap ON cross_chain_swaps(status)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_chains_swap ON cross_chain_swaps(from_chain, to_chain)`);
 
     console.log('✅ All cross-chain support tables created successfully!');
     return true;

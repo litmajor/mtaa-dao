@@ -1,11 +1,18 @@
 
 import { db } from '../db';
-import { crossChainProposals, proposals, votes } from '../../shared/schema';
-import { eq, and } from 'drizzle-orm';
+import { crossChainProposals } from '../../shared/schema';
+import { eq } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
 import { AppError } from '../middleware/errorHandler';
 import { SupportedChain } from '../../shared/chainRegistry';
 import { bridgeProtocolService } from './bridgeProtocolService';
+
+export interface CrossChainProposalData {
+  id: string;
+  title: string;
+  description: string;
+  voteEndTime: number;
+}
 
 export interface CrossChainVote {
   proposalId: string;
@@ -20,21 +27,16 @@ export class CrossChainGovernanceService {
 
   /**
    * Create cross-chain proposal
+   * @param proposalData - Complete proposal data (not just ID)
+   * @param chains - Chains to deploy proposal across
+   * @param executionChain - Chain to execute proposal on
    */
   async createCrossChainProposal(
-    proposalId: string,
+    proposalData: CrossChainProposalData,
     chains: SupportedChain[],
     executionChain: SupportedChain
   ): Promise<string> {
     try {
-      const proposal = await db.query.proposals.findFirst({
-        where: eq(proposals.id, proposalId)
-      });
-
-      if (!proposal) {
-        throw new AppError('Proposal not found', 404);
-      }
-
       // Initialize vote tallies for each chain
       const votesByChain: Record<string, { yes: number; no: number; abstain: number }> = {};
       const quorumByChain: Record<string, number> = {};
@@ -45,7 +47,7 @@ export class CrossChainGovernanceService {
       });
 
       const [crossChainProposal] = await db.insert(crossChainProposals).values({
-        proposalId,
+        proposalId: proposalData.id,
         chains,
         votesByChain,
         quorumByChain,
@@ -56,7 +58,7 @@ export class CrossChainGovernanceService {
       this.logger.info(`Cross-chain proposal created: ${crossChainProposal.id}`);
 
       // Send proposal to all chains via bridge
-      await this.broadcastProposal(crossChainProposal.id!, chains, proposal);
+      await this.broadcastProposal(crossChainProposal.id!, chains, proposalData);
 
       return crossChainProposal.id!;
     } catch (error) {
@@ -170,14 +172,14 @@ export class CrossChainGovernanceService {
   private async broadcastProposal(
     crossChainProposalId: string,
     chains: SupportedChain[],
-    proposal: any
+    proposalData: CrossChainProposalData
   ): Promise<void> {
     const payload = JSON.stringify({
       crossChainProposalId,
-      proposalId: proposal.id,
-      title: proposal.title,
-      description: proposal.description,
-      voteEndTime: proposal.voteEndTime
+      proposalId: proposalData.id,
+      title: proposalData.title,
+      description: proposalData.description,
+      voteEndTime: proposalData.voteEndTime
     });
 
     for (const chain of chains) {

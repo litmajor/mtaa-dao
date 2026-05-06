@@ -22,7 +22,7 @@ export default function WalletDashboard() {
   useEffect(() => {
     const checkSecurityStatus = async () => {
       try {
-        const res = await fetch('/api/2fa/config', {
+        const res = await fetch('/api/v1/wallets/security/2fa/config', {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
         });

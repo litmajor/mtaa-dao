@@ -10,13 +10,16 @@ import {
   Tooltip, Legend, ResponsiveContainer 
 } from 'recharts';
 import { 
-  AlertTriangle, CheckCircle, Activity, DollarSign, Users, Wallet, 
-  TrendingUp, Server, Radio, ArrowUpRight, ArrowDownLeft, Eye, RefreshCw 
+  CheckCircle, Activity, DollarSign, Users, Wallet, 
+  TrendingUp, ArrowUpRight, ArrowDownLeft, RefreshCw, AlertCircle
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
+import { useWebSocket } from '@/hooks/useWebSocket';
+import { PresenceIndicators } from '@/components/dashboard/PresenceIndicators';
 
 interface PlatformMetrics {
   activeWallets: number;
@@ -53,6 +56,8 @@ interface AgentStatus {
 }
 
 export default function AdminDashboardOverview() {
+  const { socket, isConnected } = useWebSocket();
+  
   const [metrics, setMetrics] = useState<PlatformMetrics>({
     activeWallets: 0,
     totalVolume: 0,
@@ -69,39 +74,22 @@ export default function AdminDashboardOverview() {
   const [agentStatus, setAgentStatus] = useState<AgentStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
+  const [wsConnected, setWsConnected] = useState(false);
 
   // Fetch metrics
   const fetchMetrics = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
-      const [metricsRes, chainsRes, agentsRes] = await Promise.all([
-        fetch('/api/admin/platform-metrics', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/chain-health', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/agent-status', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
+      const [metricsData, chainsData, agentsData] = await Promise.all([
+        authClient.get('/api/admin/platform-metrics'),
+        authClient.get('/api/admin/chain-health'),
+        authClient.get('/api/admin/agent-status'),
       ]);
 
-      if (metricsRes.ok) {
-        const data = await metricsRes.json();
-        setMetrics(data);
-      }
-
-      if (chainsRes.ok) {
-        const data = await chainsRes.json();
-        setChainHealth(data.chains || []);
-      }
-
-      if (agentsRes.ok) {
-        const data = await agentsRes.json();
-        setAgentStatus(data.agents || []);
-      }
+      setMetrics(metricsData);
+      setChainHealth(chainsData.chains || []);
+      setAgentStatus(agentsData.agents || []);
     } catch (error) {
       console.error('Failed to fetch admin metrics:', error);
     } finally {
@@ -109,11 +97,72 @@ export default function AdminDashboardOverview() {
     }
   };
 
+  // WebSocket event listeners for real-time updates
   useEffect(() => {
+    if (!isConnected) {
+      setWsConnected(false);
+      return;
+    }
+
+    setWsConnected(true);
+    // Initial fetch via REST API
     fetchMetrics();
-    const interval = setInterval(fetchMetrics, 30000); // Refresh every 30 seconds
-    return () => clearInterval(interval);
-  }, []);
+
+    // Subscribe to real-time analytics updates
+    const handleAnalyticsUpdate = (data: any) => {
+      try {
+        if (data.metrics) {
+          setMetrics(prev => ({
+            ...prev,
+            ...data.metrics
+          }));
+        }
+      } catch (error) {
+        console.error('Error processing analytics update:', error);
+      }
+    };
+
+    // Subscribe to chain health updates
+    const handleStatusChange = (data: any) => {
+      try {
+        if (data.chainHealth) {
+          setChainHealth(data.chainHealth);
+        }
+        if (data.agentStatus) {
+          setAgentStatus(data.agentStatus);
+        }
+      } catch (error) {
+        console.error('Error processing status update:', error);
+      }
+    };
+
+    // Subscribe to activity logs for agent updates
+    const handleActivityLog = (data: any) => {
+      try {
+        if (data.entityType === 'agent' && data.entityId) {
+          // Update specific agent status
+          setAgentStatus(prev => prev.map(agent => 
+            agent.agentId === data.entityId 
+              ? { ...agent, lastActivity: new Date().toLocaleString() }
+              : agent
+          ));
+        }
+      } catch (error) {
+        console.error('Error processing activity log:', error);
+      }
+    };
+
+    socket.on('analytics:updated', handleAnalyticsUpdate);
+    socket.on('status:changed', handleStatusChange);
+    socket.on('activity:logged', handleActivityLog);
+
+    // Cleanup
+    return () => {
+      socket.off('analytics:updated', handleAnalyticsUpdate);
+      socket.off('status:changed', handleStatusChange);
+      socket.off('activity:logged', handleActivityLog);
+    };
+  }, [socket, isConnected]);
 
   // Key metrics cards
   const keyMetrics = [
@@ -177,6 +226,20 @@ export default function AdminDashboardOverview() {
           <div>
             <h1 className="text-4xl font-bold text-white mb-2">Admin Dashboard</h1>
             <p className="text-slate-400">Platform monitoring and performance metrics</p>
+            {/* WebSocket Connection Status */}
+            <div className="flex items-center gap-2 mt-3">
+              {wsConnected ? (
+                <>
+                  <CheckCircle className="h-4 w-4 text-green-500" />
+                  <span className="text-xs text-green-500 font-semibold">Real-time • WebSocket Connected</span>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="h-4 w-4 text-red-500" />
+                  <span className="text-xs text-red-500 font-semibold">Polling Mode • WebSocket Disconnected</span>
+                </>
+              )}
+            </div>
           </div>
           <Button
             onClick={fetchMetrics}
@@ -274,6 +337,11 @@ export default function AdminDashboardOverview() {
                 </ResponsiveContainer>
               </Card>
             </div>
+
+            {/* User Presence - Real-time Engagement */}
+            <div className="grid grid-cols-1 gap-6">
+              <PresenceIndicators />
+            </div>
           </TabsContent>
 
           {/* Chains Tab */}
@@ -285,7 +353,9 @@ export default function AdminDashboardOverview() {
                   <div key={chain.chain} className="bg-slate-700 rounded-lg p-4 border border-slate-600">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
-                        <Radio className="h-5 w-5 text-green-500" />
+                        {chain.status === 'healthy' && <CheckCircle className="h-5 w-5 text-green-500" />}
+                        {chain.status === 'degraded' && <AlertCircle className="h-5 w-5 text-yellow-500" />}
+                        {chain.status === 'down' && <AlertCircle className="h-5 w-5 text-red-500" />}
                         <span className="font-semibold text-white">{chain.chain}</span>
                       </div>
                       <Badge className={chain.status === 'healthy' ? 'bg-green-600' : chain.status === 'degraded' ? 'bg-yellow-600' : 'bg-red-600'}>
@@ -324,8 +394,8 @@ export default function AdminDashboardOverview() {
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
                         {agent.status === 'online' && <CheckCircle className="h-5 w-5 text-green-500" />}
-                        {agent.status === 'offline' && <AlertTriangle className="h-5 w-5 text-yellow-500" />}
-                        {agent.status === 'error' && <AlertTriangle className="h-5 w-5 text-red-500" />}
+                        {agent.status === 'offline' && <AlertCircle className="h-5 w-5 text-yellow-500" />}
+                        {agent.status === 'error' && <AlertCircle className="h-5 w-5 text-red-500" />}
                         <div>
                           <p className="font-semibold text-white">{agent.name}</p>
                           <p className="text-xs text-slate-400">Last active: {agent.lastActivity}</p>

@@ -48,13 +48,14 @@ export default function RecurringPaymentModal({
 
       setLoading(true);
 
-      const result = await apiPost('/api/wallet/recurring-payments', {
+      const result = await apiPost('/api/v1/wallets/payments/recurring', {
         recipient: formData.recipient,
         amount: formData.amount,
         token: formData.token,
         frequency: formData.frequency,
         startDate: formData.startDate,
-        description: formData.description
+        description: formData.description,
+        ...(userAddress && { userAddress })
       });
 
       toast({

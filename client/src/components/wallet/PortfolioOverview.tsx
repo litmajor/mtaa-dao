@@ -57,7 +57,7 @@ export function PortfolioOverview() {
   const { data: exchangeRates = {} } = useQuery({
     queryKey: ['exchange-rates'],
     queryFn: async () => {
-      const response = await fetch('/api/wallet/exchange-rates');
+      const response = await fetch('/api/v1/wallets/balance/rates');
       if (!response.ok) throw new Error('Failed to fetch rates');
       const data = await response.json();
       return data.rates || {};

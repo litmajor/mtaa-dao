@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Info, Loader2, CheckCircle2, AlertCircle, ArrowRight, Clock, DollarSign } from 'lucide-react';
+import { Info, LoaderCircle, CheckCircle, AlertCircle, ArrowUpRight, Clock, DollarSign } from 'lucide-react';
 
 const SUPPORTED_CHAINS = [
   { id: 'ethereum', name: 'Ethereum', icon: '⟠', gas: '~$50-200' },
@@ -39,56 +39,62 @@ export default function AdvancedBridge() {
   const [bridgeQuote, setBridgeQuote] = useState<any>(null);
   const [bestRoutes, setBestRoutes] = useState<any[]>([]);
 
-  const bridgeMutation = useMutation(async () => {
-    const body = {
-      fromChain,
-      toChain,
-      token,
-      amount: Number(amount),
-      slippageTolerance: Number(slippage),
-      bridgeProvider: selectedBridge,
-    };
-    return await apiPost('/api/cross-chain/bridge', body);
-  });
-
-  const quoteMutation = useMutation(async () => {
-    try {
-      // Simulate bridge quote for now
-      const estimatedTime = Math.random() * 15 + 2;
-      const fee = Number(amount) * 0.001;
-      const receiveAmount = Number(amount) - fee;
-      
-      setBridgeQuote({
+  const bridgeMutation = useMutation({
+    mutationFn: async () => {
+      const body = {
         fromChain,
         toChain,
         token,
-        amountIn: Number(amount),
-        estimatedReceive: receiveAmount,
-        fee,
-        provider: selectedBridge,
-        estimatedTime: estimatedTime.toFixed(0),
-        gasCost: 50,
-        status: 'Ready to bridge'
-      });
-      
-      toast({ title: '✅ Bridge Quote', description: `Send ${amount} ${token} from ${fromChain} → ${toChain}` });
-    } catch (err: any) {
-      toast({ title: '❌ Quote failed', description: err?.message || 'Could not fetch quote', variant: 'destructive' });
+        amount: Number(amount),
+        slippageTolerance: Number(slippage),
+        bridgeProvider: selectedBridge,
+      };
+      return await apiPost('/api/v1/yuki/bridge/swap', body);
     }
   });
 
-  const routesMutation = useMutation(async () => {
-    try {
-      const routes = BRIDGE_PROVIDERS.map(provider => ({
-        ...provider,
-        estimatedReceive: Number(amount) * (1 - (Math.random() * 0.005)),
-        totalFee: Number(amount) * (Math.random() * 0.005 + 0.001),
-      }));
-      setBestRoutes(routes.sort((a, b) => b.estimatedReceive - a.estimatedReceive));
-      
-      toast({ title: '🎯 Routes Found', description: `Found ${routes.length} optimal bridge routes` });
-    } catch (err: any) {
-      toast({ title: '❌ Route search failed', description: err?.message || 'Could not find routes', variant: 'destructive' });
+  const quoteMutation = useMutation({
+    mutationFn: async () => {
+      try {
+        // Simulate bridge quote for now
+        const estimatedTime = Math.random() * 15 + 2;
+        const fee = Number(amount) * 0.001;
+        const receiveAmount = Number(amount) - fee;
+        
+        setBridgeQuote({
+          fromChain,
+          toChain,
+          token,
+          amountIn: Number(amount),
+          estimatedReceive: receiveAmount,
+          fee,
+          provider: selectedBridge,
+          estimatedTime: estimatedTime.toFixed(0),
+          gasCost: 50,
+          status: 'Ready to bridge'
+        });
+        
+        toast({ title: '✅ Bridge Quote', description: `Send ${amount} ${token} from ${fromChain} → ${toChain}` });
+      } catch (err: any) {
+        toast({ title: '❌ Quote failed', description: err?.message || 'Could not fetch quote', variant: 'destructive' });
+      }
+    }
+  });
+
+  const routesMutation = useMutation({
+    mutationFn: async () => {
+      try {
+        const routes = BRIDGE_PROVIDERS.map(provider => ({
+          ...provider,
+          estimatedReceive: Number(amount) * (1 - (Math.random() * 0.005)),
+          totalFee: Number(amount) * (Math.random() * 0.005 + 0.001),
+        }));
+        setBestRoutes(routes.sort((a, b) => b.estimatedReceive - a.estimatedReceive));
+        
+        toast({ title: '🎯 Routes Found', description: `Found ${routes.length} optimal bridge routes` });
+      } catch (err: any) {
+        toast({ title: '❌ Route search failed', description: err?.message || 'Could not find routes', variant: 'destructive' });
+      }
     }
   });
 
@@ -282,7 +288,7 @@ export default function AdvancedBridge() {
         {bridgeQuote && (
           <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg space-y-2">
             <div className="flex items-center gap-2 mb-2">
-              <CheckCircle2 className="h-4 w-4 text-green-600" />
+              <CheckCircle className="h-4 w-4 text-green-600" />
               <p className="font-semibold text-green-900 dark:text-green-100">Bridge Quote</p>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
@@ -339,9 +345,9 @@ export default function AdvancedBridge() {
                     variant="outline"
                     className="w-full mt-2"
                     onClick={() => handleExecuteBridge(route.id)}
-                    disabled={bridgeMutation.isLoading}
+                    disabled={bridgeMutation.isPending}
                   >
-                    {bridgeMutation.isLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                    {bridgeMutation.isPending ? <LoaderCircle className="h-3 w-3 animate-spin mr-1" /> : null}
                     Bridge via {route.name}
                   </Button>
                 </div>
@@ -353,28 +359,28 @@ export default function AdvancedBridge() {
         {/* Action Buttons */}
         <div className="flex gap-2 flex-wrap">
           <Button
-            onClick={() => quoteMutation.mutateAsync()}
-            disabled={quoteMutation.isLoading || !amount || !token}
+            onClick={() => quoteMutation.mutate()}
+            disabled={quoteMutation.isPending || !amount || !token}
             className="flex-1 md:flex-none"
           >
-            {quoteMutation.isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : '📊'}
+            {quoteMutation.isPending ? <LoaderCircle className="h-4 w-4 animate-spin mr-2" /> : '📊'}
             Get Quote
           </Button>
           <Button
             variant="outline"
-            onClick={() => routesMutation.mutateAsync()}
-            disabled={routesMutation.isLoading || !amount || !token}
+            onClick={() => routesMutation.mutate()}
+            disabled={routesMutation.isPending || !amount || !token}
             className="flex-1 md:flex-none"
           >
-            {routesMutation.isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : '🛣️'}
+            {routesMutation.isPending ? <LoaderCircle className="h-4 w-4 animate-spin mr-2" /> : '🛣️'}
             Compare Routes
           </Button>
           <Button
             onClick={() => handleExecuteBridge()}
-            disabled={bridgeMutation.isLoading || !amount || !token}
+            disabled={bridgeMutation.isPending || !amount || !token}
             className="flex-1 md:flex-none bg-blue-600 hover:bg-blue-700"
           >
-            {bridgeMutation.isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : '⛓️'}
+            {bridgeMutation.isPending ? <LoaderCircle className="h-4 w-4 animate-spin mr-2" /> : '⛓️'}
             Start Bridge
           </Button>
         </div>

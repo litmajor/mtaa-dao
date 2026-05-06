@@ -16,6 +16,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { authClient } from '@/utils/authClient';
 
 import SessionTimeoutWarning from '@/components/wallet/SessionTimeoutWarning';
 import DeviceManagement from '@/components/wallet/DeviceManagement';
@@ -26,12 +27,6 @@ import PinResetFlow from '@/components/wallet/PinResetFlow';
 
 export const SessionSettingsPage: React.FC = () => {
   const [resetPinOpen, setResetPinOpen] = useState(false);
-  const [sessionToken] = useState(sessionStorage.getItem('sessionToken') || '');
-  const [expiresAt] = useState<Date | undefined>(
-    sessionStorage.getItem('expiresAt')
-      ? new Date(sessionStorage.getItem('expiresAt')!)
-      : undefined
-  );
 
   const handleLogoutAll = async () => {
     if (!confirm('Are you sure? This will log you out from all devices.')) {
@@ -39,19 +34,9 @@ export const SessionSettingsPage: React.FC = () => {
     }
 
     try {
-      const response = await fetch('/api/wallet-sessions/disconnect-all', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
-
-      if (response.ok) {
-        // Clear session storage and redirect to login
-        sessionStorage.clear();
-        localStorage.removeItem('token');
-        window.location.href = '/login';
-      }
+      await authClient.post('/api/v1/wallets/sessions/disconnect-all', {});
+      // Redirect to login (authClient will handle clearing cookies/storage)
+      window.location.href = '/login';
     } catch (error) {
       console.error('Failed to log out:', error);
     }
@@ -68,13 +53,7 @@ export const SessionSettingsPage: React.FC = () => {
       </div>
 
       {/* Session Timeout Warning */}
-      {sessionToken && expiresAt && (
-        <SessionTimeoutWarning
-          sessionToken={sessionToken}
-          expiresAt={expiresAt}
-          warningThresholdMinutes={30}
-        />
-      )}
+      {/* Removed sessionToken check - now managed via authClient cookies */}
 
       {/* Tabs */}
       <Tabs defaultValue="devices" className="space-y-4">

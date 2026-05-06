@@ -18,6 +18,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { authClient } from '@/utils/authClient';
 
 interface Notification {
   id: string;
@@ -42,15 +43,7 @@ export const SessionNotifications: React.FC = () => {
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/sessions/notifications', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
-
-      if (!response.ok) throw new Error('Failed to fetch notifications');
-
-      const data = await response.json();
+      const data = await authClient.get('/api/sessions/notifications');
       setNotifications(data.data);
       setError(null);
     } catch (err) {
@@ -69,13 +62,7 @@ export const SessionNotifications: React.FC = () => {
 
   const handleMarkAsRead = async (notificationId: string) => {
     try {
-      await fetch(`/api/sessions/notifications/${notificationId}/read`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
-
+      await authClient.post(`/api/sessions/notifications/${notificationId}/read`, {});
       setNotifications(
         notifications.map((n) =>
           n.id === notificationId ? { ...n, isRead: true } : n
@@ -91,16 +78,8 @@ export const SessionNotifications: React.FC = () => {
 
     setActingOn(notificationId);
     try {
-      const response = await fetch(`/api/sessions/notifications/${notificationId}/approve`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify({ actionToken }),
-      });
-
-      if (response.ok) {
+      const response = await authClient.post(`/api/sessions/notifications/${notificationId}/approve`, { actionToken });
+      if (response) {
         setNotifications(notifications.filter((n) => n.id !== notificationId));
       }
     } catch (err) {
@@ -115,16 +94,8 @@ export const SessionNotifications: React.FC = () => {
 
     setActingOn(notificationId);
     try {
-      const response = await fetch(`/api/sessions/notifications/${notificationId}/deny`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify({ actionToken }),
-      });
-
-      if (response.ok) {
+      const response = await authClient.post(`/api/sessions/notifications/${notificationId}/deny`, { actionToken });
+      if (response) {
         setNotifications(notifications.filter((n) => n.id !== notificationId));
       }
     } catch (err) {

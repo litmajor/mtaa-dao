@@ -10,7 +10,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Plus, RefreshCw, TrendingUp, Settings, Eye, Camera } from 'lucide-react';
+import { Loader, Plus, RefreshCw, TrendingUp, Settings, Eye, Aperture } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 
 interface Pool {
   id: string;
@@ -42,6 +43,7 @@ interface Template {
 export default function PoolManagement() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [daoId, setDaoId] = useState<string>(''); // TODO: Get from props/context for DAO-scoped management
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
 
@@ -56,44 +58,36 @@ export default function PoolManagement() {
     autoRebalance: true,
   });
 
-  // Fetch all pools
+  // Fetch all pools - V1 endpoint
   const { data: poolsData, isLoading: poolsLoading } = useQuery({
-    queryKey: ['/api/investment-pools'],
+    queryKey: [daoId, `/api/v1/daos/${daoId}/investment-pools`],
     queryFn: async () => {
-      const res = await fetch('/api/investment-pools', {
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to fetch pools');
-      return res.json();
+      if (!daoId) return { pools: [] };
+      return authClient.get(`/api/v1/daos/${daoId}/investment-pools`);
     },
+    enabled: !!daoId,
   });
 
-  // Fetch templates
+  // Fetch templates - V1 endpoint
   const { data: templatesData } = useQuery({
-    queryKey: ['/api/investment-pools/templates'],
+    queryKey: [daoId, `/api/v1/daos/${daoId}/investment-pools/templates`],
     queryFn: async () => {
-      const res = await fetch('/api/investment-pools/templates', {
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to fetch templates');
-      return res.json();
+      if (!daoId) return { templates: [] };
+      return authClient.get(`/api/v1/daos/${daoId}/investment-pools/templates`);
     },
+    enabled: !!daoId,
   });
 
-  // Create pool mutation
+  // Create pool mutation - V1 endpoint
   const createPoolMutation = useMutation({
     mutationFn: async (data: any) => {
-      const res = await fetch('/api/investment-pools/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to create pool');
-      return res.json();
+      if (!daoId) throw new Error('DAO context not available');
+      return authClient.post(`/api/v1/daos/${daoId}/investment-pools`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/investment-pools'] });
+      if (daoId) {
+        queryClient.invalidateQueries({ queryKey: [daoId, `/api/v1/daos/${daoId}/investment-pools`] });
+      }
       toast({
         title: 'Pool Created!',
         description: 'Investment pool created successfully',
@@ -110,22 +104,20 @@ export default function PoolManagement() {
     },
   });
 
-  // Trigger rebalance mutation
+  // Trigger rebalance mutation - V1 endpoint
   const rebalanceMutation = useMutation({
     mutationFn: async (poolId: string) => {
-      const res = await fetch(`/api/investment-pools/${poolId}/trigger-rebalance`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to trigger rebalance');
-      return res.json();
+      if (!daoId) throw new Error('DAO context not available');
+      return authClient.post(`/api/v1/daos/${daoId}/investment-pools/${poolId}/trigger-rebalance`, {});
     },
     onSuccess: (data) => {
+      if (daoId) {
+        queryClient.invalidateQueries({ queryKey: [daoId, `/api/v1/daos/${daoId}/investment-pools`] });
+      }
       toast({
         title: 'Rebalance Triggered',
         description: data.message,
       });
-      queryClient.invalidateQueries({ queryKey: ['/api/investment-pools'] });
     },
     onError: (error: Error) => {
       toast({
@@ -136,15 +128,11 @@ export default function PoolManagement() {
     },
   });
 
-  // Snapshot mutation
+  // Snapshot mutation - V1 endpoint
   const snapshotMutation = useMutation({
     mutationFn: async (poolId: string) => {
-      const res = await fetch(`/api/investment-pools/${poolId}/trigger-snapshot`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to trigger snapshot');
-      return res.json();
+      if (!daoId) throw new Error('DAO context not available');
+      return authClient.post(`/api/v1/daos/${daoId}/investment-pools/${poolId}/trigger-snapshot`, {});
     },
     onSuccess: () => {
       toast({
@@ -277,7 +265,7 @@ export default function PoolManagement() {
         {/* Pools List */}
         {poolsLoading ? (
           <div className="flex justify-center items-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-purple-400" />
+            <Loader className="w-8 h-8 animate-spin text-purple-400" />
           </div>
         ) : (
           <div className="space-y-4">
@@ -354,7 +342,7 @@ export default function PoolManagement() {
                         onClick={() => snapshotMutation.mutate(pool.id)}
                         disabled={snapshotMutation.isPending}
                       >
-                        <Camera className="w-4 h-4 mr-2" />
+                        <Aperture className="w-4 h-4 mr-2" />
                         Snapshot
                       </Button>
                     </div>
@@ -488,7 +476,7 @@ export default function PoolManagement() {
                 className="bg-purple-600 hover:bg-purple-700"
               >
                 {createPoolMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  <Loader className="w-4 h-4 animate-spin mr-2" />
                 ) : null}
                 Create Pool
               </Button>

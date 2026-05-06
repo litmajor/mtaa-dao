@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 import { 
   Wallet, 
   TrendingUp, 
@@ -59,10 +60,7 @@ export default function VaultOverview() {
 
   const fetchVaultData = async () => {
     try {
-      const response = await fetch(`/api/vaults/user/${address}`, {
-        credentials: 'include'
-      });
-      const data = await response.json();
+      const data = await authClient.get('/api/v1/wallets/vaults');
       
       if (data.success) {
         setStats(data.stats);

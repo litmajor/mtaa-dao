@@ -10,14 +10,12 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-// Use standard PostgreSQL client (node-postgres)
-// This provides native Promise compatibility for Docker/local databases
 export const pool = new Pool({ 
   connectionString: process.env.DATABASE_URL,
-  // Optional: Configure connection pool settings
-  max: 20, // Maximum number of clients in the pool
-  idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-  connectionTimeoutMillis: 30000, // Return an error after 30 seconds if connection could not be established
+  // Increased pool to handle concurrent startup logging (30+ services initializing)
+  max: 50, // Was 20, increased to 50 for concurrent startup operations
+  idleTimeoutMillis: 10000, // Was 30000, reduced to 10s to free connections faster
+  connectionTimeoutMillis: 15000, // Was 30000, reduced to 15s for faster failure detection
   keepAlive: true,
   keepAliveInitialDelayMs: 10000,
   // Add retry logic

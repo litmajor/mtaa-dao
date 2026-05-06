@@ -22,7 +22,7 @@ export async function migrateCEXTables() {
         timestamp TIMESTAMP NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(exchange, trading_pair, timestamp)
+        UNIQUE(exchange, trading_pair)
       );
     `);
     console.log('✅ Created cex_prices table');
@@ -113,22 +113,20 @@ export async function migrateCEXTables() {
     `);
     console.log('✅ Created exchange_settings table');
 
-    // Create indexes for performance optimization
-    await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_cex_prices_exchange_pair ON cex_prices(exchange, trading_pair);
-      CREATE INDEX IF NOT EXISTS idx_cex_prices_timestamp ON cex_prices(timestamp DESC);
-      CREATE INDEX IF NOT EXISTS idx_cex_orders_user_exchange ON cex_orders(user_id, exchange);
-      CREATE INDEX IF NOT EXISTS idx_cex_orders_status ON cex_orders(status);
-      CREATE INDEX IF NOT EXISTS idx_cex_orders_pair ON cex_orders(trading_pair);
-      CREATE INDEX IF NOT EXISTS idx_cex_orders_created_at ON cex_orders(created_at);
-      CREATE INDEX IF NOT EXISTS idx_cex_prices_exchange_pair_timestamp ON cex_prices(exchange, trading_pair, timestamp DESC);
-      CREATE INDEX IF NOT EXISTS idx_cex_credentials_user_exchange ON cex_credentials(user_id, exchange);
-      CREATE INDEX IF NOT EXISTS idx_arbitrage_pair ON arbitrage_opportunities(trading_pair);
-      CREATE INDEX IF NOT EXISTS idx_arbitrage_status ON arbitrage_opportunities(status);
-      CREATE INDEX IF NOT EXISTS idx_arbitrage_detected_at ON arbitrage_opportunities(detected_at);
-      CREATE INDEX IF NOT EXISTS idx_arbitrage_created_at ON arbitrage_opportunities(created_at);
-      CREATE INDEX IF NOT EXISTS idx_exchange_settings_user_exchange ON exchange_settings(user_id, exchange);
-    `);
+    // Create indexes for performance optimization (each as separate query)
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_cex_prices_exchange_pair ON cex_prices(exchange, trading_pair);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_cex_prices_timestamp ON cex_prices(timestamp DESC);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_cex_orders_user_exchange ON cex_orders(user_id, exchange);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_cex_orders_status ON cex_orders(status);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_cex_orders_pair ON cex_orders(trading_pair);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_cex_orders_created_at ON cex_orders(created_at);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_cex_prices_exchange_pair_timestamp ON cex_prices(exchange, trading_pair, timestamp DESC);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_cex_credentials_user_exchange ON cex_credentials(user_id, exchange);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_arbitrage_pair ON arbitrage_opportunities(trading_pair);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_arbitrage_status ON arbitrage_opportunities(status);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_arbitrage_detected_at ON arbitrage_opportunities(detected_at);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_arbitrage_created_at ON arbitrage_opportunities(created_at);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_exchange_settings_user_exchange ON exchange_settings(user_id, exchange);`);
     console.log('✅ Created performance indexes');
 
     console.log('✅ All CEX migrations completed successfully!');

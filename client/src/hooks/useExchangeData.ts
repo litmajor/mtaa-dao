@@ -6,6 +6,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
+import { authClient } from '@/utils/authClient';
 
 /**
  * Fetch exchange status and available exchanges
@@ -14,9 +15,7 @@ export const useExchangeStatus = () => {
   return useQuery({
     queryKey: ['exchange-status'],
     queryFn: async () => {
-      const response = await fetch('/api/exchanges/status');
-      if (!response.ok) throw new Error('Failed to fetch exchange status');
-      return response.json();
+      return authClient.get<any>('/api/exchanges/status');
     },
     staleTime: 30000, // 30 seconds
     retry: 1,
@@ -31,9 +30,7 @@ export const useExchangeAssets = (exchangeName: string | null) => {
     queryKey: ['exchange-assets', exchangeName],
     queryFn: async () => {
       if (!exchangeName) return [];
-      const response = await fetch(`/api/exchanges/assets?exchange=${exchangeName}`);
-      if (!response.ok) throw new Error(`Failed to fetch assets for ${exchangeName}`);
-      const data = await response.json();
+      const data = await authClient.get<any>(`/api/exchanges/assets?exchange=${exchangeName}`);
       return data.assets || [];
     },
     staleTime: 3600000, // 1 hour (assets don't change often)
@@ -51,11 +48,9 @@ export const usePrices = (symbol: string | null, exchanges: string[]) => {
     queryFn: async () => {
       if (!symbol || exchanges.length === 0) return null;
       const exchangesParam = exchanges.join(',');
-      const response = await fetch(
+      return authClient.get<any>(
         `/api/exchanges/prices?symbol=${encodeURIComponent(symbol)}&exchanges=${exchangesParam}`
       );
-      if (!response.ok) throw new Error('Failed to fetch prices');
-      return response.json();
     },
     staleTime: 30000, // 30 seconds (prices update frequently)
     retry: 1,
@@ -73,11 +68,9 @@ export const useBestPrice = (symbol: string | null, exchanges: string[]) => {
     queryFn: async () => {
       if (!symbol || exchanges.length === 0) return null;
       const exchangesParam = exchanges.join(',');
-      const response = await fetch(
+      return authClient.get<any>(
         `/api/exchanges/best-price?symbol=${encodeURIComponent(symbol)}&exchanges=${exchangesParam}`
       );
-      if (!response.ok) throw new Error('Failed to fetch best price');
-      return response.json();
     },
     staleTime: 30000,
     retry: 1,
@@ -99,11 +92,9 @@ export const useOHLCV = (
     queryKey: ['ohlcv', exchange, symbol, timeframe],
     queryFn: async () => {
       if (!exchange || !symbol) return null;
-      const response = await fetch(
+      return authClient.get<any>(
         `/api/exchanges/ohlcv?exchange=${exchange}&symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}`
       );
-      if (!response.ok) throw new Error('Failed to fetch OHLCV data');
-      return response.json();
     },
     staleTime: 60000, // 1 minute
     retry: 1,
@@ -120,13 +111,7 @@ export const useExchangeBalance = (exchange: string | null) => {
     queryKey: ['exchange-balance', exchange],
     queryFn: async () => {
       if (!exchange) return null;
-      const response = await fetch(`/api/exchanges/balance?exchange=${exchange}`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
-        },
-      });
-      if (!response.ok) throw new Error(`Failed to fetch balance for ${exchange}`);
-      return response.json();
+      return authClient.get<any>(`/api/exchanges/balance?exchange=${exchange}`);
     },
     staleTime: 30000,
     retry: 1,
@@ -143,13 +128,7 @@ export const useExchangeOrders = (exchange: string | null) => {
     queryKey: ['exchange-orders', exchange],
     queryFn: async () => {
       if (!exchange) return null;
-      const response = await fetch(`/api/exchanges/orders?exchange=${exchange}`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
-        },
-      });
-      if (!response.ok) throw new Error(`Failed to fetch orders for ${exchange}`);
-      return response.json();
+      return authClient.get<any>(`/api/exchanges/orders?exchange=${exchange}`);
     },
     staleTime: 10000, // Orders update frequently
     retry: 1,
@@ -171,19 +150,12 @@ export const useOrderRouting = (symbol: string | null, amount: number | null) =>
     queryKey: ['order-routing', symbol, amount],
     queryFn: async () => {
       if (!symbol || !amount) return null;
-      const response = await fetch('/api/orders/route', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          symbol,
-          amount,
-          side: 'buy',
-          exchanges: ['binance', 'coinbase', 'kraken']
-        })
+      return authClient.post<any>('/api/v1/yuki/orders/route', {
+        symbol,
+        amount,
+        side: 'buy',
+        exchanges: ['binance', 'coinbase', 'kraken']
       });
-      if (!response.ok) throw new Error('Failed to get order routing');
-      const data = await response.json();
-      return data.data;
     },
     staleTime: 30000, // 30 seconds
     retry: 1,
@@ -204,19 +176,13 @@ export const useOrderSplitting = (
     queryKey: ['order-splitting', symbol, amount, maxDEXLiquidity],
     queryFn: async () => {
       if (!symbol || !amount) return null;
-      const response = await fetch('/api/orders/split', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          symbol,
-          amount,
-          side: 'buy',
-          maxDEXLiquidity
-        })
+      const splittingData = await authClient.post<any>('/api/v1/yuki/orders/split', {
+        symbol,
+        amount,
+        side: 'buy',
+        maxDEXLiquidity
       });
-      if (!response.ok) throw new Error('Failed to get order splitting');
-      const data = await response.json();
-      return data.data;
+      return splittingData.data;
     },
     staleTime: 30000,
     retry: 1,
@@ -232,12 +198,10 @@ export const useBestExecutionVenue = (symbol: string | null, amount: number | nu
     queryKey: ['best-venue', symbol, amount],
     queryFn: async () => {
       if (!symbol || !amount) return null;
-      const response = await fetch(
-        `/api/orders/best-venue?symbol=${encodeURIComponent(symbol!)}&amount=${amount}&side=buy`
+      const venueData = await authClient.get<any>(
+        `/api/v1/yuki/orders/best-venue?symbol=${encodeURIComponent(symbol!)}&amount=${amount}&side=buy`
       );
-      if (!response.ok) throw new Error('Failed to find best venue');
-      const data = await response.json();
-      return data.data;
+      return venueData.data;
     },
     staleTime: 30000,
     retry: 1,
@@ -257,21 +221,15 @@ export const useCreateLimitOrder = () => {
     price: number,
     expiresInDays?: number
   ) => {
-    const response = await fetch('/api/orders/limit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        exchange,
-        symbol,
-        side,
-        amount,
-        price,
-        expiresInDays
-      })
+    const response = await authClient.post<any>('/api/v1/yuki/orders/limit', {
+      exchange,
+      symbol,
+      side,
+      amount,
+      price,
+      expiresInDays
     });
-    if (!response.ok) throw new Error('Failed to create limit order');
-    const data = await response.json();
-    return data.data;
+    return response.data;
   };
 };
 
@@ -283,12 +241,10 @@ export const useLimitOrderStatus = (orderId: string | null, exchange: string | n
     queryKey: ['limit-order-status', orderId, exchange],
     queryFn: async () => {
       if (!orderId || !exchange) return null;
-      const response = await fetch(
-        `/api/orders/limit/${orderId}/status?exchange=${exchange}`
+      const statusData = await authClient.get<any>(
+        `/api/v1/yuki/orders/limit/${orderId}/status?exchange=${exchange}`
       );
-      if (!response.ok) throw new Error('Failed to check order status');
-      const data = await response.json();
-      return data.data;
+      return statusData.data;
     },
     staleTime: 5000, // 5 seconds for active orders
     refetchInterval: 5000, // Auto-refresh frequently
@@ -310,20 +266,14 @@ export const useLimitOrderAnalysis = (
     queryKey: ['limit-order-analysis', symbol, limitPrice, amount],
     queryFn: async () => {
       if (!symbol || !limitPrice || !amount) return null;
-      const response = await fetch('/api/orders/limit/analysis', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          symbol,
-          limitPrice,
-          amount,
-          side: 'buy',
-          exchanges: ['binance', 'coinbase', 'kraken', 'bybit', 'kucoin']
-        })
+      const analysisData = await authClient.post<any>('/api/v1/yuki/orders/limit/analysis', {
+        symbol,
+        limitPrice,
+        amount,
+        side: 'buy',
+        exchanges: ['binance', 'coinbase', 'kraken', 'bybit', 'kucoin']
       });
-      if (!response.ok) throw new Error('Failed to analyze limit order');
-      const data = await response.json();
-      return data.data;
+      return analysisData.data;
     },
     staleTime: 15000, // 15 seconds (order book changes frequently)
     retry: 1,

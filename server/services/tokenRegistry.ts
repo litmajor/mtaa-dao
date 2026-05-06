@@ -1,27 +1,62 @@
 /**
  * Token Registry Service
- * 
+ *
  * Manages supported tokens across all blockchains.
- * Provides token metadata, categorization, and validation.
+ * Provides token metadata, categorisation, and validation.
+ *
+ * v2 changes:
+ * - Token data moved to tokens.config.json (easier updates, version-controllable)
+ * - Removed 'ton' from SupportedChain (no tokens defined for it)
+ * - Added BNB, AVAX, MATIC natives + WETH, WBNB, WMATIC, WAVAX wrapped tokens
+ * - Fixed PYUSD Solana address, FDUSD address (ETH + BSC)
+ * - filterTokens() and getAssets() now use a TTL result cache (1 s default)
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { logger } from '../utils/logger';
-import { AppError } from '../middleware/errorHandler';
 
 // ============= TYPES & INTERFACES =============
+
+export type SupportedChain =
+  | 'ethereum'
+  | 'celo'
+  | 'polygon'
+  | 'tron'
+  | 'solana'
+  | 'optimism'
+  | 'arbitrum'
+  | 'base'
+  | 'bsc'
+  | 'avalanche'
+  | 'moonriver'
+  | 'zksync'
+  | 'xdc'
+  | 'klaytn'
+  | 'kava'
+  | 'polygon-zkevm'
+  | 'moonbeam'
+  | 'boba'
+  | 'aurora'
+  | 'fantom'
+  | 'evmos'
+  | 'harmony'
+  | 'gnosis';
+// NOTE: 'ton' removed — add back once TON tokens are defined in tokens.config.json
 
 export interface TokenMetadata {
   symbol: string;
   name: string;
   address: string;
   decimals: number;
-  chain: 'ethereum' | 'polygon' | 'tron' | 'solana' | 'optimism' | 'arbitrum' | 'base' | 'bsc' | 'celo' | 'ton';
+  chain: SupportedChain;
   chainId?: string | number;
   category: 'stablecoin' | 'wrapped' | 'native' | 'governance' | 'utility' | 'bridge';
   logoUrl?: string;
   coingeckoId?: string;
   description?: string;
-  added: string; // ISO timestamp
+  /** ISO timestamp — injected automatically during load if absent in JSON */
+  added: string;
 }
 
 export interface TokenRegistryFilter {
@@ -29,6 +64,14 @@ export interface TokenRegistryFilter {
   category?: string;
   symbol?: string;
   address?: string;
+}
+
+/** Shape of tokens.config.json */
+interface TokenConfig {
+  native: Omit<TokenMetadata, 'added'>[];
+  stablecoins: Omit<TokenMetadata, 'added'>[];
+  wrapped: Omit<TokenMetadata, 'added'>[];
+  governance: Omit<TokenMetadata, 'added'>[];
 }
 
 // ============= TOKEN REGISTRY SERVICE =============
@@ -39,337 +82,202 @@ class TokenRegistry {
   private tokensByCategory: Map<string, TokenMetadata[]> = new Map();
   private lastUpdated: number = 0;
 
+  /** Simple TTL cache for filterTokens / getAssets results */
+  private filterCache: Map<string, { result: TokenMetadata[]; expiresAt: number }> = new Map();
+  private readonly FILTER_CACHE_TTL_MS = 1000; // 1 second
+
   constructor() {
     this.initializeTokens();
   }
 
+  // ---------------------------------------------------------------------------
+  // Initialisation
+  // ---------------------------------------------------------------------------
+
   /**
-   * Initialize with default tokens
+   * Load tokens from tokens.config.json.
+   * Falls back to empty registry with a loud warning on any load / parse error.
    */
   private initializeTokens(): void {
-    // Native tokens
-    const nativeTokens: TokenMetadata[] = [
-      {
-        symbol: 'ETH',
-        name: 'Ethereum',
-        address: '0x0000000000000000000000000000000000000000', // Native
-        decimals: 18,
-        chain: 'ethereum',
-        chainId: 1,
-        category: 'native',
-        logoUrl: 'https://assets.coingecko.com/coins/images/279/large/ethereum.png',
-        coingeckoId: 'ethereum',
-        added: new Date().toISOString()
-      },
-      {
-        symbol: 'SOL',
-        name: 'Solana',
-        address: 'So11111111111111111111111111111111111111112',
-        decimals: 9,
-        chain: 'solana',
-        category: 'native',
-        logoUrl: 'https://assets.coingecko.com/coins/images/4128/large/solana.png',
-        coingeckoId: 'solana',
-        added: new Date().toISOString()
-      },
-      {
-        symbol: 'TRX',
-        name: 'TRON',
-        address: 'TNUC9Qb1rRKPjYvRjSrgQajc1ieNaWys2d', // Mainnet
-        decimals: 6,
-        chain: 'tron',
-        category: 'native',
-        logoUrl: 'https://assets.coingecko.com/coins/images/1094/large/tron-logo.png',
-        coingeckoId: 'tron',
-        added: new Date().toISOString()
-      }
-    ];
+    const configPath = path.resolve(__dirname, 'tokens.config.json');
 
-    // Stablecoins
-    const stablecoins: TokenMetadata[] = [
-      {
-        symbol: 'USDT',
-        name: 'Tether USD',
-        address: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-        decimals: 6,
-        chain: 'ethereum',
-        chainId: 1,
-        category: 'stablecoin',
-        logoUrl: 'https://assets.coingecko.com/coins/images/325/large/Tether.png',
-        coingeckoId: 'tether',
-        added: new Date().toISOString()
-      },
-      {
-        symbol: 'USDC',
-        name: 'USD Coin',
-        address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
-        decimals: 6,
-        chain: 'ethereum',
-        chainId: 1,
-        category: 'stablecoin',
-        logoUrl: 'https://assets.coingecko.com/coins/images/6319/large/USD_Coin_icon.png',
-        coingeckoId: 'usd-coin',
-        added: new Date().toISOString()
-      },
-      {
-        symbol: 'PYUSD',
-        name: 'PayPal USD',
-        address: '0x6c3ea9036406852006290770bedfcaba0e23e8f1',
-        decimals: 6,
-        chain: 'ethereum',
-        chainId: 1,
-        category: 'stablecoin',
-        logoUrl: 'https://assets.coingecko.com/coins/images/32563/large/PYUSD.png',
-        coingeckoId: 'paypal-usd',
-        added: new Date().toISOString()
-      },
-      {
-        symbol: 'DAI',
-        name: 'Dai Stablecoin',
-        address: '0x6b175474e89094c44da98b954eedeac495271d0f',
-        decimals: 18,
-        chain: 'ethereum',
-        chainId: 1,
-        category: 'stablecoin',
-        logoUrl: 'https://assets.coingecko.com/coins/images/9956/large/4mICQk6.png',
-        coingeckoId: 'dai',
-        added: new Date().toISOString()
-      },
-      {
-        symbol: 'USDC',
-        name: 'USD Coin',
-        address: 'EPjFWaJsfqwzpm9NstUkqKKU2hyTQaw4LvcjwNYumGj',
-        decimals: 6,
-        chain: 'solana',
-        category: 'stablecoin',
-        logoUrl: 'https://assets.coingecko.com/coins/images/6319/large/USD_Coin_icon.png',
-        coingeckoId: 'usd-coin',
-        added: new Date().toISOString()
-      },
-      {
-        symbol: 'USDT',
-        name: 'Tether USD',
-        address: 'Es9vMFrzaCERmJfrF4H2FYD9iM7h1nxeyceB8FSVqWCA',
-        decimals: 6,
-        chain: 'solana',
-        category: 'stablecoin',
-        logoUrl: 'https://assets.coingecko.com/coins/images/325/large/Tether.png',
-        coingeckoId: 'tether',
-        added: new Date().toISOString()
-      },
-      {
-        symbol: 'USDT',
-        name: 'Tether USD',
-        address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', // Mainnet
-        decimals: 6,
-        chain: 'tron',
-        category: 'stablecoin',
-        logoUrl: 'https://assets.coingecko.com/coins/images/325/large/Tether.png',
-        coingeckoId: 'tether',
-        added: new Date().toISOString()
-      },
-      {
-        symbol: 'USDC',
-        name: 'USD Coin',
-        address: 'TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8', // Mainnet
-        decimals: 6,
-        chain: 'tron',
-        category: 'stablecoin',
-        logoUrl: 'https://assets.coingecko.com/coins/images/6319/large/USD_Coin_icon.png',
-        coingeckoId: 'usd-coin',
-        added: new Date().toISOString()
-      }
-    ];
+    let config: TokenConfig;
+    try {
+      const raw = fs.readFileSync(configPath, 'utf-8');
+      config = JSON.parse(raw) as TokenConfig;
+    } catch (err) {
+      logger.error(`[TokenRegistry] Failed to load tokens.config.json from ${configPath}:`, err);
+      logger.warn('[TokenRegistry] Registry is empty — all lookups will return null / []');
+      this.lastUpdated = Date.now();
+      return;
+    }
 
-    // Wrapped tokens
-    const wrappedTokens: TokenMetadata[] = [
-      {
-        symbol: 'WBTC',
-        name: 'Wrapped Bitcoin',
-        address: '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599',
-        decimals: 8,
-        chain: 'ethereum',
-        chainId: 1,
-        category: 'wrapped',
-        logoUrl: 'https://assets.coingecko.com/coins/images/7598/large/wrapped_bitcoin_wbtc.png',
-        coingeckoId: 'wrapped-bitcoin',
-        added: new Date().toISOString()
-      },
-      {
-        symbol: 'WETH',
-        name: 'Wrapped Ether',
-        address: 'So11111111111111111111111111111111111111112', // WSOL on Solana
-        decimals: 9,
-        chain: 'solana',
-        category: 'wrapped',
-        logoUrl: 'https://assets.coingecko.com/coins/images/279/large/ethereum.png',
-        coingeckoId: 'ethereum',
-        added: new Date().toISOString()
-      },
-      {
-        symbol: 'WBTC',
-        name: 'Wrapped Bitcoin',
-        address: '9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5plSmw',
-        decimals: 8,
-        chain: 'solana',
-        category: 'wrapped',
-        logoUrl: 'https://assets.coingecko.com/coins/images/7598/large/wrapped_bitcoin_wbtc.png',
-        coingeckoId: 'wrapped-bitcoin',
-        added: new Date().toISOString()
-      }
-    ];
+    const now = new Date().toISOString();
 
-    // Governance tokens
-    const governanceTokens: TokenMetadata[] = [
-      {
-        symbol: 'CELO',
-        name: 'Celo',
-        address: '0x0000000000000000000000000000000000000000', // Native on Celo
-        decimals: 18,
-        chain: 'celo',
-        category: 'governance',
-        logoUrl: 'https://assets.coingecko.com/coins/images/11090/large/icon-celo-CELO-logo.png',
-        coingeckoId: 'celo',
-        added: new Date().toISOString()
-      }
-    ];
+    const allTokens: TokenMetadata[] = [
+      ...config.native,
+      ...config.stablecoins,
+      ...config.wrapped,
+      ...config.governance,
+    ].map(t => ({ ...t, added: now } as TokenMetadata));
 
-    // Combine all tokens
-    const allTokens = [...nativeTokens, ...stablecoins, ...wrappedTokens, ...governanceTokens];
-
-    // Initialize maps
-    allTokens.forEach(token => {
-      const key = `${token.chain}:${token.address.toLowerCase()}`;
-      this.tokens.set(key, token);
-
-      // Index by chain
-      if (!this.tokensByChain.has(token.chain)) {
-        this.tokensByChain.set(token.chain, []);
-      }
-      this.tokensByChain.get(token.chain)!.push(token);
-
-      // Index by category
-      if (!this.tokensByCategory.has(token.category)) {
-        this.tokensByCategory.set(token.category, []);
-      }
-      this.tokensByCategory.get(token.category)!.push(token);
-    });
+    for (const token of allTokens) {
+      this.indexToken(token);
+    }
 
     this.lastUpdated = Date.now();
-    logger.info(`TokenRegistry initialized with ${allTokens.length} tokens`);
+    logger.info(
+      `[TokenRegistry] Loaded ${allTokens.length} tokens ` +
+        `(${config.native.length} native, ${config.stablecoins.length} stables, ` +
+        `${config.wrapped.length} wrapped, ${config.governance.length} governance) ` +
+        `from ${configPath}`
+    );
   }
 
-  /**
-   * Get token by address and chain
-   */
+  /** Register a token into all internal indices. */
+  private indexToken(token: TokenMetadata): void {
+    const key = `${token.chain}:${token.address.toLowerCase()}`;
+    this.tokens.set(key, token);
+
+    if (!this.tokensByChain.has(token.chain)) {
+      this.tokensByChain.set(token.chain, []);
+    }
+    this.tokensByChain.get(token.chain)!.push(token);
+
+    if (!this.tokensByCategory.has(token.category)) {
+      this.tokensByCategory.set(token.category, []);
+    }
+    this.tokensByCategory.get(token.category)!.push(token);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Public read API
+  // ---------------------------------------------------------------------------
+
   getToken(chain: string, address: string): TokenMetadata | null {
     const key = `${chain.toLowerCase()}:${address.toLowerCase()}`;
-    return this.tokens.get(key) || null;
+    return this.tokens.get(key) ?? null;
   }
 
-  /**
-   * Get all tokens for a chain
-   */
   getTokensByChain(chain: string): TokenMetadata[] {
-    return this.tokensByChain.get(chain.toLowerCase()) || [];
+    return this.tokensByChain.get(chain.toLowerCase()) ?? [];
   }
 
-  /**
-   * Get all tokens in a category
-   */
   getTokensByCategory(category: string): TokenMetadata[] {
-    return this.tokensByCategory.get(category.toLowerCase()) || [];
+    return this.tokensByCategory.get(category.toLowerCase()) ?? [];
   }
 
-  /**
-   * Get tokens by multiple filters
-   */
-  filterTokens(filter: TokenRegistryFilter): TokenMetadata[] {
-    let results = Array.from(this.tokens.values());
-
-    if (filter.chain) {
-      results = results.filter(t => t.chain === filter.chain?.toLowerCase());
-    }
-
-    if (filter.category) {
-      results = results.filter(t => t.category === filter.category?.toLowerCase());
-    }
-
-    if (filter.symbol) {
-      results = results.filter(t => t.symbol === filter.symbol?.toUpperCase());
-    }
-
-    if (filter.address) {
-      results = results.filter(t => t.address.toLowerCase() === filter.address?.toLowerCase());
-    }
-
-    return results;
-  }
-
-  /**
-   * Get all tokens
-   */
   getAllTokens(): TokenMetadata[] {
     return Array.from(this.tokens.values());
   }
 
+  validateToken(chain: string, address: string): boolean {
+    return this.getToken(chain, address) !== null;
+  }
+
+  getSupportedChains(): string[] {
+    return Array.from(this.tokensByChain.keys());
+  }
+
+  getSupportedCategories(): string[] {
+    return Array.from(this.tokensByCategory.keys());
+  }
+
+  // ---------------------------------------------------------------------------
+  // Cached filter helpers
+  // ---------------------------------------------------------------------------
+
   /**
-   * Get tokens for display (with filters)
+   * Filter tokens by any combination of chain / category / symbol / address.
+   * Results are cached for FILTER_CACHE_TTL_MS to avoid repeated full-array scans
+   * under high-traffic scan cycles.
    */
-  getAssets(chain?: string, category?: string): TokenMetadata[] {
+  filterTokens(filter: TokenRegistryFilter): TokenMetadata[] {
+    const cacheKey = JSON.stringify(filter);
+    const cached = this.filterCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.result;
+    }
+
     let results = Array.from(this.tokens.values());
 
-    if (chain) {
-      results = results.filter(t => t.chain === chain.toLowerCase());
+    if (filter.chain) {
+      const lc = filter.chain.toLowerCase();
+      results = results.filter(t => t.chain === lc);
+    }
+    if (filter.category) {
+      const lc = filter.category.toLowerCase();
+      results = results.filter(t => t.category === lc);
+    }
+    if (filter.symbol) {
+      const uc = filter.symbol.toUpperCase();
+      results = results.filter(t => t.symbol === uc);
+    }
+    if (filter.address) {
+      const lc = filter.address.toLowerCase();
+      results = results.filter(t => t.address.toLowerCase() === lc);
     }
 
-    if (category) {
-      results = results.filter(t => t.category === category.toLowerCase());
-    }
-
-    // Sort by symbol
-    results.sort((a, b) => a.symbol.localeCompare(b.symbol));
+    this.filterCache.set(cacheKey, {
+      result: results,
+      expiresAt: Date.now() + this.FILTER_CACHE_TTL_MS,
+    });
 
     return results;
   }
 
   /**
-   * Validate token address for a chain
+   * Convenience display getter — same caching as filterTokens.
    */
-  validateToken(chain: string, address: string): boolean {
-    const token = this.getToken(chain, address);
-    return token !== null;
+  getAssets(chain?: string, category?: string): TokenMetadata[] {
+    const cacheKey = `assets:${chain ?? '*'}:${category ?? '*'}`;
+    const cached = this.filterCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.result;
+    }
+
+    let results = Array.from(this.tokens.values());
+
+    if (chain) {
+      const lc = chain.toLowerCase();
+      results = results.filter(t => t.chain === lc);
+    }
+    if (category) {
+      const lc = category.toLowerCase();
+      results = results.filter(t => t.category === lc);
+    }
+
+    results.sort((a, b) => a.symbol.localeCompare(b.symbol));
+
+    this.filterCache.set(cacheKey, {
+      result: results,
+      expiresAt: Date.now() + this.FILTER_CACHE_TTL_MS,
+    });
+
+    return results;
   }
 
-  /**
-   * Get supported chains
-   */
-  getSupportedChains(): string[] {
-    return Array.from(this.tokensByChain.keys());
-  }
+  // ---------------------------------------------------------------------------
+  // Mutation
+  // ---------------------------------------------------------------------------
 
   /**
-   * Get supported categories
-   */
-  getSupportedCategories(): string[] {
-    return Array.from(this.tokensByCategory.keys());
-  }
-
-  /**
-   * Add or update token
+   * Add or update a token at runtime (e.g. from an external discovery service).
+   * Invalidates the filter cache.
    */
   addToken(token: TokenMetadata): void {
     const key = `${token.chain}:${token.address.toLowerCase()}`;
-    this.tokens.set(key, token);
 
     // Update chain index
     if (!this.tokensByChain.has(token.chain)) {
       this.tokensByChain.set(token.chain, []);
     }
     const chainTokens = this.tokensByChain.get(token.chain)!;
-    const existingIndex = chainTokens.findIndex(t => t.address.toLowerCase() === token.address.toLowerCase());
-    if (existingIndex >= 0) {
-      chainTokens[existingIndex] = token;
+    const chainIdx = chainTokens.findIndex(
+      t => t.address.toLowerCase() === token.address.toLowerCase()
+    );
+    if (chainIdx >= 0) {
+      chainTokens[chainIdx] = token;
     } else {
       chainTokens.push(token);
     }
@@ -378,20 +286,28 @@ class TokenRegistry {
     if (!this.tokensByCategory.has(token.category)) {
       this.tokensByCategory.set(token.category, []);
     }
-    const categoryTokens = this.tokensByCategory.get(token.category)!;
-    const catIndex = categoryTokens.findIndex(t => t.address.toLowerCase() === token.address.toLowerCase());
-    if (catIndex >= 0) {
-      categoryTokens[catIndex] = token;
+    const catTokens = this.tokensByCategory.get(token.category)!;
+    const catIdx = catTokens.findIndex(
+      t => t.address.toLowerCase() === token.address.toLowerCase()
+    );
+    if (catIdx >= 0) {
+      catTokens[catIdx] = token;
     } else {
-      categoryTokens.push(token);
+      catTokens.push(token);
     }
 
-    logger.info(`Token added/updated: ${token.symbol} on ${token.chain}`);
+    this.tokens.set(key, token);
+
+    // Bust filter cache
+    this.filterCache.clear();
+
+    logger.info(`[TokenRegistry] Token added/updated: ${token.symbol} on ${token.chain}`);
   }
 
-  /**
-   * Get registry statistics
-   */
+  // ---------------------------------------------------------------------------
+  // Stats
+  // ---------------------------------------------------------------------------
+
   getStats(): {
     totalTokens: number;
     chainCount: number;
@@ -402,7 +318,7 @@ class TokenRegistry {
       totalTokens: this.tokens.size,
       chainCount: this.tokensByChain.size,
       categoryCount: this.tokensByCategory.size,
-      lastUpdated: new Date(this.lastUpdated).toISOString()
+      lastUpdated: new Date(this.lastUpdated).toISOString(),
     };
   }
 }

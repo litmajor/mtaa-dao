@@ -51,7 +51,7 @@ export function WithdrawModal({ open, onClose, userVaultId, address, vaults }: {
   // Generate OTP for 2FA
   const generateOTP = async () => {
     try {
-      const res = await fetch("/api/2fa/generate", {
+      const res = await fetch("/api/v1/wallets/security/2fa/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -93,7 +93,7 @@ export function WithdrawModal({ open, onClose, userVaultId, address, vaults }: {
     setError("");
     try {
       // Use the new withdrawal endpoint with 2FA/PIN verification
-      const res = await fetch("/api/withdrawals/verify-2fa", {
+      const res = await fetch("/api/v1/wallets/withdrawals/verify-2fa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -136,7 +136,7 @@ export function WithdrawModal({ open, onClose, userVaultId, address, vaults }: {
 
     // Check 2FA/PIN requirements
     try {
-      const configRes = await fetch("/api/2fa/config", {
+      const configRes = await fetch("/api/v1/wallets/security/2fa/config", {
         method: "GET",
         headers: { "Content-Type": "application/json" },
       });

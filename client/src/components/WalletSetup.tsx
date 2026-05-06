@@ -8,7 +8,7 @@ import { Label } from './ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
-import { Wallet, Plus, Upload, Eye, EyeOff, Copy, Download, CheckCircle, Shield, AlertTriangle } from 'lucide-react';
+import { Wallet, Plus, Upload, Eye, EyeOff, Copy, Download, CheckCircle, Shield, TriangleAlert } from 'lucide-react';
 import { useToast } from './ui/use-toast';
 import SeedPhraseModal from './modals/SeedPhraseModal';
 
@@ -50,7 +50,7 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
   const createNewWallet = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/wallet-setup/create-wallet', {
+      const response = await fetch('/api/v1/wallets/setup/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -66,18 +66,18 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
         // Show seed phrase modal instead of just a toast
         setSeedPhraseModal({
           isOpen: true,
-          seedPhrase: data.wallet.mnemonic || '',
-          walletAddress: data.wallet.address
+          seedPhrase: data.data.wallet.mnemonic || '',
+          walletAddress: data.data.wallet.address
         });
         
         // Initialize additional assets if any
         if (assets.length > 1) {
-          await initializeAssets(data.wallet.address);
+          await initializeAssets(data.data.wallet.address);
         }
         
         onWalletCreated?.(data);
       } else {
-        throw new Error(data.error);
+        throw new Error(data.error || data.message);
       }
     } catch (error) {
       toast({
@@ -94,7 +94,7 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
     (async () => {
       setSeedPhraseModal({ ...seedPhraseModal, isOpen: false });
       try {
-        const resp = await fetch('/api/wallet-setup/backup-confirmed', {
+        const resp = await fetch('/api/v1/wallets/setup/backup/confirm', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
@@ -143,7 +143,7 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
 
     setLoading(true);
     try {
-      const response = await fetch('/api/wallet-setup/import-wallet', {
+      const response = await fetch('/api/v1/wallets/setup/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -158,17 +158,17 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
       if (data.success) {
         toast({
           title: "Wallet Imported Successfully",
-          description: `Wallet address: ${data.wallet.address.slice(0, 8)}...`
+          description: `Wallet address: ${data.data.wallet.address.slice(0, 8)}...`
         });
         
         // Initialize additional assets if any
         if (assets.length > 1) {
-          await initializeAssets(data.wallet.address);
+          await initializeAssets(data.data.wallet.address);
         }
         
         onWalletCreated?.(data);
       } else {
-        throw new Error(data.error);
+        throw new Error(data.error || data.message);
       }
     } catch (error) {
       toast({
@@ -183,7 +183,7 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
 
   const initializeAssets = async (walletAddress?: string) => {
     try {
-      const response = await fetch('/api/wallet-setup/initialize-assets', {
+      const response = await fetch('/api/v1/wallets/setup/assets/initialize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -197,7 +197,7 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
       if (data.success) {
         toast({
           title: "Assets Initialized",
-          description: `${data.summary.newVaults} new vaults created`
+          description: `${data.data.summary.newVaults} new vaults created`
         });
       }
     } catch (error) {

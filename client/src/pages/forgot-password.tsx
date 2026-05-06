@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import { Button } from "../components/ui/button";
-import { ArrowLeft, Mail, Phone, Loader2, CheckCircle } from "lucide-react";
+import { ArrowLeft, Mail, Phone, LoaderCircle, CheckCircle } from "lucide-react";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from '../components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { authClient } from '@/utils/authClient';
 
 const ForgotPassword = () => {
   const [emailOrPhone, setEmailOrPhone] = useState("");
@@ -36,19 +37,10 @@ const ForgotPassword = () => {
       }
 
       // Call backend endpoint to send OTP or reset link
-      const res = await fetch("/api/auth/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          [type]: emailOrPhone,
-          type
-        })
+      await authClient.post("/api/auth/send-otp", {
+        [type]: emailOrPhone,
+        type
       });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || "Failed to send reset code");
-      }
 
   setSent(true);
   toast(`Reset code sent! Check your ${type} for the reset instructions.`);

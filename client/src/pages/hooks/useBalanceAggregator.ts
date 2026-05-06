@@ -147,7 +147,7 @@ export const useBalanceAggregator = () => {
 
     try {
       // Fetch from backend which aggregates across all sources
-      const response = await fetch('/api/wallet/balances-aggregated', {
+      const response = await fetch('/api/v1/wallets/balance/aggregated', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

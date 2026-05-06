@@ -11,8 +11,18 @@ import { eq, and, desc } from 'drizzle-orm';
 import { isAuthenticated } from '../auth';
 import { ProposalExecutionService } from '../proposalExecutionService';
 import { rateLimitMiddleware, proposalVotingLimits } from '../middleware/rateLimitConfig';
+import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
 
 const router = express.Router();
+
+// In-memory store for idempotency keys (should use Redis in production)
+// Maps: proposalId -> { idempotencyKey, executedAt, result }
+const executionIdempotencyMap = new Map<string, {
+  idempotencyKey: string;
+  executedAt: Date;
+  result: any;
+}>();
 
 // ============================================
 // PHASE 1 FIX: Access Control Helper
@@ -108,11 +118,47 @@ router.get('/:daoId/queue', isAuthenticated, async (req, res) => {
 });
 
 // Manually execute a proposal
-// PHASE 1: SAFETY - Rate limited to 100 proposal votes per day per user
+// 🔴 CRITICAL: RATE LIMITED - Idempotency enforced to prevent double-execution
+// Requires: Idempotency-Key header for financial safety
 router.post('/:daoId/execute/:proposalId', [isAuthenticated, rateLimitMiddleware(proposalVotingLimits)], async (req: any, res: any) => {
   try {
     const { daoId, proposalId } = req.params;
     const userId = (req.user as any).claims.sub;
+    const idempotencyKey = req.headers['idempotency-key'] as string;
+    
+    // 🔴 CRITICAL: Require idempotency key for critical operation
+    if (!idempotencyKey) {
+      return res.status(400).json({
+        success: false,
+        message: 'Idempotency-Key header is required for proposal execution',
+        code: 'MISSING_IDEMPOTENCY_KEY'
+      });
+    }
+    
+    // Check if this proposal was already executed with the same idempotency key
+    const executionKey = `${daoId}:${proposalId}`;
+    const existingExecution = executionIdempotencyMap.get(executionKey);
+    
+    if (existingExecution && existingExecution.idempotencyKey === idempotencyKey) {
+      // Idempotent response - return cached result
+      return res.status(200).json({
+        success: true,
+        message: 'Proposal execution already completed (idempotent response)',
+        data: existingExecution.result,
+        executedAt: existingExecution.executedAt,
+        isIdempotentResponse: true
+      });
+    }
+    
+    if (existingExecution && existingExecution.idempotencyKey !== idempotencyKey) {
+      // Different idempotency key for same proposal - possible replay attack
+      return res.status(409).json({
+        success: false,
+        message: 'Proposal already executed with a different Idempotency-Key',
+        code: 'IDEMPOTENCY_KEY_CONFLICT',
+        previousExecutionTime: existingExecution.executedAt
+      });
+    }
     
     // PHASE 1 FIX: Check permissions (admin/elder/treasury_manager only)
     const hasPermission = await validateExecutionPermission(userId, daoId);
@@ -141,14 +187,28 @@ router.post('/:daoId/execute/:proposalId', [isAuthenticated, rateLimitMiddleware
     }
     
     // PHASE 1 FIX: Pass actual executor user ID instead of hardcoded 'system'
-    await ProposalExecutionService.executeProposal(execution[0], userId);
+    const executionResult = await ProposalExecutionService.executeProposal(execution[0], userId);
+    
+    // Store idempotency key to prevent re-execution
+    executionIdempotencyMap.set(executionKey, {
+      idempotencyKey,
+      executedAt: new Date(),
+      result: executionResult
+    });
+    
+    // Clean up old entries after 24 hours (prevent memory leak)
+    setTimeout(() => {
+      executionIdempotencyMap.delete(executionKey);
+    }, 24 * 60 * 60 * 1000);
     
     // Log execution for audit trail
-    console.log(`[AUDIT] Proposal ${proposalId} executed by user ${userId} in DAO ${daoId}`);
+    console.log(`[AUDIT] Proposal ${proposalId} executed by user ${userId} in DAO ${daoId} with idempotency key ${idempotencyKey}`);
     
     res.json({
       success: true,
-      message: 'Proposal executed successfully'
+      message: 'Proposal executed successfully',
+      data: executionResult,
+      executedAt: new Date()
     });
   } catch (error: any) {
     res.status(500).json({

@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { authClient } from '@/utils/authClient';
 
 interface Device {
   id: string;
@@ -40,16 +41,8 @@ export const DeviceManagement: React.FC = () => {
   const fetchDevices = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/sessions/active', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
-
-      if (!response.ok) throw new Error('Failed to fetch devices');
-
-      const data = await response.json();
-      setDevices(data.data);
+      const data = await authClient.get('/api/v1/wallets/sessions/active');
+      setDevices(data.data?.sessions || data.data || []);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load devices');
@@ -68,14 +61,9 @@ export const DeviceManagement: React.FC = () => {
   const handleDisconnect = async (deviceId: string) => {
     setDisconnecting(deviceId);
     try {
-      const response = await fetch(`/api/sessions/${deviceId}/disconnect`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
+      const response = await authClient.post(`/api/v1/wallets/sessions/disconnect`, { sessionId: deviceId });
 
-      if (response.ok) {
+      if (response) {
         setDevices(devices.filter((d) => d.id !== deviceId));
       } else {
         setError('Failed to disconnect device');

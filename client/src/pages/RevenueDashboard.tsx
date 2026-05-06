@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 import { 
   DollarSign, 
   TrendingUp, 
@@ -27,11 +28,7 @@ export default function RevenueDashboard() {
   const { data: report, isLoading } = useQuery({
     queryKey: ['/api/revenue/report', period],
     queryFn: async () => {
-      const res = await fetch(`/api/revenue/report?period=${period}`, {
-        credentials: 'include'
-      });
-      if (!res.ok) throw new Error('Failed to fetch revenue report');
-      return res.json();
+      return authClient.get(`/api/revenue/report?period=${period}`);
     }
   });
 

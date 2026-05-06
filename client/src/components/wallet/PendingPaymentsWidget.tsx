@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
-import { Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface PendingPayment {
   id: string;
@@ -21,13 +22,76 @@ interface PendingPaymentsWidgetProps {
 }
 
 export default function PendingPaymentsWidget({ walletAddress, userId }: PendingPaymentsWidgetProps) {
+  const { socket, isConnected } = useWebSocket();
+  
   const [payments, setPayments] = useState<PendingPayment[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [wsConnected, setWsConnected] = useState(false);
 
   useEffect(() => {
     fetchPendingPayments();
   }, [walletAddress, userId]);
+
+  // WebSocket real-time payment updates
+  useEffect(() => {
+    if (!isConnected) {
+      setWsConnected(false);
+      return;
+    }
+
+    setWsConnected(true);
+
+    // Handle payment activity updates (completion, failure, etc.)
+    const handleActivityLog = (data: any) => {
+      try {
+        if (data.entityType === 'payment' || data.action?.includes('payment')) {
+          // Refresh pending payments when payment activity occurs
+          fetchPendingPayments();
+        }
+      } catch (error) {
+        console.error('Error processing payment activity:', error);
+      }
+    };
+
+    // Handle payment alerts (failures, expirations, etc.)
+    const handleAlert = (data: any) => {
+      try {
+        if (data.severity || data.message) {
+          // Check if this is a payment-related alert
+          if (data.message?.toLowerCase().includes('payment') || 
+              data.entityType === 'payment') {
+            // Toast notification could be added here
+            fetchPendingPayments();
+          }
+        }
+      } catch (error) {
+        console.error('Error processing payment alert:', error);
+      }
+    };
+
+    // Handle status changes for payment processing
+    const handleStatusChange = (data: any) => {
+      try {
+        if (data.entityType === 'payment' || data.status?.includes('payment')) {
+          fetchPendingPayments();
+        }
+      } catch (error) {
+        console.error('Error processing status change:', error);
+      }
+    };
+
+    socket.on('activity:logged', handleActivityLog);
+    socket.on('alert:new', handleAlert);
+    socket.on('status:changed', handleStatusChange);
+
+    // Cleanup
+    return () => {
+      socket.off('activity:logged', handleActivityLog);
+      socket.off('alert:new', handleAlert);
+      socket.off('status:changed', handleStatusChange);
+    };
+  }, [socket, isConnected]);
 
   const fetchPendingPayments = async () => {
     try {
@@ -35,7 +99,7 @@ export default function PendingPaymentsWidget({ walletAddress, userId }: Pending
       if (walletAddress) params.append('walletAddress', walletAddress);
       if (userId) params.append('userId', userId);
 
-      const response = await fetch(`/api/wallet/pending-payments?${params}`);
+      const response = await fetch(`/api/v1/wallets/payments/pending?${params}`);
       const data = await response.json();
 
       if (data.success) {
@@ -72,6 +136,20 @@ export default function PendingPaymentsWidget({ walletAddress, userId }: Pending
               Pending Payments
             </CardTitle>
             <CardDescription>Payments awaiting action</CardDescription>
+            {/* WebSocket Status */}
+            <div className="flex items-center gap-1 mt-2">
+              {wsConnected ? (
+                <>
+                  <CheckCircle className="h-3 w-3 text-green-500" />
+                  <span className="text-xs text-green-600">Real-time updates</span>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="h-3 w-3 text-gray-400" />
+                  <span className="text-xs text-gray-500">Polling mode</span>
+                </>
+              )}
+            </div>
           </div>
           <Badge variant="outline">
             {summary?.totalPending || 0} pending

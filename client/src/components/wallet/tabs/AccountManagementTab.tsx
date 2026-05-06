@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowRight, CheckCircle, AlertCircle } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 
 interface WalletAccount {
   id: string;
@@ -45,11 +46,7 @@ export default function AccountManagementTab({ accounts }: AccountManagementTabP
   const { data: transferHistory = [], refetch: refetchHistory } = useQuery<Transfer[]>({
     queryKey: ['transferHistory'],
     queryFn: async () => {
-      const response = await fetch('/api/transfers/history', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      });
-      if (!response.ok) throw new Error('Failed to fetch transfer history');
-      const result = await response.json();
+      const result = await authClient.get('/api/transfers/history');
       return result.data;
     },
   });
@@ -58,11 +55,7 @@ export default function AccountManagementTab({ accounts }: AccountManagementTabP
   const { data: transferStats } = useQuery({
     queryKey: ['transferStatistics'],
     queryFn: async () => {
-      const response = await fetch('/api/transfers/statistics', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      });
-      if (!response.ok) throw new Error('Failed to fetch statistics');
-      const result = await response.json();
+      const result = await authClient.get('/api/transfers/statistics');
       return result.data;
     },
   });
@@ -75,21 +68,7 @@ export default function AccountManagementTab({ accounts }: AccountManagementTabP
       amount: string;
       reason: string;
     }) => {
-      const response = await fetch('/api/transfers', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify(data),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to create transfer');
-      }
-
-      return response.json();
+      return authClient.post('/api/transfers', data);
     },
     onSuccess: () => {
       refetchHistory();

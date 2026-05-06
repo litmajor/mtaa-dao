@@ -10,11 +10,13 @@ export default function DaoOfTheWeekBanner() {
   const { isAuthenticated } = useAuth();
 
   const { data } = useQuery({
-    queryKey: ['/api/dao-of-the-week/current'],
+    queryKey: ['/api/v1/daos/featured'],
     enabled: isAuthenticated, // Only fetch when authenticated
     queryFn: async () => {
       try {
-        return await apiGet('/api/dao-of-the-week/current');
+        // V1 endpoint: GET /api/v1/daos/featured
+        // Returns the featured DAO (DAO with most members - "DAO of the Week")
+        return await apiGet('/api/v1/daos/featured');
       } catch (error) {
         return null;
       }

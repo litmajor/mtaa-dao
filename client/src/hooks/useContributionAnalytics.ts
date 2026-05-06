@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
+import { authClient } from '@/utils/authClient';
 import { useRealtimeMetrics } from './useRealtimeMetrics';
 
 export interface ContributionMember {
@@ -84,7 +85,7 @@ export const useContributionAnalytics = ({
         `${apiBaseUrl}/api/analyzer/contributions/${daoId}?${params}`,
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
+            ...(await authClient.getAuthHeaders()),
           },
         }
       );
@@ -107,7 +108,7 @@ export const useContributionAnalytics = ({
         `${apiBaseUrl}/api/analyzer/rotation/history/${daoId}?${params}`,
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
+            ...(await authClient.getAuthHeaders()),
           },
         }
       );

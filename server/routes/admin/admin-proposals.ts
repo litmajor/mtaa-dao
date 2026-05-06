@@ -5,6 +5,7 @@ import { proposals, daos, daoMemberships, votes } from '../../../shared/schema';
 import { eq, desc, sql, and, or, like, inArray, gte, lte } from 'drizzle-orm';
 import { requireRole } from '../../middleware/rbac';
 import { logConsolidatedAuditEvent, AuditEventType } from '../../services/auditConsolidated';
+import { getEventEmitter } from '../../middleware/websocket-event-emitter';
 
 const router = Router();
 const requireSuperAdmin = requireRole('super_admin');
@@ -235,6 +236,19 @@ router.post('/daos/:daoId/proposals/:proposalId/flag', requireSuperAdmin, async 
 
     logger.info('Proposal flagged by super admin', { proposalId, daoId, adminId, reason });
 
+    // Emit WebSocket event for real-time updates
+    try {
+      const wsEmitter = getEventEmitter();
+      wsEmitter.emitApprovalUpdate('proposal', proposalId, 'flagged', adminId, {
+        daoId,
+        reason,
+        severity,
+        flaggedAt: new Date()
+      });
+    } catch (wsError) {
+      logger.warn('Failed to emit WebSocket event for proposal flag:', wsError);
+    }
+
     res.json({
       success: true,
       message: 'Proposal flagged for review',
@@ -303,6 +317,18 @@ router.post('/daos/:daoId/proposals/:proposalId/suspend', requireSuperAdmin, asy
     }).catch(err => console.error('Audit log failed:', err));
 
     logger.warn('Proposal suspended by super admin', { proposalId, daoId, adminId, reason });
+
+    // Emit WebSocket event for real-time updates (critical status change)
+    try {
+      const wsEmitter = getEventEmitter();
+      wsEmitter.emitApprovalUpdate('proposal', proposalId, 'suspended', adminId, {
+        daoId,
+        reason,
+        suspendedAt: new Date()
+      });
+    } catch (wsError) {
+      logger.warn('Failed to emit WebSocket event for proposal suspend:', wsError);
+    }
 
     res.json({
       success: true,

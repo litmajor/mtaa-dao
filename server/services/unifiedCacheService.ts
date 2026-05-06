@@ -234,16 +234,27 @@ class UnifiedCacheService {
     const staleKey = `${key}:stale`;
 
     try {
-      // 1. Check fresh cache
+      // 1. Check fresh cache (with error handling for closed Redis clients)
       if (this.isConnected && this.redis) {
-        const cached = await this.redis.get(key);
-        if (cached) {
-          return {
-            data: JSON.parse(cached),
-            source: 'cache',
-            quality: 'fresh',
-            timestamp: Date.now(),
-          };
+        try {
+          const cached = await this.redis.get(key);
+          if (cached) {
+            return {
+              data: JSON.parse(cached),
+              source: 'cache',
+              quality: 'fresh',
+              timestamp: Date.now(),
+            };
+          }
+        } catch (redisError: any) {
+          // If Redis is closed/unreachable, fall back to memory cache
+          if (redisError?.message?.includes('closed') || redisError?.message?.includes('ECONNREFUSED')) {
+            logger.debug(`[Cache] Redis unavailable, falling back to memory cache for ${key}`);
+            this.isConnected = false; // Mark Redis as disconnected
+          } else {
+            // Log other Redis errors but continue
+            logger.debug(`[Cache] Redis get error for ${key}: ${redisError?.message}`);
+          }
         }
       }
 

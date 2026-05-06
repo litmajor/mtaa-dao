@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Shield, TrendingUp, AlertTriangle, CheckCircle, Activity, Brain, Eye } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
+import { authClient } from '@/utils/authClient';
 
 interface ElderInsight {
   elder: 'KAIZEN' | 'SCRY' | 'LUMEN';
@@ -28,19 +29,12 @@ export function MorioElderInsights({ userId, daoId }: Props) {
 
   const fetchElderInsights = async () => {
     try {
-      const token = localStorage.getItem('token');
       const endpoint = daoId 
         ? `/api/morio/elder-insights?daoId=${daoId}`
         : `/api/morio/elder-insights?userId=${userId}`;
       
-      const response = await fetch(endpoint, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setInsights(data.insights || []);
-      }
+      const data = await authClient.get<{ insights: ElderInsight[] }>(endpoint);
+      setInsights(data.insights || []);
     } catch (error) {
       console.error('Failed to fetch elder insights:', error);
     } finally {

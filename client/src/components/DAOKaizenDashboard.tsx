@@ -25,6 +25,7 @@ import {
   Legend,
   ResponsiveContainer
 } from 'recharts';
+import { authClient } from '@/utils/authClient';
 import {
   AlertCircle,
   TrendingUp,
@@ -128,26 +129,12 @@ export default function DAOKaizenDashboard() {
   const fetchDAOData = async () => {
     if (!daoId) return;
     try {
-      const token = localStorage.getItem('token');
-      const [statusRes, recsRes, trendsRes, anomaliesRes] = await Promise.all([
-        fetch(`/api/elders/kaizen/dao/${daoId}/status`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        fetch(`/api/elders/kaizen/dao/${daoId}/recommendations`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        fetch(`/api/elders/kaizen/dao/${daoId}/trends?metric=${selectedMetric}&hours=168`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        fetch(`/api/elders/kaizen/dao/${daoId}/anomalies?metric=${selectedMetric}&threshold=20`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
+      const [statusData, recsData, trendsData, anomaliesData] = await Promise.all([
+        authClient.get(`/api/elders/kaizen/dao/${daoId}/status`),
+        authClient.get(`/api/elders/kaizen/dao/${daoId}/recommendations`),
+        authClient.get(`/api/elders/kaizen/dao/${daoId}/trends?metric=${selectedMetric}&hours=168`),
+        authClient.get(`/api/elders/kaizen/dao/${daoId}/anomalies?metric=${selectedMetric}&threshold=20`)
       ]);
-
-      if (!statusRes.ok || !recsRes.ok) throw new Error('Failed to fetch DAO data');
-
-      const statusData = await statusRes.json();
-      const recsData = await recsRes.json();
       const trendsData = trendsRes.ok ? await trendsRes.json() : {};
       const anomaliesData = anomaliesRes.ok ? await anomaliesRes.json() : [];
 

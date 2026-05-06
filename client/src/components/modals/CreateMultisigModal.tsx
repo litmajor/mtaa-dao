@@ -53,7 +53,7 @@ export default function CreateMultisigModal({ isOpen, daoId, initialSigners = []
 
     setLoading(true);
     try {
-      const resp = await fetch(`/api/dao/${daoId}/multisig`, {
+      const resp = await fetch(`/api/v1/wallets/${daoId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ requiredSignatures: required, signers }),
@@ -61,7 +61,7 @@ export default function CreateMultisigModal({ isOpen, daoId, initialSigners = []
       const data = await resp.json();
       if (!resp.ok) throw new Error(data?.message || data?.error || 'Failed to create multisig');
       toast({ title: 'Multisig Created', description: 'Multisig wallet recorded for this DAO' });
-      onCreated?.(data);
+      onCreated?.(data.data || data);
       onClose();
     } catch (err: any) {
       toast({ title: 'Error', description: err?.message || 'Failed to create multisig', variant: 'destructive' });

@@ -11,6 +11,7 @@ import { Calendar, MapPin, Users, Plus, Edit, Trash2, CheckCircle } from 'lucide
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { authClient } from '@/utils/authClient';
 
 interface Event {
   id: string;
@@ -43,21 +44,13 @@ export default function EventsPage() {
   const { data: events = [] } = useQuery<Event[]>({
     queryKey: ['events'],
     queryFn: async () => {
-      const res = await fetch('/api/events');
-      if (!res.ok) throw new Error('Failed to fetch events');
-      return res.json();
+      return authClient.get('/api/events');
     }
   });
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      const res = await fetch('/api/events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-      if (!res.ok) throw new Error('Failed to create event');
-      return res.json();
+      return authClient.post('/api/events', data);
     },
     onSuccess: () => {
   queryClient.invalidateQueries({ queryKey: ['events'] });
@@ -69,9 +62,7 @@ export default function EventsPage() {
 
   const rsvpMutation = useMutation({
     mutationFn: async (eventId: string) => {
-      const res = await fetch(`/api/events/${eventId}/rsvp`, { method: 'POST' });
-      if (!res.ok) throw new Error('Failed to RSVP');
-      return res.json();
+      return authClient.post(`/api/events/${eventId}/rsvp`, {});
     },
     onSuccess: () => {
   queryClient.invalidateQueries({ queryKey: ['events'] });

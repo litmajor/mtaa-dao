@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 
 interface LiquidityMetric {
   pair: string;
@@ -37,26 +38,14 @@ export default function AdminLiquidityMonitoring() {
   const fetchLiquidityData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
-      const [metricsRes, trendsRes] = await Promise.all([
-        fetch('/api/admin/liquidity/metrics', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/liquidity/trends', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
+      const [metricsData, trendsData] = await Promise.all([
+        authClient.get('/api/admin/liquidity/metrics'),
+        authClient.get('/api/admin/liquidity/trends'),
       ]);
 
-      if (metricsRes.ok) {
-        const data = await metricsRes.json();
-        setMetrics(data.metrics || []);
-      }
-
-      if (trendsRes.ok) {
-        const data = await trendsRes.json();
-        setTrends(data.trends || []);
-      }
+      setMetrics(metricsData.metrics || []);
+      setTrends(trendsData.trends || []);
     } catch (error) {
       console.error('Failed to fetch liquidity data:', error);
     } finally {

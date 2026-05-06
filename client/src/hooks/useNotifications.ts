@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-
+import { authClient } from '@/utils/authClient';
 import { io, Socket } from 'socket.io-client';
 import { API_CONFIG } from '@/config/apiConfig';
 
@@ -23,15 +23,13 @@ export function useNotifications() {
 
     // Initialize WebSocket connection
   useEffect(() => {
-    // Get token from localStorage - check multiple keys for backward compatibility
-    const token = localStorage.getItem('accessToken') || 
-                  localStorage.getItem('token') || 
-                  localStorage.getItem('mtaa_dao_auth_token');
+    // Get auth token from authClient
+    const token = authClient.getToken() || undefined;
     // Use API_CONFIG.BASE_URL for Socket.IO (http) and API_CONFIG.WS_URL for ws if needed
     const backendUrl = API_CONFIG.BASE_URL;
     const newSocket = io(backendUrl, {
       auth: {
-        token: token || undefined,
+        token,
       },
       query: token ? { token } : {},
       reconnection: true,
@@ -87,9 +85,7 @@ export function useNotifications() {
   useEffect(() => {
     if (!isConnected) {
       // Fallback to SSE if WebSocket fails
-      const token = localStorage.getItem('accessToken') || 
-                    localStorage.getItem('token') || 
-                    localStorage.getItem('mtaa_dao_auth_token');
+      const token = authClient.getToken();
       // Use API_CONFIG.BASE_URL for SSE as well
       const backendUrl = API_CONFIG.BASE_URL;
       const es = new window.EventSource(`${backendUrl}/api/sse/notifications?token=${token || ''}`);
@@ -138,12 +134,10 @@ export function useNotificationData(filter: 'all' | 'unread' | 'high' = 'all') {
       const params = new URLSearchParams();
       if (filter === 'unread') params.append('read', 'false');
       if (filter === 'high') params.append('priority', 'high,urgent');
-      const token = localStorage.getItem('accessToken');
+      const authHeaders = await authClient.getAuthHeaders();
     const backendUrl = API_CONFIG.BASE_URL;
       const response = await fetch(`${backendUrl}/api/notifications?${params}`, {
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
-        },
+        headers: authHeaders,
       });
       if (!response.ok) throw new Error('Failed to fetch notifications');
       return response.json();

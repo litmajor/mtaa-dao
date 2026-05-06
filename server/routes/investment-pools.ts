@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { Request, Response } from 'express';
 import { db } from '../db';
 import { logger } from '../utils/logger';
 import { authenticateToken } from '../middleware/auth';
@@ -21,6 +22,7 @@ import { performanceTrackingService } from '../services/performanceTrackingServi
 import { rebalancingService } from '../services/rebalancingService';
 import { triggerManualRebalance, triggerManualSnapshot } from '../jobs/investmentPoolsAutomation';
 import { investmentPoolPricingService } from '../services/investmentPoolPricingService';
+import { investmentPoolService } from '../services/investmentPoolService';
 
 const router = Router();
 
@@ -165,6 +167,201 @@ router.get('/:id', async (req: any, res) => {
     res.status(500).json({ error: 'Failed to fetch pool details' });
   }
 });
+
+// ════════════════════════════════════════════════════════════════════════════════
+// PHASE 2: POOL ASSET MANAGEMENT (MULTI-ASSET)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// GET /api/investment-pools/:id/assets - Get all assets in a pool with current prices
+router.get('/:id/assets', async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id;
+
+    // Verify DAO membership
+    const memberCheck = await verifyPoolDaoMembership(id, userId);
+    if (!memberCheck.verified) {
+      return res.status(403).json({ error: memberCheck.error || 'Unauthorized' });
+    }
+
+    // Get pool assets
+    const assets = await investmentPoolService.getPoolAssets(id);
+
+    res.json({ assets });
+  } catch (error) {
+    logger.error('Error fetching pool assets:', error);
+    res.status(500).json({ error: 'Failed to fetch assets' });
+  }
+});
+
+// GET /api/investment-pools/:id/composition - Get portfolio composition and allocation status
+router.get('/:id/composition', async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id;
+
+    // Verify DAO membership
+    const memberCheck = await verifyPoolDaoMembership(id, userId);
+    if (!memberCheck.verified) {
+      return res.status(403).json({ error: memberCheck.error || 'Unauthorized' });
+    }
+
+    // Get portfolio composition
+    const composition = await investmentPoolService.getPortfolioComposition(id);
+
+    // Get validation status
+    const validation = await investmentPoolService.validatePoolConfiguration(id);
+
+    res.json({
+      composition,
+      validation,
+    });
+  } catch (error) {
+    logger.error('Error fetching portfolio composition:', error);
+    res.status(500).json({ error: 'Failed to fetch composition' });
+  }
+});
+
+// POST /api/investment-pools/:id/assets - Add an asset to a pool
+router.post('/:id/assets', [rateLimitPerUser('pool-add-asset', 10, '5min')], async (req: any, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id;
+    const {
+      assetSymbol,
+      targetAllocation,
+      tokenAddress,
+      network,
+    } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Validate required fields
+    if (!assetSymbol || targetAllocation === undefined) {
+      return res.status(400).json({
+        error: 'assetSymbol and targetAllocation are required',
+      });
+    }
+
+    // Validate allocation is in basis points (0-10000)
+    if (targetAllocation < 0 || targetAllocation > 10000) {
+      return res.status(400).json({
+        error: 'targetAllocation must be between 0 and 10000 basis points (0-100%)',
+      });
+    }
+
+    // Add asset to pool
+    const result = await investmentPoolService.addAssetToPool(
+      id,
+      assetSymbol.toUpperCase(),
+      targetAllocation,
+      userId,
+      tokenAddress,
+      network
+    );
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    logger.info(`Asset ${assetSymbol} added to pool ${id}`);
+
+    res.status(201).json({
+      success: true,
+      asset: result.asset,
+      message: `Asset ${assetSymbol} added with ${(targetAllocation / 100).toFixed(2)}% allocation`,
+    });
+  } catch (error) {
+    logger.error('Error adding asset to pool:', error);
+    res.status(500).json({ error: 'Failed to add asset' });
+  }
+});
+
+// PATCH /api/investment-pools/:id/assets/:assetSymbol - Update asset allocation
+router.patch('/:id/assets/:assetSymbol', [rateLimitPerUser('pool-update-asset', 20, '5min')], async (req: any, res: Response) => {
+  try {
+    const { id, assetSymbol } = req.params;
+    const userId = req.user?.id;
+    const { targetAllocation } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Validate allocation
+    if (targetAllocation === undefined || typeof targetAllocation !== 'number') {
+      return res.status(400).json({ error: 'targetAllocation is required and must be a number' });
+    }
+
+    if (targetAllocation < 0 || targetAllocation > 10000) {
+      return res.status(400).json({
+        error: 'targetAllocation must be between 0 and 10000 basis points (0-100%)',
+      });
+    }
+
+    // Update allocation
+    const result = await investmentPoolService.updateAssetAllocation(
+      id,
+      assetSymbol.toUpperCase(),
+      targetAllocation,
+      userId
+    );
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    logger.info(`Asset ${assetSymbol} allocation updated in pool ${id}`);
+
+    res.json({
+      success: true,
+      asset: result.asset,
+      message: `Asset ${assetSymbol} allocation updated to ${(targetAllocation / 100).toFixed(2)}%`,
+    });
+  } catch (error) {
+    logger.error('Error updating asset allocation:', error);
+    res.status(500).json({ error: 'Failed to update allocation' });
+  }
+});
+
+// DELETE /api/investment-pools/:id/assets/:assetSymbol - Remove an asset from a pool
+router.delete('/:id/assets/:assetSymbol', [rateLimitPerUser('pool-remove-asset', 10, '5min')], async (req: any, res: Response) => {
+  try {
+    const { id, assetSymbol } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Remove asset
+    const result = await investmentPoolService.removeAssetFromPool(
+      id,
+      assetSymbol.toUpperCase(),
+      userId
+    );
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    logger.info(`Asset ${assetSymbol} removed from pool ${id}`);
+
+    res.json({
+      success: true,
+      message: `Asset ${assetSymbol} removed from pool`,
+    });
+  } catch (error) {
+    logger.error('Error removing asset from pool:', error);
+    res.status(500).json({ error: 'Failed to remove asset' });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// END PHASE 2: POOL ASSET MANAGEMENT
+// ════════════════════════════════════════════════════════════════════════════════
 
 // GET /api/investment-pools/:id/performance - Get pool performance history
 router.get('/:id/performance', async (req, res) => {
@@ -649,10 +846,10 @@ router.post('/:id/trigger-rebalance', [rateLimitPerUser('pool-rebalance', 5, '10
 });
 
 // POST /api/investment-pools/:id/trigger-snapshot - Manually trigger performance snapshot (admin)
-router.post('/:id/trigger-snapshot', async (req, res) => {
+router.post('/:id/trigger-snapshot', async (req: any, res) => {
   try {
     const { id } = req.params;
-    const userId = (req.user as any)?.id;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
@@ -799,7 +996,7 @@ router.post('/create', async (req, res) => {
   res.setHeader('Warning', '299 - "POST /api/investment-pools/create is deprecated. Use POST /api/investment-pools instead"');
 
   try {
-    const userId = (req.user as any)?.id;
+    const userId = (req as any).user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });

@@ -5,11 +5,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { CreditCard, AlertCircle, CheckCircle, Clock, RefreshCw } from 'lucide-react';
+import { Wallet, AlertCircle, CheckCircle, Clock, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 
 interface PaymentProvider {
   id: string;
@@ -56,34 +57,16 @@ export default function AdminPaymentProviders() {
   const fetchPaymentData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
-      const [providersRes, statsRes, settlementsRes] = await Promise.all([
-        fetch('/api/admin/payments/providers', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/payments/transaction-stats', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/payments/settlements', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
+      const [providersData, statsData, settlementsData] = await Promise.all([
+        authClient.get('/api/admin/payments/providers'),
+        authClient.get('/api/admin/payments/transaction-stats'),
+        authClient.get('/api/admin/payments/settlements'),
       ]);
 
-      if (providersRes.ok) {
-        const data = await providersRes.json();
-        setProviders(data.providers || []);
-      }
-
-      if (statsRes.ok) {
-        const data = await statsRes.json();
-        setStats(data.stats || []);
-      }
-
-      if (settlementsRes.ok) {
-        const data = await settlementsRes.json();
-        setSettlements(data.settlements || []);
-      }
+      setProviders(providersData.providers || []);
+      setStats(statsData.stats || []);
+      setSettlements(settlementsData.settlements || []);
     } catch (error) {
       console.error('Failed to fetch payment data:', error);
     } finally {
@@ -216,7 +199,7 @@ export default function AdminPaymentProviders() {
                     <div className="flex justify-between items-start mb-3">
                       <div>
                         <div className="flex items-center gap-2">
-                          <CreditCard className="h-5 w-5 text-blue-400" />
+                          <Wallet className="h-5 w-5 text-blue-400" />
                           <h4 className="text-lg font-semibold text-white">{provider.name}</h4>
                         </div>
                       </div>

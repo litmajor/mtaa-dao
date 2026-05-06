@@ -1,12 +1,12 @@
-import { createClient } from 'redis';
-import { promisify } from 'util';
+import Redis from 'ioredis'; // Use ioredis for better stability on Windows/Docker
 
 export class RedisClient {
-  private client: ReturnType<typeof createClient> | null = null;
-  private maxRetries = 3;
+  private client: Redis | null = null;
+  private maxRetries = 10; // Increased from 3 for more resilience
   private retryDelay = 1000;
   private isEnabled = false;
   private hasLoggedDisabled = false;
+  private redisOptions: any = {}; // Store for reconnect
 
   constructor(redisUrl?: string) {
     // Build REDIS_URL from environment variables if not provided
@@ -29,23 +29,34 @@ export class RedisClient {
     
     if (!this.isEnabled) {
       if (!this.hasLoggedDisabled) {
-        console.log('Redis: Not configured - using in-memory fallback.');
+        console.log('Redis: Not configured - operations will be no-op.');
         this.hasLoggedDisabled = true;
       }
       return;
     }
 
-    this.client = createClient({
-      url: redisUrl,
-      socket: {
-        reconnectStrategy: (retries) => {
-          if (retries > this.maxRetries) {
-            return new Error('Max retries exceeded');
-          }
-          return Math.min(retries * this.retryDelay, 3000);
-        },
+    this.redisOptions = {
+      host: process.env.REDIS_HOST || 'localhost',
+      port: Number(process.env.REDIS_PORT) || 6379,
+      password: process.env.REDIS_PASSWORD,
+      db: Number(process.env.REDIS_DB) || 0,
+      enableReadyCheck: true,
+      retryStrategy: (times: number) => {
+        if (times > this.maxRetries) {
+          return new Error('Max retries exceeded');
+        }
+        const delay = Math.min(times * this.retryDelay, 5000);
+        console.log(`[Redis] Reconnect attempt ${times} after ${delay}ms`);
+        return delay;
       },
-    });
+      reconnectOnError: (err: Error) => {
+        const targetErrors = ['ECONNRESET', 'ETIMEDOUT', 'Socket closed unexpectedly'];
+        return targetErrors.some(e => err.message.includes(e));
+      },
+      keepAlive: 30000, // NEW: Send keepalive pings every 30s to prevent socket closure
+      noDelay: true,
+      connectionName: 'mtaa-dao-server', // For Redis logs/debug
+    };
 
     this.setupEventHandlers();
   }
@@ -53,32 +64,38 @@ export class RedisClient {
   private setupEventHandlers() {
     if (!this.client) return;
     
-    this.client.on('error', () => {
-      // Silently handle Redis errors when not configured
+    this.client.on('error', (err: Error) => {
+      console.warn('[Redis] Error:', err.message);
     });
 
     this.client.on('connect', () => {
-      console.log('Redis connected');
+      console.log('[Redis] Connected');
     });
 
-    this.client.on('disconnect', () => {
-      // Silent disconnect
+    this.client.on('ready', () => {
+      console.log('[Redis] Ready for commands');
+    });
+
+    this.client.on('close', () => {
+      console.log('[Redis] Connection closed');
     });
 
     this.client.on('reconnecting', () => {
-      // Silent reconnecting
+      console.log('[Redis] Reconnecting...');
     });
   }
 
   async connect() {
-    if (!this.isEnabled || !this.client) {
+    if (!this.isEnabled || this.client) {
       return;
     }
     
     try {
-      await this.client.connect();
+      this.client = new Redis(this.redisOptions);
+      await this.client.ping(); // Test connection
       console.log('Redis client connected successfully');
     } catch (error) {
+      console.error('[Redis] Connect failed:', (error as Error).message);
       this.isEnabled = false;
     }
   }
@@ -86,139 +103,172 @@ export class RedisClient {
   async disconnect() {
     if (!this.isEnabled || !this.client) return;
     try {
-      await this.client.disconnect();
+      await this.client.quit();
     } catch (error) {
-      // Silent error
+      console.warn('[Redis] Disconnect error:', (error as Error).message);
+    } finally {
+      this.client = null;
+    }
+  }
+
+  private async ensureConnected(): Promise<void> {
+    if (!this.client) {
+      await this.connect();
     }
   }
 
   async get(key: string): Promise<string | null> {
-    if (!this.isEnabled || !this.client) return null;
+    if (!this.isEnabled) return null;
+    await this.ensureConnected();
     try {
       return await this.client.get(key);
     } catch (error) {
+      console.debug('[Redis] GET failed:', (error as Error).message);
       return null;
     }
   }
 
   async set(key: string, value: string, expirationSeconds?: number): Promise<boolean> {
-    if (!this.isEnabled || !this.client) return false;
+    if (!this.isEnabled) return false;
+    await this.ensureConnected();
     try {
       if (expirationSeconds) {
-        await this.client.setEx(key, expirationSeconds, value);
+        await this.client.set(key, value, { EX: expirationSeconds });
       } else {
         await this.client.set(key, value);
       }
       return true;
     } catch (error) {
+      console.debug('[Redis] SET failed:', (error as Error).message);
       return false;
     }
   }
 
-  async delete(key: string): Promise<boolean> {
-    if (!this.isEnabled || !this.client) return false;
+  async del(key: string): Promise<boolean> {
+    if (!this.isEnabled) return false;
+    await this.ensureConnected();
     try {
       const result = await this.client.del(key);
       return result > 0;
     } catch (error) {
+      console.debug('[Redis] DEL failed:', (error as Error).message);
       return false;
     }
   }
 
-  async deleteMany(keys: string[]): Promise<number> {
-    if (!this.isEnabled || !this.client) return 0;
+  async delMany(keys: string[]): Promise<number> {
+    if (!this.isEnabled) return 0;
+    await this.ensureConnected();
     try {
       return await this.client.del(keys);
     } catch (error) {
+      console.debug('[Redis] DELMANY failed:', (error as Error).message);
       return 0;
     }
   }
 
   async exists(key: string): Promise<boolean> {
-    if (!this.isEnabled || !this.client) return false;
+    if (!this.isEnabled) return false;
+    await this.ensureConnected();
     try {
       const result = await this.client.exists(key);
       return result === 1;
     } catch (error) {
+      console.debug('[Redis] EXISTS failed:', (error as Error).message);
       return false;
     }
   }
 
   async setObject(key: string, obj: any, expirationSeconds?: number): Promise<boolean> {
-    if (!this.isEnabled || !this.client) return false;
+    if (!this.isEnabled) return false;
     try {
       const value = JSON.stringify(obj);
-      return this.set(key, value, expirationSeconds);
+      return await this.set(key, value, expirationSeconds);
     } catch (error) {
+      console.debug('[Redis] SETOBJECT failed:', (error as Error).message);
       return false;
     }
   }
 
   async getObject<T>(key: string): Promise<T | null> {
-    if (!this.isEnabled || !this.client) return null;
+    if (!this.isEnabled) return null;
     try {
       const value = await this.get(key);
-      return value ? JSON.parse(value) : null;
+      return value ? JSON.parse(value) as T : null;
     } catch (error) {
+      console.debug('[Redis] GETOBJECT failed:', (error as Error).message);
       return null;
     }
   }
 
-  async increment(key: string): Promise<number> {
-    if (!this.isEnabled || !this.client) return -1;
+  async incr(key: string): Promise<number> {
+    if (!this.isEnabled) return -1;
+    await this.ensureConnected();
     try {
-      return await this.client.incr(key);
+      return Number(await this.client.incr(key));
     } catch (error) {
+      console.debug('[Redis] INCR failed:', (error as Error).message);
       return -1;
     }
   }
 
-  async decrement(key: string): Promise<number> {
-    if (!this.isEnabled || !this.client) return -1;
+  async decr(key: string): Promise<number> {
+    if (!this.isEnabled) return -1;
+    await this.ensureConnected();
     try {
-      return await this.client.decr(key);
+      return Number(await this.client.decr(key));
     } catch (error) {
+      console.debug('[Redis] DECR failed:', (error as Error).message);
       return -1;
     }
   }
 
-  async lpush(key: string, value: string): Promise<number> {
-    if (!this.isEnabled || !this.client) return -1;
+  async lPush(key: string, value: string): Promise<number> {
+    if (!this.isEnabled) return -1;
+    await this.ensureConnected();
     try {
-      return await this.client.lPush(key, value);
+      return Number(await this.client.lPush(key, value));
     } catch (error) {
+      console.debug('[Redis] LPUSH failed:', (error as Error).message);
       return -1;
     }
   }
 
-  async rpush(key: string, value: string): Promise<number> {
-    if (!this.isEnabled || !this.client) return -1;
+  async rPush(key: string, value: string): Promise<number> {
+    if (!this.isEnabled) return -1;
+    await this.ensureConnected();
     try {
-      return await this.client.rPush(key, value);
+      return Number(await this.client.rPush(key, value));
     } catch (error) {
+      console.debug('[Redis] RPUSH failed:', (error as Error).message);
       return -1;
     }
   }
 
-  async lpop(key: string): Promise<string | null> {
-    if (!this.isEnabled || !this.client) return null;
+  async lPop(key: string): Promise<string | null> {
+    if (!this.isEnabled) return null;
+    await this.ensureConnected();
     try {
       return await this.client.lPop(key);
     } catch (error) {
+      console.debug('[Redis] LPOP failed:', (error as Error).message);
       return null;
     }
   }
 
-  async getClient() {
+  async getClient(): Promise<Redis | null> {
+    await this.ensureConnected();
     return this.client;
   }
 
   async isHealthy(): Promise<boolean> {
-    if (!this.isEnabled || !this.client) return false;
+    if (!this.isEnabled) return false;
+    await this.ensureConnected();
     try {
       await this.client.ping();
       return true;
     } catch (error) {
+      console.debug('[Redis] Health check failed:', (error as Error).message);
       return false;
     }
   }
@@ -241,3 +291,23 @@ export async function closeRedisClient() {
     redisInstance = null;
   }
 }
+
+// Periodic health check (every 30s)
+setInterval(async () => {
+  const client = await getRedisClient();
+  const healthy = await client.isHealthy();
+  if (!healthy) {
+    console.warn('[Redis] Health check failed - may trigger reconnect');
+  }
+}, 30000);
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  await closeRedisClient();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  await closeRedisClient();
+  process.exit(0);
+});

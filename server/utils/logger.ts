@@ -76,14 +76,37 @@ export class Logger {
     return new Logger(this.service, { ...this.context, ...context });
   }
 
-  private async logToDatabase(level: string, message: string, metadata: any = {}) {
+  private logToDatabase(level: string, message: string, metadata: any = {}): Promise<any> {
+    // During startup, skip INFO logs to DB to avoid pool saturation
+    // Console output is still visible - this only skips database writes
+    const isStartup = global['isServerStarting'] === true;
+    if (isStartup && level === 'info') {
+      return Promise.resolve(); // Return resolved Promise, skip DB write
+    }
+
+    // If storage is not ready yet, skip DB logging
+    if (!storage || typeof storage.createSystemLog !== 'function') {
+      return Promise.resolve();
+    }
+
+    // Non-blocking: fire and forget, don't await database writes
     try {
-      await storage.createSystemLog(level, message, this.service, {
-        ...this.context,
-        ...metadata
-      });
-    } catch (error) {
-      console.error('Failed to log to database:', error);
+      return storage
+        .createSystemLog(level, message, this.service, {
+          ...this.context,
+          ...metadata
+        })
+        .catch((error: any) => {
+          // Silent fail - database logging shouldn't crash server
+          // Only log critical errors to console
+          const errorMsg = error?.message || String(error);
+          if (errorMsg.includes('Connection terminated') || errorMsg.includes('ECONNREFUSED')) {
+            console.error('[DBLog] Database connection unavailable');
+          }
+        });
+    } catch (err) {
+      // If storage call fails, silently return resolved promise
+      return Promise.resolve();
     }
   }
 
@@ -94,11 +117,14 @@ export class Logger {
       ...meta
     };
 
+    // Always log to console (user sees all boot messages)
     winstonLogger.log(level, message, logData);
 
-    // Also log to database for important messages
+    // Also log to database for important messages, but skip INFO during startup
     if (['error', 'warn', 'info'].includes(level)) {
-      this.logToDatabase(level, message, logData).catch(console.error);
+      this.logToDatabase(level, message, logData).catch(() => {
+        // Silently ignore DB logging errors
+      });
     }
   }
 

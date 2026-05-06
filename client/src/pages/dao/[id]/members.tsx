@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 import { Shield, Users, Mail, Trash2, Edit2 } from 'lucide-react';
 import InvitationManagement from '@/components/InvitationManagement';
 
@@ -40,27 +41,16 @@ export default function DAOMembersPage() {
 
   const checkAdminStatus = async () => {
     try {
-      const response = await fetch(`/api/dao/${daoId}`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
+      const dao = await authClient.get(`/api/dao/${daoId}`);
+      setDaoName(dao.name);
 
-      if (response.ok) {
-        const dao = await response.json();
-        setDaoName(dao.name);
+      // Check if current user is admin
+      const user = await authClient.get('/api/user/profile');
 
-        // Check if current user is admin
-        const userResponse = await fetch('/api/user/profile', {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-        });
-
-        if (userResponse.ok) {
-          const user = await userResponse.json();
-          setIsAdmin(
-            dao.creatorId === user.id ||
-            dao.members?.some((m: any) => m.userId === user.id && m.role === 'admin')
-          );
-        }
-      }
+      setIsAdmin(
+        dao.creatorId === user.id ||
+        dao.members?.some((m: any) => m.userId === user.id && m.role === 'admin')
+      );
     } catch (err) {
       console.error('Failed to check admin status:', err);
     }
@@ -69,13 +59,8 @@ export default function DAOMembersPage() {
   const fetchMembers = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/dao/${daoId}/members`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
+      const data = await authClient.get(`/api/dao/${daoId}/members`);
 
-      if (!response.ok) throw new Error('Failed to fetch members');
-
-      const data = await response.json();
       setMembers(data);
       setError(null);
     } catch (err) {
@@ -89,12 +74,7 @@ export default function DAOMembersPage() {
     if (!confirm('Are you sure you want to remove this member?')) return;
 
     try {
-      const response = await fetch(`/api/dao/${daoId}/members/${memberId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
-
-      if (!response.ok) throw new Error('Failed to remove member');
+      await authClient.delete(`/api/dao/${daoId}/members/${memberId}`);
 
       setMembers(members.filter(m => m.id !== memberId));
     } catch (err) {
@@ -104,16 +84,7 @@ export default function DAOMembersPage() {
 
   const handleChangeRole = async (memberId: string, newRole: string) => {
     try {
-      const response = await fetch(`/api/dao/${daoId}/members/${memberId}/role`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({ role: newRole })
-      });
-
-      if (!response.ok) throw new Error('Failed to update member role');
+      await authClient.put(`/api/dao/${daoId}/members/${memberId}/role`, { role: newRole });
 
       setMembers(
         members.map(m =>

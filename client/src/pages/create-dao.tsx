@@ -22,14 +22,14 @@ import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
-  ChevronLeft,
-  ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Users,
   Shield,
   Wallet,
   Settings,
   Eye,
-  Rocket,
+  Send,
   CheckCircle,
   Plus,
   Trash2,
@@ -37,18 +37,17 @@ import {
   Copy,
   Info,
   HelpCircle,
-  AlertTriangle,
-  BookOpen,
   AlertCircle,
-  TrendingUp,
-  AlertOctagon,
-  Lightbulb,
+  BookOpen,
+  AlertTriangle,
+  Zap,
   Heart,
-  BarChart3
+  BarChart2
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import MultisigManager from '@/components/multisig/MultisigManager';
 import { useToast } from '@/hooks/use-toast';
+import { authClient } from '@/utils/authClient';
 
 const WhatIsDAOExplainer = ({ onContinue }: { onContinue: () => void }) => (
   <div className="space-y-6">
@@ -108,7 +107,7 @@ const WhatIsDAOExplainer = ({ onContinue }: { onContinue: () => void }) => (
     </Card>
 
     <Alert className="border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30">
-      <AlertTriangle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+      <AlertCircle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
       <AlertTitle className="text-orange-800 dark:text-orange-200">Important: This is Permanent</AlertTitle>
       <AlertDescription className="text-orange-700 dark:text-orange-300">
         <p className="mb-2">
@@ -144,14 +143,14 @@ const WhatIsDAOExplainer = ({ onContinue }: { onContinue: () => void }) => (
       data-testid="button-understand-continue"
     >
       I Understand, Let's Create My Group
-      <ChevronRight className="w-4 h-4 ml-2" />
+      <ChevronDown className="w-4 h-4 ml-2" />
     </Button>
   </div>
 );
 
 const BlockchainWarningBanner = () => (
   <Alert className="mb-4 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30">
-    <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+    <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
     <AlertDescription className="text-amber-700 dark:text-amber-300 text-sm">
       Remember: Once created, your group will be <strong>permanent and public</strong>. Choose your name and settings carefully.
     </AlertDescription>
@@ -327,15 +326,10 @@ const CreateDAOFlow = () => {
   const { data: userSubscription } = useQuery({
     queryKey: ['/api/user/subscription'],
     queryFn: async () => {
-      const response = await fetch('/api/user/subscription', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
-      if (!response.ok) throw new Error('Failed to fetch subscription');
-      return response.json();
+      return await authClient.get('/api/user/subscription');
     },
     enabled: isConnected, // Only fetch if wallet is connected
     staleTime: 1000 * 60 * 5, // Cache for 5 minutes
-    gcTime: 1000 * 60 * 10, // Garbage collect after 10 minutes
   });
 
   const userTier = userSubscription?.tier || 'free';
@@ -636,10 +630,7 @@ const CreateDAOFlow = () => {
         return;
       }
 
-      const eligibilityCheck = await fetch('/api/dao-abuse-prevention/check-eligibility', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
-      const eligibilityData = await eligibilityCheck.json();
+      const eligibilityData = await authClient.get('/api/v1/daos/*/abuse/eligibility');
 
       if (!eligibilityData.success || !eligibilityData.data.canCreate) {
         alert(eligibilityData.data.reason || 'You cannot create a DAO at this time');
@@ -652,10 +643,7 @@ const CreateDAOFlow = () => {
         .filter(m => m.address !== walletAddress)
         .map(m => m.address);
 
-      const response = await fetch('/api/dao-deploy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const result = await authClient.post('/api/dao-deploy', {
           daoData: {
             name: sanitizeInput(daoData.name, 100),
             description: sanitizeInput(daoData.description, 500),
@@ -674,15 +662,13 @@ const CreateDAOFlow = () => {
             signers: daoData.multisigSigners || [],
             requiredSignatures: daoData.multisigRequiredSignatures || 2
           }
-        })
-      });
+        });
 
-      const result = await response.json();
-      if (response.ok && result.daoAddress) {
+      if (result && result.daoAddress) {
         setDaoData(prev => ({ ...prev, deployedAddress: result.daoAddress }));
         setCurrentStep(8);
       } else {
-        throw new Error(result.error || 'Deployment failed');
+        throw new Error(result?.error || 'Deployment failed');
       }
     } catch (err) {
       console.error('Deployment error:', err);
@@ -746,7 +732,7 @@ const CreateDAOFlow = () => {
             onClick={() => {
               setDaoData(prev => ({
                 ...prev,
-                daoType: type.id,
+                daoType: type.id as any,
                 treasuryType: type.defaultTreasuryType
               }));
             }}
@@ -1294,7 +1280,7 @@ const CreateDAOFlow = () => {
         <Card className="bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30 border-purple-200 dark:border-purple-800">
           <CardHeader>
             <CardTitle className="text-purple-800 dark:text-purple-200 flex items-center gap-2">
-              <BarChart3 className="w-5 h-5" />
+              <BarChart2 className="w-5 h-5" />
               Treasury Intelligence & Insights
             </CardTitle>
             <p className="text-sm text-purple-700 dark:text-purple-300 mt-2">AI-powered analysis of your treasury setup</p>
@@ -1316,7 +1302,7 @@ const CreateDAOFlow = () => {
                 <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold mb-2">Health Status</p>
                 <div className="flex items-center gap-2">
                   {healthStatus() === 'healthy' && <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />}
-                  {healthStatus() === 'caution' && <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />}
+                  {healthStatus() === 'caution' && <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400" />}
                   {healthStatus() === 'critical' && <AlertOctagon className="w-4 h-4 text-red-600 dark:text-red-400" />}
                   <Badge className="text-xs" variant={healthStatus() === 'healthy' ? 'secondary' : healthStatus() === 'caution' ? 'outline' : 'destructive'}>
                     {healthStatus()?.charAt(0).toUpperCase() + healthStatus()?.slice(1) || 'Analyzing...'}
@@ -1335,7 +1321,7 @@ const CreateDAOFlow = () => {
                       {intelligence.recommendedGovernanceFormula.charAt(0).toUpperCase() + intelligence.recommendedGovernanceFormula.slice(1)}
                     </p>
                   </div>
-                  <TrendingUp className="w-5 h-5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+                  <Send className="w-5 h-5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
                 </div>
               </div>
             )}
@@ -1362,7 +1348,7 @@ const CreateDAOFlow = () => {
                 <div className="space-y-2">
                   {intelligence.opportunities.slice(0, 3).map((opp, idx) => (
                     <div key={idx} className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
-                      <Lightbulb className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                      <Zap className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
                       <span>{opp}</span>
                     </div>
                   ))}
@@ -1373,7 +1359,7 @@ const CreateDAOFlow = () => {
             {/* Key Insights */}
             {intelligence.semanticSummary?.keyInsights && intelligence.semanticSummary.keyInsights.length > 0 && (
               <Alert className="border-purple-200 dark:border-purple-800 bg-purple-100/50 dark:bg-purple-900/20">
-                <Lightbulb className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                <Zap className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                 <AlertDescription>
                   <p className="text-sm text-purple-700 dark:text-purple-300 font-medium mb-2">Key Insights:</p>
                   <ul className="text-xs text-purple-700 dark:text-purple-300 space-y-1 list-disc list-inside">
@@ -1390,7 +1376,7 @@ const CreateDAOFlow = () => {
 
       {treasuryError && (
         <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
+          <AlertCircle className="h-4 w-4" />
           <AlertDescription>{treasuryError}</AlertDescription>
         </Alert>
       )}
@@ -1902,7 +1888,7 @@ const CreateDAOFlow = () => {
       </div>
 
       <Alert className="border-orange-300 dark:border-orange-700 bg-orange-50 dark:bg-orange-950/30 mb-4">
-        <AlertTriangle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+        <AlertCircle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
         <AlertTitle className="text-orange-800 dark:text-orange-200">Final Check Before Creating</AlertTitle>
         <AlertDescription className="text-orange-700 dark:text-orange-300">
           <ul className="list-disc list-inside text-sm space-y-1 mt-2">
@@ -1916,7 +1902,7 @@ const CreateDAOFlow = () => {
 
       <div className="bg-gradient-to-r from-teal-50 to-teal-100 dark:from-teal-950/30 dark:to-teal-900/30 p-6 rounded-lg border border-teal-200 dark:border-teal-800">
         <div className="flex items-center gap-3 mb-4">
-          <Rocket className="w-6 h-6 text-teal-600 dark:text-teal-400" />
+          <Send className="w-6 h-6 text-teal-600 dark:text-teal-400" />
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Ready to Create Your Group?</h3>
         </div>
         <p className="text-gray-600 dark:text-gray-400 mb-4">
@@ -1936,7 +1922,7 @@ const CreateDAOFlow = () => {
             </>
           ) : (
             <>
-              <Rocket className="w-4 h-4 mr-2" />
+              <Send className="w-4 h-4 mr-2" />
               Create My Group (This is Final)
             </>
           )}
@@ -2105,7 +2091,7 @@ const CreateDAOFlow = () => {
                 disabled={currentStep === 1}
                 className="flex items-center gap-2"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronDown className="w-4 h-4" />
                 Back
               </Button>
               {currentStep === 1 && lastSaved && (
@@ -2126,7 +2112,7 @@ const CreateDAOFlow = () => {
                 className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700"
               >
                 Continue
-                <ChevronRight className="w-4 h-4" />
+                <ChevronUp className="w-4 h-4" />
               </Button>
             ) : (
               <div />

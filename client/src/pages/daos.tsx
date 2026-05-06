@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost } from '@/lib/api';
 import { useNavigate } from "react-router-dom";
-import { Plus, Users, DollarSign, TrendingUp, Settings, ArrowRight, Sparkles, Crown, Shield, Star, Zap, Globe, Heart, Trophy, Wallet, Eye, ChevronRight, Loader2 } from 'lucide-react';
+import { Plus, Users, DollarSign, TrendingUp, Settings, ArrowRight, Sparkles, Crown, Shield, Star, Zap, Globe, Heart, Trophy, Wallet, Eye, ChevronRight, LoaderCircle } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

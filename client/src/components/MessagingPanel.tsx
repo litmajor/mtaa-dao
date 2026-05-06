@@ -7,6 +7,7 @@ import { Avatar, AvatarImage, AvatarFallback } from './ui/avatar';
 import { Badge } from './ui/badge';
 import { Send, AlertCircle, Users, DollarSign } from 'lucide-react';
 import { useAuth } from '@/pages/hooks/useAuth';
+import { authClient } from '@/utils/authClient';
 
 interface Message {
   id: string;
@@ -60,11 +61,8 @@ export function MessagingPanel({ recipientId, recipientName, onClose }: Messagin
   const { data: conversations = [] } = useQuery({
     queryKey: ['/api/messages/conversations', user?.id],
     queryFn: async () => {
-      const response = await fetch('/api/messages/conversations', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` }
-      });
-      if (!response.ok) throw new Error('Failed to fetch conversations');
-      return response.json().then(data => data.conversations || []);
+      const data = await authClient.get('/api/messages/conversations');
+      return data.conversations || [];
     },
     enabled: !!user?.id,
     refetchInterval: 3000, // Poll every 3 seconds after send
@@ -75,11 +73,8 @@ export function MessagingPanel({ recipientId, recipientName, onClose }: Messagin
     queryKey: selectedConversation ? ['/api/messages/conversation', selectedConversation] : ['/api/messages/conversation'],
     queryFn: async () => {
       if (!selectedConversation) return [];
-      const response = await fetch(`/api/messages/conversation/${selectedConversation}?limit=50`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` }
-      });
-      if (!response.ok) throw new Error('Failed to fetch messages');
-      return response.json().then(data => data.messages || []);
+      const data = await authClient.get(`/api/messages/conversation/${selectedConversation}?limit=50`);
+      return data.messages || [];
     },
     enabled: !!selectedConversation && !!user?.id,
     refetchInterval: 2000, // Poll every 2 seconds for new messages
@@ -89,11 +84,8 @@ export function MessagingPanel({ recipientId, recipientName, onClose }: Messagin
   const { data: unreadCount = 0 } = useQuery({
     queryKey: ['/api/messages/unread-count', user?.id],
     queryFn: async () => {
-      const response = await fetch('/api/messages/unread-count', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` }
-      });
-      if (!response.ok) throw new Error('Failed to fetch unread count');
-      return response.json().then(data => data.unreadCount || 0);
+      const data = await authClient.get('/api/messages/unread-count');
+      return data.unreadCount || 0;
     },
     enabled: !!user?.id,
     refetchInterval: 5000,
@@ -107,18 +99,10 @@ export function MessagingPanel({ recipientId, recipientName, onClose }: Messagin
     if (!selectedConversation || !messageText.trim()) return;
     setSendingMessage(true);
     try {
-      const response = await fetch('/api/messages/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
-        },
-        body: JSON.stringify({
-          recipientId: selectedConversation,
-          content: messageText,
-        }),
+      await authClient.post('/api/messages/send', {
+        recipientId: selectedConversation,
+        content: messageText,
       });
-      if (!response.ok) throw new Error('Failed to send message');
       setMessageText('');
       // Polling will fetch new data
     } catch (error) {
@@ -131,11 +115,8 @@ export function MessagingPanel({ recipientId, recipientName, onClose }: Messagin
   const deleteMessage = async (messageId: string) => {
     setDeletingMessage(messageId);
     try {
-      const response = await fetch(`/api/messages/${messageId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` }
-      });
-      if (!response.ok) throw new Error('Failed to delete message');
+      await authClient.delete(`/api/messages/${messageId}`);
+      // Polling will fetch new data
       // Polling will fetch new data
     } catch (error) {
       console.error('Error deleting message:', error);

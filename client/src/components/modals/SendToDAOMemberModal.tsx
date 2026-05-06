@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Search, Send, ArrowRight, Check } from 'lucide-react';
+import { Send, CheckCircle, ArrowUpRight, Activity } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 
 /**
@@ -78,9 +78,10 @@ export function SendToDAOMemberModal({
 
   async function loadUserDAOs() {
     try {
-      const data = await apiRequest('GET', '/api/users/my-daos');
-      setUserDAOs(data || []);
-      if (data?.length > 0 && !selectedDAO) {
+      const response = await apiRequest('GET', '/api/users/my-daos');
+      const data = (response as any)?.data || response || [];
+      setUserDAOs(Array.isArray(data) ? data : []);
+      if (Array.isArray(data) && data?.length > 0 && !selectedDAO) {
         setSelectedDAO(data[0].id);
       }
     } catch (err) {
@@ -92,8 +93,9 @@ export function SendToDAOMemberModal({
   async function loadDAOMembers(daoId: string) {
     try {
       setLoading(true);
-      const data = await apiRequest('GET', `/api/dao/${daoId}/members`);
-      setDAOMembers(data || []);
+      const response = await apiRequest('GET', `/api/dao/${daoId}/members`);
+      const data = (response as any)?.data || response || [];
+      setDAOMembers(Array.isArray(data) ? data : []);
     } catch (err) {
       setError('Failed to load DAO members');
       console.error(err);
@@ -135,14 +137,16 @@ export function SendToDAOMemberModal({
         escrowDays: useEscrow ? escrowDays : undefined,
       };
 
-      const result = await apiRequest('POST', '/api/wallet/send-to-member', payload);
+      const result = await apiRequest('POST', '/api/v1/wallets/transfers/send-to-member', payload);
 
-      if (result?.success) {
-        onSuccess?.(result.transactionId);
+      if (result && typeof result === 'object' && (result as any).success) {
+        onSuccess?.((result as any).transactionId);
         resetForm();
         onOpenChange(false);
+      } else if (result && typeof result === 'object' && (result as any).message) {
+        setError((result as any).message);
       } else {
-        setError(result?.message || 'Failed to send payment');
+        setError('Failed to send payment');
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred');
@@ -224,7 +228,7 @@ export function SendToDAOMemberModal({
                   disabled={!selectedDAO}
                   className="flex-1 gap-2 bg-blue-600 hover:bg-blue-700"
                 >
-                  Next <ArrowRight className="h-4 w-4" />
+                  Next <ArrowUpRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -240,7 +244,7 @@ export function SendToDAOMemberModal({
               <div>
                 <Label className="text-white">Search for member</Label>
                 <div className="relative">
-                  <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
+                  <Activity className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
                   <Input
                     placeholder="Username or ID"
                     value={searchQuery}
@@ -301,7 +305,7 @@ export function SendToDAOMemberModal({
                   disabled={!selectedMember}
                   className="flex-1 gap-2 bg-blue-600 hover:bg-blue-700"
                 >
-                  Next <ArrowRight className="h-4 w-4" />
+                  Next <ArrowUpRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -388,7 +392,7 @@ export function SendToDAOMemberModal({
                   disabled={!amount || parseFloat(amount) <= 0}
                   className="flex-1 gap-2 bg-blue-600 hover:bg-blue-700"
                 >
-                  Review <ArrowRight className="h-4 w-4" />
+                  Review <ArrowUpRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -434,11 +438,10 @@ export function SendToDAOMemberModal({
                 </Button>
                 <Button
                   onClick={handleSubmit}
-                  loading={loading}
                   disabled={loading}
                   className="flex-1 gap-2 bg-green-600 hover:bg-green-700"
                 >
-                  {loading ? 'Sending...' : <>Send Now <Check className="h-4 w-4" /></>}
+                  {loading ? 'Sending...' : <>Send Now <CheckCircle className="h-4 w-4" /></>}
                 </Button>
               </div>
             </div>

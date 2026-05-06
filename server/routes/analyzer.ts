@@ -1,5 +1,9 @@
 /**
  * Analyzer Agent API Routes
+ * 
+ * ⚠️ SECURITY: All heavy-compute endpoints require rate limiting to prevent
+ * token exhaustion attacks. Each endpoint can trigger 1+ LLM calls costing $0.01-0.10.
+ * Daily abuse could cost $300+. Limits enforced per authenticated user.
  */
 
 import express from 'express';
@@ -7,6 +11,8 @@ import { isAuthenticated } from '../nextAuthMiddleware';
 import { analyzerAgent } from '../agents/analyzer';
 import { storage } from '../storage';
 import { Logger } from '../utils/logger';
+import { analyzerLimiter } from '../middleware/rateLimiter';
+import { requireDAOMembership, requireDAOMembershipFromQuery } from '../middleware/daoMembershipValidator';
 
 const router = express.Router();
 const logger = new Logger('analyzer-routes');
@@ -34,9 +40,16 @@ router.get('/status', isAuthenticated, async (req, res) => {
 });
 
 // Analyze transaction
-router.post('/analyze/transaction/:transactionId', isAuthenticated, async (req, res) => {
+// ⚠️ RATE LIMITED: Triggers LLM analysis (~$0.01 per call)
+// Invalid IDs can be used for DoS - validated before processing
+router.post('/analyze/transaction/:transactionId', isAuthenticated, analyzerLimiter, async (req, res) => {
   try {
     const { transactionId } = req.params;
+
+    // Validate transaction ID format (UUID) before DB query
+    if (!transactionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(transactionId)) {
+      return res.status(400).json({ error: 'Invalid transaction ID format' });
+    }
 
     // Fetch transaction from database
     const { walletTransactions } = await import('../../shared/schema');
@@ -62,7 +75,8 @@ router.post('/analyze/transaction/:transactionId', isAuthenticated, async (req, 
 });
 
 // Analyze proposal
-router.post('/analyze/proposal/:proposalId', isAuthenticated, async (req, res) => {
+// ⚠️ RATE LIMITED: Governance analysis via LLM (~$0.02 per call)
+router.post('/analyze/proposal/:proposalId', isAuthenticated, analyzerLimiter, async (req, res) => {
   try {
     const { proposalId } = req.params;
 
@@ -82,7 +96,8 @@ router.post('/analyze/proposal/:proposalId', isAuthenticated, async (req, res) =
 });
 
 // Analyze vault
-router.post('/analyze/vault/:vaultId', isAuthenticated, async (req, res) => {
+// ⚠️ RATE LIMITED: Fetches 100+ transactions + LLM analysis (~$0.05 per call)
+router.post('/analyze/vault/:vaultId', isAuthenticated, analyzerLimiter, async (req, res) => {
   try {
     const { vaultId } = req.params;
 
@@ -101,7 +116,10 @@ router.post('/analyze/vault/:vaultId', isAuthenticated, async (req, res) => {
 });
 
 // Comprehensive DAO analysis
-router.get('/dao/:daoId/comprehensive', isAuthenticated, async (req, res) => {
+// 🔴 CRITICAL: Triggers 3 parallel LLM calls (treasury, governance, fraud detection)
+// ⚠️ RATE LIMITED: ~$0.30 per request = $300/hour attack cost
+// ⚠️ AUTHORIZED: Requires DAO membership to prevent cross-DAO data access
+router.get('/dao/:daoId/comprehensive', isAuthenticated, analyzerLimiter, requireDAOMembership, async (req, res) => {
   try {
     const { daoId } = req.params;
 
@@ -140,7 +158,8 @@ router.get('/dao/:daoId/comprehensive', isAuthenticated, async (req, res) => {
 });
 
 // Node profiling
-router.get('/node/:userId', isAuthenticated, async (req, res) => {
+// 🟠 HIGH: RATE LIMITED - Prevents unrestricted user profiling
+router.get('/node/:userId', isAuthenticated, analyzerLimiter, async (req, res) => {
   try {
     const { userId } = req.params;
     const { daoId } = req.query;
@@ -155,7 +174,8 @@ router.get('/node/:userId', isAuthenticated, async (req, res) => {
 });
 
 // System monitoring
-router.get('/system/monitor', isAuthenticated, async (req, res) => {
+// 🟠 HIGH: RATE LIMITED - Prevents system state enumeration attacks
+router.get('/system/monitor', isAuthenticated, analyzerLimiter, async (req, res) => {
   try {
     const healthReport = await analyzerAgent.monitorSystemHealth();
 
@@ -167,7 +187,8 @@ router.get('/system/monitor', isAuthenticated, async (req, res) => {
 });
 
 // Analyzer metrics
-router.get('/metrics', isAuthenticated, async (req, res) => {
+// 🟡 MEDIUM: RATE LIMITED - Prevents metric exhaustion via scanning
+router.get('/metrics', isAuthenticated, analyzerLimiter, async (req, res) => {
   try {
     const metrics = analyzerAgent.getMetrics();
     res.json({ success: true, data: metrics });
@@ -180,7 +201,8 @@ router.get('/metrics', isAuthenticated, async (req, res) => {
 // ========== ROTATION & PROPORTIONAL SELECTION ENDPOINTS ==========
 
 // Get contribution weights for all members
-router.get('/contributions/:daoId', isAuthenticated, async (req, res) => {
+// 🟡 MEDIUM: RATE LIMITED - Prevents data mining of contributions
+router.get('/contributions/:daoId', isAuthenticated, analyzerLimiter, async (req, res) => {
   try {
     const { daoId } = req.params;
     const { timeframe = '90d' } = req.query;
@@ -242,7 +264,8 @@ router.get('/contributions/:daoId', isAuthenticated, async (req, res) => {
 });
 
 // Execute proportional selection
-router.post('/proportional/select/:daoId', isAuthenticated, async (req, res) => {
+// 🟠 HIGH: RATE LIMITED - Complex algorithm execution
+router.post('/proportional/select/:daoId', isAuthenticated, analyzerLimiter, async (req, res) => {
   try {
     const { daoId } = req.params;
 
@@ -299,7 +322,8 @@ router.post('/proportional/select/:daoId', isAuthenticated, async (req, res) => 
 });
 
 // Get rotation history
-router.get('/rotation/history/:daoId', isAuthenticated, async (req, res) => {
+// 🟡 MEDIUM: RATE LIMITED - Prevents bulk history extraction
+router.get('/rotation/history/:daoId', isAuthenticated, analyzerLimiter, async (req, res) => {
   try {
     const { daoId } = req.params;
     const { limit = '50' } = req.query;
@@ -365,7 +389,8 @@ router.get('/rotation/history/:daoId', isAuthenticated, async (req, res) => {
 });
 
 // Process rotation cycle
-router.post('/rotation/cycle/:daoId', isAuthenticated, async (req, res) => {
+// 🟠 HIGH: RATE LIMITED (1/min) - Critical governance operation
+router.post('/rotation/cycle/:daoId', isAuthenticated, analyzerLimiter, async (req, res) => {
   try {
     const { daoId } = req.params;
     const { method = 'proportional' } = req.body;

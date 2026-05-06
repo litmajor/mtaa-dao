@@ -8,7 +8,7 @@
  * Foreign key constraints will be added after users.id is migrated to uuid.
  */
 
-import { pgTable, uuid, varchar, text, timestamp, decimal, numeric, index, check } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, decimal, numeric, integer, index, check } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { accounts } from './accountSchema';
 import { users } from './schema';
@@ -56,6 +56,11 @@ export const deposits = pgTable(
     amount: decimal('amount', { precision: 18, scale: 8 }).notNull(),
     currency: varchar('currency', { length: 10 }).notNull().default('USDC'),
     feeAmount: decimal('fee_amount', { precision: 18, scale: 8 }).default('0'),
+    stableInflowEventId: uuid('stable_inflow_event_id'),
+    normalizedAmountUsd: decimal('normalized_amount_usd', { precision: 24, scale: 8 }),
+    stableUnitsMicroUsd: numeric('stable_units_microusd', { precision: 38, scale: 0 }),
+    chainId: integer('chain_id'),
+    tokenAddress: varchar('token_address', { length: 255 }),
 
     // Status & References
     status: varchar('status', { length: 20 }).notNull().default('pending'), // pending, completed, failed, cancelled
@@ -78,6 +83,8 @@ export const deposits = pgTable(
     sourceIdx: index('idx_deposits_source').on(table.source),
     createdAtIdx: index('idx_deposits_created_at').on(table.createdAt),
     userStatusIdx: index('idx_deposits_user_status').on(table.userId, table.status),
+    stableInflowIdx: index('idx_deposits_stable_inflow_event_id').on(table.stableInflowEventId),
+    chainTokenIdx: index('idx_deposits_chain_token').on(table.chainId, table.tokenAddress),
   })
 );
 

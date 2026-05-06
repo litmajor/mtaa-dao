@@ -9,12 +9,14 @@ import {
   PaymentErrorCode
 } from '../services/paymentErrorHandler';
 import { PaymentErrorMonitoringService } from '../services/paymentErrorMonitoringService';
-import { rateLimitMiddleware, withdrawalLimits } from '../middleware/rateLimitConfig';
+import { rateLimitMiddleware, withdrawalLimits, depositLimits } from '../middleware/rateLimitConfig';
+import { getEventEmitter } from '../middleware/websocket-event-emitter';
 
 const router = express.Router();
 
 // POST /api/payment-gateway/deposit
-router.post('/deposit', isAuthenticated, async (req, res) => {
+// 🔴 CRITICAL: Rate limited to prevent deposit spam/flood attacks
+router.post('/deposit', [isAuthenticated, rateLimitMiddleware(depositLimits)], async (req: express.Request, res: express.Response) => {
   try {
     const { provider, amount, currency, method, metadata } = req.body;
     const userId = (req.user as any)?.claims?.id;
@@ -39,8 +41,26 @@ router.post('/deposit', isAuthenticated, async (req, res) => {
       callbackUrl: `${process.env.APP_URL}/payment/callback`
     });
 
+    // Emit WebSocket event on successful deposit initiation
+    if (result.success || result.status === 'pending' || result.status === 'processing') {
+      try {
+        const wsEmitter = getEventEmitter();
+        wsEmitter.emitActivity('payment', result.transactionId || `deposit_${Date.now()}`, userId, 'initiated', {
+          type: 'deposit',
+          provider,
+          amount,
+          currency,
+          method,
+          status: result.status,
+          transactionId: result.transactionId
+        });
+      } catch (wsError) {
+        logger.warn('Failed to emit WebSocket event for deposit', { wsError });
+      }
+    }
+
     // Set appropriate status code based on result
-    const statusCode = !result.success ? (result.error?.statusCode || 400) : 200;
+    const statusCode = result.success ? 200 : (result.status === 'pending' || result.status === 'processing' ? 202 : 400);
     res.status(statusCode).json(result);
 
   } catch (error: any) {
@@ -92,7 +112,7 @@ router.post('/deposit', isAuthenticated, async (req, res) => {
 
 // POST /api/payment-gateway/withdraw
 // PHASE 1: SAFETY - Rate limited to 10 withdrawals per hour per user
-router.post('/withdraw', [isAuthenticated, rateLimitMiddleware(withdrawalLimits)], async (req, res) => {
+router.post('/withdraw', [isAuthenticated, rateLimitMiddleware(withdrawalLimits)], async (req: express.Request, res: express.Response) => {
   try {
     const { provider, amount, currency, method, metadata } = req.body;
     const userId = (req.user as any)?.claims?.id;
@@ -116,7 +136,25 @@ router.post('/withdraw', [isAuthenticated, rateLimitMiddleware(withdrawalLimits)
       metadata
     });
 
-    const statusCode = !result.success ? (result.error?.statusCode || 400) : 200;
+    // Emit WebSocket event on successful withdrawal initiation
+    if (result.success || result.status === 'pending' || result.status === 'processing') {
+      try {
+        const wsEmitter = getEventEmitter();
+        wsEmitter.emitActivity('payment', result.transactionId || `withdrawal_${Date.now()}`, userId, 'initiated', {
+          type: 'withdrawal',
+          provider,
+          amount,
+          currency,
+          method,
+          status: result.status,
+          transactionId: result.transactionId
+        });
+      } catch (wsError) {
+        logger.warn('Failed to emit WebSocket event for withdrawal', { wsError });
+      }
+    }
+
+    const statusCode = result.success ? 200 : (result.status === 'pending' || result.status === 'processing' ? 202 : 400);
     res.status(statusCode).json(result);
 
   } catch (error: any) {
@@ -266,6 +304,7 @@ async function processFlutterwaveWebhook(payload: any): Promise<void> {
 
   const reference = payload.data.tx_ref;
   const status = payload.data.status === 'successful' ? 'completed' : 'failed';
+  const userId = payload.data.customer?.id || payload.data.metadata?.userId;
 
   await RetryService.executeWithRetry(
     () => db.update(paymentTransactions)
@@ -282,6 +321,30 @@ async function processFlutterwaveWebhook(payload: any): Promise<void> {
     DEFAULT_RETRY_POLICIES.database,
     { reference, provider: 'flutterwave' }
   );
+
+  // Emit WebSocket event for payment status update
+  try {
+    const { getEventEmitter } = await import('../middleware/websocket-event-emitter');
+    const wsEmitter = getEventEmitter();
+    
+    if (status === 'completed') {
+      wsEmitter.emitActivity('payment', reference, userId || 'system', 'completed', {
+        provider: 'flutterwave',
+        amount: payload.data.amount,
+        currency: payload.data.currency,
+        reference,
+        transactionId: payload.data.id
+      });
+    } else {
+      wsEmitter.emitAlert('payment_failed', 'medium', `Flutterwave payment ${reference} failed`, userId || 'system', {
+        provider: 'flutterwave',
+        reference,
+        reason: payload.data.status
+      });
+    }
+  } catch (wsError) {
+    logger.warn('Failed to emit WebSocket event for Flutterwave webhook', { wsError });
+  }
 }
 
 // POST /api/payment-gateway/paystack/webhook
@@ -352,6 +415,7 @@ async function processPaystackWebhook(payload: any): Promise<void> {
 
   const reference = payload.data.reference;
   const status = payload.data.status === 'success' ? 'completed' : 'failed';
+  const userId = payload.data.customer?.id || payload.data.metadata?.userId;
 
   await RetryService.executeWithRetry(
     () => db.update(paymentTransactions)
@@ -368,6 +432,30 @@ async function processPaystackWebhook(payload: any): Promise<void> {
     DEFAULT_RETRY_POLICIES.database,
     { reference, provider: 'paystack' }
   );
+
+  // Emit WebSocket event for payment status update
+  try {
+    const { getEventEmitter } = await import('../middleware/websocket-event-emitter');
+    const wsEmitter = getEventEmitter();
+    
+    if (status === 'completed') {
+      wsEmitter.emitActivity('payment', reference, userId || 'system', 'completed', {
+        provider: 'paystack',
+        amount: payload.data.amount,
+        currency: payload.data.currency,
+        reference,
+        transactionId: payload.data.id
+      });
+    } else {
+      wsEmitter.emitAlert('payment_failed', 'medium', `Paystack payment ${reference} failed`, userId || 'system', {
+        provider: 'paystack',
+        reference,
+        reason: payload.data.status
+      });
+    }
+  } catch (wsError) {
+    logger.warn('Failed to emit WebSocket event for Paystack webhook', { wsError });
+  }
 }
 
 // POST /api/payment-gateway/mpesa/callback

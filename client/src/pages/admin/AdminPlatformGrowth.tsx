@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 
 interface GrowthMetric {
   date: string;
@@ -41,26 +42,14 @@ export default function AdminPlatformGrowth() {
   const fetchGrowthData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
-      const [growthRes, segmentsRes] = await Promise.all([
-        fetch(`/api/admin/growth/metrics?range=${dateRange}`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/growth/user-segments', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
+      const [growthData, segmentsData] = await Promise.all([
+        authClient.get(`/api/admin/growth/metrics?range=${dateRange}`),
+        authClient.get('/api/admin/growth/user-segments'),
       ]);
 
-      if (growthRes.ok) {
-        const data = await growthRes.json();
-        setGrowthData(data.metrics || []);
-      }
-
-      if (segmentsRes.ok) {
-        const data = await segmentsRes.json();
-        setSegments(data.segments || []);
-      }
+      setGrowthData(growthData.metrics || []);
+      setSegments(segmentsData.segments || []);
     } catch (error) {
       console.error('Failed to fetch growth data:', error);
     } finally {

@@ -6,9 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { RewardCard } from "@/components/rewards/RewardsCard";
-import { Trophy, TrendingUp, Calendar, Gift, Loader2, AlertCircle, Sparkles, Crown, Award } from "lucide-react";
+import { Trophy, TrendingUp, Calendar, Gift, LoaderCircle, AlertCircle, Sparkles, Crown, Award } from "lucide-react";
 import { useAuth } from "./hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { authClient } from "@/utils/authClient";
 
 interface Reward {
   id: string;
@@ -43,16 +44,7 @@ export default function MyRewards() {
   const { data: rewards = [], isLoading: rewardsLoading, error: rewardsError } = useQuery<Reward[]>({
     queryKey: ['/api/referral-rewards/history'],
     queryFn: async () => {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch('/api/referral-rewards/history', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to fetch rewards');
-      return res.json();
+      return authClient.get<Reward[]>('/api/referral-rewards/history');
     },
     enabled: !!user,
     staleTime: 2 * 60 * 1000, // 2 minutes
@@ -62,16 +54,7 @@ export default function MyRewards() {
   const { data: leaderboard = [], isLoading: leaderboardLoading } = useQuery<LeaderboardEntry[]>({
     queryKey: ['/api/referral-rewards/current-week'],
     queryFn: async () => {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch('/api/referral-rewards/current-week', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to fetch leaderboard');
-      return res.json();
+      return authClient.get<LeaderboardEntry[]>('/api/referral-rewards/current-week');
     },
     enabled: !!user,
     staleTime: 2 * 60 * 1000,
@@ -80,20 +63,10 @@ export default function MyRewards() {
   // Claim reward mutation
   const claimMutation = useMutation({
     mutationFn: async (rewardId: string) => {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch(`/api/referral-rewards/claim/${rewardId}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to claim reward');
-      }
-      return res.json();
+      return authClient.post<{ amount: string; currency: string }>(
+        `/api/referral-rewards/claim/${rewardId}`,
+        {}
+      );
     },
     onSuccess: (data) => {
       toast({

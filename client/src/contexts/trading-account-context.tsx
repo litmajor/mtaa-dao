@@ -131,12 +131,11 @@ export function TradingAccountProvider({ children }: { children: ReactNode }) {
 
   // API helper function
   const apiCall = async (endpoint: string, options: RequestInit = {}) => {
-    const token = localStorage.getItem('accessToken');
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        ...(await authClient.getAuthHeaders()),
         ...options.headers,
       },
     });

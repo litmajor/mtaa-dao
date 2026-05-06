@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { authClient } from '@/utils/authClient';
 import {
   Select,
   SelectContent,
@@ -59,7 +60,6 @@ export default function DaoModeration() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['/api/admin/daos/list', page, search, statusFilter],
     queryFn: async () => {
-      const token = localStorage.getItem('accessToken');
       const params = new URLSearchParams({
         page: page.toString(),
         limit: '20',
@@ -67,16 +67,7 @@ export default function DaoModeration() {
         ...(statusFilter && { status: statusFilter }),
       });
 
-      const res = await fetch(`/api/admin/daos/list?${params}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-
-      if (!res.ok) throw new Error('Failed to fetch DAOs');
-      return res.json();
+      return authClient.get(`/api/admin/daos/list?${params}`);
     },
     staleTime: 1 * 60 * 1000,
   });
@@ -84,19 +75,7 @@ export default function DaoModeration() {
   // Update DAO status mutation
   const statusMutation = useMutation({
     mutationFn: async ({ daoId, status }: { daoId: string; status: string }) => {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch(`/api/admin/daos/${daoId}/status`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ status, reason }),
-        credentials: 'include',
-      });
-
-      if (!res.ok) throw new Error('Failed to update DAO status');
-      return res.json();
+      return authClient.put(`/api/admin/daos/${daoId}/status`, { status, reason });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/daos/list'] });

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
+import { authClient } from '@/utils/authClient';
 import { useRealtimeMetrics } from './useRealtimeMetrics';
 
 export interface VaultMetric {
@@ -50,12 +51,12 @@ export const useVaultAnalytics = ({
     queryFn: async () => {
       const params = new URLSearchParams({ timeframe });
       const url = vaultId
-        ? `${apiBaseUrl}/api/vault/performance/${vaultId}?${params}`
-        : `${apiBaseUrl}/api/vault/performance?daoId=${daoId}&${params}`;
+        ? `${apiBaseUrl}/api/v1/wallets/vaults/${vaultId}/performance?${params}`
+        : `${apiBaseUrl}/api/v1/daos/${daoId}/treasury/vaults/performance?${params}`;
 
       const response = await fetch(url, {
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
+          ...(await authClient.getAuthHeaders()),
         },
       });
 
@@ -72,12 +73,12 @@ export const useVaultAnalytics = ({
     queryFn: async () => {
       const params = new URLSearchParams({ timeframe, limit: '100' });
       const url = vaultId
-        ? `${apiBaseUrl}/api/vault/transactions/${vaultId}?${params}`
-        : `${apiBaseUrl}/api/vault/transactions?daoId=${daoId}&${params}`;
+        ? `${apiBaseUrl}/api/v1/wallets/vaults/${vaultId}/transactions?${params}`
+        : `${apiBaseUrl}/api/v1/daos/${daoId}/treasury/vaults/transactions?${params}`;
 
       const response = await fetch(url, {
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
+          ...(await authClient.getAuthHeaders()),
         },
       });
 

@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, AlertCircle, CheckCircle } from 'lucide-react';
+import { LoaderCircle, AlertCircle, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface PINVerificationModalProps {
@@ -53,7 +53,7 @@ export function PINVerificationModal({
     setError('');
 
     try {
-      const response = await fetch('/api/pin/verify', {
+      const response = await fetch('/api/v1/wallets/security/pin/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin }),

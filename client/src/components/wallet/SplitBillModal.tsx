@@ -64,7 +64,7 @@ export default function SplitBillModal({ isOpen, onClose, userAddress }: SplitBi
 
     setIsLoading(true);
     try {
-      const response = await fetch('/api/wallet/split-bill', {
+      const response = await fetch('/api/v1/wallets/transfers/split', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

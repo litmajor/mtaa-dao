@@ -1,6 +1,6 @@
 import { Server, Socket } from 'socket.io';
 import { Server as HTTPServer } from 'http';
-import { validateToken } from '../middleware/auth';
+import jwt from 'jsonwebtoken';
 
 /**
  * WebSocket Server Setup
@@ -33,11 +33,7 @@ class WebSocketManager {
         origin: process.env.CLIENT_URL || 'http://localhost:5000',
         methods: ['GET', 'POST'],
         credentials: true
-      },
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      reconnectionAttempts: 5
+      }
     });
 
     this.setupMiddleware();
@@ -46,22 +42,63 @@ class WebSocketManager {
 
   /**
    * Authentication middleware
+   * Validates JWT from httpOnly cookie (same pattern as REST API)
+   * Cookies are automatically included by browser in Socket.IO handshake
    */
   private setupMiddleware() {
     this.io.use(async (socket, next) => {
       try {
-        const token = socket.handshake.auth.token;
+        // Socket.IO inherits cookies from handshake (same as browser XHR)
+        const token = socket.handshake.headers.cookie
+          ? this.extractJWTFromCookie(socket.handshake.headers.cookie)
+          : null;
+
         if (!token) {
-          return next(new Error('Authentication error'));
+          // Allow connection but mark as unauthenticated
+          socket.data.user = null;
+          return next();
         }
 
-        const decoded = await validateToken(token);
-        socket.data.user = decoded;
+        // Validate JWT token using same secret as REST API
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
+
+        // Attach user data to socket for later use in event handlers
+        socket.data.user = {
+          id: decoded.id,
+          email: decoded.email,
+          role: decoded.role,
+          daos: decoded.daos || [],
+          permissions: decoded.permissions || []
+        };
+
         next();
-      } catch (err) {
-        next(new Error('Authentication failed'));
+      } catch (err: any) {
+        console.error('Socket.IO authentication failed:', err.message);
+        // Allow connection but mark as unauthenticated (don't fail handshake)
+        socket.data.user = null;
+        next();
       }
     });
+  }
+
+  /**
+   * Extract JWT token from httpOnly cookie
+   * Parses cookie string to find JWT token
+   * Cookie format: "token=<jwt>; other=value"
+   */
+  private extractJWTFromCookie(cookieString: string): string | null {
+    try {
+      const cookies = cookieString.split(';').map(c => c.trim());
+      for (const cookie of cookies) {
+        const [key, value] = cookie.split('=');
+        if (key === 'token' || key === 'jwt' || key === 'authToken') {
+          return decodeURIComponent(value);
+        }
+      }
+      return null;
+    } catch (error) {
+      return null;
+    }
   }
 
   /**
@@ -409,6 +446,39 @@ class WebSocketManager {
   public close() {
     this.io.close();
   }
+
+  /**
+   * Get Socket.IO server instance (for advanced usage)
+   */
+  public getIO(): Server {
+    return this.io;
+  }
+}
+
+// Singleton instance management
+let webSocketManagerInstance: WebSocketManager | null = null;
+
+/**
+ * Initialize WebSocket manager singleton
+ * Call this once from server setup
+ */
+export function initializeWebSocketManager(httpServer: HTTPServer): WebSocketManager {
+  if (webSocketManagerInstance) {
+    console.warn('WebSocket manager already initialized');
+    return webSocketManagerInstance;
+  }
+  webSocketManagerInstance = new WebSocketManager(httpServer);
+  return webSocketManagerInstance;
+}
+
+/**
+ * Get WebSocket manager instance
+ */
+export function getWebSocketManager(): WebSocketManager {
+  if (!webSocketManagerInstance) {
+    throw new Error('WebSocket manager not initialized. Call initializeWebSocketManager first.');
+  }
+  return webSocketManagerInstance;
 }
 
 export default WebSocketManager;

@@ -364,6 +364,23 @@ class StrategyDashboardService {
   }
 
   /**
+   * Get followers of a strategy with pagination
+   */
+  async getStrategyFollowers(
+    strategyId: string,
+    skip: number = 0,
+    limit: number = 20
+  ): Promise<{ followers: StrategyFollower[]; total: number }> {
+    const allFollowers = this.followers.get(strategyId) || [];
+    const paginatedFollowers = allFollowers.slice(skip, skip + limit);
+    
+    return {
+      followers: paginatedFollowers,
+      total: allFollowers.length
+    };
+  }
+
+  /**
    * Get strategy performance
    */
   async getStrategyPerformance(

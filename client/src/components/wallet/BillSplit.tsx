@@ -13,6 +13,7 @@ import { Badge } from '../ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Plus, Trash2, CheckCircle, Clock, X } from 'lucide-react';
 import { AlertCircle } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 
 interface BillSplitParticipant {
   userId?: string;
@@ -73,16 +74,8 @@ export default function BillSplit() {
   const fetchBillSplits = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/wallet/bill-splits', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
-
-      if (!response.ok) throw new Error('Failed to fetch bill splits');
-
-      const data = await response.json();
-      setBillSplits(data.billSplits || []);
+      const data = await authClient.get('/api/v1/wallets/payments/split');
+      setBillSplits(data.data?.billSplits || data.data || []);
     } catch (error) {
       console.error('Error fetching bill splits:', error);
     } finally {
@@ -142,19 +135,8 @@ export default function BillSplit() {
     }
 
     try {
-      const response = await fetch('/api/wallet/bill-split', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify(newSplit),
-      });
-
-      if (!response.ok) throw new Error('Failed to create bill split');
-
-      const data = await response.json();
-      setBillSplits([data.billSplit, ...billSplits]);
+      const data = await authClient.post('/api/v1/wallets/payments/split', newSplit);
+      setBillSplits([data.data?.billSplit || data.data, ...billSplits]);
       setCreateModalOpen(false);
       setNewSplit({
         title: '',
@@ -174,15 +156,7 @@ export default function BillSplit() {
 
   const settleBillSplit = async (splitId: string) => {
     try {
-      const response = await fetch(`/api/wallet/bill-split/${splitId}/settle`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
-
-      if (!response.ok) throw new Error('Failed to settle bill split');
-
+      await authClient.post(`/api/v1/wallets/payments/split/${splitId}/settle`, {});
       fetchBillSplits();
       alert('Bill split settled successfully!');
     } catch (error) {
@@ -195,15 +169,7 @@ export default function BillSplit() {
     if (!window.confirm('Are you sure you want to cancel this bill split?')) return;
 
     try {
-      const response = await fetch(`/api/wallet/bill-split/${splitId}/cancel`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
-
-      if (!response.ok) throw new Error('Failed to cancel bill split');
-
+      await authClient.post(`/api/v1/wallets/payments/split/${splitId}/cancel`, {});
       fetchBillSplits();
       alert('Bill split cancelled successfully!');
     } catch (error) {

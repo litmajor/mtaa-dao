@@ -27,7 +27,7 @@ export default function PendingTransactions({ daoId }: { daoId: string }) {
   const fetchTransactions = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/dao-treasury/${daoId}/multisig/pending`);
+      const res = await fetch(`/api/v1/daos/${daoId}/treasury/multisig/pending`);
       const data = await res.json();
       if (data.success) {
         setTransactions(data.transactions || []);
@@ -41,7 +41,7 @@ export default function PendingTransactions({ daoId }: { daoId: string }) {
 
   const signTransaction = async (txId: string) => {
     try {
-      const res = await fetch(`/api/dao-treasury/${daoId}/multisig/${txId}/sign`, {
+      const res = await fetch(`/api/v1/daos/${daoId}/treasury/multisig/${txId}/sign`, {
         method: 'POST'
       });
       const data = await res.json();

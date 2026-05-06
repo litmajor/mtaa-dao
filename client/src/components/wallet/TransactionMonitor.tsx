@@ -38,7 +38,7 @@ interface PendingTransaction {
 const getPendingTransactions = async (): Promise<PendingTransaction[]> => {
   try {
     // First, try to fetch from API endpoint
-    const response = await fetch('/api/wallet/pending-transactions', {
+    const response = await fetch('/api/v1/wallets/transactions/pending', {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
     });

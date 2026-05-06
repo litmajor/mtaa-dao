@@ -3,9 +3,17 @@
  * 
  * Client-side functions for interacting with staking endpoints
  * Handles stake creation, claiming rewards, and unstaking
+ * 
+ * ✅ Migrated to authClient for centralized auth handling:
+ * - Uses cookie-based authentication (httpOnly)
+ * - Auto-refresh on 401
+ * - Single-flight refresh to prevent token storms
+ * - CSRF protection
  */
 
-const API_BASE = '/api/staking';
+import { authClient } from './authClient';
+
+const API_BASE = '/api/v1/yuki/staking';
 
 interface StakeRequest {
   amount: number;
@@ -48,86 +56,36 @@ interface StakingStatsResponse {
  * Stake MTAA tokens
  */
 export async function stakeTokens(request: StakeRequest): Promise<StakeResponse> {
-  const response = await fetch(`${API_BASE}/stake`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || 'Staking failed');
-  }
-
-  return response.json();
+  return authClient.post<StakeResponse>(`${API_BASE}/stake`, request);
 }
 
 /**
  * Get user's stakes
  */
 export async function getMyStakes(): Promise<StakeResponse[]> {
-  const response = await fetch(`${API_BASE}/my-stakes`, {
-    headers: { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` },
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch stakes');
-  }
-
-  const result = await response.json();
-  return result.data || [];
+  const data = await authClient.get<{ data: StakeResponse[] }>(`${API_BASE}/my-stakes`);
+  return data.data || [];
 }
 
 /**
  * Get staking statistics
  */
 export async function getStakingStats(): Promise<StakingStatsResponse> {
-  const response = await fetch(`${API_BASE}/stats`, {
-    headers: { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` },
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch staking stats');
-  }
-
-  return response.json();
+  return authClient.get<StakingStatsResponse>(`${API_BASE}/stats`);
 }
 
 /**
  * Claim rewards for a stake
  */
 export async function claimRewards(stakeId: string): Promise<{ amount: number }> {
-  const response = await fetch(`${API_BASE}/claim/${stakeId}`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` },
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || 'Failed to claim rewards');
-  }
-
-  return response.json();
+  return authClient.post<{ amount: number }>(`${API_BASE}/claim/${stakeId}`);
 }
 
 /**
  * Unstake tokens (requires lockup period to be over)
  */
 export async function unstakeTokens(stakeId: string): Promise<{ amount: number; rewards: number }> {
-  const response = await fetch(`${API_BASE}/unstake/${stakeId}`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` },
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || 'Failed to unstake');
-  }
-
-  return response.json();
+  return authClient.post<{ amount: number; rewards: number }>(`${API_BASE}/unstake/${stakeId}`);
 }
 
 /**
@@ -139,15 +97,12 @@ export async function getVaultAccessTier(): Promise<{
   maxVaults: number;
   feeDiscount: number;
 }> {
-  const response = await fetch(`${API_BASE}/vault-access`, {
-    headers: { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` },
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch vault access tier');
-  }
-
-  return response.json();
+  return authClient.get<{
+    tier: 'bronze' | 'silver' | 'gold' | 'platinum';
+    name: string;
+    maxVaults: number;
+    feeDiscount: number;
+  }>(`${API_BASE}/vault-access`);
 }
 
 /**
@@ -162,13 +117,9 @@ export async function getStakingLeaderboard(): Promise<
     totalRewards: number;
   }>
 > {
-  const response = await fetch(`${API_BASE}/leaderboard`);
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch leaderboard');
-  }
-
-  const data = await response.json();
+  const data = await authClient.get<{ data: Array<{ rank: number; userId: string; username: string; totalStaked: number; totalRewards: number }> }>(
+    `${API_BASE}/leaderboard`
+  );
   return data.data || [];
 }
 

@@ -2,7 +2,10 @@
  * Vaults & Staking API Client Utilities
  *
  * Typed utilities for calling vault and staking endpoints from React components
+ * ✅ Updated to use authClient - NO localStorage/sessionStorage
  */
+
+import { authClient } from '@/utils/authClient';
 
 // ============================================================================
 // VAULT API UTILITIES
@@ -88,17 +91,8 @@ export async function getVaults(filters?: {
     if (filters?.minAUM) params.append('minAUM', String(filters.minAUM));
     if (filters?.maxFee) params.append('maxFee', String(filters.maxFee));
 
-    const response = await fetch(`/api/vaults?${params}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-      },
-    });
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    const result = await response.json();
-    return result.data || [];
+    const data = await authClient.get<VaultListItem[]>(`/api/vaults?${params}`);
+    return data || [];
   } catch (error) {
     console.error('Failed to get vaults:', error);
     throw error;
@@ -109,22 +103,7 @@ export async function getVaults(filters?: {
  * Get detailed vault information including positions and performance
  */
 export async function getVaultDetails(vaultId: string): Promise<VaultDetail> {
-  try {
-    const response = await fetch(`/api/vaults/${vaultId}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-      },
-    });
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    const result = await response.json();
-    return result.data;
-  } catch (error) {
-    console.error('Failed to get vault details:', error);
-    throw error;
-  }
+  return authClient.get<VaultDetail>(`/api/vaults/${vaultId}`);
 }
 
 /**
@@ -136,18 +115,11 @@ export async function depositToVault(
   asset: string = 'USDC'
 ): Promise<DepositResponse> {
   try {
-    const response = await fetch(`/api/vaults/${vaultId}/deposit`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-      },
-      body: JSON.stringify({ amount, asset }),
+    const data = await authClient.post<DepositResponse>(`/api/vaults/${vaultId}/deposit`, {
+      amount,
+      asset,
     });
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    const result = await response.json();
-    return result.data;
+    return data;
   } catch (error) {
     console.error('Failed to deposit to vault:', error);
     throw error;
@@ -162,67 +134,25 @@ export async function withdrawFromVault(
   shares: string,
   asset: string = 'USDC'
 ): Promise<WithdrawalResponse> {
-  try {
-    const response = await fetch(`/api/vaults/${vaultId}/withdraw`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-      },
-      body: JSON.stringify({ shares, asset }),
-    });
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    const result = await response.json();
-    return result.data;
-  } catch (error) {
-    console.error('Failed to withdraw from vault:', error);
-    throw error;
-  }
+  return authClient.post<WithdrawalResponse>(`/api/vaults/${vaultId}/withdraw`, {
+    shares,
+    asset,
+  });
 }
 
 /**
  * Get user's balance in a specific vault
  */
 export async function getVaultBalance(vaultId: string): Promise<VaultBalance> {
-  try {
-    const response = await fetch(`/api/vaults/${vaultId}/balance`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-      },
-    });
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    const result = await response.json();
-    return result.data;
-  } catch (error) {
-    console.error('Failed to get vault balance:', error);
-    throw error;
-  }
+  return authClient.get<VaultBalance>(`/api/vaults/${vaultId}/balance`);
 }
 
 /**
  * Get vault's current positions
  */
 export async function getVaultPositions(vaultId: string): Promise<any[]> {
-  try {
-    const response = await fetch(`/api/vaults/${vaultId}/positions`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-      },
-    });
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    const result = await response.json();
-    return result.data || [];
-  } catch (error) {
-    console.error('Failed to get vault positions:', error);
-    throw error;
-  }
+  const result = await authClient.get<{ data: any[] } | any[]>(`/api/vaults/${vaultId}/positions`);
+  return Array.isArray(result) ? result : (result?.data || []);
 }
 
 /**
@@ -232,25 +162,7 @@ export async function getVaultPerformance(
   vaultId: string,
   period: string = '30d'
 ): Promise<any> {
-  try {
-    const response = await fetch(
-      `/api/vaults/${vaultId}/performance?period=${period}`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-        },
-      }
-    );
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    const result = await response.json();
-    return result.data;
-  } catch (error) {
-    console.error('Failed to get vault performance:', error);
-    throw error;
-  }
+  return authClient.get<any>(`/api/vaults/${vaultId}/performance?period=${period}`);
 }
 
 // ============================================================================
@@ -299,21 +211,7 @@ export interface UserStakingBalance {
  * Get staking configuration and APY rates
  */
 export async function getStakingConfig(): Promise<StakingConfig> {
-  try {
-    const response = await fetch('/api/staking/config', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    const result = await response.json();
-    return result.data;
-  } catch (error) {
-    console.error('Failed to get staking config:', error);
-    throw error;
-  }
+  return authClient.get<StakingConfig>('/api/v1/yuki/staking/config');
 }
 
 /**
@@ -323,113 +221,39 @@ export async function stakeTokens(
   amount: string,
   lockupDays: number
 ): Promise<StakeResponse> {
-  try {
-    const response = await fetch('/api/staking/stake', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-      },
-      body: JSON.stringify({ amount, lockupDays }),
-    });
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    const result = await response.json();
-    return result.data;
-  } catch (error) {
-    console.error('Failed to stake tokens:', error);
-    throw error;
-  }
+  return authClient.post<StakeResponse>('/api/v1/yuki/staking/stake', {
+    amount,
+    lockupDays,
+  });
 }
 
 /**
  * Unstake MTAA tokens (only after lockup period)
  */
 export async function unstakeTokens(stakeId: string): Promise<any> {
-  try {
-    const response = await fetch('/api/staking/unstake', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-      },
-      body: JSON.stringify({ stakeId }),
-    });
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    const result = await response.json();
-    return result.data;
-  } catch (error) {
-    console.error('Failed to unstake tokens:', error);
-    throw error;
-  }
+  return authClient.post<any>('/api/v1/yuki/staking/unstake', { stakeId });
 }
 
 /**
  * Get all stakes for the current user
  */
 export async function getUserStakes(): Promise<any[]> {
-  try {
-    const response = await fetch('/api/staking/stakes', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-      },
-    });
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    const result = await response.json();
-    return result.data || [];
-  } catch (error) {
-    console.error('Failed to get user stakes:', error);
-    throw error;
-  }
+  const result = await authClient.get<{ data: any[] } | any[]>('/api/v1/yuki/staking/stakes');
+  return Array.isArray(result) ? result : (result?.data || []);
 }
 
 /**
  * Get user's staking balance and rewards
  */
 export async function getStakingBalance(): Promise<UserStakingBalance> {
-  try {
-    const response = await fetch('/api/staking/balance', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-      },
-    });
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    const result = await response.json();
-    return result.data;
-  } catch (error) {
-    console.error('Failed to get staking balance:', error);
-    throw error;
-  }
+  return authClient.get<UserStakingBalance>('/api/v1/yuki/staking/balance');
 }
 
 /**
  * Claim accumulated staking rewards
  */
 export async function claimRewards(): Promise<any> {
-  try {
-    const response = await fetch('/api/staking/claim-rewards', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-      },
-      body: JSON.stringify({}),
-    });
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    const result = await response.json();
-    return result.data;
-  } catch (error) {
-    console.error('Failed to claim rewards:', error);
-    throw error;
-  }
+  return authClient.post<any>('/api/v1/yuki/staking/claim-rewards', {});
 }
 
 /**
@@ -438,63 +262,27 @@ export async function claimRewards(): Promise<any> {
 export async function getStakingLeaderboard(
   limit: number = 100
 ): Promise<any[]> {
-  try {
-    const response = await fetch(`/api/staking/leaderboard?limit=${limit}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    const result = await response.json();
-    return result.data || [];
-  } catch (error) {
-    console.error('Failed to get leaderboard:', error);
-    throw error;
-  }
+  const result = await authClient.get<{ data: any[] } | any[]>(
+    `/api/v1/yuki/staking/leaderboard?limit=${limit}`
+  );
+  return Array.isArray(result) ? result : (result?.data || []);
 }
 
 /**
  * Get rewards pool status
  */
 export async function getRewardsPoolStatus(): Promise<any> {
-  try {
-    const response = await fetch('/api/staking/rewards-pool', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    const result = await response.json();
-    return result.data;
-  } catch (error) {
-    console.error('Failed to get rewards pool status:', error);
-    throw error;
-  }
+  return authClient.get<any>('/api/v1/yuki/staking/rewards-pool');
 }
 
 /**
  * Get active governance proposals
  */
 export async function getProposals(status: string = 'active'): Promise<any[]> {
-  try {
-    const response = await fetch(`/api/staking/proposals?status=${status}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    const result = await response.json();
-    return result.data || [];
-  } catch (error) {
-    console.error('Failed to get proposals:', error);
-    throw error;
-  }
+  const result = await authClient.get<{ data: any[] } | any[]>(
+    `/api/v1/yuki/staking/proposals?status=${status}`
+  );
+  return Array.isArray(result) ? result : (result?.data || []);
 }
 
 /**
@@ -504,21 +292,5 @@ export async function voteOnProposal(
   proposalId: string,
   support: boolean
 ): Promise<any> {
-  try {
-    const response = await fetch('/api/staking/vote', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-      },
-      body: JSON.stringify({ proposalId, support }),
-    });
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    const result = await response.json();
-    return result.data;
-  } catch (error) {
-    console.error('Failed to vote on proposal:', error);
-    throw error;
-  }
+  return authClient.post<any>('/api/v1/yuki/staking/vote', { proposalId, support });
 }

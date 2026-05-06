@@ -4,9 +4,10 @@
  */
 
 import React, { useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 
 interface DepositMethod {
   id: string;
@@ -50,35 +51,19 @@ export default function DepositTab({ methods, accounts }: DepositTabProps) {
   const { data: depositHistory, refetch: refetchHistory } = useQuery<DepositHistory[]>({
     queryKey: ['depositHistory'],
     queryFn: async () => {
-      const response = await fetch('/api/deposits/user/history', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      });
-      if (!response.ok) throw new Error('Failed to fetch deposit history');
-      const result = await response.json();
-      return result.data;
+      return authClient.get<DepositHistory[]>('/api/v1/wallets/deposits/user/history');
     },
   });
 
   // Initiate off-ramp deposit
   const initiateOffRampMutation = useMutation({
     mutationFn: async (data: { methodId: string; amount: string }) => {
-      const response = await fetch('/api/deposits/offramp/initiate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify(data),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to initiate deposit');
-      }
-
-      return response.json();
+      return authClient.post<{ data?: { paymentUrl?: string } }>(
+        '/api/v1/wallets/deposits/offramp/initiate',
+        data
+      );
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       // Redirect to payment provider or show confirmation
       if (data.data?.paymentUrl) {
         window.location.href = data.data.paymentUrl;

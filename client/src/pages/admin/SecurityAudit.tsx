@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { authClient } from '@/utils/authClient';
 import {
   Table,
   TableBody,
@@ -22,7 +23,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Shield, AlertTriangle, CheckCircle, XCircle, Loader2, LogOut, Monitor, Smartphone, Tablet, Laptop } from 'lucide-react';
+import { Shield, TriangleAlert, CheckCircle, CircleX, LoaderCircle, LogOut, Monitor, Smartphone, Tablet, Laptop } from 'lucide-react';
 
 interface Session {
   id: string;
@@ -44,17 +45,7 @@ export default function SecurityAudit() {
   const { data: auditReport, isLoading: auditLoading } = useQuery({
     queryKey: ['/api/admin/security/audit'],
     queryFn: async () => {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch('/api/admin/security/audit', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-
-      if (!res.ok) throw new Error('Failed to fetch audit report');
-      return res.json();
+      return authClient.get('/api/admin/security/audit');
     },
     staleTime: 1 * 60 * 1000,
     refetchInterval: 30000, // Auto-refresh every 30 seconds
@@ -64,17 +55,7 @@ export default function SecurityAudit() {
   const { data: sessionsData, isLoading: sessionsLoading } = useQuery({
     queryKey: ['/api/admin/security/sessions'],
     queryFn: async () => {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch('/api/admin/security/sessions', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-
-      if (!res.ok) throw new Error('Failed to fetch sessions');
-      return res.json();
+      return authClient.get('/api/admin/security/sessions');
     },
     staleTime: 1 * 60 * 1000,
     refetchInterval: 30000,
@@ -83,18 +64,7 @@ export default function SecurityAudit() {
   // Revoke session mutation
   const revokeMutation = useMutation({
     mutationFn: async (sessionId: string) => {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch(`/api/admin/security/sessions/${sessionId}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-
-      if (!res.ok) throw new Error('Failed to revoke session');
-      return res.json();
+      return authClient.delete(`/api/admin/security/sessions/${sessionId}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/security/sessions'] });

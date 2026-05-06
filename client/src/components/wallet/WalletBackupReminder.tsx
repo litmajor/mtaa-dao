@@ -28,8 +28,8 @@ export default function WalletBackupReminder({ userId, walletAddress }: WalletBa
 
   const checkBackupStatus = async () => {
     try {
-      const response = await apiGet(`/api/wallet-setup/backup-status/${userId}`);
-      setIsBackedUp(response.isBackedUp || false);
+      const response = await apiGet(`/api/v1/wallets/setup/backup/status/${userId}`);
+      setIsBackedUp(response.data?.isBackedUp || response.isBackedUp || false);
     } catch (error) {
       console.error('Failed to check backup status:', error);
     }
@@ -38,9 +38,9 @@ export default function WalletBackupReminder({ userId, walletAddress }: WalletBa
   const retrieveBackupData = async () => {
     setLoading(true);
     try {
-      const response = await apiPost('/api/wallet-setup/get-backup-data', { userId });
-      setRecoveryPhrase(response.mnemonic || '');
-      setPrivateKey(response.privateKey || '');
+      const response = await apiPost('/api/v1/wallets/setup/backup/data', { userId });
+      setRecoveryPhrase(response.data?.mnemonic || response.mnemonic || '');
+      setPrivateKey(response.data?.privateKey || response.privateKey || '');
       setShowBackupDialog(true);
     } catch (error: any) {
       toast({
@@ -55,7 +55,7 @@ export default function WalletBackupReminder({ userId, walletAddress }: WalletBa
 
   const confirmBackup = async () => {
     try {
-      await apiPost('/api/wallet-setup/backup-confirmed', { userId });
+      await apiPost('/api/v1/wallets/setup/backup/confirm', { userId });
       setIsBackedUp(true);
       setShowBackupDialog(false);
       toast({

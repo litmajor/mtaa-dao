@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 
 interface ReferralMetric {
   date: string;
@@ -51,34 +52,16 @@ export default function AdminReferrals() {
   const fetchReferralData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
-      const [metricsRes, referrersRes, sourcesRes] = await Promise.all([
-        fetch('/api/admin/referrals/metrics', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/referrals/top-referrers', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/referrals/sources', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
+      const [metricsData, referrersData, sourcesData] = await Promise.all([
+        authClient.get('/api/admin/referrals/metrics'),
+        authClient.get('/api/admin/referrals/top-referrers'),
+        authClient.get('/api/admin/referrals/sources'),
       ]);
 
-      if (metricsRes.ok) {
-        const data = await metricsRes.json();
-        setMetrics(data.metrics || []);
-      }
-
-      if (referrersRes.ok) {
-        const data = await referrersRes.json();
-        setTopReferrers(data.topReferrers || []);
-      }
-
-      if (sourcesRes.ok) {
-        const data = await sourcesRes.json();
-        setSources(data.sources || []);
-      }
+      setMetrics(metricsData.metrics || []);
+      setTopReferrers(referrersData.topReferrers || []);
+      setSources(sourcesData.sources || []);
     } catch (error) {
       console.error('Failed to fetch referral data:', error);
     } finally {

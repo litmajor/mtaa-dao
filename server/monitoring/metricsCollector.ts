@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { performance } from 'perf_hooks';
 import { logger } from '../utils/logger';
+import { getEventEmitter } from '../middleware/websocket-event-emitter';
 
 // Simple Prometheus-style metrics (without external dependency)
 class PrometheusMetrics {
@@ -247,6 +248,31 @@ class MetricsCollector {
     prometheus.gauge('http_request_errors_total', this.errorCount);
     prometheus.gauge('http_request_duration_ms', this.getAverageResponseTime());
     prometheus.gauge('http_active_connections', this.activeConnections);
+
+    // Emit WebSocket metrics update for real-time dashboard
+    try {
+      const wsEmitter = getEventEmitter();
+      wsEmitter.emitMetrics(
+        'system',
+        {
+          memory: {
+            heapUsed: `${(memoryUsage.heapUsed / 1024 / 1024).toFixed(2)}MB`,
+            heapTotal: `${(memoryUsage.heapTotal / 1024 / 1024).toFixed(2)}MB`,
+            external: `${(memoryUsage.external / 1024 / 1024).toFixed(2)}MB`
+          },
+          uptime: `${(metric.uptime / 60 / 60).toFixed(2)}h`,
+          activeConnections: this.activeConnections,
+          requestCount: this.requestCount,
+          errorCount: this.errorCount,
+          avgResponseTime: `${this.getAverageResponseTime().toFixed(2)}ms`,
+          cpuUsage: `${(cpuUsage.user / 1000000).toFixed(2)}s`,
+          timestamp: metric.timestamp
+        },
+        'system'  // userId for audit
+      );
+    } catch (wsError) {
+      logger.debug('Failed to emit WebSocket metrics event:', wsError);
+    }
 
     // Log memory warnings
     const memoryUsageMB = memoryUsage.heapUsed / 1024 / 1024;

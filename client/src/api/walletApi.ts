@@ -1,7 +1,7 @@
 // Wallet and DAO API utility functions for frontend wiring
 
 export async function getRiskValidation(amount: number, tokenAddress?: string, toAddress?: string) {
-  const res = await fetch('/api/wallet/risk/validate', {
+  const res = await fetch('/api/v1/wallets/risk/validate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ amount, tokenAddress, toAddress })
@@ -10,13 +10,13 @@ export async function getRiskValidation(amount: number, tokenAddress?: string, t
 }
 
 export async function getAnalyticsReport(timeframe?: number) {
-  const url = '/api/wallet/analytics/report' + (timeframe ? `?timeframe=${timeframe}` : '');
+  const url = '/api/v1/wallets/analytics/report' + (timeframe ? `?timeframe=${timeframe}` : '');
   const res = await fetch(url);
   return res.json();
 }
 
 export async function getMultisigInfo(multisigAddress: string) {
-  const res = await fetch('/api/wallet/multisig/info', {
+  const res = await fetch('/api/v1/wallets/multisig/info', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ multisigAddress })
@@ -25,7 +25,7 @@ export async function getMultisigInfo(multisigAddress: string) {
 }
 
 export async function submitMultisigTx(multisigAddress: string, destination: string, value: string, data?: string) {
-  const res = await fetch('/api/wallet/multisig/submit', {
+  const res = await fetch('/api/v1/wallets/multisig/request', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ multisigAddress, destination, value, data })
@@ -34,13 +34,13 @@ export async function submitMultisigTx(multisigAddress: string, destination: str
 }
 
 export async function getAllowedTokens() {
-  const res = await fetch('/api/wallet/allowed-tokens');
+  const res = await fetch('/api/v1/wallets/tokens/allowed');
   return res.json();
 }
 
 // Enhanced Multisig Functions
 export async function createMultisigWallet(owners: string[], threshold: number) {
-  const res = await fetch('/api/wallet/multisig/create', {
+  const res = await fetch('/api/v1/wallets/multisig/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ owners, threshold })
@@ -49,12 +49,12 @@ export async function createMultisigWallet(owners: string[], threshold: number) 
 }
 
 export async function getMultisigTransactions(multisigAddress: string, pending = false) {
-  const res = await fetch(`/api/wallet/multisig/${multisigAddress}/transactions?pending=${pending}`);
+  const res = await fetch(`/api/v1/wallets/multisig/${multisigAddress}/transactions?pending=${pending}`);
   return res.json();
 }
 
 export async function confirmMultisigTransaction(multisigAddress: string, transactionId: string) {
-  const res = await fetch('/api/wallet/multisig/confirm', {
+  const res = await fetch('/api/v1/wallets/multisig/confirm', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ multisigAddress, transactionId })
@@ -63,7 +63,7 @@ export async function confirmMultisigTransaction(multisigAddress: string, transa
 }
 
 export async function executeMultisigTransaction(multisigAddress: string, transactionId: string) {
-  const res = await fetch('/api/wallet/multisig/execute', {
+  const res = await fetch('/api/v1/wallets/multisig/execute', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ multisigAddress, transactionId })
@@ -72,7 +72,7 @@ export async function executeMultisigTransaction(multisigAddress: string, transa
 }
 
 export async function addAllowedToken(tokenAddress: string) {
-  const res = await fetch('/api/wallet/allowed-tokens/add', {
+  const res = await fetch('/api/v1/wallets/tokens/allowed/add', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tokenAddress })
@@ -81,7 +81,7 @@ export async function addAllowedToken(tokenAddress: string) {
 }
 
 export async function removeAllowedToken(tokenAddress: string) {
-  const res = await fetch('/api/wallet/allowed-tokens/remove', {
+  const res = await fetch('/api/v1/wallets/tokens/allowed/remove', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tokenAddress })
@@ -90,7 +90,7 @@ export async function removeAllowedToken(tokenAddress: string) {
 }
 
 export async function approveToken(tokenAddress: string, spender: string, amount: number) {
-  const res = await fetch('/api/wallet/approve-token', {
+  const res = await fetch('/api/v1/wallets/tokens/approve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tokenAddress, spender, amount })
@@ -99,17 +99,17 @@ export async function approveToken(tokenAddress: string, spender: string, amount
 }
 
 export async function getAllowance(tokenAddress: string, spender: string) {
-  const res = await fetch(`/api/wallet/allowance/${tokenAddress}/${spender}`);
+  const res = await fetch(`/api/v1/wallets/tokens/allowance/${tokenAddress}/${spender}`);
   return res.json();
 }
 
 export async function getTransactionStatus(txHash: string) {
-  const res = await fetch(`/api/wallet/tx-status/${txHash}`);
+  const res = await fetch(`/api/v1/wallets/transactions/status/${txHash}`);
   return res.json();
 }
 
 export async function getPortfolio(tokenAddresses: string[]) {
-  const res = await fetch('/api/wallet/portfolio', {
+  const res = await fetch('/api/v1/wallets/balance/portfolio', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tokenAddresses })
@@ -118,7 +118,7 @@ export async function getPortfolio(tokenAddresses: string[]) {
 }
 
 export async function batchTransfer(transfers: Array<{ tokenAddress?: string; toAddress: string; amount: number }>) {
-  const res = await fetch('/api/wallet/batch-transfer', {
+  const res = await fetch('/api/v1/wallets/transfers/batch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ transfers })
@@ -127,7 +127,7 @@ export async function batchTransfer(transfers: Array<{ tokenAddress?: string; to
 }
 
 export async function sendNativeToken(toAddress: string, amount: number) {
-  const res = await fetch('/api/wallet/send-native', {
+  const res = await fetch('/api/v1/wallets/transfers/send-native', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ toAddress, amount })
@@ -136,7 +136,7 @@ export async function sendNativeToken(toAddress: string, amount: number) {
 }
 
 export async function sendToken(tokenAddress: string, toAddress: string, amount: number) {
-  const res = await fetch('/api/wallet/send-token', {
+  const res = await fetch('/api/v1/wallets/transfers/send-token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tokenAddress, toAddress, amount })
@@ -145,23 +145,23 @@ export async function sendToken(tokenAddress: string, toAddress: string, amount:
 }
 
 export async function getTokenInfo(tokenAddress: string) {
-  const res = await fetch(`/api/wallet/token-info/${tokenAddress}`);
+  const res = await fetch(`/api/v1/wallets/tokens/info/${tokenAddress}`);
   return res.json();
 }
 
 export async function getNetworkInfo() {
-  const res = await fetch('/api/wallet/network-info');
+  const res = await fetch('/api/v1/wallets/network/info');
   return res.json();
 }
 
 export async function getBalance(address?: string) {
-  const url = address ? `/api/wallet/balance/${address}` : '/api/wallet/balance';
+  const url = address ? `/api/v1/wallets/balance/${address}` : '/api/v1/wallets/balance';
   const res = await fetch(url);
   return res.json();
 }
 
 export async function getTxHistory(limit?: number) {
-  const url = '/api/wallet/analytics/tx-history' + (limit ? `?limit=${limit}` : '');
+  const url = '/api/v1/wallets/analytics/tx-history' + (limit ? `?limit=${limit}` : '');
   const res = await fetch(url);
   return res.json();
 }

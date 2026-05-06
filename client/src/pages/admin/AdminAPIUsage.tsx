@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 
 interface APIEndpoint {
   endpoint: string;
@@ -52,34 +53,16 @@ export default function AdminAPIUsage() {
   const fetchAPIData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
 
-      const [endpointsRes, usageRes, devsRes] = await Promise.all([
-        fetch('/api/admin/api-usage/endpoints', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/api-usage/metrics', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/admin/api-usage/developers', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
+      const [endpointsData, usageData, devsData] = await Promise.all([
+        authClient.get('/api/admin/api-usage/endpoints'),
+        authClient.get('/api/admin/api-usage/metrics'),
+        authClient.get('/api/admin/api-usage/developers'),
       ]);
 
-      if (endpointsRes.ok) {
-        const data = await endpointsRes.json();
-        setEndpoints(data.endpoints || []);
-      }
-
-      if (usageRes.ok) {
-        const data = await usageRes.json();
-        setUsage(data.metrics || []);
-      }
-
-      if (devsRes.ok) {
-        const data = await devsRes.json();
-        setDevelopers(data.developers || []);
-      }
+      setEndpoints(endpointsData.endpoints || []);
+      setUsage(usageData.metrics || []);
+      setDevelopers(devsData.developers || []);
     } catch (error) {
       console.error('Failed to fetch API usage data:', error);
     } finally {

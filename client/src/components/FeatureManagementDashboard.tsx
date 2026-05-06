@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Settings, TrendingUp, Users, Calendar } from 'lucide-react';
+import { Plus, Trash2, Settings, TrendingUp, Users, Clock } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 
 interface Feature {
   key: string;
@@ -47,16 +48,8 @@ export const FeatureManagementDashboard: React.FC = () => {
   useEffect(() => {
     const loadFeatures = async () => {
       try {
-        const response = await fetch('/api/features/user/accessible', {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          },
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setFeatures(data.features || []);
-        }
+        const data = await authClient.get('/api/features/user/accessible');
+        setFeatures(data.features || []);
       } catch (error) {
         console.error('Failed to load features:', error);
       } finally {
@@ -70,19 +63,11 @@ export const FeatureManagementDashboard: React.FC = () => {
   // Load feature analytics
   const loadFeatureAnalytics = async (featureKey: string) => {
     try {
-      const response = await fetch(`/api/features/analytics/${featureKey}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setAnalytics((prev) => ({
-          ...prev,
-          [featureKey]: data.analytics,
-        }));
-      }
+      const data = await authClient.get(`/api/features/analytics/${featureKey}`);
+      setAnalytics((prev) => ({
+        ...prev,
+        [featureKey]: data.analytics,
+      }));
     } catch (error) {
       console.error('Failed to load analytics:', error);
     }
@@ -91,24 +76,13 @@ export const FeatureManagementDashboard: React.FC = () => {
   // Set feature rollout percentage
   const handleSetRollout = async (featureKey: string, percentage: number) => {
     try {
-      const response = await fetch('/api/features/rollout', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify({
-          featureKey,
-          percentage,
-        }),
+      await authClient.post('/api/features/rollout', {
+        featureKey,
+        percentage,
       });
 
-      if (response.ok) {
-        setRolloutPercentage(percentage);
-        alert(`Rollout set to ${percentage}%`);
-      } else {
-        alert('Failed to set rollout percentage');
-      }
+      setRolloutPercentage(percentage);
+      alert(`Rollout set to ${percentage}%`);
     } catch (error) {
       console.error('Failed to set rollout:', error);
       alert('Error setting rollout');
@@ -123,26 +97,15 @@ export const FeatureManagementDashboard: React.FC = () => {
     }
 
     try {
-      const response = await fetch('/api/features/beta/grant', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify({
-          userId: betaUserId,
-          featureKey: selectedFeature,
-          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
-        }),
+      await authClient.post('/api/features/beta/grant', {
+        userId: betaUserId,
+        featureKey: selectedFeature,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
       });
 
-      if (response.ok) {
-        alert('Beta access granted');
-        setBetaUserId('');
-        setShowBetaForm(false);
-      } else {
-        alert('Failed to grant beta access');
-      }
+      alert('Beta access granted');
+      setBetaUserId('');
+      setShowBetaForm(false);
     } catch (error) {
       console.error('Failed to grant beta:', error);
       alert('Error granting beta access');
@@ -154,24 +117,10 @@ export const FeatureManagementDashboard: React.FC = () => {
     if (!window.confirm('Revoke beta access?')) return;
 
     try {
-      const response = await fetch('/api/features/beta/revoke', {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify({
-          userId,
-          featureKey,
-        }),
-      });
+      await authClient.delete(`/api/features/beta/revoke/${userId}/${featureKey}`);
 
-      if (response.ok) {
-        alert('Beta access revoked');
-        setBetaUsers((prev) => prev.filter((b) => !(b.userId === userId && b.featureKey === featureKey)));
-      } else {
-        alert('Failed to revoke beta access');
-      }
+      alert('Beta access revoked');
+      setBetaUsers((prev) => prev.filter((b) => !(b.userId === userId && b.featureKey === featureKey)));
     } catch (error) {
       console.error('Failed to revoke beta:', error);
       alert('Error revoking beta access');
@@ -367,7 +316,7 @@ export const FeatureManagementDashboard: React.FC = () => {
                                 <div className="font-medium text-sm">{beta.userId}</div>
                                 {beta.expiresAt && (
                                   <div className="text-xs text-gray-600 flex items-center mt-1">
-                                    <Calendar size={12} className="mr-1" />
+                                    <Clock size={12} className="mr-1" />
                                     Expires: {new Date(beta.expiresAt).toLocaleDateString()}
                                   </div>
                                 )}

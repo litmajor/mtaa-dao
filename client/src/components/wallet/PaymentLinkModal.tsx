@@ -30,7 +30,7 @@ export default function PaymentLinkModal({ isOpen, onClose, userAddress }: Payme
 
     setIsLoading(true);
     try {
-      const response = await fetch('/api/wallet/payment-link', {
+      const response = await fetch('/api/v1/wallets/payments/link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

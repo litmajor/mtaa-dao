@@ -27,6 +27,7 @@ import { ContributionAnalyticsTab } from '@/components/analytics/ContributionAna
 import { RealtimeMetricsProvider } from '@/components/analytics/RealtimeMetricsProvider';
 import { DashboardLayout } from '@/components/layouts';
 import { Logger } from '@/utils/logger';
+import { authClient } from '@/utils/authClient';
 
 const logger = new Logger('AnalyticsDashboard');
 
@@ -71,18 +72,9 @@ const AnalyticsDashboardContent: React.FC<{
   const { data: fetchedDaoInfo, isLoading: daoLoading } = useQuery({
     queryKey: ['dao', daoId],
     queryFn: async () => {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(
-        `${process.env.VITE_API_URL}/dao/${daoId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
+      return authClient.get(
+        `${process.env.VITE_API_URL}/dao/${daoId}`
       );
-      if (!response.ok) throw new Error('Failed to fetch DAO info');
-      return response.json();
     },
     enabled: !!daoId && !daoInfo,
     staleTime: 5 * 60 * 1000,
@@ -92,18 +84,9 @@ const AnalyticsDashboardContent: React.FC<{
   const { data: fetchedVaultInfo, isLoading: vaultLoading } = useQuery({
     queryKey: ['vault', vaultId],
     queryFn: async () => {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(
-        `${process.env.VITE_API_URL}/vault/${vaultId}/info`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
+      return authClient.get(
+        `${process.env.VITE_API_URL}/vault/${vaultId}/info`
       );
-      if (!response.ok) throw new Error('Failed to fetch vault info');
-      return response.json();
     },
     enabled: !!vaultId && !vaultInfo,
     staleTime: 5 * 60 * 1000,

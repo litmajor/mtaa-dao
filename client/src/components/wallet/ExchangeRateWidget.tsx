@@ -49,11 +49,11 @@ export default function ExchangeRateWidget({ onConvert }: ExchangeRateWidgetProp
   const { data: rates = {}, isLoading, error, refetch } = useQuery<Record<string, ExchangeRate>>({
     queryKey: ['exchange-rates'],
     queryFn: async () => {
-      const response = await fetch('/api/wallet/exchange-rates');
+      const response = await fetch('/api/v1/wallets/balance/exchange-rates');
       if (!response.ok) throw new Error('Failed to fetch rates');
       const data = await response.json();
       setLastRefresh(new Date());
-      return data.rates || {};
+      return data.data?.rates || {};
     },
     staleTime: 30000, // 30s cache
     retry: 3,

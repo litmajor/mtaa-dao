@@ -7,6 +7,8 @@
  * - Multisig approval workflows
  */
 
+import authClient from '@/services/authClient';
+
 export interface TreasuryWhitelistEntry {
   id: string;
   walletAddress: string;
@@ -48,14 +50,14 @@ export interface PendingApproval {
 }
 
 class TreasuryAPI {
-  private baseUrl = '/api/treasury-management';
-  private multisigUrl = '/api/multisig';
+  private baseUrl = '/api/v1/daos';
+  private multisigUrl = '/api/v1/daos';
 
   private getHeaders() {
-    const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+    const authHeaders = authClient.getAuthHeaders();
     return {
       'Content-Type': 'application/json',
-      ...(token && { 'Authorization': `Bearer ${token}` }),
+      ...authHeaders,
     };
   }
 
@@ -70,7 +72,7 @@ class TreasuryAPI {
     category: 'charity' | 'payments' | 'team' | 'disbursements' | 'other',
     description?: string
   ): Promise<TreasuryWhitelistEntry> {
-    const response = await fetch(`${this.baseUrl}/${daoId}/whitelist/request`, {
+    const response = await fetch(`${this.baseUrl}/${daoId}/treasury/management/whitelist/request`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({
@@ -95,7 +97,7 @@ class TreasuryAPI {
    * Fetch all whitelist entries for a DAO
    */
   async getWhitelistEntries(daoId: string): Promise<TreasuryWhitelistEntry[]> {
-    const response = await fetch(`${this.baseUrl}/${daoId}/whitelist`, {
+    const response = await fetch(`${this.baseUrl}/${daoId}/treasury/management/whitelist`, {
       method: 'GET',
       headers: this.getHeaders(),
     });
@@ -115,7 +117,7 @@ class TreasuryAPI {
    * Requires: admin role
    */
   async approveWhitelistEntry(daoId: string, entryId: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/${daoId}/whitelist/${entryId}/approve`, {
+    const response = await fetch(`${this.baseUrl}/${daoId}/treasury/management/whitelist/${entryId}/approve`, {
       method: 'POST',
       headers: this.getHeaders(),
     });
@@ -131,7 +133,7 @@ class TreasuryAPI {
    * Fetch current treasury limits for a DAO
    */
   async getTreasuryLimits(daoId: string): Promise<TreasuryLimits> {
-    const response = await fetch(`${this.baseUrl}/${daoId}/limits`, {
+    const response = await fetch(`${this.baseUrl}/${daoId}/treasury/management/limits`, {
       method: 'GET',
       headers: this.getHeaders(),
     });
@@ -161,7 +163,7 @@ class TreasuryAPI {
     daoId: string,
     limits: Partial<Omit<TreasuryLimits, 'daoId' | 'lastUpdated'>>
   ): Promise<TreasuryLimits> {
-    const response = await fetch(`${this.baseUrl}/${daoId}/limits`, {
+    const response = await fetch(`${this.baseUrl}/${daoId}/treasury/management/limits`, {
       method: 'PUT',
       headers: this.getHeaders(),
       body: JSON.stringify(limits),
@@ -188,7 +190,7 @@ class TreasuryAPI {
    * Fetch all pending multisig approvals for a DAO
    */
   async getPendingApprovals(daoId: string): Promise<PendingApproval[]> {
-    const response = await fetch(`${this.multisigUrl}/${daoId}/pending`, {
+    const response = await fetch(`${this.multisigUrl}/${daoId}/treasury/multisig/pending`, {
       method: 'GET',
       headers: this.getHeaders(),
     });
@@ -212,7 +214,7 @@ class TreasuryAPI {
     signature: string
   ): Promise<void> {
     const response = await fetch(
-      `${this.multisigUrl}/${daoId}/approval/${approvalId}/sign`,
+      `${this.multisigUrl}/${daoId}/treasury/multisig/approvals/${approvalId}/sign`,
       {
         method: 'POST',
         headers: this.getHeaders(),
@@ -236,7 +238,7 @@ class TreasuryAPI {
     reason: string
   ): Promise<void> {
     const response = await fetch(
-      `${this.multisigUrl}/${daoId}/approval/${approvalId}/reject`,
+      `${this.multisigUrl}/${daoId}/treasury/multisig/approvals/${approvalId}/reject`,
       {
         method: 'POST',
         headers: this.getHeaders(),

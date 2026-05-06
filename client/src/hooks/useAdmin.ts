@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { authClient } from '@/utils/authClient';
 import {
   AnalyticsMetrics,
   SystemHealth,
@@ -23,7 +24,7 @@ export function useAdminAnalytics() {
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE}/analytics`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        headers: { ...(await authClient.getAuthHeaders()) },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
@@ -48,7 +49,7 @@ export function useAdminHealth() {
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE}/analytics`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        headers: { ...(await authClient.getAuthHeaders()) },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
@@ -73,7 +74,7 @@ export function useAdminSettings() {
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE}/settings`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        headers: { ...(await authClient.getAuthHeaders()) },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
@@ -94,7 +95,7 @@ export function useAdminSettings() {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
+            ...(await authClient.getAuthHeaders()),
           },
           body: JSON.stringify(updates),
         });
@@ -133,7 +134,7 @@ export function useAdminUsers() {
         ...(params.sortOrder && { sortOrder: params.sortOrder }),
       });
       const response = await fetch(`${API_BASE}/users/list?${query}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        headers: { ...(await authClient.getAuthHeaders()) },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
@@ -153,7 +154,7 @@ export function useAdminUsers() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
+          ...(await authClient.getAuthHeaders()),
         },
         body: JSON.stringify({ reason }),
       });
@@ -171,7 +172,7 @@ export function useAdminUsers() {
     try {
       const response = await fetch(`${API_BASE}/users/${userId}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        headers: { ...(await authClient.getAuthHeaders()) },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       await fetchUsers({ page: pagination.page, limit: pagination.limit });
@@ -200,7 +201,7 @@ export function useAdminBetaAccess() {
         limit: (params.limit || 20).toString(),
       });
       const response = await fetch(`${API_BASE}/beta-access?${query}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        headers: { ...(await authClient.getAuthHeaders()) },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
@@ -221,7 +222,7 @@ export function useAdminBetaAccess() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
+            ...(await authClient.getAuthHeaders()),
           },
           body: JSON.stringify({ userIds, features }),
         });
@@ -244,7 +245,7 @@ export function useAdminBetaAccess() {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
+            ...(await authClient.getAuthHeaders()),
           },
           body: JSON.stringify({ userIds, features }),
         });
@@ -277,7 +278,7 @@ export function useAdminDAOs() {
         limit: (params.limit || 20).toString(),
       });
       const response = await fetch(`${API_BASE}/daos/list?${query}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        headers: { ...(await authClient.getAuthHeaders()) },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
@@ -298,7 +299,7 @@ export function useAdminDAOs() {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
+            ...(await authClient.getAuthHeaders()),
           },
           body: JSON.stringify({ status }),
         });
@@ -331,7 +332,7 @@ export function useAdminAuditLogs() {
         limit: (params.limit || 50).toString(),
       });
       const response = await fetch(`${API_BASE}/activity-logs?${query}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        headers: { ...(await authClient.getAuthHeaders()) },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();

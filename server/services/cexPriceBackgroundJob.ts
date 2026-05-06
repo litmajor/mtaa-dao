@@ -42,7 +42,7 @@ export interface JobStats {
 export class CEXPriceBackgroundJob {
   private collector: CEXPriceCollector;
   private config: Required<JobConfig>;
-  private jobTimer: NodeJS.Timer | null = null;
+  private jobTimer: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
   private startTime: number | null = null;
   private nextScheduledRun: number | null = null;
@@ -62,7 +62,7 @@ export class CEXPriceBackgroundJob {
     this.collector = new CEXPriceCollector(db);
     this.config = {
       collectionIntervalSeconds: config.collectionIntervalSeconds || 30,
-      tradingPairs: config.tradingPairs,
+      tradingPairs: (config.tradingPairs || []) as string[],
       maxConcurrentExchanges: config.maxConcurrentExchanges || 3,
       onError: config.onError || (() => {}),
     };
@@ -139,7 +139,7 @@ export class CEXPriceBackgroundJob {
           () => this.runCollection(),
           {
             skipIfRunning: true,
-            timeout: (this.config.collectionIntervalSeconds - 5) * 1000, // Leave 5s buffer
+            timeout: (this.config.collectionIntervalSeconds - 1) * 1000, // Leave 1s buffer (collections take 20-26s, need 29s max)
           }
         );
         
@@ -227,6 +227,7 @@ export class CEXPriceBackgroundJob {
    */
   private async performCollection(): Promise<void> {
     console.log(`[CEXPriceBackgroundJob] Starting collection cycle...`);
+    console.log(`[CEXPriceBackgroundJob] Trading pairs config: ${JSON.stringify(this.config.tradingPairs)}`);
 
     const results = await this.collector.fetchAllExchanges(this.config.tradingPairs);
 

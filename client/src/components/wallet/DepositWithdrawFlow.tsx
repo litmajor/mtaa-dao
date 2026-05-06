@@ -145,7 +145,7 @@ export function DepositWithdrawFlow() {
     const fetchVaults = async () => {
       setLoadingVaults(true);
       try {
-        const res = await fetch('/api/wallets', {
+        const res = await fetch('/api/v1/wallets', {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
         });

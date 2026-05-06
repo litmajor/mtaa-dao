@@ -17,7 +17,9 @@ import {
   boolean,
   uuid,
   json,
-  numeric // Import numeric type
+  numeric, // Import numeric type
+  date,
+  unique
 } from "drizzle-orm/pg-core";
 import { sql } from 'drizzle-orm';
 import { createInsertSchema } from "drizzle-zod";
@@ -334,6 +336,9 @@ export const daos = pgTable("daos", {
   creatorId: varchar("creator_id").references(() => users.id).notNull(),
   isPublic: boolean("is_public").default(true), // legacy, keep for now
   memberCount: integer("member_count").default(1),
+  // ⚠️ DEPRECATED: treasuryBalance is now computed from treasuryPositions + stableInflowEvents
+  // DO NOT UPDATE THIS DIRECTLY - it will drift from actual on-chain state
+  // Query: SELECT SUM(tp.balance) FROM treasuryPositions tp WHERE tp.daoId = $1
   treasuryBalance: decimal("treasury_balance", { precision: 10, scale: 2 }).default("0"),
   plan: varchar("plan").default("free"), // free, premium, short_term, collective
   daoType: varchar("dao_type").default("free"), // free, short_term, collective, governance, investment_club, meta
@@ -457,6 +462,24 @@ export const sessions = pgTable("sessions", {
 
 export const createSessionSchema = createInsertSchema(sessions);
 export const sessionSchema = createSessionSchema;
+
+// Refresh Tokens table - for token revocation and rotation tracking
+export const refreshTokens = pgTable("refresh_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  tokenHash: varchar("token_hash").notNull(), // Hash of the actual refresh token (bcrypt)
+  expiresAt: timestamp("expires_at").notNull(),
+  revoked: boolean("revoked").default(false), // Mark as revoked for logout/force-logout
+  revokedAt: timestamp("revoked_at"), // When token was revoked
+  rotatedAt: timestamp("rotated_at"), // When token was rotated to new one (for tracking refresh chain)
+  ipAddress: varchar("ip_address"), // IP address that requested the token
+  userAgent: varchar("user_agent"), // User agent that requested token
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const createRefreshTokenSchema = createInsertSchema(refreshTokens);
+
 // Billing History table for DAOs
 export const billingHistory = pgTable("billing_history", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -644,6 +667,9 @@ export const vaults = pgTable("vaults", {
   description: text("description"),
   currency: varchar("currency").notNull(), // primary currency, kept for backward compatibility
   address: varchar("address"), // wallet address for this vault
+  // ⚠️ DEPRECATED: balance is now computed from vaultTokenHoldings (chain-indexed, source of truth)
+  // DO NOT UPDATE THIS DIRECTLY - it will drift from actual on-chain state
+  // Query: SELECT SUM(vth.balance) FROM vaultTokenHoldings vth WHERE vth.vaultId = $1
   balance: decimal("balance", { precision: 18, scale: 8 }).default("0"), // higher precision for crypto
   monthlyGoal: decimal("monthly_goal", { precision: 18, scale: 8 }).default("0"),
   vaultType: varchar("vault_type").default("regular"), // regular, savings, locked_savings, yield, dao_treasury
@@ -662,6 +688,12 @@ export const vaults = pgTable("vaults", {
   yieldStrategy: varchar("yield_strategy"), // references YIELD_STRATEGIES
   performanceFee: decimal("performance_fee", { precision: 5, scale: 4 }).default("0.1"), // 10% default
   managementFee: decimal("management_fee", { precision: 5, scale: 4 }).default("0.02"), // 2% annual default
+
+  // Phase 4B: Vault ownership and treasury linking
+  ownerType: varchar("owner_type"), // 'user' | 'dao' - replaces userId/daoId nullable logic
+  ownerId: uuid("owner_id"), // userId or daoId depending on ownerType
+  treasuryId: uuid("treasury_id").references(() => daos.id), // link to DAO treasury (optional, only for DAO vaults)
+  vaultConfig: jsonb("vault_config"), // JSONB config for type-specific settings (lockDuration, strategy params, etc)
 
   updatedAt: timestamp("updated_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
@@ -806,10 +838,87 @@ export const walletTransactions = pgTable("wallet_transactions", {
   transactionHash: varchar("transaction_hash"),
   description: text("description"),
   disbursementId: varchar("disbursement_id"),
+  stableInflowEventId: uuid("stable_inflow_event_id"),
+  stableUnitsMicroUsd: numeric("stable_units_microusd", { precision: 38, scale: 0 }),
+  chainId: integer("chain_id"),
+  tokenAddress: varchar("token_address", { length: 255 }),
   metadata: jsonb("metadata"), // Added for transaction monitor compatibility
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+/**
+ * Stable Asset Registry
+ * Canonical stablecoin metadata by chain + token.
+ */
+export const stableAssetRegistry = pgTable("stable_asset_registry", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  chain: varchar("chain", { length: 50 }).notNull(),
+  chainId: integer("chain_id").notNull(),
+  tokenAddress: varchar("token_address", { length: 255 }).notNull(),
+  symbol: varchar("symbol", { length: 20 }).notNull(),
+  decimals: integer("decimals").notNull().default(6),
+  riskScore: integer("risk_score").notNull().default(20),
+  liquidityScore: integer("liquidity_score").notNull().default(70),
+  depegThresholdBps: integer("depeg_threshold_bps").notNull().default(100),
+  minConfirmations: integer("min_confirmations").notNull().default(3),
+  maxConfirmationDelaySec: integer("max_confirmation_delay_sec").notNull().default(900),
+  pegTargetUsd: decimal("peg_target_usd", { precision: 18, scale: 8 }).notNull().default("1.00000000"),
+  isActive: boolean("is_active").default(true),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  chainTokenIdx: index("stable_asset_registry_chain_token_idx").on(table.chainId, table.tokenAddress),
+  symbolIdx: index("stable_asset_registry_symbol_idx").on(table.symbol),
+  activeIdx: index("stable_asset_registry_active_idx").on(table.isActive),
+}));
+
+/**
+ * Stable Inflow Events (append-only ledger)
+ * Canonical normalized intake records for stablecoin deposits.
+ */
+export const stableInflowEvents = pgTable("stable_inflow_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  source: varchar("source", { length: 50 }).notNull().default("webhook"),
+  chain: varchar("chain", { length: 50 }).notNull(),
+  chainId: integer("chain_id").notNull(),
+  txHash: varchar("tx_hash", { length: 255 }).notNull(),
+  logIndex: integer("log_index").notNull().default(0),
+  tokenAddress: varchar("token_address", { length: 255 }).notNull(),
+  tokenSymbol: varchar("token_symbol", { length: 20 }).notNull(),
+  tokenDecimals: integer("token_decimals").notNull(),
+  toAddress: varchar("to_address", { length: 255 }).notNull(),
+  fromAddress: varchar("from_address", { length: 255 }),
+  rawAmount: numeric("raw_amount", { precision: 78, scale: 0 }).notNull(),
+  normalizedTokenAmount: decimal("normalized_token_amount", { precision: 38, scale: 18 }).notNull(),
+  normalizedAmountUsd: decimal("normalized_amount_usd", { precision: 24, scale: 8 }).notNull(),
+  stableUnitsMicroUsd: numeric("stable_units_microusd", { precision: 38, scale: 0 }).notNull(),
+  confirmations: integer("confirmations").default(0),
+  minConfirmations: integer("min_confirmations").default(0),
+  confirmationState: varchar("confirmation_state", { length: 30 }).notNull().default("pending"),
+  delayState: varchar("delay_state", { length: 30 }).notNull().default("unknown"),
+  observedConfirmationDelaySec: integer("observed_confirmation_delay_sec"),
+  pegTargetUsd: decimal("peg_target_usd", { precision: 18, scale: 8 }).default("1.00000000"),
+  observedPriceUsd: decimal("observed_price_usd", { precision: 24, scale: 8 }),
+  pegDeviationBps: integer("peg_deviation_bps").default(0),
+  riskFlags: jsonb("risk_flags").default({}),
+  status: varchar("status", { length: 30 }).notNull().default("received"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  idempotencyIdx: index("stable_inflow_events_idempotency_idx").on(
+    table.chainId,
+    table.txHash,
+    table.logIndex,
+    table.tokenAddress,
+    table.toAddress
+  ),
+  statusIdx: index("stable_inflow_events_status_idx").on(table.status),
+  symbolIdx: index("stable_inflow_events_symbol_idx").on(table.tokenSymbol),
+  createdAtIdx: index("stable_inflow_events_created_at_idx").on(table.createdAt),
+}));
 
 // ════════════════════════════════════════════════════════════════════════════════
 // DAO MULTI-SIG & CONTRIBUTION CONFIGURATION TABLES
@@ -1484,6 +1593,7 @@ export const proposalLikes = pgTable("proposal_likes", {
 export const treasuryMultisigTransactions = pgTable("treasury_multisig_transactions", {
   id: uuid("id").primaryKey().defaultRandom(),
   daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  multisigWalletId: uuid("multisig_wallet_id").references(() => multisigWallets.id).notNull(),
   proposedBy: varchar("proposed_by").references(() => users.id).notNull(),
   transactionType: varchar("transaction_type").notNull(), // withdrawal, disbursement, budget_allocation
   amount: decimal("amount", { precision: 18, scale: 2 }).notNull(),
@@ -1491,15 +1601,25 @@ export const treasuryMultisigTransactions = pgTable("treasury_multisig_transacti
   recipient: varchar("recipient"), // wallet address or user ID
   purpose: text("purpose").notNull(),
 
-  // Multi-sig tracking
+  // ✅ On-chain execution tracking (for Gnosis Safe / trustless multisig)
+  // contractFunction: the method to call on the deployed multisig contract
+  contractFunction: varchar("contract_function"), // 'execTransaction', 'transfer', 'batchTransfer', etc.
+  // params: the encoded parameters for the on-chain function call
+  params: jsonb("params"), // {to, value, data, operation} for Gnosis Safe format
+
+  // Multi-sig tracking (DB-managed workflow)
   requiredSignatures: integer("required_signatures").notNull(),
   currentSignatures: integer("current_signatures").default(0),
   signers: jsonb("signers").default([]), // array of {userId, signedAt, signature}
 
   // Status
-  status: varchar("status").default("pending"), // pending, approved, rejected, executed, expired
+  status: varchar("status").default("pending"), // pending, signed, submitted, executed, rejected, expired
   approvedAt: timestamp("approved_at"),
-  executedAt: timestamp("executed_at"),
+  // ✅ Execution on chain (NOT just DB update)
+  submittedAt: timestamp("submitted_at"), // When we submitted the aggregated signatures to the multisig contract
+  submittedTxHash: varchar("submitted_tx_hash"), // ✅ The actual on-chain transaction hash (proof of execution)
+  executedAt: timestamp("executed_at"), // When the tx was mined / confirmed
+  // DEPRECATED: executionTxHash → use submittedTxHash instead
   executionTxHash: varchar("execution_tx_hash"),
   expiresAt: timestamp("expires_at").notNull(), // 7 days expiry
 
@@ -1508,6 +1628,57 @@ export const treasuryMultisigTransactions = pgTable("treasury_multisig_transacti
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// ════════════════════════════════════════════════════════════════════════════════
+// WITHDRAWAL APPROVAL & MULTISIG TABLES (Phase 4B)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// Withdrawal Approvals - Tracks pending multisig approval requests for vault withdrawals
+export const withdrawalApprovals = pgTable("withdrawal_approvals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  userId: uuid("user_id").references(() => users.id).notNull(), // Requester
+  amount: decimal("amount", { precision: 25, scale: 8 }).notNull(),
+  destination: varchar("destination").notNull(), // Address or recipient
+  status: varchar("status").default("pending").notNull(), // pending|approved|rejected|executed|expired
+  requiredSignatures: integer("required_signatures").notNull(),
+  currentSignatures: integer("current_signatures").default(0).notNull(),
+  signers: jsonb("signers").default([]).notNull(), // Array of signer info
+  expiresAt: timestamp("expires_at").notNull(),
+  executedAt: timestamp("executed_at"),
+  executedBy: uuid("executed_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Multisig Signatures - Tracks individual signer approvals
+export const multisigSignatures = pgTable("multisig_signatures", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  approvalId: uuid("approval_id").references(() => withdrawalApprovals.id).notNull(),
+  signerId: uuid("signer_id").references(() => users.id).notNull(),
+  signerRole: varchar("signer_role").notNull(), // member|elder|admin
+  signature: text("signature").notNull(), // Cryptographic signature or approval token
+  signedAt: timestamp("signed_at").defaultNow().notNull(),
+  ipAddress: varchar("ip_address"), // IPv4 or IPv6
+  isValid: boolean("is_valid").default(true).notNull(),
+  verificationError: text("verification_error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Vault Withdrawal Tracking - Tracks daily withdrawal totals per vault
+export const vaultWithdrawalTracking = pgTable("vault_withdrawal_tracking", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
+  date: date("date").notNull(),
+  dailyTotalWithdrawn: decimal("daily_total_withdrawn", { precision: 25, scale: 8 }).default("0").notNull(),
+  withdrawalCount: integer("withdrawal_count").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  uniqueVaultDate: unique().on(table.vaultId, table.date),
+}));
 
 // Treasury Budget Allocations
 export const treasuryBudgetAllocations = pgTable("treasury_budget_allocations", {
@@ -1551,6 +1722,33 @@ export type TreasuryBudgetAllocation = typeof treasuryBudgetAllocations.$inferSe
 export type InsertTreasuryBudgetAllocation = typeof treasuryBudgetAllocations.$inferInsert;
 export type TreasuryAuditLog = typeof treasuryAuditLog.$inferSelect;
 export type InsertTreasuryAuditLog = typeof treasuryAuditLog.$inferInsert;
+
+// Treasury Reconciliation Audits - for on-chain validation and drift detection
+export const treasuryReconciliationAudits = pgTable("treasury_reconciliation_audits", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  reconciliationType: varchar("reconciliation_type").notNull(), // 'dao_treasury' | 'vault_balance' | 'multisig_transactions'
+  entityId: uuid("entity_id").notNull(), // daoId or vaultId being reconciled
+  computedValue: decimal("computed_value", { precision: 20, scale: 8 }).notNull(), // value from our computation
+  onChainValue: decimal("on_chain_value", { precision: 20, scale: 8 }).notNull(), // value from blockchain
+  discrepancy: decimal("discrepancy", { precision: 20, scale: 8 }).notNull(), // absolute difference
+  discrepancyPercent: decimal("discrepancy_percent", { precision: 5, scale: 4 }).notNull(), // percentage difference (0.0500 = 5%)
+  reconciliationStatus: varchar("reconciliation_status").default("matched").notNull(), // 'matched' | 'warning' | 'critical'
+  lastOnChainCheck: timestamp("last_on_chain_check").notNull(), // when we last checked on-chain
+  notes: text("notes"), // any additional notes about the discrepancy
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type TreasuryReconciliationAudit = typeof treasuryReconciliationAudits.$inferSelect;
+export type InsertTreasuryReconciliationAudit = typeof treasuryReconciliationAudits.$inferInsert;
+
+// Withdrawal Approval Types
+export type WithdrawalApproval = typeof withdrawalApprovals.$inferSelect;
+export type InsertWithdrawalApproval = typeof withdrawalApprovals.$inferInsert;
+export type MultisigSignature = typeof multisigSignatures.$inferSelect;
+export type InsertMultisigSignature = typeof multisigSignatures.$inferInsert;
+export type VaultWithdrawalTracking = typeof vaultWithdrawalTracking.$inferSelect;
+export type InsertVaultWithdrawalTracking = typeof vaultWithdrawalTracking.$inferInsert;
 
 // Comment Likes table
 export const commentLikes = pgTable("comment_likes", {
@@ -2050,11 +2248,16 @@ export const multisigWallets = pgTable("multisig_wallets", {
   id: uuid("id").primaryKey().defaultRandom(),
   walletId: uuid("wallet_id").references(() => wallets.id, { onDelete: 'cascade' }).notNull().unique(),
   daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }).notNull(),
-  contractAddress: varchar("contract_address").notNull().unique(), // Smart contract address
+  // ✅ Must be a deployed Gnosis Safe or compatible multisig contract on-chain
+  contractAddress: varchar("contract_address").notNull().unique(), // Smart contract address (on-chain)
+  chain: varchar("chain").notNull(), // ethereum, polygon, arbitrum, optimism, etc.
   chainId: integer("chain_id").notNull(), // Which blockchain (1 for Ethereum, etc.)
   requiredSignatures: integer("required_signatures").notNull(), // M in M-of-N
   totalSigners: integer("total_signers").notNull(), // N in M-of-N
   walletStandard: varchar("wallet_standard").default("gnosis"), // gnosis, safe, multisig, custom
+  // ✅ Deployment tracking for on-chain verification
+  deployedAt: timestamp("deployed_at"), // When the multisig contract was deployed
+  deploymentTxHash: varchar("deployment_tx_hash"), // Deployment transaction hash on-chain (for verification)
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -3898,6 +4101,182 @@ export const supportTicketMetrics = pgTable('support_ticket_metrics', {
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });
+
+// ════════════════════════════════════════════════════════════════════════════════
+// YUKI Orders - Execution Metrics & Machine Learning System
+// ════════════════════════════════════════════════════════════════════════════════
+
+// Execution Metrics - Track execution performance for learning & optimization
+export const executionMetrics = pgTable('execution_metrics', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orderId: varchar('order_id', { length: 255 }).notNull(),
+  exchange: varchar('exchange', { length: 50 }).notNull(),
+  symbol: varchar('symbol', { length: 20 }).notNull(),
+  
+  // Price metrics
+  expectedPrice: numeric('expected_price', { precision: 20, scale: 8 }).notNull(),
+  actualPrice: numeric('actual_price', { precision: 20, scale: 8 }).notNull(),
+  slippagePercent: numeric('slippage_percent', { precision: 10, scale: 6 }).notNull().default('0'),
+  
+  // Execution metrics
+  filled: numeric('filled', { precision: 20, scale: 8 }),
+  fillTimeMs: integer('fill_time_ms'),
+  success: boolean('success').notNull().default(true),
+  accuracy: numeric('accuracy', { precision: 5, scale: 2 }).notNull().default('100'),
+  
+  // Strategy metadata
+  strategy: varchar('strategy', { length: 50 }).default('unknown'),
+  side: varchar('side', { length: 10 }),
+  amount: numeric('amount', { precision: 20, scale: 8 }),
+  
+  recordedAt: timestamp('recorded_at').defaultNow(),
+  createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+  exchangeSymbolIdx: index('idx_execution_metrics_exchange_symbol').on(table.exchange, table.symbol, table.recordedAt),
+  recordedAtIdx: index('idx_execution_metrics_recorded_at').on(table.recordedAt),
+  orderIdIdx: index('idx_execution_metrics_order_id').on(table.orderId),
+  successIdx: index('idx_execution_metrics_success').on(table.success, table.recordedAt),
+}));
+
+export type ExecutionMetric = typeof executionMetrics.$inferSelect;
+export type InsertExecutionMetric = typeof executionMetrics.$inferInsert;
+
+// Execution Statistics - Aggregated performance by venue and symbol
+export const executionStatistics = pgTable('execution_statistics', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  exchange: varchar('exchange', { length: 50 }).notNull(),
+  symbol: varchar('symbol', { length: 20 }).notNull(),
+  
+  // Aggregated metrics (30-day rolling)
+  totalExecutions: integer('total_executions').notNull().default(0),
+  successfulExecutions: integer('successful_executions').notNull().default(0),
+  successRate: numeric('success_rate', { precision: 5, scale: 2 }).notNull().default('0'),
+  
+  averageSlippage: numeric('average_slippage', { precision: 10, scale: 6 }).notNull().default('0'),
+  minSlippage: numeric('min_slippage', { precision: 10, scale: 6 }),
+  maxSlippage: numeric('max_slippage', { precision: 10, scale: 6 }),
+  
+  averageFillTimeMs: integer('average_fill_time_ms').default(0),
+  averageAccuracy: numeric('average_accuracy', { precision: 5, scale: 2 }).notNull().default('0'),
+  
+  // Performance trend
+  accuracyTrend: numeric('accuracy_trend', { precision: 5, scale: 2 }).default('0'),
+  improvementRate: numeric('improvement_rate', { precision: 5, scale: 2 }).default('0'),
+  
+  lastUpdated: timestamp('last_updated').defaultNow(),
+  windowStart: date('window_start').notNull(),
+  windowEnd: date('window_end').notNull(),
+}, (table) => ({
+  exchangeSymbolIdx: index('idx_execution_statistics_exchange_symbol').on(table.exchange, table.symbol),
+  windowIdx: index('idx_execution_statistics_window').on(table.windowStart, table.windowEnd),
+  uniqueWindow: unique('execution_statistics_unique').on(table.exchange, table.symbol, table.windowStart, table.windowEnd),
+}));
+
+export type ExecutionStatistic = typeof executionStatistics.$inferSelect;
+export type InsertExecutionStatistic = typeof executionStatistics.$inferInsert;
+
+// Execution History - User-specific execution tracking for attribution
+export const executionHistory = pgTable('execution_history', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: varchar('user_id').notNull(),
+  orderId: varchar('order_id', { length: 255 }).notNull(),
+  exchange: varchar('exchange', { length: 50 }).notNull(),
+  symbol: varchar('symbol', { length: 20 }).notNull(),
+  
+  side: varchar('side', { length: 10 }).notNull(),
+  amount: numeric('amount', { precision: 20, scale: 8 }).notNull(),
+  expectedPrice: numeric('expected_price', { precision: 20, scale: 8 }).notNull(),
+  actualPrice: numeric('actual_price', { precision: 20, scale: 8 }),
+  
+  status: varchar('status', { length: 20 }).notNull().default('pending'),
+  filledAmount: numeric('filled_amount', { precision: 20, scale: 8 }).default('0'),
+  slippagePercent: numeric('slippage_percent', { precision: 10, scale: 6 }).default('0'),
+  accuracy: numeric('accuracy', { precision: 5, scale: 2 }).default('100'),
+  
+  strategyUsed: varchar('strategy_used', { length: 50 }),
+  venueRecommendation: varchar('venue_recommendation', { length: 100 }),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+  executedAt: timestamp('executed_at'),
+  completedAt: timestamp('completed_at'),
+}, (table) => ({
+  userIdIdx: index('idx_execution_history_user_id').on(table.userId, table.createdAt),
+  statusIdx: index('idx_execution_history_status').on(table.status, table.createdAt),
+  symbolIdx: index('idx_execution_history_symbol').on(table.symbol, table.createdAt),
+}));
+
+export type ExecutionHistoryRecord = typeof executionHistory.$inferSelect;
+export type InsertExecutionHistoryRecord = typeof executionHistory.$inferInsert;
+
+// Venue Performance - Real-time confidence scoring by venue
+export const venuePerformance = pgTable('venue_performance', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  venueType: varchar('venue_type', { length: 10 }).notNull(), // 'dex' or 'cex'
+  exchange: varchar('exchange', { length: 50 }).notNull(),
+  symbol: varchar('symbol', { length: 20 }),
+  
+  // Confidence metrics
+  successRate: numeric('success_rate', { precision: 5, scale: 2 }).notNull().default('0'),
+  averageAccuracy: numeric('average_accuracy', { precision: 5, scale: 2 }).notNull().default('0'),
+  averageSlippage: numeric('average_slippage', { precision: 10, scale: 6 }).notNull().default('0'),
+  averageFillTimeMs: integer('average_fill_time_ms').default(0),
+  
+  // Recent performance (last 7 days)
+  recentSuccessRate: numeric('recent_success_rate', { precision: 5, scale: 2 }).default('0'),
+  recentAccuracy: numeric('recent_accuracy', { precision: 5, scale: 2 }).default('0'),
+  
+  // Trend indicators
+  uptrend: boolean('uptrend').default(false),
+  downtrend: boolean('downtrend').default(false),
+  volatility: numeric('volatility', { precision: 5, scale: 2 }).default('0'),
+  
+  lastExecutionAt: timestamp('last_execution_at'),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+  typeExchangeIdx: index('idx_venue_performance_type_exchange').on(table.venueType, table.exchange),
+  updatedAtIdx: index('idx_venue_performance_updated_at').on(table.updatedAt),
+  uniqueVenue: unique('venue_performance_unique').on(table.venueType, table.exchange, table.symbol),
+}));
+
+export type VenuePerformanceRecord = typeof venuePerformance.$inferSelect;
+export type InsertVenuePerformanceRecord = typeof venuePerformance.$inferInsert;
+
+// Machine Learning Training Data - Features for ML models
+export const mlTrainingData = pgTable('ml_training_data', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  
+  // Input features
+  symbol: varchar('symbol', { length: 20 }).notNull(),
+  orderSize: numeric('order_size', { precision: 20, scale: 8 }).notNull(),
+  timeOfDay: varchar('time_of_day', { length: 20 }), // morning, midday, afternoon, evening, night
+  marketVolatility: numeric('market_volatility', { precision: 5, scale: 2 }),
+  orderQueueDepth: integer('order_queue_depth'),
+  
+  // Venue information
+  venueType: varchar('venue_type', { length: 10 }),
+  exchange: varchar('exchange', { length: 50 }),
+  liquidityScore: numeric('liquidity_score', { precision: 5, scale: 2 }),
+  
+  // Output / Target variable
+  actualSlippage: numeric('actual_slippage', { precision: 10, scale: 6 }).notNull(),
+  actualFillTimeMs: integer('actual_fill_time_ms').notNull(),
+  executionSuccess: boolean('execution_success').notNull(),
+  
+  // Metadata
+  modelVersion: varchar('model_version', { length: 20 }),
+  predictionAccuracy: numeric('prediction_accuracy', { precision: 5, scale: 2 }),
+  featureImportance: jsonb('feature_importance'),
+  
+  recordedAt: timestamp('recorded_at').defaultNow(),
+  createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+  symbolTimeIdx: index('idx_ml_training_data_symbol_time').on(table.symbol, table.recordedAt),
+  venueIdx: index('idx_ml_training_data_venue').on(table.venueType, table.exchange),
+  successIdx: index('idx_ml_training_data_success').on(table.executionSuccess, table.recordedAt),
+}));
+
+export type MLTrainingDataRecord = typeof mlTrainingData.$inferSelect;
+export type InsertMLTrainingDataRecord = typeof mlTrainingData.$inferInsert;
 
 // Operational Framework Schema Extensions
 export * from '../server/services/operational/schema';

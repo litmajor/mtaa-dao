@@ -29,7 +29,7 @@ export default function WalletBackupManager({ userId }: { userId: string }) {
 
     setIsExporting(true);
     try {
-      const response = await fetch('/api/wallet-setup/export-encrypted-backup', {
+      const response = await fetch('/api/v1/wallets/setup/backup/export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -85,7 +85,7 @@ export default function WalletBackupManager({ userId }: { userId: string }) {
       const fileContent = await backupFile.text();
       const backupData = JSON.parse(fileContent);
 
-      const response = await fetch('/api/wallet-setup/restore-from-backup', {
+      const response = await fetch('/api/v1/wallets/setup/backup/restore', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

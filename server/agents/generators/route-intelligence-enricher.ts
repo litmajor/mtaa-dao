@@ -13,6 +13,25 @@
  *   domain-intelligence.json
  *   priority-queue.csv
  *   mirror-node-graph.json
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * MIGRATION STATUS (March 2026)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * Legacy endpoints migrated to /api/v1/yuki/* structure:
+ * 
+ * Legacy Path                    → V1 Path
+ * ─────────────────────────────────────────────────────────────
+ * /api/dex/*                     → /api/v1/yuki/dex/*
+ *   ✅ /api/dex/symbol-universe/sync → 301 redirect to /v1/symbol-universe/sync
+ * /api/staking/*                 → /api/v1/yuki/staking/*
+ * /api/rebalancing/*             → /api/v1/yuki/rebalancing/*
+ * /api/freqtrade/*               → /api/v1/yuki/algo/*
+ * /api/cross-chain/*             → /api/v1/yuki/bridge/*
+ * /api/orders/*                  → /api/v1/yuki/orders/*
+ * 
+ * All legacy endpoints return 410 Gone with migration mappings.
+ * This analyzer continues to categorize routes properly via DOMAIN_CATEGORY_MAP.
+ * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import fs from 'fs';
@@ -166,7 +185,7 @@ const DOMAIN_CATEGORY_MAP: Record<string, RouteCategory> = {
   'strategies': 'trading.strategy',
   'freqtrade': 'trading.strategy',
   'yuki': 'trading.strategy',
-  'v1': 'trading.market',
+  'v1': 'trading.strategy',  // ✅ v1/strategies routes now mapped to trading.strategy
   'trading': 'trading.market',
   'symbol-universe': 'trading.market',
   // Identity

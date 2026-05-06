@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
+import { authClient } from '@/utils/authClient';
 import {
   Select,
   SelectContent,
@@ -76,7 +77,6 @@ export default function AnnouncementsManagement() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['/api/announcements/admin/list', page, typeFilter, statusFilter],
     queryFn: async () => {
-      const token = localStorage.getItem('accessToken');
       const params = new URLSearchParams({
         page: page.toString(),
         limit: '20',
@@ -84,16 +84,7 @@ export default function AnnouncementsManagement() {
         ...(statusFilter && { status: statusFilter }),
       });
 
-      const res = await fetch(`/api/announcements/admin/list?${params}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-
-      if (!res.ok) throw new Error('Failed to fetch announcements');
-      return res.json();
+      return authClient.get(`/api/announcements/admin/list?${params}`);
     },
     staleTime: 1 * 60 * 1000,
   });
@@ -101,19 +92,7 @@ export default function AnnouncementsManagement() {
   // Create announcement mutation
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch('/api/announcements/admin/create', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-        credentials: 'include',
-      });
-
-      if (!res.ok) throw new Error('Failed to create announcement');
-      return res.json();
+      return authClient.post('/api/announcements/admin/create', data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/announcements/admin/list'] });
@@ -137,19 +116,7 @@ export default function AnnouncementsManagement() {
   // Update announcement mutation
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch(`/api/announcements/admin/${id}`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-        credentials: 'include',
-      });
-
-      if (!res.ok) throw new Error('Failed to update announcement');
-      return res.json();
+      return authClient.put(`/api/announcements/admin/${id}`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/announcements/admin/list'] });
@@ -174,18 +141,7 @@ export default function AnnouncementsManagement() {
   // Delete announcement mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const token = localStorage.getItem('accessToken');
-      const res = await fetch(`/api/announcements/admin/${id}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-
-      if (!res.ok) throw new Error('Failed to delete announcement');
-      return res.json();
+      return authClient.delete(`/api/announcements/admin/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/announcements/admin/list'] });

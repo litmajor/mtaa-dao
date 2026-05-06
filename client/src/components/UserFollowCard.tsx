@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Users, UserPlus, UserCheck } from 'lucide-react';
+import { Users, Plus, CheckCircle } from 'lucide-react';
 import { useAuth } from '../pages/hooks/useAuth';
-
+import {authClient} from '@/utils/authClient';
 // Feature flag: Disable if not enabled
 const FOLLOWS_ENABLED = import.meta.env.VITE_FEATURE_USER_FOLLOWS === 'true';
 
@@ -24,13 +24,10 @@ export function UserFollowCard({ userId, userName }: UserFollowCardProps) {
 
   // Check if current user is following this user
   const { data: isFollowingData } = useQuery({
-    queryKey: ['/api/user-follows', user?.id, userId, 'check'],
+    queryKey: ['/api/user-follows', user?.id || '', userId, 'check'],
     queryFn: async () => {
       if (!user?.id) return false;
-      const response = await fetch(`/api/user-follows/${user.id}/is-following/${userId}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` }
-      });
-      const data = await response.json();
+      const data = await authClient.get(`/api/user-follows/${user.id}/is-following/${userId}`);
       return data.isFollowing;
     },
     enabled: !!user?.id && user?.id !== userId,
@@ -57,15 +54,7 @@ export function UserFollowCard({ userId, userName }: UserFollowCardProps) {
   // Follow mutation
   const followMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch(`/api/user-follows/follow/${userId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
-        },
-      });
-      if (!response.ok) throw new Error('Failed to follow');
-      return response.json();
+      return await authClient.post(`/api/user-follows/follow/${userId}`, {});
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/user-follows', user?.id, userId, 'check'] });
@@ -75,15 +64,7 @@ export function UserFollowCard({ userId, userName }: UserFollowCardProps) {
   // Unfollow mutation
   const unfollowMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch(`/api/user-follows/unfollow/${userId}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
-        },
-      });
-      if (!response.ok) throw new Error('Failed to unfollow');
-      return response.json();
+      return await authClient.delete(`/api/user-follows/unfollow/${userId}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/user-follows', user?.id, userId, 'check'] });
@@ -121,7 +102,7 @@ export function UserFollowCard({ userId, userName }: UserFollowCardProps) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Users className="w-5 h-5" />
-          {userName || 'User'} Network
+          {userName ? userName : 'User'} Network
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -140,9 +121,9 @@ export function UserFollowCard({ userId, userName }: UserFollowCardProps) {
           <Button
             onClick={() => {
               if (isFollowingData) {
-                unfollowMutation.mutate();
+                unfollowMutation.mutate({});
               } else {
-                followMutation.mutate();
+                followMutation.mutate({});
               }
             }}
             disabled={followMutation.isPending || unfollowMutation.isPending}
@@ -152,12 +133,12 @@ export function UserFollowCard({ userId, userName }: UserFollowCardProps) {
           >
             {isFollowingData ? (
               <>
-                <UserCheck className="w-4 h-4 mr-2" />
+                <CheckCircle className="w-4 h-4 mr-2" />
                 Following
               </>
             ) : (
               <>
-                <UserPlus className="w-4 h-4 mr-2" />
+                <Plus className="w-4 h-4 mr-2" />
                 Follow
               </>
             )}

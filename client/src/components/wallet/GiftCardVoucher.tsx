@@ -23,7 +23,7 @@ export default function GiftCardVoucher() {
 
   const handleCreateVoucher = async () => {
     try {
-      const result = await apiPost('/api/wallet/vouchers', formData);
+      const result = await apiPost('/api/v1/wallets/auth/vouchers', formData);
       toast({ title: 'Success', description: 'Gift card created!' });
       setVouchers([...vouchers, result.voucher]);
       setIsOpen(false);

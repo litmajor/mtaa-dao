@@ -12,6 +12,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { authClient } from '@/utils/authClient';
 import {
   Card,
   CardContent,
@@ -131,11 +132,9 @@ const useExchangeStatus = () => {
   return useQuery({
     queryKey: ['exchange-status'],
     queryFn: async () => {
-      const response = await fetch('/api/exchanges/available');
-      if (!response.ok) throw new Error('Failed to fetch exchange status');
-      const data = await response.json();
+      const response = await authClient.get<any>('/api/v1/yuki/exchanges');
       return {
-        available: data.exchanges || [],
+        available: response.data || [],
         health: { exchanges: {} }
       };
     },
@@ -152,9 +151,7 @@ const useExchangeAssets = (exchangeName: string | null) => {
     queryKey: ['exchange-assets', exchangeName],
     queryFn: async () => {
       if (!exchangeName) return [];
-      const response = await fetch(`/api/exchanges/markets?exchange=${exchangeName}`);
-      if (!response.ok) throw new Error(`Failed to fetch assets for ${exchangeName}`);
-      const data = await response.json();
+      const data = await authClient.get<any>(`/api/exchanges/markets?exchange=${exchangeName}`);
       return data.markets || data || [];
     },
     staleTime: 3600000, // 1 hour
@@ -171,9 +168,7 @@ const useFindSymbolAcrossExchanges = (symbol: string | null, exchanges: string[]
     queryKey: ['find-symbol', symbol, exchanges.join(',')],
     queryFn: async () => {
       if (!symbol || exchanges.length === 0) return null;
-      const response = await fetch(`/api/exchanges/find-symbol?symbol=${symbol}&exchanges=${exchanges.join(',')}`);
-      if (!response.ok) throw new Error('Failed to find symbol');
-      return response.json();
+      return authClient.get<any>(`/api/exchanges/find-symbol?symbol=${symbol}&exchanges=${exchanges.join(',')}`);
     },
     staleTime: 30000, // 30 seconds
     retry: 1,
@@ -189,13 +184,7 @@ const usePrices = (symbol: string | null, exchanges: string[]) => {
     queryKey: ['prices', symbol, exchanges.join(',')],
     queryFn: async () => {
       if (!symbol || exchanges.length === 0) return null;
-      const response = await fetch('/api/exchanges/prices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, exchanges })
-      });
-      if (!response.ok) throw new Error('Failed to fetch prices');
-      return response.json();
+      return authClient.post<any>('/api/v1/yuki/orders/route', { symbol, exchanges });
     },
     staleTime: 30000, // 30 seconds
     retry: 1,
@@ -211,13 +200,7 @@ const useBestPrice = (symbol: string | null, exchanges: string[]) => {
     queryKey: ['best-price', symbol, exchanges.join(',')],
     queryFn: async () => {
       if (!symbol || exchanges.length === 0) return null;
-      const response = await fetch('/api/orders/best-venue', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, exchanges })
-      });
-      if (!response.ok) throw new Error('Failed to fetch best price');
-      return response.json();
+      return authClient.post<any>('/api/v1/yuki/orders/best-venue', { symbol, exchanges });
     },
     staleTime: 30000,
     retry: 1,
@@ -247,12 +230,7 @@ const useTopAssets = (limit: number = 500) => {
         
         for (const exchange of exchanges) {
           try {
-            const response = await fetch(`/api/exchanges/markets?exchange=${exchange}`);
-            if (!response.ok) {
-              console.warn(`Failed to fetch from ${exchange}`);
-              continue;
-            }
-            const data = await response.json();
+            const data = await authClient.get<any>(`/api/exchanges/markets?exchange=${exchange}`);
             const markets = Array.isArray(data) ? data : data.markets || [];
             
             if (!Array.isArray(markets) || markets.length === 0) {
@@ -1508,6 +1486,7 @@ const ExchangeMarkets: React.FC = () => {
                             </span>
                           </div>
                           <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
+                            {/* eslint-disable-next-line @next/next/no-style-component-with-dynamic-styles */}
                             <div
                               className="bg-gradient-to-r from-emerald-500 to-blue-500 h-2 rounded-full transition-all"
                               style={{

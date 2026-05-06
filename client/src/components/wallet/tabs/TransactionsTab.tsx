@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowDown, ArrowUp, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 
 interface Transaction {
   id: string;
@@ -28,11 +29,7 @@ export default function TransactionsTab() {
   const { data: deposits = [] } = useQuery<any[]>({
     queryKey: ['deposits'],
     queryFn: async () => {
-      const response = await fetch('/api/deposits/user/history', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      });
-      if (!response.ok) throw new Error('Failed to fetch deposits');
-      const result = await response.json();
+      const result = await authClient.get('/api/v1/wallets/deposits/user/history');
       return result.data;
     },
   });
@@ -41,11 +38,7 @@ export default function TransactionsTab() {
   const { data: withdrawals = [] } = useQuery<any[]>({
     queryKey: ['withdrawals'],
     queryFn: async () => {
-      const response = await fetch('/api/withdrawals/user/history', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      });
-      if (!response.ok) throw new Error('Failed to fetch withdrawals');
-      const result = await response.json();
+      const result = await authClient.get('/api/v1/wallets/withdrawals/user/history');
       return result.data;
     },
   });

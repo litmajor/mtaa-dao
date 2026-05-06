@@ -1,3 +1,4 @@
 {
-    "livePreview.defaultPreviewPath": "/PROGRESS.html"
+    "livePreview.defaultPreviewPath": "/PROGRESS.html",
+    "chatgpt.commentCodeLensEnabled": false
 }

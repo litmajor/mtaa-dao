@@ -222,8 +222,8 @@ export function BillSplitModal({ isOpen, onClose, onCreateBill }: BillSplitModal
       if (onCreateBill) {
         await onCreateBill(billData);
       } else {
-        // Fallback: send to API
-        const res = await fetch('/api/wallet/bill-split', {
+        // Fallback: send to API using v1 endpoint
+        const res = await fetch('/api/v1/wallets/payments/split', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(billData),
@@ -231,7 +231,7 @@ export function BillSplitModal({ isOpen, onClose, onCreateBill }: BillSplitModal
 
         if (!res.ok) {
           const data = await res.json();
-          throw new Error(data.error || 'Failed to create bill');
+          throw new Error(data.error || data.message || 'Failed to create bill');
         }
       }
 

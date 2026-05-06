@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { authClient } from '@/utils/authClient';
 import { 
   TrendingUp, 
   Shield, 
@@ -49,25 +50,17 @@ export default function MaonoVaultManagement() {
   const [showWithdraw, setShowWithdraw] = useState(false);
 
   const { data: userVaults, isLoading, refetch } = useQuery<VaultData[]>({
-    queryKey: ['/api/vaults/user'],
+    queryKey: ['/api/v1/wallets/vaults'],
     queryFn: async () => {
-      const res = await fetch('/api/vaults/user', {
-        credentials: 'include'
-      });
-      if (!res.ok) throw new Error('Failed to fetch vaults');
-      const data = await res.json();
+      const data = await authClient.get('/api/v1/wallets/vaults');
       return data.vaults as VaultData[];
     }
   });
 
   const { data: vaultStats } = useQuery({
-    queryKey: ['/api/vaults/stats'],
+    queryKey: ['/api/v1/wallets/vaults/stats'],
     queryFn: async () => {
-      const res = await fetch('/api/vaults/stats', {
-        credentials: 'include'
-      });
-      if (!res.ok) throw new Error('Failed to fetch stats');
-      return res.json();
+      return authClient.get('/api/v1/wallets/vaults/stats');
     }
   });
 

@@ -7,6 +7,7 @@ import { tokenService } from './tokenService';
 import { gasPriceOracle } from './gasPriceOracle';
 import { notificationService } from '../notificationService';
 import { WebSocketService } from './WebSocketService';
+import { getEventEmitter } from '../middleware/websocket-event-emitter';
 
 const logger = Logger.getLogger();
 
@@ -149,6 +150,23 @@ export class RecurringPaymentService {
       // Step 6: Schedule next payment
       await this.scheduleNextPayment(payment);
       
+      // Step 7: Emit WebSocket event for payment completion
+      try {
+        const wsEmitter = getEventEmitter();
+        wsEmitter.emitActivity('payment', payment.id, payment.userId, 'recurring_completed', {
+          recurring: true,
+          toAddress: payment.toAddress,
+          amount: payment.amount,
+          currency: payment.currency,
+          frequency: payment.frequency,
+          transactionHash: txHash,
+          nextPayment: payment.nextPayment,
+          status: 'completed'
+        });
+      } catch (wsError) {
+        logger.warn('Failed to emit WebSocket event for recurring payment completion', wsError);
+      }
+      
       logger.info(`Recurring payment ${payment.id} processed successfully`);
       
     } catch (error) {
@@ -230,8 +248,25 @@ export class RecurringPaymentService {
       })
       .where(eq(walletTransactions.id, payment.id));
 
-    // Send WebSocket alert
-  //
+    // Emit WebSocket alert for insufficient balance
+    try {
+      const wsEmitter = getEventEmitter();
+      wsEmitter.emitAlert(
+        'payment_insufficient_balance',
+        'high',
+        `Recurring payment failed: insufficient balance`,
+        payment.userId,
+        {
+          paymentId: payment.id,
+          required: requiredBalance,
+          current: currentBalance,
+          consecutiveFailures,
+          willDisable: consecutiveFailures >= this.MAX_CONSECUTIVE_FAILURES
+        }
+      );
+    } catch (wsError) {
+      logger.warn('Failed to emit WebSocket alert for insufficient balance', wsError);
+    }
 
     // Send notification
     await notificationService.createNotification({
@@ -296,9 +331,22 @@ export class RecurringPaymentService {
       })
       .where(eq(walletTransactions.id, payment.id));
 
-    // Notify user
-  //
+    // Emit WebSocket alert for payment failure
+    try {
+      const wsEmitter = getEventEmitter();
+      wsEmitter.emitAlert('payment_recurring_failed', 'high', `Recurring payment failed: ${error.message}`, payment.userId, {
+        paymentId: payment.id,
+        toAddress: payment.toAddress,
+        amount: payment.amount,
+        currency: payment.currency,
+        error: error.message,
+        consecutiveFailures
+      });
+    } catch (wsError) {
+      logger.warn('Failed to emit WebSocket alert for payment failure', wsError);
+    }
 
+    // Notify user
     await notificationService.createNotification({
       userId: payment.userId,
       type: 'recurring_payment_failed',
@@ -313,7 +361,20 @@ export class RecurringPaymentService {
    * Notify user of successful payment
    */
   private async notifySuccess(payment: RecurringPayment, txHash: string): Promise<void> {
-  //
+    // Emit WebSocket activity for successful payment
+    try {
+      const wsEmitter = getEventEmitter();
+      wsEmitter.emitStatusChange('payment', payment.id, 'completed', payment.userId, {
+        recurring: true,
+        toAddress: payment.toAddress,
+        amount: payment.amount,
+        currency: payment.currency,
+        transactionHash: txHash,
+        nextPayment: payment.nextPayment
+      });
+    } catch (wsError) {
+      logger.warn('Failed to emit WebSocket event for payment success', wsError);
+    }
 
     await notificationService.createNotification({
       userId: payment.userId,

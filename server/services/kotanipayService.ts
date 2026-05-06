@@ -11,6 +11,8 @@ import { and, eq, gt, isNull } from 'drizzle-orm';
 import { notificationService } from '../notificationService';
 import { config } from '../../shared/config';
 import { exchangeRateService } from './exchangeRateService';
+import { stableInflowModule } from './stableInflowModule';
+import { stableAssetRegistryService } from './stableAssetRegistryService';
 
 interface DepositRequest {
   userId: string;
@@ -56,6 +58,13 @@ const KOTANI_SECRET_KEY = process.env.KOTANIPAY_SECRET_KEY;
 // Fee configuration
 const DEPOSIT_FEE_PERCENTAGE = 0.015; // 1.5% for M-Pesa deposits
 const WITHDRAWAL_FEE_PERCENTAGE = 0.02; // 2% for M-Pesa withdrawals
+
+function decimalToRawAmount(amount: string, decimals: number): string {
+  const [wholeRaw, fractionRaw = ''] = amount.trim().split('.');
+  const whole = wholeRaw || '0';
+  const fraction = (fractionRaw + '0'.repeat(decimals)).slice(0, decimals);
+  return `${whole}${fraction}`.replace(/^0+(?=\d)/, '') || '0';
+}
 
 export class KotanipayService {
   /**
@@ -169,7 +178,13 @@ export class KotanipayService {
         throw new Error(`Transaction already processed: ${transactionId}`);
       }
 
-      const amountCUSD = parseFloat(transaction.amount);
+      const exchangeRate = (transaction.metadata as any)?.exchangeRate
+        ? Number((transaction.metadata as any).exchangeRate)
+        : await exchangeRateService.getUSDtoKESRate();
+
+      const metadataAmount = (transaction.metadata as any)?.amountCUSD;
+      const amountCUSD = metadataAmount ? parseFloat(metadataAmount) : parseFloat(transaction.amount);
+      const amountCUSDString = metadataAmount ? String(metadataAmount) : amountCUSD.toString();
 
       // Update transaction status
       await (db as any)
@@ -191,21 +206,77 @@ export class KotanipayService {
         (transaction.metadata as any)?.daoId
       );
 
+      let stableInflowResult: Awaited<ReturnType<typeof stableInflowModule.processStableInflow>> | undefined;
+      const resolvedCusdAsset = await stableAssetRegistryService.resolveStableAsset({
+        chain: 'celo',
+        chainId: 42220,
+        symbol: 'cUSD',
+      });
+
+      if (stableInflowModule.isEnabled()) {
+        const tokenAddress =
+          resolvedCusdAsset?.tokenAddress ||
+          process.env.CUSD_CONTRACT_ADDRESS ||
+          '0x765DE816845861e75A25fCA122bb6898B8B1282a';
+
+        stableInflowResult = await stableInflowModule.processStableInflow({
+          source: 'kotanipay',
+          chain: 'celo',
+          chainId: 42220,
+          txHash: mpesaReceipt || transactionId,
+          logIndex: 0,
+          tokenAddress,
+          tokenSymbol: 'cUSD',
+          decimals: resolvedCusdAsset?.decimals ?? 18,
+          rawAmount: decimalToRawAmount(amountCUSDString, resolvedCusdAsset?.decimals ?? 18),
+          fromAddress: `mpesa:${transaction.phoneNumber || 'unknown'}`,
+          toAddress: `user:${transaction.userId}`,
+          blockTimestamp: Math.floor(Date.now() / 1000),
+          confirmations: resolvedCusdAsset?.minConfirmations ?? 3,
+          provider: 'kotanipay',
+          metadata: {
+            kotaniTransactionId: transactionId,
+            mpesaReceipt,
+          },
+        });
+      }
+
       // Record wallet transaction
+      const walletTransactionId = `${transactionId}-cUSD`;
       await (db as any).insert(walletTransactions).values({
-        id: `${transactionId}-cUSD`,
+        id: walletTransactionId,
         fromUserId: 'SYSTEM',
         toUserId: transaction.userId,
         amount: amountCUSD.toString(),
         currency: 'cUSD',
+        type: 'deposit',
+        walletAddress: `kotanipay:${transaction.userId}`,
         transactionHash: mpesaReceipt,
+        stableInflowEventId: stableInflowResult?.stableInflowEventId,
+        stableUnitsMicroUsd: stableInflowResult?.stableUnitsMicroUsd,
+        chainId: 42220,
+        tokenAddress:
+          resolvedCusdAsset?.tokenAddress ||
+          process.env.CUSD_CONTRACT_ADDRESS ||
+          '0x765DE816845861e75A25fCA122bb6898B8B1282a',
         status: 'completed',
         metadata: {
           mpesaReceipt,
           kotaniTransactionId: transactionId,
-          exchangeRate: EXCHANGE_RATE,
+          exchangeRate,
+          normalizedAmountUsd: stableInflowResult?.normalizedAmountUsd,
+          stableUnitsMicroUsd: stableInflowResult?.stableUnitsMicroUsd,
+          riskFlags: stableInflowResult?.riskFlags,
+          confirmationState: stableInflowResult?.confirmationState,
         },
       });
+
+      if (stableInflowResult?.stableInflowEventId) {
+        await stableInflowModule.markCredited(stableInflowResult.stableInflowEventId, {
+          walletTransactionId,
+          source: 'kotanipay.completeDeposit',
+        });
+      }
 
       // Send success notification
       await notificationService.sendPaymentNotification(transaction.phoneNumber, {
@@ -253,9 +324,10 @@ export class KotanipayService {
       }
 
       // Calculate conversion and fees
+      const exchangeRate = await exchangeRateService.getUSDtoKESRate();
       const fee = request.amountCUSD * WITHDRAWAL_FEE_PERCENTAGE;
       const netCUSD = request.amountCUSD - fee;
-      const estimatedKES = netCUSD * EXCHANGE_RATE;
+      const estimatedKES = netCUSD * exchangeRate;
 
       // Deduct from balance immediately (lock funds)
       await this.updateUserBalance(
@@ -276,7 +348,7 @@ export class KotanipayService {
         status: 'pending',
         metadata: {
           amountCUSD: request.amountCUSD.toString(),
-          exchangeRate: EXCHANGE_RATE.toString(),
+          exchangeRate: exchangeRate.toString(),
           daoId: request.daoId,
         },
       }).returning();
@@ -316,7 +388,7 @@ export class KotanipayService {
         status: 'pending',
         amountCUSD: request.amountCUSD,
         estimatedKES,
-        exchangeRate: EXCHANGE_RATE,
+        exchangeRate,
         fee,
         message: 'Withdrawal initiated. You will receive M-Pesa notification shortly.',
       };
@@ -348,6 +420,10 @@ export class KotanipayService {
         throw new Error(`Transaction already processed: ${transactionId}`);
       }
 
+      const exchangeRate = (transaction.metadata as any)?.exchangeRate
+        ? Number((transaction.metadata as any).exchangeRate)
+        : await exchangeRateService.getUSDtoKESRate();
+
       // Update transaction status
       await (db as any)
         .update(mpesaTransactionsTable)
@@ -366,12 +442,14 @@ export class KotanipayService {
         toUserId: 'SYSTEM',
         amount: (transaction.metadata as any)?.amountCUSD || transaction.amount.toString(),
         currency: 'cUSD',
+        type: 'withdrawal',
+        walletAddress: `kotanipay:${transaction.userId}`,
         transactionHash: mpesaResponse.ConversationID,
         status: 'completed',
         metadata: {
           mpesaReceipt: mpesaResponse.ConversationID,
           kotaniTransactionId: transactionId,
-          exchangeRate: EXCHANGE_RATE,
+          exchangeRate,
         },
       });
 

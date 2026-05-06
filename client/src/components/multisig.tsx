@@ -38,7 +38,7 @@ export default function Multisig() {
 
     setIsLoading(true);
     try {
-      const response = await fetch('/api/wallet/multisig/create', {
+      const response = await fetch('/api/v1/wallets/multisig/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -82,7 +82,7 @@ export default function Multisig() {
 
   const loadMultisigInfo = async (address: string) => {
     try {
-      const response = await fetch('/api/wallet/multisig/info', {
+      const response = await fetch('/api/v1/wallets/multisig/info', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ multisigAddress: address })
@@ -103,7 +103,7 @@ export default function Multisig() {
 
   const submitTransaction = async (multisigAddress: string, destination: string, value: string, data: string = '0x') => {
     try {
-      const response = await fetch('/api/wallet/multisig/submit', {
+      const response = await fetch('/api/v1/wallets/multisig/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
