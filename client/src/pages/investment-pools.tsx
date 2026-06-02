@@ -1,14 +1,17 @@
+//This component is a @ssa-v2-violation, in that new stateful ui, i plan to have zero business logic in ui rendering, and state drives features, so this component is purely presentational, and all logic for fetching/managing pools will be in the store and hooks. This is a temporary exception to the pattern to get the v1 pool listing page up, but the goal is to move all logic out of this file and into the store/hooks as we build out features.
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { LoaderCircle, TrendingUp, TrendingDown, Wallet, PieChart, Plus, ArrowUpRight, Crown, AlertTriangle, RefreshCw, Lock, Users, Zap } from 'lucide-react';
+import { Loader2, TrendingUp, Wallet, PieChart, Plus, ArrowUpRight, Crown, AlertTriangle, RefreshCw, Lock, Users, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { useWallet } from './hooks/useWallet';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { authClient } from '@/utils/authClient';
+import Shell from '../components/ui/shell';
+import { Grid } from '../components/ui/grid';
 
 interface InvestmentPool {
   id: string;
@@ -98,8 +101,11 @@ export default function InvestmentPools() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-purple-900 p-8">
-      <div className="max-w-7xl mx-auto">
+    <Shell
+      brand={<h1 className="text-4xl font-bold text-white mb-2">💰 Investment Pools</h1>}
+    >
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 to-purple-900 p-8">
+        <div className="max-w-7xl mx-auto">
         {/* Header with Wallet Status */}
         <div className="mb-8 flex items-center justify-between">
           <div>
@@ -239,6 +245,7 @@ export default function InvestmentPools() {
         )}
       </div>
     </div>
+    </Shell>
   );
 }
 
@@ -258,7 +265,7 @@ function PoolCard({ pool }: { pool: InvestmentPool }) {
               <CardTitle className="text-white text-xl flex items-center gap-2">
                 {pool.name}
                 {pool.poolAddress && (
-                  <Lock className="w-4 h-4 text-emerald-400" title="On-Chain Pool" />
+                  <Lock className="w-4 h-4 text-emerald-400" aria-label="On-Chain Pool" />
                 )}
               </CardTitle>
               <CardDescription className="text-white/60 font-mono text-xs">
@@ -306,7 +313,7 @@ function PoolCard({ pool }: { pool: InvestmentPool }) {
             </div>
           </div>
 
-          <Button className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700">
+          <Button variant="primary" className="w-full">
             <ArrowUpRight className="w-4 h-4 mr-2" />
             Participate in Pool
           </Button>

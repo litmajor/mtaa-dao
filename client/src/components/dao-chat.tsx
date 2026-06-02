@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMessages } from '@/hooks/useMessages';
+import { usePresence } from '@/hooks/usePresence';
+import { useTypingIndicator } from '@/hooks/useTypingIndicator';
+import { useChatActions } from '@/hooks/useChatActions';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,8 +10,9 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Send, MessageSquare, Edit, Trash2, Users, Paperclip, Search, Smile, Reply, Pin, Hash, Volume2, VolumeX, Copy, MoreHorizontal, Download, FileImage, File, Zap } from "lucide-react";
+// Icons replaced with lightweight emoji fallbacks to avoid lucide-react type issues
 import { formatDistanceToNow } from "date-fns";
+import { MorioFAB } from '@/components/morio/MorioFAB';
 
 interface Message {
   id: string;
@@ -52,176 +56,42 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
-  const [typingUsers, setTypingUsers] = useState<string[]>([]);
-  const [isTyping, setIsTyping] = useState(false);
-  const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
+  // presence/typing handled by hooks
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const longPressTimer = useRef<number | null>(null);
+  const [longPressMenu, setLongPressMenu] = useState<{ visible: boolean; x: number; y: number; message?: Message | null }>({ visible: false, x: 0, y: 0, message: null });
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const queryClient = useQueryClient();
 
   const commonEmojis = ['👍', '❤️', '😂', '😮', '😢', '😡', '🎉', '🚀'];
 
-  // Fetch messages
-  const { data: messagesData, isLoading, error } = useQuery({
-    queryKey: [`/api/dao/${daoId}/messages`],
-    queryFn: async () => {
-      const res = await fetch(`/api/dao/${daoId}/messages?limit=100`);
-      if (!res.ok) throw new Error("Failed to fetch messages");
-      return res.json();
-    },
-    refetchInterval: 5000, // Auto-refresh every 5 seconds for real-time feel
-  });
+  // Hooks for messages, presence, typing and actions
+  const { messages: hookMessages, isLoading, error, create, update, remove } = useMessages(daoId);
+  const { onlineUsers, typingUsers } = usePresence(daoId);
+  useTypingIndicator(daoId, newMessage);
+  const { react, upload } = useChatActions(daoId);
 
-  const messages = messagesData?.messages?.reverse() || []; // Reverse to show latest at bottom
+  const messages = (hookMessages || []).reverse(); // show latest at bottom
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
-  // Typing indicator
-  useEffect(() => {
-    let typingTimeout: NodeJS.Timeout;
-    if (newMessage && !isTyping) {
-      setIsTyping(true);
-      // Simulate sending typing indicator to server
-      fetch(`/api/dao/${daoId}/typing`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isTyping: true })
-      }).catch(() => {});
-    }
-    
-    if (isTyping) {
-      typingTimeout = setTimeout(() => {
-        setIsTyping(false);
-        fetch(`/api/dao/${daoId}/typing`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ isTyping: false })
-        }).catch(() => {});
-      }, 2000);
-    }
-    
-    return () => clearTimeout(typingTimeout);
-  }, [newMessage, daoId, isTyping]);
+  // presence and typing are handled by hooks
 
-  // Simulate fetching online users and typing indicators
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetch(`/api/dao/${daoId}/presence`)
-        .then(res => res.json())
-        .then(data => {
-          setOnlineUsers(data.onlineUsers || []);
-          setTypingUsers(data.typingUsers || []);
-        })
-        .catch(() => {});
-    }, 5000);
-    
-    return () => clearInterval(interval);
-  }, [daoId]);
-
-  // Create message mutation
-  const createMessageMutation = useMutation({
-    mutationFn: async (messageData: string | { content: string; replyTo?: any; messageType?: string; attachment?: any }) => {
-      const payload = typeof messageData === 'string' ? { content: messageData } : messageData;
-      const res = await fetch(`/api/dao/${daoId}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error("Failed to send message");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/dao/${daoId}/messages`] });
-      setNewMessage("");
-      setIsSubmitting(false);
-    },
-    onError: () => {
-      setIsSubmitting(false);
-    },
-  });
-
-  // Update message mutation
-  const updateMessageMutation = useMutation({
-    mutationFn: async ({ messageId, content }: { messageId: string; content: string }) => {
-      const res = await fetch(`/api/messages/${messageId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
-      });
-      if (!res.ok) throw new Error("Failed to update message");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/dao/${daoId}/messages`] });
-      setEditingMessageId(null);
-      setEditContent("");
-    },
-  });
-
-  // Delete message mutation
-  const deleteMessageMutation = useMutation({
-    mutationFn: async (messageId: string) => {
-      const res = await fetch(`/api/messages/${messageId}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error("Failed to delete message");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/dao/${daoId}/messages`] });
-    },
-  });
-
-  // Add reaction mutation
-  const addReactionMutation = useMutation({
-    mutationFn: async ({ messageId, emoji }: { messageId: string; emoji: string }) => {
-      const res = await fetch(`/api/messages/${messageId}/reactions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ emoji }),
-      });
-      if (!res.ok) throw new Error("Failed to add reaction");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/dao/${daoId}/messages`] });
-    },
-  });
-
-  // File upload mutation
-  const uploadFileMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('daoId', daoId);
-      
-      const res = await fetch(`/api/dao/${daoId}/upload`, {
-        method: "POST",
-        body: formData,
-      });
-      if (!res.ok) throw new Error("Failed to upload file");
-      return res.json();
-    },
-    onSuccess: (data) => {
-      createMessageMutation.mutate({
-        content: selectedFile?.name || 'File uploaded',
-        messageType: data.fileType?.startsWith('image/') ? 'image' : 'file',
-        attachment: data
-      });
-      setSelectedFile(null);
-    },
-  });
+  // actions handled by hooks: create, update, remove, react, upload
 
   const handleSendMessage = () => {
     if (!newMessage.trim() && !selectedFile) return;
     
     if (selectedFile) {
-      uploadFileMutation.mutate(selectedFile);
+      upload(selectedFile).then((data) => {
+        create({ content: selectedFile?.name || 'File uploaded', messageType: data.fileType?.startsWith('image/') ? 'image' : 'file', attachment: data }).catch(() => {});
+        setSelectedFile(null);
+      }).catch(() => {});
       return;
     }
     
@@ -234,8 +104,7 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
         userName: replyingTo.userName || 'Unknown'
       } : undefined
     };
-    
-    createMessageMutation.mutate(messageData);
+    create(messageData).then(() => { setNewMessage(''); setIsSubmitting(false); }).catch(() => setIsSubmitting(false));
     setReplyingTo(null);
   };
 
@@ -253,12 +122,12 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
 
   const handleUpdateMessage = (messageId: string) => {
     if (!editContent.trim()) return;
-    updateMessageMutation.mutate({ messageId, content: editContent });
+    update({ messageId, content: editContent }).then(() => { setEditingMessageId(null); setEditContent(''); }).catch(() => {});
   };
 
   const handleDeleteMessage = (messageId: string) => {
     if (confirm("Are you sure you want to delete this message?")) {
-      deleteMessageMutation.mutate(messageId);
+      remove(messageId).catch(() => {});
     }
   };
 
@@ -283,12 +152,22 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
   };
 
   const handleReaction = (messageId: string, emoji: string) => {
-    addReactionMutation.mutate({ messageId, emoji });
+    react({ messageId, emoji }).catch(() => {});
   };
 
   const copyMessageLink = (messageId: string) => {
     navigator.clipboard.writeText(`${window.location.origin}/dao/${daoId}/message/${messageId}`);
   };
+
+  const handleLongPressOpen = (evt: React.TouchEvent | React.MouseEvent, message: Message) => {
+    evt.preventDefault();
+    const touch = (evt as React.TouchEvent).touches ? (evt as React.TouchEvent).touches[0] : (evt as React.MouseEvent);
+    const x = touch.clientX || 0;
+    const y = touch.clientY || 0;
+    setLongPressMenu({ visible: true, x, y, message });
+  };
+
+  const handleLongPressClose = () => setLongPressMenu({ visible: false, x: 0, y: 0, message: null });
 
   const filteredMessages = searchQuery 
     ? messages.filter((msg: Message) => 
@@ -300,8 +179,8 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
   if (!currentUserId) {
     return (
       <Card className="border border-gray-200 shadow-sm">
-        <CardContent className="p-8 text-center">
-          <MessageSquare className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+          <CardContent className="p-8 text-center">
+          <div className="w-12 h-12 mx-auto mb-4 text-gray-300 text-4xl">💬</div>
           <h3 className="text-lg font-medium text-gray-900 mb-2">Join the Conversation</h3>
           <p className="text-gray-500">Please log in to participate in the DAO chat.</p>
         </CardContent>
@@ -315,18 +194,16 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
       <CardHeader className="pb-3 bg-[#075E54] dark:bg-[#1F2C34] text-white border-none">
         <CardTitle className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-white/20 dark:bg-white/10 rounded-full flex items-center justify-center">
-              <MessageSquare className="w-5 h-5 text-white" />
-            </div>
+            <div className="w-10 h-10 bg-white/20 dark:bg-white/10 rounded-full flex items-center justify-center text-white">💬</div>
             <div>
               <div className="text-base font-medium text-white">{daoName} Chat</div>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div className="flex items-center space-x-1.5 cursor-pointer">
-                      <div className="w-2 h-2 bg-[#25D366] dark:bg-green-500 rounded-full animate-pulse"></div>
-                      <span className="text-xs text-white/80 dark:text-white/70">{onlineUsers.length} online</span>
-                    </div>
+                          <div className="flex items-center space-x-1.5 cursor-pointer">
+                            <div className="w-2 h-2 bg-[#25D366] dark:bg-green-500 rounded-full animate-pulse" />
+                            <span className="text-xs text-white/80 dark:text-white/70">{onlineUsers.length} online</span>
+                          </div>
                   </TooltipTrigger>
                   <TooltipContent>
                     <div className="text-sm">
@@ -349,7 +226,7 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
               onClick={() => setShowSearch(!showSearch)}
               className="h-9 w-9 text-white hover:bg-white/10 dark:hover:bg-white/5"
             >
-              <Search className="w-4 h-4" />
+              <span className="w-4 h-4 inline-block text-lg">🔍</span>
             </Button>
             <Button
               variant="ghost"
@@ -357,7 +234,7 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
               onClick={() => setSoundEnabled(!soundEnabled)}
               className="h-9 w-9 text-white hover:bg-white/10 dark:hover:bg-white/5"
             >
-              {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+              {soundEnabled ? <span className="text-lg">🔊</span> : <span className="text-lg">🔈</span>}
             </Button>
           </div>
         </CardTitle>
@@ -412,7 +289,7 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
           </div>
         ) : messages.length === 0 ? (
           <div className="text-center py-8 text-gray-600 dark:text-gray-400">
-            <MessageSquare className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+            <div className="w-12 h-12 mx-auto mb-3 text-gray-400 text-4xl">💬</div>
             <p className="text-lg font-medium">No messages yet</p>
             <p className="text-sm">Start the conversation!</p>
           </div>
@@ -425,6 +302,17 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
                 className={`flex items-start space-x-3 group ${
                   isCurrentUser ? "flex-row-reverse space-x-reverse" : ""
                 } ${message.isPinned ? "bg-yellow-50 p-2 rounded-lg border-l-4 border-yellow-400" : ""}`}
+                onTouchStart={(e) => {
+                  if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+                  longPressTimer.current = window.setTimeout(() => handleLongPressOpen(e, message), 600) as unknown as number;
+                }}
+                onTouchEnd={() => {
+                  if (longPressTimer.current) {
+                    window.clearTimeout(longPressTimer.current);
+                    longPressTimer.current = null;
+                  }
+                }}
+                onContextMenu={(e) => { e.preventDefault(); handleLongPressOpen(e, message); }}
               >
                 <Avatar className="w-8 h-8">
                   <AvatarImage src={message.userAvatar} />
@@ -448,7 +336,7 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
                         </Badge>
                       )}
                       {message.isPinned && (
-                        <Pin className="w-3 h-3 text-yellow-600" />
+                        <span className="w-3 h-3 text-yellow-600">📌</span>
                       )}
                     </div>
 
@@ -460,7 +348,7 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
                         className="h-6 w-6 p-0 text-gray-400 hover:text-blue-600"
                         title="Reply"
                       >
-                        <Reply className="w-3 h-3" />
+                        <span className="w-3 h-3">↩️</span>
                       </Button>
                       <Popover>
                         <PopoverTrigger asChild>
@@ -470,7 +358,7 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
                             className="h-6 w-6 p-0 text-gray-400 hover:text-yellow-600"
                             title="React"
                           >
-                            <Smile className="w-3 h-3" />
+                            <span className="w-3 h-3">😄</span>
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-2">
@@ -496,7 +384,7 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
                             size="sm"
                             className="h-6 w-6 p-0 text-gray-400 hover:text-gray-600"
                           >
-                            <MoreHorizontal className="w-3 h-3" />
+                            <span className="w-3 h-3">⋯</span>
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-48">
@@ -507,7 +395,7 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
                               onClick={() => copyMessageLink(message.id)}
                               className="w-full justify-start text-xs"
                             >
-                              <Copy className="w-3 h-3 mr-2" />
+                              <span className="w-3 h-3 mr-2">📋</span>
                               Copy Message Link
                             </Button>
                             {isCurrentUser && (
@@ -518,7 +406,7 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
                                   onClick={() => handleEditMessage(message)}
                                   className="w-full justify-start text-xs"
                                 >
-                                  <Edit className="w-3 h-3 mr-2" />
+                                  <span className="w-3 h-3 mr-2">✏️</span>
                                   Edit Message
                                 </Button>
                                 <Button
@@ -527,7 +415,7 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
                                   onClick={() => handleDeleteMessage(message.id)}
                                   className="w-full justify-start text-xs text-red-600"
                                 >
-                                  <Trash2 className="w-3 h-3 mr-2" />
+                                  <span className="w-3 h-3 mr-2">🗑️</span>
                                   Delete Message
                                 </Button>
                               </>
@@ -601,7 +489,7 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
                           </div>
                         ) : message.messageType === 'file' && message.attachment ? (
                           <div className="flex items-center space-x-2 p-2 bg-white/20 rounded">
-                            <File className="w-4 h-4" />
+                            <span className="w-4 h-4">📄</span>
                             <div className="flex-1 min-w-0">
                               <p className="text-xs truncate">{message.attachment.fileName}</p>
                               <p className="text-xs opacity-60">{(message.attachment.fileSize / 1024).toFixed(1)} KB</p>
@@ -612,7 +500,7 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
                               onClick={() => window.open(message.attachment?.url, '_blank')}
                               className="h-6 w-6 p-0"
                             >
-                              <Download className="w-3 h-3" />
+                              <span className="w-3 h-3">⬇️</span>
                             </Button>
                           </div>
                         ) : (
@@ -656,6 +544,23 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
           </div>
         )}
         <div ref={messagesEndRef} />
+        {/* Long-press action sheet for mobile */}
+        {longPressMenu.visible && longPressMenu.message && (
+          <div className="fixed z-50" style={{ left: longPressMenu.x, top: longPressMenu.y }}>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2 flex flex-col space-y-1 w-40">
+              <button className="text-left text-sm px-2 py-1 hover:bg-gray-100 rounded" onClick={() => { setReplyingTo(longPressMenu.message!); handleLongPressClose(); }}>Reply</button>
+              <button className="text-left text-sm px-2 py-1 hover:bg-gray-100 rounded" onClick={() => { copyMessageLink(longPressMenu.message!.id); handleLongPressClose(); }}>Copy Link</button>
+              <button className="text-left text-sm px-2 py-1 hover:bg-gray-100 rounded" onClick={() => { handleReaction(longPressMenu.message!.id, commonEmojis[0]); handleLongPressClose(); }}>React {commonEmojis[0]}</button>
+              {longPressMenu.message.userId === currentUserId && (
+                <>
+                  <button className="text-left text-sm px-2 py-1 hover:bg-gray-100 rounded" onClick={() => { handleEditMessage(longPressMenu.message!); handleLongPressClose(); }}>Edit</button>
+                  <button className="text-left text-sm px-2 py-1 text-red-600 hover:bg-gray-100 rounded" onClick={() => { if (confirm('Delete this message?')) { handleDeleteMessage(longPressMenu.message!.id); } handleLongPressClose(); }}>Delete</button>
+                </>
+              )}
+              <button className="text-left text-sm px-2 py-1 hover:bg-gray-100 rounded" onClick={() => handleLongPressClose()}>Close</button>
+            </div>
+          </div>
+        )}
       </CardContent>
 
       {/* Message Input - WhatsApp style */}
@@ -666,8 +571,8 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 {selectedFile.type.startsWith('image/') ? 
-                  <FileImage className="w-4 h-4 text-[#25D366]" /> : 
-                  <File className="w-4 h-4 text-gray-500" />
+                  <span className="w-4 h-4">🖼️</span> : 
+                  <span className="w-4 h-4">📄</span>
                 }
                 <span className="text-sm text-gray-700 dark:text-gray-200">{selectedFile.name}</span>
                 <span className="text-xs text-gray-500 dark:text-gray-400">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
@@ -694,7 +599,7 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
               className="h-10 w-10 p-0 text-gray-600 dark:text-gray-300 hover:bg-white/50 dark:hover:bg-white/10 rounded-full"
               title="Attach file"
             >
-              <Paperclip className="w-5 h-5" />
+              <span className="w-5 h-5 text-lg">📎</span>
             </Button>
             <input
               ref={fileInputRef}
@@ -713,7 +618,7 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
                   className="h-10 w-10 p-0 text-gray-600 dark:text-gray-300 hover:bg-white/50 dark:hover:bg-white/10 rounded-full"
                   title="Add emoji"
                 >
-                  <Smile className="w-5 h-5" />
+                  <span className="w-5 h-5">😄</span>
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-2">
@@ -747,10 +652,12 @@ export default function DaoChat({ daoId, daoName = "DAO", currentUserId }: DaoCh
             disabled={(!newMessage.trim() && !selectedFile) || isSubmitting}
             className="bg-[#25D366] hover:bg-[#20BD5C] rounded-full w-10 h-10 p-0 flex items-center justify-center"
           >
-            {selectedFile ? <Paperclip className="w-4 h-4 text-white" /> : <Send className="w-4 h-4 text-white" />}
+            {selectedFile ? <span className="w-4 h-4 text-white">📎</span> : <span className="w-4 h-4 text-white">➤</span>}
           </Button>
         </div>
       </div>
+      {/* Morio floating assistant */}
+      <MorioFAB userId={currentUserId || ''} daoId={daoId} />
     </Card>
   );
 }

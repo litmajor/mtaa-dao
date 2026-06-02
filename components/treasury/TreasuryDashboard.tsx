@@ -6,6 +6,7 @@
  */
 
 import React, { useState } from 'react';
+import { useActionHistoryStore } from '../../stores/actionHistory';
 import TreasuryRebalancePanel from './TreasuryRebalancePanel';
 import AssetAllocationPanel from './AssetAllocationPanel';
 import GrantDistributionPanel from './GrantDistributionPanel';
@@ -32,7 +33,8 @@ export const TreasuryDashboard: React.FC<TreasuryDashboardProps> = ({
 }) => {
   // State management
   const [activePanel, setActivePanel] = useState<'rebalance' | 'allocation' | 'grants' | 'dividend' | 'margin' | 'fixedincome'>('rebalance');
-  const [treasuryHistory, setTreasuryHistory] = useState<any[]>([]);
+  const treasuryHistory = useActionHistoryStore((s) => s.actionHistory);
+  const pushAction = useActionHistoryStore((s) => s.pushAction);
   const [showHistory, setShowHistory] = useState(false);
 
   // Treasury state
@@ -62,7 +64,7 @@ export const TreasuryDashboard: React.FC<TreasuryDashboardProps> = ({
       type: 'rebalance',
       details: result,
     };
-    setTreasuryHistory([action, ...treasuryHistory]);
+    pushAction(action);
   };
 
   const handleAllocationSet = (result: any) => {
@@ -72,7 +74,7 @@ export const TreasuryDashboard: React.FC<TreasuryDashboardProps> = ({
       type: 'allocation',
       details: result,
     };
-    setTreasuryHistory([action, ...treasuryHistory]);
+    pushAction(action);
   };
 
   const handleDistributionExecuted = (result: any) => {
@@ -82,7 +84,7 @@ export const TreasuryDashboard: React.FC<TreasuryDashboardProps> = ({
       type: 'distribution',
       details: result,
     };
-    setTreasuryHistory([action, ...treasuryHistory]);
+    pushAction(action);
   };
 
   return (
@@ -273,13 +275,13 @@ export const TreasuryDashboard: React.FC<TreasuryDashboardProps> = ({
       {showHistory && (
         <div className="history-section">
           <h2>Treasury Action History</h2>
-          {treasuryHistory.length === 0 ? (
+          {treasuryHistory.filter(a => ['rebalance','allocation','distribution'].includes(a.type)).length === 0 ? (
             <div className="empty-history">
               <p>No treasury actions yet. Start by selecting a tool above.</p>
             </div>
           ) : (
             <div className="history-list">
-              {treasuryHistory.map((action) => (
+              {treasuryHistory.filter(a => ['rebalance','allocation','distribution'].includes(a.type)).map((action) => (
                 <div key={action.id} className="history-item">
                   <div className="history-icon">
                     {action.type === 'rebalance' && '⚖️'}

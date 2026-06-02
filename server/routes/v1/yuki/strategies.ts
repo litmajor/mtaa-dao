@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { isAuthenticated } from '../../../auth';
 import { logger } from '../../../utils/logger';
 import { pool, db } from '../../../db';
+import { redis } from '../../../services/redis';
 import { orderRouter } from '../../../services/orderRouter';
 
 const router = express.Router();
@@ -46,6 +47,17 @@ const backtestSchema = z.object({
   endDate: z.string().datetime(),
   initialCapital: z.number().positive().default(10000),
   tradingPair: z.string().min(1, 'Trading pair required'),
+});
+
+const compiledDeploySchema = z.object({
+  compiled: z.any(),
+  deploymentConfig: z.object({
+    tradingPair: z.string().min(1).optional(),
+    exchangeConnections: z.array(z.string()).optional(),
+    enableRealTrading: z.boolean().optional(),
+    maxOrderSize: z.number().optional(),
+    dailyLossLimit: z.number().optional(),
+  }).optional(),
 });
 
 const listStrategiesSchema = z.object({
@@ -305,6 +317,14 @@ router.post('/:id/deploy', isAuthenticated, async (req: Request, res: Response) 
       [executionId, 'Strategy deployed', JSON.stringify(deploymentConfig)]
     );
 
+    // publish to redis channel for real-time clients
+    try {
+      const payload = { executionId, type: 'deployment', message: 'Strategy deployed', metadata: deploymentConfig, timestamp: new Date().toISOString() };
+      await redis.publish(`execution:${executionId}`, JSON.stringify(payload));
+    } catch (err) {
+      logger.warn('[YUKI-STRATEGIES] Redis publish failed', { err });
+    }
+
     return res.status(201).json({
       success: true,
       data: {
@@ -519,6 +539,256 @@ router.get('/:id/signals', isAuthenticated, async (req: Request, res: Response) 
       success: false,
       error: 'Failed to fetch signals',
     });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// POST /v1/yuki/strategies/deploy - Deploy compiled strategy payload
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Accepts a compiled strategy object (from visual builder) and creates an execution.
+ * Returns `executionId` and `signalsUrl` for the created execution so the client
+ * can subscribe to logs via SSE at GET /v1/yuki/strategies/:id/signals/:executionId
+ */
+router.post('/deploy', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const parsed = compiledDeploySchema.parse(req.body);
+    const userId = (req as any).user?.id;
+    const compiled = parsed.compiled;
+    const deployCfg = parsed.deploymentConfig || {};
+
+    // Determine strategy id: reuse if compiled contains an id owned by user, otherwise create a draft
+    let strategyId = compiled?.id || `strat_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+    // Try to update existing strategy if owned
+    const updateResult = await pool.query(
+      `UPDATE strategies SET parameters = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3 RETURNING id, user_id`,
+      [JSON.stringify(compiled), strategyId, userId]
+    );
+
+    if (updateResult.rowCount === 0) {
+      // create draft strategy
+      await pool.query(
+        `INSERT INTO strategies (id, user_id, name, description, parameters, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+        [strategyId, userId, compiled?.name || 'Untitled (deployed)', compiled?.description || '', JSON.stringify(compiled)]
+      );
+    }
+
+    // Create execution entry
+    const executionId = `exec_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const deploymentConfig = {
+      tradingPair: deployCfg.tradingPair || null,
+      exchanges: deployCfg.exchangeConnections || [],
+      maxOrderSize: deployCfg.maxOrderSize || null,
+      dailyLossLimit: deployCfg.dailyLossLimit || null,
+      realTrading: !!deployCfg.enableRealTrading,
+      compiledAt: new Date().toISOString(),
+    };
+
+    await pool.query(
+      `INSERT INTO strategy_executions (
+        id, strategy_id, user_id, status, deployment_config, real_trading_enabled, started_at, created_at
+      ) VALUES ($1, $2, $3, 'active', $4, $5, NOW(), NOW())`,
+      [executionId, strategyId, userId, JSON.stringify(deploymentConfig), !!deployCfg.enableRealTrading]
+    );
+
+    // Log initial deployment
+    await pool.query(
+      `INSERT INTO execution_logs (execution_id, event_type, message, metadata)
+       VALUES ($1, 'deployment', $2, $3)`,
+      [executionId, 'Compiled strategy deployed', JSON.stringify({ deploymentConfig })]
+    );
+
+    // publish to redis channel for real-time clients
+    try {
+      const payload = { executionId, type: 'deployment', message: 'Compiled strategy deployed', metadata: deploymentConfig, timestamp: new Date().toISOString() };
+      await redis.publish(`execution:${executionId}`, JSON.stringify(payload));
+    } catch (err) {
+      logger.warn('[YUKI-STRATEGIES] Redis publish failed', { err });
+    }
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        executionId,
+        strategyId,
+        status: 'active',
+        deploymentConfig,
+        message: 'Compiled strategy deployed. Connect to the signals SSE for logs.',
+        signalsUrl: `/v1/yuki/strategies/${strategyId}/signals/${executionId}`,
+      },
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: 'Invalid compiled deploy payload', details: error.errors });
+    }
+
+    logger.error('[YUKI-STRATEGIES] Failed to deploy compiled strategy', { error });
+    return res.status(500).json({ success: false, error: 'Failed to deploy compiled strategy' });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// GET /v1/yuki/strategies/:id/signals/:executionId - SSE stream for execution logs
+// ════════════════════════════════════════════════════════════════════════════════
+
+router.get('/:id/signals/:executionId', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { id } = strategyIdSchema.parse(req.params);
+    const executionId = String(req.params.executionId || '');
+    const userId = (req as any).user?.id;
+
+    // Verify execution exists and belongs to user
+    const execResult = await pool.query(
+      `SELECT id, strategy_id, user_id FROM strategy_executions WHERE id = $1 AND strategy_id = $2 AND user_id = $3`,
+      [executionId, id, userId]
+    );
+
+    if (execResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Execution not found' });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders && res.flushHeaders();
+
+    let lastTs = new Date(0).toISOString();
+
+    // send existing logs first
+    const sendLogs = async () => {
+      const logsRes = await pool.query(
+        `SELECT id, event_type, message, metadata, created_at FROM execution_logs WHERE execution_id = $1 AND created_at > $2 ORDER BY created_at ASC`,
+        [executionId, lastTs]
+      );
+      for (const row of logsRes.rows) {
+        const payload = {
+          id: row.id,
+          type: row.event_type,
+          message: row.message,
+          metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata,
+          timestamp: row.created_at?.toISOString(),
+        };
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        lastTs = row.created_at?.toISOString() || lastTs;
+      }
+    };
+
+    await sendLogs();
+
+    const timer = setInterval(async () => {
+      try {
+        await sendLogs();
+      } catch (err) {
+        logger.warn('[YUKI-STRATEGIES] SSE sendLogs error', { err });
+      }
+    }, 1000);
+
+    req.on('close', () => {
+      clearInterval(timer);
+      try { res.end(); } catch (e) {}
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: 'Invalid request', details: error.errors });
+    }
+    logger.error('[YUKI-STRATEGIES] SSE stream failed', { error });
+    return res.status(500).json({ success: false, error: 'Failed to open signals stream' });
+  }
+});
+
+// POST /v1/yuki/strategies/save-graph - Persist strategy graph/layout
+router.post('/save-graph', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    // Basic size limit to avoid DoS before deep validation
+    const rawSize = Buffer.byteLength(JSON.stringify(req.body || {}), 'utf8');
+    const MAX_SIZE = 200 * 1024; // 200 KB
+    if (rawSize > MAX_SIZE) return res.status(413).json({ success: false, error: 'Graph payload too large' });
+
+    // Strict Zod schemas for graph payload to reject malformed nodes/configs early
+    const portSchema = z.object({
+      id: z.string().min(1),
+      name: z.string().optional(),
+      direction: z.enum(['in', 'out']),
+    });
+
+    const positionSchema = z.object({ x: z.number(), y: z.number() }).optional();
+
+    const baseNodeSchema = z.object({
+      id: z.string().min(1),
+      type: z.enum(['condition', 'action', 'logic', 'risk', 'execution', 'ai', 'vault', 'crosschain']),
+      label: z.string().optional(),
+      icon: z.string().optional(),
+      color: z.string().optional(),
+      position: positionSchema,
+      ports: z.array(portSchema).optional(),
+    });
+
+    const conditionNode = baseNodeSchema.extend({ type: z.literal('condition'), config: z.object({ expression: z.string().optional() }).optional() });
+    const actionNode = baseNodeSchema.extend({ type: z.literal('action'), config: z.object({ actionType: z.string().optional(), params: z.record(z.any()).optional() }).optional() });
+    const riskNode = baseNodeSchema.extend({ type: z.literal('risk'), config: z.object({ stopLossPct: z.number().optional(), takeProfitPct: z.number().optional() }).optional() });
+    const executionNode = baseNodeSchema.extend({ type: z.literal('execution'), config: z.object({ schedule: z.string().optional() }).optional() });
+    const logicNode = baseNodeSchema.extend({ type: z.literal('logic'), config: z.record(z.any()).optional() });
+
+    // Simple, explicit schemas for AI/Vault/Crosschain nodes to avoid arbitrary shapes
+    const aiNode = baseNodeSchema.extend({ type: z.literal('ai'), config: z.object({ model: z.string().optional(), prompt: z.string().optional(), temperature: z.number().optional() }).optional() });
+    const vaultNode = baseNodeSchema.extend({ type: z.literal('vault'), config: z.object({ vaultId: z.string().optional(), action: z.string().optional() }).optional() });
+    const crosschainNode = baseNodeSchema.extend({ type: z.literal('crosschain'), config: z.object({ chain: z.string().optional(), method: z.string().optional(), params: z.record(z.any()).optional() }).optional() });
+
+    const nodeSchema = z.discriminatedUnion('type', [conditionNode, actionNode, riskNode, executionNode, logicNode, aiNode, vaultNode, crosschainNode]);
+
+    const edgeSchema = z.object({
+      id: z.string().min(1),
+      sourceNodeId: z.string().min(1),
+      sourcePortId: z.string().optional(),
+      targetNodeId: z.string().min(1),
+      targetPortId: z.string().optional(),
+      label: z.string().optional(),
+    });
+
+    const graphSchema = z.object({
+      id: z.string().min(1),
+      name: z.string().optional(),
+      description: z.string().optional(),
+      nodes: z.array(nodeSchema).optional(),
+      edges: z.array(edgeSchema).optional(),
+      metadata: z.any().optional(),
+    });
+
+    const saveGraphSchema = z.object({ graph: graphSchema });
+
+    const parsed = saveGraphSchema.parse(req.body);
+    const graph = parsed.graph;
+    const userId = (req as any).user?.id;
+
+    // Try to update existing strategy parameters/layout
+    const updateResult = await pool.query(
+      `UPDATE strategies SET parameters = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3 RETURNING id`,
+      [JSON.stringify(graph), graph.id, userId]
+    );
+
+    if (updateResult.rowCount === 0) {
+      // Not found or not owned — create a new draft strategy referencing this graph
+      const newId = graph.id || `strat_${Date.now().toString(16).slice(2)}`;
+      await pool.query(
+        `INSERT INTO strategies (id, user_id, name, description, parameters, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+        [newId, userId, graph.name || 'Untitled Strategy', graph.description || '', JSON.stringify(graph)]
+      );
+      return res.json({ success: true, data: { id: newId, created: true } });
+    }
+
+    return res.json({ success: true, data: { id: graph.id, updated: true } });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      logger.warn('[YUKI-STRATEGIES] Invalid save-graph payload', { errors: error.errors });
+      return res.status(400).json({ success: false, error: 'Invalid graph payload', details: error.errors });
+    }
+
+    logger.error('[YUKI-STRATEGIES] Failed to save graph', { error });
+    return res.status(500).json({ success: false, error: 'Failed to save graph' });
   }
 });
 

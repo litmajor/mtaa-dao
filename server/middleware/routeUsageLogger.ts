@@ -33,22 +33,23 @@ export function createRouteUsageLogger(logFilePath?: string) {
   const filePath = logFilePath || path.join(process.cwd(), 'route-usage.csv');
   let headerWritten = false;
 
-  // Ensure directory exists
+  // Ensure directory exists (sync at startup is acceptable)
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  // Check if file exists and write header if needed
-  if (!fs.existsSync(filePath)) {
-    const header =
-      'TIMESTAMP,METHOD,PATH,URL,STATUS,DURATION_MS,IP,USER_AGENT\n';
-    try {
-      fs.writeFileSync(filePath, header);
+  // Create a writable stream for non-blocking append
+  const stream = fs.createWriteStream(filePath, { flags: 'a' });
+  try {
+    const stats = fs.existsSync(filePath) ? fs.statSync(filePath) : null;
+    if (!stats || stats.size === 0) {
+      const header = 'TIMESTAMP,METHOD,PATH,URL,STATUS,DURATION_MS,IP,USER_AGENT\n';
+      stream.write(header);
       headerWritten = true;
-    } catch (error) {
-      logger.error('Failed to write route usage header:', error);
     }
+  } catch (err) {
+    logger.error('Failed to initialize route usage stream:', err);
   }
 
   return (req: Request, res: Response, next: NextFunction) => {
@@ -90,7 +91,8 @@ export function createRouteUsageLogger(logFilePath?: string) {
 
         const csv = logLine.map(v => `"${v}"`).join(',') + '\n';
 
-        fs.appendFileSync(filePath, csv);
+        // Non-blocking write to stream
+        stream.write(csv);
       } catch (error) {
         logger.error('Failed to log route usage:', error);
       }

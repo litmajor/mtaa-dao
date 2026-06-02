@@ -15,7 +15,7 @@ import {
   Menu,
   X,
   Zap,
-} from 'lucide-react';
+} from '../../src/lib/icons';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -62,6 +62,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, title = 'Adm
           <button 
             className={styles.closeMobile}
             onClick={() => setMobileOpen(false)}
+            aria-label="Close mobile menu"
+            title="Close mobile menu"
           >
             <X size={24} />
           </button>
@@ -82,7 +84,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, title = 'Adm
         </nav>
 
         <div className={styles.sidebarFooter}>
-          <button className={styles.logoutBtn} onClick={handleLogout}>
+          <button className={styles.logoutBtn} onClick={handleLogout} aria-label="Logout" title="Logout">
             <LogOut size={20} />
             <span>Logout</span>
           </button>
@@ -96,6 +98,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, title = 'Adm
           <button 
             className={styles.menuToggle}
             onClick={() => setMobileOpen(!mobileOpen)}
+            aria-label="Toggle mobile menu"
+            title="Toggle mobile menu"
           >
             <Menu size={24} />
           </button>

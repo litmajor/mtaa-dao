@@ -43,10 +43,10 @@ export default function Navigation() {
   async function handleLogout() {
     try {
       await apiRequest("POST", "/api/auth/logout");
-      // Clear local storage
+      // Clear local session data and notify other tabs
       localStorage.removeItem('mtaa_dao_auth_session');
-      localStorage.removeItem('mtaa_dao_auth_token');
       localStorage.removeItem('mtaa_remembered_email');
+      try { (await import('../utils/authChannel')).default.postAuthMessage({ type: 'logout', payload: {} }); } catch (e) {}
       // Navigate to login without reload
       navigate("/login", { replace: true });
     } catch (e) {
@@ -465,7 +465,7 @@ export default function Navigation() {
                     </Button>
                   </Link>
                   <Link to="/register">
-                    <Button className="font-medium px-6 py-2 rounded-lg bg-gradient-to-r from-mtaa-orange to-amber-500 text-white">
+                    <Button variant="primary" className="font-medium px-6 py-2 rounded-lg">
                       Register
                     </Button>
                   </Link>

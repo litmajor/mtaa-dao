@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import type { SystemSettings } from '../../types/admin';
 import { useAdminSettings } from '../../hooks/useAdmin';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { AlertCircle, CheckCircle, Save, RotateCcw } from 'lucide-react';
@@ -6,7 +7,7 @@ import { Skeleton } from '../../components/ui/skeleton';
 
 export function SettingsPage() {
   const { settings, loading, error, fetchSettings, updateSettings } = useAdminSettings();
-  const [formData, setFormData] = useState<any>(null);
+  const [formData, setFormData] = useState<SystemSettings | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -21,14 +22,14 @@ export function SettingsPage() {
     }
   }, [settings, formData]);
 
-  const handleChange = (section: string, key: string, value: any) => {
-    setFormData((prev: any) => ({
-      ...prev,
+  const handleChange = (section: keyof SystemSettings, key: string, value: unknown) => {
+    setFormData((prev) => ({
+      ...(prev || {}),
       [section]: {
-        ...prev[section],
+        ...((prev as any)?.[section] || {}),
         [key]: value,
       },
-    }));
+    } as SystemSettings));
     setIsDirty(true);
     setSaveSuccess(false);
   };

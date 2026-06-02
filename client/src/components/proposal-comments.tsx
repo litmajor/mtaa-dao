@@ -7,6 +7,7 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { MessageCircle, Send, Edit, Trash2, Heart, AlertCircle, Loader2 } from "lucide-react";
+import { t } from '@/lib/uiLabels';
 import { formatDistanceToNow } from "date-fns";
 
 interface Comment {
@@ -262,7 +263,7 @@ export default function ProposalComments({ proposalId, daoId, currentUserId }: P
         {currentUserId && (
           <div className="space-y-3">
             <Textarea
-              placeholder="Share your thoughts on this proposal..."
+              placeholder={`Share your thoughts on this ${t('proposal').toLowerCase()}...`}
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
               className="min-h-[100px] resize-none border-gray-300 focus:border-mtaa-purple focus:ring-mtaa-purple"

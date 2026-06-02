@@ -11,6 +11,21 @@ import { useState, useCallback, useEffect, useContext, createContext } from 'rea
 import Web3 from 'web3';
 import type { WalletConfig } from './types';
 
+// Basic account and provider types
+export type Account = { address: string; chainId?: number; balance?: string } | null
+
+export type WalletConnectResult = { success: boolean; account?: Account; error?: string }
+
+export type WalletProvider = { id?: string; name?: string; raw?: unknown }
+
+type WindowEthereumShim = {
+  request: (args: { method: string; params?: unknown }) => Promise<unknown>
+  on?: (event: string, cb: (...args: unknown[]) => void) => void
+  removeListener?: (event: string, cb: (...args: unknown[]) => void) => void
+  isMetaMask?: boolean
+  [k: string]: unknown
+}
+
 /**
  * Wallet Connection State
  */
@@ -23,14 +38,14 @@ export interface WalletState {
   isLoading: boolean;
   error: string | null;
   web3: Web3 | null;
-  account: any | null;
+  account: Account | null;
 }
 
 /**
  * Wallet Context Type
  */
 export interface WalletContextType extends WalletState {
-  connect: (provider?: any) => Promise<void>;
+  connect: (provider?: WalletProvider | WindowEthereumShim) => Promise<void>;
   disconnect: () => void;
   switchChain: (chainId: number) => Promise<void>;
   getBalance: () => Promise<string>;
@@ -70,16 +85,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   /**
    * Connect wallet via MetaMask or other provider
    */
-  const connect = useCallback(async (provider?: any) => {
+  const connect = useCallback(async (provider?: WalletProvider | WindowEthereumShim) => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
       // Try MetaMask first
-      const ethereum = provider || (typeof window !== 'undefined' ? (window as any).ethereum : null);
+      const ethereum = (provider as WindowEthereumShim) || (typeof window !== 'undefined' ? (window as unknown as { ethereum?: unknown }).ethereum as WindowEthereumShim | undefined : undefined);
 
-      if (!ethereum) {
-        throw new Error('No wallet provider found. Please install MetaMask or similar.');
-      }
+      if (!ethereum) throw new Error('No wallet provider found. Please install MetaMask or similar.');
 
       // Request account access
       const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
@@ -112,29 +125,39 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       });
 
       // Listen for account changes
-      ethereum.on('accountsChanged', (newAccounts: string[]) => {
-        if (newAccounts.length === 0) {
-          setState(prev => ({
-            ...prev,
-            isConnected: false,
-            address: null,
-            account: null
-          }));
-        } else {
-          setState(prev => ({ ...prev, address: newAccounts[0] }));
+      if (typeof ethereum.on === 'function') {
+        try {
+          ethereum.on('accountsChanged', (newAccounts: unknown) => {
+            const arr = Array.isArray(newAccounts) ? (newAccounts as string[]) : [];
+            if (arr.length === 0) {
+              setState(prev => ({
+                ...prev,
+                isConnected: false,
+                address: null,
+                account: null
+              }));
+            } else {
+              setState(prev => ({ ...prev, address: arr[0] }));
+            }
+          });
+        } catch (e) {
+          // ignore listener binding errors
         }
-      });
+      }
 
       // Listen for chain changes
-      ethereum.on('chainChanged', (newChainId: string) => {
-        setState(prev => ({ ...prev, chainId: parseInt(newChainId, 16) }));
-      });
+      if (typeof ethereum.on === 'function') {
+        try {
+          ethereum.on('chainChanged', (newChainId: unknown) => {
+            if (typeof newChainId === 'string') setState(prev => ({ ...prev, chainId: parseInt(newChainId, 16) }));
+          });
+        } catch (e) {
+          // ignore
+        }
+      }
     } catch (error) {
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: error instanceof Error ? error.message : String(error)
-      }));
+      const msg = error instanceof Error ? error.message : String(error);
+      setState(prev => ({ ...prev, isLoading: false, error: msg }));
     }
   }, []);
 
@@ -170,19 +193,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           method: 'wallet_switchEthereumChain',
           params: [{ chainId: chainIdHex }]
         });
-      } catch (switchError: any) {
+      } catch (switchError: unknown) {
         // Chain not added, try to add it
-        if (switchError.code === 4902) {
-          // You would need chain details to add
+        const se = switchError as { code?: number }
+        if (se?.code === 4902) {
           throw new Error('Chain not found. Please add it manually in your wallet.');
         }
         throw switchError;
       }
-    } catch (error) {
-      setState(prev => ({
-        ...prev,
-        error: error instanceof Error ? error.message : String(error)
-      }));
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      setState(prev => ({ ...prev, error: msg }));
     }
   }, []);
 

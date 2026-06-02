@@ -10,6 +10,7 @@
  */
 
 import React, { useState } from 'react';
+import { useActionHistoryStore } from '../../stores/actionHistory';
 import { SoloStakingPanel } from './SoloStakingPanel';
 import { PoolStakingPanel } from './PoolStakingPanel';
 import { LiquidityPoolPanel } from './LiquidityPoolPanel';
@@ -25,7 +26,8 @@ export const StakingDashboard: React.FC<StakingDashboardProps> = ({
   daoName = 'My DAO',
 }) => {
   const [activePanel, setActivePanel] = useState<'solo' | 'pool' | 'liquidity' | 'farming'>('solo');
-  const [stakingHistory, setStakingHistory] = useState<any[]>([]);
+  const stakingHistory = useActionHistoryStore((s) => s.actionHistory);
+  const pushAction = useActionHistoryStore((s) => s.pushAction);
   const [showHistory, setShowHistory] = useState(false);
 
   // Staking state
@@ -44,7 +46,7 @@ export const StakingDashboard: React.FC<StakingDashboardProps> = ({
       type: activePanel,
       details: result,
     };
-    setStakingHistory([action, ...stakingHistory]);
+    pushAction(action);
   };
 
   return (

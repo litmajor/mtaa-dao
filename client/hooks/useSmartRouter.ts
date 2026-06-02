@@ -7,7 +7,10 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { apiClient } from '@/client/lib/apiClient';
+import { apiClient } from '../lib/apiClient';
+
+export type Route = { from: string; to: string; steps: Array<{ exchange: string; amountIn: string }> }
+export type Order = { id?: string; market: string; side: 'buy' | 'sell'; amount: string; price?: string }
 
 interface RoutingPath {
   exchange: string;
@@ -21,7 +24,7 @@ interface RoutingPath {
   feeAmount: number;
   slippageAmount: number;
   totalCost: number;
-  alternativeRoutes?: any[];
+  alternativeRoutes?: Route[];
 }
 
 interface RoutingAnalysis {
@@ -82,8 +85,9 @@ export function useSmartRouting(pair: string, quantity: number, side: 'BUY' | 'S
         } else {
           setError(response.error || 'Failed to analyze routing');
         }
-      } catch (err: any) {
-        setError(err.message || 'Error analyzing routing');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(msg || 'Error analyzing routing');
       } finally {
         setLoading(false);
       }
@@ -122,8 +126,9 @@ export function useExchangeQuotes(pair: string, quantity: number, side: 'BUY' | 
         } else {
           setError(response.error || 'Failed to fetch quotes');
         }
-      } catch (err: any) {
-        setError(err.message || 'Error fetching quotes');
+        } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(msg || 'Error fetching quotes');
       } finally {
         setLoading(false);
       }
@@ -156,8 +161,9 @@ export function useFeeComparison() {
         } else {
           setError(response.error || 'Failed to fetch fees');
         }
-      } catch (err: any) {
-        setError(err.message || 'Error fetching fees');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(msg || 'Error fetching fees');
       } finally {
         setLoading(false);
       }
@@ -190,11 +196,12 @@ export function useSavingsBySmartRouting(pair: string, quantity: number, side: '
           side,
         });
 
-        if (response.success) {
-          setSavings(response.data?.savings || 0);
-          setSavingsPercent(response.data?.savingsPercent || 0);
+        if (response.success && response.data && typeof response.data === 'object') {
+          const d = response.data as Record<string, unknown>;
+          setSavings(Number(d.savings ?? 0));
+          setSavingsPercent(Number(d.savingsPercent ?? 0));
         }
-      } catch (err) {
+      } catch (err: unknown) {
         console.error('Error calculating savings:', err);
       } finally {
         setLoading(false);
@@ -232,8 +239,9 @@ export function useLiquidityAnalysis(pair: string) {
         } else {
           setError(response.error || 'Failed to analyze liquidity');
         }
-      } catch (err: any) {
-        setError(err.message || 'Error analyzing liquidity');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(msg || 'Error analyzing liquidity');
       } finally {
         setLoading(false);
       }
@@ -272,8 +280,9 @@ export function useSlippageCalculation(pair: string, quantity: number, side: 'BU
         } else {
           setError(response.error || 'Failed to calculate slippage');
         }
-      } catch (err: any) {
-        setError(err.message || 'Error calculating slippage');
+        } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(msg || 'Error calculating slippage');
       } finally {
         setLoading(false);
       }
@@ -307,13 +316,15 @@ export function useBestExchange(pair: string, quantity: number, side: 'BUY' | 'S
           side,
         });
 
-        if (response.success) {
-          setBestExchange(response.data?.exchange);
+        if (response.success && response.data && typeof response.data === 'object') {
+          const d = response.data as Record<string, unknown>;
+          setBestExchange((d.exchange as string) || null);
         } else {
           setError(response.error || 'Failed to find best exchange');
         }
-      } catch (err: any) {
-        setError(err.message || 'Error finding best exchange');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(msg || 'Error finding best exchange');
       } finally {
         setLoading(false);
       }
@@ -329,7 +340,7 @@ export function useBestExchange(pair: string, quantity: number, side: 'BUY' | 'S
  * Hook to analyze arbitrage opportunities
  */
 export function useArbitrageAnalysis(pair: string) {
-  const [opportunities, setOpportunities] = useState<any[]>([]);
+  const [opportunities, setOpportunities] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -344,13 +355,15 @@ export function useArbitrageAnalysis(pair: string) {
         pair,
       });
 
-      if (response.success) {
-        setOpportunities(response.data?.opportunities || []);
-      } else {
-        setError(response.error || 'Failed to analyze arbitrage');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Error analyzing arbitrage');
+        if (response.success && response.data && typeof response.data === 'object') {
+          const d = response.data as Record<string, unknown>;
+          setOpportunities((d.opportunities as Array<Record<string, unknown>> | undefined) || []);
+        } else {
+          setError(response.error || 'Failed to analyze arbitrage');
+        }
+      } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg || 'Error analyzing arbitrage');
     } finally {
       setLoading(false);
     }
@@ -367,7 +380,7 @@ export function useArbitrageAnalysis(pair: string) {
  * Hook for multi-leg routing (splitting orders across exchanges)
  */
 export function useMultiLegRouting(pair: string, quantity: number, side: 'BUY' | 'SELL') {
-  const [routes, setRoutes] = useState<any[]>([]);
+  const [routes, setRoutes] = useState<Route[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -385,13 +398,15 @@ export function useMultiLegRouting(pair: string, quantity: number, side: 'BUY' |
           side,
         });
 
-        if (response.success) {
-          setRoutes(response.data?.routes || []);
+        if (response.success && response.data && typeof response.data === 'object') {
+          const d = response.data as Record<string, unknown>;
+          setRoutes((d.routes as Route[] | undefined) || []);
         } else {
           setError(response.error || 'Failed to calculate multi-leg routes');
         }
-      } catch (err: any) {
-        setError(err.message || 'Error calculating multi-leg routes');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(msg || 'Error calculating multi-leg routes');
       } finally {
         setLoading(false);
       }
@@ -407,7 +422,7 @@ export function useMultiLegRouting(pair: string, quantity: number, side: 'BUY' |
  * Hook to get execution recommendation
  */
 export function useExecutionRecommendation(pair: string, quantity: number, side: 'BUY' | 'SELL') {
-  const [recommendation, setRecommendation] = useState<any>(null);
+  const [recommendation, setRecommendation] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -425,13 +440,14 @@ export function useExecutionRecommendation(pair: string, quantity: number, side:
           side,
         });
 
-        if (response.success) {
-          setRecommendation(response.data);
+        if (response.success && response.data && typeof response.data === 'object') {
+          setRecommendation(response.data as Record<string, unknown>);
         } else {
           setError(response.error || 'Failed to get recommendation');
         }
-      } catch (err: any) {
-        setError(err.message || 'Error getting recommendation');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(msg || 'Error getting recommendation');
       } finally {
         setLoading(false);
       }

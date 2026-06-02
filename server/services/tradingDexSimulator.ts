@@ -45,7 +45,7 @@ export class SpotTradeSimulator extends SimulationService {
       return this.createError(`Missing required parameters: ${missing.join(', ')}`, params);
     }
 
-    const { userId, side, symbol, quantity, currentPrice, volatility = 2.0, userBalance = 100000 } = params;
+    const { userId, side, symbol, quantity, currentPrice, volatility = 2.0, userBalance = 100000, currentHolding = 0 } = params;
 
     if (quantity <= 0 || currentPrice <= 0) {
       return this.createError('Quantity and price must be positive', params);
@@ -69,21 +69,26 @@ export class SpotTradeSimulator extends SimulationService {
 
     const beforeState = {
       balance: userBalance,
-      position: side === 'SELL' ? quantity : 0,
+      position: currentHolding,
       symbol,
       currentPrice,
     };
 
+    // SELL: validate holdings
+    if (side === 'SELL' && quantity > currentHolding) {
+      return this.createError(`Insufficient holdings to sell. Holding: ${currentHolding}, Trying to sell: ${quantity}`, params);
+    }
+
     const afterState = side === 'BUY' 
       ? {
           balance: userBalance - totalValue - fees,
-          position: quantity,
+          position: this.round(currentHolding + quantity, 8),
           symbol,
           executionPrice,
         }
       : {
           balance: userBalance + totalValue - fees,
-          position: 0,
+          position: this.round(currentHolding - quantity, 8),
           symbol,
           executionPrice,
         };
@@ -114,6 +119,11 @@ export class SpotTradeSimulator extends SimulationService {
       return this.createError('Insufficient balance to execute trade', params);
     }
 
+    // Warn if using default balance assumption
+    if (params.userBalance === undefined) {
+      warnings.push('Using default `userBalance` assumption of 100000 — provide explicit balance for accurate results');
+    }
+
     const riskLevel = riskFactors.length === 0 ? 'LOW' : 
                       riskFactors.length === 1 ? 'MEDIUM' : 'HIGH';
 
@@ -121,7 +131,7 @@ export class SpotTradeSimulator extends SimulationService {
       status: SimulationStatus.SUCCESS,
       depth: this.depth,
       timestamp: Date.now(),
-      executionTimeMs: Date.now() - startTime,
+      executionTimeMs: Math.max(1, Date.now() - startTime),
       beforeState,
       afterState,
       delta,
@@ -222,7 +232,7 @@ export class MarginTradeSimulator extends SimulationService {
       ? currentPrice * (1 + this.basisPoints(slippageBp))
       : currentPrice * (1 - this.basisPoints(slippageBp));
 
-    const fees = this.round(positionValue * 0.0010, 8); // 0.1% opening fee
+    const fees = this.round(positionValue * this.basisPoints(10), 8); // 10 bp = 0.1% opening fee
 
     const beforeState = {
       collateral,
@@ -279,14 +289,14 @@ export class MarginTradeSimulator extends SimulationService {
     warnings.push(`Hourly funding cost: ${interestCost.toFixed(8)} USDT`);
 
     const riskLevel = collateralRatio < 110 ? 'CRITICAL' :
-                      collateralRatio < 150 ? 'HIGH' :
-                      leverage > 50 ? 'HIGH' : 'MEDIUM';
-
+              collateralRatio < 150 ? 'HIGH' :
+              leverage > 50 ? 'HIGH' : 'MEDIUM';
+    
     return {
       status: SimulationStatus.SUCCESS,
       depth: this.depth,
       timestamp: Date.now(),
-      executionTimeMs: Date.now() - startTime,
+      executionTimeMs: Math.max(1, Date.now() - startTime),
       beforeState,
       afterState,
       delta,
@@ -353,7 +363,16 @@ export class PerpetualsFuturesSimulator extends SimulationService {
     // Calculate unrealized P&L
     const priceChange = side === 'LONG' ? currentPrice - entryPrice : entryPrice - currentPrice;
     const pnl = quantity * priceChange;
-    const pnlPercentage = (priceChange / entryPrice) * 100;
+    const marginRequired = (quantity * entryPrice) / leverage;
+
+    // Validate collateral covers margin required
+    if (collateral < marginRequired) {
+      return this.createError(`Insufficient margin for perp position. Required: ${marginRequired.toFixed(8)}, Available: ${collateral.toFixed(8)}`, params);
+    }
+
+    // P&L percentage should account for leverage when reporting risk (leveraged P&L%)
+    const rawPricePct = (priceChange / entryPrice) * 100;
+    const pnlPercentage = rawPricePct * leverage; // leveraged P&L%
 
     // Funding rate impact (perpetuals specific)
     const fundingRateAnnual = 3 + (volatility * 0.3);
@@ -373,10 +392,8 @@ export class PerpetualsFuturesSimulator extends SimulationService {
       leverage,
     };
 
-    const marginRequired = (quantity * entryPrice) / leverage;
-
     const afterState = {
-      collateral: collateral - marginRequired,
+      collateral: Math.max(0, collateral - marginRequired),
       position: quantity,
       entry: entryPrice,
       currentPrice,
@@ -397,7 +414,7 @@ export class PerpetualsFuturesSimulator extends SimulationService {
 
     if (pnlPercentage < -20) {
       riskFactors.push('high-drawdown');
-      warnings.push(`Position is down ${Math.abs(pnlPercentage).toFixed(2)}% - consider risk management`);
+      warnings.push(`Position is down ${Math.abs(pnlPercentage).toFixed(2)}% (leveraged) - consider risk management`);
     }
 
     if (leverage > 20) {
@@ -410,14 +427,15 @@ export class PerpetualsFuturesSimulator extends SimulationService {
       warnings.push(`High volatility (${volatility}%) may trigger liquidation`);
     }
 
-    const riskLevel = Math.abs(pnlPercentage) > 50 ? 'CRITICAL' :
-                      Math.abs(pnlPercentage) > 20 ? 'HIGH' : 'MEDIUM';
+    const riskLevel = Math.abs(pnlPercentage) > 500 ? 'CRITICAL' :
+              Math.abs(pnlPercentage) > 200 ? 'HIGH' :
+              Math.abs(pnlPercentage) > 50 ? 'MEDIUM' : 'LOW';
 
     return {
       status: SimulationStatus.SUCCESS,
       depth: this.depth,
       timestamp: Date.now(),
-      executionTimeMs: Date.now() - startTime,
+      executionTimeMs: Math.max(1, Date.now() - startTime),
       beforeState,
       afterState,
       delta,
@@ -469,27 +487,25 @@ export class DexSwapSimulator extends SimulationService {
       return this.createError('Amount must be positive', params);
     }
 
-    // AMM formula: x * y = k (constant product)
-    const k = reserveIn * reserveOut;
-    const newReserveIn = reserveIn + amountIn;
-    const newReserveOut = k / newReserveIn;
-    const amountOut = reserveOut - newReserveOut;
+    // DEX fee (percent)
+    const dexFeePercent = 0.003; // 0.3%
+    const feeAmount = amountIn * dexFeePercent;
+    const amountInAfterFee = amountIn - feeAmount;
 
-    // Price impact
-    const spotPrice = amountIn / amountOut;
-    const expectedPrice = reserveOut / reserveIn;
-    const priceImpact = ((spotPrice - expectedPrice) / expectedPrice) * 100;
+    // AMM formula using amountIn after fee (Uniswap v2 style):
+    // amountOut = (amountInWithFee * reserveOut) / (reserveIn + amountInWithFee)
+    const amountOut = (amountInAfterFee * reserveOut) / (reserveIn + amountInAfterFee);
+
+    // Price impact (compare tokenOut per tokenIn)
+    const spotPrice = amountOut / amountInAfterFee; // tokenOut per tokenIn
+    const expectedPrice = reserveOut / reserveIn; // tokenOut per tokenIn
+    const priceImpact = ((expectedPrice - spotPrice) / expectedPrice) * 100;
 
     // Slippage
     const minimumAmountOut = amountOut * (1 - (slippageTolerance / 100));
 
-    // DEX fees (typically 0.25-1%)
-    const dexFee = 0.30; // 0.3%
-    const feeAmount = amountIn * (dexFee / 100);
-    const amountInAfterFee = amountIn - feeAmount;
-
-    // Liquidity provider fee impact
-    const lpFees = amountOut * (dexFee / 100);
+    // Liquidity provider fee impact comes from the feeAmount (stays in pool on the tokenIn side)
+    const lpFees = feeAmount;
 
     const beforeState = {
       tokenIn,
@@ -502,16 +518,16 @@ export class DexSwapSimulator extends SimulationService {
 
     const afterState = {
       balanceIn: 100 - amountIn,
-      balanceOut: 100 + amountOut - (amountOut * (dexFee / 100)),
-      reserveIn: newReserveIn,
-      reserveOut: newReserveOut,
+      balanceOut: 100 + amountOut,
+      reserveIn: reserveIn + amountIn, // fee also added to reserveIn
+      reserveOut: reserveOut - amountOut,
     };
 
     const delta = {
       tokenInDelta: -amountIn,
-      tokenOutDelta: amountOut - lpFees,
+      tokenOutDelta: amountOut,
       feesCollected: feeAmount,
-      priceImpact: ((amountOut * expectedPrice) - (amountOut * spotPrice)).toFixed(8),
+      priceImpact: this.round(priceImpact, 8),
     };
 
     const riskFactors: string[] = [];
@@ -538,7 +554,7 @@ export class DexSwapSimulator extends SimulationService {
       status: SimulationStatus.SUCCESS,
       depth: this.depth,
       timestamp: Date.now(),
-      executionTimeMs: Date.now() - startTime,
+      executionTimeMs: Math.max(1, Date.now() - startTime),
       beforeState,
       afterState,
       delta,
@@ -605,8 +621,15 @@ export class FlashLoanSimulator extends SimulationService {
                             actionType === 'liquidation' ? 30 : 20;
     const executionCost = amount * this.basisPoints(executionCostBp);
 
-    // Profit calculation (simplified)
-    const estimatedProfit = amount * 0.001; // 0.1% profit assumption
+    // Estimate profit based on action type multipliers (avoid fabricated flat profit)
+    const profitMultipliers: { [k: string]: number } = {
+      arbitrage: 0.007, // 0.7%
+      liquidation: 0.07, // 7% (liquidation bonus)
+      swap: 0.005, // 0.5%
+      default: 0.001,
+    };
+    const multiplier = profitMultipliers[actionType] ?? profitMultipliers.default;
+    const estimatedProfit = amount * multiplier;
     const netProfit = estimatedProfit - fee - executionCost;
 
     const beforeState = {
@@ -617,18 +640,18 @@ export class FlashLoanSimulator extends SimulationService {
     };
 
     const afterState = {
-      loanBalance: amount,
-      poolLiquidity: poolLiquidity - amount,
+      loanBalance: 0, // Flash loans repay within transaction
+      poolLiquidity: poolLiquidity + fee, // principal returned, fee remains in pool
       repaymentAmount: amount + fee,
       profit: Math.max(0, netProfit),
     };
 
     const delta = {
-      loanDelta: amount,
+      loanDelta: 0,
       feeCollected: fee,
       executionCost,
       netProfitChange: netProfit,
-      liquidityImpact: -amount,
+      liquidityImpact: fee,
     };
 
     const riskFactors: string[] = [];
@@ -656,7 +679,7 @@ export class FlashLoanSimulator extends SimulationService {
       status: SimulationStatus.SUCCESS,
       depth: this.depth,
       timestamp: Date.now(),
-      executionTimeMs: Date.now() - startTime,
+      executionTimeMs: Math.max(1, Date.now() - startTime),
       beforeState,
       afterState,
       delta,
@@ -672,7 +695,7 @@ export class FlashLoanSimulator extends SimulationService {
       summary: `Flash loan ${amount} ${token} for ${actionType} - fee ${fee.toFixed(8)}, net profit ${netProfit.toFixed(8)}`,
       impactedEntities: [
         { type: 'wallet', id: userId, impact: `Profit: ${netProfit.toFixed(8)} ${token}` },
-        { type: 'pool', id: token, impact: `Liquidity: ${poolLiquidity - amount}` },
+        { type: 'pool', id: token, impact: `Liquidity: ${poolLiquidity + fee}` },
       ],
       simulationData: {
         flashLoanFee: flashLoanFeeBp / 100,

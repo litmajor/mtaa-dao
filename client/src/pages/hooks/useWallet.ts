@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getBalance, connectWallet, currentNetwork, publicClient } from '@/lib/blockchain';
-import { parseUnits, encodeFunctionData } from 'viem';
+import { Interface, parseUnits } from 'ethers';
 
 declare global {
   interface Window {
@@ -230,9 +230,9 @@ export const useWallet = () => {
       let txParams;
 
       if (tokenAddress) {
-        // ERC-20 token transfer using viem for precise encoding
-        const transferData = encodeFunctionData({
-          abi: [{
+        // ERC-20 token transfer using ethers utils for precise encoding
+        const abi = [
+          {
             inputs: [
               { internalType: 'address', name: 'to', type: 'address' },
               { internalType: 'uint256', name: 'amount', type: 'uint256' },
@@ -241,11 +241,11 @@ export const useWallet = () => {
             outputs: [{ internalType: 'bool', name: '', type: 'bool' }],
             stateMutability: 'nonpayable',
             type: 'function',
-          }],
-          functionName: 'transfer',
-          args: [to as `0x${string}`, parseUnits(amount, 18)]
-        });
-        
+          },
+        ];
+        const iface = new Interface(abi as any);
+        const transferData = iface.encodeFunctionData('transfer', [to as `0x${string}`, parseUnits(amount, 18)]);
+
         txParams = {
           from: walletState.address,
           to: tokenAddress,
@@ -254,10 +254,13 @@ export const useWallet = () => {
         };
       } else {
         // Native CELO transfer using viem for precise conversion
+        const value = parseUnits(amount, 18);
+        // `parseUnits` returns a bigint; convert to hex string for the RPC payload
+        const hex = '0x' + value.toString(16);
         txParams = {
           from: walletState.address,
           to,
-          value: `0x${parseUnits(amount, 18).toString(16)}`,
+          value: hex,
           // Let provider estimate gas
         };
       }

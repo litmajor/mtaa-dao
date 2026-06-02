@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { AdminTable } from '@/components/admin/AdminTable';
-import { Search, AlertTriangle } from 'lucide-react';
+import { Search, AlertTriangle } from '../../src/lib/icons';
 import styles from './daos.module.css';
 
 interface DAO {
@@ -138,6 +138,7 @@ const AdminDAOs: React.FC = () => {
               setPage(1);
             }}
             className={styles.select}
+            aria-label="Filter DAOs by status"
           >
             <option value="all">All Status</option>
             <option value="active">Active</option>

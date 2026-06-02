@@ -24,7 +24,7 @@ export interface CacheStats {
 class DataCache<T> {
   private cache = new Map<string, CacheEntry<T>>();
   private stats: CacheStats = { hits: 0, misses: 0, size: 0 };
-  private cleanupInterval: NodeJS.Timer | null = null;
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.startCleanup();
@@ -130,17 +130,17 @@ class DataCache<T> {
 /**
  * Global cache instance for historical price data
  */
-export const priceHistoryCache = new DataCache<any>();
+export const priceHistoryCache = new DataCache<unknown>();
 
 /**
  * Global cache instance for market cap data
  */
-export const marketCapHistoryCache = new DataCache<any>();
+export const marketCapHistoryCache = new DataCache<unknown>();
 
 /**
  * Global cache instance for volume data
  */
-export const volumeHistoryCache = new DataCache<any>();
+export const volumeHistoryCache = new DataCache<unknown>();
 
 /**
  * Generate cache key for historical data
@@ -189,9 +189,9 @@ export class BatchCacheReader {
   getBatch(
     keys: string[],
     type: 'price' | 'marketCap' | 'volume' = 'price'
-  ): Map<string, any | null> {
+  ): Map<string, unknown | null> {
     const cache = this.caches[type];
-    const results = new Map<string, any | null>();
+    const results = new Map<string, unknown | null>();
 
     for (const key of keys) {
       results.set(key, cache.get(key));
@@ -203,8 +203,8 @@ export class BatchCacheReader {
   /**
    * Set multiple cache entries
    */
-  setBatch(
-    entries: Map<string, any>,
+    setBatch(
+    entries: Map<string, unknown>,
     type: 'price' | 'marketCap' | 'volume' = 'price',
     ttl?: number
   ): void {

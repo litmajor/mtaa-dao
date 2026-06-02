@@ -5,6 +5,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { useToast } from '../ui/use-toast';
+import useWalletActions from '@/hooks/useWalletActions';
 import { Users, Plus, Minus, Send } from 'lucide-react';
 
 interface Participant {
@@ -20,6 +21,7 @@ interface SplitBillModalProps {
 }
 
 export default function SplitBillModal({ isOpen, onClose, userAddress }: SplitBillModalProps) {
+  const actions = useWalletActions();
   const [totalAmount, setTotalAmount] = useState('');
   const [description, setDescription] = useState('');
   const [participants, setParticipants] = useState<Participant[]>([
@@ -64,34 +66,18 @@ export default function SplitBillModal({ isOpen, onClose, userAddress }: SplitBi
 
     setIsLoading(true);
     try {
-      const response = await fetch('/api/v1/wallets/transfers/split', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          creatorAddress: userAddress,
-          totalAmount,
-          description,
-          participants: validParticipants
-        })
-      });
+      const payloadParticipants = validParticipants.map(p => ({ username: p.username, amount: p.share }));
+      const res = await actions.splitBill({ title: description || 'Split Bill', participants: payloadParticipants, currency: 'cUSD', totalAmount, metadata: { creatorAddress: userAddress } });
+      if (!res.success) throw new Error(res.error || 'Failed to create split bill');
 
-      if (!response.ok) throw new Error('Failed to create split bill');
-
-      toast({
-        title: 'Split Bill Created',
-        description: `Payment requests sent to ${validParticipants.length} participants`
-      });
+      toast({ title: 'Split Bill Created', description: `Payment requests sent to ${validParticipants.length} participants` });
 
       setTotalAmount('');
       setDescription('');
       setParticipants([{ id: '1', username: '', share: '' }]);
       onClose();
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to create split bill',
-        variant: 'destructive'
-      });
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to create split bill', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }

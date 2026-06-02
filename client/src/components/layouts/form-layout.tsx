@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button } from '../ui/button-design';
+import { Button } from '../ui';
 
 export interface FormLayoutProps {
   // Metadata

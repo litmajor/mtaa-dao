@@ -53,8 +53,8 @@ export const TreasuryRebalancePanel: React.FC<TreasuryRebalancePanelProps> = ({
     simulationRuns: 10000,
   });
 
-  const [allocationDrift, setAllocationDrift] = useState<Record<string, number>>({});
-  const [totalValue, setTotalValue] = useState<number>(0);
+  // Derived metrics: compute from `formData.positions` instead of storing
+  // to avoid stale state and manual syncing.
 
   // Simulation state
   const {
@@ -71,33 +71,33 @@ export const TreasuryRebalancePanel: React.FC<TreasuryRebalancePanelProps> = ({
     },
   });
 
-  // Calculate portfolio metrics
-  const calculateMetrics = () => {
+  // Pure calculation for derived metrics
+  const computeMetrics = (positions: AssetPosition[]) => {
     let total = 0;
     const drift: Record<string, number> = {};
 
-    formData.positions.forEach((pos) => {
+    positions.forEach((pos) => {
       const posValue = pos.currentAmount * pos.currentPrice;
       total += posValue;
     });
 
-    formData.positions.forEach((pos) => {
+    positions.forEach((pos) => {
       const posValue = pos.currentAmount * pos.currentPrice;
       const currentPercentage = total > 0 ? (posValue / total) * 100 : 0;
       drift[pos.symbol] = currentPercentage - pos.targetPercentage;
     });
 
-    setTotalValue(total);
-    setAllocationDrift(drift);
-
     return { total, drift };
   };
+
+  // Memoized derived state
+  const { totalValue, allocationDrift } = React.useMemo(() => computeMetrics(formData.positions), [formData.positions]);
 
   // Handle preview button click
   const handlePreviewRebalance = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const { total, drift } = calculateMetrics();
+    const { total, drift } = computeMetrics(formData.positions);
 
     if (total <= 0) {
       alert('Portfolio value must be greater than 0');

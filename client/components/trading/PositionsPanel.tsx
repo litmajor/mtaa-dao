@@ -17,7 +17,7 @@ interface PositionsPanelProps {
     longPositions: number;
     shortPositions: number;
     totalExposure: number;
-    totalUnrealizedPnL: number;
+    totalUnrealizedPnl: number;
   };
 }
 
@@ -34,7 +34,7 @@ export default function PositionsPanel({
     longs: positions.filter((p) => p.side === 'long').length,
     shorts: positions.filter((p) => p.side === 'short').length,
     totalExposure: positions.reduce((sum, p) => sum + p.amount * p.currentPrice, 0),
-    totalPnL: positions.reduce((sum, p) => sum + p.unrealizedPnL, 0),
+    totalPnL: positions.reduce((sum, p) => sum + (p.unrealizedPnl ?? 0), 0),
     avgLiquidationRisk: positions.length > 0
       ? positions.reduce((sum, p) => sum + p.liquidationRisk, 0) / positions.length
       : 0,

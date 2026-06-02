@@ -9,6 +9,7 @@
  */
 
 import React, { useState } from 'react';
+import { useActionHistoryStore } from '../../stores/actionHistory';
 import { VaultWithdrawalPanel } from './VaultWithdrawalPanel';
 import { VaultLiquidationPanel } from './VaultLiquidationPanel';
 import { VaultStrategyPanel } from './VaultStrategyPanel';
@@ -23,7 +24,8 @@ export const VaultsDashboard: React.FC<VaultsDashboardProps> = ({
   daoName = 'My DAO',
 }) => {
   const [activePanel, setActivePanel] = useState<'withdrawal' | 'liquidation' | 'strategy'>('strategy');
-  const [vaultHistory, setVaultHistory] = useState<any[]>([]);
+  const vaultHistory = useActionHistoryStore((s) => s.actionHistory);
+  const pushAction = useActionHistoryStore((s) => s.pushAction);
   const [showHistory, setShowHistory] = useState(false);
 
   // Vault state
@@ -41,7 +43,7 @@ export const VaultsDashboard: React.FC<VaultsDashboardProps> = ({
       type: activePanel,
       details: result,
     };
-    setVaultHistory([action, ...vaultHistory]);
+    pushAction(action);
   };
 
   return (
@@ -153,13 +155,13 @@ export const VaultsDashboard: React.FC<VaultsDashboardProps> = ({
       {showHistory && (
         <div className="history-section">
           <h2>Vault Action History</h2>
-          {vaultHistory.length === 0 ? (
+          {vaultHistory.filter(a => ['strategy','withdrawal','liquidation'].includes(a.type)).length === 0 ? (
             <div className="empty-history">
               <p>No vault actions yet. Start by selecting a tool above.</p>
             </div>
           ) : (
             <div className="history-list">
-              {vaultHistory.map((action) => (
+              {vaultHistory.filter(a => ['strategy','withdrawal','liquidation'].includes(a.type)).map((action) => (
                 <div key={action.id} className="history-item">
                   <div className="history-icon">
                     {action.type === 'strategy' && '📊'}

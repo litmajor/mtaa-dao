@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
 import { Wallet, Plus, Upload, Eye, EyeOff, Copy, Download, CheckCircle, Shield, TriangleAlert } from 'lucide-react';
+import { Wallet as EthersWallet } from 'ethers';
 import { useToast } from './ui/use-toast';
 import SeedPhraseModal from './modals/SeedPhraseModal';
 
@@ -28,15 +29,22 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
   const [loading, setLoading] = useState(false);
   const [showPrivateKey, setShowPrivateKey] = useState(false);
   const [privateKey, setPrivateKey] = useState('');
-  const [assets, setAssets] = useState<Asset[]>([
-    { currency: 'cUSD', initialAmount: 0, monthlyGoal: 100 }
-  ]);
+  const [assets, setAssets] = useState<Asset[]>([]);
   const [seedPhraseModal, setSeedPhraseModal] = useState({
     isOpen: false,
     seedPhrase: '',
     walletAddress: ''
   });
   const { toast } = useToast();
+  type WalletSecurityState =
+    | 'UNINITIALIZED'
+    | 'GENERATING'
+    | 'UNBACKED'
+    | 'VIEWING_SECRET'
+    | 'VERIFYING_BACKUP'
+    | 'SECURE'
+    | 'AT_RISK';
+  const [walletSecurityState, setWalletSecurityState] = useState<WalletSecurityState>('UNINITIALIZED');
 
   const supportedCurrencies = [
     { code: 'cUSD', name: 'Celo Dollar', symbol: '$' },
@@ -50,13 +58,15 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
   const createNewWallet = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/wallets/setup/create', {
+      // Create a mnemonic-backed wallet (chain/network selection and asset preferences occur afterward)
+      const response = await fetch('/api/v1/wallets/setup/create/mnemonic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId,
-          currency: assets[0]?.currency || 'cUSD',
-          initialGoal: assets[0]?.monthlyGoal || 0
+          wordCount: 12,
+          password: '' ,
+          initialAssetPreference: assets[0]?.currency
         })
       });
 
@@ -66,10 +76,12 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
         // Show seed phrase modal instead of just a toast
         setSeedPhraseModal({
           isOpen: true,
-          seedPhrase: data.data.wallet.mnemonic || '',
-          walletAddress: data.data.wallet.address
+          seedPhrase: data.data.mnemonic || data.data.wallet?.mnemonic || '',
+          walletAddress: data.data.wallet?.address || ''
         });
-        
+        // mark UNBACKED until user confirms backup
+        setWalletSecurityState('UNBACKED');
+
         // Initialize additional assets if any
         if (assets.length > 1) {
           await initializeAssets(data.data.wallet.address);
@@ -104,6 +116,7 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
             title: "Success!",
             description: "Your wallet backup has been recorded. Redirecting to wallet dashboard..."
           });
+          setWalletSecurityState('SECURE');
         } else {
           const err = await resp.json().catch(() => ({}));
           toast({
@@ -143,30 +156,40 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
 
     setLoading(true);
     try {
+      // Do not send raw private keys to the server. Request a server challenge, sign it locally, then submit.
+      const pk = privateKey.trim();
+      const wallet = new EthersWallet(pk);
+      const address = await wallet.getAddress();
+
+      // Request server challenge (nonce + message)
+      const chalResp = await fetch('/api/v1/wallets/setup/challenge/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address })
+      });
+      const chalData = await chalResp.json();
+      if (!chalData.success || !chalData.data?.message) throw new Error('Failed to obtain server challenge');
+      const message = chalData.data.message;
+
+      // Sign server challenge locally
+      const signature = await wallet.signMessage(message);
+
+      // Submit signed challenge to import endpoint (server will validate and consume nonce)
       const response = await fetch('/api/v1/wallets/setup/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          privateKey: privateKey.trim(),
-          currency: assets[0]?.currency || 'cUSD'
-        })
+        body: JSON.stringify({ userId, address, message, signature })
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
-        toast({
-          title: "Wallet Imported Successfully",
-          description: `Wallet address: ${data.data.wallet.address.slice(0, 8)}...`
-        });
-        
-        // Initialize additional assets if any
+        toast({ title: "Wallet Imported Successfully", description: `Wallet address: ${address.slice(0, 8)}...` });
         if (assets.length > 1) {
-          await initializeAssets(data.data.wallet.address);
+          await initializeAssets(address);
         }
-        
         onWalletCreated?.(data);
+        setWalletSecurityState('AT_RISK');
       } else {
         throw new Error(data.error || data.message);
       }
@@ -206,7 +229,7 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
   };
 
   const addAsset = () => {
-    setAssets([...assets, { currency: 'cUSD', initialAmount: 0, monthlyGoal: 0 }]);
+    setAssets([...assets, { currency: '', initialAmount: 0, monthlyGoal: 0 }]);
   };
 
   const removeAsset = (index: number) => {
@@ -223,11 +246,33 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <div className="text-center space-y-2">
-        <Wallet className="mx-auto h-12 w-12 text-blue-600" />
-        <h1 className="text-3xl font-bold">Setup Your Mtaa Wallet</h1>
-        <p className="text-gray-600">Create a new wallet or import an existing one to get started</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <Wallet className="h-12 w-12 text-blue-600" />
+          <h1 className="text-3xl font-bold">Setup Your Mtaa Wallet</h1>
+          <p className="text-gray-600">Create a new wallet or import an existing one to get started</p>
+        </div>
+        <div>
+          <div className={`px-3 py-1 rounded-full ${walletSecurityState === 'SECURE' ? 'bg-green-100 text-green-800' : walletSecurityState === 'UNBACKED' ? 'bg-amber-100 text-amber-800' : walletSecurityState === 'AT_RISK' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-700'}`}>
+            ● <span className="text-xs font-semibold">{walletSecurityState}</span>
+          </div>
+        </div>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Non-Custodial Security</CardTitle>
+          <CardDescription>Important information about who can recover this wallet</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ul className="list-disc ml-4 space-y-1">
+            <li>You own your recovery phrase</li>
+            <li>Your keys are never stored by MtaaDAO</li>
+            <li>No password reset exists</li>
+            <li>Losing your phrase means permanent loss of access</li>
+          </ul>
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="create" className="w-full">
         <TabsList className="grid w-full grid-cols-2">

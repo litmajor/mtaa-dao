@@ -149,6 +149,20 @@ class RedisService {
     }
   }
 
+  async publish(channel: string, message: string): Promise<number> {
+    await this.ensureConnected();
+    try {
+      if (this.client && this.isConnected) {
+        // ioredis publish returns number of clients that received the message
+        return await (this.client as any).publish(channel, message);
+      }
+    } catch (error) {
+      logger.debug('[Redis] PUBLISH failed:', (error as Error).message);
+      this.isConnected = false;
+    }
+    return 0;
+  }
+
   async incr(key: string): Promise<number> {
     await this.ensureConnected();
     try {
@@ -182,6 +196,44 @@ class RedisService {
   // Alias for set with EX
   async setex(key: string, seconds: number, value: string): Promise<void> {
     await this.set(key, value, seconds);
+  }
+
+  /**
+   * Set value only if key does not already exist (NX semantics).
+   * Returns true if the key was set, false if it already existed.
+   */
+  async setnx(key: string, value: string, expiresInSeconds?: number): Promise<boolean> {
+    await this.ensureConnected();
+    try {
+      if (this.client && this.isConnected) {
+        // ioredis: client.set(key, value, 'EX', seconds, 'NX') -> returns 'OK' or null
+        if (expiresInSeconds) {
+          const res = await (this.client as any).set(key, value, 'EX', expiresInSeconds, 'NX');
+          return res === 'OK';
+        } else {
+          const res = await (this.client as any).set(key, value, 'NX');
+          return res === 'OK';
+        }
+      } else {
+        // Fallback: only set if not present in in-memory store (and not expired)
+        const existing = this.getFromFallback(key);
+        if (existing) return false;
+        this.useFallback('set', key, value, expiresInSeconds);
+        return true;
+      }
+    } catch (error) {
+      logger.debug('[Redis] SETNX failed:', (error as Error).message);
+      this.isConnected = false;
+      // Fallback behavior: behave as if set succeeded to avoid blocking callers
+      try {
+        const existing = this.getFromFallback(key);
+        if (existing) return false;
+        this.useFallback('set', key, value, expiresInSeconds);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
   }
 
   private useFallback(op: 'set', key: string, value: string, expires?: number): void {

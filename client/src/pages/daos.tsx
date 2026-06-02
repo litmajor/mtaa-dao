@@ -2,11 +2,14 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost } from '@/lib/api';
 import { useNavigate } from "react-router-dom";
-import { Plus, Users, DollarSign, TrendingUp, Settings, ArrowRight, Sparkles, Crown, Shield, Star, Zap, Globe, Heart, Trophy, Wallet, Eye, ChevronRight, LoaderCircle } from 'lucide-react';
+import { Plus, Users, DollarSign, TrendingUp, Settings, ArrowUpRight, Sparkles, Crown, Shield, Star, Zap, Globe, Heart, Trophy, Wallet, Eye, ChevronRight, Loader } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DaoOnboardingTour } from '@/components/DaoOnboardingTour';
+import Shell from '../components/ui/shell';
+import { Grid } from '../components/ui/grid';
 
 type DaoRole = "elder" | "proposer" | "member" | null;
 
@@ -161,9 +164,16 @@ export default function EnhancedDAOs() {
   };
 
   const handleLeaveDao = async (daoId: number) => {
-    if (!window.confirm("Are you sure you want to leave this DAO? Past contributions are not refunded.")) return;
+    // open confirm dialog
     setLeavingDaoId(daoId);
-    leaveMutation.mutate(daoId);
+    setLeaveConfirmOpen(true);
+  };
+
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+
+  const confirmLeaveDao = async () => {
+    if (!leavingDaoId) return;
+    leaveMutation.mutate(leavingDaoId);
   };
 
   const handleJoinDao = (daoId: number) => {
@@ -330,31 +340,31 @@ export default function EnhancedDAOs() {
         {/* Action buttons */}
         {dao.isJoined ? (
           <div className="flex flex-col gap-2">
-            <button 
+            <Button
               onClick={() => handleEnterDao(dao.id)}
               className={`w-full bg-gradient-to-r ${dao.gradient} text-white py-3 rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-300 flex items-center justify-center gap-2 group/btn`}
             >
-              <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform duration-300" />
+              <ArrowUpRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform duration-300" />
               Enter DAO
               <Sparkles className="w-4 h-4 group-hover/btn:rotate-12 transition-transform duration-300" />
-            </button>
-            <button
+            </Button>
+            <Button
               className="w-full bg-gradient-to-r from-red-500 to-pink-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:transform-none"
               disabled={leavingDaoId === dao.id || leaveMutation.isPending}
               onClick={() => handleLeaveDao(dao.id)}
             >
               {leavingDaoId === dao.id || leaveMutation.isPending ? (
                 <div className="flex items-center justify-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader className="w-4 h-4 animate-spin" />
                   Leaving...
                 </div>
               ) : (
                 "Leave DAO"
               )}
-            </button>
+            </Button>
           </div>
         ) : (
-          <button 
+          <Button
             onClick={() => handleJoinDao(dao.id)}
             disabled={joinMutation.isPending}
             className={`w-full bg-gradient-to-r ${dao.gradient} text-white py-3 rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-300 flex items-center justify-center gap-2 group/btn disabled:opacity-50 disabled:transform-none`}
@@ -371,15 +381,39 @@ export default function EnhancedDAOs() {
                 <Heart className="w-4 h-4 group-hover/btn:scale-110 transition-transform duration-300" />
               </>
             )}
-          </button>
+          </Button>
         )}
       </div>
     </div>
   );
 
+  // Confirm dialog for leaving DAO
+  const LeaveConfirm = (
+    <ConfirmDialog
+      open={leaveConfirmOpen}
+      onClose={setLeaveConfirmOpen}
+      title="Leave DAO"
+      description="Are you sure you want to leave this DAO? Past contributions are not refunded."
+      confirmLabel="Leave"
+      cancelLabel="Cancel"
+      onConfirm={confirmLeaveDao}
+    />
+  );
+
   return (
+    <Shell
+      brand={
+        <div>
+          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 bg-clip-text text-transparent mb-2">👥 My Groups</h1>
+          <p className="text-gray-600 dark:text-gray-400 text-lg">Save together, invest together, grow together</p>
+        </div>
+      }
+    >
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-purple-900">
-      <DaoOnboardingTour />
+      <DaoOnboardingTour
+        daoId={joinedDAOs[0]?.id?.toString() ?? ''}
+        userRole={joinedDAOs.length ? 'member' : 'creator'}
+      />
       {/* Animated background elements */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob"></div>
@@ -403,9 +437,10 @@ export default function EnhancedDAOs() {
             </div>
           </div>
 
-          <button 
+          <Button
             onClick={() => navigate('/create-dao')}
-            className="group relative overflow-hidden bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 text-white px-8 py-4 rounded-2xl font-semibold shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
+            variant="primary"
+            className="group relative overflow-hidden px-8 py-4 rounded-2xl font-semibold shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
           >
             <div className="absolute inset-0 bg-gradient-to-r from-orange-500 via-pink-600 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
             <div className="relative flex items-center gap-2">
@@ -413,7 +448,7 @@ export default function EnhancedDAOs() {
               Start a Group
               <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
             </div>
-          </button>
+          </Button>
         </div>
 
         {/* Enhanced tabs with discovery filters */}
@@ -498,9 +533,10 @@ export default function EnhancedDAOs() {
                 : "No groups available in this category yet. Be the first to create one!"}
             </p>
             
-            <button 
+            <Button
               onClick={() => navigate('/create-dao')}
-              className="group relative overflow-hidden inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 text-white px-8 py-4 rounded-2xl font-semibold shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
+              variant="primary"
+              className="group relative overflow-hidden inline-flex items-center gap-2 px-8 py-4 rounded-2xl font-semibold shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
             >
               <div className="absolute inset-0 bg-gradient-to-r from-orange-500 via-pink-600 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
               <div className="relative flex items-center gap-2">
@@ -508,23 +544,24 @@ export default function EnhancedDAOs() {
                 Start Your Group
                 <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
               </div>
-            </button>
+            </Button>
             <p className="text-gray-600 dark:text-gray-400 text-lg mb-8 max-w-md mx-auto">
               {currentView === "joined" 
                 ? "Join your first DAO to start participating in revolutionary community governance"
                 : "Check back soon for new innovative communities to join"
               }
             </p>
-            <button 
+            <Button
               onClick={() => currentView === "joined" ? setActiveTab("available") : navigate('/create-dao')}
-              className="bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 text-white px-8 py-4 rounded-2xl font-semibold shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300 group"
+              variant="primary"
+              className="px-8 py-4 rounded-2xl font-semibold shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300"
             >
               <div className="flex items-center gap-2">
                 <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
                 {currentView === "joined" ? "Discover DAOs" : "Create DAO"}
                 <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" />
               </div>
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -567,5 +604,6 @@ export default function EnhancedDAOs() {
         }
       `}</style>
     </div>
+    </Shell>
   );
 }

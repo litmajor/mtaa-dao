@@ -6,7 +6,7 @@
  * Reusable across all components (Trading, Treasury, Governance, Agent)
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { SimulationResult } from '../server/services/simulationFramework';
 
 interface UseSimulationPreviewOptions {
@@ -63,6 +63,8 @@ export function useSimulationPreview(
   const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const timeoutRef = useRef<number | null>(null);
 
   // Open modal
   const openModal = useCallback(() => {
@@ -80,6 +82,15 @@ export function useSimulationPreview(
     setError(null);
     setIsLoading(false);
     setIsModalOpen(false);
+    // Clear any pending timeout and abort pending requests
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current as number);
+      timeoutRef.current = null;
+    }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
   }, []);
 
   // Run simulation
@@ -94,6 +105,13 @@ export function useSimulationPreview(
           throw new Error('simulatorType and params are required');
         }
 
+        // Abort any prior in-flight request
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+        }
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         // Call API
         const response = await fetch('/api/simulate', {
           method: 'POST',
@@ -105,6 +123,7 @@ export function useSimulationPreview(
             params,
             userId, // For audit trail
           }),
+          signal: controller.signal,
         });
 
         if (!response.ok) {
@@ -126,24 +145,48 @@ export function useSimulationPreview(
 
         // Auto-close if enabled
         if (autoClose) {
-          setTimeout(() => {
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current as number);
+          }
+          timeoutRef.current = window.setTimeout(() => {
             closeModal();
+            timeoutRef.current = null;
           }, autoCloseDelay);
         }
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
+        // Handle aborts gracefully
+        const isAbort = (err as any)?.name === 'AbortError';
+        const errorMessage = isAbort ? 'Request aborted' : (err instanceof Error ? err.message : String(err));
         setError(errorMessage);
 
         // Call error callback
         onError?.(err instanceof Error ? err : new Error(errorMessage));
 
-        console.error('Simulation failed:', errorMessage);
+        if (!isAbort) console.error('Simulation failed:', errorMessage);
       } finally {
         setIsLoading(false);
+        // clear abort controller if request finished
+        if (abortControllerRef.current) {
+          abortControllerRef.current = null;
+        }
       }
     },
     [autoClose, autoCloseDelay, onError, onSuccess, closeModal]
   );
+
+  // Cleanup on unmount: abort pending requests and clear timeouts
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current as number);
+        timeoutRef.current = null;
+      }
+    };
+  }, []);
 
   return {
     simulationResult,

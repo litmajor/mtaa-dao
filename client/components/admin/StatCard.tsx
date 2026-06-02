@@ -1,9 +1,9 @@
 import React from 'react';
-import { LucideIcon } from 'lucide-react';
+import React from 'react';
 import styles from './StatCard.module.css';
 
 interface StatCardProps {
-  icon: LucideIcon;
+  icon: React.ComponentType<any>;
   label: string;
   value: number | string;
   trend?: {

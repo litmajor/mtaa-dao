@@ -12,6 +12,7 @@ import React, { useState } from 'react';
 import { BillSplitPanel } from './BillSplitPanel';
 import { ExpenseReimbursementPanel } from './ExpenseReimbursementPanel';
 import { GroupSettlementPanel } from './GroupSettlementPanel';
+import { useActionHistoryStore } from '../../stores/actionHistory';
 
 interface BillSplitDashboardProps {
   userId: string;
@@ -22,8 +23,9 @@ export const BillSplitDashboard: React.FC<BillSplitDashboardProps> = ({
   userId,
   daoName = 'My DAO',
 }) => {
-  const [activePanel, setActivePanel] = useState<'split' | 'reimbursement' | 'settlement'>('split');
-  const [billSplitHistory, setBillSplitHistory] = useState<any[]>([]);
+  const [activePanel, setActivePanel] = useState<'split' | 'settle' | 'roundup' | 'invoice'>('split');
+  const billsHistory = useActionHistoryStore((s) => s.actionHistory);
+  const pushAction = useActionHistoryStore((s) => s.pushAction);
   const [showHistory, setShowHistory] = useState(false);
 
   // Bill split state
@@ -41,7 +43,7 @@ export const BillSplitDashboard: React.FC<BillSplitDashboardProps> = ({
       type: activePanel,
       details: result,
     };
-    setBillSplitHistory([action, ...billSplitHistory]);
+    pushAction(action);
   };
 
   return (

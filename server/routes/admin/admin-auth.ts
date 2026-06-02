@@ -7,7 +7,12 @@ import { users } from '../../../shared/schema';
 import { eq } from 'drizzle-orm';
 import crypto from 'crypto';
 import { createRateLimiter } from '../../middleware/rateLimiting';
-import { auditConsolidated } from '../../services/auditConsolidated';
+import { auditConsolidated, logConsolidatedAuditEvent } from '../../services/auditConsolidated';
+// Ensure JWT secret is present for admin token issuance
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable required for admin auth routes');
+}
 import { requireRole } from '../../middleware/rbac';
 
 const router = Router();
@@ -21,6 +26,28 @@ function isUser(obj: any): obj is { id: string; email: string; password: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+
+// Adapter: normalize legacy audit payloads to UnifiedAuditEntry
+async function audit(entry: any) {
+  const normalized = {
+    actorId: entry.userId || entry.actorId || 'unknown',
+    actorType: entry.actorType || (entry.userRole || 'user'),
+    actionType: entry.action || entry.actionType || 'unknown',
+    actionCategory: entry.actionCategory || 'audit',
+    targetType: entry.resource || entry.targetType || '',
+    targetId: entry.resourceId || entry.targetId || '',
+    result: entry.status === 'success' ? 'success' : (entry.status === 'denied' ? 'failed' : entry.result || 'failed'),
+    metadata: entry.details || entry.metadata || {},
+    severity: entry.severity,
+    ipAddress: entry.ip || entry.ipAddress || '',
+    endpoint: entry.endpoint || '',
+  };
+  try {
+    await logConsolidatedAuditEvent(normalized);
+  } catch (e) {
+    logger.error('[AdminAuthAudit] failed to log', e);
+  }
+}
 // ADMIN AUTH RATE LIMITERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -63,8 +90,8 @@ router.post('/auth/admin-login', adminLoginLimiter, adminLoginIpLimiter, async (
     const user = userArr[0];
     if (!isUser(user)) {
       // Log failed login attempt
-      await auditConsolidated.logConsolidatedAuditEvent({
-        userId: 'unknown',
+      await audit({
+        userId: 'unknown',  
         action: 'admin_login_failed_user_not_found',
         resourceId: email,
         status: 'denied',
@@ -79,7 +106,7 @@ router.post('/auth/admin-login', adminLoginLimiter, adminLoginIpLimiter, async (
     const hasAdminAccess = user.roles === 'superUser' || user.roles === 'admin' || (user as any).isSuperUser === true;
     if (!hasAdminAccess) {
       // Log unauthorized access attempt
-      await auditConsolidated.logConsolidatedAuditEvent({
+      await audit({
         userId: user.id,
         action: 'admin_login_failed_insufficient_role',
         resourceId: user.id,
@@ -98,7 +125,7 @@ router.post('/auth/admin-login', adminLoginLimiter, adminLoginIpLimiter, async (
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
       // Log failed password attempt
-      await auditConsolidated.logConsolidatedAuditEvent({
+          await audit({
         userId: user.id,
         action: 'admin_login_failed_invalid_password',
         resourceId: user.id,
@@ -118,6 +145,12 @@ router.post('/auth/admin-login', adminLoginLimiter, adminLoginIpLimiter, async (
 
     if (twoFaEnabled && !twoFactorCode) {
       // 2FA required but not provided
+      const JWT_SECRET = process.env.JWT_SECRET;
+      if (!JWT_SECRET) {
+        logger.error('JWT_SECRET not configured');
+        return res.status(500).json({ message: 'Server misconfiguration' });
+      }
+
       const tempToken = jwt.sign(
         { 
           id: user.id, 
@@ -125,7 +158,7 @@ router.post('/auth/admin-login', adminLoginLimiter, adminLoginIpLimiter, async (
           roles: user.roles,
           pending2FA: true 
         },
-        process.env.JWT_SECRET || 'changeme',
+        JWT_SECRET,
         { expiresIn: '5m' }
       );
 
@@ -140,7 +173,7 @@ router.post('/auth/admin-login', adminLoginLimiter, adminLoginIpLimiter, async (
 
     const token = jwt.sign(
       { id: user.id, role: user.roles },
-      process.env.JWT_SECRET || 'changeme',
+      JWT_SECRET,
       { expiresIn: '4h' }
     );
     
@@ -162,7 +195,7 @@ router.post('/auth/admin-login', adminLoginLimiter, adminLoginIpLimiter, async (
     };
 
     // Log successful login
-    await auditConsolidated.logConsolidatedAuditEvent({
+    await audit({
       userId: user.id,
       action: 'admin_login_success',
       resourceId: user.id,
@@ -192,7 +225,7 @@ router.post('/auth/superuser-register', async (req, res) => {
   const allowSuperuserReg = process.env.ALLOW_SUPERUSER_REGISTRATION === 'true';
 
   if (!allowSuperuserReg) {
-    await auditConsolidated.logConsolidatedAuditEvent({
+    await audit({
       userId: 'unknown',
       action: 'superuser_register_attempt_disabled',
       resourceId: 'superuser_registration',
@@ -224,7 +257,7 @@ router.post('/auth/superuser-register', async (req, res) => {
   try {
     const existingArr = await db.select().from(users).where(eq(users.email, email)).limit(1);
     if (existingArr[0]) {
-      await auditConsolidated.logConsolidatedAuditEvent({
+      await audit({
         userId: 'unknown',
         action: 'superuser_register_failed_duplicate',
         resourceId: email,
@@ -254,7 +287,7 @@ router.post('/auth/superuser-register', async (req, res) => {
     }
 
     // Log successful superuser creation
-    await auditConsolidated.logConsolidatedAuditEvent({
+    await audit({
       userId: 'system',
       action: 'superuser_register_success',
       resourceId: newUser.id,
@@ -280,7 +313,7 @@ router.post('/auth/superuser-register', async (req, res) => {
     };
     const token = jwt.sign(
       { id: newUser.id, role: newUser.roles, isSuperUser: true },
-      process.env.JWT_SECRET || 'changeme',
+      JWT_SECRET,
       { expiresIn: '4h' }
     );
     res.json({ 
@@ -340,7 +373,7 @@ router.get('/2fa/setup', requireSuperAdmin, async (req, res) => {
     const setupData = await adminTOTPService.initiateTwoFASetup(userEmail, encryptionKey);
 
     // Log 2FA setup initiation
-    await auditConsolidated.logConsolidatedAuditEvent({
+    await audit({
       userId,
       action: 'admin_2fa_setup_initiated',
       resourceId: userId,
@@ -411,7 +444,7 @@ router.post('/2fa/setup/verify', requireSuperAdmin, async (req, res) => {
     );
 
     if (!isValid) {
-      await auditConsolidated.logConsolidatedAuditEvent({
+      await audit({
         userId,
         action: 'admin_2fa_verification_failed',
         resourceId: userId,
@@ -449,7 +482,7 @@ router.post('/2fa/setup/verify', requireSuperAdmin, async (req, res) => {
     }).where(eq(users.id, userId));
 
     // Log successful 2FA setup
-    await auditConsolidated.logConsolidatedAuditEvent({
+    await audit({
       userId,
       action: 'admin_2fa_setup_completed',
       resourceId: userId,
@@ -537,7 +570,7 @@ router.post('/2fa/verify', requireSuperAdmin, async (req, res) => {
     );
 
     if (!isValid) {
-      await auditConsolidated.logConsolidatedAuditEvent({
+      await audit({
         userId,
         action: 'admin_2fa_verification_failed_login',
         resourceId: userId,
@@ -559,7 +592,7 @@ router.post('/2fa/verify', requireSuperAdmin, async (req, res) => {
     }).where(eq(users.id, userId));
 
     // Log successful verification
-    await auditConsolidated.logConsolidatedAuditEvent({
+    await audit({
       userId,
       action: 'admin_2fa_verification_success',
       resourceId: userId,
@@ -733,7 +766,7 @@ router.post('/2fa/backup-codes/regenerate', requireSuperAdmin, async (req, res) 
 
     // Verify password
     if (!user.password || !(await bcrypt.compare(password, user.password))) {
-      await auditConsolidated.logConsolidatedAuditEvent({
+      await audit({
         userId,
         action: 'admin_backup_codes_regen_failed',
         resourceId: userId,
@@ -770,7 +803,7 @@ router.post('/2fa/backup-codes/regenerate', requireSuperAdmin, async (req, res) 
     }).where(eq(users.id, userId));
 
     // Log backup codes regeneration
-    await auditConsolidated.logConsolidatedAuditEvent({
+    await audit({
       userId,
       action: 'admin_backup_codes_regenerated',
       resourceId: userId,
@@ -833,7 +866,7 @@ router.post('/2fa/disable', async (req, res) => {
 
     // Verify password
     if (!user.password || !(await bcrypt.compare(password, user.password))) {
-      await auditConsolidated.logConsolidatedAuditEvent({
+      await audit({
         userId,
         action: 'admin_2fa_disable_failed',
         resourceId: userId,
@@ -858,7 +891,7 @@ router.post('/2fa/disable', async (req, res) => {
     }).where(eq(users.id, userId));
 
     // Log 2FA disablement
-    await auditConsolidated.logConsolidatedAuditEvent({
+    await audit({
       userId,
       action: 'admin_2fa_disabled',
       resourceId: userId,

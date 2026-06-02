@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 
+type EventData = Record<string, unknown>;
+
 interface UseWebSocketOptions {
   url?: string;
   autoConnect?: boolean;
@@ -50,12 +52,14 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       setIsConnected(false);
     });
 
-    socket.on('error:permission', (data) => {
-      setError(data.message || 'Permission denied');
+    socket.on('error:permission', (data: unknown) => {
+      const msg = typeof data === 'object' && data !== null && 'message' in data ? (data as any).message : undefined;
+      setError(msg || 'Permission denied');
     });
 
-    socket.on('connect_error', (error) => {
-      setError(error.message || 'Connection error');
+    socket.on('connect_error', (error: unknown) => {
+      const msg = error instanceof Error ? error.message : String(error);
+      setError(msg || 'Connection error');
     });
 
     socketRef.current = socket;
@@ -77,19 +81,19 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     }
   }, []);
 
-  const emit = useCallback((event: string, data: any) => {
+  const emit = useCallback((event: string, data: Record<string, unknown> | unknown) => {
     if (socketRef.current?.connected) {
       socketRef.current.emit(event, data);
     }
   }, []);
 
-  const on = useCallback((event: string, callback: (data: any) => void) => {
+  const on = useCallback((event: string, callback: (data: unknown) => void) => {
     if (socketRef.current) {
       socketRef.current.on(event, callback);
     }
   }, []);
 
-  const off = useCallback((event: string, callback?: (data: any) => void) => {
+  const off = useCallback((event: string, callback?: (data: unknown) => void) => {
     if (socketRef.current) {
       socketRef.current.off(event, callback);
     }
@@ -114,7 +118,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
  */
 export function useRealtimeNotifications() {
   const { socket, subscribe, unsubscribe, on, off } = useWebSocket();
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<EventData[]>([]);
 
   useEffect(() => {
     if (!socket) return;
@@ -122,13 +126,15 @@ export function useRealtimeNotifications() {
     subscribe('alerts');
     subscribe('dashboard:updates');
 
-    const handleAlert = (data: any) => {
-      setNotifications(prev => [data, ...prev].slice(0, 50)); // Keep last 50
+    const handleAlert = (data: unknown) => {
+      const d = typeof data === 'object' && data !== null ? data as EventData : { payload: String(data) };
+      setNotifications(prev => [d, ...prev].slice(0, 50)); // Keep last 50
     };
 
-    const handleDashboardUpdate = (data: any) => {
+    const handleDashboardUpdate = (data: unknown) => {
+      const d = typeof data === 'object' && data !== null ? data as EventData : { payload: String(data) };
       setNotifications(prev => [
-        { type: 'dashboard', ...data },
+        { type: 'dashboard', ...d },
         ...prev
       ].slice(0, 50));
     };
@@ -165,7 +171,7 @@ export function useRealtimeNotifications() {
  */
 export function useRealtimeActivity(entityType?: string, entityId?: string) {
   const { socket, subscribe, unsubscribe, on, off } = useWebSocket();
-  const [activities, setActivities] = useState<any[]>([]);
+  const [activities, setActivities] = useState<EventData[]>([]);
 
   useEffect(() => {
     if (!socket) return;
@@ -173,8 +179,9 @@ export function useRealtimeActivity(entityType?: string, entityId?: string) {
     const room = entityId ? `activity:${entityType}:${entityId}` : 'activity:feed';
     subscribe(room);
 
-    const handleActivity = (data: any) => {
-      setActivities(prev => [data, ...prev].slice(0, 100));
+    const handleActivity = (data: unknown) => {
+      const d = typeof data === 'object' && data !== null ? data as EventData : { payload: String(data) };
+      setActivities(prev => [d, ...prev].slice(0, 100));
     };
 
     on('activity:logged', handleActivity);
@@ -196,7 +203,7 @@ export function useRealtimeActivity(entityType?: string, entityId?: string) {
  */
 export function useRealtimeConfig(entityType: string, entityId: string) {
   const { socket, subscribe, unsubscribe, on, off } = useWebSocket();
-  const [configChange, setConfigChange] = useState<any>(null);
+  const [configChange, setConfigChange] = useState<EventData | null>(null);
   const [changeTimestamp, setChangeTimestamp] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -205,8 +212,9 @@ export function useRealtimeConfig(entityType: string, entityId: string) {
     const room = `config:${entityType}:${entityId}`;
     subscribe(room);
 
-    const handleConfigChange = (data: any) => {
-      setConfigChange(data);
+    const handleConfigChange = (data: unknown) => {
+      const d = typeof data === 'object' && data !== null ? data as EventData : { payload: String(data) };
+      setConfigChange(d);
       setChangeTimestamp(new Date());
     };
 
@@ -227,7 +235,7 @@ export function useRealtimeConfig(entityType: string, entityId: string) {
  */
 export function useRealtimePresence(section: string) {
   const { socket, subscribe, unsubscribe, on, off, emit } = useWebSocket();
-  const [presentUsers, setPresentUsers] = useState<Map<string, any>>(new Map());
+  const [presentUsers, setPresentUsers] = useState<Map<string, EventData>>(new Map());
 
   useEffect(() => {
     if (!socket) return;
@@ -235,10 +243,12 @@ export function useRealtimePresence(section: string) {
     const room = `presence:${section}`;
     subscribe(room);
 
-    const handlePresenceUpdate = (data: any) => {
+    const handlePresenceUpdate = (data: unknown) => {
+      const d = typeof data === 'object' && data !== null ? data as EventData : { payload: String(data) };
       setPresentUsers(prev => {
         const updated = new Map(prev);
-        updated.set(data.userId, data);
+        const id = (d as any).userId ? String((d as any).userId) : String(Math.random());
+        updated.set(id, d);
         return updated;
       });
     };
@@ -270,7 +280,7 @@ export function useRealtimePresence(section: string) {
  */
 export function useRealtimeSearch() {
   const { socket, subscribe, unsubscribe, on, off } = useWebSocket();
-  const [searchResults, setSearchResults] = useState<any>(null);
+  const [searchResults, setSearchResults] = useState<EventData | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
   useEffect(() => {
@@ -278,9 +288,10 @@ export function useRealtimeSearch() {
 
     subscribe('search:results');
 
-    const handleSearchResult = (data: any) => {
-      setSearchResults(data);
-      setIsSearching(!data.completed);
+    const handleSearchResult = (data: unknown) => {
+      const d = typeof data === 'object' && data !== null ? data as EventData : { payload: String(data) };
+      setSearchResults(d);
+      setIsSearching(!(d as any).completed);
     };
 
     on('search:result-ready', handleSearchResult);
@@ -300,7 +311,7 @@ export function useRealtimeSearch() {
  */
 export function useRealtimeAnalytics() {
   const { socket, subscribe, unsubscribe, on, off } = useWebSocket();
-  const [metrics, setMetrics] = useState<any>(null);
+  const [metrics, setMetrics] = useState<EventData | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -309,13 +320,15 @@ export function useRealtimeAnalytics() {
     subscribe('analytics');
     subscribe('dashboard:metrics');
 
-    const handleAnalyticsUpdate = (data: any) => {
-      setMetrics(prev => ({ ...prev, ...data }));
+    const handleAnalyticsUpdate = (data: unknown) => {
+      const d = typeof data === 'object' && data !== null ? data as EventData : { payload: String(data) };
+      setMetrics(prev => ({ ...(prev || {}), ...d }));
       setLastUpdate(new Date());
     };
 
-    const handleMetricsUpdate = (data: any) => {
-      setMetrics(prev => ({ ...prev, ...data }));
+    const handleMetricsUpdate = (data: unknown) => {
+      const d = typeof data === 'object' && data !== null ? data as EventData : { payload: String(data) };
+      setMetrics(prev => ({ ...(prev || {}), ...d }));
       setLastUpdate(new Date());
     };
 
@@ -339,7 +352,7 @@ export function useRealtimeAnalytics() {
  */
 export function useRealtimeDashboard() {
   const { socket, subscribe, unsubscribe, on, off } = useWebSocket();
-  const [updates, setUpdates] = useState<any[]>([]);
+  const [updates, setUpdates] = useState<EventData[]>([]);
   const [userCount, setUserCount] = useState(0);
 
   useEffect(() => {
@@ -347,12 +360,14 @@ export function useRealtimeDashboard() {
 
     subscribe('dashboard:updates');
 
-    const handleUpdate = (data: any) => {
-      setUpdates(prev => [data, ...prev].slice(0, 100));
+    const handleUpdate = (data: unknown) => {
+      const d = typeof data === 'object' && data !== null ? data as EventData : { payload: String(data) };
+      setUpdates(prev => [d, ...prev].slice(0, 100));
     };
 
-    const handleUserCount = (data: any) => {
-      setUserCount(data.totalUsers);
+    const handleUserCount = (data: unknown) => {
+      const d = typeof data === 'object' && data !== null ? data as EventData : { totalUsers: Number(data) };
+      setUserCount(Number((d as any).totalUsers || 0));
     };
 
     on('dashboard:update', handleUpdate);

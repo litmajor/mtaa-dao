@@ -1,8 +1,5 @@
-import React, { useState } from 'react';
-import { Input } from '../ui/input-design';
-import { Button } from '../ui/button-design';
-import { Card } from '../ui/card-design';
-import { Icon } from '../ui/icon-design';
+import React, { useState, useRef, useEffect } from 'react';
+import { Input, Button, Card, Icon } from '../ui';
 
 export interface ListLayoutProps {
   // Metadata
@@ -93,15 +90,25 @@ export const ListLayout = React.forwardRef<HTMLDivElement, ListLayoutProps>(
     ref
   ) => {
     const [searchQuery, setSearchQuery] = useState('');
-    const [activeFilters, setActiveFilters] = useState({});
+    const [activeFilters, setActiveFilters] = useState<Record<string, any>>({});
+    const searchTimer = useRef<number | null>(null);
 
     const handleSearch = (value: string) => {
       setSearchQuery(value);
-      const timer = setTimeout(() => {
+      if (searchTimer.current) {
+        window.clearTimeout(searchTimer.current as unknown as number);
+      }
+      searchTimer.current = window.setTimeout(() => {
         onSearch?.(value);
       }, searchDelay);
-      return () => clearTimeout(timer);
     };
+
+    // clear timer on unmount
+    useEffect(() => {
+      return () => {
+        if (searchTimer.current) window.clearTimeout(searchTimer.current as unknown as number);
+      };
+    }, []);
 
     const handleFilterChange = (filterId: string, value: any) => {
       const newFilters = { ...activeFilters, [filterId]: value };
@@ -126,13 +133,16 @@ export const ListLayout = React.forwardRef<HTMLDivElement, ListLayoutProps>(
         {/* Search & Filters */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           {/* Search */}
-          <Input
-            placeholder={searchPlaceholder}
-            value={searchQuery}
-            onChange={e => handleSearch(e.target.value)}
-            className="w-full md:w-64"
-            icon="search"
-          />
+          <div className="relative w-full md:w-64">
+            <Icon name="search" size="sm" className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+            <Input
+              placeholder={searchPlaceholder}
+              value={searchQuery}
+              onChange={e => handleSearch(e.target.value)}
+              className="w-full pl-10"
+              aria-label="Search"
+            />
+          </div>
 
           {/* View Toggle */}
           <div className="flex gap-2">
@@ -160,6 +170,7 @@ export const ListLayout = React.forwardRef<HTMLDivElement, ListLayoutProps>(
                 <span className="text-sm font-medium text-neutral-700">{filter.label}:</span>
                 {filter.type === 'select' && (
                   <select
+                    aria-label={filter.label}
                     value={activeFilters[filter.id] || ''}
                     onChange={e => handleFilterChange(filter.id, e.target.value)}
                     className="text-sm px-2 py-1 border border-neutral-300 rounded"
@@ -175,6 +186,7 @@ export const ListLayout = React.forwardRef<HTMLDivElement, ListLayoutProps>(
                 {filter.type === 'text' && (
                   <input
                     type="text"
+                    aria-label={filter.label}
                     value={activeFilters[filter.id] || ''}
                     onChange={e => handleFilterChange(filter.id, e.target.value)}
                     className="text-sm px-2 py-1 border border-neutral-300 rounded"

@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   ArrowLeft,
-  BarChart3,
+  BarChart2,
   Users,
   Trophy,
   AlertTriangle,

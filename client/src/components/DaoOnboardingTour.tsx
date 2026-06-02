@@ -9,7 +9,7 @@ import {
   MessageSquare,
   Wallet,
   TrendingUp,
-  BarChart3,
+  BarChart2,
   Users,
   CheckSquare,
   Trophy,
@@ -21,6 +21,7 @@ import {
   Clock,
   Zap
 } from 'lucide-react';
+import { t } from '@/lib/uiLabels';
 
 interface TourStep {
   id: string;
@@ -37,16 +38,16 @@ const TOUR_STEPS: TourStep[] = [
   // Creator Perspective
   {
     id: 'welcome-creator',
-    title: '🎉 Welcome to Your DAO!',
-    description: "You've created a DAO! Let's explore what you can do as a founder/admin.",
+    title: `🎉 Welcome to Your ${t('dao')}!`,
+    description: `You've created a ${t('dao')}! Let's explore what you can do as a founder/admin.`,
     icon: Users,
     position: 'center',
     role: 'creator'
   },
   {
     id: 'dao-settings',
-    title: 'DAO Settings',
-    description: 'Configure your DAO: name, governance rules, member roles, and treasury limits. This is your control center.',
+    title: `${t('dao')} Settings`,
+    description: `Configure your ${t('dao')}: name, governance rules, member roles, and treasury limits. This is your control center.`,
     icon: Settings,
     route: '/dao/:id/settings',
     position: 'left',
@@ -63,8 +64,8 @@ const TOUR_STEPS: TourStep[] = [
   },
   {
     id: 'dao-treasury',
-    title: 'DAO Treasury',
-    description: 'Your DAO\'s shared funds. All members contribute here. Multi-sig protected. Requires proposals for withdrawals.',
+    title: `${t('dao')} Treasury`,
+    description: `Your ${t('dao')}'s shared funds. All members contribute here. Multi-sig protected. Requires ${t('proposals').toLowerCase()} for withdrawals.`,
     icon: Wallet,
     route: '/dao/treasury',
     position: 'top',
@@ -82,7 +83,7 @@ const TOUR_STEPS: TourStep[] = [
   {
     id: 'members-management',
     title: 'Member Management',
-    description: 'Invite members, assign roles (Admin, Elder, Proposer, Member), track contributions, and manage permissions.',
+    description: `Invite ${t('members').toLowerCase()}, assign roles (Admin, Elder, Proposer, Member), track ${t('contributions').toLowerCase()}, and manage permissions.`,
     icon: Users,
     route: '/dao/:id/members',
     position: 'right',
@@ -126,8 +127,8 @@ const TOUR_STEPS: TourStep[] = [
   },
   {
     id: 'proposals',
-    title: 'Governance & Proposals',
-    description: 'Create proposals for spending, policy changes, or member votes. Your DAO runs on-chain democracy.',
+    title: `Governance & ${t('proposals')}`,
+    description: `Create ${t('proposals').toLowerCase()} for spending, policy changes, or member votes. Your ${t('dao')} runs on-chain democracy.`,
     icon: FileText,
     route: '/proposals',
     position: 'left',
@@ -137,8 +138,8 @@ const TOUR_STEPS: TourStep[] = [
   // Member Perspective
   {
     id: 'welcome-member',
-    title: '👋 Welcome to the DAO!',
-    description: "You've joined a DAO! Let's explore what you can do as a member.",
+    title: `👋 Welcome to the ${t('dao')}!`,
+    description: `You've joined a ${t('dao')}! Let's explore what you can do as a member.`,
     icon: Users,
     position: 'center',
     role: 'member'
@@ -154,8 +155,8 @@ const TOUR_STEPS: TourStep[] = [
   },
   {
     id: 'member-treasury-view',
-    title: 'View DAO Treasury',
-    description: 'See how the DAO spends funds. You can contribute but withdrawals require proposals and votes.',
+    title: `View ${t('dao')} Treasury`,
+    description: `See how the ${t('dao')} spends funds. You can contribute but withdrawals require ${t('proposals').toLowerCase()} and votes.`,
     icon: Wallet,
     route: '/dao/treasury',
     position: 'top',
@@ -172,8 +173,8 @@ const TOUR_STEPS: TourStep[] = [
   },
   {
     id: 'member-proposals',
-    title: 'Vote on Proposals',
-    description: 'Your voice matters! Vote on how the DAO spends funds, changes policies, or admits new members.',
+    title: `Vote on ${t('proposals')}`,
+    description: `Your voice matters! Vote on how the ${t('dao')} spends funds, changes policies, or admits new members.`,
     icon: FileText,
     route: '/proposals',
     position: 'left',
@@ -419,19 +420,19 @@ export function DaoQuickReference({ daoId, userRole }: { daoId: string; userRole
   const features = userRole === 'creator' ? [
     { icon: Settings, label: 'Settings', route: `/dao/${daoId}/settings`, color: 'text-purple-600' },
     { icon: DollarSign, label: 'Billing', route: `/dao/${daoId}/subscription`, color: 'text-green-600' },
-    { icon: Wallet, label: 'Treasury', route: '/dao/treasury', color: 'text-blue-600' },
+    { icon: Wallet, label: t('treasury'), route: '/dao/treasury', color: 'text-blue-600' },
     { icon: TrendingUp, label: 'Vaults', route: '/vault', color: 'text-teal-600' },
-    { icon: Users, label: 'Members', route: `/dao/${daoId}/members`, color: 'text-orange-600' },
+    { icon: Users, label: t('members'), route: `/dao/${daoId}/members`, color: 'text-orange-600' },
     { icon: MessageSquare, label: 'Chat', route: '/dao-chat', color: 'text-pink-600' },
     { icon: BarChart3, label: 'Analytics', route: '/analytics-dashboard', color: 'text-indigo-600' },
     { icon: CheckSquare, label: 'Tasks', route: '/tasks', color: 'text-yellow-600' },
     { icon: Trophy, label: 'Leaderboard', route: '/reputation', color: 'text-red-600' },
-    { icon: FileText, label: 'Proposals', route: '/proposals', color: 'text-cyan-600' }
+    { icon: FileText, label: t('proposals'), route: '/proposals', color: 'text-cyan-600' }
   ] : [
     { icon: BarChart3, label: 'Dashboard', route: '/dashboard', color: 'text-indigo-600' },
-    { icon: Wallet, label: 'Treasury', route: '/dao/treasury', color: 'text-blue-600' },
+    { icon: Wallet, label: t('treasury'), route: '/dao/treasury', color: 'text-blue-600' },
     { icon: TrendingUp, label: 'Vaults', route: '/vault', color: 'text-teal-600' },
-    { icon: FileText, label: 'Proposals', route: '/proposals', color: 'text-cyan-600' },
+    { icon: FileText, label: t('proposals'), route: '/proposals', color: 'text-cyan-600' },
     { icon: CheckSquare, label: 'Tasks', route: '/tasks', color: 'text-yellow-600' },
     { icon: MessageSquare, label: 'Chat', route: '/dao-chat', color: 'text-pink-600' },
     { icon: Trophy, label: 'Leaderboard', route: '/reputation', color: 'text-red-600' }

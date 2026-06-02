@@ -5,65 +5,98 @@
  * Redirects to dashboard or shows welcome screen
  */
 
-'use client';
+"use client";
 
-import Link from 'next/link';
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import Shell from '../client/src/components/ui/shell';
+import Link from 'next/link';
+import { Grid } from '../client/src/components/ui/grid';
+import { Card } from '../client/src/components/ui/card';
 
 export default function Home() {
-  const router = useRouter();
-
   // Auto-redirect to dashboard (can be modified for auth check)
   useEffect(() => {
-    // Check if user is authenticated
-    const isAuthenticated = true; // TODO: Replace with actual auth check
-    if (isAuthenticated) {
-      router.push('/dashboard');
+    let mounted = true;
+
+    async function checkAuthAndRoute() {
+      try {
+        const res = await fetch('/api/auth_user', { credentials: 'include' });
+        if (!mounted) return;
+
+        if (res.ok) {
+          const payload = await res.json();
+          const user = payload?.data?.user;
+
+          const routes: Record<string, string> = {
+            okedi: '/dashboard/okedi',
+            yuki: '/dashboard/yuki',
+            amara: '/dashboard/amara',
+          };
+
+          const dest = user?.activeSubprofile ? routes[user.activeSubprofile] : null;
+
+          if (dest) {
+            const next = new URLSearchParams(window.location.search).get('next') || dest;
+            window.location.href = next;
+            return;
+          }
+
+          // If no persona chosen, send to onboarding (not to trading)
+          const next = new URLSearchParams(window.location.search).get('next') || '/onboarding';
+          window.location.href = next;
+          return;
+        }
+
+        // not authenticated -> stay on landing
+      } catch (err) {
+        // network or server error -> keep showing landing
+        // console.debug('Auth check failed', err);
+      }
     }
-  }, [router]);
+
+    checkAuthAndRoute();
+
+    return () => { mounted = false; };
+  }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white overflow-hidden">
-      {/* Navigation Bar */}
-      <nav className="bg-slate-800/50 backdrop-blur-sm border-b border-slate-700">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="text-2xl font-bold text-white">
-            🚀 MTAA <span className="text-blue-400">Protocol</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <a href="#features" className="text-slate-300 hover:text-white transition">
-              Features
-            </a>
-            <a href="#stats" className="text-slate-300 hover:text-white transition">
-              Stats
-            </a>
-            <Link
-              href="/dashboard"
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition"
-            >
-              Open Dashboard
-            </Link>
-          </div>
+    <Shell
+      brand={
+        <div className="text-2xl font-bold text-white">
+          🚀 MTAA <span className="text-blue-400">Protocol</span>
         </div>
-      </nav>
-
+      }
+      primaryNav={
+        <nav className="p-4 text-sm text-slate-300" aria-label="top-nav">
+          <a href="#features" className="block mb-2 hover:text-white">Features</a>
+          <a href="#stats" className="block mb-2 hover:text-white">Stats</a>
+        </nav>
+      }
+      userActions={
+        <a
+          href="/dashboard"
+          className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition"
+        >
+          Open Dashboard
+        </a>
+      }
+    >
       {/* Hero Section */}
       <section className="max-w-7xl mx-auto px-6 py-20 text-center">
         <div className="space-y-6">
           <h1 className="text-5xl md:text-6xl font-bold">
-            Multi-Exchange <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600">Trading Automation</span>
+            Your chama. Your wallet. One platform.
           </h1>
           <p className="text-xl text-slate-400 max-w-2xl mx-auto">
-            Trade across multiple exchanges with intelligent routing, real-time analytics, and advanced risk management.
+            Mtaa is where your chama lives on‑chain — pool money, make decisions together, and grow your capital. Keep trading and managing your own wallet, and when your group is ready, move pooled funds into shared vaults and coordinated strategies.
           </p>
           <div className="flex justify-center gap-4 pt-6">
-            <Link
+            <a
               href="/dashboard"
               className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition transform hover:scale-105"
             >
-              Launch Platform →
-            </Link>
+              Open Your Chama →
+            </a>
             <a
               href="https://docs.mtaaprotocol.com"
               className="px-8 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg transition"
@@ -75,23 +108,23 @@ export default function Home() {
 
         {/* Feature Preview */}
         <div className="mt-16 p-8 bg-slate-800/50 backdrop-blur rounded-lg border border-slate-700">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <FeatureCard
-              icon="💱"
-              title="Multi-Exchange"
-              description="Trade on Binance, Kraken, Coinbase, and more simultaneously"
-            />
-            <FeatureCard
-              icon="🧠"
-              title="Smart Routing"
-              description="AI-powered order routing optimizes fees and execution speed"
-            />
-            <FeatureCard
-              icon="📊"
-              title="Analytics"
-              description="Real-time P&L, risk metrics, and performance analysis"
-            />
-          </div>
+          <Grid columns={3} gap="lg">
+            <Card className="text-center p-6">
+              <div className="text-4xl mb-3">💱</div>
+              <h3 className="text-xl font-bold mb-2">Multi-Exchange</h3>
+              <p className="text-slate-400">Trade on Binance, Kraken, Coinbase, and more simultaneously</p>
+            </Card>
+            <Card className="text-center p-6">
+              <div className="text-4xl mb-3">🧠</div>
+              <h3 className="text-xl font-bold mb-2">Smart Routing</h3>
+              <p className="text-slate-400">AI-powered order routing optimizes fees and execution speed</p>
+            </Card>
+            <Card className="text-center p-6">
+              <div className="text-4xl mb-3">📊</div>
+              <h3 className="text-xl font-bold mb-2">Analytics</h3>
+              <p className="text-slate-400">Real-time P&L, risk metrics, and performance analysis</p>
+            </Card>
+          </Grid>
         </div>
       </section>
 
@@ -201,12 +234,12 @@ export default function Home() {
           <p className="text-xl mb-6 text-blue-100">
             Connect your exchanges and start automated trading today
           </p>
-          <Link
+          <a
             href="/dashboard"
             className="inline-block px-8 py-3 bg-white text-blue-600 font-bold rounded-lg hover:bg-slate-100 transition transform hover:scale-105"
           >
             Get Started →
-          </Link>
+          </a>
         </div>
       </section>
 
@@ -216,7 +249,7 @@ export default function Home() {
           <p>© 2024 MTAA Protocol. All rights reserved.</p>
         </div>
       </footer>
-    </div>
+    </Shell>
   );
 }
 

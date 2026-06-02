@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAdminBetaAccess } from '../../hooks/useAdmin';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { AlertCircle, Plus, Trash2, CheckCircle } from 'lucide-react';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { Skeleton } from '../../components/ui/skeleton';
 
 const AVAILABLE_FEATURES = [
@@ -22,6 +23,7 @@ export function BetaAccessPage() {
   const [isGranting, setIsGranting] = useState(false);
   const [isRevoking, setIsRevoking] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [confirmRevokeOpen, setConfirmRevokeOpen] = useState(false);
 
   useEffect(() => {
     fetchBetaUsers({ page: 1, limit: 20 });
@@ -82,11 +84,11 @@ export function BetaAccessPage() {
       alert('Please select at least one user');
       return;
     }
+    setConfirmRevokeOpen(true);
+  };
 
-    if (!window.confirm('Are you sure you want to revoke access?')) {
-      return;
-    }
-
+  const confirmRevoke = async () => {
+    setConfirmRevokeOpen(false);
     setIsRevoking(true);
     try {
       await revokeBetaAccess(
@@ -130,6 +132,16 @@ export function BetaAccessPage() {
           <span>{successMessage}</span>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmRevokeOpen}
+        title="Revoke access"
+        description="Are you sure you want to revoke access for the selected users?"
+        confirmLabel="Revoke"
+        cancelLabel="Cancel"
+          onClose={(open: boolean) => setConfirmRevokeOpen(open)}
+        onConfirm={confirmRevoke}
+      />
 
       {/* Feature Selection Card */}
       <Card>

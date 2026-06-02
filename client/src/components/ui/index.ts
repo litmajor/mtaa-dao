@@ -1,15 +1,18 @@
-// Design System Components (Week 2)
-export { Button, buttonVariants } from './button-design';
+// Canonical primitives (prefer these)
+export { Button } from './button';
+// keep variant helpers/types available for compatibility
+export { buttonVariants } from './button-design';
 export type { ButtonProps } from './button-design';
 
-export { Card } from './card-design';
-export type { CardProps } from './card-design';
+export { Card } from './card';
 
-export { Input } from './input-design';
-export type { InputProps } from './input-design';
+export { Input } from './input';
 
-export { Badge } from './badge-design';
-export type { BadgeProps } from './badge-design';
+export { Surface } from './surface';
+export { Stack } from './stack';
+
+export { Badge, badgeVariants } from './badge';
+export type { BadgeProps } from './badge';
 
 export { Icon } from './icon-design';
 export type { IconProps } from './icon-design';

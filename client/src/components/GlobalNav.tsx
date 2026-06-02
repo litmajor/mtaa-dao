@@ -56,8 +56,8 @@ export default function GlobalNav() {
     try {
       await apiRequest("POST", "/api/auth/logout");
       localStorage.removeItem("mtaa_dao_auth_session");
-      localStorage.removeItem("mtaa_dao_auth_token");
       localStorage.removeItem("mtaa_remembered_email");
+      try { (await import('../utils/authChannel')).default.postAuthMessage({ type: 'logout', payload: {} }); } catch (e) {}
       navigate("/login", { replace: true });
     } catch (e) {
       console.error("Logout failed:", e);
@@ -157,13 +157,9 @@ export default function GlobalNav() {
                   <TooltipTrigger asChild>
                     <Link to={item.href}>
                       <Button
-                        variant={active ? "default" : "ghost"}
+                        variant={active ? "primary" : "ghost"}
                         size="sm"
-                        className={`gap-2 ${
-                          active
-                            ? "bg-blue-600 text-white"
-                            : "text-slate-300 hover:text-white hover:bg-slate-800"
-                        }`}
+                        className="gap-2"
                       >
                         <IconComponent className="h-4 w-4" />
                         <span>{item.label}</span>
@@ -190,7 +186,7 @@ export default function GlobalNav() {
                   variant="ghost"
                   size="sm"
                   onClick={toggleTheme}
-                  className="text-slate-300 hover:text-white"
+                  className="text-slate-300"
                 >
                   {theme === "dark" ? (
                     <Sun className="h-4 w-4" />
@@ -216,15 +212,11 @@ export default function GlobalNav() {
                 <Tooltip key={profile.id}>
                   <TooltipTrigger asChild>
                     <Button
-                      variant={activeSubprofile === profile.id ? "default" : "ghost"}
+                      variant={activeSubprofile === profile.id ? "primary" : "ghost"}
                       size="sm"
                       onClick={() => switchSubprofile(profile.id as 'okedi' | 'yuki' | 'amara')}
                       disabled={profileSwitching}
-                      className={`gap-1 text-xs ${
-                        activeSubprofile === profile.id
-                          ? `text-white border`
-                          : "text-slate-400 hover:text-slate-200"
-                      }`}
+                      className="gap-1 text-xs"
                       style={
                         activeSubprofile === profile.id
                           ? {
@@ -262,7 +254,7 @@ export default function GlobalNav() {
                       }}
                     >
                       <span>{subprofileDetails.icon}</span>
-                      <span className="font-medium">{subprofileDetails.displayName}</span>
+                      <span className="font-medium">{subprofileDetails.name}</span>
                     </Button>
                   </Link>
                 </TooltipTrigger>
@@ -280,19 +272,19 @@ export default function GlobalNav() {
                     e.stopPropagation();
                     setShowProfileDropdown(!showProfileDropdown);
                   }}
-                  className="flex items-center gap-2 hover:bg-slate-800 rounded-lg p-1 transition-colors"
+                  className="flex items-center gap-2 rounded-lg p-1"
                 >
                   <Avatar className="h-8 w-8">
                     <AvatarImage
-                      src={user?.avatar || undefined}
-                      alt={user?.username || "User"}
+                      src={(user as any)?.profilePicture || (user as any)?.profileImageUrl || (user as any)?.avatar || undefined}
+                      alt={(user as any)?.username || (user as any)?.firstName || (user as any)?.email || "User"}
                     />
                     <AvatarFallback className="bg-blue-600 text-white text-xs">
-                      {(user?.username || "U").substring(0, 2).toUpperCase()}
+                      {((user as any)?.username || (user as any)?.firstName || "U").toString().substring(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <span className="hidden sm:inline text-sm font-medium text-slate-200 max-w-[100px] truncate">
-                    {user?.username || "User"}
+                    {(user as any)?.username || `${(user as any)?.firstName || ''} ${(user as any)?.lastName || ''}`.trim() || (user as any)?.email || "User"}
                   </span>
                 </button>
 
@@ -341,13 +333,8 @@ export default function GlobalNav() {
             return (
               <Link key={item.id} to={item.href} className="flex-shrink-0">
                 <Button
-                  variant={active ? "default" : "ghost"}
+                  variant={active ? "primary" : "ghost"}
                   size="sm"
-                  className={`${
-                    active
-                      ? "bg-blue-600 text-white"
-                      : "text-slate-300 hover:text-white hover:bg-slate-800"
-                  }`}
                 >
                   <IconComponent className="h-4 w-4" />
                   <span className="text-xs ml-1">{item.label}</span>

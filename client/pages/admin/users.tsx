@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { AdminTable } from '@/components/admin/AdminTable';
-import { Search, Plus } from 'lucide-react';
+import { Search, Plus } from '../../src/lib/icons';
 import styles from './users.module.css';
 
 interface User {
@@ -129,6 +129,7 @@ const AdminUsers: React.FC = () => {
         <select
           value={value}
           onChange={(e) => handleChangeRole(row.id, e.target.value)}
+          aria-label={`Change role for ${row.username}`}
           className={styles.roleSelect}
         >
           <option value="user">User</option>
@@ -178,6 +179,7 @@ const AdminUsers: React.FC = () => {
               setPage(1);
             }}
             className={styles.select}
+            aria-label="Filter users by role"
           >
             <option value="all">All Roles</option>
             <option value="user">User</option>
@@ -192,6 +194,7 @@ const AdminUsers: React.FC = () => {
               setPage(1);
             }}
             className={styles.select}
+            aria-label="Filter users by status"
           >
             <option value="all">All Status</option>
             <option value="active">Active</option>

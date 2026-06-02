@@ -10,6 +10,7 @@ import { SmartRouter } from './smart-router';
 import { DexIntegrationService } from './dex-integration-service';
 import { CCXTService } from './ccxt-service';
 import { CrossChainService } from './cross-chain-service';
+import { publishExecutionEvent } from './executionEvents';
 
 interface VaultState {
   vaultId: string;
@@ -238,6 +239,10 @@ export class VaultExecutionService extends EventEmitter {
       } catch (err) {
         console.error(`Vault ${vaultId} execution error:`, err);
         this.emit('execution:error', { vaultId, error: err });
+        // Publish to Redis for real-time monitoring
+        try {
+          publishExecutionEvent(`vault:${vaultId}`, { type: 'execution:error', vaultId, error: String(err), timestamp: new Date().toISOString() });
+        } catch (e) {}
       }
     }, 5000);
 

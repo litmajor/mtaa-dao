@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
-import { Strategy, RiskControl } from '../hooks/useStrategyRegistry';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Strategy, RiskControl } from '../../hooks/useStrategyRegistry';
 import { StrategySelector } from './StrategySelector';
 import { StrategyConfigurator } from './StrategyConfigurator';
 import { RiskControlPanel } from './RiskControlPanel';
 import { ExchangeSelector } from './ExchangeSelector';
 import { DeploymentPreview } from './DeploymentPreview';
+import { Lucide } from '../../src/lib/icons';
+const { Target, Settings, Shield, Globe, Eye, Loader, PartyPopper, Check } = (Lucide as any) || {};
 
 type WizardStep = 'select' | 'configure' | 'risk' | 'exchanges' | 'preview' | 'deploying' | 'success';
 
@@ -17,7 +19,7 @@ interface StrategyDeploymentWizardProps {
     exchanges: string[],
     botName: string,
     initialCapital: number
-  ) => Promise<void>;
+  ) => Promise<any>;
   isLoading?: boolean;
 }
 
@@ -31,6 +33,8 @@ export const StrategyDeploymentWizard: React.FC<StrategyDeploymentWizardProps> =
   const [strategyInputs, setStrategyInputs] = useState<Record<string, any>>({});
   const [riskControl, setRiskControl] = useState<RiskControl | null>(null);
   const [exchanges, setExchanges] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [botName, setBotName] = useState('');
   const [initialCapital, setInitialCapital] = useState(100);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +50,13 @@ export const StrategyDeploymentWizard: React.FC<StrategyDeploymentWizardProps> =
       case 'select':
         return selectedStrategy !== null;
       case 'configure':
-        return selectedStrategy !== null && Object.keys(strategyInputs).length > 0;
+        // If a strategy has no inputs, treat configure as valid. Otherwise require inputs.
+        return (
+          selectedStrategy !== null &&
+          (Array.isArray(selectedStrategy.inputs) && selectedStrategy.inputs.length === 0
+            ? true
+            : Object.keys(strategyInputs).length > 0)
+        );
       case 'risk':
         return riskControl !== null;
       case 'exchanges':
@@ -65,6 +75,7 @@ export const StrategyDeploymentWizard: React.FC<StrategyDeploymentWizardProps> =
   };
 
   const handleNext = () => {
+    if (isLoading) return; // prevent navigation while loading
     if (isStepValid()) {
       const nextIndex = Math.min(currentStepIndex + 1, steps.length - 1);
       setCurrentStep(steps[nextIndex]);
@@ -75,6 +86,7 @@ export const StrategyDeploymentWizard: React.FC<StrategyDeploymentWizardProps> =
   };
 
   const handlePrev = () => {
+    if (isLoading) return;
     const prevIndex = Math.max(currentStepIndex - 1, 0);
     setCurrentStep(steps[prevIndex]);
     setError(null);
@@ -87,7 +99,8 @@ export const StrategyDeploymentWizard: React.FC<StrategyDeploymentWizardProps> =
       setCurrentStep('deploying');
       setError(null);
 
-      await onDeploy(
+      // Race the deploy against a timeout so user isn't stuck forever
+      const deployPromise = onDeploy(
         selectedStrategy.id,
         strategyInputs,
         riskControl,
@@ -96,8 +109,25 @@ export const StrategyDeploymentWizard: React.FC<StrategyDeploymentWizardProps> =
         initialCapital
       );
 
+      const timeoutMs = 30000; // 30s
+      let result: any;
+      try {
+        result = await Promise.race([
+          deployPromise,
+          new Promise((_, rej) => setTimeout(() => rej(new Error('Deployment timeout')), timeoutMs)),
+        ]);
+      } catch (err) {
+        throw err;
+      }
+
+      // If the API returned an id, use it; otherwise fallback to mock id
+      if (result && typeof result === 'object' && result.id) {
+        setDeployedBotId(String(result.id));
+      } else {
+        setDeployedBotId(`bot-${Date.now()}`);
+      }
+
       setCurrentStep('success');
-      setDeployedBotId(`bot-${Date.now()}`); // Mock bot ID
     } catch (err) {
       setCurrentStep('preview');
       setError(err instanceof Error ? err.message : 'Deployment failed');
@@ -116,6 +146,38 @@ export const StrategyDeploymentWizard: React.FC<StrategyDeploymentWizardProps> =
     setDeployedBotId(null);
   };
 
+  // Reset inputs and risk control when user selects a different strategy
+  useEffect(() => {
+    if (!selectedStrategy) {
+      setStrategyInputs({});
+      setRiskControl(null);
+      return;
+    }
+
+    // Initialize inputs from strategy defaults if provided
+    const defaults: Record<string, any> = {};
+    if (Array.isArray(selectedStrategy.inputs)) {
+      for (const inp of selectedStrategy.inputs) {
+        defaults[inp.name] = inp.value !== undefined ? inp.value : inp.default;
+      }
+    }
+    setStrategyInputs(defaults);
+    // Initialize risk control to strategy's defaults if present
+    setRiskControl(selectedStrategy.riskControl || null);
+  }, [selectedStrategy]);
+
+  // Filtering for StrategySelector: keep local search/category state and pass filtered list
+  const filteredStrategies = useMemo(() => {
+    return strategies.filter((s) => {
+      const matchesCategory = !categoryFilter || s.category === categoryFilter;
+      const matchesSearch =
+        !searchQuery ||
+        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.description.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesCategory && matchesSearch;
+    });
+  }, [strategies, searchQuery, categoryFilter]);
+
   const stepTitles: Record<WizardStep, string> = {
     select: 'Select Strategy',
     configure: 'Configure Inputs',
@@ -126,14 +188,14 @@ export const StrategyDeploymentWizard: React.FC<StrategyDeploymentWizardProps> =
     success: 'Success!'
   };
 
-  const stepEmojis: Record<WizardStep, string> = {
-    select: '🎯',
-    configure: '⚙️',
-    risk: '🛡️',
-    exchanges: '🌐',
-    preview: '👀',
-    deploying: '⏳',
-    success: '🎉'
+  const stepIcons: Record<WizardStep, JSX.Element> = {
+    select: <Target className="inline w-6 h-6 mr-2" />,
+    configure: <Settings className="inline w-6 h-6 mr-2" />,
+    risk: <Shield className="inline w-6 h-6 mr-2" />,
+    exchanges: <Globe className="inline w-6 h-6 mr-2" />,
+    preview: <Eye className="inline w-6 h-6 mr-2" />,
+    deploying: <Loader className="inline w-6 h-6 mr-2 animate-spin" />,
+    success: <PartyPopper className="inline w-6 h-6 mr-2" />,
   };
 
   // Success Screen
@@ -142,7 +204,7 @@ export const StrategyDeploymentWizard: React.FC<StrategyDeploymentWizardProps> =
       <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 p-6 flex items-center justify-center">
         <div className="max-w-2xl w-full space-y-6">
           <div className="text-center">
-            <div className="text-6xl mb-4">🎉</div>
+            <div className="text-6xl mb-4"><PartyPopper className="w-20 h-20 mx-auto text-yellow-400" /></div>
             <h1 className="text-4xl font-bold text-white mb-2">Bot Deployed Successfully!</h1>
             <p className="text-slate-300 mb-4">
               Your trading strategy "{botName}" is now live and running
@@ -178,7 +240,7 @@ export const StrategyDeploymentWizard: React.FC<StrategyDeploymentWizardProps> =
           </div>
 
           <div className="bg-green-900 border-l-4 border-green-500 p-4 rounded">
-            <div className="font-bold text-green-100 mb-2">✓ What's Next?</div>
+            <div className="font-bold text-green-100 mb-2"><Check className="inline w-4 h-4 mr-2" />What's Next?</div>
             <ul className="text-sm text-green-200 space-y-1">
               <li>• Monitor bot performance in Trading Dashboard → Bots section</li>
               <li>• Check real-time trades in History tab</li>
@@ -211,17 +273,16 @@ export const StrategyDeploymentWizard: React.FC<StrategyDeploymentWizardProps> =
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 p-6 flex items-center justify-center">
         <div className="text-center space-y-6">
-          <div className="text-6xl animate-spin">⏳</div>
+          <div className="text-6xl">
+            <Loader className="w-20 h-20 mx-auto animate-spin text-yellow-400" />
+          </div>
           <h1 className="text-3xl font-bold text-white">Deploying Your Bot...</h1>
           <p className="text-slate-300">
             Setting up strategy "{botName}" on {exchanges.length} exchange(s)
           </p>
 
           <div className="w-64 h-2 bg-slate-700 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-blue-600 animate-pulse"
-              style={{ animation: 'pulse 1.5s ease-in-out infinite' }}
-            />
+            <div className="h-full bg-blue-600 animate-pulse" />
           </div>
 
           <div className="text-sm text-slate-400 space-y-1">
@@ -241,7 +302,7 @@ export const StrategyDeploymentWizard: React.FC<StrategyDeploymentWizardProps> =
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-2">
-            {stepEmojis[currentStep]} {stepTitles[currentStep]}
+            {stepIcons[currentStep]} {stepTitles[currentStep]}
           </h1>
           <p className="text-slate-400">
             Step {currentStepIndex + 1} of {steps.length}
@@ -251,10 +312,7 @@ export const StrategyDeploymentWizard: React.FC<StrategyDeploymentWizardProps> =
         {/* Progress Bar */}
         <div className="mb-8 space-y-2">
           <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-300"
-              style={{ width: `${progress}%` }}
-            />
+            <div className={`h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-300 w-[${progress}%]`} />
           </div>
 
           {/* Step Indicators */}
@@ -283,11 +341,11 @@ export const StrategyDeploymentWizard: React.FC<StrategyDeploymentWizardProps> =
         <div className="bg-slate-800 rounded-lg p-8 mb-8 min-h-96">
           {currentStep === 'select' && (
             <StrategySelector
-              strategies={strategies}
-              selectedStrategy={selectedStrategy}
+              strategies={filteredStrategies}
+              selectedStrategyId={selectedStrategy?.id ?? null}
               onStrategySelect={setSelectedStrategy}
-              onCategoryFilter={() => {}}
-              onSearch={() => {}}
+              onCategoryFilter={(c) => setCategoryFilter(c)}
+              onSearch={(q) => setSearchQuery(q)}
             />
           )}
 
@@ -341,7 +399,7 @@ export const StrategyDeploymentWizard: React.FC<StrategyDeploymentWizardProps> =
             {currentStep === 'preview' && (
               <>
                 <button
-                  onClick={handleNext}
+                  onClick={handlePrev}
                   className="px-6 py-3 border border-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors font-bold"
                 >
                   Back
@@ -353,6 +411,13 @@ export const StrategyDeploymentWizard: React.FC<StrategyDeploymentWizardProps> =
                 >
                   🚀 Deploy Bot
                 </button>
+                {!isStepValid() && (
+                  <div className="text-xs text-slate-300 mt-2">{
+                    !botName.trim() ? 'Enter a bot name above to enable deployment.' :
+                    initialCapital < 10 ? 'Initial capital must be at least $10.' :
+                    'Please complete required fields.'
+                  }</div>
+                )}
               </>
             )}
             {currentStep !== 'preview' && (

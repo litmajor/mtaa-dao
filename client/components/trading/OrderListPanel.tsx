@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from 'react';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { OrderStatus, MarketType } from '@/client/hooks';
 import { useCancelOrder } from '@/client/hooks';
 import OrderRow from './OrderRow';
@@ -38,9 +39,17 @@ export default function OrderListPanel({
   };
 
   const handleCancel = async (orderId: string, exchange: string) => {
-    if (window.confirm('Cancel this order?')) {
-      cancelOrder(orderId, exchange);
-    }
+    setPendingCancel({ orderId, exchange });
+    setCancelConfirmOpen(true);
+  };
+
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [pendingCancel, setPendingCancel] = useState<{ orderId: string; exchange: string } | null>(null);
+
+  const confirmCancel = () => {
+    if (!pendingCancel) return;
+    cancelOrder(pendingCancel.orderId, pendingCancel.exchange);
+    setPendingCancel(null);
   };
 
   return (
@@ -130,11 +139,22 @@ export default function OrderListPanel({
           order={selectedOrder}
           onClose={() => setSelectedOrder(null)}
           onCancel={() => {
-            handleCancel(selectedOrder.orderId, selectedOrder.exchange);
+            setPendingCancel({ orderId: selectedOrder.orderId, exchange: selectedOrder.exchange });
+            setCancelConfirmOpen(true);
             setSelectedOrder(null);
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={cancelConfirmOpen}
+        onClose={setCancelConfirmOpen}
+        title="Cancel Order"
+        description="Are you sure you want to cancel this order?"
+        confirmLabel="Cancel Order"
+        cancelLabel="Keep"
+        onConfirm={confirmCancel}
+      />
     </div>
   );
 }

@@ -81,6 +81,12 @@ import { kwetu } from '../core/kwetu';
 import { morio } from '../agents/morio';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { adminTOTPService } from '../services/admin-totp-service';
+// Ensure critical secrets are present at module load time
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('Critical configuration missing: JWT_SECRET must be set');
+}
 import { v4 as uuidv4 } from 'uuid';
 import {
   users,
@@ -278,12 +284,24 @@ router.post('/auth/login', adminLoginLimiter, adminLoginIpLimiter, async (req: R
           { 
             id: user.id, 
             email: user.email, 
-            roles: user.roles,
             pending2FA: true
           },
-          process.env.JWT_SECRET || 'secret',
+          JWT_SECRET,
           { expiresIn: '5m' } // Only valid for 5 minutes
         );
+
+        // Audit that 2FA step was initiated
+        await logConsolidatedAuditEvent({
+          actorId: user.id,
+          actionType: 'ADMIN_LOGIN_2FA_CHALLENGE_ISSUED',
+          targetType: 'user',
+          targetId: user.id,
+          result: 'partial',
+          resultReason: '2FA challenge issued',
+          ipAddress: req.ip,
+          metadata: { email },
+          severity: 'medium'
+        });
 
         res.json({
           success: true,
@@ -299,23 +317,61 @@ router.post('/auth/login', adminLoginLimiter, adminLoginIpLimiter, async (req: R
         return;
       }
 
-      // TODO: Implement 2FA verification with TOTP or backup codes
-      // For now, log that 2FA would be verified here
-      await logConsolidatedAuditEvent({
-        actorId: user.id,
-        actionType: 'ADMIN_LOGIN_2FA_VERIFICATION_REQUIRED',
-        targetType: 'user',
-        targetId: user.id,
-        result: 'partial',
-        resultReason: '2FA verification pending',
-        ipAddress: req.ip,
-        metadata: { email, hasTwoFactorCode: !!twoFactorCode },
-        severity: 'medium'
-      });
+      // If a twoFactorCode was provided, verify it against stored secret
+      try {
+        const encryptionKey = process.env.TWO_FA_ENCRYPTION_KEY;
+        if (!encryptionKey) {
+          logger.error('TWO_FA_ENCRYPTION_KEY not configured');
+          return res.status(500).json({ success: false, error: 'Server misconfiguration' });
+        }
 
-      // In production, verify the 2FA code here
-      // const isValidCode = await verify2FACode(user.id, twoFactorCode);
-      // if (!isValidCode) { return 401; }
+        if (!(user as any).twoFactorSecret) {
+          await logConsolidatedAuditEvent({
+            actorId: user.id,
+            actionType: 'ADMIN_LOGIN_2FA_FAILED_NO_SECRET',
+            targetType: 'user',
+            targetId: user.id,
+            result: 'failed',
+            resultReason: '2FA secret missing',
+            ipAddress: req.ip,
+            metadata: { email },
+            severity: 'high'
+          });
+          return res.status(401).json({ success: false, error: 'Invalid two-factor authentication' });
+        }
+
+        const secretData = JSON.parse((user as any).twoFactorSecret as string);
+        const isValid = adminTOTPService.verify2FACode(twoFactorCode, secretData, encryptionKey);
+        if (!isValid) {
+          await logConsolidatedAuditEvent({
+            actorId: user.id,
+            actionType: 'ADMIN_LOGIN_2FA_FAILED_INVALID_CODE',
+            targetType: 'user',
+            targetId: user.id,
+            result: 'failed',
+            resultReason: 'Invalid 2FA code',
+            ipAddress: req.ip,
+            metadata: { email },
+            severity: 'high'
+          });
+          return res.status(401).json({ success: false, error: 'Invalid two-factor authentication' });
+        }
+
+        // Successful 2FA verification
+        await logConsolidatedAuditEvent({
+          actorId: user.id,
+          actionType: 'ADMIN_LOGIN_2FA_VERIFIED',
+          targetType: 'user',
+          targetId: user.id,
+          result: 'success',
+          ipAddress: req.ip,
+          metadata: { email },
+          severity: 'medium'
+        });
+      } catch (err) {
+        logger.error('Error verifying 2FA code:', err);
+        return res.status(500).json({ success: false, error: '2FA verification failed' });
+      }
     } else {
       // SECURITY POLICY: 2FA should be mandatory for admins
       logger.warn(`[SECURITY] Admin ${email} logged in without 2FA enabled. Consider enforcing mandatory 2FA.`);
@@ -324,7 +380,7 @@ router.post('/auth/login', adminLoginLimiter, adminLoginIpLimiter, async (req: R
     // Generate JWT token (only after successful password AND 2FA verification)
     const token = jwt.sign(
       { id: user.id, email: user.email, roles: user.roles },
-      process.env.JWT_SECRET || 'secret',
+      JWT_SECRET,
       { expiresIn: '4h' } // Shorter expiry for admin sessions
     );
 
@@ -528,9 +584,24 @@ router.get('/users', requireSuperAdmin, async (req: Request, res: Response) => {
       filters.length > 0 ? and(...filters) : undefined
     );
 
+    // Sanitize output: exclude sensitive fields such as password, twoFactorSecret, twoFactorBackupCodes
+    const safeUsers = allUsers.map(u => ({
+      id: u.id,
+      email: u.email,
+      name: (u as any).name || (u as any).firstName || null,
+      roles: u.roles,
+      createdAt: u.createdAt,
+      emailVerified: (u as any).emailVerified || false,
+      twoFactorEnabled: (u as any).twoFactorEnabled || false,
+      isBanned: (u as any).isBanned || false,
+      banReason: (u as any).banReason || null,
+      profileImageUrl: (u as any).profileImageUrl || null,
+      walletAddress: (u as any).walletAddress || null
+    }));
+
     res.json({
       success: true,
-      data: allUsers,
+      data: safeUsers,
       pagination: {
         total: totalCount[0].count,
         skip: parseInt(skip as string),
@@ -565,9 +636,24 @@ router.get('/users/:userId', requireSuperAdmin, async (req: Request, res: Respon
       });
     }
 
+    // Sanitize user object
+    const safeUser = {
+      id: user.id,
+      email: user.email,
+      name: (user as any).name || (user as any).firstName || null,
+      roles: user.roles,
+      createdAt: user.createdAt,
+      emailVerified: (user as any).emailVerified || false,
+      twoFactorEnabled: (user as any).twoFactorEnabled || false,
+      isBanned: (user as any).isBanned || false,
+      banReason: (user as any).banReason || null,
+      profileImageUrl: (user as any).profileImageUrl || null,
+      walletAddress: (user as any).walletAddress || null
+    };
+
     res.json({
       success: true,
-      data: user
+      data: safeUser
     });
   } catch (error) {
     logger.error('[Admin] Get user error:', error);
@@ -580,7 +666,7 @@ router.get('/users/:userId', requireSuperAdmin, async (req: Request, res: Respon
 
 /**
  * PUT /api/admin/users/:userId/ban
- * 🔴 CRITICAL: Ban or unban a user - RATE LIMITED (1/day)
+ *  CRITICAL: Ban or unban a user - RATE LIMITED (1/day)
  * Prevents accidental or malicious account termination
  * Requires: super_admin role
  */
@@ -596,6 +682,19 @@ router.put('/users/:userId/ban', requireSuperAdmin, adminDestructiveOpsLimiter, 
       })
       .where(eq(users.id, userId))
       .returning();
+
+    // Audit the ban/unban action
+    const actorId = (req as any).user?.id || 'unknown';
+    await logConsolidatedAuditEvent({
+      actorId,
+      actionType: banned ? 'ADMIN_USER_BANNED' : 'ADMIN_USER_UNBANNED',
+      targetType: 'user',
+      targetId: userId,
+      result: 'success',
+      ipAddress: req.ip,
+      metadata: { reason },
+      severity: 'high'
+    });
 
     res.json({
       success: true,
@@ -615,22 +714,48 @@ router.put('/users/:userId/ban', requireSuperAdmin, adminDestructiveOpsLimiter, 
  * DELETE /api/admin/users/:userId
  * Delete a user
  */
-router.delete('/users/:userId', requireSuperAdmin, async (req: Request, res: Response) => {
+router.delete('/users/:userId', requireSuperAdmin, adminDestructiveOpsLimiter, async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
+    const adminId = (req as any).user?.id || 'unknown';
 
-    await db.delete(users).where(eq(users.id, userId));
+    if (userId === adminId) {
+      return res.status(400).json({ success: false, error: 'Cannot delete yourself' });
+    }
 
-    res.json({
-      success: true,
-      message: 'User deleted successfully'
+    // Prevent deleting the last super_admin
+    const targetUser = await db.query.users.findFirst({ where: eq(users.id, userId) });
+    if (!targetUser) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+    const targetRoles = (targetUser as any).roles || '';
+    if (targetRoles.includes('super_admin')) {
+      const superAdmins = await db.query.users.findMany({ where: like(users.roles, '%super_admin%') });
+      if (superAdmins.length <= 1) {
+        return res.status(403).json({ success: false, error: 'Cannot delete the last super_admin' });
+      }
+    }
+
+    // Soft delete: mark as deleted and retain record for audit/recovery
+    // Use raw SQL to perform soft-delete to avoid strict Drizzle type checks for extended fields
+    const deletedRows = await db.execute(sql`UPDATE users SET is_deleted = true, deleted_at = now(), deleted_by = ${adminId} WHERE id = ${userId} RETURNING *`);
+    const deleted = deletedRows && Array.isArray(deletedRows) ? deletedRows[0] as any : null;
+
+    await logConsolidatedAuditEvent({
+      actorId: adminId,
+      actionType: 'ADMIN_USER_DELETED',
+      targetType: 'user',
+      targetId: userId,
+      result: 'success',
+      ipAddress: req.ip,
+      metadata: { softDelete: true },
+      severity: 'critical'
     });
+
+    res.json({ success: true, message: 'User soft-deleted', data: deleted[0] });
   } catch (error) {
     logger.error('[Admin] Delete user error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to delete user'
-    });
+    res.status(500).json({ success: false, error: 'Failed to delete user' });
   }
 });
 
@@ -712,6 +837,12 @@ router.put('/daos/:daoId/status', requireSuperAdmin, async (req: Request, res: R
     const { daoId } = req.params;
     const { status } = req.body;
 
+    // Validate status against allowed enums
+    const allowedStatuses = ['active', 'suspended', 'archived', 'pending'];
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({ success: false, error: 'Invalid status value' });
+    }
+
     const updated = await db.update(daos)
       .set({ status })
       .where(eq(daos.id, daoId))
@@ -741,12 +872,28 @@ router.put('/daos/:daoId/status', requireSuperAdmin, async (req: Request, res: R
  */
 router.get('/security/sessions', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const allSessions = await db.query.sessions.findMany();
+    const { skip = 0, limit = 50, userId } = req.query;
+    const whereClause = userId ? eq(sessions.userId, userId as string) : undefined;
 
-    res.json({
-      success: true,
-      data: allSessions
+    const sessionsList = await db.query.sessions.findMany({
+      where: whereClause,
+      limit: Math.min(parseInt(limit as string), 200),
+      offset: parseInt(skip as string),
+      orderBy: [desc(sessions.createdAt)]
     });
+
+    // Strip sensitive sessionToken and sessionData fields
+    const safeSessions = sessionsList.map(s => ({
+      id: s.id,
+      userId: s.userId,
+      createdAt: s.createdAt,
+      expiresAt: s.expiresAt,
+      lastAccessedAt: (s as any).lastAccessedAt,
+      ipAddress: (s as any).ipAddress || null,
+      userAgent: (s as any).userAgent || null
+    }));
+
+    res.json({ success: true, data: safeSessions });
   } catch (error) {
     logger.error('[Admin] Get sessions error:', error);
     res.status(500).json({
@@ -852,6 +999,11 @@ router.get('/activity-logs', requireSuperAdmin, async (req: Request, res: Respon
   }
 });
 
+// Backwards-compatible route: /api/admin/users/activity -> redirects to /api/admin/activity-logs
+router.get('/users/activity', requireSuperAdmin, async (req: Request, res: Response) => {
+  return res.redirect(307, '/api/admin/activity-logs');
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // SYSTEM CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -884,11 +1036,31 @@ router.get('/settings', requireSuperAdmin, async (req: Request, res: Response) =
 router.put('/settings', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const { key, value } = req.body;
+    // Protect critical keys from being updated via this endpoint
+    const protectedKeys = ['JWT_SECRET', 'ADMIN_TOKEN', 'STRIPE_WEBHOOK_SECRET', 'DB_PASSWORD', 'TWO_FA_ENCRYPTION_KEY'];
+    if (protectedKeys.includes(key)) {
+      return res.status(403).json({ success: false, error: 'Updating this config key is not allowed via API' });
+    }
+
+    // Ensure key exists
+    const existing = await db.query.config.findFirst({ where: eq(config.key, key) });
+    if (!existing) return res.status(404).json({ success: false, error: 'Config key not found' });
 
     const updated = await db.update(config)
       .set({ value })
       .where(eq(config.key, key))
       .returning();
+
+    await logConsolidatedAuditEvent({
+      actorId: (req as any).user?.id || 'unknown',
+      actionType: 'ADMIN_CONFIG_UPDATED',
+      targetType: 'config',
+      targetId: key,
+      result: 'success',
+      ipAddress: req.ip,
+      metadata: { newValuePresent: true },
+      severity: 'high'
+    });
 
     res.json({
       success: true,
@@ -919,7 +1091,6 @@ router.get('/analytics', requireSuperAdmin, async (req: Request, res: Response) 
     const activeSessions = await db.select({ count: count() }).from(sessions).where(
       gte(sessions.expiresAt, new Date())
     );
-
     res.json({
       success: true,
       data: {
@@ -932,8 +1103,7 @@ router.get('/analytics', requireSuperAdmin, async (req: Request, res: Response) 
           total: totalDAOs[0].count
         },
         system: {
-          uptime: process.uptime(),
-          memory: process.memoryUsage()
+          uptime: process.uptime()
         }
       }
     });
@@ -959,35 +1129,15 @@ router.get('/ai-metrics', requireSuperAdmin, async (req: Request, res: Response)
     const nuruHealth = await nuru.healthCheck().catch(() => ({ status: 'unknown' }));
     const kwetuHealth = await kwetu.healthCheck().catch(() => ({ status: 'unknown' }));
 
+    // Return live health only; detailed metrics should be fetched from dedicated monitoring sources
     const metrics = {
       timestamp: new Date().toISOString(),
-      nuru: {
-        status: nuruHealth.status,
-        intentClassificationAccuracy: 92,
-        totalIntents: 15420,
-        topIntents: [
-          { intent: 'check_balance', count: 3200 },
-          { intent: 'submit_proposal', count: 2100 },
-          { intent: 'vote', count: 1800 }
-        ]
-      },
-      kwetu: {
-        status: kwetuHealth.status,
-        treasuryOperations: 8500,
-        transactionsProcessed: 12400,
-        averageLatency: 234
-      },
-      morio: {
-        status: 'operational',
-        agentRunsTotal: 5600,
-        successRate: 98.5
-      }
+      nuru: { status: nuruHealth.status },
+      kwetu: { status: kwetuHealth.status },
+      morio: { status: 'unknown' }
     };
 
-    res.json({
-      success: true,
-      data: metrics
-    });
+    res.json({ success: true, data: metrics });
   } catch (error) {
     logger.error('[Admin] AI metrics error:', error);
     res.status(500).json({

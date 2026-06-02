@@ -23,11 +23,17 @@ export function setupWeeklyRewardsDistribution() {
       weekEnding.setHours(23, 59, 59, 999);
       
       // Call the distribution API
+      const adminToken = process.env.ADMIN_TOKEN;
+      if (!adminToken) {
+        logger.error('ADMIN_TOKEN not configured — skipping weekly rewards distribution');
+        return;
+      }
+
       const response = await fetch('http://localhost:5000/api/referral-rewards/distribute', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.ADMIN_TOKEN || process.env.JWT_SECRET}`,
+          'Authorization': `Bearer ${adminToken}`,
         },
         body: JSON.stringify({
           weekEnding: weekEnding.toISOString().split('T')[0], // YYYY-MM-DD
@@ -58,7 +64,7 @@ export function setupWeeklyRewardsDistribution() {
   }, {
     scheduled: true,
     timezone: "UTC" // Use UTC or your preferred timezone
-  });
+  } as any);
   
   logger.info('⏰ Weekly rewards distribution job scheduled (Every Sunday at 00:00 UTC)');
   
@@ -71,15 +77,18 @@ export function setupWeeklyRewardsDistribution() {
 export async function triggerManualDistribution(weekEnding: string) {
   logger.info(`🎯 Manual rewards distribution triggered for week ending: ${weekEnding}`);
   
-  try {
-    const response = await fetch('http://localhost:5000/api/referral-rewards/distribute', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.ADMIN_TOKEN || process.env.JWT_SECRET}`,
-      },
-      body: JSON.stringify({ weekEnding }),
-    });
+    try {
+      const adminToken = process.env.ADMIN_TOKEN;
+      if (!adminToken) throw new Error('ADMIN_TOKEN environment variable required for manual distribution');
+
+      const response = await fetch('http://localhost:5000/api/referral-rewards/distribute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`,
+        },
+        body: JSON.stringify({ weekEnding }),
+      });
     
     if (!response.ok) {
       const error = await response.json();

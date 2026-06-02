@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
-import { Input } from '../ui/input-design';
-import { Button } from '../ui/button-design';
-import { Icon } from '../ui/icon-design';
+import { Input, Button, Icon } from '../ui';
 
 export interface HeaderNavItem {
   id: string;

@@ -342,15 +342,15 @@ const PortfolioSection: React.FC<{ assetState: AssetState }> = ({ assetState }) 
             <>
               <div>
                 <p className="text-sm text-gray-600">Unrealized P&L</p>
-                <p className={`font-semibold ${performance.unrealizedPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  ${performance.unrealizedPnL.toLocaleString()}
+                <p className={`font-semibold ${performance.unrealizedPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  ${performance.unrealizedPnl.toLocaleString()}
                 </p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">Return %</p>
-                <p className={`font-semibold ${performance.unrealizedPnLPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {performance.unrealizedPnLPercent >= 0 ? '+' : ''}
-                  {performance.unrealizedPnLPercent.toFixed(2)}%
+                <p className={`font-semibold ${performance.unrealizedPnlPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {performance.unrealizedPnlPercent >= 0 ? '+' : ''}
+                  {performance.unrealizedPnlPercent.toFixed(2)}%
                 </p>
               </div>
             </>

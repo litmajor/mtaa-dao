@@ -28,8 +28,8 @@ const swaggerUiOptions = {
   // plugins: [swaggerUi.SwaggerUIBundle.plugins.DownloadUrl]
 };
 
-// Mount Swagger UI at /api-docs
-router.use('/api-docs', swaggerUi.serve);
+// Mount Swagger UI at /api-docs and ensure middleware only handles /api-docs path
+router.use('/api-docs', swaggerUi.serve, (req, res, next) => next());
 router.get('/api-docs', swaggerUi.setup(swaggerSpec, swaggerUiOptions));
 
 // Alternative: serve OpenAPI spec as JSON

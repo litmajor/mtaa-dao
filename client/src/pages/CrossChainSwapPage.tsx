@@ -1,9 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowRight, LoaderCircle, ChevronLeft } from 'lucide-react';
+import PriceImpact from '@/components/crosschain/PriceImpact';
+import ExpandableQuote from '@/components/crosschain/ExpandableQuote';
+import TrustBadges from '@/components/crosschain/TrustBadges';
+import StepProgress from '@/components/crosschain/StepProgress';
+import StickyCTA from '@/components/crosschain/StickyCTA';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiGet, apiPost } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
@@ -36,10 +41,18 @@ export default function CrossChainSwapPage() {
   const [sourceChain, setSourceChain] = useState('celo');
   const [destinationChain, setDestinationChain] = useState('ethereum');
   const [amount, setAmount] = useState('');
+  // debounce amount to avoid query on every keystroke
+  const [debouncedAmount, setDebouncedAmount] = useState(amount);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedAmount(amount), 500);
+    return () => clearTimeout(t);
+  }, [amount]);
+
   const [fromToken, setFromToken] = useState('CELO');
   const [toToken, setToToken] = useState('ETH');
   const [destinationAddress, setDestinationAddress] = useState('');
-  const [swapQuote, setSwapQuote] = useState<any>(null);
+  const [step, setStep] = useState(0);
+  // remove local swapQuote state; rely on react-query's cached data
 
   // Fetch supported chains
   const { data: chains } = useQuery({
@@ -55,45 +68,37 @@ export default function CrossChainSwapPage() {
     queryKey: ['swap-quote', sourceChain, destinationChain, fromToken, toToken, amount],
     queryFn: async () => {
       if (!amount || parseFloat(amount) <= 0) return null;
-      
+      if (!fromToken || !toToken) return null;
       try {
-        if (!fromToken || !toToken) {
-          throw new Error('Please select both tokens');
-        }
         const res = await apiPost('/api/v1/yuki/bridge/quote', {
           fromChain: sourceChain,
           toChain: destinationChain,
           fromToken: fromToken.toUpperCase(),
           toToken: toToken.toUpperCase(),
-          fromAmount: amount,
+          fromAmount: debouncedAmount,
           slippageTolerance: 1.0
         });
-        setSwapQuote(res.data);
         return res.data;
-      } catch (error: any) {
-        const message = error?.response?.data?.message || error?.message || 'Failed to fetch quote';
-        toast({
-          title: 'Error',
-          description: message,
-          variant: 'destructive'
-        });
-        throw error;
+      } catch (error) {
+        // return null and let UI show quoteError from react-query
+        return null;
       }
     },
-    enabled: !!amount && parseFloat(amount) > 0
+    enabled: !!debouncedAmount && parseFloat(debouncedAmount) > 0,
+    refetchInterval: !!debouncedAmount ? 15000 : undefined,
   });
 
   // Swap mutation
   const swapMutation = useMutation({
     mutationFn: async () => {
-      if (!destinationAddress || !destinationAddress.startsWith('0x')) {
+      if (!isValidAddress) {
         throw new Error('Invalid destination address');
       }
-      if (!swapQuote) {
+      if (!swapQuoteData) {
         throw new Error('No swap quote available');
       }
       const res = await apiPost('/api/v1/yuki/bridge/swap', {
-        quote: swapQuote,
+        quote: swapQuoteData,
         userAddress: destinationAddress
       });
       return res.data;
@@ -105,7 +110,7 @@ export default function CrossChainSwapPage() {
       });
       setAmount('');
       setDestinationAddress('');
-      setSwapQuote(null);
+      // react-query will refresh quote automatically
     },
     onError: (error: any) => {
       const errorMessage = error?.response?.data?.message || error?.message || 'Failed to execute swap';
@@ -117,256 +122,142 @@ export default function CrossChainSwapPage() {
     }
   });
 
+  // address validation
+  const isValidAddress = /^0x[a-fA-F0-9]{40}$/.test(destinationAddress);
+  const isSameToken = fromToken === toToken && sourceChain === destinationChain;
+
+  const handleExecuteSwap = () => {
+    if (swapMutation.isPending) return;
+    toast({ title: 'Swap started', description: 'Your swap is being processed. This may take several minutes.' });
+    swapMutation.mutate(undefined);
+  };
   return (
     <div className="container mx-auto p-6 max-w-4xl">
-      {/* Back Link */}
-      <Link to="/cross-chain" className="flex items-center gap-2 text-blue-600 hover:text-blue-700 mb-6">
-        <ChevronLeft className="h-4 w-4" />
-        Back to Hub
-      </Link>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-4">
+          <Link to="/cross-chain" className="flex items-center gap-2 text-blue-600 hover:text-blue-700">
+            <ChevronLeft className="h-4 w-4" />
+            Back
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold">Swap & Bridge</h1>
+            <p className="text-sm text-muted-foreground">Convert tokens and bridge in one flow</p>
+          </div>
+        </div>
+        <TrustBadges />
+      </div>
 
-      <h1 className="text-3xl font-bold mb-2">Swap & Bridge</h1>
-      <p className="text-gray-600 mb-6">Convert your tokens and transfer them to another blockchain in one transaction</p>
-      
       <Card>
         <CardHeader>
           <CardTitle>Swap & Bridge Token</CardTitle>
-          <CardDescription>
-            Convert between different tokens and send to another chain simultaneously
-          </CardDescription>
+          <CardDescription>Convert tokens and bridge in one flow</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Information Card */}
-          <Card className="border-green-200 bg-green-50">
-            <CardHeader>
-              <CardTitle className="text-base text-green-900">How Swap & Bridge Works</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm text-green-900">
+        <CardContent className="space-y-4">
+          <StepProgress step={step} />
+
+          {step === 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
               <div>
-                <p className="font-semibold mb-1">💡 The Process:</p>
-                <p className="text-green-800">1. Your token is swapped at the best rate available 2. The output token is automatically bridged 3. Arrives on destination chain in your wallet</p>
+                <label className="text-sm font-medium mb-2 block">From Chain</label>
+                <Select value={sourceChain} onValueChange={setSourceChain}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {chains?.map((chain: string) => (
+                      <SelectItem key={chain} value={chain}>{CHAIN_NAMES[chain as keyof typeof CHAIN_NAMES] || chain}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+
+              <div className="flex justify-center">
+                <ArrowRight className="h-6 w-6 text-muted-foreground" />
+              </div>
+
               <div>
-                <p className="font-semibold mb-1">✅ Key Benefits:</p>
-                <p className="text-green-800">Convert between any supported tokens. Get exactly the token you want on the chain you want. All in one transaction.</p>
+                <label className="text-sm font-medium mb-2 block">To Chain</label>
+                <Select value={destinationChain} onValueChange={setDestinationChain}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {chains?.filter((c: string) => c !== sourceChain).map((chain: string) => (
+                      <SelectItem key={chain} value={chain}>{CHAIN_NAMES[chain as keyof typeof CHAIN_NAMES] || chain}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+            </div>
+          )}
+
+          {step === 1 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <p className="font-semibold mb-1">⏱️ Timeline:</p>
-                <p className="text-green-800">Typical processing: 15-45 minutes. Includes swap routing and bridge confirmation time.</p>
+                <label className="text-sm font-medium mb-2 block">From Token</label>
+                <Select value={fromToken} onValueChange={setFromToken}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUPPORTED_TOKENS[sourceChain]?.map((token) => (
+                      <SelectItem key={token} value={token}>{token}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500 mt-1">The token you want to convert</p>
               </div>
+
               <div>
-                <p className="font-semibold mb-1">💰 Costs:</p>
-                <p className="text-green-800">Swap fee + bridge fee + gas fees. Usually €10-75 depending on token pair, amount, and network conditions.</p>
+                <label className="text-sm font-medium mb-2 block">Amount to Swap</label>
+                <Input type="number" placeholder="0.00" value={amount} onChange={(e: any) => setAmount(e.target.value)} />
+                <p className="text-xs text-gray-500 mt-1">You'll send this amount of {fromToken}</p>
               </div>
-              <div className="border-t pt-3">
-                <p className="font-semibold text-green-800 mb-2">⚠️ Price Impact:</p>
-                <p className="text-green-800 text-xs">Price impact shows market movement from your trade size. Green (&lt;2%) = good, Orange (2-5%) = fair, Red (&gt;5%) = high. Larger swaps have higher impact.</p>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="space-y-4">
+              <ExpandableQuote quote={swapQuoteData} fromToken={fromToken} toToken={toToken} />
+              <div>
+                <label className="text-sm font-medium mb-2 block">Destination Address</label>
+                <Input placeholder="0x..." value={destinationAddress} onChange={(e: any) => setDestinationAddress(e.target.value)} />
+                <p className="text-xs text-gray-500 mt-1">Where your {toToken} will arrive on {CHAIN_NAMES[destinationChain as keyof typeof CHAIN_NAMES]}</p>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Chain Selection */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-            <div>
-              <label className="text-sm font-medium mb-2 block">From Chain</label>
-              <Select value={sourceChain} onValueChange={setSourceChain}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {chains?.map((chain: string) => (
-                    <SelectItem key={chain} value={chain}>
-                      {CHAIN_NAMES[chain as keyof typeof CHAIN_NAMES] || chain}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
+          )}
 
-            <div className="flex justify-center">
-              <ArrowRight className="h-6 w-6 text-muted-foreground" />
+          {step === 3 && (
+            <div className="space-y-4">
+              <div className="text-sm">Review and confirm your swap. You will be redirected to status after confirmation.</div>
+              <div className="bg-muted/50 p-3 rounded">
+                <div className="flex justify-between"><span>From</span><span>{amount} {fromToken}</span></div>
+                <div className="flex justify-between"><span>To (est)</span><span>{Number(swapQuoteData?.estimatedToAmount ?? 0).toFixed(6)} {toToken}</span></div>
+                <div className="flex justify-between"><span>Price impact</span><span><PriceImpact value={Number(swapQuoteData?.priceImpact ?? 0)} /></span></div>
+              </div>
             </div>
+          )}
 
-            <div>
-              <label className="text-sm font-medium mb-2 block">To Chain</label>
-              <Select value={destinationChain} onValueChange={setDestinationChain}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {chains?.filter((c: string) => c !== sourceChain).map((chain: string) => (
-                    <SelectItem key={chain} value={chain}>
-                      {CHAIN_NAMES[chain as keyof typeof CHAIN_NAMES] || chain}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Token Selection */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium mb-2 block">From Token</label>
-              <Select value={fromToken} onValueChange={setFromToken}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SUPPORTED_TOKENS[sourceChain]?.map((token) => (
-                    <SelectItem key={token} value={token}>
-                      {token}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-gray-500 mt-1">The token you want to convert</p>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium mb-2 block">To Token</label>
-              <Select value={toToken} onValueChange={setToToken}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SUPPORTED_TOKENS[destinationChain]?.map((token) => (
-                    <SelectItem key={token} value={token}>
-                      {token}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-gray-500 mt-1">The token you want to receive</p>
-            </div>
-          </div>
-
-          {/* Amount */}
-          <div>
-            <label className="text-sm font-medium mb-2 block">Amount to Swap</label>
-            <Input
-              type="number"
-              placeholder="0.00"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
-            <p className="text-xs text-gray-500 mt-1">You'll send this amount of {fromToken}</p>
-            {swapQuote && (
-              <p className="text-sm text-green-600 mt-1 font-medium">
-                ≈ {parseFloat(swapQuote.estimatedToAmount).toFixed(6)} {toToken}
-              </p>
+          <div className="flex gap-2">
+            {step > 0 && (
+              <Button variant="ghost" onClick={() => setStep((s) => Math.max(0, s - 1))}>Back</Button>
+            )}
+            {step < 3 && (
+              <Button onClick={() => setStep((s) => Math.min(3, s + 1))}>{step === 2 ? 'Review' : 'Next'}</Button>
+            )}
+            {step === 3 && (
+              <Button onClick={handleExecuteSwap} disabled={!amount || !destinationAddress || swapMutation.isPending || !swapQuoteData}>Execute Swap</Button>
             )}
           </div>
-
-          <div>
-            <label className="text-sm font-medium mb-2 block">Destination Address</label>
-            <Input
-              placeholder="0x..."
-              value={destinationAddress}
-              onChange={(e) => setDestinationAddress(e.target.value)}
-            />
-            <p className="text-xs text-gray-500 mt-1">Where your {toToken} will arrive on {CHAIN_NAMES[destinationChain as keyof typeof CHAIN_NAMES]}</p>
-          </div>
-
-          {/* Swap Quote */}
-          {swapQuoteData && swapQuote && (
-            <Card className="bg-muted/50">
-              <CardContent className="pt-6">
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span>Exchange Rate:</span>
-                    <span className="font-medium">1 {fromToken} = {swapQuote.exchangeRate.toFixed(6)} {toToken}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>You Receive:</span>
-                    <span className="font-medium">{parseFloat(swapQuote.estimatedToAmount).toFixed(6)} {toToken}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span>Price Impact:</span>
-                    <span className={`font-medium ${
-                      swapQuote.priceImpact > 5 ? 'text-red-600 bg-red-100' : 
-                      swapQuote.priceImpact > 2 ? 'text-orange-600 bg-orange-100' : 
-                      'text-green-600 bg-green-100'
-                    } px-2 py-1 rounded text-xs`}>
-                      {swapQuote.priceImpact.toFixed(2)}%
-                    </span>
-                  </div>
-                  <hr className="my-2" />
-                  <div className="flex justify-between">
-                    <span>Swap Fee:</span>
-                    <span className="font-medium">{swapQuote.swapFee}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Bridge Fee:</span>
-                    <span className="font-medium">{swapQuote.bridgeFee} {fromToken}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Gas Fee:</span>
-                    <span className="font-medium">{swapQuote.estimatedGas} ETH</span>
-                  </div>
-                  <div className="flex justify-between border-t pt-2">
-                    <span className="text-xs text-muted-foreground">Route:</span>
-                    <span className="text-xs text-right">{swapQuote.route.join(' → ')}</span>
-                  </div>
-                  <div className="mt-3 p-2 bg-yellow-100 rounded text-yellow-800 text-xs">
-                    <p className="font-semibold mb-1">📌 Tips for better swaps:</p>
-                    <ul className="list-disc list-inside space-y-1">
-                      <li>High price impact? Try a smaller amount for a better rate</li>
-                      <li>Peak times (UTC 14:00-18:00) may have higher slippage</li>
-                      <li>Fees shown are estimates - actual may vary slightly</li>
-                      <li>Check your {toToken} balance on {CHAIN_NAMES[destinationChain as keyof typeof CHAIN_NAMES]} in 15-45 minutes</li>
-                    </ul>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Error Display */}
-          {quoteError && (
-            <div className="p-3 bg-red-100 border border-red-300 rounded text-red-800 text-sm">
-              <p className="font-semibold mb-1">⚠️ Error getting swap quote:</p>
-              <p>{quoteError instanceof Error ? quoteError.message : 'Unable to calculate swap. Check your inputs.'}</p>
-            </div>
-          )}
-
-          {/* Validation Feedback */}
-          {amount && sourceChain && destinationChain && fromToken && toToken && destinationAddress && !quoteError && (
-            <div className="p-3 bg-green-100 border border-green-300 rounded text-green-800 text-sm">
-              <p className="font-semibold">✅ All inputs validated</p>
-              <p>Ready to swap {amount} {fromToken} to {toToken} on {CHAIN_NAMES[destinationChain as keyof typeof CHAIN_NAMES]}</p>
-            </div>
-          )}
-
-          {/* Submit Button */}
-          <Button
-            onClick={() => swapMutation.mutate()}
-            disabled={
-              !amount || 
-              !destinationAddress || 
-              !swapQuote ||
-              swapMutation.isPending ||
-              loadingQuote
-            }
-            className="w-full"
-            size="lg"
-          >
-            {swapMutation.isPending ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Executing Swap...
-              </>
-            ) : loadingQuote ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Fetching Quote...
-              </>
-            ) : (
-              `Execute Swap`
-            )}
-          </Button>
         </CardContent>
       </Card>
+
+      <StickyCTA
+        receive={swapQuoteData ? `${Number(swapQuoteData?.estimatedToAmount ?? 0).toFixed(6)} ${toToken}` : undefined}
+        priceImpact={Number(swapQuoteData?.priceImpact ?? 0)}
+        disabled={!amount || !destinationAddress || !swapQuoteData}
+        onConfirm={() => setStep(3)}
+      />
     </div>
   );
 }

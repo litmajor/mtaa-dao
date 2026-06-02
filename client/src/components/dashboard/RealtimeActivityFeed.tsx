@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { useSystemState } from '@/context/systemState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -360,10 +361,32 @@ export function RealtimeActivityFeed({
 
   // Filter activities
   const filteredActivities = useMemo(() => {
-    if (filterType === 'all') {
-      return liveActivities;
+    // Incorporate system mode to prioritize or compact the feed
+    let mode: string = 'network';
+    try {
+      const ctx = useSystemState();
+      mode = ctx.state.mode;
+    } catch (e) {
+      // ignore
     }
-    return liveActivities.filter(a => a.type === filterType);
+
+    let base = filterType === 'all' ? liveActivities.slice() : liveActivities.filter(a => a.type === filterType);
+
+    if (mode === 'execution') {
+      // Execution mode: focus on actual activity logs and high-impact opportunities
+      base = base.filter(a => a.type === 'activity' || a.type === 'opportunity');
+    }
+
+    if (mode === 'intelligence') {
+      // Intelligence mode: surface highest priority opportunities first
+      base.sort((a, b) => {
+        const pa = (a as any).priority === 'high' ? 2 : (a as any).priority === 'medium' ? 1 : 0;
+        const pb = (b as any).priority === 'high' ? 2 : (b as any).priority === 'medium' ? 1 : 0;
+        return pb - pa;
+      });
+    }
+
+    return base;
   }, [liveActivities, filterType]);
 
   // Render activity item
@@ -404,7 +427,7 @@ export function RealtimeActivityFeed({
     { label: 'Opportunities', type: 'opportunity', icon: <Sparkles className="w-4 h-4" /> },
     { label: 'DeFi', type: 'defi', icon: <Zap className="w-4 h-4" /> },
     { label: 'Arbitrage', type: 'arbitrage', icon: <TrendingUp className="w-4 h-4" /> },
-    { label: 'Markets', type: 'market', icon: <BarChart3 className="w-4 h-4" /> },
+    { label: 'Markets', type: 'market', icon: <BarChart2 className="w-4 h-4" /> },
     { label: 'Global', type: 'global', icon: <Globe className="w-4 h-4" /> },
   ];
 

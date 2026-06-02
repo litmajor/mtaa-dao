@@ -14,6 +14,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import { logger } from '../utils/logger';
 
 // ============= TYPES & INTERFACES =============
@@ -99,6 +100,8 @@ class TokenRegistry {
    * Falls back to empty registry with a loud warning on any load / parse error.
    */
   private initializeTokens(): void {
+    // __dirname is not defined in ES module scope; compute from import.meta.url
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const configPath = path.resolve(__dirname, 'tokens.config.json');
 
     let config: TokenConfig;

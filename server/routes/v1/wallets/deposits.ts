@@ -61,8 +61,11 @@ const webhookLimiter = new RateLimiter({ windowMs: 60 * 1000, maxRequests: 100 }
 // VALIDATION SCHEMAS
 // ════════════════════════════════════════════════════════════════════════════════
 
+// Accept provider as free-form string but validate against supported providers list
+const SUPPORTED_PROVIDERS = ['stripe', 'kotanipay', 'mpesa', 'paystack', 'flutterwave', 'ramp', 'moonpay', 'wyre', 'transak', 'coinbase'];
+
 const initiateDepositSchema = z.object({
-  provider: z.enum(['stripe', 'kotanipay', 'mpesa']),
+  provider: z.string().min(1),
   amount: z.string().regex(/^\d+(\.\d{1,8})?$/, 'Invalid amount format'),
   currency: z.string().default('cUSD'),
   metadata: z.record(z.any()).optional(),
@@ -88,6 +91,7 @@ router.post(
 
       // Create wallet transaction record for deposit tracking
       const [transaction] = await db.insert(walletTransactions).values({
+        id: depositId,
         toUserId: userId,
         type: 'deposit',
         status: 'pending',
@@ -99,16 +103,30 @@ router.post(
 
       logger.info('Deposit initiated', { userId, depositId, amount: validatedData.amount, provider: validatedData.provider });
 
+      // If provider is known to require a redirect, construct an internal redirect URL
+      const providerKey = (validatedData.provider || '').toLowerCase();
+      let paymentUrl: string | undefined;
+      const redirectProviders = ['stripe', 'ramp', 'moonpay', 'wyre', 'transak', 'coinbase', 'paystack', 'flutterwave'];
+      if (redirectProviders.includes(providerKey)) {
+        // point to an internal redirect handler which will later invoke provider SDKs
+        const host = req.get('host');
+        const protocol = req.protocol;
+        paymentUrl = `${protocol}://${host}/api/v1/wallets/deposits/redirect/${providerKey}/${depositId}`;
+      }
+
+      const responsePayload: any = {
+        id: depositId,
+        status: 'pending',
+        amount: validatedData.amount,
+        currency: validatedData.currency,
+        provider: validatedData.provider,
+        createdAt: transaction.createdAt,
+      };
+      if (paymentUrl) responsePayload.paymentUrl = paymentUrl;
+
       res.status(201).json({
         success: true,
-        data: {
-          id: depositId,
-          status: 'pending',
-          amount: validatedData.amount,
-          currency: validatedData.currency,
-          provider: validatedData.provider,
-          createdAt: transaction.createdAt,
-        },
+        data: responsePayload,
         message: 'Deposit initiated. Awaiting payment confirmation.',
       });
     } catch (error) {
@@ -116,6 +134,43 @@ router.post(
     }
   }
 );
+
+
+/**
+ * GET /redirect/:provider/:depositId
+ * Lightweight redirector: maps provider key to a provider checkout/demo URL.
+ * Production: this should exchange keys/tokens with real provider SDKs and create a session.
+ */
+router.get('/redirect/:provider/:depositId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { provider, depositId } = req.params;
+    const p = (provider || '').toLowerCase();
+
+    // Resolve deposit for logging/debugging (best-effort)
+    const [transaction] = await db.select().from(walletTransactions).where(eq(walletTransactions.id, depositId)).limit(1);
+
+    // Map to provider-hosted demo/checkout URLs. Replace with real SDK flows in production.
+    const providerMap: Record<string, string> = {
+      stripe: `https://checkout.stripe.com/pay?depositId=${depositId}`,
+      ramp: `https://buy.ramp.network/?depositId=${depositId}`,
+      moonpay: `https://buy.moonpay.io/?depositId=${depositId}`,
+      wyre: `https://pay.sendwyre.com/?depositId=${depositId}`,
+      transak: `https://global.transak.com/?depositId=${depositId}`,
+      coinbase: `https://commerce.coinbase.com/checkout?depositId=${depositId}`,
+      paystack: `https://paystack.com/pay?depositId=${depositId}`,
+      flutterwave: `https://flutterwave.com/pay?depositId=${depositId}`,
+    };
+
+    const target = providerMap[p] || `https://example.com/deposit/${depositId}`;
+
+    // Log the redirect for audit
+    logger.info('Redirecting to provider', { depositId, provider: p, target, transactionId: transaction?.id });
+
+    return res.redirect(302, target);
+  } catch (err) {
+    next(err);
+  }
+});
 
 /**
  * GET /deposits/status/:txId - Get deposit status

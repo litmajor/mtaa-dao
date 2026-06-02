@@ -14,6 +14,7 @@ import { MicroWithdrawalPanel } from './MicroWithdrawalPanel';
 import { TipDonationPanel } from './TipDonationPanel';
 import { MicroLoanPanel } from './MicroLoanPanel';
 import { SavingsChallengePanel } from './SavingsChallengePanel';
+import { useActionHistoryStore } from '../../stores/actionHistory';
 
 interface MicroTransactionsDashboardProps {
   userId: string;
@@ -25,7 +26,8 @@ export const MicroTransactionsDashboard: React.FC<MicroTransactionsDashboardProp
   daoName = 'My DAO',
 }) => {
   const [activePanel, setActivePanel] = useState<'withdrawal' | 'tip' | 'loan' | 'savings'>('withdrawal');
-  const [microHistory, setMicroHistory] = useState<any[]>([]);
+  const microHistory = useActionHistoryStore((s) => s.actionHistory);
+  const pushAction = useActionHistoryStore((s) => s.pushAction);
   const [showHistory, setShowHistory] = useState(false);
 
   // Micro state
@@ -43,7 +45,7 @@ export const MicroTransactionsDashboard: React.FC<MicroTransactionsDashboardProp
       type: activePanel,
       details: result,
     };
-    setMicroHistory([action, ...microHistory]);
+    pushAction(action);
   };
 
   return (
@@ -64,7 +66,7 @@ export const MicroTransactionsDashboard: React.FC<MicroTransactionsDashboardProp
           <div className="stat">
             <span className="stat-label">Active Users</span>
             <span className="stat-value">
-              {microState.activeUsers.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                {microState.activeUsers.toLocaleString('en-US', { maximumFractionDigits: 0 })}
             </span>
           </div>
           <div className="stat">
@@ -86,7 +88,6 @@ export const MicroTransactionsDashboard: React.FC<MicroTransactionsDashboardProp
             className="history-toggle"
             onClick={() => setShowHistory(!showHistory)}
           >
-            {showHistory ? 'Hide History' : 'Show History'}
           </button>
         </div>
 
@@ -98,13 +99,6 @@ export const MicroTransactionsDashboard: React.FC<MicroTransactionsDashboardProp
             <span className="tab-icon">💸</span>
             <span className="tab-label">Micro-Withdrawal</span>
             <span className="tab-subtitle">Small withdrawals</span>
-          </button>
-
-          <button
-            className={`panel-tab ${activePanel === 'tip' ? 'active' : ''}`}
-            onClick={() => setActivePanel('tip')}
-          >
-            <span className="tab-icon">🎁</span>
             <span className="tab-label">Tip & Donation</span>
             <span className="tab-subtitle">Creator support</span>
           </button>

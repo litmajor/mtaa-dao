@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RiskControl, Strategy } from '../hooks/useStrategyRegistry';
+import { RiskControl, Strategy } from '../../hooks/useStrategyRegistry';
 
 interface RiskLevel {
   name: 'Conservative' | 'Moderate' | 'Aggressive';
@@ -85,23 +85,25 @@ const RISK_FIELDS: RiskControlField[] = [
     label: 'Max Loss Per Trade',
     description: 'Maximum loss allowed on single trade',
     unit: '%',
-    type: 'number',
-    min: 0.1,
-    max: 50,
-    step: 0.1
-  },
-  {
-    key: 'maxDailyLoss',
-    label: 'Max Daily Loss',
-    description: 'Stop all trades if daily loss exceeds this',
-    unit: '%',
-    type: 'number',
-    min: 1,
-    max: 100,
-    step: 1
-  },
-  {
-    key: 'maxLossStreak',
+          {RISK_PRESETS.map(preset => (
+            <button
+              key={preset.name}
+              onClick={() => handlePresetClick(preset)}
+              className={`p-3 rounded-lg border-2 transition-all text-left ${
+                selectedPreset === preset.name
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
+                  : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:border-blue-300'
+              }`}
+              aria-label={`Select ${preset.name} preset`}
+              title={`Select ${preset.name} preset`}
+            >
+              <div className="text-2xl mb-1">{preset.emoji}</div>
+              <div className="font-bold text-sm">{preset.name}</div>
+              <div className="text-xs text-slate-600 dark:text-slate-400">
+                {preset.description}
+              </div>
+            </button>
+          ))}
     label: 'Max Loss Streak',
     description: 'Stop trading after this many consecutive losses',
     unit: 'trades',

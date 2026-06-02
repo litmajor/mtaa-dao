@@ -563,7 +563,8 @@ export async function getNetworkHealth(chainId: number): Promise<any | null> {
  */
 export async function verifyWalletOwnership(
   walletConnectionId: string,
-  signature: string
+  messageOrSignature: string,
+  maybeSignature?: string
 ): Promise<boolean> {
   const wallet = await db
     .select()
@@ -574,9 +575,59 @@ export async function verifyWalletOwnership(
   if (!wallet[0]) {
     throw new Error("Wallet not found");
   }
+  // Support two modes:
+  // 1) New: (walletConnectionId, message, signature) => verify signature recovers address
+  // 2) Legacy: (walletConnectionId, signature) => mark verified (deprecated)
+  let message: string | undefined;
+  let signature: string | undefined;
+  if (maybeSignature) {
+    message = messageOrSignature;
+    signature = maybeSignature;
+  } else {
+    // Legacy mode: messageOrSignature is actually the signature
+    signature = messageOrSignature;
+  }
 
-  // Verification would happen here via blockchain call
-  // For now, we'll just mark as verified
+  if (message && signature) {
+    // Lazy import ethers to avoid heavy startup cost
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { ethers } = require('ethers');
+    let recovered: string;
+    try {
+      recovered = ethers.verifyMessage(message, signature);
+    } catch (err) {
+      throw new Error('Invalid signature');
+    }
+
+    if (recovered.toLowerCase() !== String(wallet[0].walletAddress).toLowerCase()) {
+      throw new Error('Signature does not match wallet address');
+    }
+
+    // Parse timestamp from message to mitigate replay (expect a line like "timestamp: <ms>")
+    const tsMatch = String(message).match(/timestamp:\s*(\d{10,})/i);
+    if (!tsMatch) {
+      throw new Error('Signed message missing timestamp');
+    }
+    const ts = parseInt(tsMatch[1], 10);
+    const age = Math.abs(Date.now() - ts);
+    if (age > 5 * 60 * 1000) {
+      throw new Error('Signed message is too old');
+    }
+
+    await db
+      .update(walletConnections)
+      .set({
+        isVerified: true,
+        verificationSignature: signature,
+        updatedAt: new Date(),
+      })
+      .where(eq(walletConnections.id, walletConnectionId));
+
+    await logWalletHistory(walletConnectionId, 'verified', {});
+    return true;
+  }
+
+  // Fallback legacy behavior: accept signature and mark verified (deprecated)
   await db
     .update(walletConnections)
     .set({
@@ -586,8 +637,7 @@ export async function verifyWalletOwnership(
     })
     .where(eq(walletConnections.id, walletConnectionId));
 
-  await logWalletHistory(walletConnectionId, "verified", {});
-
+  await logWalletHistory(walletConnectionId, 'verified', { legacy: true });
   return true;
 }
 

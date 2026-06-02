@@ -6,6 +6,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { useToast } from '../ui/use-toast';
+import useWalletActions from '@/hooks/useWalletActions';
 import { Link, Copy, Check, Share2 } from 'lucide-react';
 
 interface PaymentLinkModalProps {
@@ -15,6 +16,7 @@ interface PaymentLinkModalProps {
 }
 
 export default function PaymentLinkModal({ isOpen, onClose, userAddress }: PaymentLinkModalProps) {
+  const actions = useWalletActions();
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [generatedLink, setGeneratedLink] = useState('');
@@ -30,32 +32,16 @@ export default function PaymentLinkModal({ isOpen, onClose, userAddress }: Payme
 
     setIsLoading(true);
     try {
-      const response = await fetch('/api/v1/wallets/payments/link', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          address: userAddress,
-          amount,
-          description
-        })
-      });
-
-      if (!response.ok) throw new Error('Failed to generate link');
-
-      const data = await response.json();
-      const link = `${window.location.origin}/pay/${data.linkId}`;
+      const res = await actions.createPaymentLink({ amount, currency: 'cUSD', description, expiresAt: undefined, metadata: { creatorAddress: userAddress } });
+      if (!res.success) throw new Error(res.error || 'Failed to generate link');
+      const payload = res.res || res;
+      const linkId = payload?.data?.linkId || payload?.linkId || payload?.id || payload?.data?.id;
+      const link = linkId ? `${window.location.origin}/pay/${linkId}` : payload?.data?.url || payload?.url || '';
       setGeneratedLink(link);
 
-      toast({
-        title: 'Payment Link Created',
-        description: 'Share this link to receive payments'
-      });
+      toast({ title: 'Payment Link Created', description: 'Share this link to receive payments' });
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to generate payment link',
-        variant: 'destructive'
-      });
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to generate payment link', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }

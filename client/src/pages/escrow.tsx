@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Lock, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Clock, CheckCircle, Shield } from 'lucide-react';
 import { apiGet, apiPost } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
@@ -48,7 +48,7 @@ export default function EscrowPage() {
     <div className="container mx-auto p-6">
       <div className="mb-6">
         <h1 className="text-3xl font-bold flex items-center gap-2">
-          <Lock className="w-8 h-8" />
+          <Shield className="w-8 h-8" />
           Escrow Management
         </h1>
         <p className="text-muted-foreground">Secure milestone-based payments</p>
@@ -67,7 +67,7 @@ export default function EscrowPage() {
                 </div>
                 <Badge variant={
                   escrow.status === 'active' ? 'default' :
-                  escrow.status === 'completed' ? 'success' :
+                  escrow.status === 'completed' ? 'secondary' :
                   escrow.status === 'disputed' ? 'destructive' : 'secondary'
                 }>
                   {escrow.status}
@@ -99,7 +99,7 @@ export default function EscrowPage() {
                     <Button onClick={() => handleRelease(escrow.id)} className="flex-1">
                       Release Next Milestone
                     </Button>
-                    <Button onClick={() => handleDispute(escrow.id)} variant="destructive">
+                    <Button onClick={() => handleDispute(escrow.id)} variant="danger">
                       Dispute
                     </Button>
                   </div>

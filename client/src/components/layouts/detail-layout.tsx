@@ -1,7 +1,5 @@
 import React from 'react';
-import { Card } from '../ui/card-design';
-import { Button } from '../ui/button-design';
-import { Icon } from '../ui/icon-design';
+import { Card, Button, Icon } from '../ui';
 
 export interface DetailLayoutProps {
   // Metadata

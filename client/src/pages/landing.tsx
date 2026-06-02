@@ -407,7 +407,7 @@ export default function MtaaDAOLanding() {
           <a href="/whitepaper.html" target="_blank" rel="noopener noreferrer" className="text-purple-200 hover:text-white transition">Whitepaper</a>
         </nav>
         <Link href="/register">
-          <Button className="bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 text-white px-6 py-2 rounded-xl font-bold shadow-lg">
+          <Button variant="primary" className="px-6 py-2 rounded-xl font-bold shadow-lg">
             Get Started
           </Button>
         </Link>

@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { 
   MessageCircle, 
-  BarChart3, 
+  BarChart2, 
   Calendar, 
   TrendingUp,
   Zap,

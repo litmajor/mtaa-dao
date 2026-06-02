@@ -12,6 +12,7 @@
  */
 
 import React, { useState } from 'react';
+import { useActionHistoryStore } from '../../stores/actionHistory';
 import { ReferralGenerationPanel } from './ReferralGenerationPanel';
 import { ReferralRewardsPanel } from './ReferralRewardsPanel';
 import { ReferralTierAdvancementPanel } from './ReferralTierAdvancementPanel';
@@ -27,7 +28,8 @@ export const ReferralDashboard: React.FC<ReferralDashboardProps> = ({
   daoName = 'My DAO',
 }) => {
   const [activePanel, setActivePanel] = useState<'generation' | 'rewards' | 'tier' | 'fraud'>('generation');
-  const [referralHistory, setReferralHistory] = useState<any[]>([]);
+  const referralHistory = useActionHistoryStore((s) => s.actionHistory);
+  const pushAction = useActionHistoryStore((s) => s.pushAction);
   const [showHistory, setShowHistory] = useState(false);
 
   // Referral state
@@ -45,7 +47,7 @@ export const ReferralDashboard: React.FC<ReferralDashboardProps> = ({
       type: activePanel,
       details: result,
     };
-    setReferralHistory([action, ...referralHistory]);
+    pushAction(action);
   };
 
   return (

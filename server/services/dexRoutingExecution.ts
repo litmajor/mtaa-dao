@@ -15,6 +15,8 @@ import { Logger } from '../utils/logger';
 import { db } from '../db';
 import { strategyRebalancesTable } from '../db/schema/strategies';
 import { v4 as uuidv4 } from 'uuid';
+import { publishExecutionEvent } from './executionEvents';
+import { orderRouter } from './orderRouter';
 
 const logger = Logger.getLogger();
 
@@ -83,19 +85,49 @@ class DexRoutingExecution {
   private activeExecutions: Map<string, RebalanceExecution> = new Map();
   private transactionQueue: Map<string, SwapOrder[]> = new Map();
 
-  // Mock routing recommendations (in production, calls orderRouter service)
-  private getMockRoutingRecommendation(order: SwapOrder): RoutingRecommendation {
-    const venues = ['uniswap', 'curve', 'balancer', 'cex'] as const;
-    const selectedVenue = venues[Math.floor(Math.random() * venues.length)];
+  // Get routing recommendation from the smart Order Router service
+  private async getRoutingRecommendation(order: SwapOrder): Promise<RoutingRecommendation> {
+    try {
+      // orderRouter expects a symbol and amount; map our fields directly
+      const symbol = order.asset;
+      const amount = order.amount;
+      const side = order.action;
 
-    return {
-      venue: selectedVenue,
-      expectedPrice: (order.targetPrice || 1000) * (0.98 + Math.random() * 0.04),
-      expectedSlippage: 0.1 + Math.random() * 0.4,
-      expectedGasCost: 50 + Math.random() * 150,
-      totalCost: 50 + Math.random() * 50,
-      confidence: 0.85 + Math.random() * 0.15,
-    };
+      const best = await orderRouter.findBestExecutionVenue(symbol, amount, side as 'buy' | 'sell');
+
+      if (!best) {
+        // Fallback to conservative mock
+        return {
+          venue: 'cex',
+          expectedPrice: order.targetPrice || 1000,
+          expectedSlippage: order.maxSlippagePercent || 0.5,
+          expectedGasCost: 50,
+          totalCost: (order.amountUsd || 0) + 50,
+          confidence: 0.6,
+        };
+      }
+
+      const venueMapped = best.venue === 'cex' ? 'cex' : 'uniswap';
+
+      return {
+        venue: venueMapped as RoutingRecommendation['venue'],
+        expectedPrice: best.price || (order.targetPrice || 1000),
+        expectedSlippage: (best.slippage as number) || (order.maxSlippagePercent || 0.5),
+        expectedGasCost: (best.gasCost as number) || (best.fee as number) || 0,
+        totalCost: (best.totalWithCosts as number) || (best.totalCost as number) || (order.amountUsd || 0),
+        confidence: typeof best.confidence === 'number' ? best.confidence : best.confidence === 'high' ? 0.9 : best.confidence === 'medium' ? 0.7 : 0.4,
+      };
+    } catch (error) {
+      logger.warn('[DexRouting] orderRouter call failed, falling back to mock', { err: error });
+      return {
+        venue: 'cex',
+        expectedPrice: order.targetPrice || 1000,
+        expectedSlippage: order.maxSlippagePercent || 0.5,
+        expectedGasCost: 50,
+        totalCost: (order.amountUsd || 0) + 50,
+        confidence: 0.6,
+      };
+    }
   }
 
   /**
@@ -160,8 +192,8 @@ class DexRoutingExecution {
 
       for (const order of orders) {
         try {
-          // Get routing recommendation
-          const recommendation = this.getMockRoutingRecommendation(order);
+          // Get routing recommendation from order router
+          const recommendation = await this.getRoutingRecommendation(order);
 
           // Simulate transaction execution
           const transaction = await this.executeSwap({
@@ -300,6 +332,22 @@ class DexRoutingExecution {
       });
 
       logger.debug(`[DexRouting] Persisted rebalance execution: ${execution.rebalanceId}`);
+
+      // publish to redis channel for real-time clients
+      try {
+        const payload = {
+          rebalanceId: execution.rebalanceId,
+          strategyId: execution.strategyId,
+          status: execution.status,
+          successful: execution.successfulTransactions,
+          failed: execution.failedTransactions,
+          transactions: execution.transactions,
+          timestamp: new Date().toISOString(),
+        };
+        await publishExecutionEvent(`execution:${execution.rebalanceId}`, payload);
+      } catch (err) {
+        logger.warn('[DexRouting] publishExecutionEvent failed', { err });
+      }
     } catch (error) {
       logger.error('[DexRouting] Error persisting rebalance execution:', error);
     }

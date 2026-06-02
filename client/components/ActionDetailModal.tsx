@@ -5,6 +5,8 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { Lucide } from '../src/lib/icons';
+const { X, Timer, DollarSign, TriangleAlert, Siren, Users, RotateCcw, Check, CheckCircle, Lock } = (Lucide as any) || {};
 
 interface ActionState {
   [key: string]: any;
@@ -167,7 +169,7 @@ export const ActionDetailModal: React.FC<ActionDetailModalProps> = ({
               onClick={onClose}
               className="text-white hover:bg-white hover:bg-opacity-20 rounded p-2 transition"
             >
-              ✕
+              {X ? <X className="w-5 h-5" /> : '✕'}
             </button>
           </div>
         </div>
@@ -203,7 +205,7 @@ export const ActionDetailModal: React.FC<ActionDetailModalProps> = ({
             {/* Grace Period Countdown */}
             {action.canReverse && (
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm font-bold text-gray-700 mb-2">⏱️ Time to Reverse</p>
+                <p className="text-sm font-bold text-gray-700 mb-2">{Timer ? <Timer className="inline w-4 h-4 mr-2" /> : '⏱️'} Time to Reverse</p>
                 <p className="text-2xl font-bold text-blue-600 font-mono">{formatCountdown(countdown)}</p>
                 <p className="text-xs text-gray-600 mt-2">
                   Deadlineเก: {new Date(action.gracePeriodEndsAt).toLocaleString()}
@@ -215,10 +217,7 @@ export const ActionDetailModal: React.FC<ActionDetailModalProps> = ({
                     <span>{action.percentRemaining}%</span>
                   </div>
                   <div className="w-full h-2 bg-gray-300 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-blue-600 transition-all"
-                      style={{ width: `${action.percentRemaining}%` }}
-                    ></div>
+                      <div className={`h-full bg-blue-600 transition-all w-[${action.percentRemaining}%]`}></div>
                   </div>
                 </div>
               </div>
@@ -258,7 +257,7 @@ export const ActionDetailModal: React.FC<ActionDetailModalProps> = ({
             {/* Impacts */}
             {action.fees !== undefined && (
               <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <h4 className="font-bold text-gray-800 mb-2">💰 Financial Impact</h4>
+                <h4 className="font-bold text-gray-800 mb-2">{DollarSign ? <DollarSign className="inline w-5 h-5 mr-2" /> : '💰'} Financial Impact</h4>
                 <div className="space-y-2 text-sm">
                   {action.fees !== undefined && (
                     <p className="text-gray-700">
@@ -277,7 +276,7 @@ export const ActionDetailModal: React.FC<ActionDetailModalProps> = ({
             {/* Risk Factors */}
             {action.riskFactors && action.riskFactors.length > 0 && (
               <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                <h4 className="font-bold text-gray-800 mb-3">⚠️ Risk Factors</h4>
+                <h4 className="font-bold text-gray-800 mb-3">{TriangleAlert ? <TriangleAlert className="inline w-5 h-5 mr-2 text-orange-600" /> : '⚠️'} Risk Factors</h4>
                 <ul className="space-y-2">
                   {action.riskFactors.map((factor, idx) => (
                     <li key={idx} className="text-sm text-orange-900 flex items-start gap-2">
@@ -292,11 +291,11 @@ export const ActionDetailModal: React.FC<ActionDetailModalProps> = ({
             {/* Warnings */}
             {action.warnings && action.warnings.length > 0 && (
               <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                <h4 className="font-bold text-gray-800 mb-3">🚨 Warnings</h4>
+                <h4 className="font-bold text-gray-800 mb-3">{Siren ? <Siren className="inline w-5 h-5 mr-2 text-red-600" /> : '🚨'} Warnings</h4>
                 <ul className="space-y-2">
                   {action.warnings.map((warning, idx) => (
                     <li key={idx} className="text-sm text-red-900 flex items-start gap-2">
-                      <span className="text-red-600 mt-0.5">⚠️</span>
+                      <span className="text-red-600 mt-0.5">{TriangleAlert ? <TriangleAlert className="w-4 h-4 text-red-600" /> : '⚠️'}</span>
                       <span>{warning}</span>
                     </li>
                   ))}
@@ -306,7 +305,7 @@ export const ActionDetailModal: React.FC<ActionDetailModalProps> = ({
 
             {/* Affected Entities */}
             <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-lg">
-              <h4 className="font-bold text-gray-800 mb-3">👥 Affected Entities</h4>
+              <h4 className="font-bold text-gray-800 mb-3">{Users ? <Users className="inline w-5 h-5 mr-2 text-indigo-600" /> : '👥'} Affected Entities</h4>
               <ul className="space-y-1">
                 {action.affectedEntities.map((entity, idx) => (
                   <li key={idx} className="text-sm text-indigo-900">
@@ -319,12 +318,13 @@ export const ActionDetailModal: React.FC<ActionDetailModalProps> = ({
             {/* Reversal Section */}
             {action.canReverse && !reversalSuccess && (
               <div className="space-y-3 p-4 bg-red-50 border border-red-200 rounded-lg">
-                <h4 className="font-bold text-gray-800">⏮️ Reverse This Action</h4>
+                <h4 className="font-bold text-gray-800">{RotateCcw ? <RotateCcw className="inline w-5 h-5 mr-2" /> : '⏮️'} Reverse This Action</h4>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <label htmlFor="reversalReason" className="block text-sm font-semibold text-gray-700 mb-2">
                     Reason for Reversal
                   </label>
                   <select
+                    id="reversalReason"
                     value={reversalReason}
                     onChange={e => setReversalReason(e.target.value)}
                     disabled={isReversing}
@@ -346,7 +346,7 @@ export const ActionDetailModal: React.FC<ActionDetailModalProps> = ({
                   disabled={isReversing}
                   className="w-full px-4 py-3 bg-red-600 text-white rounded font-bold hover:bg-red-700 disabled:opacity-50 transition"
                 >
-                  {isReversing ? '⏳ Reversing...' : '✓ Confirm Reversal'}
+                  {isReversing ? (Timer ? <><Timer className="inline w-4 h-4 mr-2" />Reversing...</> : '⏳ Reversing...') : (Check ? <><Check className="inline w-4 h-4 mr-2" />Confirm Reversal</> : '✓ Confirm Reversal')}
                 </button>
               </div>
             )}
@@ -354,7 +354,7 @@ export const ActionDetailModal: React.FC<ActionDetailModalProps> = ({
             {/* Success Message */}
             {reversalSuccess && (
               <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                <p className="text-green-800 font-bold">✅ Action reversed successfully!</p>
+                <p className="text-green-800 font-bold">{CheckCircle ? <CheckCircle className="inline w-4 h-4 mr-2 text-green-600" /> : '✅'} Action reversed successfully!</p>
                 <p className="text-green-700 text-sm mt-2">
                   All changes from this action have been reverted.
                 </p>
@@ -364,7 +364,7 @@ export const ActionDetailModal: React.FC<ActionDetailModalProps> = ({
             {/* Expired Message */}
             {!action.canReverse && (
               <div className="p-4 bg-gray-50 border border-gray-300 rounded-lg">
-                <p className="text-gray-800 font-bold">🔒 Grace Period Expired</p>
+                <p className="text-gray-800 font-bold">{Lock ? <Lock className="inline w-4 h-4 mr-2" /> : '🔒'} Grace Period Expired</p>
                 <p className="text-gray-700 text-sm mt-2">
                   This action can no longer be reversed. It became permanent on{' '}
                   {new Date(action.gracePeriodEndsAt).toLocaleString()}.

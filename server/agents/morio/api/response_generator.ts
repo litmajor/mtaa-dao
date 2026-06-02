@@ -13,6 +13,7 @@ import { createLLMProvider, LLMResponseGenerator, LLMConfig } from './llm_provid
 import { Logger } from '../../../utils/logger';
 import { kwetu } from '../../../core/kwetu';
 import { storage } from '../../../storage';
+import { pendingActionService } from '../../../services/pendingActionService';
 import { handleGatingQuestion } from '../handlers/gatingHandler';
 
 const logger = new Logger('response-generator');
@@ -45,6 +46,7 @@ export class ResponseGenerator {
   async generate(understanding: any, context: UserContext) {
     const { intent, entities, confidence } = understanding;
     const rawInput = understanding.rawInput || '';
+    const sentiment = understanding.sentiment || 0;
 
     // Check for gating-related questions FIRST
     const gatingResult = await handleGatingQuestion(context.userId, rawInput);
@@ -74,7 +76,7 @@ export class ResponseGenerator {
         return {
           text: llmResponse.text,
           suggestions: this.generateSuggestions(intent, context),
-          actions: this.generateActions(intent, entities)
+          actions: await this.generateActions(intent, entities)
         };
       } catch (error) {
         logger.warn('LLM generation failed, falling back to templates:', error);
@@ -119,12 +121,12 @@ export class ResponseGenerator {
           const treasuryData = await this.fetchTreasuryBalance(context.daoId);
           responseText = `Your DAO treasury: **${treasuryData.balance} ${treasuryData.currency}** across ${treasuryData.vaults} vault(s). Last updated: ${new Date(treasuryData.lastUpdated).toLocaleString()}`;
           suggestions = this.generateSuggestions(intent, context);
-          actions = this.generateActions(intent, { ...entities, balance: treasuryData.balance });
+          actions = await this.generateActions(intent, { ...entities, balance: treasuryData.balance });
         } catch (error) {
           logger.warn('Failed to fetch treasury balance, using template:', error);
           responseText = this.personalizeResponse(template.text, context, entities);
           suggestions = this.generateSuggestions(intent, context);
-          actions = this.generateActions(intent, entities);
+          actions = await this.generateActions(intent, entities);
         }
         break;
 
@@ -157,7 +159,7 @@ export class ResponseGenerator {
           logger.warn('Failed to create proposal, using template:', error);
           responseText = this.personalizeResponse(template.text, context, entities);
           suggestions = this.generateSuggestions(intent, context);
-          actions = this.generateActions(intent, entities);
+          actions = await this.generateActions(intent, entities);
         }
         break;
 
@@ -165,14 +167,23 @@ export class ResponseGenerator {
         // For other intents, proceed with default response generation
         responseText = this.personalizeResponse(template.text, context, entities);
         suggestions = this.generateSuggestions(intent, context);
-        actions = this.generateActions(intent, entities);
+        actions = await this.generateActions(intent, entities);
         break;
+    }
+
+    // Emotion-aware tweak: if sentiment is negative, add empathetic prefix and escalate suggestions
+    if (sentiment && sentiment < -0.3) {
+      responseText = `I'm sorry you're having a rough time. ${responseText}`;
+      suggestions = ['Do you want to talk to an elder?', ...suggestions];
     }
 
     return {
       text: responseText || this.personalizeResponse(template.text, context, entities),
       suggestions,
-      actions
+      actions,
+      metadata: {
+        sentiment
+      }
     };
   }
 
@@ -180,7 +191,8 @@ export class ResponseGenerator {
    * Get response template for intent
    */
   private getResponseTemplate(intent: string) {
-    return responses[intent] || responses.default;
+    // responses has a fixed set of keys; cast to any to allow dynamic lookup
+    return (responses as any)[intent] || responses.default;
   }
 
   /**
@@ -266,48 +278,43 @@ export class ResponseGenerator {
   /**
    * Generate actionable buttons/actions
    */
-  private generateActions(intent: string, entities: Record<string, any>): Action[] {
+  private async generateActions(intent: string, entities: Record<string, any>): Promise<Action[]> {
     const actions: Action[] = [];
 
     switch (intent) {
       case 'withdraw':
-        actions.push({
-          type: 'open_withdrawal',
-          label: 'Start Withdrawal',
-          data: entities
-        });
+        try {
+          const token = await pendingActionService.createPendingAction({ userId: entities.userId || '', daoId: entities.daoId, actionType: 'open_withdrawal', payload: entities, summary: `Withdrawal request: ${entities.amount || ''} ${entities.currency || ''}` });
+          actions.push({ type: 'open_withdrawal', label: 'Start Withdrawal', data: { ...entities, pendingActionToken: token }, requiresConfirmation: true });
+        } catch (e) {
+          actions.push({ type: 'open_withdrawal', label: 'Start Withdrawal', data: entities });
+        }
         break;
 
       case 'deposit':
-        actions.push({
-          type: 'open_deposit',
-          label: 'Deposit Funds',
-          data: entities
-        });
+        actions.push({ type: 'open_deposit', label: 'Deposit Funds', data: entities });
         break;
 
       case 'submit_proposal':
-        actions.push({
-          type: 'create_proposal',
-          label: 'Create Proposal',
-          data: entities
-        });
+        try {
+          const token = await pendingActionService.createPendingAction({ userId: entities.userId || '', daoId: entities.daoId, actionType: 'create_proposal', payload: entities, summary: `Create proposal: ${entities.title || 'untitled'}` });
+          actions.push({ type: 'create_proposal', label: 'Create Proposal', data: { ...entities, pendingActionToken: token }, requiresConfirmation: true });
+        } catch (e) {
+          actions.push({ type: 'create_proposal', label: 'Create Proposal', data: entities });
+        }
         break;
 
       case 'vote':
-        actions.push({
-          type: 'cast_vote',
-          label: 'Cast Vote',
-          data: entities
-        });
+        try {
+          const token = await pendingActionService.createPendingAction({ userId: entities.userId || '', daoId: entities.daoId, actionType: 'cast_vote', payload: entities, summary: `Cast vote on ${entities.proposalId}` });
+          actions.push({ type: 'cast_vote', label: 'Cast Vote', data: { ...entities, pendingActionToken: token }, requiresConfirmation: true });
+        } catch (e) {
+          actions.push({ type: 'cast_vote', label: 'Cast Vote', data: entities });
+        }
         break;
 
       case 'check_balance':
-        actions.push({
-          type: 'view_balance',
-          label: 'View Full Balance',
-          data: {}
-        });
+        actions.push({ type: 'view_balance', label: 'View Full Balance', data: {} });
         break;
     }
 
@@ -325,10 +332,11 @@ export class ResponseGenerator {
 
       // Call KWETU treasury service to get actual balance
       const treasuryData = await kwetu.execute({
+        type: 'treasury',
         service: 'treasury',
         method: 'getBalance',
         params: { daoId }
-      });
+      } as any);
 
       logger.info('Treasury balance fetched for DAO:', { daoId, balance: treasuryData.balance });
       return treasuryData;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Strategy, RiskControl } from '../hooks/useStrategyRegistry';
+import { Strategy, RiskControl } from '../../hooks/useStrategyRegistry';
 
 interface DeploymentPreviewProps {
   strategy: Strategy | null;
@@ -48,10 +48,11 @@ export const DeploymentPreview: React.FC<DeploymentPreviewProps> = ({
       {/* Bot Name & Capital */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-bold text-slate-900 dark:text-white mb-2">
+          <label htmlFor="bot-name" className="block text-sm font-bold text-slate-900 dark:text-white mb-2">
             Bot Name
           </label>
           <input
+            id="bot-name"
             type="text"
             value={botName}
             onChange={e => onBotNameChange(e.target.value)}
@@ -64,11 +65,12 @@ export const DeploymentPreview: React.FC<DeploymentPreviewProps> = ({
         </div>
 
         <div>
-          <label className="block text-sm font-bold text-slate-900 dark:text-white mb-2">
+          <label htmlFor="initial-capital" className="block text-sm font-bold text-slate-900 dark:text-white mb-2">
             Initial Capital
           </label>
           <div className="flex gap-2">
             <input
+              id="initial-capital"
               type="number"
               value={initialCapital}
               onChange={e => onInitialCapitalChange(parseFloat(e.target.value))}

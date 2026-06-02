@@ -136,7 +136,7 @@ export default function SimplifiedDashboard({
             {/* Action Buttons */}
             <div className="flex gap-3">
               <Link href="/daos" className="flex-1">
-                <Button className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 shadow-lg hover:shadow-xl transition-all duration-300 group/btn" size="lg">
+                <Button variant="primary" className="w-full shadow-lg hover:shadow-xl transition-all duration-300 group/btn" size="lg">
                   View Groups
                   <ArrowRight className="w-4 h-4 ml-2 group-hover/btn:translate-x-1 transition-transform" />
                 </Button>
@@ -164,7 +164,7 @@ export default function SimplifiedDashboard({
                   Your groups need you to vote on important decisions
                 </p>
                 <Link href="/proposals">
-                  <Button className="bg-gradient-to-r from-orange-500 to-pink-600" size="lg">
+                  <Button variant="primary" size="lg">
                     Vote Now
                     <ArrowRight className="ml-2 h-5 w-5" />
                   </Button>

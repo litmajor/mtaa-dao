@@ -1,13 +1,16 @@
 
 import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowUpRight, TrendingUp, Wallet, Users } from 'lucide-react';
 import { Link } from 'wouter';
+import Shell from '../components/ui/shell';
+import { Grid } from '../components/ui/grid';
 
 export default function VaultDashboard() {
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <Shell brand={<h1 className="text-3xl font-bold text-gray-900">Vault Dashboard</h1>}>
+      <div className="container mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-gray-900">Vault Dashboard</h1>
         <Link href="/vault">
@@ -81,5 +84,6 @@ export default function VaultDashboard() {
         </CardContent>
       </Card>
     </div>
+    </Shell>
   );
 }

@@ -1,22 +1,35 @@
 
-FROM node:18
+FROM node:20-bullseye-slim AS builder
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm install
+ # Use npm for installs (prefer locked installs, increase network timeouts)
+ COPY package*.json ./
+ # prefer `npm ci` for reproducible installs; increase network timeout and retries
+ RUN npm ci --prefer-offline --no-audit --progress=false --network-timeout=600000 --fetch-retries=5 || npm install --network-timeout=600000 --fetch-retries=5
 
+# Copy rest of repo and build
 COPY . .
+ RUN npm run build:backend
 
-# Install tsx for TypeScript execution
-RUN npm install -g tsx
-RUN npm install prisma --save-dev
-RUN npm install @prisma/client
-RUN npm run build:backend
+# Optional: generate Prisma client if schema exists
+ RUN [ -f prisma/schema.prisma ] && npx prisma generate || echo "no prisma schema"
 
-# Generate Prisma client if needed
-RUN npx prisma generate || echo "Skipping prisma generate..."
+FROM node:20-bullseye-slim AS runtime
+WORKDIR /app
+ COPY package*.json ./
+ RUN npm install --only=production
+
+# Copy built artifacts from builder
+COPY --from=builder /app/server/dist ./server/dist
 
 EXPOSE 5000
 
-# Use tsx to run TypeScript directly
-CMD ["npx", "tsx", "server/index.ts"]
+ENV NODE_ENV=production
+
+# Ensure lightweight healthcheck tooling is available
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+	CMD curl -f http://localhost:5000/health || exit 1
+
+CMD ["node", "server/dist/index.js"]

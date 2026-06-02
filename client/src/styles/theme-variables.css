@@ -264,3 +264,74 @@
   --breakpoint-xl: 1280px;
   --breakpoint-2xl: 1536px;
 }
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --animation-duration-shortest: 0ms;
+    --animation-duration-shorter: 0ms;
+    --animation-duration-short: 0ms;
+    --animation-duration-standard: 0ms;
+    --animation-duration-complex: 0ms;
+  }
+}
+
+/* Surface primitives: use these utility classes to ensure consistent elevation and tone */
+.surface-base {
+  background-color: var(--semantic-card);
+  color: var(--semantic-card-foreground);
+  border: 1px solid var(--semantic-border);
+  box-shadow: var(--shadow-xs);
+  border-radius: var(--border-radius-md);
+}
+
+.surface-raised {
+  background-color: var(--semantic-popover);
+  color: var(--semantic-popover-foreground);
+  border: 1px solid rgba(15,23,42,0.06);
+  box-shadow: var(--shadow-md);
+  border-radius: var(--border-radius-lg);
+}
+
+.surface-floating {
+  background-color: rgba(255,255,255,0.02);
+  color: var(--semantic-foreground);
+  border: 1px solid rgba(255,255,255,0.04);
+  box-shadow: var(--shadow-lg);
+  border-radius: var(--border-radius-xl);
+}
+
+.surface-overlay {
+  background-color: rgba(2,6,23,0.6);
+  color: var(--semantic-foreground);
+  backdrop-filter: blur(6px);
+  border-radius: var(--border-radius-md);
+  box-shadow: 0 8px 30px rgba(2,6,23,0.6);
+}
+
+/* Motion utilities for workspace-driven adaptive prioritization
+   Use classes like `motion-priority-1`..`motion-priority-4` to subtly emphasize high-priority cards */
+.motion-priority-1 {
+  animation: scale-in var(--animation-duration-short) var(--animation-easing-out) both;
+  transform-origin: center;
+}
+.motion-priority-2 {
+  animation: slide-up var(--animation-duration-standard) var(--animation-easing-out) both;
+}
+.motion-priority-3 {
+  animation: fade-in var(--animation-duration-standard) var(--animation-easing-inout) both;
+}
+.motion-priority-4 {
+  animation: pulse var(--animation-duration-complex) var(--animation-easing-inout) infinite;
+}
+
+/* helper to reduce motion if user prefers reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .motion-priority-1,
+  .motion-priority-2,
+  .motion-priority-3,
+  .motion-priority-4 {
+    animation: none !important;
+    transition: none !important;
+  }
+}

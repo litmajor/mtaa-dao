@@ -9,6 +9,7 @@ import { Skeleton } from '../ui/skeleton';
 import ErrorBoundary from '../ErrorBoundary'; // Using ErrorBoundary from parent components directory
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
+import { useWalletOperatingStore } from '@/stores/wallet-operating-store';
 
 interface Transaction {
   id: string;
@@ -217,8 +218,9 @@ const TransactionItemSkeleton = () => (
 
 
 export default function TransactionHistory({ userId, walletAddress }: TransactionHistoryProps) {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
+  const store = useWalletOperatingStore();
+  const [transactions, setTransactions] = useState<Transaction[]>(store.transactions || []);
+  const [loading, setLoading] = useState(!store.transactions || store.transactions.length === 0);
   const [error, setError] = useState<string | null>(null); // State for error handling
   const [filter, setFilter] = useState({
     type: '',
@@ -291,8 +293,15 @@ export default function TransactionHistory({ userId, walletAddress }: Transactio
   };
 
   useEffect(() => {
+    // If central store has transactions, use them; otherwise fetch and populate store
+    if (store.transactions && store.transactions.length > 0) {
+      setTransactions(store.transactions as Transaction[]);
+      setLoading(false);
+      return;
+    }
     fetchTransactions();
-  }, [userId, walletAddress, filter, currentPage]);
+    // sync store when local transactions change
+  }, [userId, walletAddress, filter, currentPage, store.transactions]);
 
   const fetchTransactions = async () => {
     setLoading(true);
@@ -317,7 +326,10 @@ export default function TransactionHistory({ userId, walletAddress }: Transactio
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       const data = await response.json();
-      setTransactions(data.data?.transactions || data.data || []);
+      const fetched = data.data?.transactions || data.data || [];
+      setTransactions(fetched);
+      // update central store so other components can react
+      store.setTransactions(fetched);
     } catch (err: any) {
       console.error('Error fetching transactions:', err);
       setError('Failed to load transactions. Please try again later.');

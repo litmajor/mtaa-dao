@@ -8,8 +8,8 @@
  */
 
 import React, { useMemo } from 'react';
-import { AlertCircle, TrendingDown, TrendingUp } from 'lucide-react';
-import { ExchangeData } from './types';
+import { AlertCircle, TrendingDown, TrendingUp } from '../../lib/icons';
+import { ExchangeData } from '@/pages/trading';
 
 interface HeatmapViewProps {
   exchanges: ExchangeData[];
@@ -115,7 +115,7 @@ const HeatmapView: React.FC<HeatmapViewProps> = ({
         <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg border border-green-200">
           <p className="text-sm text-gray-600 mb-1">Best Price</p>
           <p className="text-2xl font-bold text-green-900">${bestExchange.price.toFixed(2)}</p>
-          <p className="text-xs text-gray-500 mt-1">on {bestExchange.exchange}</p>
+          <p className="text-xs text-gray-500 mt-1">on {bestExchange.name}</p>
         </div>
 
         <div className="bg-gradient-to-br from-red-50 to-red-100 p-4 rounded-lg border border-red-200">
@@ -151,7 +151,7 @@ const HeatmapView: React.FC<HeatmapViewProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {heatmapData.map((exchange) => (
           <div
-            key={exchange.exchange}
+            key={exchange.name}
             onClick={() => onSelectExchange?.(exchange)}
             className={`
               relative p-4 rounded-lg border-2 cursor-pointer transition-all
@@ -159,6 +159,7 @@ const HeatmapView: React.FC<HeatmapViewProps> = ({
               bg-gradient-to-br ${exchange.bgColor}
               border-gray-200 hover:border-blue-400
             `}
+            /* eslint-disable-next-line */
             style={{
               opacity: exchange.opacity,
             }}
@@ -173,7 +174,7 @@ const HeatmapView: React.FC<HeatmapViewProps> = ({
             {/* Exchange Header */}
             <div className="mb-3 flex items-start justify-between">
               <div>
-                <h3 className="font-bold text-gray-900">{exchange.exchange}</h3>
+                <h3 className="font-bold text-gray-900">{exchange.name}</h3>
                 <p className="text-xs text-gray-500">{exchange.region}</p>
               </div>
               <div

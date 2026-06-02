@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import authChannel from '../utils/authChannel';
+import { Button } from '@/components/ui/button';
 import { Eye, EyeOff, Mail, Lock, AlertCircle, Phone, Send, Sparkles, Shield, ArrowRight, Star, Zap, Globe, Heart } from 'lucide-react';
 import { HeroLogo } from '@/components/ui/logo';
 
@@ -112,9 +114,9 @@ export default function MtaaDAOLogin() {
       // Successful login - data will be stored by useAuth hook if used
       if (data.success && data.data?.user) {
         console.log('[LOGIN] Login successful, storing data and redirecting...');
-        // Store user data in localStorage
+        // Store user data (non-sensitive) and notify other tabs; do NOT persist raw tokens
         localStorage.setItem('user', JSON.stringify(data.data.user));
-        localStorage.setItem('accessToken', data.data.accessToken);
+        authChannel.postAuthMessage({ type: 'login', payload: { user: data.data.user } });
         
         // Handle remember me
         if (rememberMe) {
@@ -302,10 +304,12 @@ export default function MtaaDAOLogin() {
               </div>
 
               {/* Submit Button */}
-              <button
+              <Button
                 onClick={handleSubmit}
                 disabled={isLoading}
-                className="w-full bg-orange-600 hover:bg-orange-700 disabled:bg-orange-600/50 disabled:cursor-not-allowed text-white py-3 rounded-lg font-semibold text-sm transition-all duration-300 transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2"
+                variant="primary"
+                size="md"
+                className="w-full flex items-center justify-center gap-2"
               >
                 {isLoading ? (
                   <>
@@ -318,7 +322,7 @@ export default function MtaaDAOLogin() {
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
-              </button>
+              </Button>
             </div>
 
             {/* Divider */}
@@ -330,9 +334,11 @@ export default function MtaaDAOLogin() {
 
             {/* Social Login Buttons */}
             <div className="grid grid-cols-2 gap-3">
-              <button
+              <Button
                 type="button"
-                className="py-3 px-4 bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-orange-500/30 rounded-lg text-white text-sm font-medium transition-all duration-300 flex items-center justify-center gap-2"
+                variant="ghost"
+                size="md"
+                className="py-3 px-4 flex items-center justify-center gap-2"
                 onClick={handleGoogleAuth}
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
@@ -342,15 +348,17 @@ export default function MtaaDAOLogin() {
                   <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
                 </svg>
                 <span>Google</span>
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className="py-3 px-4 bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-orange-500/30 rounded-lg text-white text-sm font-medium transition-all duration-300 flex items-center justify-center gap-2"
+                variant="ghost"
+                size="md"
+                className="py-3 px-4 flex items-center justify-center gap-2"
                 onClick={handleTelegramAuth}
               >
                 <Send className="w-4 h-4" />
                 <span>Telegram</span>
-              </button>
+              </Button>
             </div>
 
             {/* Sign Up Link */}

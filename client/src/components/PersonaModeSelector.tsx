@@ -1,5 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { usePersona, SubprofileType } from '../contexts/persona-context';
+import { Lucide } from '../lib/icons';
+const { Mic, Wrench, DollarSign, Check } = (Lucide as any) || {};
+/* eslint-disable */
 
 /**
  * PersonaModeSelector Component
@@ -15,8 +18,9 @@ export interface PersonaModeOption {
   displayName: string;
   role: string;
   description: string;
-  icon: string;
+  icon: string | React.ReactNode;
   color: string;
+  features?: string[];
 }
 
 const SUBPROFILE_OPTIONS: PersonaModeOption[] = [
@@ -26,8 +30,9 @@ const SUBPROFILE_OPTIONS: PersonaModeOption[] = [
     displayName: 'Okedi',
     role: 'Community Leader & Governor',
     description: 'Focus on governance, create proposals, lead DAOs',
-    icon: '🎤',
+    icon: Mic ? <Mic className="w-8 h-8" /> : '🎤',
     color: '#8B5CF6',
+    features: ['Create & govern DAOs', 'Create proposals', 'Vote on governance', 'Lead communities'],
   },
   {
     id: 'yuki',
@@ -35,8 +40,9 @@ const SUBPROFILE_OPTIONS: PersonaModeOption[] = [
     displayName: 'Yuki',
     role: 'Advanced Trader & Developer',
     description: 'Focus on trading, yield farming, smart contracts',
-    icon: '🛠️',
+    icon: Wrench ? <Wrench className="w-8 h-8" /> : '🛠️',
     color: '#06B6D4',
+    features: ['Trade on DEX', 'Yield farming', 'Smart contracts', 'Leverage trading'],
   },
   {
     id: 'amara',
@@ -44,10 +50,21 @@ const SUBPROFILE_OPTIONS: PersonaModeOption[] = [
     displayName: 'Amara',
     role: 'Wealth Builder & Investor',
     description: 'Focus on passive income and wealth growth',
-    icon: '💰',
+    icon: DollarSign ? <DollarSign className="w-8 h-8" /> : '💰',
     color: '#EC4899',
+    features: ['Investment pools', 'Passive income', 'Wealth tracking', 'Portfolio optimization'],
   },
 ];
+
+// Utility: convert hex color to rgba string with alpha
+function hexToRgba(hex: string, alpha = 1) {
+  const h = hex.replace('#', '');
+  const bigint = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 interface PersonaModeSelectorProps {
   /**
@@ -94,16 +111,8 @@ function CompactSelector({
             }
             ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
           `}
-          style={
-            activeSubprofile === option.id
-              ? {
-                  backgroundColor: option.color,
-                  ringColor: option.color,
-                }
-              : {
-                  backgroundColor: option.color,
-                }
-          }
+              data-color={option.color}
+              data-active={activeSubprofile === option.id}
           title={option.role}
         >
           <span>{option.icon} {option.displayName}</span>
@@ -132,38 +141,61 @@ function FullSelector({
         Switch between subprofiles anytime. All features accessible from any subprofile - dashboard just reorganizes.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {SUBPROFILE_OPTIONS.map((option) => (
-          <button
-            key={option.id}
-            onClick={() => !disabled && onSwitch(option.id)}
-            disabled={disabled}
-            className={`
-              p-4 rounded-lg border-2 text-left transition-all duration-200
-              ${
-                activeSubprofile === option.id
-                  ? 'border-opacity-100 bg-opacity-5'
-                  : 'border-gray-200 hover:border-gray-300'
-              }
-              ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-            `}
-            style={
-              activeSubprofile === option.id
-                ? {
-                    borderColor: option.color,
-                    backgroundColor: option.color,
-                  }
-                : {}
-            }
-          >
-            <div className="text-2xl mb-2">{option.icon}</div>
-            <div className="font-semibold text-gray-900">{option.name}</div>
-            <div className="text-xs font-medium mb-2" style={{ color: option.color }}>
-              {option.displayName}
-            </div>
-            <div className="text-sm text-gray-600">{option.role}</div>
-            <div className="text-xs text-gray-500 mt-2">{option.description}</div>
-          </button>
-        ))}
+        {SUBPROFILE_OPTIONS.map((option) => {
+          const isActive = activeSubprofile === option.id;
+          return isActive ? (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => !disabled && onSwitch(option.id)}
+              disabled={disabled}
+              aria-pressed="true"
+              className={`
+                p-4 rounded-lg border-2 text-left transition-all duration-200 focus:outline-none
+                ${
+                  'border-opacity-100'
+                }
+                ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+              `}
+                  data-color={option.color}
+                  data-active={true}
+            >
+              <div className="text-2xl mb-2">{option.icon}</div>
+              <div className="font-semibold text-gray-900">{option.name}</div>
+              {/* eslint-disable-next-line */}
+                  <div className="text-xs font-medium mb-2" data-color={option.color}>
+                {option.displayName}
+              </div>
+              <div className="text-sm text-gray-600">{option.role}</div>
+              <div className="text-xs text-gray-500 mt-2">{option.description}</div>
+            </button>
+          ) : (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => !disabled && onSwitch(option.id)}
+              disabled={disabled}
+              aria-pressed="false"
+              className={`
+                p-4 rounded-lg border-2 text-left transition-all duration-200 focus:outline-none
+                ${
+                  'border-gray-200 hover:border-gray-300'
+                }
+                ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+              `}
+                  data-active={false}
+            >
+              <div className="text-2xl mb-2">{option.icon}</div>
+              <div className="font-semibold text-gray-900">{option.name}</div>
+              {/* eslint-disable-next-line */}
+                  <div className="text-xs font-medium mb-2" data-color={option.color}>
+                {option.displayName}
+              </div>
+              <div className="text-sm text-gray-600">{option.role}</div>
+              <div className="text-xs text-gray-500 mt-2">{option.description}</div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -192,96 +224,93 @@ function CardsSelector({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {SUBPROFILE_OPTIONS.map((option) => (
-          <div
-            key={option.id}
-            onClick={() => !disabled && onSwitch(option.id)}
-            className={`
-              p-6 rounded-xl border-2 cursor-pointer transition-all duration-200
-              ${
-                activeSubprofile === option.id
-                  ? 'ring-2 ring-offset-2 shadow-lg'
-                  : 'hover:shadow-md border-gray-200'
-              }
-              ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
-            `}
-            style={
-              activeSubprofile === option.id
-                ? {
-                    borderColor: option.color,
-                    backgroundColor: `${option.color}10`,
-                    ringColor: option.color,
-                  }
-                : {}
-            }
-          >
-            {/* Selected Checkmark */}
-            {activeSubprofile === option.id && (
-              <div
-                className="inline-flex items-center justify-center w-5 h-5 rounded-full text-white text-xs font-bold mb-4 ml-auto"
-                style={{ backgroundColor: option.color }}
-              >
-                ✓
-              </div>
-            )}
-
-            {/* Icon and Name */}
-            <div className="text-4xl mb-4">{option.icon}</div>
-            <h3 className="text-xl font-bold text-gray-900 mb-1">{option.name}</h3>
-            <p className="text-sm font-medium mb-3" style={{ color: option.color }}>
-              {option.displayName} • {option.role}
-            </p>
-
-            {/* Description */}
-            <p className="text-sm text-gray-600 mb-4">{option.description}</p>
-
-            {/* Features List */}
-            <div className="text-xs space-y-1 mb-4 text-gray-500">
-              {option.id === 'okedi' && (
-                <>
-                  <div>✓ Create & govern DAOs</div>
-                  <div>✓ Create proposals</div>
-                  <div>✓ Vote on governance</div>
-                  <div>✓ Lead communities</div>
-                </>
-              )}
-              {option.id === 'yuki' && (
-                <>
-                  <div>✓ Trade on DEX</div>
-                  <div>✓ Yield farming</div>
-                  <div>✓ Smart contracts</div>
-                  <div>✓ Leverage trading</div>
-                </>
-              )}
-              {option.id === 'amara' && (
-                <>
-                  <div>✓ Investment pools</div>
-                  <div>✓ Passive income</div>
-                  <div>✓ Wealth tracking</div>
-                  <div>✓ Portfolio optimization</div>
-                </>
-              )}
-            </div>
-
-            {/* Button */}
+        {SUBPROFILE_OPTIONS.map((option) => {
+          const isActive = activeSubprofile === option.id;
+          return isActive ? (
             <button
-              className="w-full py-2 rounded-lg font-medium text-sm transition-all duration-200"
-              style={
-                activeSubprofile === option.id
-                  ? {
-                      backgroundColor: option.color,
-                      color: 'white',
-                    }
-                  : {
-                      backgroundColor: '#f3f4f6',
-                      color: '#374151',
-                    }
-              }
+              key={option.id}
+              type="button"
+              onClick={() => !disabled && onSwitch(option.id)}
+              disabled={disabled}
+              aria-pressed="true"
+              className={`p-6 rounded-xl border-2 transition-all duration-200 text-left focus:outline-none shadow-lg ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                  data-color={option.color}
+                  data-active={true}
             >
-              {activeSubprofile === option.id ? 'Active' : 'Select'}
+              {/* active indicator */}
+              {/* eslint-disable-next-line */}
+                  <div
+                    className="inline-flex items-center justify-center w-5 h-5 rounded-full text-white text-xs font-bold mb-4 ml-auto"
+                    data-color={option.color}
+                  >
+                {Check ? <Check className="w-3 h-3" /> : '✓'}
+              </div>
+
+              {/* Icon and Name */}
+              <div className="text-4xl mb-4">{option.icon}</div>
+              <h3 className="text-xl font-bold text-gray-900 mb-1">{option.name}</h3>
+              {/* eslint-disable-next-line */}
+                  <p className="text-sm font-medium mb-3" data-color={option.color}>
+                {option.displayName} • {option.role}
+              </p>
+
+              {/* Description */}
+              <p className="text-sm text-gray-600 mb-4">{option.description}</p>
+
+              {/* Features List (data-driven) */}
+              <div className="text-xs space-y-1 mb-4 text-gray-500">
+                {option.features?.map((f) => (
+                  <div key={f} className="flex items-center gap-2"><span>{Check ? <Check className="w-3 h-3 text-green-600" /> : '✓'}</span><span>{f}</span></div>
+                ))}
+              </div>
+
+              {/* Label */}
+              <div
+                className={`w-full py-2 rounded-lg font-medium text-sm text-center transition-all duration-200 text-white`}
+                    data-color={option.color}
+                    data-active={true}
+              >
+                Active
+              </div>
             </button>
-          </div>
-        ))}
+          ) : (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => !disabled && onSwitch(option.id)}
+              disabled={disabled}
+              aria-pressed="false"
+              className={`p-6 rounded-xl border-2 transition-all duration-200 text-left focus:outline-none hover:shadow-md border-gray-200 ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                  data-active={false}
+            >
+              {/* Icon and Name */}
+              <div className="text-4xl mb-4">{option.icon}</div>
+              <h3 className="text-xl font-bold text-gray-900 mb-1">{option.name}</h3>
+              {/* eslint-disable-next-line */}
+                  <p className="text-sm font-medium mb-3" data-color={option.color}>
+                {option.displayName} • {option.role}
+              </p>
+
+              {/* Description */}
+              <p className="text-sm text-gray-600 mb-4">{option.description}</p>
+
+              {/* Features List (data-driven) */}
+              <div className="text-xs space-y-1 mb-4 text-gray-500">
+                {option.features?.map((f) => (
+                  <div key={f} className="flex items-center gap-2"><span>{Check ? <Check className="w-3 h-3 text-green-600" /> : '✓'}</span><span>{f}</span></div>
+                ))}
+              </div>
+
+              {/* Label */}
+              <div
+                className={`w-full py-2 rounded-lg font-medium text-sm text-center transition-all duration-200 text-gray-700`}
+                    data-active={false}
+              >
+                Select
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -296,21 +325,29 @@ export function PersonaModeSelector({
   disabled = false,
 }: PersonaModeSelectorProps) {
   const { activeSubprofile, isLoading, switchSubprofile, error } = usePersona();
+  const [localError, setLocalError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    setLocalError(error || null);
+  }, [error]);
 
   const handleSwitch = async (subprofile: SubprofileType) => {
+    if (disabled || isLoading) return;
     try {
       await switchSubprofile(subprofile);
+      setLocalError(null);
       onChanged?.(subprofile);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to switch subprofile:', err);
+      setLocalError(err?.message || 'Failed to switch subprofile');
     }
   };
 
   return (
     <div className="w-full">
-      {error && (
+      {localError && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
-          {error}
+          {localError}
         </div>
       )}
 

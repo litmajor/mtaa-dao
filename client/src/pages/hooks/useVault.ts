@@ -1,8 +1,8 @@
 // MtaaDAO: useVaultHooks.ts — Unified hooks for Personal and Community Vaults
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAccount, useContractRead, useContractWrite } from "wagmi";
-import { parseEther, formatEther, Address } from "viem";
+import { useAccount } from "wagmi";
+import { parseEther, formatEther, ethers } from "ethers";
 import { toast } from "sonner";
 
 // Temporarily disable the contract import to fix loading issues
@@ -36,7 +36,7 @@ export function useVaultContract(vaultAddress: string) {
     queryFn: async () => {
       if (!vaultAddress) return null;
       return {
-        address: vaultAddress as Address,
+        address: vaultAddress as string,
         abi: MaonoVaultABI.abi,
       };
     },
@@ -48,17 +48,23 @@ export function useVaultContract(vaultAddress: string) {
 export function useVaultInfo(vaultAddress: string) {
   const { data: contract } = useVaultContract(vaultAddress);
   if (!contract) return { data: undefined };
-  const contractRead = useContractRead({
-    ...contract,
-    functionName: "getVaultInfo",
-  }) as {
+  const queryKey = ["vaultInfo", String(contract?.address)];
+  const contractRead = useQuery({
+    queryKey,
+    queryFn: async () => {
+      if (!contract) return undefined;
+      const provider = ethers.getDefaultProvider();
+      const c = new ethers.Contract(contract.address as string, contract.abi as any, provider);
+      return await c['getVaultInfo']();
+    },
+    enabled: !!contract,
+  }) as unknown as {
     data?: [bigint, bigint, bigint, bigint, boolean];
     isLoading?: boolean;
     isError?: boolean;
     error?: Error;
   };
 
-  // Transform the data to VaultInfo shape
   const data = contractRead.data
     ? {
         tvl: contractRead.data[0] ?? BigInt(0),
@@ -75,38 +81,37 @@ export function useVaultInfo(vaultAddress: string) {
 // Get user's vault balance
 export function useVaultBalance(userAddress: string, vaultAddress: string) {
   const { data: contract } = useVaultContract(vaultAddress);
-  const shares = contract && userAddress
-    ? useContractRead({
-        ...contract,
-        functionName: "balanceOf",
-        args: [userAddress as Address],
-      }).data
-    : undefined;
+  const sharesQuery = useQuery({
+    queryKey: ["vaultShares", String(contract?.address), String(userAddress)],
+    queryFn: async () => {
+      if (!contract || !userAddress) return undefined;
+      const provider = ethers.getDefaultProvider();
+      const c = new ethers.Contract(contract.address as string, contract.abi as any, provider);
+      return (await c['balanceOf'](userAddress as string)) as bigint;
+    },
+    enabled: !!contract && !!userAddress,
+  });
 
-  const assets = contract && shares
-    ? useContractRead({
-        ...contract,
-        functionName: "convertToAssets",
-        args: [shares || BigInt(0)],
-      }).data
-    : undefined;
+  const assetsQuery = useQuery({
+    queryKey: ["vaultAssets", String(contract?.address), String(sharesQuery.data ?? '')],
+    queryFn: async () => {
+      if (!contract || !sharesQuery.data) return undefined;
+      const provider = ethers.getDefaultProvider();
+      const c = new ethers.Contract(contract.address as string, contract.abi as any, provider);
+      return (await c['convertToAssets'](sharesQuery.data || BigInt(0))) as bigint;
+    },
+    enabled: !!contract && !!sharesQuery.data,
+  });
 
   return useQuery({
-    queryKey: ["vaultBalance", userAddress, vaultAddress, shares, assets],
+    queryKey: ["vaultBalance", String(userAddress), String(vaultAddress), String(sharesQuery.data ?? ''), String(assetsQuery.data ?? '')],
     queryFn: async () => {
-      if (!shares || !assets) return null;
-
-      // Get USD value from API
-      const response = await fetch(`/api/v1/wallets/vaults/balance-usd?shares=${shares}&vault=${vaultAddress}`);
+      if (!sharesQuery.data || !assetsQuery.data) return null;
+      const response = await fetch(`/api/v1/wallets/vaults/balance-usd?shares=${sharesQuery.data}&vault=${vaultAddress}`);
       const { valueUSD } = await response.json();
-
-      return {
-        shares,
-        assets,
-        valueUSD,
-      };
+      return { shares: sharesQuery.data, assets: assetsQuery.data, valueUSD };
     },
-    enabled: !!shares && !!assets,
+    enabled: !!sharesQuery.data && !!assetsQuery.data,
     refetchInterval: 30000,
   });
 }
@@ -114,47 +119,60 @@ export function useVaultBalance(userAddress: string, vaultAddress: string) {
 // Get token balance for deposits
 export function useTokenBalance(userAddress: string, tokenAddress?: string) {
   if (!userAddress || !tokenAddress) return { data: undefined };
-  return useContractRead({
-    address: tokenAddress as Address,
-    abi: [
-      {
-        name: "balanceOf",
-        type: "function",
-        stateMutability: "view",
-        inputs: [{ name: "account", type: "address" }],
-        outputs: [{ name: "", type: "uint256" }],
+    return useQuery({
+      queryKey: ["tokenBalance", String(tokenAddress), String(userAddress)],
+      queryFn: async () => {
+        const provider = ethers.getDefaultProvider();
+        const c = new ethers.Contract(tokenAddress as string, [
+          {
+            name: "balanceOf",
+            type: "function",
+            stateMutability: "view",
+            inputs: [{ name: "account", type: "address" }],
+            outputs: [{ name: "", type: "uint256" }],
+          },
+        ], provider);
+        return (await c['balanceOf'](userAddress as string)) as bigint;
       },
-    ],
-    functionName: "balanceOf",
-    args: [userAddress as Address],
-  });
+      enabled: !!userAddress && !!tokenAddress,
+    });
 }
 
 // Check token approval
 export function useTokenApproval(userAddress: string, amount: string, tokenAddress?: string, vaultAddress?: string) {
   const allowance = userAddress && tokenAddress && vaultAddress
-    ? useContractRead({
-        address: tokenAddress as Address,
-        abi: [
-          {
-            name: "allowance",
-            type: "function",
-            stateMutability: "view",
-            inputs: [
-              { name: "owner", type: "address" },
-              { name: "spender", type: "address" }
-            ],
-            outputs: [{ name: "", type: "uint256" }],
-          },
-        ],
-        functionName: "allowance",
-        args: [userAddress as Address, vaultAddress as Address],
+      ? useQuery({
+          queryKey: ["tokenAllowance", String(tokenAddress), String(userAddress), String(vaultAddress)],
+          queryFn: async () => {
+            const provider = ethers.getDefaultProvider();
+            const c = new ethers.Contract(tokenAddress as string, [
+              {
+                name: "allowance",
+                type: "function",
+                stateMutability: "view",
+                inputs: [
+                  { name: "owner", type: "address" },
+                  { name: "spender", type: "address" }
+                ],
+                outputs: [{ name: "", type: "uint256" }],
+              },
+            ], provider);
+            return (await c['allowance'](userAddress as string, vaultAddress as string)) as bigint;
+        },
+        enabled: !!userAddress && !!tokenAddress && !!vaultAddress,
       }).data
     : undefined;
 
   return useQuery({
-    queryKey: ["tokenApproval", userAddress, amount, tokenAddress, vaultAddress, allowance],
-    queryFn: () => {
+    queryKey: [
+      "tokenApproval",
+      String(userAddress ?? ''),
+      String(amount ?? ''),
+      String(tokenAddress ?? ''),
+      String(vaultAddress ?? ''),
+      String(allowance ?? ''),
+    ],
+    queryFn: async () => {
       if (!allowance || !amount) return false;
       return allowance < parseEther(amount);
     },

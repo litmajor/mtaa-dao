@@ -7,7 +7,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { exchangeApi } from '@/client/lib/apiClient';
+import { exchangeApi } from '../lib/apiClient';
 
 export interface ExchangeConnection {
   id: string;

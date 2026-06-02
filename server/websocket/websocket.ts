@@ -1,4 +1,5 @@
 import { Server, Socket } from 'socket.io';
+import Redis from 'ioredis';
 import { Server as HTTPServer } from 'http';
 import jwt from 'jsonwebtoken';
 
@@ -23,6 +24,8 @@ export interface SocketRoom {
 
 class WebSocketManager {
   private io: Server;
+  private redisSub: Redis | null = null;
+  private subscribedChannels: Set<string> = new Set();
   private connectedUsers: Map<string, SocketUser> = new Map();
   private userSockets: Map<string, Set<string>> = new Map();
   private rooms: Map<string, SocketRoom> = new Map();
@@ -38,6 +41,36 @@ class WebSocketManager {
 
     this.setupMiddleware();
     this.setupConnections();
+    this.setupRedisSubscriber();
+  }
+
+  private setupRedisSubscriber() {
+    try {
+      const host = process.env.REDIS_HOST || 'localhost';
+      const port = Number(process.env.REDIS_PORT) || 6379;
+      const password = process.env.REDIS_PASSWORD || undefined;
+      const db = Number(process.env.REDIS_DB) || 0;
+      const opts: any = { host, port, db, password };
+      this.redisSub = new Redis(opts);
+
+      this.redisSub.on('error', (err) => {
+        console.warn('[WebSocket] Redis subscriber error', err.message || err);
+      });
+
+      this.redisSub.on('message', (channel: string, message: string) => {
+        try {
+          const payload = JSON.parse(message);
+          // Forward to socket.io room matching the channel name
+          this.io.to(channel).emit('execution:log', payload);
+        } catch (err) {
+          // Send raw message if JSON parse fails
+          this.io.to(channel).emit('execution:log', { raw: message });
+        }
+      });
+    } catch (err) {
+      console.warn('[WebSocket] Failed to start Redis subscriber', err);
+      this.redisSub = null;
+    }
   }
 
   /**
@@ -60,7 +93,14 @@ class WebSocketManager {
         }
 
         // Validate JWT token using same secret as REST API
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
+        const secret = process.env.JWT_SECRET;
+        if (!secret) {
+          console.error('JWT_SECRET not configured — socket token verification disabled');
+          socket.data.user = null;
+          return next();
+        }
+
+        const decoded = jwt.verify(token, secret) as any;
 
         // Attach user data to socket for later use in event handlers
         socket.data.user = {
@@ -108,7 +148,14 @@ class WebSocketManager {
     this.io.on('connection', (socket: Socket) => {
       const user = socket.data.user;
 
-      // Register user
+      // If unauthenticated, register lightweight connection and skip protected handlers
+      if (!user) {
+        console.log(`Unauthenticated socket connected: ${socket.id}`);
+        // Do not register as authenticated user; allow basic public events if any
+        return;
+      }
+
+      // Register authenticated user
       const socketUser: SocketUser = {
         userId: user.id,
         email: user.email,
@@ -218,6 +265,17 @@ class WebSocketManager {
     });
 
     console.log(`User subscribed to room: ${room}`);
+    // Ensure Redis subscriber is subscribed to this room/channel
+    try {
+      if (this.redisSub && !this.subscribedChannels.has(room)) {
+        this.redisSub.subscribe(room).then(() => {
+          this.subscribedChannels.add(room);
+          console.log(`[WebSocket] Subscribed Redis to channel: ${room}`);
+        }).catch((err) => console.warn('[WebSocket] Redis subscribe failed', err));
+      }
+    } catch (err) {
+      console.warn('[WebSocket] Redis subscribe error', err);
+    }
   }
 
   /**
@@ -240,6 +298,18 @@ class WebSocketManager {
     }
 
     console.log(`User unsubscribed from room: ${room}`);
+    // If no users remain in this room, unsubscribe Redis
+    try {
+      const roomSocketCount = this.io.sockets.adapter.rooms.get(room)?.size || 0;
+      if (this.redisSub && this.subscribedChannels.has(room) && roomSocketCount === 0) {
+        this.redisSub.unsubscribe(room).then(() => {
+          this.subscribedChannels.delete(room);
+          console.log(`[WebSocket] Unsubscribed Redis from channel: ${room}`);
+        }).catch((err) => console.warn('[WebSocket] Redis unsubscribe failed', err));
+      }
+    } catch (err) {
+      console.warn('[WebSocket] Redis unsubscribe error', err);
+    }
   }
 
   /**

@@ -4,6 +4,7 @@ import { db } from '../db';
 import { daos, daoMemberships, vaults, users, wallets, multisigWallets, multisigSigners } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
+import { DAO_TYPE_CONFIG } from '../config/daoTypes';
 import { evaluateMemberCreationRules, formatRuleRejectionMessage, logRuleEvaluation } from '../services/rules-integration';
 
 // Validate if string is a valid Ethereum address
@@ -62,29 +63,26 @@ export async function daoDeployHandler(req: Request, res: Response) {
       return res.status(400).json({ error: 'Invalid founder wallet address' });
     }
 
-    // Validate user can create this DAO type based on subscription
-    const tierPermissions = {
-      free: ['free'],
-      growth: ['free', 'shortTerm', 'short_term'],
-      professional: ['free', 'shortTerm', 'short_term', 'collective', 'governance', 'investment_club'],
-      enterprise: ['free', 'shortTerm', 'short_term', 'collective', 'governance', 'investment_club', 'meta']
-    };
-
-    // Get user's subscription tier
+    // Validate user can create this DAO type based on DAO_TYPE_CONFIG requiredTier
     const userProfile = await db.query.users.findFirst({
       where: eq(users.id, founderWallet)
     });
 
     const userTier = resolveUserTier(userProfile);
-    const allowedTypes = tierPermissions[userTier as keyof typeof tierPermissions] || ['free'];
+    const typeKey = String(daoData.daoType || '');
+    const requiredTier = DAO_TYPE_CONFIG[typeKey]?.requiredTier || 'free';
 
-    if (!allowedTypes.includes(daoData.daoType)) {
-      logger.error(`User ${founderWallet} attempted to create ${daoData.daoType} DAO without proper tier (has: ${userTier})`);
-      return res.status(403).json({ 
+    const tierHierarchy = ['free', 'growth', 'professional', 'enterprise'];
+    const userTierIndex = tierHierarchy.indexOf(userTier as any);
+    const requiredTierIndex = tierHierarchy.indexOf(requiredTier as any);
+
+    if (userTierIndex < requiredTierIndex) {
+      logger.error(`User ${founderWallet} attempted to create ${daoData.daoType} DAO without proper tier (has: ${userTier}, needs: ${requiredTier})`);
+      return res.status(403).json({
         error: 'Insufficient subscription tier',
-        message: `${daoData.daoType} DAOs require ${Object.keys(tierPermissions).find(k => tierPermissions[k as keyof typeof tierPermissions].includes(daoData.daoType))} tier or higher`,
+        message: `${daoData.daoType} DAOs require ${requiredTier} tier or higher`,
         currentTier: userTier,
-        requiredTier: Object.keys(tierPermissions).find(k => tierPermissions[k as keyof typeof tierPermissions].includes(daoData.daoType))
+        requiredTier
       });
     }
 
@@ -221,6 +219,12 @@ export async function daoDeployHandler(req: Request, res: Response) {
         executionDelay: 24,
 
         plan: daoData.daoType,
+        // Persist metadata including features and intended duration
+        metadata: {
+          features: (daoData as any).features || DAO_TYPE_CONFIG[typeKey]?.features || {},
+          durationDays: daoData.durationDays || null,
+          createdFromTemplate: typeKey
+        },
         status: 'active',
         createdAt: new Date(),
         updatedAt: new Date(),

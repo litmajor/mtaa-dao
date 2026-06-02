@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -20,6 +20,8 @@ import {
   Crown
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import Shell from '../components/ui/shell';
+import { Grid } from '../components/ui/grid';
 import { useAccount } from 'wagmi';
 
 interface VaultStats {
@@ -117,8 +119,16 @@ export default function VaultOverview() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <Shell
+      brand={
+        <div>
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-purple-900 bg-clip-text text-transparent mb-2">Vault Dashboard</h1>
+          <p className="text-gray-600 text-lg">Manage all your vaults in one place</p>
+        </div>
+      }
+    >
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-12">
           <div className="flex items-center justify-between mb-6">
@@ -130,7 +140,7 @@ export default function VaultOverview() {
             </div>
             <div className="flex gap-2">
               <Link to="/vault">
-                <Button className="bg-gradient-to-r from-blue-600 to-purple-600">
+                <Button variant="primary">
                   <Plus className="mr-2 h-5 w-5" />
                   Create Vault
                 </Button>
@@ -314,5 +324,6 @@ export default function VaultOverview() {
         </Card>
       </div>
     </div>
+    </Shell>
   );
 }

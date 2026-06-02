@@ -2278,6 +2278,21 @@ export const multisigSigners = pgTable("multisig_signers", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Multisig Creation Jobs - queued requests to create multisig wallets (processed by worker)
+export const multisigCreationJobs = pgTable("multisig_creation_jobs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  jobId: varchar("job_id").notNull().unique(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }).notNull(),
+  signers: jsonb("signers").default([]),
+  requiredSignatures: integer("required_signatures").notNull(),
+  chainId: integer("chain_id"),
+  payload: jsonb("payload").default({}),
+  status: varchar("status").default("queued"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+
 // Multisig Signer Keys - Private key data for each signer (NOT stored - reference only)
 export const multisigSignerKeys = pgTable("multisig_signer_keys", {
   id: uuid("id").primaryKey().defaultRandom(),

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { useRouter } from 'next/router';
 import { useAuth } from '@clerk/nextjs';
 import Head from 'next/head';
@@ -157,14 +158,19 @@ export default function MembersPage() {
   };
 
   const handleRemove = async (memberId: string) => {
-    if (!window.confirm('Are you sure you want to remove this member?')) {
-      return;
-    }
+    setPendingRemove(memberId);
+    setConfirmRemoveOpen(true);
+  };
 
+  const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
+  const [pendingRemove, setPendingRemove] = useState<string | null>(null);
+
+  const confirmRemove = async () => {
+    if (!pendingRemove) return;
     setActionInProgress(true);
     try {
       const response = await fetch(
-        `/api/admin/daos/${daoId}/members/${memberId}/remove`,
+        `/api/admin/daos/${daoId}/members/${pendingRemove}/remove`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -183,6 +189,8 @@ export default function MembersPage() {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setActionInProgress(false);
+      setPendingRemove(null);
+      setConfirmRemoveOpen(false);
     }
   };
 
@@ -219,6 +227,15 @@ export default function MembersPage() {
         </div>
 
         {error && <div className={styles.errorBanner}>{error}</div>}
+        <ConfirmDialog
+          open={confirmRemoveOpen}
+          title="Remove member"
+          description="Are you sure you want to remove this member from the DAO?"
+          confirmLabel="Remove"
+          cancelLabel="Cancel"
+          onClose={(open: boolean) => setConfirmRemoveOpen(open)}
+          onConfirm={confirmRemove}
+        />
 
         {/* Statistics */}
         {stats && (

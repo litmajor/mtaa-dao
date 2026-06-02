@@ -225,8 +225,17 @@ export class CCXTAggregator {
     const exchange = this.exchanges.get(exchangeName);
     if (!exchange) throw new Error(`Exchange ${exchangeName} not initialized`);
 
-    // Already loaded — fast path
-    if (exchange.markets && Object.keys(exchange.markets).length > 0) return;
+    const cacheKey = `markets:${exchangeName}`;
+    // Try marketsCache first (TTL-driven). If present, reuse cached markets and avoid loadMarkets()
+    const cachedMarkets = this.marketsCache.get<any>(cacheKey);
+    if (cachedMarkets && Object.keys(cachedMarkets).length > 0) {
+      // Restore into the CCXT exchange instance so callers see markets as if loaded
+      exchange.markets = cachedMarkets;
+      return;
+    }
+
+    // If the CCXT instance already has markets but our cache expired, we want to refresh
+    // so fall through to the loadMarkets path. This implements TTL-based refresh semantics.
 
     // In-flight — reuse existing promise (don't fire a duplicate)
     const existing = this.marketsLoadingPromise.get(exchangeName);
@@ -238,15 +247,32 @@ export class CCXTAggregator {
     // Start a new load and register the promise
     const loadPromise = this.marketLimiter(async () => {
       // Double-check after acquiring the limiter slot
-      if (exchange.markets && Object.keys(exchange.markets).length > 0) return;
+      if (exchange.markets && Object.keys(exchange.markets).length > 0) {
+        // If markets are present it means either another codepath populated them
+        // while we awaited the limiter slot — still record them into cache and return.
+        try {
+          this.marketsCache.set(cacheKey, exchange.markets);
+        } catch (err: any) {
+          logger.warn(`[CCXTAggregator] Failed to cache markets for ${exchangeName}: ${err.message}`);
+        }
+        return;
+      }
 
       logger.info(`[CCXTAggregator] Loading markets for ${exchangeName}...`);
       const start = Date.now();
-      await exchange.loadMarkets();
+      // Force a fresh load from the exchange (ensures we update stale markets when TTL expired)
+      await exchange.loadMarkets(true);
       logger.info(
         `[CCXTAggregator] loadMarkets complete for ${exchangeName} ` +
         `(${Object.keys(exchange.markets).length} markets, ${Date.now() - start}ms)`
       );
+
+      // Store loaded markets into the NodeCache so future calls within TTL reuse them
+      try {
+        this.marketsCache.set(cacheKey, exchange.markets);
+      } catch (err: any) {
+        logger.warn(`[CCXTAggregator] Failed to cache markets for ${exchangeName}: ${err.message}`);
+      }
     }).finally(() => {
       // Clear lock so future calls can re-load if markets expire
       this.marketsLoadingPromise.delete(exchangeName);

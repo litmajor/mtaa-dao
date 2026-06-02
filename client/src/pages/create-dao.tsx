@@ -6,6 +6,14 @@ import { useTreasury } from '@/hooks/useTreasury';
 import { useTreasuryIntelligence } from '@/hooks/useTreasuryIntelligence';
 import { getTreasuryConfigForDAOType } from '@/config/treasury.config';
 import { ErrorAlert } from '@/components/ErrorAlert';
+import { DAOOrchestratorProvider, useDAOOrchestrator } from '@/context/daoOrchestratorSystem';
+import {
+  SystemHealthBanner,
+  AdaptiveReadinessMeter,
+  WarningsAndSuggestionsPanel,
+  OperationalModeIndicator,
+  RiskLevelBadge,
+} from '@/components/dao-creation/AdaptiveUIComponents';
 import type { DAOType } from '@/types/treasury';
 import { CharacterCounter } from '@/components/CharacterCounter';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,33 +29,40 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import {
-  ChevronDown,
-  ChevronUp,
-  Users,
-  Shield,
-  Wallet,
-  Settings,
-  Eye,
-  Send,
-  CheckCircle,
-  Plus,
-  Trash2,
-  Upload,
-  Copy,
-  Info,
-  HelpCircle,
-  AlertCircle,
-  BookOpen,
-  AlertTriangle,
-  Zap,
-  Heart,
-  BarChart2
-} from 'lucide-react';
+// icon imports intentionally omitted; lightweight emoji fallbacks are used below during refactor
+import { t } from '@/lib/uiLabels';
 import { useQuery } from '@tanstack/react-query';
+import { DAO_TYPE_CONFIG } from '@/config/daoTypes.config';
 import MultisigManager from '@/components/multisig/MultisigManager';
 import { useToast } from '@/hooks/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { authClient } from '@/utils/authClient';
+
+// Fallback lightweight icon components (emoji) to avoid build failures during onboarding edits.
+const Icon = ({ children, className }: any) => <span className={className} aria-hidden>{children}</span>;
+const ChevronDown = (p: any) => <Icon {...p}>⌄</Icon>;
+const ChevronUp = (p: any) => <Icon {...p}>˄</Icon>;
+const Users = (p: any) => <Icon {...p}>👥</Icon>;
+const Shield = (p: any) => <Icon {...p}>🛡️</Icon>;
+const Wallet = (p: any) => <Icon {...p}>👛</Icon>;
+const Settings = (p: any) => <Icon {...p}>⚙️</Icon>;
+const Eye = (p: any) => <Icon {...p}>👁️</Icon>;
+const Send = (p: any) => <Icon {...p}>📤</Icon>;
+const CheckCircle = (p: any) => <Icon {...p}>✅</Icon>;
+const Plus = (p: any) => <Icon {...p}>＋</Icon>;
+const Trash2 = (p: any) => <Icon {...p}>🗑️</Icon>;
+const Upload = (p: any) => <Icon {...p}>⬆️</Icon>;
+const Copy = (p: any) => <Icon {...p}>📋</Icon>;
+const Info = (p: any) => <Icon {...p}>ℹ️</Icon>;
+const HelpCircle = (p: any) => <Icon {...p}>❓</Icon>;
+const AlertCircle = (p: any) => <Icon {...p}>⚠️</Icon>;
+const BookOpen = (p: any) => <Icon {...p}>📘</Icon>;
+const AlertTriangle = (p: any) => <Icon {...p}>⚠️</Icon>;
+const Zap = (p: any) => <Icon {...p}>⚡</Icon>;
+const Heart = (p: any) => <Icon {...p}>❤️</Icon>;
+const ChartBar = (p: any) => <Icon {...p}>📊</Icon>;
+const BarChart2 = (p: any) => <Icon {...p}>📈</Icon>;
+const AlertOctagon = (p: any) => <Icon {...p}>🛑</Icon>;
 
 const WhatIsDAOExplainer = ({ onContinue }: { onContinue: () => void }) => (
   <div className="space-y-6">
@@ -63,13 +78,13 @@ const WhatIsDAOExplainer = ({ onContinue }: { onContinue: () => void }) => (
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-teal-800 dark:text-teal-200">
           <Users className="w-5 h-5" />
-          What is a DAO? (Think of it like a digital Chama)
+          {`What is a ${t('dao')}? (A simple digital group)`}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 text-gray-700 dark:text-gray-300">
         <p>
-          A <strong>DAO</strong> (Decentralized Autonomous Organization) is like a <strong>chama or savings group</strong> that runs on the internet.
-          Instead of keeping records in a book or M-Pesa statements, everything is stored on a shared digital ledger that everyone can see.
+          A <strong>{t('dao')}</strong> is like a <strong>chama or savings group</strong> that manages money and decisions together online.
+          Instead of paper records or individual ledgers, members keep a shared, permanent record everyone can access.
         </p>
 
         <div className="grid gap-3 mt-4">
@@ -107,15 +122,15 @@ const WhatIsDAOExplainer = ({ onContinue }: { onContinue: () => void }) => (
     </Card>
 
     <Alert className="border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30">
-      <AlertCircle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+          <AlertCircle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
       <AlertTitle className="text-orange-800 dark:text-orange-200">Important: This is Permanent</AlertTitle>
       <AlertDescription className="text-orange-700 dark:text-orange-300">
         <p className="mb-2">
-          Once you create a DAO, it becomes a <strong>permanent record on the blockchain</strong>.
-          Think of it like registering a business with the government - the record exists forever.
+          Once you create a {t('dao')}, it becomes a <strong>permanent shared record</strong>.
+          Think carefully about name and rules — they will be visible to your members and retained long-term.
         </p>
         <ul className="list-disc list-inside text-sm space-y-1">
-          <li>You <strong>cannot delete</strong> a DAO once created</li>
+          <li>You <strong>cannot delete</strong> a {t('dao')} once created</li>
           <li>The name and rules you set will be <strong>public and visible</strong> to anyone</li>
           <li>All transactions will be <strong>recorded permanently</strong></li>
         </ul>
@@ -123,9 +138,9 @@ const WhatIsDAOExplainer = ({ onContinue }: { onContinue: () => void }) => (
     </Alert>
 
     <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-lg">
-      <h4 className="font-semibold mb-2 text-gray-900 dark:text-white">Who should create a DAO?</h4>
+      <h4 className="font-semibold mb-2 text-gray-900 dark:text-white">Who should create a {t('dao')}?</h4>
       <div className="grid gap-2 text-sm text-gray-600 dark:text-gray-400">
-        <p>A DAO is perfect for:</p>
+        <p>A {t('dao')} is perfect for:</p>
         <ul className="list-disc list-inside space-y-1">
           <li><strong>Savings groups (Chamas)</strong> - Pool money together transparently</li>
           <li><strong>Merry-go-rounds</strong> - Take turns receiving contributions</li>
@@ -159,7 +174,10 @@ const BlockchainWarningBanner = () => (
 
 const MINIMUM_QUORUM = 20; // 20% minimum quorum
 
-const CreateDAOFlow = () => {
+const CreateDAOFlowContent = () => {
+  // Orchestrator system for stateful UI feedback
+  const orchestrator = useDAOOrchestrator();
+
   const [showExplainer, setShowExplainer] = useState(true);
   const [currentStep, setCurrentStep] = useState(1);
   const [isDeploying, setIsDeploying] = useState(false);
@@ -222,6 +240,8 @@ const CreateDAOFlow = () => {
   const [newMember, setNewMember] = useState({ address: '', role: 'member', name: '' });
   const [newMultisigSigner, setNewMultisigSigner] = useState('');
   const [showMultisigManager, setShowMultisigManager] = useState(false);
+  const [upsellOpen, setUpsellOpen] = useState(false);
+  const [upsellRequiredTier, setUpsellRequiredTier] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Input sanitization helper
@@ -239,84 +259,83 @@ const CreateDAOFlow = () => {
     if (/^0x[a-fA-F0-9]{40}$/.test(address)) return true;
     // Phone number (+254...)
     if (/^\+\d{10,15}$/.test(address)) return true;
-    // Email
-    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) return true;
     return false;
   }, []);
 
-  // DAO Type Options with subscription tier gating
+  // Simplified DAO Type Options for Chama-first onboarding
   const daoTypeOptions = [
     {
-      id: 'free',
-      label: 'Free Community DAO',
-      icon: '🆓',
-      duration: '30 days (testing)',
-      description: 'Test DAO features with basic limits',
-      examples: ['Small group', 'Test project'],
+      id: 'harambee',
+      label: 'Harambee / Emergency Fund',
+      icon: '⚡',
+      duration: '1-4 weeks',
+      description: 'One-time collection and immediate payout',
+      examples: ['Emergency fund', 'Event collection'],
       requiresGovernance: false,
       defaultTreasuryType: 'cusd',
-      requiredTier: 'free', // Available to all tiers
-      badge: 'FREE'
+      badge: 'HARAM'
     },
     {
       id: 'shortTerm',
       label: 'Short-Term Fund',
-      icon: '⏱️',
-      duration: '3-6 months',
-      description: 'Quick rotating funds, burial support, harambee',
-      examples: ['Merry-go-round', 'Burial fund', 'Event contribution'],
+      icon: '⏳',
+      duration: '1-3 months',
+      description: 'Targeted short-term savings with milestones',
+      examples: ['School fees', 'Medical plan'],
       requiresGovernance: false,
       defaultTreasuryType: 'cusd',
-      requiredTier: 'growth', // Requires Growth or higher
-      badge: 'GROWTH+'
+      badge: 'SHORT'
     },
     {
-      id: 'collective',
-      label: 'Collective / Savings Group',
+      id: 'savings',
+      label: 'Savings Group',
       icon: '🤝',
       duration: 'Ongoing',
-      description: 'Regular savings, investment clubs, cooperatives',
-      examples: ['Savings group', 'Table banking', 'Traders coop'],
-      requiresGovernance: true,
+      description: 'Chama, table banking, regular savings',
+      examples: ['Savings group', 'Investment club'],
+      requiresGovernance: false,
       defaultTreasuryType: 'cusd',
-      requiredTier: 'professional', // Requires Professional or higher
-      badge: 'PRO+'
+      badge: 'SAVINGS'
     },
     {
-      id: 'governance',
-      label: 'Governance DAO',
+      id: 'community',
+      label: 'Community',
       icon: '🏛️',
       duration: 'Ongoing',
-      description: 'Community leadership, major decisions',
-      examples: ['Community council', 'District leadership'],
+      description: 'Community projects and collective decisions',
+      examples: ['Community council', 'Welfare group'],
       requiresGovernance: true,
-      defaultTreasuryType: 'dual',
-      requiredTier: 'professional',
-      badge: 'PRO+'
+      defaultTreasuryType: 'cusd',
+      badge: 'COMMUNITY'
+    }
+    ,
+    {
+      id: 'investment',
+      label: 'Investment Club',
+      icon: '📈',
+      duration: 'Ongoing',
+      description: 'Pool resources to invest together with shared returns',
+      examples: ['Investment club', 'Group portfolio'],
+      requiresGovernance: true,
+      defaultTreasuryType: 'cusd',
+      badge: 'INVEST'
     },
     {
-      id: 'meta',
-      label: 'MetaDAO Network',
-      icon: '🌐',
-      duration: 'Continuous',
-      description: 'Multi-DAO coordination and regional networks',
-      examples: ['Regional alliance', 'DAO federation'],
-      requiresGovernance: true,
-      defaultTreasuryType: 'dual',
-      requiredTier: 'enterprise', // Enterprise only
-      badge: 'ENTERPRISE'
+      id: 'merryGoRound',
+      label: 'Merry-Go-Round',
+      icon: '🎡',
+      duration: 'Rotating cycle',
+      description: 'Simple rotating savings where each member receives the pot in turn',
+      examples: ['Rotation savings', 'Chama cycle'],
+      requiresGovernance: false,
+      defaultTreasuryType: 'cusd',
+      badge: 'ROTATION'
     }
   ];
 
-  // Filter DAO types based on user's subscription tier
-  const getAvailableDaoTypes = (userTier: string) => {
-    const tierHierarchy = ['free', 'growth', 'professional', 'enterprise'];
-    const userTierIndex = tierHierarchy.indexOf(userTier);
-
-    return daoTypeOptions.filter(option => {
-      const requiredTierIndex = tierHierarchy.indexOf(option.requiredTier);
-      return userTierIndex >= requiredTierIndex;
-    });
+  // For onboarding we show all simplified DAO types (no subscription gating)
+  const getAvailableDaoTypes = (_userTier: string) => {
+    return daoTypeOptions;
   };
 
   // Get user's current subscription tier (you'll need to fetch this)
@@ -338,12 +357,8 @@ const CreateDAOFlow = () => {
   const steps = [
     { id: 1, title: 'Group Type', icon: Settings },
     { id: 2, title: 'Name & Info', icon: Settings },
-    { id: 3, title: 'Trustees', icon: Shield },
-    { id: 4, title: 'Voting Rules', icon: Shield },
-    { id: 5, title: 'Money', icon: Wallet },
-    { id: 6, title: 'Members', icon: Users },
-    { id: 7, title: 'Review', icon: Eye },
-    { id: 8, title: 'Done', icon: CheckCircle }
+    { id: 3, title: 'Members', icon: Users },
+    { id: 4, title: 'Confirm', icon: CheckCircle }
   ];
 
   const logoOptions = ['🏛️', '🌍', '🤝', '💎', '🚀', '⚡', '🌱', '🔥', '💰'];
@@ -398,7 +413,7 @@ const CreateDAOFlow = () => {
     { value: 'chama', label: 'Chama', emoji: '🤝', description: 'Traditional community savings and investment group' },
     { value: 'investment', label: 'Investment Club', emoji: '📈', description: 'Pool funds for investment opportunities' },
     { value: 'social', label: 'Social Impact', emoji: '🌍', description: 'Community welfare and social causes' },
-    { value: 'governance', label: 'Governance', emoji: '🏛️', description: 'Decision-making and community leadership' },
+    { value: 'governance', label: t('governance'), emoji: '🏛️', description: 'Decision-making and community leadership' },
     { value: 'funeral', label: 'Funeral Fund', emoji: '🕊️', description: 'Support members during bereavement' },
     { value: 'education', label: 'Education', emoji: '🎓', description: 'Scholarship and learning initiatives' },
     { value: 'youth', label: 'Youth Empowerment', emoji: '⚡', description: 'Youth development and mentorship' },
@@ -471,13 +486,27 @@ const CreateDAOFlow = () => {
     }
   ];
 
-  // DAO types that require multisig by default
-  const multisigRequiredTypes = ['collective', 'governance', 'meta'];
+  // DAO types that require multisig by default (map to simplified types)
+  const multisigRequiredTypes = ['savings', 'community', 'investment', 'merryGoRound'];
 
   // Ensure multisig is enabled automatically for required types
   useEffect(() => {
-    if (multisigRequiredTypes.includes(daoData.daoType || '')) {
-      setDaoData(prev => ({ ...prev, enableMultisig: true }));
+    // Auto-configure sensible defaults per DAO type (chama-first)
+    const type = String(daoData.daoType || '');
+    if (!type) return;
+    if (type === 'harambee') {
+      setDaoData(prev => ({ ...prev, governanceModel: '1-person-1-vote', quorum: 51, votingPeriod: '24h', treasuryType: 'cusd', enableMultisig: true, multisigRequiredSignatures: 1, duration: 14 }));
+    } else if (type === 'shortTerm') {
+      setDaoData(prev => ({ ...prev, governanceModel: '1-person-1-vote', quorum: 50, votingPeriod: '3d', treasuryType: 'cusd', enableMultisig: true, multisigRequiredSignatures: 2, duration: 60 }));
+    } else if (type === 'savings') {
+      setDaoData(prev => ({ ...prev, governanceModel: '1-person-1-vote', quorum: 50, votingPeriod: '7d', treasuryType: 'cusd', enableMultisig: true, multisigRequiredSignatures: 2 }));
+    } else if (type === 'community') {
+      setDaoData(prev => ({ ...prev, governanceModel: '1-person-1-vote', quorum: 60, votingPeriod: '7d', treasuryType: 'cusd', enableMultisig: true, multisigRequiredSignatures: 2 }));
+    } else if (type === 'investment') {
+      // Investment clubs prefer contribution-weighted voting
+      setDaoData(prev => ({ ...prev, governanceModel: 'weighted-stake', quorum: 60, votingPeriod: '7d', treasuryType: 'cusd', enableMultisig: true, multisigRequiredSignatures: 2 }));
+    } else if (type === 'merryGoRound') {
+      setDaoData(prev => ({ ...prev, governanceModel: '1-person-1-vote', quorum: 51, votingPeriod: '3d', treasuryType: 'cusd', enableMultisig: true, multisigRequiredSignatures: 1 }));
     }
   }, [daoData.daoType]);
 
@@ -493,7 +522,7 @@ const CreateDAOFlow = () => {
 
   // Initialize treasury when DAO type is selected
   useEffect(() => {
-    if (daoData.daoType && currentStep >= 5) {
+    if (daoData.daoType && currentStep >= 4) {
       initializeTreasury(
         `dao-${Date.now()}`, // temporary ID until deployed
         daoData.daoType as DAOType
@@ -553,7 +582,7 @@ const CreateDAOFlow = () => {
     enableDiscovery: boolean;
     featuredMessage: string;
     deployedAddress?: string;
-    daoType?: 'free' | 'shortTerm' | 'collective' | 'governance' | 'meta';
+    daoType?: 'free' | 'shortTerm' | 'collective' | 'governance' | 'meta' | 'harambee' | 'savings' | 'community' | 'investment' | 'merryGoRound';
     duration?: number;
     selectedElders: string[]; // NEW: Track selected elders
     // Multisig settings
@@ -578,6 +607,52 @@ const CreateDAOFlow = () => {
     }
     setDaoData(prev => ({ ...prev, [key]: sanitizedValue }));
   }, [sanitizeInput, setDaoData]);
+
+  // Update orchestrator metrics when member count changes
+  useEffect(() => {
+    const memberCount = daoData.members.filter(m => m.address.trim()).length;
+    const decentralizationLevel = Math.min(100, memberCount * 15); // More members = more decentralized
+    const founderControl = Math.max(10, 100 - decentralizationLevel);
+    const governanceComplexity = daoData.governanceModel === '1-person-1-vote' ? 30 : daoData.governanceModel === 'delegated' ? 60 : 80;
+
+    orchestrator.actions.updateGovernanceMetrics({
+      decentralizationLevel,
+      founderControl,
+      governanceComplexity,
+    });
+
+    // Update participation metrics
+    const expectedParticipation = Math.min(100, (memberCount / 10) * 100);
+    const quorumRealism = daoData.quorum > 60 ? Math.max(20, 100 - daoData.quorum) : 80;
+
+    orchestrator.actions.updateParticipationMetrics({
+      expectedParticipation,
+      quorumRealism,
+    });
+  }, [daoData.members, daoData.governanceModel, daoData.quorum]);
+
+  // Update treasury metrics
+  useEffect(() => {
+    const treasuryReady = daoData.initialFunding !== '' && parseFloat(daoData.initialFunding) > 0 ? 80 : 30;
+    const riskLevel = 100 - (daoData.depositRequired ? 70 : 40);
+
+    orchestrator.actions.updateTreasuryMetrics({
+      treasuryReadiness: treasuryReady,
+      treasuryRisk: riskLevel,
+    });
+  }, [daoData.initialFunding, daoData.depositRequired]);
+
+  // Update operational mode based on current step
+  useEffect(() => {
+    const modeMap: { [key: number]: any } = {
+      1: 'definition',
+      2: 'definition',
+      3: 'people',
+      4: 'execution',
+      5: 'execution',
+    };
+    orchestrator.actions.setOperationalMode(modeMap[currentStep] || 'definition');
+  }, [currentStep]);
 
   const addMember = useCallback(() => {
     const trimmedAddress = newMember.address.trim();
@@ -643,6 +718,23 @@ const CreateDAOFlow = () => {
         .filter(m => m.address !== walletAddress)
         .map(m => m.address);
 
+      const typeConfig = DAO_TYPE_CONFIG[daoData.daoType || ''] || {};
+
+      // Client-side subscription gating: show upsell prompt if user tier is insufficient
+      const requiredTier = typeConfig.requiredTier || 'free';
+      const tierHierarchy = ['free', 'growth', 'professional', 'enterprise'];
+      const userTierIndex = Math.max(0, tierHierarchy.indexOf(userTier));
+      const requiredTierIndex = Math.max(0, tierHierarchy.indexOf(requiredTier));
+
+      if (userTierIndex < requiredTierIndex) {
+        // Show inline upsell modal instead of blocking confirm
+        toast({ title: 'Upgrade required', description: `Creating a ${daoData.daoType} requires the ${requiredTier} plan.`, variant: 'destructive' });
+        setUpsellRequiredTier(requiredTier);
+        setUpsellOpen(true);
+        setIsDeploying(false);
+        return;
+      }
+
       const result = await authClient.post('/api/dao-deploy', {
           daoData: {
             name: sanitizeInput(daoData.name, 100),
@@ -650,6 +742,8 @@ const CreateDAOFlow = () => {
             daoType: daoData.daoType,
             category: daoData.category,
             treasuryType: daoData.treasuryType,
+        modules: typeConfig.modules || [],
+        features: { ...(typeConfig.features || {}) },
             customTokenAddress: daoData.treasuryType === 'custom' ? daoData.customTokenAddress : undefined,
             durationDays: daoData.duration,
             rotationFrequency: daoData.daoType === 'shortTerm' ? 'monthly' : undefined
@@ -666,7 +760,7 @@ const CreateDAOFlow = () => {
 
       if (result && result.daoAddress) {
         setDaoData(prev => ({ ...prev, deployedAddress: result.daoAddress }));
-        setCurrentStep(8);
+        setCurrentStep(5);
       } else {
         throw new Error(result?.error || 'Deployment failed');
       }
@@ -683,21 +777,19 @@ const CreateDAOFlow = () => {
       return; // Errors will be shown via ErrorAlert
     }
 
-    // For short-term DAOs, skip governance step
-    if (currentStep === 4 && daoData.daoType === 'shortTerm') {
-      setCurrentStep(5);  // Skip to Treasury
+    if (currentStep < 4) {
+      setCurrentStep(currentStep + 1);
       return;
     }
 
-    if (currentStep < 8) setCurrentStep(currentStep + 1);
+    // On final confirmation, deploy the DAO
+    if (currentStep === 4) {
+      deployDAO();
+      return;
+    }
   }, [currentStep, isStepValid, daoData.daoType]);
 
   const prevStep = () => {
-    // For short-term DAOs, skip governance step when going back
-    if (currentStep === 5 && daoData.daoType === 'shortTerm') {
-      setCurrentStep(3);  // Jump back to Elder Selection
-      return;
-    }
     if (currentStep > 1) setCurrentStep(currentStep - 1);
   };
 
@@ -767,6 +859,28 @@ const CreateDAOFlow = () => {
           </Card>
         ))}
       </div>
+        {/* Upsell Modal for insufficient tier */}
+        <Dialog open={upsellOpen} onOpenChange={setUpsellOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Upgrade Required</DialogTitle>
+            </DialogHeader>
+            <div className="py-4">
+              <p className="text-sm">Creating a <strong>{daoData.daoType}</strong> requires a <strong>{upsellRequiredTier}</strong> subscription. Upgrade to unlock this DAO type and its features.</p>
+              <ul className="mt-3 text-sm list-disc list-inside">
+                {(DAO_TYPE_CONFIG[daoData.daoType || '']?.features ? Object.keys(DAO_TYPE_CONFIG[daoData.daoType || ''].features) : []).map(f => (
+                  <li key={f}>{f}</li>
+                ))}
+              </ul>
+            </div>
+            <DialogFooter>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setUpsellOpen(false)}>Cancel</Button>
+                <Button onClick={() => { window.open('/pricing', '_blank'); setUpsellOpen(false); }}>View Plans</Button>
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
     </div>
   );
 
@@ -1109,7 +1223,7 @@ const CreateDAOFlow = () => {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">How Will Your Group Make Decisions?</h2>
-        <p className="text-gray-600 dark:text-gray-400">Choose how members will vote on proposals and approve spending</p>
+        <p className="text-gray-600 dark:text-gray-400">Choose how members will vote on {t('proposals').toLowerCase()} and approve spending</p>
       </div>
 
       <div className="space-y-6">
@@ -1170,7 +1284,7 @@ const CreateDAOFlow = () => {
         <div>
           <div className="flex items-center">
             <Label className="text-sm font-medium">Voting Period</Label>
-            <InfoTooltip text="How long members have to vote on proposals" />
+            <InfoTooltip text={`How long members have to vote on ${t('proposals').toLowerCase()}`} />
           </div>
           <Select value={daoData.votingPeriod} onValueChange={(value) => updateDaoData('votingPeriod', value)}>
             <SelectTrigger className="mt-1">
@@ -1381,96 +1495,13 @@ const CreateDAOFlow = () => {
         </Alert>
       )}
 
-      {/* Multisig explanatory area */}
-      <div>
-        {multisigRequiredTypes.includes(daoData.daoType || '') ? (
-          <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
-            <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-              Multisig is required for this DAO type and will be enabled.
-            </p>
-          </div>
-        ) : (
-          <div className="flex items-center justify-between p-3 border rounded-lg">
-            <div>
-              <p className="font-medium">Enable Multisig for Treasury</p>
-              <p className="text-xs text-gray-500">Require multiple elder approvals for withdrawals</p>
-            </div>
-            <Switch
-              checked={!!daoData.enableMultisig}
-              onCheckedChange={(checked) => setDaoData(prev => ({ ...prev, enableMultisig: checked }))}
-            />
-          </div>
-        )}
-      </div>
-
-      {/* Multisig signer editor & required signatures */}
-      {(daoData.enableMultisig || multisigRequiredTypes.includes(daoData.daoType || '')) && (
-        <div className="space-y-4">
-          <div>
-            <Label className="text-sm font-medium">Multisig Signers</Label>
-            <p className="text-xs text-gray-500">Who will be signers for multisig withdrawals? Founder is pre-added.</p>
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex flex-wrap gap-2">
-              {(daoData.multisigSigners || []).map((s, i) => (
-                <div key={s + i} className="flex items-center gap-2 px-3 py-1 bg-gray-100 rounded">
-                  <span className="font-mono text-sm break-all">{s}</span>
-                  <Button size="icon" variant="ghost" onClick={() => setDaoData(prev => ({ ...prev, multisigSigners: (prev.multisigSigners || []).filter((_, idx) => idx !== i) }))}>
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex gap-2">
-              <Input
-                placeholder="0x... or user-id"
-                id="new-multisig-signer"
-                value={newMultisigSigner}
-                onChange={(e) => setNewMultisigSigner(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    const val = newMultisigSigner.trim();
-                    if (!val) return;
-                    if (!validateAddress(val)) { toast({ title: 'Invalid', description: 'Invalid signer format', variant: 'destructive' }); return; }
-                    setDaoData(prev => ({ ...prev, multisigSigners: [...(prev.multisigSigners || []), val] }));
-                    setNewMultisigSigner('');
-                  }
-                }}
-              />
-              <Button onClick={() => {
-                const val = newMultisigSigner.trim();
-                if (!val) { toast({ title: 'Missing', description: 'Enter a signer address or id', variant: 'destructive' }); return; }
-                if (!validateAddress(val)) { toast({ title: 'Invalid', description: 'Invalid signer format', variant: 'destructive' }); return; }
-                setDaoData(prev => ({ ...prev, multisigSigners: [...(prev.multisigSigners || []), val] }));
-                setNewMultisigSigner('');
-              }} disabled={!validateAddress(newMultisigSigner)}>
-                Add
-              </Button>
-            </div>
-
-            <div>
-              <Button variant="ghost" size="sm" onClick={() => setShowMultisigManager(v => !v)}>
-                {showMultisigManager ? 'Hide Advanced Multisig Manager' : 'Open Advanced Multisig Manager'}
-              </Button>
-              {showMultisigManager && (
-                <div className="mt-4">
-                  <MultisigManager daoId={daoData.deployedAddress || ''} elders={daoData.selectedElders} />
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center gap-4">
-              <div>
-                <Label className="text-sm">Required Signatures</Label>
-                <p className="text-xs text-gray-500">Minimum number of signers required to approve a withdrawal</p>
-              </div>
-              <input aria-label="Required signatures" id="multisig-required" type="number" min={2} max={(daoData.multisigSigners || []).length || 2} value={daoData.multisigRequiredSignatures || 2} onChange={(e) => setDaoData(prev => ({ ...prev, multisigRequiredSignatures: Number(e.target.value) }))} className="w-20 px-2 py-1 border rounded" />
-            </div>
-          </div>
+      <div className="p-4 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+        <p className="font-medium">Advanced governance and multisig configuration have moved to the DAO Settings.</p>
+        <p className="text-xs text-gray-500">You can review and customize voting, quorum(votes required), and multisig signers anytime in Settings.</p>
+        <div className="mt-3">
+          <Button onClick={() => window.location.href = '/dao/settings'}>Open DAO Settings</Button>
         </div>
-      )}
+      </div>
 
       <div className="space-y-6">
         <div>
@@ -1666,28 +1697,15 @@ const CreateDAOFlow = () => {
                 <InfoTooltip text="Enter wallet address, phone number (+254...), or email" />
               </div>
               <Input
-                placeholder="0x... or +254... or email"
+                placeholder="Name or phone (+254...) or wallet (0x...)"
                 value={newMember.address}
                 onChange={(e) => setNewMember(prev => ({ ...prev, address: e.target.value }))}
               />
             </div>
+            {/* Roles are assigned in Settings. Everyone starts as Member during creation. */}
             <div>
-              <div className="flex items-center">
-                <Label className="text-sm">Role</Label>
-                <InfoTooltip text="Member: basic rights | Moderator: can moderate | Treasurer: financial access | Governor: full control" />
-              </div>
-              <Select value={newMember.role} onValueChange={(value) => setNewMember(prev => ({ ...prev, role: value }))}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {roleTypes.map(role => (
-                    <SelectItem key={role} value={role}>
-                      {role.charAt(0).toUpperCase() + role.slice(1)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-sm">Role</Label>
+              <p className="text-xs text-gray-500">All invited people will start as <strong>Member</strong>. Assign roles later in Settings.</p>
             </div>
           </div>
           <Button onClick={addMember} className="w-full">
@@ -1780,79 +1798,52 @@ const CreateDAOFlow = () => {
           </CardContent>
         </Card>
 
-        {/* Treasury Section */}
+        {/* Treasury Section (simplified for creation) */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Wallet className="w-5 h-5" />
-              Treasury Configuration
+              Treasury
             </CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => setCurrentStep(5)}>
-              Edit
+            <Button variant="ghost" size="sm" onClick={() => window.location.href = '/dao/settings'}>
+              Manage
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div>
-                <Label className="text-xs text-gray-500 dark:text-gray-400">TREASURY TYPE</Label>
-                <p className="font-medium">
-                  {getTreasuryOptionsForType(daoData.daoType).find(t => t.value === daoData.treasuryType)?.label || 'Not selected'}
-                </p>
-              </div>
-              {daoData.daoType === 'shortTerm' && (
-                <div>
-                  <Label className="text-xs text-gray-500 dark:text-gray-400">DURATION</Label>
-                  <p className="font-medium">{daoData.duration} days</p>
-                </div>
-              )}
-              <div>
-                <Label className="text-xs text-gray-500 dark:text-gray-400">INITIAL FUNDING</Label>
+                <Label className="text-xs text-gray-500 dark:text-gray-400">STARTING AMOUNT</Label>
                 <p className="font-medium">
                   {daoData.initialFunding && parseFloat(daoData.initialFunding) > 0
-                    ? `${daoData.initialFunding} ${daoData.treasuryType === 'cusd' ? 'cUSD' : daoData.treasuryType === 'dual' ? 'CELO' : 'USD'}`
+                    ? `${daoData.initialFunding} cUSD`
                     : 'None'}
                 </p>
               </div>
               <div>
-                <Label className="text-xs text-gray-500 dark:text-gray-400">MEMBER DEPOSITS</Label>
+                <Label className="text-xs text-gray-500 dark:text-gray-400">DEPOSITS</Label>
                 <p className="font-medium">{daoData.depositRequired ? 'Required' : 'Optional'}</p>
               </div>
             </div>
+            <p className="text-xs text-gray-400">Treasury type defaults to cUSD. Advanced treasury options and analysis are available in DAO Settings after creation.</p>
           </CardContent>
         </Card>
 
-        {/* Governance Section - only for non-shortTerm DAOs */}
-        {daoData.daoType !== 'shortTerm' && daoData.daoType !== 'free' && ( // Exclude 'free' and 'shortTerm'
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Shield className="w-5 h-5" />
-                Governance
-              </CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => setCurrentStep(4)}>
-                Edit
-              </Button>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                <div>
-                  <Label className="text-xs text-gray-500 dark:text-gray-400">MODEL</Label>
-                  <p className="font-medium">
-                    {governanceModels.find(g => g.value === daoData.governanceModel)?.label}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-xs text-gray-500 dark:text-gray-400">QUORUM</Label>
-                  <p className="font-medium">{daoData.quorum}%</p>
-                </div>
-                <div>
-                  <Label className="text-xs text-gray-500 dark:text-gray-400">VOTING PERIOD</Label>
-                  <p className="font-medium">{daoData.votingPeriod}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {/* Governance (moved to settings) */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="w-5 h-5" />
+              Governance
+            </CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => window.location.href = '/dao/settings'}>
+              Manage
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm">Default: Equal Voice (1-person-1-vote), Quorum 50%, Voting period 7 days.</p>
+            <p className="text-xs text-gray-400">Advanced governance settings (quorum, voting period, delegated models) are configurable in DAO Settings after creation.</p>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -1860,7 +1851,7 @@ const CreateDAOFlow = () => {
               <Users className="w-5 h-5" />
               Members ({daoData.members.length})
             </CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => setCurrentStep(6)}>
+            <Button variant="ghost" size="sm" onClick={() => setCurrentStep(3)}>
               Edit
             </Button>
           </CardHeader>
@@ -1997,12 +1988,9 @@ const CreateDAOFlow = () => {
     switch (currentStep) {
       case 1: return renderDaoTypeSelection();
       case 2: return renderBasicInfo();
-      case 3: return renderElderSelection();
-      case 4: return renderGovernance();
-      case 5: return renderTreasury();
-      case 6: return renderMembers();
-      case 7: return renderPreview();
-      case 8: return renderSuccess();
+      case 3: return renderMembers();
+      case 4: return renderPreview();
+      case 5: return renderSuccess();
       default: return renderDaoTypeSelection();
     }
   };
@@ -2027,7 +2015,24 @@ const CreateDAOFlow = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 py-8">
       <div className="max-w-4xl mx-auto px-4">
-        {currentStep < 7 && currentStep !== 8 && (
+        {/* SYSTEM HEALTH STATUS - Show on steps 2+ */}
+        {currentStep >= 2 && currentStep < 5 && (
+          <div className="mb-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">DAO System Health</h3>
+              <RiskLevelBadge />
+            </div>
+            <SystemHealthBanner />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+              <div className="lg:col-span-2">
+                <WarningsAndSuggestionsPanel />
+              </div>
+              <AdaptiveReadinessMeter />
+            </div>
+          </div>
+        )}
+
+        {currentStep < 5 && (
           <div className="mb-8">
             <div className="flex items-center justify-between overflow-x-auto">
               {steps.slice(0, -1).map((step, index) => {
@@ -2067,7 +2072,7 @@ const CreateDAOFlow = () => {
 
         <Card className="mb-8 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
           <CardContent className="p-8">
-            {currentStep < 7 && currentStep !== 8 && <BlockchainWarningBanner />}
+            {currentStep < 5 && <BlockchainWarningBanner />}
 
             {lastSaved && (
               <div className="text-xs text-gray-500 mb-4 flex items-center gap-2">
@@ -2082,7 +2087,7 @@ const CreateDAOFlow = () => {
           </CardContent>
         </Card>
 
-        {currentStep < 8 && (
+        {currentStep < 5 && (
           <div className="flex justify-between items-center">
             <div className="flex gap-2">
               <Button
@@ -2105,18 +2110,14 @@ const CreateDAOFlow = () => {
               )}
             </div>
 
-            {currentStep < 7 ? (
-              <Button
-                onClick={nextStep}
-                disabled={!isStepValid}
-                className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700"
-              >
-                Continue
-                <ChevronUp className="w-4 h-4" />
-              </Button>
-            ) : (
-              <div />
-            )}
+            <Button
+              onClick={nextStep}
+              disabled={!isStepValid}
+              className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700"
+            >
+              {currentStep === 4 ? 'Create' : 'Continue'}
+              <ChevronUp className="w-4 h-4" />
+            </Button>
           </div>
         )}
 
@@ -2125,6 +2126,15 @@ const CreateDAOFlow = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+// Wrapped component with orchestrator provider
+const CreateDAOFlow = () => {
+  return (
+    <DAOOrchestratorProvider>
+      <CreateDAOFlowContent />
+    </DAOOrchestratorProvider>
   );
 };
 

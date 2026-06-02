@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindVite from '@tailwindcss/vite';
 import path from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
@@ -9,7 +10,7 @@ const __dirname = dirname(__filename);
 
 export default defineConfig({
   root: "./client",
-  plugins: [react()],
+  plugins: [react(), tailwindVite()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./client/src"),
@@ -28,49 +29,46 @@ export default defineConfig({
         drop_debugger: true,
       },
     },
-    chunkSizeWarningLimit: 1000,
+    chunkSizeWarningLimit: 2000,
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, "client/index.html"),
       },
       output: {
         manualChunks: (id) => {
-          if (id.includes('node_modules')) {
-            // React ecosystem - shared by all components
-            if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) {
-              return 'react-core';
-            }
-            // Router
-            if (id.includes('react-router') || id.includes('wouter')) {
-              return 'react-core';
-            }
-            // Chart libraries - heavy, lazy load
-            if (id.includes('recharts') || id.includes('chart.js') || id.includes('react-chartjs')) {
-              return 'charts';
-            }
-            // UI component library
-            if (id.includes('@radix-ui/')) {
-              const match = id.match(/@radix-ui\/react-([^\/]+)/);
-              if (match) {
-                return `radix-${match[1]}`;
-              }
-              return 'radix-ui';
-            }
-            // State management
-            if (id.includes('@tanstack/react-query')) {
-              return 'react-query';
-            }
-            // Web3 - heavy, used only in specific pages
-            if (id.includes('ethers') || id.includes('viem') || id.includes('web3') || 
-                id.includes('wagmi') || id.includes('@wagmi')) {
-              return 'web3';
-            }
-            // Icons - split separately
-            if (id.includes('lucide-react')) {
-              return 'icons';
-            }
-            // Don't bundle everything else together - let Vite handle it
+          if (!id.includes('node_modules')) return undefined;
+
+          // React core and router
+          if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('react-router') || id.includes('wouter') || id.includes('/scheduler/')) {
+            return 'react-core';
           }
+
+          // Web3 and blockchain libs
+          if (id.includes('ethers') || id.includes('viem') || id.includes('/web3') || id.includes('wagmi') || id.includes('@wagmi')) {
+            return 'web3';
+          }
+
+          // Charting libraries bundle
+          if (id.includes('recharts') || id.includes('chart.js') || id.includes('react-chartjs') || id.includes('react-chartjs-2')) {
+            return 'charts';
+          }
+
+          // UI libs (radix, icons, lucide)
+          if (id.includes('@radix-ui') || id.includes('lucide-react') || id.includes('react-icons')) {
+            return 'ui-lib';
+          }
+
+          // Websocket / realtime
+          if (id.includes('socket.io-client') || id.includes('ws')) {
+            return 'realtime';
+          }
+
+          // Heavy utils used across app
+          if (id.includes('@tanstack/react-query') || id.includes('date-fns') || id.includes('lodash')) {
+            return 'utils';
+          }
+
+          return undefined;
         },
         chunkFileNames: 'assets/[name]-[hash].js',
         entryFileNames: 'assets/[name]-[hash].js',
@@ -84,10 +82,9 @@ export default defineConfig({
     strictPort: false,
     middlewareMode: false,
     allowedHosts: 'all',
-    hmr: {
-      host: 'localhost',
-      port: 5173,
-    },
+    // Let Vite determine the correct HMR host/protocol based on the current connection.
+    // Removing hardcoded host/port avoids mismatched ws/wss when accessing via HTTPS or proxies.
+    hmr: true,
     proxy: {
       "/api": {
         target: "http://localhost:5000",
@@ -110,9 +107,23 @@ export default defineConfig({
       'react-helmet-async',
       'recharts',
       'lucide-react',
+      'socket.io-client',
+      'web3',
+      'ethers',
+      'viem',
+      'wagmi',
+      '@wagmi/core',
+
+
     ],
     // Force pre-bundling of heavy dependencies
     force: true,
+  },
+  // Use Rolldown-specific options to control code-splitting behavior
+  rolldownOptions: {
+    output: {
+      codeSplitting: true,
+    },
   },
 });
 

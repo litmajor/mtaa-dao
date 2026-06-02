@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { authClient } from '../utils/authClient';
+import authChannel from '../utils/authChannel';
 import { UserRole } from './navigation-context';
 
 /**
@@ -21,8 +23,9 @@ export interface AuthUser {
 
 interface AuthSession {
   user: AuthUser;
-  token: string;
-  expiresAt: Date;
+  token?: string;
+  // Stored as ISO string when persisted to localStorage; may be Date in-memory
+  expiresAt: string | Date;
 }
 
 interface AuthContextType {
@@ -50,131 +53,47 @@ const WS_HOST = import.meta.env.VITE_API_HOST || 'localhost';
  */
 const authApi = {
   async login(email: string, password: string): Promise<AuthSession> {
-    const response = await fetch(`${API_BASE_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ email, password }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Login failed');
-    }
-
-    return response.json();
+    return authClient.post<AuthSession>(`${API_BASE_URL}/auth/login`, { email, password });
   },
 
-  async logout(token: string): Promise<void> {
-    // Clear session from backend (Redis + Database)
+  async logout(): Promise<void> {
     try {
-      await fetch(`${API_BASE_URL}/auth/logout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        credentials: 'include',
-      });
+      await authClient.post<void>(`${API_BASE_URL}/auth/logout`);
     } catch (err) {
       console.error('Logout API error (continuing local logout):', err);
     }
   },
 
-  async refreshSession(token: string): Promise<AuthSession> {
-    const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      throw new Error('Session refresh failed');
-    }
-
-    return response.json();
+  async refreshSession(): Promise<AuthSession> {
+    return authClient.post<AuthSession>(`${API_BASE_URL}/auth/refresh`);
   },
 
-  async switchRole(token: string, role: UserRole): Promise<AuthUser> {
-    const response = await fetch(`${API_BASE_URL}/auth/switch-role`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      credentials: 'include',
-      body: JSON.stringify({ role }),
-    });
-
-    if (!response.ok) {
-      throw new Error('Role switch failed');
-    }
-
-    return response.json();
+  async switchRole(role: UserRole): Promise<AuthUser> {
+    return authClient.post<AuthUser>(`${API_BASE_URL}/auth/switch-role`, { role });
   },
 
-  async getCurrentUser(token: string): Promise<AuthUser> {
-    const response = await fetch(`${API_BASE_URL}/auth/me`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch current user');
-    }
-
-    return response.json();
+  async getCurrentUser(): Promise<AuthUser> {
+    return authClient.get<AuthUser>(`${API_BASE_URL}/auth/me`);
   },
 
-  /**
-   * Persist session to backend (Redis + Database)
-   * Called after login/refresh to ensure session survives server restarts
-   */
-  async persistSession(token: string, session: AuthSession): Promise<void> {
+  async persistSession(session: AuthSession): Promise<void> {
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/session/persist`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          user: session.user,
-          expiresAt: session.expiresAt,
-        }),
+      await authClient.post<void>(`${API_BASE_URL}/auth/session/persist`, {
+        user: session.user,
+        expiresAt: session.expiresAt,
       });
-
-      if (!response.ok) {
-        console.warn('Failed to persist session to backend');
-      }
     } catch (err) {
       console.error('Session persistence error:', err);
-      // Don't throw - allow local session to continue even if persistence fails
     }
   },
 
-  /**
-   * Verify session exists in backend (Redis/Database)
-   * Useful for cross-device/cross-tab validation
-   */
-  async verifySessionExists(token: string): Promise<boolean> {
+  async verifySessionExists(): Promise<boolean> {
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/session/verify`, {
+      const res = await fetch(`${API_BASE_URL}/auth/session/verify`, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
         credentials: 'include',
       });
-
-      return response.ok;
+      return res.ok;
     } catch (err) {
       console.error('Session verification error:', err);
       return false;
@@ -203,15 +122,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (storedToken) {
           try {
             // Verify session with backend (will check Redis/Database)
-            const currentUser = await authApi.getCurrentUser(storedToken);
+            const currentUser = await authApi.getCurrentUser();
             setToken(storedToken);
             setUser(currentUser);
           } catch (err) {
-            // Token invalid or expired - clear it
-            localStorage.removeItem(AUTH_STORAGE_KEY);
-            localStorage.removeItem(AUTH_TOKEN_KEY);
-            setToken(null);
-            setUser(null);
+            // Token invalid or expired - try refresh before clearing
+            try {
+              const refreshed = await authApi.refreshSession();
+              // store refreshed session
+              localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(refreshed));
+              localStorage.setItem(AUTH_TOKEN_KEY, refreshed.token);
+              setToken(refreshed.token);
+              setUser(refreshed.user);
+            } catch (refreshErr) {
+              // Refresh failed - clear it
+              localStorage.removeItem(AUTH_STORAGE_KEY);
+              localStorage.removeItem(AUTH_TOKEN_KEY);
+              setToken(null);
+              setUser(null);
+            }
           }
         } else if (storedSession) {
           // Fallback: restore from localStorage if no token yet
@@ -249,30 +178,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setToken(null);
       }
     };
-
     window.addEventListener('storage', handleStorageChange);
 
-    // Periodic session sync with backend (every 5 minutes)
-    // Ensures Redis/Database session stays fresh and in sync
-    const syncInterval = setInterval(async () => {
-      if (token && user) {
-        try {
-          const session: AuthSession = {
-            user,
-            token,
-            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-          };
-          await authApi.persistSession(token, session);
-        } catch (err) {
-          console.error('Periodic session sync failed:', err);
-        }
-      }
-    }, 5 * 60 * 1000); // 5 minutes
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      clearInterval(syncInterval);
-    };
+  // Periodic session sync with backend (every 5 minutes)
+  // Separate effect so it starts/stops with token/user changes and avoids multiple intervals
+  useEffect(() => {
+    if (!token || !user) return;
+
+    const syncInterval = setInterval(async () => {
+      try {
+        const session: AuthSession = {
+          user,
+          // do not include token when persisting from frontend; backend uses cookie
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        };
+        await authApi.persistSession(session);
+      } catch (err) {
+        console.error('Periodic session sync failed:', err);
+      }
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(syncInterval);
   }, [token, user]);
 
   /**
@@ -285,23 +214,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const session = await authApi.login(email, password);
 
-      // Store in both localStorage (for immediate access) and backend manages Redis/Database
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
-      localStorage.setItem(AUTH_TOKEN_KEY, session.token);
-
+      // Don't persist raw tokens to localStorage; backend should set httpOnly refresh cookie
       setUser(session.user);
-      setToken(session.token);
+      if ((session as any).token) setToken((session as any).token);
 
-      // Persist session to backend (Redis + Database) for multi-device support
-      await authApi.persistSession(session.token, session);
+      // Persist minimal session info to backend
+      await authApi.persistSession({ user: session.user, token: (session as any).token, expiresAt: session.expiresAt });
 
-      // Notify other tabs
-      window.dispatchEvent(
-        new StorageEvent('storage', {
-          key: AUTH_STORAGE_KEY,
-          newValue: JSON.stringify(session),
-        })
-      );
+      // Notify other tabs via BroadcastChannel/localStorage fallback
+      authChannel.postAuthMessage({ type: 'login', payload: { user: session.user } });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Login failed';
       setError(errorMessage);
@@ -318,26 +239,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
 
     try {
-      if (token) {
-        await authApi.logout(token);
-      }
+      await authApi.logout();
     } catch (err) {
       console.error('Logout error:', err);
     } finally {
       localStorage.removeItem(AUTH_STORAGE_KEY);
-      localStorage.removeItem(AUTH_TOKEN_KEY);
       setUser(null);
       setToken(null);
       setError(null);
       setIsLoading(false);
 
       // Notify other tabs
-      window.dispatchEvent(
-        new StorageEvent('storage', {
-          key: AUTH_STORAGE_KEY,
-          newValue: null,
-        })
-      );
+      authChannel.postAuthMessage({ type: 'logout', payload: {} });
     }
   }, [token]);
 
@@ -345,17 +258,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * Switch user role (persisted to backend)
    */
   const switchRole = useCallback(async (role: UserRole): Promise<void> => {
-    if (!token) throw new Error('No active session');
-
     try {
-      const updatedUser = await authApi.switchRole(token, role);
+      const updatedUser = await authApi.switchRole(role);
       setUser(updatedUser);
 
-      // Update persisted session
+      // Update persisted session (no token stored client-side)
       const session: AuthSession = {
         user: updatedUser,
-        token,
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        token: (token as any) || '',
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       };
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
     } catch (err) {
@@ -369,17 +280,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * Refresh session from backend (Redis/Database)
    */
   const refreshSession = useCallback(async (): Promise<void> => {
-    if (!token) return;
-
     try {
-      const session = await authApi.refreshSession(token);
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
-      localStorage.setItem(AUTH_TOKEN_KEY, session.token);
+      const session = await authApi.refreshSession();
+      // don't store raw token client-side; backend may set cookie
       setUser(session.user);
-      setToken(session.token);
+      if ((session as any).token) setToken((session as any).token);
 
-      // Re-persist updated session to backend
-      await authApi.persistSession(session.token, session);
+      // Re-persist updated session to backend (minimal)
+      await authApi.persistSession({ user: session.user, token: (session as any).token, expiresAt: session.expiresAt });
     } catch (err) {
       // If refresh fails, logout
       await logout();

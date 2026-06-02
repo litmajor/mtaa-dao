@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Card } from './card-design';
-import { Button } from './button-design';
+import { Button } from './button';
 import { Icon } from './icon-design';
 
 export interface PopoverProps {

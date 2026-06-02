@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useId } from 'react';
 import { Icon } from './icon-design';
-import { Button } from './button-design';
+import { Button } from './button';
 
 export type ToastType = 'info' | 'success' | 'warning' | 'error';
 

@@ -5,6 +5,7 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Clock, CheckCircle, AlertCircle } from 'lucide-react';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { useWalletOperatingStore } from '@/stores/wallet-operating-store';
 
 interface PendingPayment {
   id: string;
@@ -23,15 +24,25 @@ interface PendingPaymentsWidgetProps {
 
 export default function PendingPaymentsWidget({ walletAddress, userId }: PendingPaymentsWidgetProps) {
   const { socket, isConnected } = useWebSocket();
+  const store = useWalletOperatingStore();
   
   const [payments, setPayments] = useState<PendingPayment[]>([]);
   const [summary, setSummary] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
 
   useEffect(() => {
+    // Prefer central store transactions if available to derive pending payments
+    if (store.transactions && store.transactions.length > 0) {
+      const pending = (store.transactions as any[]).filter(t => t.status === 'pending' || t.status === 'processing');
+      setPayments(pending.map(p => ({ id: p.id || '', amount: String(p.amount || '0'), currency: p.currency || 'cUSD', description: p.description || '', status: p.status || 'pending', expiresAt: p.expiresAt || '', createdAt: p.createdAt || '' })));
+      setSummary({ totalPending: pending.length, byCurrency: {} });
+      setLoading(false);
+      return;
+    }
+
     fetchPendingPayments();
-  }, [walletAddress, userId]);
+  }, [walletAddress, userId, store.transactions]);
 
   // WebSocket real-time payment updates
   useEffect(() => {
@@ -95,6 +106,7 @@ export default function PendingPaymentsWidget({ walletAddress, userId }: Pending
 
   const fetchPendingPayments = async () => {
     try {
+      setLoading(true);
       const params = new URLSearchParams();
       if (walletAddress) params.append('walletAddress', walletAddress);
       if (userId) params.append('userId', userId);
@@ -103,8 +115,8 @@ export default function PendingPaymentsWidget({ walletAddress, userId }: Pending
       const data = await response.json();
 
       if (data.success) {
-        setPayments(data.data.payments);
-        setSummary(data.data.summary);
+        setPayments(data.data.payments || []);
+        setSummary(data.data.summary || { totalPending: (data.data.payments || []).length });
       }
     } catch (error) {
       console.error('Error fetching pending payments:', error);

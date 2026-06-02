@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { t } from '@/lib/uiLabels';
 import { Calendar, User, ThumbsUp, ThumbsDown, Minus, Clock, TrendingUp, Sparkles, Eye, MessageCircle } from "lucide-react";
 import { useState } from "react";
 import ProposalLikeButton from "./proposal-like-button";
@@ -22,7 +23,7 @@ export default function ProposalCard({ proposal, onVote, showFullDescription = f
   const quorumRequired = proposal?.quorumRequired || 0;
   const voteEndTime = proposal?.voteEndTime || new Date().toISOString();
   const status = proposal?.status || 'draft';
-  const title = proposal?.title || 'Untitled Proposal';
+  const title = proposal?.title || `Untitled ${t('proposal')}`;
   const description = proposal?.description || 'No description available';
   const proposerId = proposal?.proposerId || 'Unknown';
   const createdAt = proposal?.createdAt || new Date().toISOString();

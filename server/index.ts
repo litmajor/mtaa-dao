@@ -91,6 +91,7 @@ import { elderCoordinator as coordinator } from './core/elders/coordinator';
 import { initializeGatewayAgent } from './core/agents/gateway/initialize';
 import { opportunityEngine } from './services/opportunityEngine';
 import { opportunityStream } from './websocket/opportunityStream';
+import { marketStreamService } from './services/marketStreamService';
 import { pool } from './db';
 import { startPriceCollectionJob } from './services/cexPriceBackgroundJob';
 import { initTreasuryMonitoring, stopTreasuryMonitoring } from './services/treasury-monitoring.service';
@@ -190,8 +191,9 @@ const app = express();
 // Setup process error handlers
 setupProcessErrorHandlers();
 
-// Add global handler for unhandled promise rejections from blockchain services
-process.on('unhandledRejection', (reason: Error | string, promise: Promise<any>) => {
+// Add global handler for unhandled promise rejections from blockchain services (only register if none exist)
+if (process.listenerCount('unhandledRejection') === 0) {
+  process.on('unhandledRejection', (reason: Error | string, promise: Promise<any>) => {
   const message = reason instanceof Error ? reason.message : String(reason);
 
   // Check if it's a known blockchain timeout error - these are non-critical
@@ -207,7 +209,10 @@ process.on('unhandledRejection', (reason: Error | string, promise: Promise<any>)
     reason: message,
     stack: reason instanceof Error ? reason.stack : undefined
   });
-});
+  });
+} else {
+  console.log('[STARTUP] unhandledRejection handler already registered; skipping duplicate registration (top-level)');
+}
 
 // Initialize Socket.IO
 // Note: 'server' variable is used here but not defined in the provided snippet. Assuming it's to be defined by `createServer`.
@@ -240,21 +245,18 @@ const compressionMiddleware = compression({
   }
 });
 
-// Body parsing middleware
-app.use(express.json({
-  limit: '10mb',
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf;
-  }
-}));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// NOTE: Body parsing is applied after CORS and security headers to avoid parsing
+// large request bodies from blocked origins (reduces DoS surface).
 
 // CORS Configuration - Whitelist approved origins
 const allowedOrigins = (
   process.env.ALLOWED_ORIGINS?.split(',') || [
     'http://localhost:5000',
     'http://localhost:5173',
-    'http://localhost:8080'
+    'http://localhost:8080',
+    'https://mtaadao.com',
+    'https://www.mtaadao.org',  
+    'https://app.mtaadao.com',
   ]
 ).map(origin => origin.trim());
 
@@ -286,6 +288,15 @@ app.use(helmet());
 // Request logging middleware (before other middleware)
 app.use(requestLogger);
 
+// Body parsing middleware (after security headers and CORS)
+app.use(express.json({
+  limit: process.env.BODY_LIMIT || '1mb',
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
+app.use(express.urlencoded({ extended: true, limit: process.env.BODY_LIMIT || '1mb' }));
+
 // Apply security middleware (rate limiting handled per-route in API)
 app.use(sanitizeInput);
 app.use(preventSqlInjection);
@@ -301,18 +312,23 @@ app.use(performanceMonitor(1000)); // Log requests > 1000ms
 
 // Add metrics collection
 app.use(metricsCollector.requestMiddleware());
+// Mark metrics collector as mounted to prevent duplicate mounts elsewhere
+(app as any).locals = (app as any).locals || {};
+(app as any).locals.metricsCollectorMounted = true;
 
 // User activity tracking middleware
 app.use(activityTracker());
 
-// System Visibility Stack - Route usage logging and anomaly detection
+// System Visibility Stack - Route usage logging and anomaly detection (non-blocking)
 app.use(createRouteUsageLogger(path.join(__dirname, '../visibility/route-usage.csv')));
-logger.info('✅ Route usage logger middleware mounted');
+logger.info('✅ Route usage logger middleware mounted (streamed writes)');
 
-// Real-time metrics collection middleware
-app.use(metricsMiddleware());
-logger.info('✅ Real-time endpoint metrics collection enabled');
+// NOTE: Removed previous `metricsMiddleware()` mount to avoid double-counting.
+logger.info('✅ metricsCollector.requestMiddleware mounted; skipping legacy metricsMiddleware to avoid duplicate metrics');
 
+// Circuit Breaker middleware (Phase 6) - protects and monitors API endpoints
+app.use('/api', circuitBreakerMiddleware);
+logger.info('✅ Circuit breaker middleware mounted on /api');
 // Initialize system visibility dashboard
 const systemVisibility = new SystemVisibility(app, path.join(__dirname, '../visibility'));
 logger.info('✅ System visibility dashboard initialized');
@@ -333,6 +349,10 @@ logger.info('✅ Socket.IO WebSocket service initialized (unified, no ws.router 
 opportunityStream.initialize(server);
 logger.info('✅ Opportunity Engine WebSocket stream initialized');
 
+// Initialize Market Stream WebSocket service (real-time market data)
+marketStreamService.initialize(server);
+logger.info('✅ Market Stream WebSocket service initialized at /api/market-stream');
+
 // Store user socket connections
 const userSockets = new Map();
 
@@ -348,9 +368,15 @@ io.use(async (socket: any, next) => {
       return next();
     }
 
-    // Verify JWT token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
+    // Verify JWT token — require JWT_SECRET to be configured; do NOT fall back to a public default
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      logger.error('JWT_SECRET not configured — rejecting token-based Socket.IO authentication');
+      socket.userId = null;
+      return next();
+    }
 
+    const decoded = jwt.verify(token, jwtSecret) as any;
     socket.userId = decoded.userId || decoded.id;
     logger.info('Socket.IO client authenticated via token', { userId: socket.userId, socketId: socket.id });
     next();
@@ -393,8 +419,8 @@ notificationService.on('notification_created', (data) => {
   io.to(`user_${data.userId}`).emit('new_notification', data);
 });
 
-// Make io available globally
-(global as any).io = io;
+// Expose Socket.IO instance via app locals only (avoid polluting global scope)
+(app as any).locals.socketIO = io;
 
 
 // Logging middleware
@@ -429,14 +455,18 @@ console.log('[STARTUP] Starting async initialization...');
 // ═══════════════════════════════════════════════════════════════════════════════
 // GLOBAL ERROR HANDLERS (Must be set up BEFORE any async operations)
 // ═══════════════════════════════════════════════════════════════════════════════
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error('🚨 Unhandled Promise Rejection:', {
-    reason: reason instanceof Error ? reason.message : String(reason),
-    stack: reason instanceof Error ? reason.stack : undefined,
-    promise: String(promise),
+if (process.listenerCount('unhandledRejection') === 0) {
+  process.on('unhandledRejection', (reason, promise) => {
+    logger.error('🚨 Unhandled Promise Rejection:', {
+      reason: reason instanceof Error ? reason.message : String(reason),
+      stack: reason instanceof Error ? reason.stack : undefined,
+      promise: String(promise),
+    });
+    console.error('[CRITICAL] Unhandled rejection:', reason);
   });
-  console.error('[CRITICAL] Unhandled rejection:', reason);
-});
+} else {
+  logger.info('[STARTUP] unhandledRejection handler already present; skipping duplicate registration (IIFE)');
+}
 
 process.on('uncaughtException', (error) => {
   logger.error('🚨 Uncaught Exception:', {
@@ -832,6 +862,19 @@ process.on('uncaughtException', (error) => {
       // Metrics flusher runs in background (non-blocking)
       // Transforms: Redis buffer (real-time) → DB archive (historical) every 5 min
       logger.info('[STARTUP] ✅ Performance metrics buffering initialized');
+      // Schedule periodic flush of buffered metrics (uses guarded job to avoid overlaps)
+      const FLUSH_INTERVAL_MS = parseInt(process.env.PERF_BUFFER_FLUSH_MS || '300000'); // default 5 minutes
+      const performFlush = async () => {
+        await executeGuardedJob('perf:flush', async () => {
+          await PerformanceOptimizerBufferedWriter.flushBufferedMetricsToDB();
+        }, { timeout: 120000 });
+      };
+
+      // Run initial flush in background and schedule recurring flushes
+      performFlush().catch(err => logger.warn('[BufferedWriter] Initial flush failed', err));
+      setInterval(() => {
+        performFlush().catch(err => logger.error('[BufferedWriter] Scheduled flush failed', err));
+      }, FLUSH_INTERVAL_MS);
     } catch (metricsError) {
       logger.warn('[STARTUP] Metrics buffering setup warning:', metricsError);
     }
@@ -939,9 +982,9 @@ process.on('uncaughtException', (error) => {
       // Continue without defender agent - core functionality can still work
     }
 
-    // Mount Swagger API Documentation
+    // Mount Swagger API Documentation at /api-docs
     console.log('[STARTUP] Setting up Swagger API documentation...');
-    app.use('/', swaggerMiddleware);
+    app.use('/api-docs', swaggerMiddleware);
     console.log('[STARTUP] Swagger API documentation available at /api-docs');
 
     // Health check endpoint
@@ -956,7 +999,8 @@ process.on('uncaughtException', (error) => {
     }));
 
     // System Visibility Report endpoint (admin only)
-    app.get('/api/visibility/report', asyncHandler(async (req: Request, res: Response) => {
+    if (!(app as any).locals?.routesRegistered) {
+      app.get('/api/visibility/report', isAuthenticated, requireRole('super_admin'), asyncHandler(async (req: Request, res: Response) => {
       try {
         const report = systemVisibility.generateAllReports();
         res.json(report);
@@ -967,10 +1011,14 @@ process.on('uncaughtException', (error) => {
           message: error instanceof Error ? error.message : 'Unknown error'
         });
       }
-    }));
+      }));
+    } else {
+      console.log('[STARTUP] Skipping duplicate mount: /api/visibility/report (handled by registerRoutes)');
+    }
 
     // System Visibility summary endpoint
-    app.get('/api/visibility/summary', asyncHandler(async (req: Request, res: Response) => {
+    if (!(app as any).locals?.routesRegistered) {
+      app.get('/api/visibility/summary', isAuthenticated, requireRole('super_admin'), asyncHandler(async (req: Request, res: Response) => {
       try {
         // generateAllReports internally calls printSummary
         const report = systemVisibility.generateAllReports();
@@ -1001,7 +1049,10 @@ process.on('uncaughtException', (error) => {
           message: error instanceof Error ? error.message : 'Unknown error'
         });
       }
-    }));
+      }));
+    } else {
+      console.log('[STARTUP] Skipping duplicate mount: /api/visibility/summary (handled by registerRoutes)');
+    }
 
     // Circuit Breaker Status Endpoint (Phase 6)
     app.get('/api/health/circuits', asyncHandler(async (req: Request, res: Response) => {
@@ -1030,8 +1081,72 @@ process.on('uncaughtException', (error) => {
       }
     }));
 
-    // Error Classification Endpoint (Phase 6) - For debugging and monitoring
-    app.post('/api/debug/classify-error', asyncHandler(async (req: Request, res: Response) => {
+    // Admin endpoint to reset all circuits (Phase 6)
+    app.post(
+      '/api/admin/circuits/reset',
+      isAuthenticated,
+      requireRole('super_admin'),
+      asyncHandler(async (req: Request, res: Response) => {
+        try {
+          resetAllCircuits();
+          res.json({ success: true, message: 'All circuits reset' });
+        } catch (error) {
+          logger.error('Failed to reset circuits:', error);
+          res.status(500).json({ success: false, error: (error as Error).message });
+        }
+      })
+    );
+
+    // Admin endpoint: singleton health status (Phase 7.1)
+    app.get(
+      '/api/admin/singletons',
+      isAuthenticated,
+      requireRole('super_admin'),
+      asyncHandler(async (req: Request, res: Response) => {
+        try {
+          const status = getSingletonHealthStatus();
+          res.json({ success: true, data: status });
+        } catch (error) {
+          logger.error('Failed to get singleton health status:', error);
+          res.status(500).json({ success: false, error: (error as Error).message });
+        }
+      })
+    );
+
+    // Admin endpoints for PerformanceOptimizerBufferedWriter (buffered metrics)
+    app.get(
+      '/api/admin/metrics/buffered',
+      isAuthenticated,
+      requireRole('super_admin'),
+      asyncHandler(async (req: Request, res: Response) => {
+        try {
+          const status = await PerformanceOptimizerBufferedWriter.getBufferedMetricsStatus();
+          res.json({ success: true, data: status });
+        } catch (error) {
+          logger.error('Failed to get buffered metrics status:', error);
+          res.status(500).json({ success: false, error: (error as Error).message });
+        }
+      })
+    );
+
+    app.post(
+      '/api/admin/metrics/buffered/clear',
+      isAuthenticated,
+      requireRole('super_admin'),
+      asyncHandler(async (req: Request, res: Response) => {
+        try {
+          await PerformanceOptimizerBufferedWriter.clearAllBuffers();
+          res.json({ success: true, message: 'Buffered metrics cleared' });
+        } catch (error) {
+          logger.error('Failed to clear buffered metrics:', error);
+          res.status(500).json({ success: false, error: (error as Error).message });
+        }
+      })
+    );
+
+    // Error Classification Endpoint (Phase 6) - For debugging and monitoring (admin only)
+    if (!(app as any).locals?.routesRegistered) {
+      app.post('/api/debug/classify-error', isAuthenticated, requireRole('super_admin'), asyncHandler(async (req: Request, res: Response) => {
       try {
         const { errorMessage, queueLength } = req.body;
         
@@ -1054,7 +1169,10 @@ process.on('uncaughtException', (error) => {
           message: error instanceof Error ? error.message : 'Unknown error'
         });
       }
-    }));
+      }));
+    } else {
+      console.log('[STARTUP] Skipping duplicate mount: /api/debug/classify-error (handled by registerRoutes)');
+    }
 
     // Add API routes
     app.use('/api/payments/kotanipay', kotaniPayStatusRoutes);
@@ -1063,7 +1181,11 @@ process.on('uncaughtException', (error) => {
     // reconciliation moved to admin namespace (see below)
     app.use('/api/treasury-management', isAuthenticated, requireDAORole('admin', 'owner'), treasuryManagementRoutes); // PHASE 2: Treasury whitelist & limits
     app.use('/api/multisig', isAuthenticated, requireDAORole('admin', 'owner'), multisigRoutes); // PHASE 2: Multisig approval workflows
-    app.use('/api/analytics', isAuthenticated, analyticsRoutes);
+    if (!(app as any).locals?.routesRegistered) {
+      app.use('/api/analytics', isAuthenticated, analyticsRoutes);
+    } else {
+      console.log('[STARTUP] Skipping duplicate mount: /api/analytics (handled by registerRoutes)');
+    }
     app.use('/api/referrals', isAuthenticated, referralsRoutes);
     app.use('/api/events', eventsRoutes);
     app.use('/api/notifications', isAuthenticated, notificationRoutes);
@@ -1075,7 +1197,11 @@ process.on('uncaughtException', (error) => {
     app.use('/api/economy', isAuthenticated, requireDAORole('member', 'admin', 'owner'), economyRouter);
     app.use('/api/dao/:daoId/executions', isAuthenticated, requireDAORole('member', 'admin', 'owner'), proposalExecutionRouter);
     app.use('/api/poll-proposals', isAuthenticated, requireDAORole('member', 'admin', 'owner'), pollProposalsRouter);
-    app.use('/api/reputation', isAuthenticated, requireDAORole('member', 'admin', 'owner'), reputationRoutes); // Added reputation routes
+    if (!(app as any).locals?.routesRegistered) {
+      app.use('/api/reputation', isAuthenticated, requireDAORole('member', 'admin', 'owner'), reputationRoutes); // Added reputation routes
+    } else {
+      console.log('[STARTUP] Skipping duplicate mount: /api/reputation (handled by registerRoutes)');
+    }
     // Admin-only routes with authentication and superuser role check
     app.use('/api/admin/operational', isAuthenticated, requireRole('super_admin'), operationalFrameworkRoutes); // Operational Framework routes
     app.use('/api/admin/health', isAuthenticated, requireRole('super_admin'), healthAdminRoutes); // Health & System State routes
@@ -1091,7 +1217,11 @@ process.on('uncaughtException', (error) => {
     
     // Cross-chain routes moved to v1 API
     app.use('/api/user/preferences', isAuthenticated, userPreferencesRoutes);
-    app.use('/api/morio', isAuthenticated, morioRoutes);
+    if (!(app as any).locals?.routesRegistered) {
+      app.use('/api/morio', isAuthenticated, morioRoutes);
+    } else {
+      console.log('[STARTUP] Skipping duplicate mount: /api/morio (handled by registerRoutes)');
+    }
     app.use('/api/morio/data-hub', isAuthenticated, morioDataHubRoutes);
     app.use('/api/morio/elder-insights', isAuthenticated, morioElderInsightsRoutes);
     app.use('/api/personas', isAuthenticated, personasRouter);
@@ -1100,14 +1230,23 @@ process.on('uncaughtException', (error) => {
     app.use('/api/analyzer', isAuthenticated, requireRole('super_admin'), analyzerRoutes);
     app.use('/api/dashboard', isAuthenticated, amaraRoutes); // 🎨 Amara Dashboard routes
     // ✅ V1 STRATEGY ROUTES (Modular Architecture - Phase 2)
-    app.use('/api/v1/strategies', strategiesRouter); // 📈 V1 Strategies (core CRUD + execution + social)
+    // Require authentication for strategies endpoints
+    app.use('/api/v1/strategies', isAuthenticated, strategiesRouter); // 📈 V1 Strategies (core CRUD + execution + social)
     // ✅ CONSOLIDATED ADMIN ROUTES (Phase 1 - Migration Complete)
     // Requires authentication + superuser role
     app.use('/api/admin', isAuthenticated, requireRole('super_admin'), adminConsolidated); // 👤 Admin operations + AI monitoring (UNIFIED)
     app.use('/api/defender', isAuthenticated, requireRole('super_admin'), defenderRoutes); // Registered defender routes
-    app.use('/api/exchanges', isAuthenticated, exchangeRoutes); // CCXT Service - Phase 1
+    if (!(app as any).locals?.routesRegistered) {
+      app.use('/api/exchanges', isAuthenticated, exchangeRoutes); // CCXT Service - Phase 1
+    } else {
+      console.log('[STARTUP] Skipping duplicate mount: /api/exchanges (handled by registerRoutes)');
+    }
     app.use('/api/features', isAuthenticated, requireRole('super_admin'), featureAnalyticsRoutes); // Feature tracking and analytics
-    app.use('/api/propagation', isAuthenticated, requireRole('super_admin'), graphPropagationRoutes); // Graph Propagation Engine (Phase B & C)
+    if (!(app as any).locals?.routesRegistered) {
+      app.use('/api/propagation', isAuthenticated, requireRole('super_admin'), graphPropagationRoutes); // Graph Propagation Engine (Phase B & C)
+    } else {
+      console.log('[STARTUP] Skipping duplicate mount: /api/propagation (handled by registerRoutes)');
+    }
 
     // Synchronizer agent routes
     const synchronizerRoutes = (await import('./routes/synchronizer')).default;
@@ -1157,8 +1296,12 @@ process.on('uncaughtException', (error) => {
     const proofOfContributionRoutes = (await import('./routes/proof-of-contribution')).default;
     app.use('/api/proof-of-contribution', isAuthenticated, proofOfContributionRoutes);
 
-    // Job monitoring and health check routes
-    app.use('/admin', jobHealthRoutes);
+    // Job monitoring and health check routes (secure under /api/admin/jobs)
+    if (!(app as any).locals?.routesRegistered) {
+      app.use('/api/admin/jobs', isAuthenticated, requireRole('super_admin'), jobHealthRoutes);
+    } else {
+      console.log('[STARTUP] Skipping duplicate mount: /api/admin/jobs (handled by registerRoutes)');
+    }
 
     // AI Analytics endpoints
     app.get('/api/ai-analytics/:daoId', isAuthenticated, async (req: Request, res: Response) => {
@@ -1174,10 +1317,14 @@ process.on('uncaughtException', (error) => {
 
     // Auth endpoints
     app.get('/api/auth/user', authenticate, authUserHandler);
-    app.post('/api/auth/login', authLoginHandler);
-    app.post('/api/auth/register', authRegisterHandler);
-    app.post('/api/auth/refresh-token', refreshTokenHandler);
-    app.post('/api/auth/logout', logoutHandler);
+    if (!(app as any).locals?.routesRegistered) {
+      app.post('/api/auth/login', authLoginHandler);
+      app.post('/api/auth/register', authRegisterHandler);
+      app.post('/api/auth/refresh-token', refreshTokenHandler);
+      app.post('/api/auth/logout', logoutHandler);
+    } else {
+      console.log('[STARTUP] Skipping duplicate mount: /api/auth/* (handled by registerRoutes)');
+    }
 
     // Real-time API metrics and registry endpoints (agent-friendly)
     app.use('/api/docs', apiRegistryRoutes);
@@ -1205,13 +1352,9 @@ process.on('uncaughtException', (error) => {
       // Continue server startup even if workers fail to initialize
     }
 
-    // Register job status/result retrieval routes
-    app.use('/api/jobs', isAuthenticated, jobRoutes);
-    logger.info('✅ Job queue status API endpoints mounted at /api/jobs/*');
-
-    // Register WebSocket monitoring routes
-    app.use('/api/monitoring', isAuthenticated, websocketMonitoringRoutes);
-    logger.info('✅ WebSocket monitoring endpoints mounted at /api/monitoring/*');
+    // NOTE: job and monitoring routes are mounted centrally in routes.ts
+    // Skipping duplicate mounts here to avoid route duplication and ordering issues
+    logger.info('✅ Skipping duplicate /api/jobs and /api/monitoring mounts (handled by registerRoutes)');
 
     // 404 handler (must be after all routes including Vite/static)
     app.use(notFoundHandler);
@@ -1527,6 +1670,14 @@ process.on('uncaughtException', (error) => {
         logger.info('Console logging finalized');
       } catch (err) {
         logger.error('Error finalizing console logging:', err);
+      }
+
+      // Close PostgreSQL pool to free database connections
+      try {
+        await pool.end();
+        logger.info('PostgreSQL pool closed successfully');
+      } catch (err) {
+        logger.error('Error while closing PostgreSQL pool during shutdown:', err);
       }
 
       server.close(() => {

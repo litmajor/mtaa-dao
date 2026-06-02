@@ -1,0 +1,36 @@
+/* Styles extracted from CapitalLayer inline styles */
+.capital-root { font-family: system-ui, sans-serif; max-width: 900px; }
+.capital-top { background: white; border: 0.5px solid #e5e7eb; border-radius: 12px; padding: 20px 24px; margin-bottom: 12px; }
+.capital-top-row { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
+.address-badge { font-size:12px; color:#6b7280; background:#f9fafb; border:0.5px solid #e5e7eb; border-radius:99px; padding:4px 12px; font-family:monospace; }
+.total-amount { font-size:34px; font-weight:500; letter-spacing:-1px; }
+.total-sub { font-size:13px; color:#9ca3af; margin-bottom:20px; }
+.metric-grid { display:grid; grid-template-columns: repeat(3,1fr); gap:10px; }
+.metric-card { background: var(--color-background-secondary, #f9fafb); border-radius:8px; padding:10px 12px; }
+.metric-label { font-size:11px; color:#9ca3af; margin-bottom:3px; }
+.metric-value { font-size:18px; font-weight:500; }
+.metric-sub { font-size:11px; color:#9ca3af; margin-top:2px; }
+.action-row { display:flex; gap:8px; margin-bottom:12px; }
+.action-btn { display:flex; flex-direction:column; align-items:center; gap:6px; padding:12px 8px; border:0.5px solid #e5e7eb; border-radius:8px; background:white; cursor:pointer; flex:1; }
+.action-btn:hover { background: #f9fafb; }
+.flowbars { display:flex; align-items:flex-end; gap:2px; height:24px; }
+.flowbar { width:4px; border-radius:1px; display:block; }
+.panel { background:white; border:0.5px solid #e5e7eb; border-radius:12px; padding:20px; }
+.surface-title { font-size:11px; font-weight:500; color:#9ca3af; letter-spacing:0.07em; text-transform:uppercase; margin-bottom:12px; display:block; }
+.vault-row { display:flex; align-items:center; gap:10px; }
+.vault-icon { width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.vault-name { font-size:13px; font-weight:500; }
+.vault-sub { font-size:11px; color:#9ca3af; }
+.vault-right { margin-left:auto; text-align:right; }
+.vault-balance { font-size:13px; font-weight:500; }
+.vault-usd { font-size:11px; color:#9ca3af; }
+.vault-bar-outer { height:3px; background:#f3f4f6; border-radius:2px; overflow:hidden; margin-top:4px; }
+.vault-bar-inner { height:100%; border-radius:2px; }
+.recent-tx { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:0.5px solid #f3f4f6; }
+.tx-dot { width:28px; height:28px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:13px; }
+.tx-dot.in { background:#dcfce7; }
+.tx-dot.out { background:#fee2e2; }
+.health-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.health-card { padding:8px; }
+.health-micro { font-size:11px; color:#9ca3af; margin-bottom:3px; }
+.netflow { margin-top:12px; padding:8px 10px; background:#f9fafb; border-radius:8px; }

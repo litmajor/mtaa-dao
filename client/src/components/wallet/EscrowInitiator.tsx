@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect} from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Lock, Send, Copy, Share2, Zap } from 'lucide-react';
 import { apiPost } from '@/lib/api';
+import { useWalletOperatingStore } from '@/stores/wallet-operating-store';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
@@ -31,7 +32,7 @@ interface EscrowInitiatorProps {
 
 export default function EscrowInitiator({ 
   walletBalance = '0',
-  defaultCurrency = 'cUSD'
+  defaultCurrency
 }: EscrowInitiatorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -42,6 +43,16 @@ export default function EscrowInitiator({
   const [recipient, setRecipient] = useState(''); // email or username
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState(defaultCurrency);
+  const store = useWalletOperatingStore();
+
+  // sync default currency to operating store display unit if not provided
+  useEffect(() => {
+    if (!defaultCurrency && store.displayUnit) {
+      // map display unit like 'USD' -> 'cUSD'
+      const map: Record<string,string> = { USD: 'cUSD', EUR: 'cEUR' };
+      setCurrency(map[store.displayUnit] || store.displayUnit || 'cUSD');
+    }
+  }, [defaultCurrency, store.displayUnit]);
   const [description, setDescription] = useState('');
   const [milestoneCount, setMilestoneCount] = useState('1');
   const [milestones, setMilestones] = useState<Array<{ description: string; amount: string }>>([
@@ -143,7 +154,7 @@ export default function EscrowInitiator({
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button className="w-full sm:w-auto gap-2 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600">
+        <Button variant="primary" className="w-full sm:w-auto gap-2">
           <Zap className="w-4 h-4" />
           Initiate Escrow
         </Button>

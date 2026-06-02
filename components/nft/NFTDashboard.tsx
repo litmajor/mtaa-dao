@@ -10,6 +10,7 @@
  */
 
 import React, { useState } from 'react';
+import { useActionHistoryStore } from '../../stores/actionHistory';
 import { NFTMintingPanel } from './NFTMintingPanel';
 import { NFTMarketplaceListingPanel } from './NFTMarketplaceListingPanel';
 import { NFTPurchasePanel } from './NFTPurchasePanel';
@@ -25,7 +26,8 @@ export const NFTDashboard: React.FC<NFTDashboardProps> = ({
   daoName = 'My DAO',
 }) => {
   const [activePanel, setActivePanel] = useState<'minting' | 'listing' | 'purchase' | 'royalty'>('minting');
-  const [nftHistory, setNftHistory] = useState<any[]>([]);
+  const nftHistory = useActionHistoryStore((s) => s.actionHistory);
+  const pushAction = useActionHistoryStore((s) => s.pushAction);
   const [showHistory, setShowHistory] = useState(false);
 
   // NFT state
@@ -43,7 +45,7 @@ export const NFTDashboard: React.FC<NFTDashboardProps> = ({
       type: activePanel,
       details: result,
     };
-    setNftHistory([action, ...nftHistory]);
+    pushAction(action);
   };
 
   return (

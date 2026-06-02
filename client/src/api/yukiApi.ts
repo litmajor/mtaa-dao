@@ -26,6 +26,11 @@ export async function getMarketOpportunities() {
   return authClient.get(`${API_BASE}/yuki/market/opportunities`);
 }
 
+// Backwards-compatible aliases expected by some UI modules
+export async function fetchOpportunities() {
+  return getMarketOpportunities();
+}
+
 export async function getLiquidity(symbol: string) {
   return authClient.get(`${API_BASE}/yuki/market/liquidity/${symbol}`);
 }
@@ -123,6 +128,18 @@ export async function deployStrategy(id: string) {
   return authClient.post(`${API_BASE}/yuki/strategies/${id}/deploy`, {});
 }
 
+// Deploy a fully compiled strategy object (used by the visual builder)
+export async function deployCompiledStrategy(compiled: any) {
+  return authClient.post(`${API_BASE}/yuki/strategies/deploy`, {
+    compiled,
+  });
+}
+
+// Save the full strategy graph (used to persist node positions and layout)
+export async function saveGraph(graph: any) {
+  return authClient.post(`${API_BASE}/yuki/strategies/save-graph`, { graph });
+}
+
 export async function backtestStrategy(id: string, startDate: string, endDate: string) {
   return authClient.post(`${API_BASE}/yuki/strategies/${id}/backtest`, {
     startDate,
@@ -149,6 +166,11 @@ export async function getMarketplaceStrategy(id: string) {
 
 export async function copyMarketplaceStrategy(id: string) {
   return authClient.post(`${API_BASE}/yuki/marketplace/strategies/${id}/copy`, {});
+}
+
+// Backwards-compatible alias for a 'fork' operation (copy + open in builder)
+export async function forkMarketplaceStrategy(id: string) {
+  return copyMarketplaceStrategy(id);
 }
 
 export async function publishStrategy(strategyId: string, pricing: any, description: string, category: string) {
@@ -186,6 +208,11 @@ export async function getExchangeBalances(id: string) {
 
 export async function getExchangePositions(id: string) {
   return authClient.get(`${API_BASE}/yuki/exchanges/${id}/positions`);
+}
+
+// User watchlist endpoints (UI expects `fetchWatchlist`)
+export async function fetchWatchlist() {
+  return authClient.get(`${API_BASE}/yuki/watchlist`);
 }
 
 // ============================================================================

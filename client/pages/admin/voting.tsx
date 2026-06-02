@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { useRouter } from 'next/router';
 import { useAuth } from '@clerk/nextjs';
 import Head from 'next/head';
@@ -147,10 +148,13 @@ export default function VotingPage() {
   };
 
   const handlePauseVoting = async () => {
-    if (!window.confirm('Are you sure you want to pause voting?')) {
-      return;
-    }
+    setConfirmPauseOpen(true);
+  };
 
+  const [confirmPauseOpen, setConfirmPauseOpen] = useState(false);
+
+  const confirmPauseVoting = async () => {
+    setConfirmPauseOpen(false);
     try {
       const response = await fetch(
         `/api/admin/daos/${daoId}/voting/pause`,
@@ -174,10 +178,13 @@ export default function VotingPage() {
   };
 
   const handleResumeVoting = async () => {
-    if (!window.confirm('Are you sure you want to resume voting?')) {
-      return;
-    }
+    setConfirmResumeOpen(true);
+  };
 
+  const [confirmResumeOpen, setConfirmResumeOpen] = useState(false);
+
+  const confirmResumeVoting = async () => {
+    setConfirmResumeOpen(false);
     try {
       const response = await fetch(
         `/api/admin/daos/${daoId}/voting/resume`,
@@ -214,6 +221,24 @@ export default function VotingPage() {
 
         {error && <div className={styles.errorBanner}>{error}</div>}
         {success && <div className={styles.successBanner}>{success}</div>}
+        <ConfirmDialog
+          open={confirmPauseOpen}
+          title="Pause Voting"
+          description="Are you sure you want to pause voting?"
+          confirmLabel="Pause"
+          cancelLabel="Cancel"
+            onClose={(open: boolean) => setConfirmPauseOpen(open)}
+          onConfirm={confirmPauseVoting}
+        />
+        <ConfirmDialog
+          open={confirmResumeOpen}
+          title="Resume Voting"
+          description="Are you sure you want to resume voting?"
+          confirmLabel="Resume"
+          cancelLabel="Cancel"
+            onClose={(open: boolean) => setConfirmResumeOpen(open)}
+          onConfirm={confirmResumeVoting}
+        />
 
         {/* Analytics Section */}
         {analytics && (

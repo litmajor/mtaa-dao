@@ -10,6 +10,7 @@
  */
 
 import React, { useState } from 'react';
+import { useActionHistoryStore } from '../../stores/actionHistory';
 import { EscrowReleasePanel } from './EscrowReleasePanel';
 import { DisputeResolutionPanel } from './DisputeResolutionPanel';
 import { SettlementFinalityPanel } from './SettlementFinalityPanel';
@@ -25,7 +26,8 @@ export const EscrowDashboard: React.FC<EscrowDashboardProps> = ({
   daoName = 'My DAO',
 }) => {
   const [activePanel, setActivePanel] = useState<'release' | 'dispute' | 'finality' | 'recovery'>('release');
-  const [escrowHistory, setEscrowHistory] = useState<any[]>([]);
+  const escrowHistory = useActionHistoryStore((s) => s.actionHistory);
+  const pushAction = useActionHistoryStore((s) => s.pushAction);
   const [showHistory, setShowHistory] = useState(false);
 
   // Escrow state
@@ -43,7 +45,7 @@ export const EscrowDashboard: React.FC<EscrowDashboardProps> = ({
       type: activePanel,
       details: result,
     };
-    setEscrowHistory([action, ...escrowHistory]);
+    pushAction(action);
   };
 
   return (

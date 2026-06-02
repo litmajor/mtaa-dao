@@ -33,6 +33,32 @@ export interface BalanceSource {
   icon?: string;
 }
 
+// Lightweight trading types used across dashboard/Yuki APIs
+export interface Strategy {
+  id: string;
+  name: string;
+  description?: string;
+  author?: string;
+  returnPct?: number;
+  risk?: 'low' | 'medium' | 'high' | string;
+}
+
+export interface Position {
+  id: string;
+  symbol: string;
+  size: number;
+  entryPrice: number;
+  side: 'long' | 'short' | string;
+  pnl?: number;
+}
+
+export interface Exchange {
+  id: string;
+  name: string;
+  balances?: { currency: string; amount: number }[];
+  connectedAt?: string;
+}
+
 export interface OkediDashboardData {
   totalBalance: number;
   trustScore: number;

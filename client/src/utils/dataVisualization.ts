@@ -93,7 +93,7 @@ export function roundToSignificant(value: number, significantFigures: number = 3
 /**
  * Normalize chart data for consistent scaling
  */
-export function normalizeChartData<T extends Record<string, any>>(
+export function normalizeChartData<T extends Record<string, unknown>>(
   data: T[],
   numericKeys: (keyof T)[]
 ): {
@@ -113,7 +113,7 @@ export function normalizeChartData<T extends Record<string, any>>(
 
   // Normalize values
   const normalized = data.map((item) => {
-    const result: Record<string, any> = { ...item };
+    const result: Record<string, unknown> = { ...item };
 
     numericKeys.forEach((key) => {
       const scale = scales[String(key)];
@@ -218,7 +218,7 @@ export function getValueColor(
 /**
  * Validate chart data for rendering
  */
-export function validateChartData<T extends Record<string, any>>(
+export function validateChartData<T extends Record<string, unknown>>(
   data: T[],
   requiredKeys: (keyof T)[],
   numericKeys?: (keyof T)[]

@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useEffect } from 'react';
 import { HelmetProvider } from 'react-helmet-async';
-import { Route, Routes, Navigate, Outlet } from 'react-router-dom';
+import { Route, Routes, Navigate, Outlet, useParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from './pages/hooks/useAuth';
 import { PageLoading } from './components/ui/page-loading';
@@ -13,6 +13,9 @@ import { NavigationProvider } from './contexts/navigation-context';
 import { PersonaProvider } from './contexts/persona-context';
 import MorioFloatingChat from './components/MorioFloatingChat';
 import { AlertToastManager } from './components/notifications/AlertToastManager';
+// Register workspace panels (core + Yuki/Amara) on app startup
+import '../../core/workspace/registerPanels';
+import '../../core/workspace/registerYukiAmaraPanels';
 
 // Lazy load heavy components that are only shown to authenticated users
 // WEEK 1 UPDATE: Use new GlobalNav instead of Navigation
@@ -25,7 +28,7 @@ const Register1 = Register1Raw as React.ComponentType<{ adminMode?: boolean }>;
 // Lazy load heavy pages
 const CreateDaoLazy = lazy(() => import('./pages/create-dao'));
 // WEEK 1 UPDATE: Use new PersonalizedDashboard
-const PersonalizedDashboardLazy = lazy(() => import('./components/dashboard/PersonalizedDashboard'));
+const PersonalizedDashboardLazy = lazy(() => import('./components/dashboard/PersonalizedDashboard').then(m => ({ default: (m as any).PersonalizedDashboard || (m as any).default })));
 const ProposalsLazy = lazy(() => import('./pages/proposals'));
 const ProposalDetailLazy = lazy(() => import('./pages/proposal-detail'));
 const VaultLazy = lazy(() => import('./pages/vault'));
@@ -35,7 +38,7 @@ const CreateVaultLazy = lazy(() => import('./pages/create-vault'));
 const KYCLazy = lazy(() => import('./pages/kyc'));
 const ProfileLazy = lazy(() => import('./pages/profile'));
 const DAOsLazy = lazy(() => import('./pages/daos'));
-const WalletLazy = lazy(() => import('./pages/wallet'));
+// Wallet is imported statically below; remove dead lazy import
 const ReferralsLazy = lazy(() => import('./pages/referrals'));
 const MorioDemoLazy = lazy(() => import('./pages/MorioDemo'));
 
@@ -50,6 +53,7 @@ const RewardsHubLazy = lazy(() => import('./pages/RewardsHub'));
 const MyRewardsLazy = lazy(() => import('./pages/my-rewards'));
 const TradingPageLazy = lazy(() => import('./pages/trading'));
 const YukiDashboardPageLazy = lazy(() => import('./pages/YukiDashboard'));
+const StrategyDetailLazy = lazy(() => import('./components/trading/StrategyDetail'));
 const OpportunitiesPageLazy = lazy(() => import('./pages/opportunities'));
 const UserManagementLazy = lazy(() => import('./pages/admin/UserManagement'));
 const DaoModerationLazy = lazy(() => import('./pages/admin/DaoModeration'));
@@ -136,8 +140,7 @@ import Disbursements from './pages/dao/disbursements';
 import Treasury from './pages/dao/treasury';
 
 // Payment pages
-import Checkout from './pages/Checkout';
-import Subscribe from './pages/Subscribe';
+// Checkout and Subscribe are lazy-loaded later; remove unused static imports
 
 // Cross-chain integration
 import CrossChainHub from './pages/CrossChainHub';
@@ -174,7 +177,7 @@ const DefenderMonitorLazy = lazy(() => import('./pages/DefenderMonitor'));
 const EldersPageLazy = lazy(() => import('./pages/EldersPage'));
 const EventsPageLazy = lazy(() => import('./pages/events'));
 const MaonoVaultDashboardLazy = lazy(() => import('./pages/maonovault-dashboard'));
-const EscrowAnalyticsLazy = lazy(() => import('./pages/escrow-analytics'));
+const EscrowAnalyticsLazy = lazy(() => import('./pages/escrow-analytics').then(m => ({ default: (m as any).EscrowAnalyticsDashboard || (m as any).default })));
 const EscrowDetailLazy = lazy(() => import('./pages/escrow-detail'));
 const BillSplitPageLazy = lazy(() => import('./pages/bill-split'));
 const RecurringPaymentsPageLazy = lazy(() => import('./pages/recurring-payments'));
@@ -258,6 +261,13 @@ function App() {
     console.log('Auth state:', { isAuthenticated, user });
     const userId = user?.id || undefined;
 
+    // Wrapper route for `/vaults/:vaultId` to pass the param as a prop
+    const VaultDetailRoute: React.FC = () => {
+      const { vaultId } = useParams() as { vaultId?: string };
+      if (!vaultId) return <PageLoading message="Loading vault..." />;
+      return <VaultDetailPageLazy vaultId={vaultId} /> as any;
+    };
+
     return (
       <HelmetProvider>
         <NavigationProvider>
@@ -312,12 +322,7 @@ function App() {
                             <p className="text-gray-600">Get help with using Mtaa DAO platform.</p>
                           </div>
                         } />
-                        <Route path="/faq" element={
-                          <div className="p-8 max-w-4xl mx-auto">
-                            <h1 className="text-3xl font-bold mb-6">Frequently Asked Questions</h1>
-                            <p className="text-gray-600">Common questions about Mtaa DAO.</p>
-                          </div>
-                        } />
+                        {/* FAQ moved to lazy `FAQCenter` route further down to avoid duplicate routes */}
                         <Route path="/contact" element={
                           <div className="p-8 max-w-4xl mx-auto">
                             <h1 className="text-3xl font-bold mb-6">Contact Us</h1>
@@ -354,6 +359,7 @@ function App() {
                         <Route path="/escrow" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><EscrowPageLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/escrow/accept/:inviteCode" element={<Suspense fallback={<PageLoading />}><EscrowAcceptLazy /></Suspense>} />
                         <Route path="/nft-marketplace" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><NFTMarketplace /></Suspense></ProtectedRoute>} />
+                        <Route path="/strategy/:id" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><StrategyDetailLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/morio" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><MorioDemoLazy /></Suspense></ProtectedRoute>} />
                         {/* Blog routes */}
                         <Route path="/blog" element={<Suspense fallback={<PageLoading />}><BlogPage /></Suspense>} />
@@ -413,6 +419,8 @@ function App() {
                           <Route path="achievements" element={<Suspense fallback={<PageLoading />}><AdminAchievementsLazy /></Suspense>} />
                           <Route path="announcements" element={<Suspense fallback={<PageLoading />}><AdminAnnouncementsLazy /></Suspense>} />
                           <Route path="dao-analytics" element={<Suspense fallback={<PageLoading />}><AdminDAOAnalyticsLazy /></Suspense>} />
+                          <Route path="billing" element={<ProtectedRoute><AdminBillingDashboard /></ProtectedRoute>} />
+                          <Route path="payments" element={<ProtectedRoute><PaymentReconciliation /></ProtectedRoute>} />
                         </Route>
                         {/* Legacy Admin routes */}
                         <Route path="/superuser" element={<SuperuserRoute><SuperUserDashboard /></SuperuserRoute>} />
@@ -422,8 +430,7 @@ function App() {
                         <Route path="/admin-old/security" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><SecurityAuditLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/admin-old/announcements" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><AnnouncementsManagementLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/admin-old/pools" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><PoolManagementLazy /></Suspense></ProtectedRoute>} />
-                        <Route path="/admin/billing" element={<ProtectedRoute><AdminBillingDashboard /></ProtectedRoute>} />
-                        <Route path="/admin/payments" element={<ProtectedRoute><PaymentReconciliation /></ProtectedRoute>} />
+                        {/* Moved admin billing/payments under /admin layout so they render with admin sidebar */}
                         {/* Protected special routes */}
                         <Route path="/architect-setup" element={<ProtectedRoute><ArchitectSetupPage /></ProtectedRoute>} />
                         <Route path="/wallet-setup" element={<ProtectedRoute><WalletSetupPage /></ProtectedRoute>} />
@@ -453,7 +460,7 @@ function App() {
                         <Route path="/maonovault-dashboard" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><MaonoVaultDashboardLazy /></Suspense></ProtectedRoute>} />
                         {/* Vault & Staking Routes (NEW - Session Complete) */}
                         <Route path="/vaults" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><VaultListPageLazy /></Suspense></ProtectedRoute>} />
-                        <Route path="/vaults/:vaultId" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><VaultDetailPageLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/vaults/:vaultId" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><VaultDetailRoute /></Suspense></ProtectedRoute>} />
                         <Route path="/my-vaults" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><MyVaultsPageLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/staking" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><StakingComponentLazy /></Suspense></ProtectedRoute>} />
                         {/* Cross-chain bridge route */}

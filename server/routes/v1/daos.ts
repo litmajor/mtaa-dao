@@ -21,7 +21,7 @@ import { logger } from '../../utils/logger';
 import { daos, daoMemberships, users, proposals } from '../../../shared/schema';
 import { eq, and, sql, desc } from 'drizzle-orm';
 import { isAuthenticated } from '../../nextAuthMiddleware';
-import daoIdRouter from './daos';
+import daoIdRouter from './daos/index';
 import TreasuryService from '../../services/treasuryService';
 
 const router: Router = express.Router();

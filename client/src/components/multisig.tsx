@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { getMultisigInfo } from '../api/walletApi';
+import { useTreasurySystem, MultisigWallet } from '@/context/treasurySystem';
+import CreateMultisigModal from '@/components/modals/CreateMultisigModal';
 
 export default function Multisig() {
   const [multisigAddress, setMultisigAddress] = useState('');
@@ -14,9 +16,12 @@ export default function Multisig() {
   const [walletName, setWalletName] = useState('');
   const [owners, setOwners] = useState(['', '']);
   const [threshold, setThreshold] = useState(1);
-  const [multisigWallets, setMultisigWallets] = useState<any[]>([]);
+  // multisig wallets are now provided by the TreasurySystem context
+  const treasury = useTreasurySystem();
+  const multisigWallets = treasury.state.multisigWallets as MultisigWallet[];
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('create'); // or 'list'
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   const handleInfo = async () => {
     setLoading(true);
@@ -50,8 +55,9 @@ export default function Multisig() {
 
       const data = await response.json();
 
-      if (response.ok) {
-        const newWallet = {
+
+        if (response.ok) {
+        const newWallet: MultisigWallet = {
           id: data.address,
           address: data.address,
           name: walletName || `Multisig ${multisigWallets.length + 1}`,
@@ -62,7 +68,8 @@ export default function Multisig() {
           createdAt: new Date().toISOString()
         };
 
-        setMultisigWallets([...multisigWallets, newWallet]);
+        // register wallet in treasury system
+        treasury.actions.addWallet(newWallet);
 
         // Reset form
         setWalletName('');
@@ -138,7 +145,7 @@ export default function Multisig() {
 
 
   return (
-    <div className="max-w-2xl mx-auto p-6 bg-white dark:bg-neutral-900 rounded-lg shadow space-y-8">
+    <><div className="max-w-2xl mx-auto p-6 bg-white dark:bg-neutral-900 rounded-lg shadow space-y-8">
       <h2 className="text-2xl font-bold mb-2 text-gray-900 dark:text-gray-100">Multisig</h2>
 
       {/* Tabs for Create/List/View */}
@@ -163,45 +170,13 @@ export default function Multisig() {
       {activeTab === 'create' && (
         <div className="space-y-4">
           <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Create New Multisig Wallet</h3>
-          <input
-            className="w-full px-3 py-2 rounded border border-gray-300 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800 text-gray-900 dark:text-gray-100 mb-2"
-            placeholder="Wallet Name (optional)"
-            value={walletName}
-            onChange={e => setWalletName(e.target.value)}
-          />
-          <div className="space-y-2">
-            {owners.map((owner, index) => (
-              <input
-                key={index}
-                className="w-full px-3 py-2 rounded border border-gray-300 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800 text-gray-900 dark:text-gray-100"
-                placeholder={`Owner Address ${index + 1}`}
-                value={owner}
-                onChange={e => {
-                  const newOwners = [...owners];
-                  newOwners[index] = e.target.value;
-                  setOwners(newOwners);
-                }}
-              />
-            ))}
+          <p className="text-sm text-gray-500 dark:text-gray-400">Use the Multisig Wizard to configure signers, thresholds, and simulate deployment.</p>
+          <div>
+            <button
+              className="mt-4 px-4 py-2 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700"
+              onClick={() => setShowCreateModal(true)}
+            >Open Multisig Wizard</button>
           </div>
-          <button
-            className="mt-2 px-3 py-1 rounded bg-green-600 text-white font-semibold hover:bg-green-700"
-            onClick={() => setOwners([...owners, ''])}
-          >Add Owner</button>
-          <input
-            type="number"
-            className="w-full px-3 py-2 rounded border border-gray-300 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800 text-gray-900 dark:text-gray-100 mt-2"
-            placeholder="Threshold"
-            value={threshold}
-            onChange={e => setThreshold(parseInt(e.target.value, 10))}
-            min="1"
-            max={owners.length}
-          />
-          <button
-            className="mt-4 px-4 py-2 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-60"
-            onClick={createMultisig}
-            disabled={isLoading}
-          >{isLoading ? 'Creating...' : 'Create Wallet'}</button>
         </div>
       )}
 
@@ -219,7 +194,7 @@ export default function Multisig() {
                   <span className="text-xs text-gray-600 dark:text-gray-400">Threshold: {wallet.threshold}/{wallet.owners.length}</span>
                   <button
                     className="ml-2 px-2 py-1 rounded bg-blue-500 text-white font-semibold hover:bg-blue-600"
-                    onClick={() => { setMultisigAddress(wallet.address); setActiveTab('view'); }}
+                    onClick={() => { setMultisigAddress(wallet.address); setActiveTab('view'); } }
                   >View</button>
                 </li>
               ))}
@@ -235,8 +210,7 @@ export default function Multisig() {
             className="w-full px-3 py-2 rounded border border-gray-300 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800 text-gray-900 dark:text-gray-100 mb-2"
             placeholder="Multisig Address"
             value={multisigAddress}
-            onChange={e => setMultisigAddress(e.target.value)}
-          />
+            onChange={e => setMultisigAddress(e.target.value)} />
           <button
             className="mb-2 px-3 py-1 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-60"
             onClick={handleInfo}
@@ -249,20 +223,17 @@ export default function Multisig() {
               className="px-3 py-2 rounded border border-gray-300 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800 text-gray-900 dark:text-gray-100"
               placeholder="Destination"
               value={destination}
-              onChange={e => setDestination(e.target.value)}
-            />
+              onChange={e => setDestination(e.target.value)} />
             <input
               className="px-3 py-2 rounded border border-gray-300 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800 text-gray-900 dark:text-gray-100"
               placeholder="Value"
               value={value}
-              onChange={e => setValue(e.target.value)}
-            />
+              onChange={e => setValue(e.target.value)} />
             <input
               className="px-3 py-2 rounded border border-gray-300 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800 text-gray-900 dark:text-gray-100"
               placeholder="Data (hex)"
               value={data}
-              onChange={e => setData(e.target.value)}
-            />
+              onChange={e => setData(e.target.value)} />
           </div>
           <button
             className="px-4 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700 disabled:opacity-60"
@@ -272,6 +243,23 @@ export default function Multisig() {
           {submitResult && <pre className="bg-gray-100 dark:bg-neutral-800 rounded p-2 text-xs overflow-x-auto text-gray-900 dark:text-gray-100 mt-2">{JSON.stringify(submitResult, null, 2)}</pre>}
         </div>
       )}
-    </div>
+    </div><CreateMultisigModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreated={(m: any) => {
+          const newWallet: MultisigWallet = {
+            id: m.id || m.address || `ms-${Date.now()}`,
+            address: m.address || m.id || '',
+            name: m.name || m.address || `Multisig ${multisigWallets.length + 1}`,
+            owners: m.signers || m.owners || [],
+            threshold: m.requiredSignatures || m.threshold || m.required || 1,
+            balance: (m.balance as any) || '0',
+            transactionCount: m.transactionCount || 0,
+            createdAt: m.createdAt || new Date().toISOString(),
+          };
+          treasury.actions.addWallet(newWallet);
+          setShowCreateModal(false);
+          setActiveTab('list');
+        } } /></>
   );
 }

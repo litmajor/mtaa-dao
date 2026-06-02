@@ -12,6 +12,7 @@ import React, { useState } from 'react';
 import { SubscriptionPanel } from './SubscriptionPanel';
 import { InstallmentPanel } from './InstallmentPanel';
 import { PaymentAutomationPanel } from './PaymentAutomationPanel';
+import { useActionHistoryStore } from '../../stores/actionHistory';
 
 interface RecurringPaymentsDashboardProps {
   userId: string;
@@ -23,7 +24,8 @@ export const RecurringPaymentsDashboard: React.FC<RecurringPaymentsDashboardProp
   daoName = 'My DAO',
 }) => {
   const [activePanel, setActivePanel] = useState<'subscription' | 'installment' | 'automation'>('subscription');
-  const [recurringHistory, setRecurringHistory] = useState<any[]>([]);
+  const recurringHistory = useActionHistoryStore((s) => s.actionHistory);
+  const pushAction = useActionHistoryStore((s) => s.pushAction);
   const [showHistory, setShowHistory] = useState(false);
 
   // Recurring state
@@ -41,7 +43,7 @@ export const RecurringPaymentsDashboard: React.FC<RecurringPaymentsDashboardProp
       type: activePanel,
       details: result,
     };
-    setRecurringHistory([action, ...recurringHistory]);
+    pushAction(action);
   };
 
   return (

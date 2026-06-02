@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Mail, Lock, AlertCircle, UserPlus, Check, Phone, Send } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { signIn } from '../lib/auth';
 
 const ACCESS_CODE = 'your-secret-code'; // Change this to your secret
@@ -111,8 +112,8 @@ export default function ArchitectSetup() {
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.message || 'OTP verification failed');
-      // Auto sign in after registration
-      localStorage.setItem('token', data.token);
+      // Auto sign in after registration - rely on httpOnly cookie; notify other tabs
+      try { (await import('../utils/authChannel')).default.postAuthMessage({ type: 'login', payload: { user: data.user || {} } }); } catch (e) {}
       window.location.href = '/';
     } catch (err) {
       setError(
@@ -139,6 +140,7 @@ export default function ArchitectSetup() {
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.message || 'Admin login failed');
       localStorage.setItem('superuser', 'true');
+      try { (await import('../utils/authChannel')).default.postAuthMessage({ type: 'login', payload: { user: data.user || {} } }); } catch (e) {}
       window.location.href = '/superuser';
     } catch (err) {
       setError(
@@ -250,10 +252,11 @@ export default function ArchitectSetup() {
                   </button>
                 </div>
               </div>
-              <button
+              <Button
                 type="submit"
                 disabled={adminLoading}
-                className="w-full bg-gradient-to-r from-mtaa-orange to-mtaa-emerald text-white py-3 rounded-xl font-semibold shadow-lg hover:from-mtaa-orange/90 hover:to-mtaa-emerald/90 focus:outline-none focus:ring-2 focus:ring-mtaa-orange focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                variant="primary"
+                className="w-full"
               >
                 {adminLoading ? (
                   <div className="flex items-center justify-center">
@@ -263,7 +266,7 @@ export default function ArchitectSetup() {
                 ) : (
                   'Login as Superuser/Admin'
                 )}
-              </button>
+              </Button>
             </form>
           ) : (
             // Registration form
@@ -284,10 +287,11 @@ export default function ArchitectSetup() {
                       required
                     />
                   </div>
-                  <button
+                  <Button
                     type="submit"
                     disabled={otpLoading}
-                    className="w-full bg-gradient-to-r from-mtaa-orange to-mtaa-emerald text-white py-3 rounded-xl font-semibold shadow-lg hover:from-mtaa-orange/90 hover:to-mtaa-emerald/90 focus:outline-none focus:ring-2 focus:ring-mtaa-orange focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                    variant="primary"
+                    className="w-full"
                   >
                     {otpLoading ? (
                       <div className="flex items-center justify-center">
@@ -297,10 +301,9 @@ export default function ArchitectSetup() {
                     ) : (
                       'Verify OTP & Create Account'
                     )}
-                  </button>
+                  </Button>
                 </form>
               ) : (
-// ...existing code...
                 <>
                   {/* Email/Phone field */}
                   <div className="space-y-2">
@@ -436,10 +439,11 @@ export default function ArchitectSetup() {
 
                   {/* Submit button */}
                   <form onSubmit={handleSubmit} className="space-y-6">
-                    <button
+                    <Button
                       type="submit"
                       disabled={isLoading}
-                      className="w-full bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 text-white py-3 rounded-xl font-semibold shadow-lg border-0 focus:ring-4 focus:ring-orange-400 dark:focus:ring-orange-600 transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                      variant="primary"
+                      className="w-full"
                     >
                       {isLoading ? (
                         <div className="flex items-center justify-center">
@@ -449,7 +453,7 @@ export default function ArchitectSetup() {
                       ) : (
                         'Create Account'
                       )}
-                    </button>
+                    </Button>
                   </form>
                 </>
               )}

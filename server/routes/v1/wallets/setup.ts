@@ -11,6 +11,9 @@ import express from 'express';
 import { isAuthenticated } from '../../../auth';
 import { walletOwnershipGuard } from '../../../middleware/walletValidation';
 import { createRateLimiter } from '../../../middleware/rateLimiting';
+import { ethers } from 'ethers';
+import challengeStore from '../../../utils/challengeStore';
+import { randomUUID } from 'crypto';
 
 const router = express.Router({ mergeParams: true });
 
@@ -23,6 +26,58 @@ const setupCreationLimiter = createRateLimiter({
   keyGenerator: (req: express.Request) => {
     const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
     return `wallet_setup_creation:${userId}`;
+  }
+});
+
+/**
+ * POST /v1/wallets/setup/challenge/request
+ * Issue a short-lived challenge (nonce + message) for the authenticated user/address.
+ */
+router.post('/challenge/request', isAuthenticated, setupCreationLimiter, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
+    const { address } = req.body || {};
+    const challenge = challengeStore.createChallenge({ userId, address });
+    res.json({ success: true, data: challenge });
+  } catch (err) {
+    console.error('Failed to create challenge:', err);
+    res.status(400).json({ success: false, error: (err as Error).message });
+  }
+});
+
+/**
+ * POST /v1/wallets/setup/challenge/verify
+ * Verify a signed challenge and consume the nonce.
+ */
+router.post('/challenge/verify', isAuthenticated, setupCreationLimiter, async (req, res) => {
+  try {
+    const { address, message, signature } = req.body || {};
+    if (!address || !message || !signature) return res.status(400).json({ success: false, error: 'Missing address/message/signature' });
+
+    let recovered: string;
+    try {
+      recovered = ethers.verifyMessage(message, signature);
+    } catch (err) {
+      return res.status(400).json({ success: false, error: 'Invalid signature format' });
+    }
+
+    if (recovered.toLowerCase() !== String(address).toLowerCase()) {
+      return res.status(400).json({ success: false, error: 'Signature does not match address' });
+    }
+
+    const nonceMatch = String(message).match(/nonce:\s*([0-9a-zA-Z-_.]+)/i);
+    if (!nonceMatch) return res.status(400).json({ success: false, error: 'Signed message missing nonce' });
+
+    const nonce = nonceMatch[1];
+    const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
+    const ok = challengeStore.validateAndConsume({ userId, address, nonce });
+    if (!ok) return res.status(400).json({ success: false, error: 'Invalid or expired challenge nonce' });
+
+    // Challenge valid and consumed
+    res.json({ success: true, data: { verified: true, address } });
+  } catch (err) {
+    console.error('Failed to verify challenge:', err);
+    res.status(400).json({ success: false, error: (err as Error).message });
   }
 });
 
@@ -41,16 +96,18 @@ const setupBackupLimiter = createRateLimiter({
  */
 router.post('/create', isAuthenticated, setupCreationLimiter, async (req, res) => {
   try {
-    const { currency = 'USDC', walletType = 'personal', password } = req.body;
+    const { walletType = 'personal', password, network, initialAssetPreference } = req.body;
+
+    const walletId = randomUUID();
+    const address = '0x' + Math.random().toString(16).slice(2).padEnd(40, 'a');
 
     res.status(201).json({
       success: true,
       data: {
-        walletId: 'wallet-' + Date.now(),
-        address: '0x' + Math.random().toString(16).slice(2).padEnd(40, 'a'),
-        currency,
-        walletType,
-        createdAt: new Date().toISOString()
+        wallet: { id: walletId, address, walletType, createdAt: new Date().toISOString() },
+        networks: network ? [network] : [],
+        assets: initialAssetPreference ? [initialAssetPreference] : [],
+        securityState: 'UNBACKED'
       }
     });
   } catch (error) {
@@ -65,17 +122,18 @@ router.post('/create', isAuthenticated, setupCreationLimiter, async (req, res) =
  */
 router.post('/create/mnemonic', isAuthenticated, setupCreationLimiter, async (req, res) => {
   try {
-    const { currency = 'cUSD', wordCount = 12, password } = req.body;
-    
+    const { wordCount = 12, password, network, initialAssetPreference } = req.body;
+    const walletId = randomUUID();
+    const address = '0x' + Math.random().toString(16).slice(2).padEnd(40, 'a');
+
     res.status(201).json({
       success: true,
       data: {
-        walletId: 'wallet-' + Date.now(),
+        wallet: { id: walletId, address, wordCount, createdAt: new Date().toISOString() },
         mnemonic: Array(wordCount).fill('word').join(' '),
-        address: '0x' + Math.random().toString(16).slice(2).padEnd(40, 'a'),
-        currency,
-        wordCount,
-        createdAt: new Date().toISOString()
+        networks: network ? [network] : [],
+        assets: initialAssetPreference ? [initialAssetPreference] : [],
+        securityState: 'UNBACKED'
       }
     });
   } catch (error) {
@@ -90,10 +148,44 @@ router.post('/create/mnemonic', isAuthenticated, setupCreationLimiter, async (re
  */
 router.post('/import', isAuthenticated, setupCreationLimiter, async (req, res) => {
   try {
-    res.status(201).json({
-      success: true,
-      data: { walletId: 'wallet-' + Date.now(), imported: true }
-    });
+    const { privateKey, password, address, message, signature } = req.body;
+
+    // Reject raw private keys in API requests
+    if (privateKey) {
+      return res.status(400).json({ success: false, error: 'Do not submit raw private keys. Use the signature verification flow or upload an encrypted backup.' });
+    }
+
+    // Require server-issued nonce in the signed message
+    if (!message || !signature || !address) {
+      return res.status(400).json({ success: false, error: 'Missing required fields. Provide `address`, `message`, and `signature` for verification.' });
+    }
+
+    // Verify signature recovers the expected address
+    let recovered: string;
+    try {
+      recovered = ethers.verifyMessage(message, signature);
+    } catch (err) {
+      return res.status(400).json({ success: false, error: 'Invalid signature format' });
+    }
+
+    if (recovered.toLowerCase() !== String(address).toLowerCase()) {
+      return res.status(400).json({ success: false, error: 'Signature does not match address' });
+    }
+
+    // Enforce server-issued nonce: parse nonce and validate/consume
+    const nonceMatch = String(message).match(/nonce:\s*([0-9a-zA-Z-_.]+)/i);
+    if (!nonceMatch) return res.status(400).json({ success: false, error: 'Signed message missing server nonce. Obtain a server challenge first.' });
+
+    const nonce = nonceMatch[1];
+    const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
+    const stored = challengeStore.getChallenge({ userId, address });
+    if (!stored) return res.status(400).json({ success: false, error: 'No active server challenge found. Request a new challenge.' });
+    const ok = challengeStore.validateAndConsume({ userId, address, nonce });
+    if (!ok) return res.status(400).json({ success: false, error: 'Invalid or expired challenge nonce' });
+
+    // Address verified and challenge consumed; create wallet record
+    const walletId = randomUUID();
+    res.status(201).json({ success: true, data: { wallet: { id: walletId, address, imported: true }, securityState: 'AT_RISK' } });
   } catch (error) {
     console.error('Failed to import wallet:', error);
     res.status(400).json({ success: false, error: (error as Error).message });
@@ -106,12 +198,9 @@ router.post('/import', isAuthenticated, setupCreationLimiter, async (req, res) =
  */
 router.post('/import/private-key', isAuthenticated, setupCreationLimiter, async (req, res) => {
   try {
-    const { privateKey, password, currency = 'USDC' } = req.body;
-
-    res.status(201).json({
-      success: true,
-      data: { walletId: 'wallet-' + Date.now(), imported: true, currency }
-    });
+    const { privateKey, password } = req.body;
+    const walletId = randomUUID();
+    res.status(201).json({ success: true, data: { wallet: { id: walletId, imported: true } } });
   } catch (error) {
     console.error('Failed to import private key:', error);
     res.status(400).json({ success: false, error: (error as Error).message });
@@ -124,12 +213,9 @@ router.post('/import/private-key', isAuthenticated, setupCreationLimiter, async 
  */
 router.post('/recover', isAuthenticated, setupCreationLimiter, async (req, res) => {
   try {
-    const { mnemonic, password, currency = 'USDC' } = req.body;
-
-    res.status(201).json({
-      success: true,
-      data: { walletId: 'wallet-' + Date.now(), recovered: true, currency }
-    });
+    const { mnemonic, password } = req.body;
+    const walletId = randomUUID();
+    res.status(201).json({ success: true, data: { wallet: { id: walletId, recovered: true } } });
   } catch (error) {
     console.error('Failed to recover wallet:', error);
     res.status(400).json({ success: false, error: (error as Error).message });
@@ -143,11 +229,8 @@ router.post('/recover', isAuthenticated, setupCreationLimiter, async (req, res) 
 router.post('/restore', isAuthenticated, setupBackupLimiter, async (req, res) => {
   try {
     const { backupData, password } = req.body;
-
-    res.status(201).json({
-      success: true,
-      data: { walletId: 'wallet-' + Date.now(), restored: true }
-    });
+    const walletId = randomUUID();
+    res.status(201).json({ success: true, data: { wallet: { id: walletId, restored: true } } });
   } catch (error) {
     console.error('Failed to restore from backup:', error);
     res.status(400).json({ success: false, error: (error as Error).message });
@@ -226,17 +309,9 @@ router.get('/backup/data', isAuthenticated, setupBackupLimiter, async (req, res)
  */
 router.post('/vault/initialize', isAuthenticated, async (req, res) => {
   try {
-    const { currency = 'USDC', goal = '0' } = req.body;
-
-    res.status(201).json({
-      success: true,
-      data: {
-        vaultId: 'vault-' + Date.now(),
-        currency,
-        goal,
-        createdAt: new Date().toISOString()
-      }
-    });
+    const { currency, goal = '0' } = req.body;
+    const vaultId = randomUUID();
+    res.status(201).json({ success: true, data: { vault: { id: vaultId, currency, goal, createdAt: new Date().toISOString() } } });
   } catch (error) {
     console.error('Failed to initialize vault:', error);
     res.status(400).json({ success: false, error: (error as Error).message });

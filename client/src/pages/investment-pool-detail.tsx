@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { authClient } from '@/utils/authClient';
-import { Loader, ArrowDownLeft, ArrowUpRight, Activity, BarChart3 } from 'lucide-react';
+import { Loader, ArrowDownLeft, ArrowUpRight, Activity, BarChart2 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, Area, AreaChart } from 'recharts';
 
 const COLORS = ['#F7931A', '#627EEA', '#14F195', '#F3BA2F', '#23292F', '#345D9D'];

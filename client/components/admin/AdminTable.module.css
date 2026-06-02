@@ -1,4 +1,47 @@
 .container {
+  width: 100%;
+}
+.tableWrapper {
+  overflow: auto;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.cell {
+  padding: 8px 12px;
+  text-align: left;
+}
+.checkboxCol {
+  width: 40px;
+}
+.actionsCol {
+  width: 56px;
+}
+.menuBtn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.loading, .empty {
+  padding: 16px;
+  text-align: center;
+}
+.pagination {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 0;
+}
+.selected {
+  background-color: rgba(59,130,246,0.06);
+}
+.navItem {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}.container {
   display: flex;
   flex-direction: column;
   background-color: #ffffff;

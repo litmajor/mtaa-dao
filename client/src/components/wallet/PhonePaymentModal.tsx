@@ -6,6 +6,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../ui/select';
 import { useToast } from '../ui/use-toast';
+import useWalletActions from '@/hooks/useWalletActions';
 import { Phone, Send } from 'lucide-react';
 
 interface PhonePaymentModalProps {
@@ -21,6 +22,7 @@ export default function PhonePaymentModal({ isOpen, onClose, userAddress }: Phon
   const [countryCode, setCountryCode] = useState('+254'); // Kenya default
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const actions = useWalletActions();
 
   const handleSendToPhone = async () => {
     if (!phoneNumber || !amount || parseFloat(amount) <= 0) {
@@ -31,24 +33,10 @@ export default function PhonePaymentModal({ isOpen, onClose, userAddress }: Phon
     setIsLoading(true);
     try {
       const fullPhone = `${countryCode}${phoneNumber}`;
-      const response = await fetch('/api/v1/wallets/payments/phone', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fromAddress: userAddress,
-          phoneNumber: fullPhone,
-          amount,
-          currency
-        })
-      });
+      const res = await actions.social.payByPhone({ phone: fullPhone, amount, currency });
+      if (!res || (res.success === false)) throw new Error(res?.error || 'Payment failed');
 
-      if (!response.ok) throw new Error('Payment failed');
-
-      toast({
-        title: 'Payment Sent',
-        description: `Successfully sent ${amount} ${currency} to ${fullPhone}`
-      });
-
+      toast({ title: 'Payment Sent', description: `Successfully sent ${amount} ${currency} to ${fullPhone}` });
       setPhoneNumber('');
       setAmount('');
       onClose();

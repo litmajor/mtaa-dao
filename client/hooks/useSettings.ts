@@ -7,7 +7,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { settingsApi } from '@/client/lib/apiClient';
+import { settingsApi } from '../lib/apiClient';
 
 export interface UserSettings {
   profile: {

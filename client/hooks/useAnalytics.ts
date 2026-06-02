@@ -15,7 +15,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { analyticsApi } from '@/client/lib/apiClient';
+import { analyticsApi } from '../lib/apiClient';
 
 export type MarketType = 'spot' | 'margin' | 'futures' | 'swap' | 'option' | 'dex';
 

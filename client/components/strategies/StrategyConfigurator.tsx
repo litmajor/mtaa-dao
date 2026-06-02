@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Strategy, StrategyInput } from '../hooks/useStrategyRegistry';
+import { Strategy, StrategyInput } from '../../hooks/useStrategyRegistry';
 
 interface InputControlProps {
   input: StrategyInput;
@@ -8,11 +8,13 @@ interface InputControlProps {
 }
 
 const InputControl: React.FC<InputControlProps> = ({ input, value, onChange }) => {
+  // deterministic id base for accessibility
+  const idBase = `strategy-input-${String(input.name).replace(/[^a-z0-9_-]/gi, '-').toLowerCase()}`;
   switch (input.type) {
     case 'number':
       return (
         <div className="space-y-2">
-          <label className="flex justify-between">
+          <label htmlFor={`${idBase}-number`} className="flex justify-between">
             <span className="text-sm font-medium">{input.name}</span>
             <span className="text-sm text-slate-600 dark:text-slate-400">
               {value} {input.unit || ''}
@@ -20,6 +22,7 @@ const InputControl: React.FC<InputControlProps> = ({ input, value, onChange }) =
           </label>
           <div className="space-y-1">
             <input
+              id={`${idBase}-range`}
               type="range"
               min={input.min}
               max={input.max}
@@ -28,6 +31,7 @@ const InputControl: React.FC<InputControlProps> = ({ input, value, onChange }) =
               className="w-full"
             />
             <input
+              id={`${idBase}-number`}
               type="number"
               value={value}
               onChange={e => onChange(parseFloat(e.target.value))}
@@ -46,8 +50,9 @@ const InputControl: React.FC<InputControlProps> = ({ input, value, onChange }) =
     case 'string':
       return (
         <div className="space-y-2">
-          <label className="block text-sm font-medium">{input.name}</label>
+          <label htmlFor={idBase} className="block text-sm font-medium">{input.name}</label>
           <input
+            id={idBase}
             type="text"
             value={value}
             onChange={e => onChange(e.target.value)}
@@ -60,15 +65,17 @@ const InputControl: React.FC<InputControlProps> = ({ input, value, onChange }) =
     case 'boolean':
       return (
         <div className="space-y-2">
-          <label className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <input
+              id={idBase}
               type="checkbox"
               checked={value}
+              aria-label={input.name}
               onChange={e => onChange(e.target.checked)}
               className="w-4 h-4"
             />
-            <span className="text-sm font-medium">{input.name}</span>
-          </label>
+            <label htmlFor={idBase} className="text-sm font-medium">{input.name}</label>
+          </div>
           <p className="text-xs text-slate-600 dark:text-slate-400">{input.description}</p>
         </div>
       );
@@ -76,8 +83,10 @@ const InputControl: React.FC<InputControlProps> = ({ input, value, onChange }) =
     case 'enum':
       return (
         <div className="space-y-2">
-          <label className="block text-sm font-medium">{input.name}</label>
+          <label htmlFor={idBase} className="block text-sm font-medium">{input.name}</label>
           <select
+            id={idBase}
+            aria-label={input.name}
             value={value}
             onChange={e => onChange(e.target.value)}
             className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded dark:bg-slate-700 dark:text-white"
@@ -95,12 +104,13 @@ const InputControl: React.FC<InputControlProps> = ({ input, value, onChange }) =
     case 'array':
       return (
         <div className="space-y-2">
-          <label className="block text-sm font-medium">{input.name}</label>
+          <label htmlFor={idBase} className="block text-sm font-medium">{input.name}</label>
           <div className="space-y-2">
             {Array.isArray(value) ? (
               value.map((item, idx) => (
                 <div key={idx} className="flex gap-2">
                   <input
+                    id={`${idBase}-${idx}`}
                     type="text"
                     value={item}
                     onChange={e => {
@@ -113,6 +123,7 @@ const InputControl: React.FC<InputControlProps> = ({ input, value, onChange }) =
                   <button
                     onClick={() => onChange(value.filter((_, i) => i !== idx))}
                     className="px-2 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950 rounded"
+                    aria-label={`Remove ${input.name} item ${idx + 1}`}
                   >
                     ✕
                   </button>
@@ -122,6 +133,7 @@ const InputControl: React.FC<InputControlProps> = ({ input, value, onChange }) =
             <button
               onClick={() => onChange([...(Array.isArray(value) ? value : []), ''])}
               className="w-full px-3 py-2 text-sm border border-dashed border-slate-300 dark:border-slate-600 rounded text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700"
+              aria-label={`Add ${input.name} item`}
             >
               + Add Item
             </button>

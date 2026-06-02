@@ -42,7 +42,10 @@ export class CoordinatorWebSocketHandler {
       }
 
       try {
-        const secret = process.env.JWT_SECRET || 'your-secret-key';
+        const secret = process.env.JWT_SECRET;
+        if (!secret) {
+          return next(new Error('Server misconfiguration: JWT_SECRET not configured'));
+        }
         const user = jwt.verify(token, secret) as any;
         socket.data.user = user;
         next();

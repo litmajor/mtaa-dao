@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useAdminUsers } from '../../hooks/useAdmin';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import Shell from '../../components/ui/shell';
+import { Grid } from '../../components/ui/grid';
 import { AlertCircle, Ban, Trash2, CheckCircle } from 'lucide-react';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { Skeleton } from '../../components/ui/skeleton';
 
 export function UsersPage() {
@@ -14,6 +17,8 @@ export function UsersPage() {
   const [banReason, setBanReason] = useState('');
   const [showBanModal, setShowBanModal] = useState(false);
   const [userToBan, setUserToBan] = useState<string | null>(null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [pendingDeleteUser, setPendingDeleteUser] = useState<string | null>(null);
 
   useEffect(() => {
     fetchUsers({ page: 1, limit: 20, sortBy, sortOrder });
@@ -61,17 +66,20 @@ export function UsersPage() {
   };
 
   const handleDelete = async (userId: string) => {
-    if (!window.confirm('Are you sure you want to permanently delete this user and all their data?')) {
-      return;
-    }
+    setPendingDeleteUser(userId);
+    setConfirmDeleteOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDeleteUser) return;
 
     setActionInProgress(true);
     try {
-      await deleteUser(userId);
-      setSuccessMessage(`User ${userId} has been deleted`);
+      await deleteUser(pendingDeleteUser);
+      setSuccessMessage(`User ${pendingDeleteUser} has been deleted`);
       setSelectedUsers((prev) => {
         const newSet = new Set(prev);
-        newSet.delete(userId);
+        newSet.delete(pendingDeleteUser);
         return newSet;
       });
       setTimeout(() => setSuccessMessage(''), 3000);
@@ -79,10 +87,13 @@ export function UsersPage() {
       console.error('Failed to delete user:', err);
     } finally {
       setActionInProgress(false);
+      setPendingDeleteUser(null);
+      setConfirmDeleteOpen(false);
     }
   };
 
   return (
+    <Shell brand={<h1 className="text-3xl font-bold">User Management</h1>}>
     <div className="space-y-6">
       {/* Header */}
       <div>
@@ -151,6 +162,17 @@ export function UsersPage() {
           </Card>
         </div>
       )}
+
+      {/* Delete Confirm Dialog */}
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="Delete user"
+        description="Are you sure you want to permanently delete this user and all their data?"
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onClose={(open: boolean) => setConfirmDeleteOpen(open)}
+        onConfirm={confirmDelete}
+      />
 
       {/* Users Table */}
       <Card>
@@ -336,6 +358,7 @@ export function UsersPage() {
         </CardContent>
       </Card>
     </div>
+    </Shell>
   );
 }
 

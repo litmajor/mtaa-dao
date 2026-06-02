@@ -9,6 +9,7 @@
  */
 
 import React, { useState } from 'react';
+import { useActionHistoryStore } from '../../stores/actionHistory';
 import { BountyProgramPanel } from './BountyProgramPanel';
 import { RewardDistributionPanel } from './RewardDistributionPanel';
 import { BountyCompletionPanel } from './BountyCompletionPanel';
@@ -22,8 +23,9 @@ export const BountiesDashboard: React.FC<BountiesDashboardProps> = ({
   userId,
   daoName = 'My DAO',
 }) => {
-  const [activePanel, setActivePanel] = useState<'program' | 'distribution' | 'completion'>('program');
-  const [bountiesHistory, setBountiesHistory] = useState<any[]>([]);
+    const [activePanel, setActivePanel] = useState<'program' | 'distribution' | 'completion'>('program');
+    const bountyHistory = useActionHistoryStore((s) => s.actionHistory);
+    const pushAction = useActionHistoryStore((s) => s.pushAction);
   const [showHistory, setShowHistory] = useState(false);
 
   // Bounties state
@@ -35,13 +37,13 @@ export const BountiesDashboard: React.FC<BountiesDashboardProps> = ({
   });
 
   const handleSimulationComplete = (result: any) => {
-    const action = {
-      id: `bounty_action_${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      type: activePanel,
-      details: result,
-    };
-    setBountiesHistory([action, ...bountiesHistory]);
+      const action = {
+        id: `bounty_action_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        type: activePanel,
+        details: result,
+      };
+      pushAction(action);
   };
 
   return (
@@ -150,13 +152,13 @@ export const BountiesDashboard: React.FC<BountiesDashboardProps> = ({
       {showHistory && (
         <div className="history-section">
           <h2>Bounty Activity History</h2>
-          {bountiesHistory.length === 0 ? (
+          {bountyHistory.length === 0 ? (
             <div className="empty-history">
               <p>No bounty operations yet. Start by selecting a tool above.</p>
             </div>
           ) : (
             <div className="history-list">
-              {bountiesHistory.map((action) => (
+              {bountyHistory.map((action) => (
                 <div key={action.id} className="history-item">
                   <div className="history-icon">
                     {action.type === 'program' && '🎯'}

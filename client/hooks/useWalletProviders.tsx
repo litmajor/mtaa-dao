@@ -12,15 +12,21 @@ import {
   WALLET_PROVIDERS,
   getSupportedProviders,
   getProvidersForChain,
-  type WalletProvider
+  type ProviderInfo,
 } from '../agent-wallet/wallet-provider-integrations';
 
+type WindowWithEthereum = Window & Record<string, unknown> & { ethereum?: unknown; coinbaseWalletExtension?: unknown };
+
+function isEthereum(obj: unknown): obj is { request: (args: { method: string; params?: unknown }) => Promise<unknown>; isMetaMask?: boolean; on?: any } {
+  return !!obj && typeof obj === 'object' && typeof (obj as any).request === 'function'
+}
+
 export interface ProviderConnectionState {
-  provider: WalletProvider | null;
+  provider: ProviderInfo | null;
   isConnecting: boolean;
   isConnected: boolean;
   error: string | null;
-  web3: Web3 | null;
+  web3: unknown | null;
   account: string | null;
 }
 
@@ -51,18 +57,18 @@ export function useWalletProviders(chainId: number = 1) {
     setState(prev => ({ ...prev, isConnecting: true, error: null }));
 
     try {
-      if (!typeof window !== 'undefined' || !(window as any).ethereum?.isMetaMask) {
-        throw new Error('MetaMask not installed. Please install the MetaMask extension.');
-      }
+      if (typeof window === 'undefined') throw new Error('MetaMask not available');
+      const w = window as unknown as WindowWithEthereum;
+      const eth = w.ethereum;
+      if (!isEthereum(eth) || !eth.isMetaMask) throw new Error('MetaMask not installed. Please install the MetaMask extension.');
 
-      const ethereum = (window as any).ethereum;
-      const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+      const accounts = await eth.request({ method: 'eth_requestAccounts' });
 
-      if (!accounts || accounts.length === 0) {
+      if (!Array.isArray(accounts) || accounts.length === 0) {
         throw new Error('No accounts returned from MetaMask');
       }
 
-      const web3 = new Web3(ethereum);
+      const web3 = new Web3(eth as any);
 
       setState({
         provider: WALLET_PROVIDERS.metamask,
@@ -72,12 +78,9 @@ export function useWalletProviders(chainId: number = 1) {
         web3,
         account: accounts[0]
       });
-    } catch (error) {
-      setState(prev => ({
-        ...prev,
-        isConnecting: false,
-        error: error instanceof Error ? error.message : String(error)
-      }));
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      setState(prev => ({ ...prev, isConnecting: false, error: msg }));
     }
   }, []);
 
@@ -88,18 +91,18 @@ export function useWalletProviders(chainId: number = 1) {
     setState(prev => ({ ...prev, isConnecting: true, error: null }));
 
     try {
-      if (!typeof window !== 'undefined' || !(window as any).coinbaseWalletExtension) {
-        throw new Error('Coinbase Wallet not installed. Please install the Coinbase Wallet extension.');
-      }
+      if (typeof window === 'undefined') throw new Error('Coinbase Wallet not available');
+      const w = window as unknown as WindowWithEthereum;
+      const prov = w.coinbaseWalletExtension;
+      if (!isEthereum(prov)) throw new Error('Coinbase Wallet not installed. Please install the Coinbase Wallet extension.');
 
-      const provider = (window as any).coinbaseWalletExtension;
-      const accounts = await provider.request({ method: 'eth_requestAccounts' });
+      const accounts = await (prov as any).request({ method: 'eth_requestAccounts' });
 
-      if (!accounts || accounts.length === 0) {
+      if (!Array.isArray(accounts) || accounts.length === 0) {
         throw new Error('No accounts returned from Coinbase Wallet');
       }
 
-      const web3 = new Web3(provider);
+      const web3 = new Web3(prov as any);
 
       setState({
         provider: WALLET_PROVIDERS.coinbase,
@@ -109,12 +112,9 @@ export function useWalletProviders(chainId: number = 1) {
         web3,
         account: accounts[0]
       });
-    } catch (error) {
-      setState(prev => ({
-        ...prev,
-        isConnecting: false,
-        error: error instanceof Error ? error.message : String(error)
-      }));
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      setState(prev => ({ ...prev, isConnecting: false, error: msg }));
     }
   }, []);
 
@@ -196,13 +196,13 @@ export function useWalletProviders(chainId: number = 1) {
    */
   const isProviderInstalled = useCallback((providerId: string): boolean => {
     if (typeof window === 'undefined') return false;
-    const w = window as any;
+    const w = window as unknown as WindowWithEthereum;
 
     switch (providerId.toLowerCase()) {
       case 'metamask':
-        return !!w.ethereum?.isMetaMask;
+        return isEthereum(w.ethereum) && !!(w.ethereum as any).isMetaMask;
       case 'coinbase':
-        return !!w.coinbaseWalletExtension;
+        return !!w.coinbaseWalletExtension && isEthereum(w.coinbaseWalletExtension);
       case 'walletconnect':
         return true; // WalletConnect works via QR code
       case 'ledger':
@@ -244,14 +244,14 @@ export function useInstalledWallets(chainId: number = 1) {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const w = window as any;
+    const w = window as unknown as WindowWithEthereum;
     const detected: DetectedWallet[] = [];
     const apps: DetectedWallet[] = [];
 
     // ============= BROWSER EXTENSIONS =============
     
     // MetaMask Extension
-    if (w.ethereum?.isMetaMask) {
+    if (isEthereum(w.ethereum) && (w.ethereum as any).isMetaMask) {
       detected.push({
         id: 'metamask',
         name: 'MetaMask',
@@ -262,7 +262,7 @@ export function useInstalledWallets(chainId: number = 1) {
     }
 
     // Coinbase Wallet Extension
-    if (w.coinbaseWalletExtension) {
+    if (w.coinbaseWalletExtension && isEthereum(w.coinbaseWalletExtension)) {
       detected.push({
         id: 'coinbase',
         name: 'Coinbase Wallet',
@@ -273,7 +273,7 @@ export function useInstalledWallets(chainId: number = 1) {
     }
 
     // Rabby Wallet Extension
-    if (w.ethereum?.isRabby) {
+    if (isEthereum(w.ethereum) && (w.ethereum as any).isRabby) {
       detected.push({
         id: 'rabby',
         name: 'Rabby Wallet',
@@ -284,7 +284,7 @@ export function useInstalledWallets(chainId: number = 1) {
     }
 
     // Brave Wallet (built-in)
-    if (w.ethereum?.isBraveWallet) {
+    if (isEthereum(w.ethereum) && (w.ethereum as any).isBraveWallet) {
       detected.push({
         id: 'brave',
         name: 'Brave Wallet',
@@ -295,7 +295,7 @@ export function useInstalledWallets(chainId: number = 1) {
     }
 
     // Crypto.com DeFi Wallet
-    if (w.ethereum?.isDeficonnect) {
+    if (isEthereum(w.ethereum) && (w.ethereum as any).isDeficonnect) {
       detected.push({
         id: 'defiwallet',
         name: 'Crypto.com DeFi Wallet',
@@ -306,7 +306,7 @@ export function useInstalledWallets(chainId: number = 1) {
     }
 
     // Trust Wallet Web
-    if (w.trustwallet?.ethereum) {
+    if (w.trustwallet && (w.trustwallet as any).ethereum) {
       detected.push({
         id: 'trustwallet',
         name: 'Trust Wallet',

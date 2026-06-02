@@ -98,7 +98,7 @@ export interface AuditLog {
   userId: string;
   username: string;
   action: string;
-  details: Record<string, any>;
+  details: Record<string, unknown>;
   ipAddress: string;
   userAgent: string;
   timestamp: string;

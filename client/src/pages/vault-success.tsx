@@ -70,7 +70,7 @@ export default function VaultSuccess() {
 
           <div className="flex gap-3 justify-center pt-4">
             <Link to={`/vault/${vaultId}`}>
-              <Button className="bg-gradient-to-r from-blue-600 to-purple-600">
+              <Button variant="primary">
                 Go to Vault
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>

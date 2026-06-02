@@ -15,7 +15,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { tradingApi } from '@/client/lib/apiClient';
+import { tradingApi } from '../lib/apiClient';
 
 export type MarketType = 'spot' | 'margin' | 'futures' | 'swap' | 'option' | 'dex';
 
@@ -50,10 +50,10 @@ export interface OrderHistoryItem {
   createdAt: string;
   closedAt?: string;
   pnl?: {
-    realizedPnL: number;
-    realizedPnLPercent: number;
-    unrealizedPnL: number;
-    unrealizedPnLPercent: number;
+    realizedPnl: number;
+    realizedPnlPercent: number;
+    unrealizedPnl: number;
+    unrealizedPnlPercent: number;
   };
 }
 
@@ -331,7 +331,7 @@ export function usePositionSummary(exchange: string = 'binance') {
     longPositions: positions.filter(o => o.type === 'buy').length,
     shortPositions: positions.filter(o => o.type === 'sell').length,
     totalExposure: positions.reduce((sum, p) => sum + p.totalCost, 0),
-    totalUnrealizedPnL: positions.reduce((sum, p) => {
+    totalUnrealizedPnl: positions.reduce((sum, p) => {
       const pnlPercent = (p.averageFillPrice - p.averageFillPrice) / p.averageFillPrice;
       return sum + p.totalCost * pnlPercent;
     }, 0),

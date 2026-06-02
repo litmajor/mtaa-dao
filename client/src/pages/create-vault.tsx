@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,11 +7,19 @@ import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Lock, Shield, DollarSign, Target, Users, AlertTriangle, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Lock, Shield, DollarSign, Target, Users, AlertTriangle, CheckCircle, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { authClient } from '@/utils/authClient';
+import { DAOOrchestratorProvider, useDAOOrchestrator } from '@/context/daoOrchestratorSystem';
+import {
+  SystemHealthBanner,
+  AdaptiveReadinessMeter,
+  WarningsAndSuggestionsPanel,
+  RiskLevelBadge,
+} from '@/components/dao-creation/AdaptiveUIComponents';
 
 interface VaultConfig {
   name: string;
@@ -25,10 +33,11 @@ interface VaultConfig {
   yieldStrategy: string;
 }
 
-export default function CreateVaultPage() {
+function CreateVaultContent() {
   const [step, setStep] = useState<'basic' | 'advanced' | 'review'>('basic');
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+  const orchestrator = useDAOOrchestrator();
   
   const [config, setConfig] = useState<VaultConfig>({
     name: '',
@@ -41,6 +50,68 @@ export default function CreateVaultPage() {
     lockDuration: 0,
     yieldStrategy: 'balanced'
   });
+
+  // Update orchestrator metrics based on vault config
+  useEffect(() => {
+    let vaultReadiness = 0;
+    if (config.name) vaultReadiness += 20;
+    if (config.description) vaultReadiness += 20;
+    if (config.monthlyGoal > 0) vaultReadiness += 15;
+    if (config.minDeposit > 0 && config.maxDeposit > 0) vaultReadiness += 15;
+    if (config.lockDuration > 0) vaultReadiness += 15;
+    if (step === 'review') vaultReadiness = Math.min(100, vaultReadiness + 15);
+
+    let riskScore = 0;
+    if (config.riskLevel === 'low') riskScore = 20;
+    if (config.riskLevel === 'moderate') riskScore = 50;
+    if (config.riskLevel === 'high') riskScore = 75;
+    if (config.yieldStrategy === 'aggressive') riskScore += 15;
+    if (config.yieldStrategy === 'balanced') riskScore += 5;
+    if (config.maxDeposit > 50000) riskScore = Math.max(riskScore - 10, 20);
+
+    const confidenceFromLock = Math.min(config.lockDuration / 30, 20);
+
+    orchestrator.actions.updateTreasuryMetrics({
+      treasuryReadiness: vaultReadiness,
+      treasuryRisk: Math.min(100, riskScore),
+      capitalAllocationHealth: Math.min(100, 50 + confidenceFromLock),
+    });
+
+    const modeMap = {
+      'basic': 'definition' as const,
+      'advanced': 'capital' as const,
+      'review': 'execution' as const,
+    };
+    orchestrator.actions.setOperationalMode(modeMap[step]);
+  }, [config, step]);
+
+  const getValidationState = () => {
+    const issues: string[] = [];
+    const suggestions: string[] = [];
+
+    if (!config.name) issues.push('Vault name is required');
+    if (!config.description) issues.push('Description helps members understand the vault purpose');
+    if (config.minDeposit > config.maxDeposit && config.maxDeposit > 0) {
+      issues.push('Minimum deposit cannot exceed maximum deposit');
+    }
+
+    if (config.riskLevel === 'high' && config.lockDuration < 30) {
+      suggestions.push('Consider longer lock duration with high-risk strategies');
+    }
+    if (config.monthlyGoal > 0 && config.minDeposit === 0) {
+      suggestions.push('Set minimum deposit to ensure consistent growth toward goal');
+    }
+    if (config.maxDeposit > 0 && config.minDeposit > config.maxDeposit * 0.8) {
+      suggestions.push('High minimum deposit may limit participation');
+    }
+    if (config.riskLevel === 'low' && config.yieldStrategy === 'aggressive') {
+      issues.push('Low risk level conflicts with aggressive yield strategy');
+    }
+
+    return { issues, suggestions };
+  };
+
+  const validation = getValidationState();
 
   const handleInputChange = (field: keyof VaultConfig, value: any) => {
     setConfig(prev => ({ ...prev, [field]: value }));
@@ -191,10 +262,18 @@ export default function CreateVaultPage() {
 
   const renderReviewStep = () => (
     <div className="space-y-6">
-      <Alert>
-        <CheckCircle className="h-4 w-4" />
-        <AlertDescription>Review your vault configuration before creating</AlertDescription>
+      <Alert className="border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30">
+        <CheckCircle className="h-4 w-4 text-green-600" />
+        <AlertDescription className="text-green-800 dark:text-green-200">✓ Your vault is ready. Review the configuration below and create!</AlertDescription>
       </Alert>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium">Vault Readiness</span>
+          <span className="text-sm font-bold text-blue-600">{orchestrator.state.overallReadiness}%</span>
+        </div>
+        <Progress value={orchestrator.state.overallReadiness} className="h-2" />
+      </div>
 
       <div className="grid grid-cols-2 gap-4">
         <Card>
@@ -230,17 +309,47 @@ export default function CreateVaultPage() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
-      <div className="max-w-2xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-indigo-100 p-6">
+      <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-6">
           <Link to="/vault-overview" className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 mb-4">
             <ArrowLeft className="h-4 w-4" />
             Back to Vaults
           </Link>
-          <h1 className="text-3xl font-bold text-gray-900">Create New Vault</h1>
-          <p className="text-gray-600 mt-2">Set up a new savings vault with custom goals and strategies</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Create New Vault</h1>
+              <p className="text-gray-600 mt-2">Set up a new savings vault with custom goals and strategies</p>
+            </div>
+            <RiskLevelBadge />
+          </div>
         </div>
+
+        {/* SYSTEM HEALTH STATUS */}
+        <div className="mb-6 space-y-3">
+          <SystemHealthBanner />
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <div className="lg:col-span-2">
+              <WarningsAndSuggestionsPanel />
+            </div>
+            <AdaptiveReadinessMeter />
+          </div>
+        </div>
+
+        {/* Validation Messages */}
+        {validation.issues.length > 0 && (
+          <Alert className="mb-6 border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30">
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-800 dark:text-red-200">
+              <div className="space-y-1">
+                {validation.issues.map((issue, idx) => (
+                  <div key={idx}>• {issue}</div>
+                ))}
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Step Indicator */}
         <div className="mb-8">
@@ -263,17 +372,17 @@ export default function CreateVaultPage() {
         </div>
 
         {/* Form Card */}
-        <Card>
+        <Card className={orchestrator.helpers.surfaceClass('moderate')}>
           <CardHeader>
             <CardTitle>
-              {step === 'basic' && 'Basic Information'}
-              {step === 'advanced' && 'Advanced Settings'}
-              {step === 'review' && 'Review & Create'}
+              {step === 'basic' && '💾 Basic Information'}
+              {step === 'advanced' && '⚙️ Advanced Settings'}
+              {step === 'review' && '✓ Review & Create'}
             </CardTitle>
             <CardDescription>
               {step === 'basic' && 'Tell us about your vault'}
-              {step === 'advanced' && 'Configure vault parameters'}
-              {step === 'review' && 'Confirm your settings'}
+              {step === 'advanced' && 'Configure vault parameters and risk profile'}
+              {step === 'review' && `Confirm your ${config.name || 'vault'} settings`}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -290,13 +399,21 @@ export default function CreateVaultPage() {
               )}
               <div className="flex-1"></div>
               {step !== 'review' && (
-                <Button onClick={() => setStep(step === 'basic' ? 'advanced' : 'review')}>
-                  Next
+                <Button 
+                  onClick={() => setStep(step === 'basic' ? 'advanced' : 'review')}
+                  disabled={validation.issues.length > 0}
+                  className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                >
+                  Next →
                 </Button>
               )}
               {step === 'review' && (
-                <Button onClick={handleCreateVault} disabled={loading}>
-                  {loading ? 'Creating...' : 'Create Vault'}
+                <Button 
+                  onClick={handleCreateVault} 
+                  disabled={loading || validation.issues.length > 0}
+                  className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
+                >
+                  {loading ? '⏳ Creating...' : '🚀 Create Vault'}
                 </Button>
               )}
             </div>
@@ -304,5 +421,13 @@ export default function CreateVaultPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function CreateVaultPage() {
+  return (
+    <DAOOrchestratorProvider>
+      <CreateVaultContent />
+    </DAOOrchestratorProvider>
   );
 }

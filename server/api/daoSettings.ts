@@ -26,6 +26,10 @@ export async function getDaoSettingsHandler(req: Request, res: Response) {
       return res.status(403).json({ error: 'Admin permissions required' });
     }
 
+    // Load current DAO to support metadata merges
+    const currentDao = await db.query.daos.findFirst({ where: eq(daos.id, daoId) });
+    if (!currentDao) return res.status(404).json({ error: 'DAO not found' });
+
     const dao = await db.query.daos.findFirst({
       where: eq(daos.id, daoId)
     });
@@ -45,6 +49,13 @@ export async function getDaoSettingsHandler(req: Request, res: Response) {
         inviteOnly: dao.inviteOnly,
         inviteCode: dao.inviteCode
       },
+      lifecycle: {
+        durationDays: (() => { try { return JSON.parse(JSON.stringify(dao)).metadata?.durationDays ?? null; } catch { return null; } })(),
+        durationModel: dao.durationModel ?? null,
+        rotationFrequency: dao.rotationFrequency ?? null,
+        nextRotationDate: dao.nextRotationDate ?? null
+      },
+      features: (() => { try { return JSON.parse(JSON.stringify(dao)).metadata?.features || {}; } catch { return {}; } })(),
       governance: {
         quorumPercentage: dao.quorumPercentage,
         votingPeriod: dao.votingPeriod,
@@ -95,6 +106,10 @@ export async function updateDaoSettingsHandler(req: Request, res: Response) {
     // Validate and prepare updates based on category
     let validUpdates: any = {};
 
+    // Load current DAO for metadata merges and existing values
+    const currentDao: any = await db.query.daos.findFirst({ where: eq(daos.id, daoId) });
+    if (!currentDao) return res.status(404).json({ error: 'DAO not found' });
+
     switch (category) {
       case 'basic':
         const allowedBasicFields = ['name', 'description', 'imageUrl', 'bannerUrl', 'access', 'inviteOnly'];
@@ -138,6 +153,45 @@ export async function updateDaoSettingsHandler(req: Request, res: Response) {
             }
           }
         }
+        break;
+
+      case 'lifecycle':
+        // Only DAO admins may modify lifecycle settings
+        if (membership.role !== 'admin') return res.status(403).json({ error: 'Only DAO admins can modify lifecycle settings' });
+
+        const allowedLifecycleFields = ['durationDays', 'durationModel', 'rotationFrequency', 'nextRotationDate'];
+
+        for (const [key, value] of Object.entries(updates)) {
+          if (!allowedLifecycleFields.includes(key)) continue;
+
+          if (key === 'durationDays') {
+            const num = Number(value);
+            if (isNaN(num) || num < 0) return res.status(400).json({ error: 'Invalid durationDays' });
+            validUpdates.durationDays = num;
+          } else if (key === 'durationModel') {
+            validUpdates.durationModel = String(value);
+          } else if (key === 'rotationFrequency') {
+            validUpdates.rotationFrequency = String(value);
+          } else if (key === 'nextRotationDate') {
+            const d = new Date(value as any);
+            if (isNaN(d.getTime())) return res.status(400).json({ error: 'Invalid nextRotationDate' });
+            validUpdates.nextRotationDate = d;
+          }
+        }
+        break;
+
+      case 'features':
+        // Only DAO admins may modify features
+        if (membership.role !== 'admin') return res.status(403).json({ error: 'Only DAO admins can modify features' });
+
+        // Expecting updates.features to be an object of feature toggles
+        if (!updates || typeof updates !== 'object') return res.status(400).json({ error: 'Invalid features payload' });
+
+        const incomingFeatures = (updates as any).features;
+        if (!incomingFeatures || typeof incomingFeatures !== 'object') return res.status(400).json({ error: 'features must be an object' });
+
+        // Overwrite or set metadata.features directly for now (avoid reading typed DB metadata)
+        validUpdates.metadata = { features: incomingFeatures };
         break;
 
       case 'financial':

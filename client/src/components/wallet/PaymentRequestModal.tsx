@@ -7,6 +7,7 @@ import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../ui/select';
 import { useToast } from '../ui/use-toast';
+import useWalletActions from '@/hooks/useWalletActions';
 import { QrCode, Copy, Download, Mail, Clock, Check } from 'lucide-react';
 import QRCode from 'qrcode';
 
@@ -29,6 +30,7 @@ export default function PaymentRequestModal({ isOpen, onClose, userAddress }: Pa
   const [copied, setCopied] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const { toast } = useToast();
+  const actions = useWalletActions();
 
   const generatePaymentRequest = async () => {
     if (!amount || parseFloat(amount) <= 0) {
@@ -56,37 +58,21 @@ export default function PaymentRequestModal({ isOpen, onClose, userAddress }: Pa
       // Save to backend
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + parseInt(expiryHours));
+      // Use centralized action to create a payment link/request record
+      const res = await actions.createPaymentLink({ amount: parseFloat(amount), currency, description, expiresAt: expiresAt.toISOString(), metadata: { celoUri: uri, qrCode: qrDataUrl, recipientEmail, creatorAddress: userAddress } });
+      if (!res.success) throw new Error(res.error || 'Failed to create payment request');
 
-      const response = await fetch('/api/v1/wallets/payments/requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          toAddress: userAddress,
-          amount,
-          currency,
-          description,
-          qrCode: qrDataUrl,
-          celoUri: uri,
-          expiresAt,
-          recipientEmail
-        })
-      });
+      const payload = res.res || res;
+      const linkId = payload?.data?.linkId || payload?.linkId || payload?.id || payload?.data?.id;
 
-      if (!response.ok) throw new Error('Failed to create payment request');
+      toast({ title: 'Payment Request Created', description: 'QR code and payment link generated successfully' });
 
-      const data = await response.json();
-      
-      toast({
-        title: 'Payment Request Created',
-        description: 'QR code and payment link generated successfully'
-      });
-
-      // Send email if recipient provided
-      if (recipientEmail) {
+      // Send email if recipient provided and linkId is available
+      if (recipientEmail && linkId) {
         await fetch('/api/v1/wallets/payments/requests/send-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ requestId: data.id })
+          body: JSON.stringify({ requestId: linkId })
         });
       }
     } catch (error) {

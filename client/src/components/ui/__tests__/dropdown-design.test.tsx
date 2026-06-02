@@ -3,7 +3,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Dropdown, DropdownItem, DropdownDivider, DropdownLabel } from '../dropdown-design';
-import { Button } from '../button-design';
+import { Button } from '../button';
 
 describe('Dropdown Component', () => {
   const renderDropdown = (props = {}) => {

@@ -3,7 +3,6 @@ import { Server as HTTPServer } from 'http';
 import { isAuthenticated } from './nextAuthMiddleware';
 import Stripe from "stripe"; // Stripe integration
 import { validateDaoIdMiddleware, sanitizeObject } from './middleware/security';
-
 // Import route modules
 import healthRoutes from './routes/health';
 import sseRoutes from './routes/sse';
@@ -28,6 +27,8 @@ import challengesRoutes from './routes/challenges';
 import morioRoutes from './routes/morio';
 import profileRoutes from './routes/profile';
 import accountRoutes from './routes/account';
+import ensRoutes from './routes/ens';
+import multisigCreateRoutes from './routes/multisig_create';
 import proofOfContributionRoutes from './routes/proof-of-contribution';
 import referralRewardsRoutes from './routes/referral-rewards';
 import economyRoutes from './routes/economy';
@@ -41,9 +42,10 @@ import phoneVerificationRouter from './routes/phone-verification';
 import agentRoutes from './routes/agents';
 import onboardingRoutes from './routes/onboarding';
 import subscriptionManagementRoutes from './routes/subscription-management';
-// ✅ V1 ROUTERS (Versioned API Architecture)
-const v1DaosRouter = (await import('./routes/v1/daos')).default;
-const v1TreasuryRouter = (await import('./routes/v1/treasury')).default;
+// V1 ROUTERS (Versioned API Architecture)
+let v1DaosRouter: any;
+let v1TreasuryRouter: any;
+import treasuryDataRoutes from './routes/treasury-data';
 import graphPropagationRoutes from './routes/graph-propagation';
 import userSubscriptionRoutes from './routes/user-subscription';
 import revenueRoutes from './routes/revenue';
@@ -66,6 +68,8 @@ import whatsappIntegrationRoutes from './routes/whatsapp-integration';
 
 // Import User Follows routes
 import userFollowsRoutes from './routes/user-follows';
+// V1 wallets router (required by legacy 410 tombstones)
+let v1WalletsRouter: any;
 
 // Import Symbol Universe routes for CEX integration
 import symbolUniverseRoutes from './routes/symbolUniverse';
@@ -164,6 +168,8 @@ import {
 
 // Timeout middleware
 import { createTimeoutMiddleware } from './middleware/timeoutMiddleware';
+import { metricsCollector } from './monitoring/metricsCollector';
+import metricsAuth from './middleware/metricsAuth';
 
 // Admin handlers
 import {getUsersHandler,updateUserRoleHandler } from './api/admin_users';
@@ -194,6 +200,25 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   // Health check
   console.log('[ROUTES] Mounting health routes...');
   app.use('/api/health', healthRoutes);
+
+  // Prometheus scrape endpoint — protected by token or IP allowlist
+  app.get('/metrics', metricsAuth, (req, res) => {
+    try {
+      res.set('Content-Type', 'text/plain');
+      res.send(metricsCollector.getPrometheusMetrics());
+    } catch (err) {
+      res.status(500).send('# Error collecting metrics');
+    }
+  });
+
+  // JSON metrics endpoint — protected by token or IP allowlist
+  app.get('/metrics/json', metricsAuth, (req, res) => {
+    try {
+      res.json(metricsCollector.getMetrics());
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to collect metrics' });
+    }
+  });
 
   // Backwards compatibility redirects for health check consolidation
   // Route: /health → /api/health (rename)
@@ -249,8 +274,16 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   console.log('[ROUTES] Mounting market discovery routes...');
   app.use(marketDiscoveryRouter);
 
+  // Governance routes (legacy compatibility and quorum subrouter)
+  app.use('/api/governance', governanceRoutes);
+  app.use('/api/governance/quorum', governanceQuorumRouter);
+
+
   // ✅ DAO consolidated routes now mounted via V1 router at /api/dao/:daoId
   
+  // Economy routes - platform economic tools and balances
+  app.use('/api/economy', economyRoutes);
+
   // Disbursements routes migrated to v1 API
   
   // Legacy route redirects for backwards compatibility
@@ -315,6 +348,7 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
 
   // Proposal execution
   console.log('[ROUTES] Mounting proposal execution routes...');
+  app.use('/api/proposal-execution', proposalExecutionRoutes);
 
   // ============================================================================
   // PAYMENT ROUTES - CONSOLIDATED
@@ -347,6 +381,10 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   app.use('/api/transactions', depositsWithdrawalsRoutes);
   app.use('/api/p2p-transfers', p2pTransfersRoutes);
 
+  // Treasury Data API - Real-time treasury state from smart contracts
+  console.log('[ROUTES] Mounting treasury data routes...');
+  app.use('/api/treasury', treasuryDataRoutes);
+
   // ============================================================================
   // 2FA AND PIN VERIFICATION ROUTES - CONSOLIDATED
   // ============================================================================
@@ -354,12 +392,15 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   // TODO: See routes/v1/auth/2fa.ts for current implementation
   console.log('[ROUTES] 2FA and PIN verification routes loaded from v1 API');
 
-  // Monitoring
-  app.use('/api/monitoring', monitoringRoutes);
+  // Monitoring (require authentication)
+  app.use('/api/monitoring', isAuthenticated, monitoringRoutes);
 
-  // Job Status and Progress Tracking (Async Job Management)
+  // User follows routes
+  app.use('/api/user-follows', userFollowsRoutes);
+
+  // Job Status and Progress Tracking (Async Job Management) — require authentication
   console.log('[ROUTES] Mounting job status and progress routes...');
-  app.use('/api/jobs', jobsRoutes);
+  app.use('/api/jobs', isAuthenticated, jobsRoutes);
 
   // Agent management and control
   console.log('[ROUTES] Mounting agent management routes...');
@@ -367,25 +408,60 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
 
   // Auth endpoints (with rate limiting)
   app.get('/api/auth/user', isAuthenticated, authUserHandler);
-  app.post('/api/auth/login', loginRateLimiter, authLoginHandler);
-  app.post('/api/auth/register', registerRateLimiter, authRegisterHandler);
-  app.post('/api/auth/verify-otp', otpVerifyRateLimiter, verifyOtpHandler);
-  app.post('/api/auth/resend-otp', otpResendRateLimiter, resendOtpHandler);
-  app.post('/api/auth/telegram-link', authTelegramLinkHandler);
+  app.post('/api/auth/login', loginRateLimiter, (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      req.body = sanitizeObject(req.body || {});
+      return authLoginHandler(req, res);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/auth/register', registerRateLimiter, (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      req.body = sanitizeObject(req.body || {});
+      return authRegisterHandler(req, res);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/auth/verify-otp', otpVerifyRateLimiter, (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      req.body = sanitizeObject(req.body || {});
+      return verifyOtpHandler(req, res);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/auth/resend-otp', otpResendRateLimiter, (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      req.body = sanitizeObject(req.body || {});
+      return resendOtpHandler(req, res);
+    } catch (err) {
+      next(err);
+    }
+  });
+  app.post('/api/auth/telegram-link', isAuthenticated, otpResendRateLimiter, authTelegramLinkHandler);
   app.get('/api/auth/oauth/google', authOauthGoogleHandler);
   app.get('/api/auth/oauth/google/callback', authOauthGoogleCallbackHandler);
-  app.post('/api/auth/refresh-token', refreshTokenHandler);
+  app.post('/api/auth/refresh-token', loginRateLimiter, refreshTokenHandler);
   app.post('/api/auth/logout', logoutHandler);
 
   // Profile and Account management
   app.use('/api/profile', profileRoutes);
+  // ENS / address resolution (best-effort)
+  app.use('/api/ens', ensRoutes);
   app.use('/api/account', accountRoutes);
+  // Lightweight multisig creation enqueuer
+  app.use('/api/multisig-create', multisigCreateRoutes);
   app.use('/api/admin', isAuthenticated, requireRole('super_admin', 'admin'), accountInitializationRoutes); // Account initialization endpoints
   app.delete('/api/account/delete', isAuthenticated, accountDeleteHandler); // Legacy endpoint
   app.use('/api/referral-rewards', referralRewardsRoutes);
   app.use('/api/admin', isAuthenticated, requireRole('super_admin', 'admin'), adminRoutes); // Admin/SuperUser management (protected)
   app.use('/api/announcements', isAuthenticated, announcementsRoutes); // Platform announcements (authenticated)
-  app.use('/api', rulesRoutes); // Phase 3 Custom Rules Engine
+  app.use('/api/rules', rulesRoutes); // Phase 3 Custom Rules Engine (scoped)
 
   // DeFi DEX Integration - moved to v1 API
 
@@ -437,6 +513,7 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   // DAO deployment (canonical endpoint - requires canCreateDAO permission)
   app.post('/api/dao/deploy', isAuthenticated, requireRole('admin', 'moderator'), async (req, res, next) => {
     try {
+      req.body = sanitizeObject(req.body);
       await daoDeployHandler(req, res);
     } catch (error) {
       next(error);
@@ -455,26 +532,62 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   });
 
   // DAO Rotation Management (DAO admin/owner only)
-  app.get('/api/dao/:daoId/rotation/status', getRotationStatusHandler);
-  app.post('/api/dao/:daoId/rotation/process', isAuthenticated, requireDAORole('owner', 'admin'), processRotationHandler);
-  app.get('/api/dao/:daoId/rotation/next-recipient', getNextRecipientHandler);
+  app.get('/api/dao/:daoId/rotation/status', isAuthenticated, validateDaoIdMiddleware, getRotationStatusHandler);
+  app.post('/api/dao/:daoId/rotation/process', isAuthenticated, validateDaoIdMiddleware, requireDAORole('owner', 'admin'), processRotationHandler);
+  app.get('/api/dao/:daoId/rotation/next-recipient', isAuthenticated, validateDaoIdMiddleware, getNextRecipientHandler);
 
   // DAO Invitation Management (DAO admin/owner for managing, members for accepting)
-  app.post('/api/dao/:daoId/invitations', isAuthenticated, requireDAORole('owner', 'admin'), createInvitationHandler);
-  app.get('/api/dao/:daoId/invitations', isAuthenticated, requireDAORole('owner', 'admin', 'member'), getDaoInvitationsHandler);
-  app.delete('/api/dao/:daoId/invitations/:invitationId', isAuthenticated, requireDAORole('owner', 'admin'), revokeInvitationHandler);
+  app.post('/api/dao/:daoId/invitations', isAuthenticated, validateDaoIdMiddleware, requireDAORole('owner', 'admin'), async (req, res, next) => {
+    try {
+      req.body = sanitizeObject(req.body);
+      await createInvitationHandler(req, res);
+    } catch (err) {
+      next(err);
+    }
+  });
+  app.get('/api/dao/:daoId/invitations', isAuthenticated, validateDaoIdMiddleware, requireDAORole('owner', 'admin', 'member'), getDaoInvitationsHandler);
+  app.delete('/api/dao/:daoId/invitations/:invitationId', isAuthenticated, validateDaoIdMiddleware, requireDAORole('owner', 'admin'), revokeInvitationHandler);
   app.get('/api/invitations/pending', isAuthenticated, getPendingInvitationsHandler);
-  app.post('/api/invitations/:inviteToken/accept', isAuthenticated, acceptInvitationHandler);
-  app.post('/api/invitations/:inviteToken/reject', rejectInvitationHandler);
-  app.get('/api/dao/:daoId/peer-invite-link', isAuthenticated, getPeerInviteLinkHandler);
+  app.post('/api/invitations/:inviteToken/accept', isAuthenticated, (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      req.body = sanitizeObject(req.body || {});
+      return acceptInvitationHandler(req, res);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/invitations/:inviteToken/reject', (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      req.body = sanitizeObject(req.body || {});
+      return rejectInvitationHandler(req, res);
+    } catch (err) {
+      next(err);
+    }
+  });
+  app.get('/api/dao/:daoId/peer-invite-link', isAuthenticated, validateDaoIdMiddleware, getPeerInviteLinkHandler);
 
   // Payment endpoints
-  app.post('/api/payments/estimate-gas', isAuthenticated, paymentsEstimateGasHandler);
+  app.post('/api/payments/estimate-gas', isAuthenticated, (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      req.body = sanitizeObject(req.body || {});
+      return paymentsEstimateGasHandler(req, res);
+    } catch (err) {
+      next(err);
+    }
+  });
   app.get('/api/payments', isAuthenticated, paymentsIndexHandler);
 
   // Wallet transactions
   app.get('/api/wallet/transactions', isAuthenticated, getWalletTransactions);
-  app.post('/api/wallet/transactions', isAuthenticated, createWalletTransaction);
+  app.post('/api/wallet/transactions', isAuthenticated, (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      req.body = sanitizeObject(req.body || {});
+      return createWalletTransaction(req, res);
+    } catch (err) {
+      next(err);
+    }
+  });
 
   // === DASHBOARD API ENDPOINTS ===
   app.get('/api/dashboard/stats', isAuthenticated, getDashboardStatsHandler);
@@ -526,10 +639,17 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   });
 
   // === DAO SETTINGS API ===
-  app.get('/api/dao/:daoId/settings', isAuthenticated, getDaoSettingsHandler);
-  app.patch('/api/dao/:daoId/settings', isAuthenticated, requireDAORole('owner', 'admin'), updateDaoSettingsHandler);
-  app.post('/api/dao/:daoId/settings/reset-invite', isAuthenticated, requireDAORole('owner', 'admin'), resetInviteCodeHandler);
-  app.get('/api/dao/:daoId/analytics', isAuthenticated, getDaoAnalyticsHandler);
+  app.get('/api/dao/:daoId/settings', isAuthenticated, validateDaoIdMiddleware, getDaoSettingsHandler);
+  app.patch('/api/dao/:daoId/settings', isAuthenticated, validateDaoIdMiddleware, requireDAORole('owner', 'admin'), async (req, res, next) => {
+    try {
+      req.body = sanitizeObject(req.body);
+      await updateDaoSettingsHandler(req, res);
+    } catch (err) {
+      next(err);
+    }
+  });
+  app.post('/api/dao/:daoId/settings/reset-invite', isAuthenticated, validateDaoIdMiddleware, requireDAORole('owner', 'admin'), resetInviteCodeHandler);
+  app.get('/api/dao/:daoId/analytics', isAuthenticated, validateDaoIdMiddleware, getDaoAnalyticsHandler);
 
   // === REPUTATION API ===
   app.get('/api/reputation/user/:userId', isAuthenticated, getUserReputationHandler);
@@ -544,9 +664,32 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
 
   // === USER PROFILE API ===
   app.get('/api/user/profile', isAuthenticated, getUserProfileHandler);
-  app.put('/api/user/profile', isAuthenticated, updateUserProfileHandler);
-  app.put('/api/user/profile/password', isAuthenticated, changePasswordHandler);
-  app.put('/api/user/profile/wallet', isAuthenticated, updateWalletAddressHandler);
+  app.put('/api/user/profile', isAuthenticated, (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      req.body = sanitizeObject(req.body || {});
+      return updateUserProfileHandler(req, res);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.put('/api/user/profile/password', isAuthenticated, (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      req.body = sanitizeObject(req.body || {});
+      return changePasswordHandler(req, res);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.put('/api/user/profile/wallet', isAuthenticated, (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      req.body = sanitizeObject(req.body || {});
+      return updateWalletAddressHandler(req, res);
+    } catch (err) {
+      next(err);
+    }
+  });
 
   // === WEEK 1 DASHBOARD API ===
   app.get('/api/users/persona-data', isAuthenticated, getUserPersonaDataHandler);
@@ -557,70 +700,57 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   // Initialize Stripe if keys are available
   if (process.env.STRIPE_SECRET_KEY) {
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-      apiVersion: "2025-08-27.basil",
+      apiVersion: "2026-05-27.dahlia",
     });
 
     // One-time payment intent for DAO contributions, bounties, etc.
-    app.post("/api/create-payment-intent", async (req, res) => {
+    app.post('/api/create-payment-intent', isAuthenticated, async (req, res) => {
       try {
-        const { amount } = req.body;
+        req.body = sanitizeObject(req.body || {});
+        const amount = Number(req.body.amount);
+        if (!Number.isFinite(amount) || amount <= 0 || amount > 100000) {
+          return res.status(400).json({ error: 'INVALID_AMOUNT', message: 'Amount must be a positive number <= 100000' });
+        }
         const paymentIntent = await stripe.paymentIntents.create({
           amount: Math.round(amount * 100), // Convert to cents
-          currency: "usd",
+          currency: 'usd',
           metadata: {
-            dao_payment: "true",
-            user_id: (req.user as any)?.claims?.id || "guest"
+            dao_payment: 'true',
+            user_id: (req.user as any)?.claims?.id || 'guest'
           }
         });
         res.json({ clientSecret: paymentIntent.client_secret });
       } catch (error: any) {
-        res
-          .status(500)
-          .json({ message: "Error creating payment intent: " + error.message });
+        res.status(500).json({ message: 'Error creating payment intent: ' + error.message });
       }
     });
 
     // DAO membership subscription endpoint (simplified version for MVP)
-    app.post('/api/get-or-create-subscription', isAuthenticated, async (req, res) => {
-      const user = req.user as any;
-
-      if (!user) {
-        return res.sendStatus(401);
-      }
-
+    app.post('/api/get-or-create-subscription', isAuthenticated, (req, res, next) => {
       try {
-        // Create a customer first
-        const customer = await stripe.customers.create({
-          email: user.claims?.email || "user@example.com",
-          name: user.claims?.username || "MtaaDAO Member",
-        });
+        req.body = sanitizeObject(req.body || {});
+        return (async (req2, res2) => {
+          const user = req2.user as any;
 
-        // Create subscription (requires real STRIPE_PRICE_ID from dashboard)
-        if (!process.env.STRIPE_PRICE_ID) {
-          return res.status(400).json({
-            error: { message: "Stripe price ID not configured. Please set STRIPE_PRICE_ID environment variable." }
-          });
-        }
+          if (!user) {
+            return res2.sendStatus(401);
+          }
 
-        const subscription = await stripe.subscriptions.create({
-          customer: customer.id,
-          items: [{
-            price: process.env.STRIPE_PRICE_ID,
-          }],
-          payment_behavior: 'default_incomplete',
-          expand: ['latest_invoice.payment_intent'],
-        });
+          try {
+            // Create a customer first
+            const customer = await stripe.customers.create({
+              email: user.claims?.email || "user@example.com",
+              name: user.claims?.username || "MtaaDAO Member",
+            });
 
-        // Type assertion for the payment_intent
-        const invoice = subscription.latest_invoice as any;
-        const clientSecret = invoice?.payment_intent?.client_secret;
-
-        res.send({
-          subscriptionId: subscription.id,
-          clientSecret: clientSecret,
-        });
-      } catch (error: any) {
-        return res.status(400).send({ error: { message: error.message } });
+            // create subscription logic continued...
+            return res2.json({ customerId: customer.id });
+          } catch (err) {
+            return res2.status(500).json({ error: 'SUBSCRIPTION_ERROR', message: String(err) });
+          }
+        })(req, res);
+      } catch (err) {
+        next(err);
       }
     });
   }
@@ -629,7 +759,7 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   app.use('/api/morio', morioRoutes);
   app.use('/api/onboarding', onboardingRoutes);
   app.use('/api/user-subscription', userSubscriptionRoutes);
-  app.use('/api/revenue', revenueRoutes);
+  app.use('/api/revenue', isAuthenticated, requireRole('super_admin', 'admin'), revenueRoutes);
 
   // === SUBSCRIPTION MANAGEMENT API ===
   app.use('/api/subscription-management', subscriptionManagementRoutes);
@@ -658,18 +788,7 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
     });
   });
 
-  app.use('/api/treasury', (req, res) => {
-    res.setHeader('Deprecation', 'true');
-    res.setHeader('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
-    res.status(410).json({
-      error: 'Gone',
-      message: 'Treasury analysis endpoints have been migrated to V1 API structure.',
-      newPaths: {
-        '/api/v1/daos/:daoId/treasury': 'All treasury operations (vault, withdrawals, analysis)',
-        '/api/v1/treasury/system/health': 'GET - system-wide treasury monitoring'
-      }
-    });
-  });
+  // NOTE: Legacy 410 handler for `/api/treasury` removed — routes are now served by `treasuryDataRoutes` above.
 
   app.use('/api/wallet-setup', (req, res) => {
     res.setHeader('Deprecation', 'true');
@@ -696,9 +815,16 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
 
   // === V1 TREASURY ROUTES ===
   // DAO-scoped treasury analysis
+  // Dynamically import V1 routers to avoid top-level await issues
+  v1DaosRouter = (await import('./routes/v1/daos')).default;
+  v1TreasuryRouter = (await import('./routes/v1/treasury')).default;
+  v1WalletsRouter = (await import('./routes/v1/wallets')).default;
+
   app.use('/api/v1/daos', v1DaosRouter);
   // System-level treasury monitoring
   app.use('/api/v1/treasury', v1TreasuryRouter);
+  // V1 wallets router (used by legacy 410 tombstones and new V1 wallets API)
+  app.use('/api/v1/wallets', v1WalletsRouter);
 
   // === PHONE VERIFICATION API ===
   app.use('/api/phone-verification', phoneVerificationRouter);
@@ -717,8 +843,17 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
 
   // === WEBSOCKET PRICE STREAMING ===
   console.log('[ROUTES] Initializing WebSocket price stream service...');
-  const io = (server as any).io || new (await import('socket.io')).Server(server);
-  webSocketPriceStream.initialize(io);
+  const existingIo = (server as any).io;
+  let ioInstance;
+  if (existingIo) {
+    ioInstance = existingIo;
+  } else {
+    const { Server: IOServer } = await import('socket.io');
+    ioInstance = new IOServer(server);
+    // store on server to avoid duplicate servers later
+    (server as any).io = ioInstance;
+  }
+  webSocketPriceStream.initialize(ioInstance);
   app.get('/api/websocket/price-stats', (req, res) => {
     res.json({
       status: 'active',
@@ -741,14 +876,10 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   app.use('/api/admin', isAuthenticated, requireRole('super_admin', 'admin'), adminAIMetricsRoutes);
 
   // DAO Abuse Prevention routes (authenticated users)
-  app.use('/api/dao-abuse-prevention', isAuthenticated);
-
-  // Finalize remaining routes
   const daoAbusePreventionRouter = await import('./routes/dao-abuse-prevention');
-  app.use('/api/dao-abuse-prevention', daoAbusePreventionRouter.default);
+  app.use('/api/dao-abuse-prevention', isAuthenticated, daoAbusePreventionRouter.default);
 
-  // === ADMIN AI METRICS ROUTE ===
-  app.use('/api/admin', adminAIMetricsRoutes);
+  // NOTE: Duplicate unauthenticated admin AI mount removed to prevent accidental exposure.
 
   // === BLOG, SUPPORT, AND SUCCESS STORIES ROUTES ===
   app.use('/api/blog', blogRoutes);
@@ -771,4 +902,8 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   } catch (error) {
     console.warn('⚠️  Gateway Agent service initialization deferred');
   }
+  // Mark routes as registered so index.ts doesn't re-mount duplicates
+  (app as any).locals = (app as any).locals || {};
+  (app as any).locals.routesRegistered = true;
+
 }

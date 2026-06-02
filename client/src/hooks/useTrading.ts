@@ -33,14 +33,21 @@ export function usePositions(exchange?: string) {
     : positions;
 
   const positionMetrics = {
+    // legacy / additional metrics
     totalOpenPositions: filteredPositions.length,
-    totalUnrealizedPnl: filteredPositions.reduce((sum, p) => sum + p.pnl, 0),
+    totalUnrealizedPnl: filteredPositions.reduce((sum, p) => sum + (p.unrealizedPnl ?? p.pnl ?? 0), 0),
     averageWinRate: filteredPositions.length > 0
       ? filteredPositions.filter(p => p.pnl > 0).length / filteredPositions.length
       : 0,
     largestPosition: filteredPositions.length > 0
       ? Math.max(...filteredPositions.map(p => Math.abs(p.pnl)))
       : 0,
+    // canonical metrics expected by PositionsPanel
+    totalPositions: filteredPositions.length,
+    longPositions: filteredPositions.filter((p) => p.side === 'long').length,
+    shortPositions: filteredPositions.filter((p) => p.side === 'short').length,
+    totalExposure: filteredPositions.reduce((sum, p) => sum + (p.amount * (p.currentPrice ?? 0)), 0),
+    totalUnrealizedPnL: filteredPositions.reduce((sum, p) => sum + (p.unrealizedPnl ?? p.pnl ?? 0), 0),
   };
 
   return {
@@ -90,19 +97,8 @@ export function useTradeHistory() {
     try {
       setLoading(true);
       
-      const response = await fetch(`${API_BASE_URL}/orders/history`, {
-        headers: {
-          ...(await authClient.getAuthHeaders()),
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch trade history');
-      }
-
-      const data = await response.json();
-      setTrades(data.trades || []);
+      const data: any = await authClient.get(`${API_BASE_URL}/orders/history`);
+      setTrades(data?.trades || data || []);
       setError(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch trade history';
@@ -216,26 +212,14 @@ export function useSmartRouting(symbol: string, amount: number, side: 'buy' | 's
     try {
       setLoading(true);
 
-      const response = await fetch(`${API_BASE_URL}/orders/route`, {
-        method: 'POST',
-        headers: {
-          ...(await authClient.getAuthHeaders()),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          symbol,
-          amount,
-          side,
-        }),
+      const data: any = await authClient.post(`${API_BASE_URL}/orders/route`, {
+        symbol,
+        amount,
+        side,
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch routes');
-      }
-
-      const data = await response.json();
-      setRoutes(data.recommendations || []);
-      setBestRoute(data.recommended || null);
+      setRoutes(data?.recommendations || []);
+      setBestRoute(data?.recommended || null);
       setError(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch routes';
@@ -276,26 +260,14 @@ export function useOrderSplitting(symbol: string, amount: number, side: 'buy' | 
     try {
       setLoading(true);
 
-      const response = await fetch(`${API_BASE_URL}/orders/split`, {
-        method: 'POST',
-        headers: {
-          ...(await authClient.getAuthHeaders()),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          symbol,
-          amount,
-          side,
-          maxDEXLiquidity: 0.2, // 20% of order
-        }),
+      const data: any = await authClient.post(`${API_BASE_URL}/orders/split`, {
+        symbol,
+        amount,
+        side,
+        maxDEXLiquidity: 0.2, // 20% of order
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch splitting recommendation');
-      }
-
-      const data = await response.json();
-      setSplitRecommendation(data.data || null);
+      setSplitRecommendation(data?.data || data || null);
       setError(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch splitting';
@@ -335,18 +307,7 @@ export function useBestVenue(symbol: string, amount: number, side: 'buy' | 'sell
     try {
       setLoading(true);
 
-      const response = await fetch(`${API_BASE_URL}/orders/best-venue?symbol=${symbol}&amount=${amount}&side=${side}`, {
-        headers: {
-          ...(await authClient.getAuthHeaders()),
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch best venue');
-      }
-
-      const data = await response.json();
+      const data: any = await authClient.get(`${API_BASE_URL}/orders/best-venue?symbol=${symbol}&amount=${amount}&side=${side}`);
       setBestVenue(data || null);
       setError(null);
     } catch (err) {

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useAuth } from './auth-context';
+import {authClient} from '../utils/authClient';
 
 /**
  * Trading Account Context
@@ -19,6 +20,8 @@ export interface TradePosition {
   pnlPercent: number;
   leverage?: number;
   liquidationPrice?: number;
+  // Optional canonical unrealized PnL value (some providers use different keys)
+  unrealizedPnl?: number;
   openedAt: string;
   status: 'open' | 'closing' | 'closed';
 }
@@ -131,22 +134,98 @@ export function TradingAccountProvider({ children }: { children: ReactNode }) {
 
   // API helper function
   const apiCall = async (endpoint: string, options: RequestInit = {}) => {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(await authClient.getAuthHeaders()),
-        ...options.headers,
-      },
-    });
+    const method = (options.method || 'GET').toUpperCase();
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `API error: ${response.statusText}`);
+    // Helper to parse stringified JSON body if present
+    const parseBody = (body?: any) => {
+      if (!body) return undefined;
+      if (typeof body === 'string') {
+        try {
+          return JSON.parse(body);
+        } catch (e) {
+          return body;
+        }
+      }
+      return body;
+    };
+
+    try {
+      if (method === 'GET') {
+        return await authClient.get(endpoint, options as RequestInit);
+      }
+
+      if (method === 'POST') {
+        const body = parseBody(options.body);
+        return await authClient.post(endpoint, body, options as RequestInit);
+      }
+
+      if (method === 'PUT') {
+        const body = parseBody(options.body);
+        return await authClient.put(endpoint, body, options as RequestInit);
+      }
+
+      if (method === 'PATCH') {
+        const body = parseBody(options.body);
+        return await authClient.patch(endpoint, body, options as RequestInit);
+      }
+
+      if (method === 'DELETE') {
+        return await authClient.delete(endpoint, options as RequestInit);
+      }
+
+      // Fallback to raw fetch when needed
+      const resp = await authClient.fetch(endpoint, options as RequestInit);
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err?.error?.message || resp.statusText);
+      }
+      return await resp.json();
+    } catch (err) {
+      throw err;
     }
-
-    return response.json();
   };
+
+  /* Normalizers - canonicalize provider responses into local shapes */
+  const normalizePosition = (p: any): TradePosition => {
+    return {
+      id: p.id || p.positionId || p._id || `${p.exchange || 'ex'}:${p.symbol || p.market?.symbol || 'x'}`,
+      exchange: p.exchange || p.market?.exchange || 'unknown',
+      symbol: p.symbol || p.market?.symbol || p.ticker || '',
+      side: (p.side || p.direction || 'long') as 'long' | 'short',
+      amount: Number(p.amount ?? p.size ?? 0),
+      entryPrice: Number(p.entryPrice ?? p.openPrice ?? p.price ?? 0),
+      currentPrice: Number(p.currentPrice ?? p.markPrice ?? p.price ?? 0),
+      pnl: Number(p.pnl ?? p.profit ?? 0),
+      pnlPercent: Number(p.pnlPercent ?? p.profitPercent ?? 0),
+      leverage: p.leverage ?? p.margin ?? undefined,
+      liquidationPrice: p.liquidationPrice ?? p.liqPrice ?? undefined,
+      unrealizedPnl: Number(p.unrealizedPnl ?? p.unrealizedPnL ?? p.unrealized ?? 0),
+      openedAt: p.openedAt || p.openTime || p.createdAt || new Date().toISOString(),
+      status: (p.status || (p.closed ? 'closed' : 'open')) as 'open' | 'closing' | 'closed',
+    };
+  };
+
+  const normalizeBalance = (b: any): ExchangeBalance => ({
+    exchange: b.exchange || b.provider || 'unknown',
+    asset: b.asset || b.currency || 'USD',
+    free: Number(b.free ?? b.available ?? 0),
+    used: Number(b.used ?? b.locked ?? 0),
+    total: Number(b.total ?? b.balance ?? (Number(b.free ?? 0) + Number(b.used ?? 0))),
+    usdValue: Number(b.usdValue ?? b.usd_value ?? b.value ?? 0),
+  });
+
+  const normalizeMetrics = (m: any): TradingMetrics => ({
+    totalBalance: Number(m?.totalBalance ?? m?.total_balance ?? m?.balance_total ?? 0),
+    totalUsed: Number(m?.totalUsed ?? m?.used_total ?? 0),
+    totalFree: Number(m?.totalFree ?? m?.free_total ?? 0),
+    totalUsdValue: Number(m?.totalUsdValue ?? m?.usd_total ?? 0),
+    unrealizedPnl: Number(m?.unrealizedPnl ?? m?.unrealized ?? 0),
+    realizedPnl: Number(m?.realizedPnl ?? m?.realized ?? 0),
+    totalPnl: Number(m?.totalPnl ?? m?.total_pnl ?? 0),
+    winRate: Number(m?.winRate ?? m?.win_rate ?? 0),
+    trades24h: Number(m?.trades24h ?? m?.trades_24h ?? 0),
+    volume24h: Number(m?.volume24h ?? m?.volume_24h ?? 0),
+  });
 
   /**
    * Get connected exchanges
@@ -225,7 +304,7 @@ export function TradingAccountProvider({ children }: { children: ReactNode }) {
       setIsLoadingBalances(true);
       const query = exchange ? `?exchange=${exchange}` : '';
       const data = await apiCall(`/exchanges/balances${query}`);
-      setBalances(data.balances || []);
+        setBalances((data.balances || []).map(normalizeBalance));
       setError(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to refresh balances';
@@ -246,7 +325,7 @@ export function TradingAccountProvider({ children }: { children: ReactNode }) {
       setIsLoadingPositions(true);
       const query = exchange ? `?exchange=${exchange}` : '';
       const data = await apiCall(`/orders/positions${query}`);
-      setPositions(data.positions || []);
+        setPositions((data.positions || []).map(normalizePosition));
       setError(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to refresh positions';
@@ -267,7 +346,7 @@ export function TradingAccountProvider({ children }: { children: ReactNode }) {
       setIsLoadingOrders(true);
       const query = exchange ? `?exchange=${exchange}` : '';
       const data = await apiCall(`/exchanges/orders${query}`);
-      setOrders(data.orders || []);
+        setOrders(data.orders || []); // No change needed here
       setError(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to refresh orders';
@@ -287,7 +366,7 @@ export function TradingAccountProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoadingMetrics(true);
       const data = await apiCall('/orders/metrics');
-      setMetrics(data.metrics || null);
+        setMetrics(data.metrics ? normalizeMetrics(data.metrics) : null);
       setError(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to refresh metrics';

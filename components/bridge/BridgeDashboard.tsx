@@ -8,6 +8,7 @@
  */
 
 import React, { useState } from 'react';
+import { useActionHistoryStore } from '../../stores/actionHistory';
 import { BridgeTransferPanel } from './BridgeTransferPanel';
 import { CrossChainArbitragePanel } from './CrossChainArbitragePanel';
 
@@ -21,7 +22,8 @@ export const BridgeDashboard: React.FC<BridgeDashboardProps> = ({
   daoName = 'My DAO',
 }) => {
   const [activePanel, setActivePanel] = useState<'transfer' | 'arbitrage'>('transfer');
-  const [bridgeHistory, setBridgeHistory] = useState<any[]>([]);
+  const bridgeHistory = useActionHistoryStore((s) => s.actionHistory);
+  const pushAction = useActionHistoryStore((s) => s.pushAction);
   const [showHistory, setShowHistory] = useState(false);
 
   // Bridge state
@@ -39,7 +41,7 @@ export const BridgeDashboard: React.FC<BridgeDashboardProps> = ({
       type: activePanel,
       details: result,
     };
-    setBridgeHistory([action, ...bridgeHistory]);
+    pushAction(action);
   };
 
   return (

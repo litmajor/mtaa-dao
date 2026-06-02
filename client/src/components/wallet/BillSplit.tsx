@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Plus, Trash2, CheckCircle, Clock, X } from 'lucide-react';
 import { AlertCircle } from 'lucide-react';
 import { authClient } from '@/utils/authClient';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 interface BillSplitParticipant {
   userId?: string;
@@ -166,15 +167,25 @@ export default function BillSplit() {
   };
 
   const cancelBillSplit = async (splitId: string) => {
-    if (!window.confirm('Are you sure you want to cancel this bill split?')) return;
+    setPendingCancelSplit(splitId);
+    setConfirmCancelOpen(true);
+  };
 
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
+  const [pendingCancelSplit, setPendingCancelSplit] = useState<string | null>(null);
+
+  const confirmCancel = async () => {
+    if (!pendingCancelSplit) return;
     try {
-      await authClient.post(`/api/v1/wallets/payments/split/${splitId}/cancel`, {});
+      await authClient.post(`/api/v1/wallets/payments/split/${pendingCancelSplit}/cancel`, {});
       fetchBillSplits();
       alert('Bill split cancelled successfully!');
     } catch (error) {
       console.error('Error cancelling bill split:', error);
       alert('Failed to cancel bill split');
+    } finally {
+      setPendingCancelSplit(null);
+      setConfirmCancelOpen(false);
     }
   };
 
@@ -215,6 +226,16 @@ export default function BillSplit() {
           New Bill Split
         </Button>
       </div>
+
+        <ConfirmDialog
+          open={confirmCancelOpen}
+          title="Cancel Bill Split"
+          description="Are you sure you want to cancel this bill split? This action cannot be undone."
+          confirmLabel="Cancel"
+          cancelLabel="Keep"
+            onClose={(open: boolean) => setConfirmCancelOpen(open)}
+          onConfirm={confirmCancel}
+        />
 
       {/* Bill Splits List */}
       <div className="grid gap-4">

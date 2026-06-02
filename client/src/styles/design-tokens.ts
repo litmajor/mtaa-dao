@@ -8,18 +8,27 @@ export * from './colors';
 export * from './typography';
 export * from './spacing';
 export * from './animations';
+export * from './elevation';
+export * from './radius';
+export * from './visual';
 
 // Re-export as a unified object for convenience
 import * as colors from './colors';
 import * as typography from './typography';
 import * as spacing from './spacing';
 import * as animations from './animations';
+import * as elevation from './elevation';
+import * as radius from './radius';
+import * as visual from './visual';
 
 export const designTokens = {
   colors,
   typography,
   spacing,
   animations,
+  elevation,
+  radius,
+  visual,
 } as const;
 
 /**

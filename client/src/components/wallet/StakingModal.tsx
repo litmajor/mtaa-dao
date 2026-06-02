@@ -5,6 +5,8 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { TrendingUp, Lock, Info } from 'lucide-react';
 import { useToast } from '../ui/use-toast';
+import useWalletActions from '@/hooks/useWalletActions';
+import useWalletOperatingStore from '@/stores/wallet-operating-store';
 
 interface StakingModalProps {
   isOpen: boolean;
@@ -15,6 +17,8 @@ export default function StakingModal({ isOpen, onClose }: StakingModalProps) {
   const [amount, setAmount] = useState('');
   const [period, setPeriod] = useState('30');
   const { toast } = useToast();
+  const actions = useWalletActions();
+  const store = useWalletOperatingStore();
 
   const stakingOptions = [
     { days: 30, apy: '8.5%', protocol: 'Moola Market' },
@@ -24,12 +28,16 @@ export default function StakingModal({ isOpen, onClose }: StakingModalProps) {
 
   const selectedOption = stakingOptions.find(o => o.days.toString() === period) || stakingOptions[0];
 
-  const handleStake = () => {
-    toast({ 
-      title: 'Staking Initiated', 
-      description: `Staking ${amount} CELO for ${period} days at ${selectedOption.apy} APY` 
-    });
-    onClose();
+  const handleStake = async () => {
+    const vaultId = store.selectedAccountId || 'native';
+    try {
+      const res = await actions.stake({ vaultId, amount });
+      if (!res.success) throw new Error(res.error || 'Staking failed');
+      toast({ title: 'Staking Initiated', description: `Staking ${amount} for ${period} days at ${selectedOption.apy} APY` });
+      onClose();
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message || String(err), variant: 'destructive' });
+    }
   };
 
   if (!isOpen) return null;

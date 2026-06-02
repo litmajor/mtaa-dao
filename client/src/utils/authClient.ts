@@ -1,7 +1,7 @@
 /**
  * Centralized Auth Client
  * 
- * 🔐 Security Architecture:
+ * Security Architecture:
  * - NO localStorage/sessionStorage usage
  * - Tokens stored in httpOnly cookies (auto-included by fetch)
  * - Auto-refresh on 401 (token expiry)
@@ -12,7 +12,10 @@
  *   const res = await authClient.post('/api/v1/yuki/staking/stake', { amount: 100 })
  */
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+import authChannel from './authChannel';
+
+// Use Vite-provided env variable in the browser. Falls back to localhost backend.
+const API_BASE = (typeof import.meta !== 'undefined' && (import.meta.env as any)?.VITE_API_URL) || 'http://localhost:5000';
 
 interface AuthResponse<T = any> {
   success: boolean;
@@ -107,12 +110,12 @@ async function authFetch(
 
   const response = await fetch(fullUrl, {
     ...options,
-    credentials: 'include', // 🍪 Auto-include httpOnly cookies
+    credentials: 'include', // Auto-include httpOnly cookies
     signal: controller.signal,
     headers,
   });
 
-  clearTimeout(timeout);
+  clearTimeout(timeout); 
 
   // If token expired or user is unauthorized
   if (response.status === 401 && retry) {
@@ -149,12 +152,12 @@ function handleAuthFailure(): void {
     document.cookie = 'csrf_token=; Max-Age=0; path=/;';
   }
 
-  // Dispatch event for app to listen to and redirect to login
-  window.dispatchEvent(
-    new CustomEvent('auth:logout', {
-      detail: { reason: 'token_expired_or_invalid' },
-    })
-  );
+  // Notify other tabs/windows via BroadcastChannel/localStorage fallback
+  try {
+    authChannel.postAuthMessage({ type: 'logout', payload: { reason: 'token_expired_or_invalid' } });
+  } catch (e) {
+    // ignore
+  }
 
   // Redirect to login after short delay
   setTimeout(() => {

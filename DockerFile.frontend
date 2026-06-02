@@ -1,10 +1,12 @@
 
 # ---- Build Stage ----
-FROM node:18 AS builder
+FROM node:20-bullseye-slim AS builder
 WORKDIR /app
 
+# Use npm for installs (prefer locked installs, increase network timeouts)
 COPY package*.json ./
-RUN npm install
+# prefer `npm ci` for reproducible installs; increase network timeout and retries
+RUN npm ci --prefer-offline --no-audit --progress=false --network-timeout=600000 --fetch-retries=5 || npm install --network-timeout=600000 --fetch-retries=5
 
 COPY . .
 

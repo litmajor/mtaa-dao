@@ -17,6 +17,8 @@ target/
 nginx.conf.prod
 visibility/
 
+.git-rewrite/
+
 
 # Project-specific
 mtaa-dao-whitepaper/target
@@ -49,4 +51,20 @@ models/llama-2-7b-chat.Q2_K.gguf
 # Git rewrite state
 .git-rewrite/
 .git-rewrite
+.env
+
+cache/solidity-files-cache.json
+.vscode/
+.obsidian/
+.continue/
+.github/
+
+# Ignore build artifacts and logs
+/server/dist/
+/dist/public/
+/dist/
+/server/logs/
+/route-usage.csv
+
+# Ignore local environment files
 .env

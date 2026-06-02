@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Settings, TrendingUp, Users, Clock } from 'lucide-react';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { authClient } from '@/utils/authClient';
 
 interface Feature {
@@ -113,9 +114,17 @@ export const FeatureManagementDashboard: React.FC = () => {
   };
 
   // Revoke beta access
-  const handleRevokeBeta = async (userId: string, featureKey: string) => {
-    if (!window.confirm('Revoke beta access?')) return;
+  const [confirmRevokeOpen, setConfirmRevokeOpen] = useState(false);
+  const [pendingRevoke, setPendingRevoke] = useState<{ userId: string; featureKey: string } | null>(null);
 
+  const handleRevokeBeta = async (userId: string, featureKey: string) => {
+    setPendingRevoke({ userId, featureKey });
+    setConfirmRevokeOpen(true);
+  };
+
+  const confirmRevokeBeta = async () => {
+    if (!pendingRevoke) return;
+    const { userId, featureKey } = pendingRevoke;
     try {
       await authClient.delete(`/api/features/beta/revoke/${userId}/${featureKey}`);
 
@@ -124,6 +133,9 @@ export const FeatureManagementDashboard: React.FC = () => {
     } catch (error) {
       console.error('Failed to revoke beta:', error);
       alert('Error revoking beta access');
+    } finally {
+      setPendingRevoke(null);
+      setConfirmRevokeOpen(false);
     }
   };
 
@@ -343,6 +355,15 @@ export const FeatureManagementDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmRevokeOpen}
+        title="Revoke Beta Access"
+        description="Are you sure you want to revoke beta access for this user?"
+        confirmLabel="Revoke"
+        cancelLabel="Cancel"
+        onClose={(open: boolean) => setConfirmRevokeOpen(open)}
+        onConfirm={confirmRevokeBeta}
+      />
     </div>
   );
 };

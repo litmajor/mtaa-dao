@@ -7,7 +7,7 @@
  * - Multi-exchange comparison
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Card,
@@ -50,7 +50,7 @@ import {
 } from 'recharts';
 // Note: Some icons may not exist in lucide-react, using available alternatives
 // import { TrendingUp, RefreshCcw, Lightbulb, AlertTriangle } from 'lucide-react';
-import { TrendingUp } from 'lucide-react';
+import { TrendingUp, RotateCw } from 'lucide-react';
 
 interface Market {
   id: string;
@@ -200,7 +200,7 @@ const useReloadMarkets = () => {
 /**
  * Market Row Component
  */
-const MarketRow: React.FC<{ market: Market; exchange: string }> = ({ market, exchange }) => {
+const MarketRow: React.FC<{ market: Market; exchange: string; expanded?: boolean; onToggle?: (id: string) => void; highlighted?: boolean; onAction?: (action: string, market: Market) => void }> = ({ market, exchange, expanded = false, onToggle, highlighted = false, onAction }) => {
   const symbol = market.symbol || market.id || '';
   const baseId = market.baseId || market.base || '';
   const quoteId = market.quoteId || market.quote || '';
@@ -211,77 +211,96 @@ const MarketRow: React.FC<{ market: Market; exchange: string }> = ({ market, exc
   const ask = market.bidAsk?.ask || 0;
   const spread = market.bidAsk?.spread || 0;
 
+  // Intelligence badges
+  const highVolume = volume > 1e7; // heuristic
+  const tightSpread = spread > 0 ? spread < 0.001 : false;
+  const illiquid = volume < 1000;
+  const activeTraderMarket = (market.taker || 0) < 0.002 || (market.maker || 0) < 0.001;
+
   return (
-    <tr className="border-b border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
-      <td className="px-4 py-3">
-        <Badge variant={isActive ? "default" : "secondary"} className="text-xs">
-          {isActive ? "Active" : "Inactive"}
-        </Badge>
-      </td>
-      <td className="px-4 py-3">
-        <div className="font-mono text-sm font-medium text-gray-900 dark:text-white">
-          {symbol}
-        </div>
-        <div className="text-xs text-gray-500 dark:text-gray-400">
-          {baseId} / {quoteId}
-        </div>
-      </td>
-      <td className="px-4 py-3 text-right">
-        {lastPrice > 0 ? (
-          <div>
-            <div className="text-sm font-medium text-gray-900 dark:text-white">
-              ${lastPrice.toFixed(lastPrice > 1 ? 2 : 8)}
+    <>
+      <tr className={`${highlighted ? 'bg-yellow-50 dark:bg-yellow-900/30' : ''} border-b border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors`}>
+        <td className="px-4 py-3 align-middle">
+          <div className="flex items-center gap-2">
+            <Badge className={`text-xs ${isActive ? 'bg-green-600/20 text-green-200' : 'bg-gray-600/10 text-gray-300'}`}>
+              {isActive ? 'Active' : 'Inactive'}
+            </Badge>
+            <div className="flex items-center gap-1">
+              {highVolume && <Badge className="text-xs bg-red-600/20">🔥 High Vol</Badge>}
+              {tightSpread && <Badge className="text-xs bg-amber-600/20">⚡ Tight</Badge>}
+              {illiquid && <Badge className="text-xs bg-gray-600/20">📉 Illiquid</Badge>}
+              {activeTraderMarket && <Badge className="text-xs bg-green-600/20">🟢 Trader</Badge>}
             </div>
           </div>
-        ) : (
-          <span className="text-gray-400">-</span>
-        )}
-      </td>
-      <td className="px-4 py-3 text-right text-sm">
-        {bid > 0 && ask > 0 ? (
-          <div>
-            <div className="text-green-600 dark:text-green-400">B: ${bid.toFixed(8)}</div>
-            <div className="text-red-600 dark:text-red-400">A: ${ask.toFixed(8)}</div>
+        </td>
+
+        <td className="px-4 py-3">
+          <div className="font-semibold text-sm text-gray-900 dark:text-white">{symbol}</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">{baseId} / {quoteId}</div>
+        </td>
+
+        <td className="px-4 py-3 text-right">
+          {lastPrice > 0 ? (
+            <div className="text-right">
+              <div className="text-lg font-bold text-gray-900 dark:text-white">${lastPrice.toFixed(lastPrice > 1 ? 2 : 8)}</div>
+              <div className="text-xs text-gray-500">{volume > 0 ? (volume > 1e6 ? `${(volume/1e6).toFixed(2)}M` : `$${volume.toFixed(2)}`) : '-'}</div>
+            </div>
+          ) : (
+            <span className="text-gray-400">-</span>
+          )}
+        </td>
+
+        <td className="px-4 py-3 text-right hidden md:table-cell">
+          {spread > 0 ? (
+            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{(spread * 100).toFixed(3)}%</span>
+          ) : (
+            <span className="text-gray-400">-</span>
+          )}
+        </td>
+
+        <td className="px-4 py-3 text-right hidden lg:table-cell">
+          {market.maker !== undefined && market.taker !== undefined ? (
+            <div className="text-xs text-gray-600 dark:text-gray-400">M: {(market.maker * 100).toFixed(3)}% · T: {(market.taker * 100).toFixed(3)}%</div>
+          ) : (
+            <span className="text-gray-400">-</span>
+          )}
+        </td>
+
+        <td className="px-4 py-3 text-right">
+          <div className="flex items-center justify-end gap-2">
+            <button onClick={() => onAction?.('trade', market)} className="text-xs px-2 py-1 bg-blue-600 text-white rounded">Trade</button>
+            <button onClick={() => onAction?.('compare', market)} className="text-xs px-2 py-1 bg-slate-700 text-white rounded">Compare</button>
+            <button onClick={() => onAction?.('chart', market)} className="text-xs px-2 py-1 bg-emerald-600 text-white rounded">Chart</button>
+            <button onClick={() => onAction?.('alert', market)} className="text-xs px-2 py-1 bg-amber-600 text-black rounded">Alert</button>
+            <button onClick={() => onToggle?.(symbol)} className="ml-2 text-xs px-2 py-1 bg-transparent border rounded">{expanded ? 'Collapse' : 'Expand'}</button>
           </div>
-        ) : (
-          <span className="text-gray-400">-</span>
-        )}
-      </td>
-      <td className="px-4 py-3 text-right">
-        {spread > 0 ? (
-          <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
-            {(spread * 100).toFixed(3)}%
-          </span>
-        ) : (
-          <span className="text-gray-400">-</span>
-        )}
-      </td>
-      <td className="px-4 py-3 text-right">
-        {volume > 0 ? (
-          <div className="text-sm">
-            {volume > 1e9
-              ? `$${(volume / 1e9).toFixed(2)}B`
-              : volume > 1e6
-              ? `$${(volume / 1e6).toFixed(2)}M`
-              : volume > 1e3
-              ? `$${(volume / 1e3).toFixed(2)}K`
-              : `$${volume.toFixed(2)}`}
-          </div>
-        ) : (
-          <span className="text-gray-400">-</span>
-        )}
-      </td>
-      <td className="px-4 py-3 text-right">
-        {market.maker !== undefined && market.taker !== undefined ? (
-          <div className="text-xs">
-            <div className="text-gray-600 dark:text-gray-400">M: {(market.maker * 100).toFixed(3)}%</div>
-            <div className="text-gray-600 dark:text-gray-400">T: {(market.taker * 100).toFixed(3)}%</div>
-          </div>
-        ) : (
-          <span className="text-gray-400">-</span>
-        )}
-      </td>
-    </tr>
+        </td>
+      </tr>
+
+      {expanded && (
+        <tr className="bg-slate-50 dark:bg-slate-900/40">
+          <td colSpan={7} className="p-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-700 dark:text-gray-300">
+              <div>
+                <div className="font-semibold">Bid / Ask</div>
+                <div>B: {bid > 0 ? `$${bid.toFixed(8)}` : '-'}</div>
+                <div>A: {ask > 0 ? `$${ask.toFixed(8)}` : '-'}</div>
+              </div>
+              <div>
+                <div className="font-semibold">Fees</div>
+                <div>Maker: {market.maker !== undefined ? `${(market.maker * 100).toFixed(3)}%` : '-'}</div>
+                <div>Taker: {market.taker !== undefined ? `${(market.taker * 100).toFixed(3)}%` : '-'}</div>
+              </div>
+              <div>
+                <div className="font-semibold">Precision / Limits</div>
+                <div>Amount: {market.precision?.amount ?? '-'}</div>
+                <div>Price: {market.precision?.price ?? '-'}</div>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 };
 
@@ -290,6 +309,14 @@ const MarketRow: React.FC<{ market: Market; exchange: string }> = ({ market, exc
  */
 export const MarketScanner: React.FC = () => {
   const [selectedExchange, setSelectedExchange] = useState('binance');
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+  const [highlightedExchange, setHighlightedExchange] = useState<string | null>(null);
+  const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
+  const [liveRefresh, setLiveRefresh] = useState(false);
+  const [refreshInterval, setRefreshInterval] = useState<number>(5000);
+  const [autocomplete, setAutocomplete] = useState<string[]>([]);
+  const windowWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
+  const refreshRef = useRef<number | null>(null as any);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [searchTerm, setSearchTerm] = useState('');
@@ -325,6 +352,26 @@ export const MarketScanner: React.FC = () => {
       }));
   }, [statsData, selectedExchanges]);
 
+  // Build autocomplete suggestions from markets
+  useEffect(() => {
+    const symbols = markets.map((m: Market) => m.symbol).filter(Boolean) as string[];
+    const uniq = Array.from(new Set(symbols)).slice(0, 200);
+    setAutocomplete(uniq);
+  }, [markets]);
+
+  // Live refresh polling
+  useEffect(() => {
+    if (!liveRefresh) {
+      if (refreshRef.current) { clearInterval(refreshRef.current); refreshRef.current = null; }
+      return;
+    }
+    // set interval
+    refreshRef.current = window.setInterval(() => {
+      if ((marketsQuery as any)?.refetch) (marketsQuery as any).refetch();
+    }, refreshInterval);
+    return () => { if (refreshRef.current) { clearInterval(refreshRef.current); refreshRef.current = null; } };
+  }, [liveRefresh, refreshInterval, marketsQuery]);
+
   const handleReloadMarkets = async () => {
     if (confirm('Reload market data from all exchanges? This may take a moment.')) {
       if ((reloadMarketsQuery as any).refetch) {
@@ -335,6 +382,45 @@ export const MarketScanner: React.FC = () => {
       }
     }
   };
+
+  const toggleExpand = (symbol: string) => {
+    setExpandedRows((prev) => ({ ...prev, [symbol]: !prev[symbol] }));
+  };
+
+  const handleAction = (action: string, market: Market) => {
+    if (action === 'chart') {
+      setSelectedMarket(market);
+      // simple behaviour: switch to statistics tab or open modal (not implemented)
+      // TODO: implement chart modal
+    } else if (action === 'trade') {
+      // open trade UI (placeholder)
+      alert(`Open trade UI for ${market.symbol}`);
+    } else if (action === 'alert') {
+      alert(`Alert set for ${market.symbol}`);
+    } else if (action === 'compare') {
+      alert(`Compare ${market.symbol}`);
+    }
+  };
+
+  // Simple insights panel
+  const insights = useMemo(() => {
+    const outs: string[] = [];
+    try {
+      const byExchange = (statsData as any)?.exchanges || [];
+      if (byExchange.length) {
+        const top = [...byExchange].sort((a: any, b: any) => (b.activeMarkets || 0) - (a.activeMarkets || 0))[0];
+        if (top) outs.push(`${top.exchange.toUpperCase()} has highest active markets (${top.activeMarkets})`);
+      }
+      const btcPairs = markets.filter((m: Market) => m.symbol?.toUpperCase().includes('BTC/'));
+      if (btcPairs.length) {
+        const tight = btcPairs.sort((a: Market, b: Market) => (a.bidAsk?.spread || 1) - (b.bidAsk?.spread || 1))[0];
+        if (tight) outs.push(`Tightest BTC spread: ${tight.symbol} (${((tight.bidAsk?.spread||0)*100).toFixed(3)}%)`);
+      }
+      const lowVolExchanges = (statsData as any)?.exchanges?.filter((s: any) => (s.activeMarkets || 0) < 10) || [];
+      if (lowVolExchanges.length) outs.push(`Low activity: ${lowVolExchanges.map((s: any) => s.exchange).slice(0,3).join(', ')}`);
+    } catch (e) {}
+    return outs;
+  }, [statsData, markets]);
 
   return (
     <div className="space-y-6">
@@ -349,19 +435,52 @@ export const MarketScanner: React.FC = () => {
                 <CardDescription>Browse and analyze 6 exchanges with real-time market data</CardDescription>
               </div>
             </div>
-            <Button
-              onClick={handleReloadMarkets}
-              disabled={(reloadMarketsQuery as any).isFetching}
-              variant="outline"
-              size="sm"
-              className="gap-2"
-            >
-              <RotateCw className={`w-4 h-4 ${(reloadMarketsQuery as any).isFetching ? 'animate-spin' : ''}`} />
-              Reload All
-            </Button>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <label className="text-xs">Live</label>
+                <select aria-label="refresh-interval" title="Live refresh interval" value={refreshInterval} onChange={(e) => setRefreshInterval(parseInt(e.target.value))} className="text-xs px-2 py-1 rounded bg-white dark:bg-slate-800">
+                  <option value={5000}>5s</option>
+                  <option value={10000}>10s</option>
+                  <option value={0}>Off</option>
+                </select>
+                <label className="inline-flex items-center gap-2">
+                  <input type="checkbox" checked={liveRefresh} onChange={(e) => setLiveRefresh(e.target.checked)} />
+                  <span className="text-xs">Auto</span>
+                </label>
+              </div>
+              <Button
+                onClick={handleReloadMarkets}
+                disabled={(reloadMarketsQuery as any).isFetching}
+                variant="outline"
+                size="sm"
+                className="gap-2"
+              >
+                <RotateCw className={`w-4 h-4 ${(reloadMarketsQuery as any).isFetching ? 'animate-spin' : ''}`} />
+                Reload All
+              </Button>
+            </div>
           </div>
         </CardHeader>
       </Card>
+
+      {/* Insights Panel */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        <div className="lg:col-span-3">
+        </div>
+        <div className="lg:col-span-1">
+          <Card className="bg-white dark:bg-slate-900">
+            <CardHeader>
+              <CardTitle>Smart Insights</CardTitle>
+              <CardDescription>AI-style quick takeaways (heuristic)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-sm space-y-2">
+                {insights.length === 0 ? <li className="text-gray-500">No insights available</li> : insights.map((s, i) => <li key={i}>• {s}</li>)}
+              </ul>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
 
       <Tabs defaultValue="scanner" className="w-full">
         <TabsList className="grid w-full grid-cols-2 lg:grid-cols-3 mb-6">
@@ -537,9 +656,10 @@ export const MarketScanner: React.FC = () => {
                 <PaginationContent className="gap-1">
                   <PaginationItem>
                     <PaginationPrevious
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                      className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                    />
+                        size="sm"
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                      />
                   </PaginationItem>
 
                   {/* Show page numbers */}
@@ -549,6 +669,7 @@ export const MarketScanner: React.FC = () => {
                     return (
                       <PaginationItem key={pageNum}>
                         <PaginationLink
+                          size="sm"
                           onClick={() => setCurrentPage(pageNum)}
                           isActive={currentPage === pageNum}
                           className="cursor-pointer"
@@ -567,6 +688,7 @@ export const MarketScanner: React.FC = () => {
 
                   <PaginationItem>
                     <PaginationNext
+                      size="sm"
                       onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                       className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
                     />

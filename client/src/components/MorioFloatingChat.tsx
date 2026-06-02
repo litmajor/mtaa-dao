@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { MessageCircle, X, ChevronDown } from 'lucide-react';
+import Icons from '../lib/icons';
 
 interface Message {
   id: string;
@@ -130,7 +130,7 @@ export default function MorioFloatingChat() {
         `}
         title="Chat with Morio"
       >
-        <MessageCircle className="w-5 h-5" />
+        <Icons.MessageCircle className="w-5 h-5" />
         {!isOpen && (
           <>
             <span className="hidden sm:inline">Morio</span>
@@ -155,12 +155,12 @@ export default function MorioFloatingChat() {
                 <p className="text-xs text-gray-500 dark:text-gray-400">AI Guide</p>
               </div>
             </div>
-            <button
+              <button
               onClick={() => setIsOpen(false)}
               className="p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded transition-colors"
               title="Close chat"
             >
-              <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+              <Icons.X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </button>
           </div>
 
@@ -190,7 +190,9 @@ export default function MorioFloatingChat() {
                 <div className="bg-gray-100 dark:bg-gray-800 px-4 py-2 rounded-lg rounded-bl-none">
                   <div className="flex gap-2">
                     <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                    {/* eslint-disable-next-line */}
                     <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                    {/* eslint-disable-next-line */}
                     <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                   </div>
                 </div>

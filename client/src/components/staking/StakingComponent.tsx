@@ -6,7 +6,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Lock, Unlock, Gift, TrendingUp } from 'lucide-react';
+import { Lock, Gift, TrendingUp, Unlock } from '@/lib/icons';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { authClient } from '@/utils/authClient';
 
 interface StakeOption {
@@ -150,10 +151,17 @@ export default function StakingComponent() {
   };
 
   const handleUnstake = async (stakeId: string) => {
-    if (!window.confirm('Are you sure? You may lose unclaimed rewards.')) return;
+    setPendingUnstake(stakeId);
+    setConfirmUnstakeOpen(true);
+  };
 
+  const [confirmUnstakeOpen, setConfirmUnstakeOpen] = useState(false);
+  const [pendingUnstake, setPendingUnstake] = useState<string | null>(null);
+
+  const confirmUnstake = async () => {
+    if (!pendingUnstake) return;
     try {
-      await authClient.post(`/api/v1/yuki/staking/unstake/${stakeId}`);
+      await authClient.post(`/api/v1/yuki/staking/unstake/${pendingUnstake}`);
 
       alert('Successfully unstaked!');
 
@@ -163,6 +171,9 @@ export default function StakingComponent() {
     } catch (err) {
       console.error('Unstake error:', err);
       alert('Failed to unstake');
+    } finally {
+      setPendingUnstake(null);
+      setConfirmUnstakeOpen(false);
     }
   };
 
@@ -175,7 +186,8 @@ export default function StakingComponent() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-4 md:p-6">
+    <>
+      <div className="min-h-screen bg-slate-900 text-white p-4 md:p-6">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* HEADER */}
         <div>
@@ -459,6 +471,16 @@ export default function StakingComponent() {
           </div>
         )}
       </div>
-    </div>
+      </div>
+      <ConfirmDialog
+        open={confirmUnstakeOpen}
+        title="Unstake"
+        description="Are you sure? You may lose unclaimed rewards."
+        confirmLabel="Unstake"
+        cancelLabel="Cancel"
+        onClose={(open: boolean) => setConfirmUnstakeOpen(open)}
+        onConfirm={confirmUnstake}
+      />
+    </>
   );
 }

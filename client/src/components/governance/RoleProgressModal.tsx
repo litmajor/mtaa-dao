@@ -11,7 +11,7 @@ import {
   Users,
   Award,
   AlertCircle,
-  BarChart3
+  BarChart2
 } from 'lucide-react';
 
 export interface ActivityRecord {

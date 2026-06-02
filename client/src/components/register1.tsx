@@ -1,5 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, EyeOff, Mail, Lock, AlertCircle, UserPlus, Check, Phone, Send } from 'lucide-react';
+/* eslint-disable */
+import * as Lucide from 'lucide-react';
+
+const IconFallback = (emoji: string) => (props: any) => (
+  <span {...props} aria-hidden>{emoji}</span>
+);
+
+const Eye = (Lucide as any).Eye || IconFallback('👁️');
+const EyeOff = (Lucide as any).EyeOff || IconFallback('🙈');
+const Mail = (Lucide as any).Mail || IconFallback('✉️');
+const Lock = (Lucide as any).Lock || IconFallback('🔒');
+const AlertCircle = (Lucide as any).AlertCircle || IconFallback('⚠️');
+const UserPlus = (Lucide as any).UserPlus || IconFallback('➕');
+const Check = (Lucide as any).Check || IconFallback('✔️');
+const Phone = (Lucide as any).Phone || IconFallback('📞');
+const Send = (Lucide as any).Send || IconFallback('📨');
+import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 
 export default function ArchitectSetup({ adminMode: initialAdminMode = false }: { adminMode?: boolean }) {
@@ -38,53 +54,54 @@ export default function ArchitectSetup({ adminMode: initialAdminMode = false }: 
     e.preventDefault();
     setError('');
     setIsLoading(true);
+
     if (!emailOrPhone || !password || !confirmPassword) {
       setError('All fields are required.');
       setIsLoading(false);
       return;
     }
+
     if (password !== confirmPassword) {
       setError('Passwords do not match.');
       setIsLoading(false);
       return;
     }
+
     if (passwordScore < 3) {
       setError('Password is too weak. Please include at least 8 characters, 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character.');
       setIsLoading(false);
       return;
     }
 
-    // Check if email or phone is valid
     const isEmail = /\S+@\S+\.\S+/.test(emailOrPhone);
     const isPhone = /^\+?[1-9]\d{1,14}$/.test(emailOrPhone);
+
     if (!isEmail && !isPhone) {
       setError('Invalid email or phone number.');
       setIsLoading(false);
       return;
     }
 
-    // Sign in or register based on input
     try {
-      let resp;
+      let resp: Response;
       if (isEmail) {
-        // Email registration
         resp = await fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: emailOrPhone, password }),
         });
       } else {
-        // Phone registration
         resp = await fetch('/api/auth/register-phone', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phone: emailOrPhone, password }),
         });
       }
+
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.message || 'Registration failed');
       setOtpSent(true);
-    } catch (err) {
+    } catch (err: any) {
       setError(
         typeof err === 'object' && err !== null && 'message' in err
           ? (err as { message?: string }).message || 'Registration failed'
@@ -94,14 +111,12 @@ export default function ArchitectSetup({ adminMode: initialAdminMode = false }: 
       setIsLoading(false);
     }
   };
-
   // Handle OTP verification
   const handleVerifyOtp = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
     setOtpLoading(true);
     try {
-      // Determine payload type
       const isEmail = /\S+@\S+\.\S+/.test(emailOrPhone);
       const isPhone = /^\+?[1-9]\d{1,14}$/.test(emailOrPhone);
       const payload = isEmail
@@ -109,18 +124,21 @@ export default function ArchitectSetup({ adminMode: initialAdminMode = false }: 
         : isPhone
         ? { phone: emailOrPhone, otp }
         : { emailOrPhone, otp };
+
       const resp = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.message || 'OTP verification failed');
-      // Auto sign in after registration
-      localStorage.setItem('accessToken', data.token);
+
+      // Auto sign in after registration - rely on httpOnly cookie; notify and redirect
       localStorage.setItem('superuser', 'true');
+      try { (await import('../utils/authChannel')).default.postAuthMessage({ type: 'login', payload: { user: data.user || {} } }); } catch (e) {}
       window.location.href = '/superuser';
-    } catch (err) {
+    } catch (err: any) {
       setError(
         typeof err === 'object' && err !== null && 'message' in err
           ? (err as { message?: string }).message || 'OTP verification failed'
@@ -196,8 +214,9 @@ export default function ArchitectSetup({ adminMode: initialAdminMode = false }: 
         return;
       }
       if (!resp.ok) throw new Error(data.message || 'Admin login failed');
-      localStorage.setItem('accessToken', data.accessToken || data.token);
+      // Rely on server-set cookie; notify other tabs and navigate
       localStorage.setItem('superuser', 'true');
+      try { (await import('../utils/authChannel')).default.postAuthMessage({ type: 'login', payload: { user: data.user || {} } }); } catch (e) {}
       navigate('/superuser'); // Use navigate instead of window.location.href
     } catch (err) {
       setError(
@@ -309,10 +328,11 @@ export default function ArchitectSetup({ adminMode: initialAdminMode = false }: 
                   </button>
                 </div>
               </div>
-              <button
+              <Button
                 type="submit"
                 disabled={adminLoading}
-                className="w-full bg-gradient-to-r from-mtaa-orange to-mtaa-emerald text-white py-3 rounded-xl font-semibold shadow-lg hover:from-mtaa-orange/90 hover:to-mtaa-emerald/90 focus:outline-none focus:ring-2 focus:ring-mtaa-orange focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                variant="primary"
+                className="w-full"
               >
                 {adminLoading ? (
                   <div className="flex items-center justify-center">
@@ -322,7 +342,7 @@ export default function ArchitectSetup({ adminMode: initialAdminMode = false }: 
                 ) : (
                   'Login as Superuser/Admin'
                 )}
-              </button>
+              </Button>
             </form>
           ) : (
             // Registration form
@@ -383,10 +403,11 @@ export default function ArchitectSetup({ adminMode: initialAdminMode = false }: 
                       )}
                     </button>
                   </div>
-                  <button
+                  <Button
                     type="submit"
                     disabled={otpLoading}
-                    className="w-full bg-gradient-to-r from-mtaa-orange to-mtaa-emerald text-white py-3 rounded-xl font-semibold shadow-lg hover:from-mtaa-orange/90 hover:to-mtaa-emerald/90 focus:outline-none focus:ring-2 focus:ring-mtaa-orange focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                    variant="primary"
+                    className="w-full"
                   >
                     {otpLoading ? (
                       <div className="flex items-center justify-center">
@@ -396,7 +417,7 @@ export default function ArchitectSetup({ adminMode: initialAdminMode = false }: 
                     ) : (
                       'Verify OTP & Create Account'
                     )}
-                  </button>
+                  </Button>
                 </form>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-6">
@@ -533,10 +554,11 @@ export default function ArchitectSetup({ adminMode: initialAdminMode = false }: 
                   </div>
 
                   {/* Submit button */}
-                  <button
+                  <Button
                     type="submit"
                     disabled={isLoading}
-                    className="w-full bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 text-white py-3 rounded-xl font-semibold shadow-lg border-0 focus:ring-4 focus:ring-orange-400 dark:focus:ring-orange-600 transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                    variant="primary"
+                    className="w-full"
                   >
                     {isLoading ? (
                       <div className="flex items-center justify-center">
@@ -546,7 +568,7 @@ export default function ArchitectSetup({ adminMode: initialAdminMode = false }: 
                     ) : (
                       'Create Account'
                     )}
-                  </button>
+                  </Button>
                 </form>
               )}
               {/* End of OTP Step */}

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useSystemState } from '@/context/systemState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TrendingUp, TrendingDown } from 'lucide-react';
@@ -24,6 +25,15 @@ interface PlatformOverviewCardProps {
 }
 
 export function PlatformOverviewCard({ data, loading, lastUpdated }: PlatformOverviewCardProps) {
+  // Consume global SystemState to alter visual density / emphasis
+  let mode: string = 'network';
+  try {
+    const ctx = useSystemState();
+    mode = ctx.state.mode;
+  } catch (e) {
+    // If provider not present, fall back to defaults
+  }
+
   if (loading || !data) {
     return (
       <Card className="bg-slate-800 border-slate-700">
@@ -56,8 +66,11 @@ export function PlatformOverviewCard({ data, loading, lastUpdated }: PlatformOve
     return 'text-red-400';
   };
 
+  const emphasizeTreasury = mode === 'capital' || mode === 'execution';
+  const emphasizeGovernance = mode === 'governance';
+
   return (
-    <Card className="bg-gradient-to-r from-slate-800 to-slate-800/50 border-slate-700">
+    <Card className={`bg-gradient-to-r from-slate-800 to-slate-800/50 border-slate-700 ${emphasizeTreasury ? 'ring-2 ring-amber-600/30' : ''}`}>
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-2xl">🌍 Platform Overview</CardTitle>
@@ -90,7 +103,7 @@ export function PlatformOverviewCard({ data, loading, lastUpdated }: PlatformOve
         </div>
 
         {/* Health Scores */}
-        <div className="bg-slate-700/50 p-4 rounded-lg space-y-3">
+        <div className={`bg-slate-700/50 p-4 rounded-lg space-y-3 ${emphasizeGovernance ? 'border-2 border-blue-600/30' : ''}`}>
           <p className="text-sm font-semibold text-white mb-3">Platform Health Scores</p>
           <div className="space-y-2">
             {Object.entries(data.healthScores).map(([key, score]) => (
@@ -113,9 +126,9 @@ export function PlatformOverviewCard({ data, loading, lastUpdated }: PlatformOve
         </div>
 
         {/* Summary */}
-        <div className="bg-gradient-to-r from-blue-900/30 to-blue-800/30 p-3 rounded-lg border border-blue-700/50">
+        <div className={`bg-gradient-to-r from-blue-900/30 to-blue-800/30 p-3 rounded-lg border border-blue-700/50 ${mode === 'execution' ? 'opacity-90' : ''}`}>
           <p className="text-sm text-blue-100">
-            ✨ Platform Status: <span className="font-semibold">Healthy</span> - All metrics within optimal ranges
+            ✨ Platform Status: <span className="font-semibold">{mode === 'execution' ? 'Execution Focus' : 'Healthy'}</span> - {mode === 'execution' ? 'Prioritizing queued operations and job health' : 'All metrics within optimal ranges'}
           </p>
         </div>
       </CardContent>

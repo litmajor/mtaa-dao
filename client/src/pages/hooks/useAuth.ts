@@ -13,6 +13,9 @@ interface User {
   isEmailVerified: boolean;
   isPhoneVerified: boolean;
   profilePicture?: string | null;
+  // Optional extended properties used across the app
+  isSuperUser?: boolean;
+  currentDaoId?: string;
 }
 
 interface AuthResponse {
@@ -27,33 +30,41 @@ interface AuthResponse {
 }
 
 export function useAuth() {
-  const queryClient = useQueryClient();
+  // React Query's QueryClient typings in this repo are slightly different; narrow to any where we call imperative methods
+  const queryClient = useQueryClient() as any;
   const navigate = useNavigate();
 
 
 
-  const { data: authData, isLoading, error } = useQuery({
+  const queryFn = async (): Promise<AuthResponse> => {
+    try {
+      const user = await authClient.get<User>("/api/auth/user");
+      return {
+        success: true,
+        data: {
+          user,
+          accessToken: '', // No longer stored in memory; use cookies
+        },
+      };
+    } catch (err) {
+      throw err;
+    }
+  };
+
+  // Build options as `any` to allow use of older/newer react-query option names
+  const queryOptions: any = {
     queryKey: ["/api/auth/user"],
-    queryFn: async (): Promise<AuthResponse> => {
-      try {
-        const user = await authClient.get<User>("/api/auth/user");
-        return {
-          success: true,
-          data: {
-            user,
-            accessToken: '', // No longer stored in memory; use cookies
-          },
-        };
-      } catch (err) {
-        throw err;
-      }
-    },
-    retry: false,
+    queryFn,
+    // Enable retry (can be number, boolean, or function in react-query)
+    retry: 1,
     staleTime: 5 * 60 * 1000, // 5 minutes
-    refetchInterval: false,
+    // Use 0 to disable polling
+    refetchInterval: 0,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-  });
+  };
+
+  const { data: authData, isLoading, error } = useQuery<AuthResponse, unknown>(queryOptions as any);
 
   const loginMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
@@ -82,6 +93,7 @@ export function useAuth() {
             accessToken: '', // Tokens are in cookies now
           },
         };
+        // QueryClient in some environments has different typings; call via any
         queryClient.setQueryData(["/api/auth/user"], cacheData);
       }
       navigate("/dashboard");
@@ -95,7 +107,8 @@ export function useAuth() {
     },
     onSuccess: () => {
       // Clear auth cache (logout also clears cookies via authClient)
-      queryClient.clear();
+      if (typeof queryClient.clear === 'function') queryClient.clear();
+      else if (typeof queryClient.invalidateQueries === 'function') queryClient.invalidateQueries();
       navigate("/login");
     },
   });
@@ -141,7 +154,8 @@ export function useAuth() {
     user: authData?.data?.user ?? null,
     isLoading: isLoading,
     isAuthenticated: !!authData?.data?.user,
-    error: error?.message || null,
+    // error from useQuery may be unknown; normalize safely
+    error: ((error as any)?.message as string) || null,
     login: loginMutation.mutate,
     logout: logoutMutation.mutate,
     register: registerMutation.mutate,

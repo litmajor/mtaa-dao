@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, MoreVertical } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Lucide } from '../../src/lib/icons';
+// @ts-ignore - CSS module types may not be declared in this scope
 import styles from './AdminTable.module.css';
 
 interface Column {
@@ -87,6 +88,8 @@ export const AdminTable: React.FC<AdminTableProps> = ({
                     type="checkbox"
                     onChange={handleSelectAll}
                     checked={selectedRows.size === rows.length && rows.length > 0}
+                    aria-label="Select all rows"
+                    title="Select all rows"
                   />
                 </th>
               )}
@@ -112,6 +115,8 @@ export const AdminTable: React.FC<AdminTableProps> = ({
                       checked={selectedRows.has(row.id)}
                       onChange={(e) => handleSelectRow(row.id, e)}
                       onClick={(e) => e.stopPropagation()}
+                      aria-label={`Select row ${row.id}`}
+                      title={`Select row ${row.id}`}
                     />
                   </td>
                 )}
@@ -127,8 +132,11 @@ export const AdminTable: React.FC<AdminTableProps> = ({
                       e.stopPropagation();
                       // TODO: Show context menu
                     }}
+                    aria-label="Row actions"
+                    title="Row actions"
                   >
-                    <MoreVertical size={18} />
+                    {/* use Lucide namespace for icon not exported from helper */}
+                    <Lucide.MoreVertical size={18} />
                   </button>
                 </td>
               </tr>
@@ -142,6 +150,8 @@ export const AdminTable: React.FC<AdminTableProps> = ({
           <button
             disabled={pagination.current === 1}
             onClick={() => pagination.onChange(pagination.current - 1)}
+            aria-label="Previous page"
+            title="Previous page"
           >
             <ChevronLeft size={18} />
           </button>
@@ -151,6 +161,8 @@ export const AdminTable: React.FC<AdminTableProps> = ({
           <button
             disabled={pagination.current === totalPages}
             onClick={() => pagination.onChange(pagination.current + 1)}
+            aria-label="Next page"
+            title="Next page"
           >
             <ChevronRight size={18} />
           </button>

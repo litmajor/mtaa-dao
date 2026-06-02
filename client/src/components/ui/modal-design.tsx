@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Card } from './card-design';
-import { Button } from './button-design';
+import { Button } from './button';
 import { Icon } from './icon-design';
 
 export interface ModalProps {

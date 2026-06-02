@@ -4,7 +4,7 @@
  * Supports BullMQ backend with Redis
  */
 
-import Queue, { Job, JobsOptions } from 'bull';
+import Queue, { Job, JobOptions } from 'bull';
 import { redis } from './redis';
 import { logger } from '../utils/logger';
 
@@ -17,7 +17,9 @@ export type JobType =
   | 'pool-rebalance'
   | 'price-oracle-update'
   | 'vault-rebalance'
-  | 'asset-graph-build';
+  | 'asset-graph-build'
+  | 'multisig-deploy';
+  
 
 export interface JobPayload {
   [key: string]: any;
@@ -54,6 +56,7 @@ class JobQueueService {
       'price-oracle-update',
       'vault-rebalance',
       'asset-graph-build'
+      , 'multisig-deploy' as JobType
     ];
 
     for (const jobType of jobTypes) {
@@ -99,7 +102,7 @@ class JobQueueService {
         throw new Error(`Queue not found for job type: ${jobType}`);
       }
 
-      const jobOptions: JobsOptions = {
+      const jobOptions: JobOptions = {
         priority: options?.priority || 5,
         delay: options?.delay || 0,
         attempts: options?.attempts || 3,
@@ -109,14 +112,15 @@ class JobQueueService {
       const job = await queue.add(payload, jobOptions);
 
       // Store initial status
-      await this.setJobStatus(job.id, {
+      const jobIdStr = String(job.id);
+      await this.setJobStatus(jobIdStr, {
         status: 'pending',
         progress: 0,
         startedAt: new Date()
       });
 
-      logger.info(`[JobQueue] Queued job ${jobType}:${job.id}`);
-      return job.id;
+      logger.info(`[JobQueue] Queued job ${jobType}:${jobIdStr}`);
+      return jobIdStr;
     } catch (error) {
       logger.error(`[JobQueue] Failed to queue job:`, error);
       throw error;
@@ -230,14 +234,15 @@ class JobQueueService {
       }
 
       queue.process(concurrency, async (job: Job<JobPayload>) => {
+        const idStr = String(job.id);
         try {
-          logger.info(`[JobQueue] Processing job ${jobType}:${job.id}`);
+          logger.info(`[JobQueue] Processing job ${jobType}:${idStr}`);
           const result = await processor(job);
-          await this.setJobResult(job.id, result);
+          await this.setJobResult(idStr, result);
           return result;
         } catch (error) {
-          logger.error(`[JobQueue] Job processing failed ${jobType}:${job.id}:`, error);
-          await this.setJobError(job.id, error as Error);
+          logger.error(`[JobQueue] Job processing failed ${jobType}:${idStr}:`, error);
+          await this.setJobError(idStr, error as Error);
           throw error;
         }
       });

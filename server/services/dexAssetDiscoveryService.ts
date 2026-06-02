@@ -15,6 +15,7 @@ import { logger } from '../utils/logger';
 import { dexService } from './dexIntegrationService';
 import { assetGraphService } from './assetGraphService';
 import { priceOracle } from './priceOracle';
+import pLimit from 'p-limit';
 
 export interface DexAssetSource {
   symbol: string;
@@ -82,6 +83,10 @@ class DexAssetDiscoveryService {
 
   constructor() {}
 
+  // Concurrency controls
+  private readonly SUBGRAPH_LIMITER = pLimit(3);
+  private readonly PRICE_HYDRATE_LIMITER = pLimit(10);
+
   /**
    * Discover assets from a specific DEX
    */
@@ -123,14 +128,49 @@ class DexAssetDiscoveryService {
         };
       }
 
-      // Discover assets based on DEX type
-      const assets = await this.discoverAssestsByDex(dex, config);
+      // Discover assets based on DEX type (no pricing yet)
+      const assets = await this.discoverAssetsByDex(dex, config);
 
       // Track new assets
       const oldAssets = cached || [];
       const newAssets = assets
         .filter(a => !oldAssets.find(o => o.symbol === a.symbol))
         .map(a => a.symbol);
+
+      // Build symbol mappings for the PriceOracle (best-effort).
+      // We map symbol -> lower-case id as a pragmatic default so CoinGecko
+      // resolution can often succeed (collector uses the same approach).
+      const symbolMappings = new Map<string, string>();
+      for (const a of assets) {
+        if (!a.symbol) continue;
+        const upper = a.symbol.toUpperCase();
+        // Normalise common misnamed fallback tokens
+        const normalized = upper === 'UNISWAP' ? 'UNI' : upper;
+        symbolMappings.set(normalized, normalized.toLowerCase());
+      }
+
+      if (symbolMappings.size > 0) {
+        try {
+          priceOracle.registerSymbolMappings(symbolMappings);
+        } catch (err: any) {
+          logger.warn(`Failed to register symbol mappings for ${dex}: ${err.message}`);
+        }
+      }
+
+      // Hydrate prices in batch via the PriceOracle (limits apply)
+      try {
+        const uniqueSymbols = Array.from(new Set(assets.map(a => a.symbol).filter(Boolean)));
+        if (uniqueSymbols.length > 0) {
+          // Use the batch API which handles deduplication and gateway/coingecko fallbacks
+          const prices = await priceOracle.getPrices(uniqueSymbols as string[]);
+          for (const asset of assets) {
+            const p = prices.get((asset.symbol || '').toUpperCase());
+            asset.price = p ? p.priceUsd : undefined;
+          }
+        }
+      } catch (err: any) {
+        logger.debug(`Price hydration failed for ${dex}: ${err.message}`);
+      }
 
       // Update cache
       this.dexTokenCache.set(dex, assets);
@@ -175,16 +215,18 @@ class DexAssetDiscoveryService {
     const startTime = Date.now();
 
     const dexes = Object.keys(this.DEX_CONFIG);
-    const results: DexDiscoveryResult[] = [];
+    const tasks = dexes.map((dex) =>
+      this.SUBGRAPH_LIMITER(() => this.discoverDexAssets(dex))
+    );
 
-    for (const dex of dexes) {
-      try {
-        const result = await this.discoverDexAssets(dex);
-        results.push(result);
-      } catch (error: any) {
-        logger.error(`Error discovering ${dex}:`, error.message);
+    const settled = await Promise.allSettled(tasks);
+    const results: DexDiscoveryResult[] = [];
+    settled.forEach((res, idx) => {
+      if (res.status === 'fulfilled') results.push(res.value);
+      else {
+        logger.error(`Error discovering ${dexes[idx]}:`, (res as any).reason?.message || res);
       }
-    }
+    });
 
     const totalAssets = results.reduce((sum, r) => sum + r.totalDiscovered, 0);
     const totalNew = results.reduce((sum, r) => sum + r.newAssets.length, 0);
@@ -253,7 +295,7 @@ class DexAssetDiscoveryService {
   /**
    * Private: Discover assets by DEX type via subgraph queries
    */
-  private async discoverAssestsByDex(
+  private async discoverAssetsByDex(
     dex: string,
     config: any
   ): Promise<DexAssetSource[]> {
@@ -264,44 +306,32 @@ class DexAssetDiscoveryService {
       const topTokens = await this.queryDexSubgraph(dex, config);
 
       for (const token of topTokens) {
-        try {
-          // Fetch current price from oracle
-          const price = await this.getPriceForDexToken(dex, token);
-
-          assets.push({
-            symbol: token.symbol || token.name,
-            dex,
-            chain: config.chain,
-            address: token.address,
-            price,
-            liquidity: token.liquidity,
-            volume24h: token.volume24h,
-            lastUpdated: Date.now()
-          });
-        } catch (error: any) {
-          logger.debug(`Failed to fetch price for ${token.name} on ${dex}`);
-        }
+        assets.push({
+          symbol: token.symbol || token.name,
+          dex,
+          chain: config.chain,
+          address: token.address,
+          price: undefined,
+          liquidity: token.liquidity,
+          volume24h: token.volume24h,
+          lastUpdated: Date.now()
+        });
       }
     } catch (error: any) {
       logger.warn(`Error discovering tokens from ${dex}:`, error.message);
       // Fallback to predefined tokens if subgraph fails
       const fallbackTokens = await this.getTopTokensFromDex(dex);
       for (const token of fallbackTokens) {
-        try {
-          const price = await this.getPriceForDexToken(dex, token);
-          assets.push({
-            symbol: token.symbol || token.name,
-            dex,
-            chain: config.chain,
-            address: token.address,
-            price,
-            liquidity: token.liquidity,
-            volume24h: token.volume24h,
-            lastUpdated: Date.now()
-          });
-        } catch (error: any) {
-          logger.debug(`Fallback: Failed to fetch price for ${token.name} on ${dex}`);
-        }
+        assets.push({
+          symbol: token.symbol || token.name,
+          dex,
+          chain: config.chain,
+          address: token.address,
+          price: undefined,
+          liquidity: token.liquidity,
+          volume24h: token.volume24h,
+          lastUpdated: Date.now()
+        });
       }
     }
 
@@ -434,7 +464,7 @@ class DexAssetDiscoveryService {
         { symbol: 'USDC', name: 'USD Coin', address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' },
         { symbol: 'USDT', name: 'Tether USD', address: '0xdAC17F958D2ee523a2206206994597C13D831ec7' },
         { symbol: 'DAI', name: 'Dai Stablecoin', address: '0x6B175474E89094C44Da98b954EedeAC495271d0f' },
-        { symbol: 'UNISWAP', name: 'Uniswap', address: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984' }
+        { symbol: 'UNI', name: 'Uniswap', address: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984' }
       ],
       sushiswap: [
         { symbol: 'SUSHI', name: 'Sushi', address: '0x6B3595068778DD592e39A122f4f5a5cF09C90fE2' },
@@ -472,8 +502,8 @@ class DexAssetDiscoveryService {
     try {
       // Try to get price from price oracle (CoinGecko)
       if (token.symbol) {
-        const price = await (priceOracle as any).getPrice(token.symbol, 'USD');
-        return price;
+        const priceData = await (priceOracle as any).getPrice(token.symbol);
+        return priceData ? (priceData as any).priceUsd : undefined;
       }
     } catch (error: any) {
       logger.debug(`Could not get price for ${token.symbol} on ${dex}`);

@@ -52,40 +52,28 @@ interface PaginationOptions {
   order: 'asc' | 'desc';
 }
 
-// Helper function to get database connection
-async function getConnection() {
-  try {
-    return await pool.getConnection();
-  } catch (error) {
-    logger.error('Database connection error:', error);
-    throw error;
-  }
-}
+// Using Postgres pool (pg) via `pool.query` directly
 
 // Helper function to detect user's primary persona
-async function detectUserPersona(userId: string, conn?: any): Promise<PersonaType> {
+async function detectUserPersona(userId: string): Promise<PersonaType> {
   try {
-    const connection = conn || await getConnection();
-
     // Get DAO membership and role information
-    const [memberships] = await connection.query(
-      `SELECT role, COUNT(*) as count FROM dao_members 
-       WHERE user_id = ? GROUP BY role`,
+    const membershipsRes = await pool.query(
+      `SELECT role, COUNT(*) as count FROM dao_members WHERE user_id = $1 GROUP BY role`,
       [userId]
     );
+    const memberships = membershipsRes.rows;
 
     // Check if user is a DAO creator
-    const [createdDAOs] = await connection.query(
-      `SELECT COUNT(*) as count FROM daos WHERE creator_id = ?`,
-      [userId]
-    );
+    const createdRes = await pool.query(`SELECT COUNT(*) as count FROM daos WHERE creator_id = $1`, [userId]);
+    const createdDAOs = createdRes.rows;
 
     // Get user's contribution types
-    const [contributions] = await connection.query(
-      `SELECT DISTINCT contribution_type FROM contributions 
-       WHERE user_id = ? LIMIT 10`,
+    const contributionsRes = await pool.query(
+      `SELECT DISTINCT contribution_type FROM contributions WHERE user_id = $1 LIMIT 10`,
       [userId]
     );
+    const contributions = contributionsRes.rows;
 
     // Determine persona based on activity
     let persona: PersonaType = 'dao_member';
@@ -101,10 +89,6 @@ async function detectUserPersona(userId: string, conn?: any): Promise<PersonaTyp
     // Check for investor persona (has investment_created contributions)
     else if (contributions.some((c: any) => c.contribution_type === 'investment_created')) {
       persona = 'investor';
-    }
-
-    if (conn === undefined) {
-      connection.release();
     }
 
     return persona;
@@ -138,17 +122,13 @@ export async function getUserPersonaDataHandler(req: Request, res: Response) {
     });
   }
 
-  let connection;
-
   try {
-    connection = await getConnection();
-
     // Get user details
-    const [users] = await connection.query(
-      `SELECT id, username, email, reputation_score, created_at 
-       FROM users WHERE id = ?`,
+    const usersRes = await pool.query(
+      `SELECT id, username, email, reputation_score, created_at FROM users WHERE id = $1`,
       [userId]
     );
+    const users = usersRes.rows;
 
     if (!users.length) {
       return res.status(404).json({
@@ -163,44 +143,40 @@ export async function getUserPersonaDataHandler(req: Request, res: Response) {
     const user = users[0];
 
     // Get DAO counts
-    const [daoCount] = await connection.query(
-      `SELECT COUNT(DISTINCT dao_id) as count FROM dao_members WHERE user_id = ?`,
+    const daoCountRes = await pool.query(
+      `SELECT COUNT(DISTINCT dao_id) as count FROM dao_members WHERE user_id = $1`,
       [userId]
     );
+    const daoCount = daoCountRes.rows;
 
     // Check if user is a DAO creator
-    const [createdCount] = await connection.query(
-      `SELECT COUNT(*) as count FROM daos WHERE creator_id = ?`,
+    const createdCountRes = await pool.query(
+      `SELECT COUNT(*) as count FROM daos WHERE creator_id = $1`,
       [userId]
     );
+    const createdCount = createdCountRes.rows;
 
     // Get DAO roles/memberships
-    const [roles] = await connection.query(
-      `SELECT DISTINCT role FROM dao_members WHERE user_id = ?`,
-      [userId]
-    );
+    const rolesRes = await pool.query(`SELECT DISTINCT role FROM dao_members WHERE user_id = $1`, [userId]);
+    const roles = rolesRes.rows;
 
     // Get contribution types
-    const [contributions] = await connection.query(
-      `SELECT DISTINCT contribution_type FROM contributions WHERE user_id = ?`,
-      [userId]
-    );
+    const contributionsRes = await pool.query(`SELECT DISTINCT contribution_type FROM contributions WHERE user_id = $1`, [userId]);
+    const contributions = contributionsRes.rows;
 
     // Count total contributions
-    const [contributionCount] = await connection.query(
-      `SELECT COUNT(*) as count FROM contributions WHERE user_id = ?`,
-      [userId]
-    );
+    const contributionCountRes = await pool.query(`SELECT COUNT(*) as count FROM contributions WHERE user_id = $1`, [userId]);
+    const contributionCount = contributionCountRes.rows;
 
     // Get last activity
-    const [lastActivity] = await connection.query(
-      `SELECT created_at FROM activities WHERE user_id = ? 
-       ORDER BY created_at DESC LIMIT 1`,
+    const lastActivityRes = await pool.query(
+      `SELECT created_at FROM activities WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
       [userId]
     );
+    const lastActivity = lastActivityRes.rows;
 
     // Detect primary persona
-    const primaryPersona = await detectUserPersona(userId, connection);
+    const primaryPersona = await detectUserPersona(userId);
 
     // Build list of all personas
     const allPersonas: PersonaType[] = ['dao_member'];
@@ -232,11 +208,7 @@ export async function getUserPersonaDataHandler(req: Request, res: Response) {
       lastActivityDate: lastActivity[0]?.created_at || user.created_at
     };
 
-    return res.json({
-      success: true,
-      data: response
-    });
-
+    return res.json({ success: true, data: response });
   } catch (error) {
     logger.error('Error in getUserPersonaDataHandler:', error);
     return res.status(500).json({
@@ -246,10 +218,6 @@ export async function getUserPersonaDataHandler(req: Request, res: Response) {
         message: 'Failed to retrieve persona data'
       }
     });
-  } finally {
-    if (connection) {
-      connection.release();
-    }
   }
 }
 
@@ -283,8 +251,6 @@ export async function getUserDAOsHandler(req: Request, res: Response) {
     });
   }
 
-  let connection;
-
   try {
     // Parse and validate query parameters
     let limit = parseInt(req.query.limit as string) || 50;
@@ -310,8 +276,6 @@ export async function getUserDAOsHandler(req: Request, res: Response) {
     // Validate order parameter
     const orderDirection = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
-    connection = await getConnection();
-
     // Get user's DAOs with member count and treasury balance
     const query = `
       SELECT 
@@ -330,23 +294,21 @@ export async function getUserDAOsHandler(req: Request, res: Response) {
       JOIN dao_members dm ON d.id = dm.dao_id
       LEFT JOIN dao_members dm2 ON d.id = dm2.dao_id
       LEFT JOIN dao_treasury dt ON d.id = dt.dao_id
-      WHERE dm.user_id = ?
+      WHERE dm.user_id = $1
       GROUP BY d.id, dm.role, dm.user_status, dm.joined_at, dm.is_primary
       ORDER BY d.${sortField} ${orderDirection}
-      LIMIT ? OFFSET ?
+      LIMIT $2 OFFSET $3
     `;
 
-    const [daos] = await connection.query(query, [userId, limit, offset]);
+    const daosRes = await pool.query(query, [userId, limit, offset]);
+    const daos = daosRes.rows;
 
     // Get total count
-    const [countResult] = await connection.query(
-      `SELECT COUNT(DISTINCT d.id) as total FROM daos d 
-       JOIN dao_members dm ON d.id = dm.dao_id 
-       WHERE dm.user_id = ?`,
+    const countRes = await pool.query(
+      `SELECT COUNT(DISTINCT d.id) as total FROM daos d JOIN dao_members dm ON d.id = dm.dao_id WHERE dm.user_id = $1`,
       [userId]
     );
-
-    const total = countResult[0]?.total || 0;
+    const total = countRes.rows[0]?.total || 0;
 
     // Format response
     const daoList: DAOInfo[] = daos.map((dao: any) => ({
@@ -382,10 +344,6 @@ export async function getUserDAOsHandler(req: Request, res: Response) {
         message: 'Failed to retrieve user DAOs'
       }
     });
-  } finally {
-    if (connection) {
-      connection.release();
-    }
   }
 }
 
@@ -435,32 +393,20 @@ export async function getDashboardPersonaHandler(req: Request, res: Response) {
     });
   }
 
-  let connection;
-
   try {
-    connection = await getConnection();
-
-    let dashboardData: any = {
-      persona,
-      summary: {},
-      timestamp: new Date().toISOString()
-    };
+    let dashboardData: any = { persona, summary: {}, timestamp: new Date().toISOString() };
 
     if (persona === 'dao_member') {
-      dashboardData = await getDaoMemberDashboard(userId, connection);
+      dashboardData = await getDaoMemberDashboard(userId);
     } else if (persona === 'dao_treasurer') {
-      dashboardData = await getDaoTreasurerDashboard(userId, connection);
+      dashboardData = await getDaoTreasurerDashboard(userId);
     } else if (persona === 'dao_creator') {
-      dashboardData = await getDaoCreatorDashboard(userId, connection);
+      dashboardData = await getDaoCreatorDashboard(userId);
     } else if (persona === 'investor') {
-      dashboardData = await getInvestorDashboard(userId, connection);
+      dashboardData = await getInvestorDashboard(userId);
     }
 
-    return res.json({
-      success: true,
-      data: dashboardData
-    });
-
+    return res.json({ success: true, data: dashboardData });
   } catch (error) {
     logger.error('Error in getDashboardPersonaHandler:', error);
     return res.status(500).json({
@@ -470,95 +416,77 @@ export async function getDashboardPersonaHandler(req: Request, res: Response) {
         message: 'Failed to retrieve dashboard data'
       }
     });
-  } finally {
-    if (connection) {
-      connection.release();
-    }
   }
 }
 
 /**
  * Get DAO Member specific dashboard data
  */
-async function getDaoMemberDashboard(userId: string, connection: any) {
+async function getDaoMemberDashboard(userId: string) {
   try {
     // Get active memberships
-    const [activeMemberships] = await connection.query(
-      `SELECT COUNT(*) as count FROM dao_members 
-       WHERE user_id = ? AND user_status = 'active'`,
+    const activeMembershipsRes = await pool.query(
+      `SELECT COUNT(*) as count FROM dao_members WHERE user_id = $1 AND user_status = 'active'`,
       [userId]
     );
+    const activeMemberships = activeMembershipsRes.rows;
 
     // Get contributions this month
-    const [monthlyContributions] = await connection.query(
-      `SELECT COUNT(*) as count FROM contributions 
-       WHERE user_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 1 MONTH)`,
+    const monthlyContributionsRes = await pool.query(
+      `SELECT COUNT(*) as count FROM contributions WHERE user_id = $1 AND created_at >= NOW() - INTERVAL '1 month'`,
       [userId]
     );
+    const monthlyContributions = monthlyContributionsRes.rows;
 
     // Get pending tasks
-    const [pendingTasks] = await connection.query(
-      `SELECT COUNT(*) as count FROM tasks 
-       WHERE assigned_to = ? AND status NOT IN ('completed', 'cancelled')`,
+    const pendingTasksRes = await pool.query(
+      `SELECT COUNT(*) as count FROM tasks WHERE assigned_to = $1 AND status NOT IN ('completed', 'cancelled')`,
       [userId]
     );
+    const pendingTasks = pendingTasksRes.rows;
 
     // Get reputation score
-    const [reputation] = await connection.query(
-      `SELECT reputation_score FROM users WHERE id = ?`,
-      [userId]
-    );
+    const reputationRes = await pool.query(`SELECT reputation_score FROM users WHERE id = $1`, [userId]);
+    const reputation = reputationRes.rows;
 
     // Get recent activity
-    const [recentActivity] = await connection.query(
-      `SELECT 
-        a.id, a.activity_type as type, d.id as daoId, d.name as daoName,
-        a.description, a.created_at as timestamp, a.metadata
-      FROM activities a
-      LEFT JOIN daos d ON a.dao_id = d.id
-      WHERE a.user_id = ?
-      ORDER BY a.created_at DESC
-      LIMIT 10`,
+    const recentActivityRes = await pool.query(
+      `SELECT a.id, a.activity_type as type, d.id as daoId, d.name as daoName, a.description, a.created_at as timestamp, a.metadata
+       FROM activities a
+       LEFT JOIN daos d ON a.dao_id = d.id
+       WHERE a.user_id = $1
+       ORDER BY a.created_at DESC
+       LIMIT 10`,
       [userId]
     );
+    const recentActivity = recentActivityRes.rows;
 
     // Get task board stats
-    const [taskStats] = await connection.query(
-      `SELECT status, COUNT(*) as count FROM tasks 
-       WHERE assigned_to = ? GROUP BY status`,
-      [userId]
-    );
+    const taskStatsRes = await pool.query(`SELECT status, COUNT(*) as count FROM tasks WHERE assigned_to = $1 GROUP BY status`, [userId]);
+    const taskStats = taskStatsRes.rows;
 
     // Get upcoming deadlines
-    const [upcomingDeadlines] = await connection.query(
+    const upcomingDeadlinesRes = await pool.query(
       `SELECT t.id as taskId, t.title, t.due_date as dueDate, d.name as daoName
        FROM tasks t
        LEFT JOIN daos d ON t.dao_id = d.id
-       WHERE t.assigned_to = ? AND t.status NOT IN ('completed', 'cancelled')
+       WHERE t.assigned_to = $1 AND t.status NOT IN ('completed', 'cancelled')
        AND t.due_date IS NOT NULL
        ORDER BY t.due_date ASC
        LIMIT 5`,
       [userId]
     );
+    const upcomingDeadlines = upcomingDeadlinesRes.rows;
 
     // Get network metrics
-    const [followers] = await connection.query(
-      `SELECT COUNT(*) as count FROM user_follows 
-       WHERE following_id = ? AND status = 'accepted'`,
-      [userId]
-    );
+    const followersRes = await pool.query(`SELECT COUNT(*) as count FROM user_follows WHERE following_id = $1 AND status = 'accepted'`, [userId]);
+    const followers = followersRes.rows;
 
-    const [following] = await connection.query(
-      `SELECT COUNT(*) as count FROM user_follows 
-       WHERE follower_id = ? AND status = 'accepted'`,
-      [userId]
-    );
+    const followingRes = await pool.query(`SELECT COUNT(*) as count FROM user_follows WHERE follower_id = $1 AND status = 'accepted'`, [userId]);
+    const following = followingRes.rows;
 
-    const [connectionRequests] = await connection.query(
-      `SELECT COUNT(*) as count FROM user_follows 
-       WHERE following_id = ? AND status = 'pending'`,
-      [userId]
-    );
+    const connectionRequestsRes = await pool.query(`SELECT COUNT(*) as count FROM user_follows WHERE following_id = $1 AND status = 'pending'`, [userId]);
+    const connectionRequests = connectionRequestsRes.rows;
 
     return {
       persona: 'dao_member',
@@ -603,15 +531,11 @@ async function getDaoMemberDashboard(userId: string, connection: any) {
 /**
  * Get DAO Treasurer specific dashboard data
  */
-async function getDaoTreasurerDashboard(userId: string, connection: any) {
+async function getDaoTreasurerDashboard(userId: string) {
   try {
     // Get DAOs managed by user as treasurer
-    const [managedDAOs] = await connection.query(
-      `SELECT dao_id FROM dao_members 
-       WHERE user_id = ? AND role = 'treasurer'`,
-      [userId]
-    );
-
+    const managedRes = await pool.query(`SELECT dao_id FROM dao_members WHERE user_id = $1 AND role = 'treasurer'`, [userId]);
+    const managedDAOs = managedRes.rows;
     const daoIds = managedDAOs.map((d: any) => d.dao_id);
 
     let treasuries = [];
@@ -620,59 +544,54 @@ async function getDaoTreasurerDashboard(userId: string, connection: any) {
     let totalMonthlyOutflow = 0;
 
     if (daoIds.length > 0) {
-      // Get treasury details
-      const placeholders = daoIds.map(() => '?').join(',');
-      const [treasuryData] = await connection.query(
-        `SELECT 
-          d.id as daoId, d.name as daoName, dt.balance_usd as balance,
-          COUNT(DISTINCT dm.user_id) as memberCount,
-          COALESCE(SUM(CASE WHEN t.transaction_type = 'inflow' 
-            AND t.created_at >= DATE_SUB(NOW(), INTERVAL 1 MONTH) 
-            THEN t.amount_usd ELSE 0 END), 0) as monthlyInflow,
-          COALESCE(SUM(CASE WHEN t.transaction_type = 'outflow' 
-            AND t.created_at >= DATE_SUB(NOW(), INTERVAL 1 MONTH) 
-            THEN t.amount_usd ELSE 0 END), 0) as monthlyOutflow
-        FROM daos d
-        JOIN dao_treasury dt ON d.id = dt.dao_id
-        LEFT JOIN dao_members dm ON d.id = dm.dao_id
-        LEFT JOIN treasury_transactions t ON d.id = t.dao_id
-        WHERE d.id IN (${placeholders})
-        GROUP BY d.id, d.name, dt.balance_usd`,
-        daoIds
-      );
+      // Get treasury details using ANY($1) with array parameter
+      const treasuryQuery = `SELECT d.id as daoId, d.name as daoName, dt.balance_usd as balance,
+        COUNT(DISTINCT dm.user_id) as memberCount,
+        COALESCE(SUM(CASE WHEN t.transaction_type = 'inflow' AND t.created_at >= NOW() - INTERVAL '1 month' THEN t.amount_usd ELSE 0 END), 0) as monthlyInflow,
+        COALESCE(SUM(CASE WHEN t.transaction_type = 'outflow' AND t.created_at >= NOW() - INTERVAL '1 month' THEN t.amount_usd ELSE 0 END), 0) as monthlyOutflow
+      FROM daos d
+      JOIN dao_treasury dt ON d.id = dt.dao_id
+      LEFT JOIN dao_members dm ON d.id = dm.dao_id
+      LEFT JOIN treasury_transactions t ON d.id = t.dao_id
+      WHERE d.id = ANY($1)
+      GROUP BY d.id, d.name, dt.balance_usd`;
+
+      const treasuryRes = await pool.query(treasuryQuery, [daoIds]);
+      const treasuryData = treasuryRes.rows;
 
       treasuries = treasuryData.map((t: any) => {
         totalTreasuryUSD += t.balance || 0;
-        totalMonthlyInflow += t.monthlyInflow || 0;
-        totalMonthlyOutflow += t.monthlyOutflow || 0;
+        totalMonthlyInflow += t.monthlyinflow || 0;
+        totalMonthlyOutflow += t.monthlyoutflow || 0;
 
         return {
-          daoId: t.daoId,
-          daoName: t.daoName,
+          daoId: t.daoid,
+          daoName: t.daoname,
           balance: t.balance || 0,
           currency: 'USD',
-          memberCount: t.memberCount || 0,
-          monthlyInflow: t.monthlyInflow || 0,
-          monthlyOutflow: t.monthlyOutflow || 0
+          memberCount: t.membercount || 0,
+          monthlyInflow: t.monthlyinflow || 0,
+          monthlyOutflow: t.monthlyoutflow || 0
         };
       });
     }
 
     // Get pending approvals
-    const [pendingApprovals] = await connection.query(
-      `SELECT 
-        ms.id, ms.transaction_type as type, ms.amount_usd as amount, 
-        'USD' as currency, ms.required_signatures as requiredSignatures,
-        COUNT(DISTINCT mss.signer_id) as currentSignatures, d.name as daoName
-      FROM multisig_transactions ms
-      LEFT JOIN multisig_signatures mss ON ms.id = mss.transaction_id
-      LEFT JOIN daos d ON ms.dao_id = d.id
-      WHERE ms.dao_id IN (${daoIds.length > 0 ? daoIds.map(() => '?').join(',') : 'NULL'})
-      AND ms.status = 'pending_signatures'
-      GROUP BY ms.id, ms.transaction_type, ms.amount_usd, 
-               ms.required_signatures, d.name`,
-      daoIds.length > 0 ? daoIds : []
-    );
+    let pendingApprovals = [];
+    if (daoIds.length > 0) {
+      const pendingQuery = `SELECT ms.id, ms.transaction_type as type, ms.amount_usd as amount,
+          'USD' as currency, ms.required_signatures as requiredSignatures,
+          COUNT(DISTINCT mss.signer_id) as currentSignatures, d.name as daoName
+        FROM multisig_transactions ms
+        LEFT JOIN multisig_signatures mss ON ms.id = mss.transaction_id
+        LEFT JOIN daos d ON ms.dao_id = d.id
+        WHERE ms.dao_id = ANY($1)
+        AND ms.status = 'pending_signatures'
+        GROUP BY ms.id, ms.transaction_type, ms.amount_usd, ms.required_signatures, d.name`;
+
+      const pendingRes = await pool.query(pendingQuery, [daoIds]);
+      pendingApprovals = pendingRes.rows;
+    }
 
     return {
       persona: 'dao_treasurer',
@@ -707,12 +626,11 @@ async function getDaoTreasurerDashboard(userId: string, connection: any) {
 /**
  * Get DAO Creator specific dashboard data
  */
-async function getDaoCreatorDashboard(userId: string, connection: any) {
+async function getDaoCreatorDashboard(userId: string) {
   try {
     // Get DAOs created by user
-    const [createdDAOs] = await connection.query(
-      `SELECT 
-        d.id, d.name, d.created_at as createdAt, 'active' as status,
+    const createdRes = await pool.query(
+      `SELECT d.id, d.name, d.created_at as createdAt, 'active' as status,
         COUNT(DISTINCT dm.user_id) as memberCount,
         COUNT(DISTINCT p.id) as proposalsCount,
         COUNT(DISTINCT t.id) as tasksCount
@@ -720,56 +638,51 @@ async function getDaoCreatorDashboard(userId: string, connection: any) {
       LEFT JOIN dao_members dm ON d.id = dm.dao_id
       LEFT JOIN proposals p ON d.id = p.dao_id
       LEFT JOIN tasks t ON d.id = t.dao_id
-      WHERE d.creator_id = ?
+      WHERE d.creator_id = $1
       GROUP BY d.id, d.name, d.created_at`,
       [userId]
     );
+    const createdDAOs = createdRes.rows;
 
     // Get governance metrics
-    const [governanceMetrics] = await connection.query(
-      `SELECT 
-        d.id,
-        COALESCE(AVG(DATEDIFF(p.ended_at, p.created_at)), 0) as avgProposalDuration,
-        COALESCE(SUM(CASE WHEN p.status = 'approved' THEN 1 ELSE 0 END) / 
-                 COUNT(p.id), 0) as proposalApprovalRate,
-        COALESCE(SUM(CASE WHEN dm.last_activity_at > DATE_SUB(NOW(), INTERVAL 30 DAY) 
-                         THEN 1 ELSE 0 END) / COUNT(DISTINCT dm.user_id), 0) as memberEngagementRate
+    const governanceRes = await pool.query(
+      `SELECT d.id,
+        COALESCE(AVG(EXTRACT(EPOCH FROM (p.ended_at - p.created_at))/86400), 0) as avgProposalDuration,
+        COALESCE(SUM(CASE WHEN p.status = 'approved' THEN 1 ELSE 0 END)::float / NULLIF(COUNT(p.id),0), 0) as proposalApprovalRate,
+        COALESCE(SUM(CASE WHEN dm.last_activity_at > NOW() - INTERVAL '30 days' THEN 1 ELSE 0 END)::float / NULLIF(COUNT(DISTINCT dm.user_id),0), 0) as memberEngagementRate
       FROM daos d
       LEFT JOIN proposals p ON d.id = p.dao_id
       LEFT JOIN dao_members dm ON d.id = dm.dao_id
-      WHERE d.creator_id = ?
+      WHERE d.creator_id = $1
       GROUP BY d.id`,
       [userId]
     );
+    const governanceMetrics = governanceRes.rows;
 
     // Get member growth rate and analytics
-    const [memberGrowth] = await connection.query(
-      `SELECT 
-        COALESCE(
-          (COUNT(CASE WHEN dm.joined_at > DATE_SUB(NOW(), INTERVAL 1 MONTH) THEN 1 END) / 
-           COUNT(DISTINCT d.id)) / 
-          (SELECT COUNT(*) FROM dao_members WHERE created_at < DATE_SUB(NOW(), INTERVAL 1 MONTH)) 
-        , 0) as growthRate
+    const memberGrowthRes = await pool.query(
+      `SELECT COALESCE((SUM(CASE WHEN dm.joined_at > NOW() - INTERVAL '1 month' THEN 1 ELSE 0 END)::float / NULLIF(COUNT(DISTINCT d.id),0)) /
+          NULLIF((SELECT COUNT(*) FROM dao_members WHERE created_at < NOW() - INTERVAL '1 month'),0), 0) as growthRate
       FROM daos d
       LEFT JOIN dao_members dm ON d.id = dm.dao_id
-      WHERE d.creator_id = ?`,
+      WHERE d.creator_id = $1`,
       [userId]
     );
+    const memberGrowth = memberGrowthRes.rows;
 
     // Get top contributors
-    const [topContributors] = await connection.query(
-      `SELECT u.id as userId, u.username, 
-        COUNT(c.id) as contributions,
-        COALESCE(u.reputation_score, 0) as reputationGain
+    const topContributorsRes = await pool.query(
+      `SELECT u.id as userId, u.username, COUNT(c.id) as contributions, COALESCE(u.reputation_score, 0) as reputationGain
       FROM contributions c
       JOIN users u ON c.user_id = u.id
       JOIN daos d ON c.dao_id = d.id
-      WHERE d.creator_id = ?
+      WHERE d.creator_id = $1
       GROUP BY u.id, u.username, u.reputation_score
       ORDER BY contributions DESC
       LIMIT 5`,
       [userId]
     );
+    const topContributors = topContributorsRes.rows;
 
     return {
       persona: 'dao_creator',
@@ -783,23 +696,23 @@ async function getDaoCreatorDashboard(userId: string, connection: any) {
         name: dao.name,
         createdAt: dao.createdAt,
         status: dao.status,
-        memberCount: dao.memberCount || 0,
-        proposalsCount: dao.proposalsCount || 0,
-        tasksCount: dao.tasksCount || 0,
+        memberCount: dao.membercount || 0,
+        proposalsCount: dao.proposalscount || 0,
+        tasksCount: dao.taskscount || 0,
         governanceMetrics: {
-          avgProposalDuration: Math.round(governanceMetrics[0]?.avgProposalDuration || 0),
-          proposalApprovalRate: parseFloat((governanceMetrics[0]?.proposalApprovalRate || 0).toFixed(2)),
-          memberEngagementRate: parseFloat((governanceMetrics[0]?.memberEngagementRate || 0).toFixed(2))
+          avgProposalDuration: Math.round(governanceMetrics[0]?.avgproposalduration || 0),
+          proposalApprovalRate: parseFloat((governanceMetrics[0]?.proposalapprovalrate || 0).toFixed(2)),
+          memberEngagementRate: parseFloat((governanceMetrics[0]?.memberengagementrate || 0).toFixed(2))
         }
       })),
       analyticsOverview: {
-        memberGrowthRate: parseFloat((memberGrowth[0]?.growthRate || 0).toFixed(2)),
+        memberGrowthRate: parseFloat((memberGrowth[0]?.growthrate || 0).toFixed(2)),
         engagementTrendMonth: 'up',
         topContributors: topContributors.map((c: any) => ({
-          userId: c.userId,
+          userId: c.userid,
           username: c.username,
           contributions: c.contributions,
-          reputationGain: c.reputationGain
+          reputationGain: c.reputationgain
         }))
       }
     };
@@ -812,50 +725,47 @@ async function getDaoCreatorDashboard(userId: string, connection: any) {
 /**
  * Get Investor specific dashboard data
  */
-async function getInvestorDashboard(userId: string, connection: any) {
+async function getInvestorDashboard(userId: string) {
   try {
     // Get user's investments
-    const [investments] = await connection.query(
-      `SELECT 
-        i.id as investmentId, d.name as daoName, i.investment_amount as amount,
-        i.current_value as currentValue, 
-        ((i.current_value - i.investment_amount) / i.investment_amount * 100) as returnPercentage,
+    const investmentsRes = await pool.query(
+      `SELECT i.id as investmentId, d.name as daoName, i.investment_amount as amount,
+        i.current_value as currentValue,
+        ((i.current_value - i.investment_amount) / NULLIF(i.investment_amount,0) * 100) as returnPercentage,
         i.created_at as investmentDate, i.shares_owned as sharesOwned
       FROM investments i
       JOIN daos d ON i.dao_id = d.id
-      WHERE i.investor_id = ?
+      WHERE i.investor_id = $1
       ORDER BY i.created_at DESC`,
       [userId]
     );
+    const investments = investmentsRes.rows;
 
-    const portfolioValue = investments.reduce((sum: number, i: any) => sum + (i.currentValue || 0), 0);
+    const portfolioValue = investments.reduce((sum: number, i: any) => sum + (i.currentvalue || 0), 0);
     const totalInvestments = investments.reduce((sum: number, i: any) => sum + (i.amount || 0), 0);
     const investmentReturns = portfolioValue - totalInvestments;
 
     // Get portfolio metrics
-    const [portfolioMetrics] = await connection.query(
-      `SELECT 
-        COALESCE(STD(i.current_value), 0) as diversification,
-        'medium' as riskLevel,
-        COALESCE(AVG((i.current_value - i.investment_amount) / i.investment_amount), 0) as avgReturn
+    const portfolioMetricsRes = await pool.query(
+      `SELECT COALESCE(stddev_pop(i.current_value), 0) as diversification, 'medium' as riskLevel,
+        COALESCE(AVG((i.current_value - i.investment_amount) / NULLIF(i.investment_amount,0)), 0) as avgReturn
       FROM investments i
-      WHERE i.investor_id = ?`,
+      WHERE i.investor_id = $1`,
       [userId]
     );
+    const portfolioMetrics = portfolioMetricsRes.rows;
 
     // Get investment opportunities
-    const [opportunities] = await connection.query(
-      `SELECT 
-        f.id, d.name as daoName, f.funding_needed as fundingNeeded,
+    const opportunitiesRes = await pool.query(
+      `SELECT f.id, d.name as daoName, f.funding_needed as fundingNeeded,
         f.funding_target as fundingTarget, f.funding_raised as fundingRaised,
         f.expected_return_rate as expectedReturn
       FROM fundraising_campaigns f
       JOIN daos d ON f.dao_id = d.id
       WHERE f.status = 'active'
       ORDER BY f.created_at DESC
-      LIMIT 5`,
-      []
-    );
+      LIMIT 5`);
+    const opportunities = opportunitiesRes.rows;
 
     return {
       persona: 'investor',
@@ -865,18 +775,18 @@ async function getInvestorDashboard(userId: string, connection: any) {
         investmentReturnsMonth: investmentReturns / 12 // Rough estimate
       },
       investments: investments.map((inv: any) => ({
-        investmentId: inv.investmentId,
-        daoName: inv.daoName,
+        investmentId: inv.investmentid,
+        daoName: inv.daoname,
         investmentAmount: inv.amount,
-        currentValue: inv.currentValue,
-        returnPercentage: parseFloat((inv.returnPercentage || 0).toFixed(1)),
-        investmentDate: inv.investmentDate,
-        sharesOwned: inv.sharesOwned
+        currentValue: inv.currentvalue,
+        returnPercentage: parseFloat((inv.returnpercentage || 0).toFixed(1)),
+        investmentDate: inv.investmentdate,
+        sharesOwned: inv.sharesowned
       })),
       portfolioMetrics: {
-        diversificationScore: 0.72, // Placeholder
-        riskLevel: portfolioMetrics[0]?.riskLevel || 'medium',
-        averageReturn: parseFloat((portfolioMetrics[0]?.avgReturn || 0).toFixed(2))
+        diversificationScore: portfolioMetrics[0]?.diversification || 0.72,
+        riskLevel: portfolioMetrics[0]?.risklevel || 'medium',
+        averageReturn: parseFloat((portfolioMetrics[0]?.avgreturn || 0).toFixed(2))
       },
       opportunities: opportunities.map((opp: any) => ({
         id: opp.id,

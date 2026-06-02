@@ -3,7 +3,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowUpRight, LoaderCircle, ChevronDown } from 'lucide-react';
+import { ArrowUpRight, LoaderCircle, ChevronDown, ChevronLeft } from 'lucide-react';
+import StepProgress from '@/components/crosschain/StepProgress';
+import DestinationPreview from '@/components/crosschain/DestinationPreview';
+import FeeIndicator from '@/components/crosschain/FeeIndicator';
+import RiskCollapse from '@/components/crosschain/RiskCollapse';
+import RouteInfo from '@/components/crosschain/RouteInfo';
+import TokenSelector from '@/components/crosschain/TokenSelector';
+import StickyCTA from '@/components/crosschain/StickyCTA';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiGet, apiPost } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
@@ -26,6 +33,8 @@ export default function CrossChainBridgePage() {
   const [destinationChain, setDestinationChain] = useState('ethereum');
   const [amount, setAmount] = useState('');
   const [tokenAddress, setTokenAddress] = useState('');
+  const [tokenSymbol, setTokenSymbol] = useState('');
+  const [step, setStep] = useState(0);
   const [destinationAddress, setDestinationAddress] = useState('');
 
   // Fetch supported chains
@@ -102,195 +111,113 @@ export default function CrossChainBridgePage() {
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
-      {/* Back Link */}
-      <Link to="/cross-chain" className="flex items-center gap-2 text-blue-600 hover:text-blue-700 mb-6">
-        <ChevronLeft className="h-4 w-4" />
-        Back to Hub
-      </Link>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-4">
+          <Link to="/cross-chain" className="flex items-center gap-2 text-blue-600 hover:text-blue-700">
+            <ChevronLeft className="h-4 w-4" />
+            Back
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold">Bridge Assets</h1>
+            <p className="text-sm text-muted-foreground">Move tokens across chains with guidance and risk info</p>
+          </div>
+        </div>
+      </div>
 
-      <h1 className="text-3xl font-bold mb-2">Bridge Assets</h1>
-      <p className="text-gray-600 mb-6">Transfer your tokens to another blockchain while keeping the same token type</p>
-      
       <Card>
         <CardHeader>
           <CardTitle>Bridge Token</CardTitle>
-          <CardDescription>
-            Move your tokens across blockchains. Your token type stays the same.
-          </CardDescription>
+          <CardDescription>Structured flow to reduce cognitive load</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Information Card */}
-          <Card className="border-blue-200 bg-blue-50">
-            <CardHeader>
-              <CardTitle className="text-base text-blue-900">How Bridging Works</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm text-blue-900">
-              <div>
-                <p className="font-semibold mb-1">💡 The Process:</p>
-                <p className="text-blue-800">1. You lock your tokens on the source chain 2. Smart contracts verify the lock 3. Equivalent tokens are released on the destination chain</p>
-              </div>
-              <div>
-                <p className="font-semibold mb-1">✅ Key Benefits:</p>
-                <p className="text-blue-800">Token amount stays exactly the same. No conversion involved. Access the same token on different chains.</p>
-              </div>
-              <div>
-                <p className="font-semibold mb-1">⏱️ Timeline:</p>
-                <p className="text-blue-800">Typical processing: 10-30 minutes. Speed depends on network congestion.</p>
-              </div>
-              <div>
-                <p className="font-semibold mb-1">💰 Costs:</p>
-                <p className="text-blue-800">Bridge fee + gas fees on both chains. Usually €5-50 depending on chain and network conditions.</p>
-              </div>
-            </CardContent>
-          </Card>
+        <CardContent className="space-y-4">
+          <StepProgress step={step} />
 
-          {/* Chain Selection */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+          {step === 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+              <div>
+                <label className="text-sm font-medium mb-2 block">From Chain</label>
+                <Select value={sourceChain} onValueChange={setSourceChain}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {chains?.map((chain: string) => (
+                      <SelectItem key={chain} value={chain}>{CHAIN_NAMES[chain as keyof typeof CHAIN_NAMES] || chain}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex justify-center">
+                <ArrowUpRight className="h-6 w-6 text-muted-foreground" />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium mb-2 block">To Chain</label>
+                <Select value={destinationChain} onValueChange={setDestinationChain}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {chains?.filter((c: string) => c !== sourceChain).map((chain: string) => (
+                      <SelectItem key={chain} value={chain}>{CHAIN_NAMES[chain as keyof typeof CHAIN_NAMES] || chain}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          {step === 1 && (
             <div>
-              <label className="text-sm font-medium mb-2 block">From Chain</label>
-              <Select value={sourceChain} onValueChange={setSourceChain}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {chains?.map((chain: string) => (
-                    <SelectItem key={chain} value={chain}>
-                      {CHAIN_NAMES[chain as keyof typeof CHAIN_NAMES] || chain}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <TokenSelector chain={sourceChain} value={tokenSymbol} address={tokenAddress} onSelect={(sym, addr) => { setTokenSymbol(sym); if (addr) setTokenAddress(addr); }} onAddressChange={setTokenAddress} />
             </div>
+          )}
 
-            <div className="flex justify-center">
-              <ArrowRight className="h-6 w-6 text-muted-foreground" />
-            </div>
-
+          {step === 2 && (
             <div>
-              <label className="text-sm font-medium mb-2 block">To Chain</label>
-              <Select value={destinationChain} onValueChange={setDestinationChain}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {chains?.filter((c: string) => c !== sourceChain).map((chain: string) => (
-                    <SelectItem key={chain} value={chain}>
-                      {CHAIN_NAMES[chain as keyof typeof CHAIN_NAMES] || chain}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Token and Amount Details */}
-          <div>
-            <label className="text-sm font-medium mb-2 block">Token Address</label>
-            <Input
-              placeholder="0x..."
-              value={tokenAddress}
-              onChange={(e) => setTokenAddress(e.target.value)}
-            />
-            <p className="text-xs text-gray-500 mt-1">The contract address of the token you want to bridge</p>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium mb-2 block">Amount to Bridge</label>
-            <Input
-              type="number"
-              placeholder="0.00"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
-            <p className="text-xs text-gray-500 mt-1">You'll send this exact amount to the destination chain</p>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium mb-2 block">Destination Address</label>
-            <Input
-              placeholder="0x..."
-              value={destinationAddress}
-              onChange={(e) => setDestinationAddress(e.target.value)}
-            />
-            <p className="text-xs text-gray-500 mt-1">Where your tokens will arrive on the destination chain</p>
-          </div>
-
-          {/* Fee Estimate */}
-          {feeEstimate && (
-            <Card className="bg-muted/50">
-              <CardContent className="pt-6">
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span>Gas Fee:</span>
-                    <span className="font-medium">{feeEstimate.gasFee} ETH</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Bridge Fee:</span>
-                    <span className="font-medium">{feeEstimate.bridgeFee}</span>
-                  </div>
-                  <div className="flex justify-between border-t pt-2">
-                    <span className="font-semibold">Total Fee:</span>
-                    <span className="font-semibold">{feeEstimate.totalFee}</span>
-                  </div>
-                  <div className="mt-3 p-2 bg-blue-100 rounded text-blue-800 text-xs">
-                    <p className="font-semibold mb-1">📌 Tips for successful bridging:</p>
-                    <ul className="list-disc list-inside space-y-1">
-                      <li>Make sure you have enough balance to cover fees</li>
-                      <li>Don't modify the destination address during transfer</li>
-                      <li>Check back in 10-30 minutes to see your tokens</li>
-                      <li>On busy chains, fees may be higher - consider timing</li>
-                    </ul>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Validation Errors */}
-          {feeError && (
-            <div className="p-3 bg-red-100 border border-red-300 rounded text-red-800 text-sm">
-              <p className="font-semibold mb-1">⚠️ Error calculating fees:</p>
-              <p>{feeError instanceof Error ? feeError.message : 'Unable to calculate fees. Check your inputs.'}</p>
+              <label className="text-sm font-medium mb-2 block">Amount to Bridge</label>
+              <Input type="number" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <p className="text-xs text-gray-500 mt-1">You'll send this exact amount to the destination chain</p>
             </div>
           )}
 
-          {/* Input Validation Feedback */}
-          {amount && sourceChain && destinationChain && tokenAddress && destinationAddress && !feeError && (
-            <div className="p-3 bg-green-100 border border-green-300 rounded text-green-800 text-sm">
-              <p className="font-semibold">✅ All inputs validated</p>
-              <p>Ready to bridge {amount} tokens to {CHAIN_NAMES[destinationChain as keyof typeof CHAIN_NAMES]}</p>
+          {step === 3 && (
+            <div className="space-y-3">
+              <FeeIndicator total={Number(feeEstimate?.totalFee ?? 0)} />
+              <RouteInfo route={feeEstimate?.route} speed={feeEstimate?.speed} reliability={feeEstimate?.reliability} />
+              <DestinationPreview chain={CHAIN_NAMES[destinationChain as keyof typeof CHAIN_NAMES] || destinationChain} token={tokenSymbol || tokenAddress || 'Token'} eta={feeEstimate?.eta} />
+              <RiskCollapse />
             </div>
           )}
 
-          {/* Submit Button */}
-          <Button
-            onClick={() => transferMutation.mutate({} as any)}
-            disabled={
-              !amount || 
-              !destinationAddress || 
-              !tokenAddress ||
-              transferMutation.isPending ||
-              loadingFees
-            }
-            className="w-full"
-            size="lg"
-          >
-            {transferMutation.isPending ? (
-              <>
-                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-                Initiating Bridge...
-              </>
-            ) : loadingFees ? (
-              <>
-                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-                Calculating Fees...
-              </>
-            ) : (
-              'Bridge Assets'
+          {step === 4 && (
+            <div className="space-y-3">
+              <div className="text-sm">Confirm and initiate the bridge transfer</div>
+              <div className="bg-muted/50 p-3 rounded">
+                <div className="flex justify-between"><span>From</span><span>{amount} {tokenSymbol || ''}</span></div>
+                <div className="flex justify-between"><span>To</span><span>{tokenSymbol || ''} on {CHAIN_NAMES[destinationChain as keyof typeof CHAIN_NAMES]}</span></div>
+                <div className="flex justify-between"><span>Total Fee</span><span>{feeEstimate?.totalFee ?? '—'}</span></div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            {step > 0 && <Button variant="ghost" onClick={() => setStep((s) => Math.max(0, s - 1))}>Back</Button>}
+            {step < 4 && <Button onClick={() => setStep((s) => Math.min(4, s + 1))}>{step === 3 ? 'Review' : 'Next'}</Button>}
+            {step === 4 && (
+              <Button onClick={() => transferMutation.mutate(undefined)} disabled={!amount || !destinationAddress || transferMutation.isPending || loadingFees}>Bridge Assets</Button>
             )}
-          </Button>
+          </div>
         </CardContent>
       </Card>
+
+      <StickyCTA
+        receive={feeEstimate ? `${Number((feeEstimate?.received ?? 0)).toFixed(6)} ${tokenSymbol || ''}` : undefined}
+        priceImpact={0}
+        disabled={!amount || !destinationAddress || !feeEstimate}
+        onConfirm={() => setStep(4)}
+      />
     </div>
   );
 }

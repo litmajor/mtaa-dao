@@ -13,7 +13,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
+} from '../components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   LineChart,
@@ -44,6 +44,9 @@ import {
 } from '@/components/ui/select';
 import AdvancedSwap from '@/components/dex/AdvancedSwap';
 import AdvancedBridge from '@/components/dex/AdvancedBridge';
+
+import Shell from '../components/ui/shell';
+import { Grid } from '../components/ui/grid';
 
 interface DEXInfo {
   id: string;
@@ -150,20 +153,33 @@ const DeFiDEXAnalytics: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 p-4 md:p-8">
-      <div className="max-w-7xl mx-auto space-y-8">
-        {/* Header */}
+    <Shell
+      brand={
         <div className="space-y-2">
           <div className="flex items-center gap-3">
             <span className="text-3xl">⚡</span>
-            <h1 className="text-4xl font-bold text-gray-900 dark:text-white">
-              DeFi DEX Analytics
-            </h1>
+            <h1 className="text-4xl font-bold text-gray-900 dark:text-white">DeFi DEX Analytics</h1>
           </div>
-          <p className="text-lg text-gray-600 dark:text-gray-400">
-            Real-time liquidity pools, swap opportunities, and DEX performance across multiple chains
-          </p>
+          <p className="text-lg text-gray-600 dark:text-gray-400">Real-time liquidity pools, swap opportunities, and DEX performance across multiple chains</p>
         </div>
+      }
+      userActions={
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={() => window.location.reload()}
+            className="gap-2"
+          >
+            <span>🔄</span>
+            Refresh
+          </Button>
+        </div>
+      }
+    >
+      <div className="p-4 md:p-8">
+        <div className="max-w-7xl mx-auto space-y-8">
+        {/* Header */}
 
         {/* Controls */}
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-end">
@@ -228,7 +244,7 @@ const DeFiDEXAnalytics: React.FC = () => {
         </div>
 
         {/* Key Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Grid columns={3} gap="md">
           <Card className="bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold text-gray-600 dark:text-gray-400">
@@ -276,7 +292,7 @@ const DeFiDEXAnalytics: React.FC = () => {
               </p>
             </CardContent>
           </Card>
-        </div>
+        </Grid>
 
         {/* Advanced Swap & Bridge Tools */}
         <Tabs defaultValue="swap" className="w-full">
@@ -429,12 +445,10 @@ const DeFiDEXAnalytics: React.FC = () => {
                   </ResponsiveContainer>
                 </div>
 
-                <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="mt-8">
+                  <Grid columns={2} gap="md">
                   {dexBreakdown.map((dex, idx) => (
-                    <div
-                      key={idx}
-                      className="p-4 rounded-lg border border-gray-200 dark:border-slate-700"
-                    >
+                    <div key={idx} className="p-4 rounded-lg border border-gray-200 dark:border-slate-700">
                       <div className="flex items-center gap-2 mb-2">
                         {/* stylelint-disable-next-line */}
                         <div
@@ -455,6 +469,7 @@ const DeFiDEXAnalytics: React.FC = () => {
                       </div>
                     </div>
                   ))}
+                  </Grid>
                 </div>
               </CardContent>
             </Card>
@@ -539,12 +554,9 @@ const DeFiDEXAnalytics: React.FC = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Grid columns={3} gap="md">
               {dexList?.map(dex => (
-                <div
-                  key={dex.id}
-                  className="p-4 rounded-lg border border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600 transition-colors"
-                >
+                <div key={dex.id} className="p-4 rounded-lg border border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600 transition-colors">
                   <div className="flex items-start justify-between mb-2">
                     <div>
                       <h4 className="font-semibold text-gray-900 dark:text-white">
@@ -578,11 +590,12 @@ const DeFiDEXAnalytics: React.FC = () => {
                   )}
                 </div>
               ))}
-            </div>
+            </Grid>
           </CardContent>
         </Card>
       </div>
     </div>
+    </Shell>
   );
 };
 

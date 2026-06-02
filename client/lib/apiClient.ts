@@ -25,10 +25,6 @@ class ApiClient {
 
   constructor(baseUrl: string = API_BASE_URL) {
     this.baseUrl = baseUrl;
-    // Get auth token from localStorage if available
-    if (typeof window !== 'undefined') {
-      this.token = localStorage.getItem('authToken');
-    }
   }
 
   /**
@@ -36,9 +32,6 @@ class ApiClient {
    */
   setToken(token: string) {
     this.token = token;
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('authToken', token);
-    }
   }
 
   /**
@@ -46,9 +39,6 @@ class ApiClient {
    */
   clearToken() {
     this.token = null;
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('authToken');
-    }
   }
 
   /**
@@ -73,6 +63,7 @@ class ApiClient {
       const response = await fetch(url, {
         ...options,
         headers,
+        credentials: 'include',
       });
 
       const json = await response.json();

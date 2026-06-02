@@ -1,10 +1,10 @@
 
-
-
+import './shims/processEnv';
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import "./index.css";
+import { installTokens } from "./styles/tokens";
 import { ToastProvider } from "./components/ui/ToastProvider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HelmetProvider } from "react-helmet-async";
@@ -31,6 +31,8 @@ const root = document.getElementById("root");
 console.log('Root element:', root);
 
 if (root) {
+  // install runtime CSS variables from tokens so Tailwind CSS utilities map to them
+  try { installTokens(); } catch (e) { console.warn('installTokens failed', e); }
   console.log('Creating React root');
   createRoot(root).render(
     <ErrorBoundary>

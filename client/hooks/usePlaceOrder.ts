@@ -7,7 +7,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { apiClient } from '@/client/lib/apiClient';
+import { apiClient } from '../lib/apiClient';
 
 interface PlaceOrderRequest {
   pair: string;
@@ -68,8 +68,8 @@ export function usePlaceOrder() {
             error: errorMsg,
           };
         }
-      } catch (err: any) {
-        const errorMsg = err.message || 'Error placing order';
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err) || 'Error placing order';
         setError(errorMsg);
         return {
           success: false,
@@ -129,8 +129,8 @@ export function useMarketOrder() {
             error: errorMsg,
           };
         }
-      } catch (err: any) {
-        const errorMsg = err.message || 'Error placing market order';
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err) || 'Error placing market order';
         setError(errorMsg);
         return {
           success: false,
@@ -194,8 +194,8 @@ export function useLimitOrder() {
             error: errorMsg,
           };
         }
-      } catch (err: any) {
-        const errorMsg = err.message || 'Error placing limit order';
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err) || 'Error placing limit order';
         setError(errorMsg);
         return {
           success: false,
@@ -259,8 +259,8 @@ export function useStopLossOrder() {
             error: errorMsg,
           };
         }
-      } catch (err: any) {
-        const errorMsg = err.message || 'Error placing stop-loss order';
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err) || 'Error placing stop-loss order';
         setError(errorMsg);
         return {
           success: false,
@@ -324,8 +324,8 @@ export function useTakeProfitOrder() {
             error: errorMsg,
           };
         }
-      } catch (err: any) {
-        const errorMsg = err.message || 'Error placing take-profit order';
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err) || 'Error placing take-profit order';
         setError(errorMsg);
         return {
           success: false,
@@ -391,8 +391,8 @@ export function useOCOOrder() {
             error: errorMsg,
           };
         }
-      } catch (err: any) {
-        const errorMsg = err.message || 'Error placing OCO order';
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err) || 'Error placing OCO order';
         setError(errorMsg);
         return {
           success: false,
@@ -542,8 +542,8 @@ export function useMultiExchangeOrder() {
             error: errorMsg,
           };
         }
-      } catch (err: any) {
-        const errorMsg = err.message || 'Error placing multi-exchange orders';
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err) || 'Error placing multi-exchange orders';
         setError(errorMsg);
         return {
           success: false,

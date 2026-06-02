@@ -10,7 +10,7 @@ import QuickOrderPanel from './QuickOrderPanel';
 import AdvancedOrderPanel from './AdvancedOrderPanel';
 import DexSwapPanel from './DexSwapPanel';
 import FlashLoanPanel from './FlashLoanPanel';
-import '@/components/trading/trading-panels.css';
+import './trading-panels.css';
 
 interface TradingDashboardProps {
   userId: string;

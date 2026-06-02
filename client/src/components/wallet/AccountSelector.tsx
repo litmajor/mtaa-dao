@@ -3,6 +3,7 @@ import { Wallet, TrendingUp, Vault, Lock } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiGet } from '@/lib/api';
+import { useWalletOperatingStore } from '@/stores/wallet-operating-store';
 
 interface Account {
   id: string;
@@ -26,26 +27,25 @@ const AccountSelector: React.FC<AccountSelectorProps> = ({
   selectedAccountId,
   className = '',
 }) => {
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [loading, setLoading] = useState(true);
+  const store = useWalletOperatingStore();
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<'wallet' | 'trading' | 'vault' | 'escrow'>('wallet');
 
-  useEffect(() => {
-    const fetchAccounts = async () => {
-      try {
-        setLoading(true);
-        const response = await apiGet('/api/accounts');
-        setAccounts(response.data || []);
-      } catch (err: any) {
-        setError(err.message || 'Failed to load accounts');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAccounts();
-  }, []);
+  // Derive account list from operating store vaults to keep UI consistent with central state
+  const accounts: Account[] = (store.vaults || []).map((v) => {
+    const type = v.type === 'escrow' ? 'escrow' : v.type === 'deployed' || v.type === 'yield' ? 'trading' : v.locked ? 'vault' : 'wallet';
+    return {
+      id: v.id,
+      userId: '',
+      type: type as any,
+      address: undefined,
+      balance: String(v.balance || '0'),
+      currency: v.currency || 'TOKEN',
+      createdAt: '',
+      updatedAt: ''
+    } as Account;
+  });
 
   const getAccountIcon = (type: string) => {
     switch (type) {
@@ -93,11 +93,13 @@ const AccountSelector: React.FC<AccountSelectorProps> = ({
   };
 
   const handleAccountSelect = (account: Account) => {
+    // update operating store selection as the single source of truth
+    store.setSelectedAccountId(account.id);
+    store.setSelectedAccount(account);
     onAccountSelect?.(account);
   };
-
   const filteredAccounts = accounts.filter((acc) => acc.type === selectedTab);
-  const selectedAccount = accounts.find((acc) => acc.id === selectedAccountId) || filteredAccounts[0];
+  const selectedAccount = accounts.find((acc) => acc.id === (selectedAccountId || store.selectedAccountId)) || filteredAccounts[0];
 
   if (loading) {
     return (

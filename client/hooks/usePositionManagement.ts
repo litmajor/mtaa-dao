@@ -15,7 +15,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { tradingApi } from '@/client/lib/apiClient';
+import { tradingApi } from '../lib/apiClient';
 
 export type MarketType = 'spot' | 'margin' | 'futures' | 'swap' | 'option' | 'dex';
 export type PositionSide = 'long' | 'short';
@@ -31,8 +31,8 @@ export interface Position {
   amount: number;
   collateral: number;
   leverage: number;
-  unrealizedPnL: number;
-  unrealizedPnLPercent: number;
+  unrealizedPnl: number;
+  unrealizedPnlPercent: number;
   liquidationPrice: number;
   liquidationRisk: number; // 0-100, percent
   fees: number;
@@ -71,6 +71,7 @@ export interface PositionMetrics {
   totalExposure: number;
   averageLeverage: number;
   totalUnrealizedPnL: number;
+  totalUnrealizedPnl: number;
   portfolioLiquidationRisk: 'safe' | 'moderate' | 'high' | 'critical';
   riskScore: number; // 0-100
 }
@@ -105,7 +106,7 @@ export function usePositions(exchange?: string, pair?: string) {
       shorts: data.filter(p => p.side === 'short').length,
       totalExposure: data.reduce((sum, p) => sum + p.amount * p.currentPrice, 0),
       totalCollateral: data.reduce((sum, p) => sum + p.collateral, 0),
-      totalUnrealizedPnL: data.reduce((sum, p) => sum + p.unrealizedPnL, 0),
+      totalUnrealizedPnl: data.reduce((sum, p) => sum + (p.unrealizedPnl ?? 0), 0),
       avgLeverage: data.length > 0 ? data.reduce((sum, p) => sum + p.leverage, 0) / data.length : 0,
     };
   }, [data]);
@@ -460,10 +461,10 @@ export function usePositionAlerts(positionId: string, exchange: string) {
     }
 
     // Check unrealized loss
-    if (position.unrealizedPnLPercent < -5) {
+    if (position.unrealizedPnlPercent < -5) {
       alerts.push({
         severity: 'warning',
-        message: `Position is down ${Math.abs(position.unrealizedPnLPercent)}%. Consider your risk tolerance.`,
+        message: `Position is down ${Math.abs(position.unrealizedPnlPercent)}%. Consider your risk tolerance.`,
       });
     }
 
@@ -529,17 +530,17 @@ export function usePositionRecommendations(positionId: string, exchange: string)
     }
 
     // Profit taking
-    if (position.unrealizedPnLPercent > 5 && !position.takeProfit) {
+    if (position.unrealizedPnlPercent > 5 && !position.takeProfit) {
       recs.push('Consider setting a take-profit to lock in gains');
     }
 
     // Loss management
-    if (position.unrealizedPnLPercent < -2 && !position.stopLoss) {
+    if (position.unrealizedPnlPercent < -2 && !position.stopLoss) {
       recs.push('Consider setting a stop-loss to limit downside');
     }
 
     // Leverage optimization
-    if (position.leverage > 5 && position.unrealizedPnL > 0) {
+    if (position.leverage > 5 && position.unrealizedPnl > 0) {
       recs.push('Consider reducing leverage to lock in profits with less risk');
     }
 

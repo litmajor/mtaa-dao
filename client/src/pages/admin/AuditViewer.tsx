@@ -59,12 +59,12 @@ interface AuditLog {
   target_type: string;
   target_id: string;
   target_name: string;
-  before_state?: Record<string, any>;
-  after_state?: Record<string, any>;
+  before_state?: Record<string, unknown>;
+  after_state?: Record<string, unknown>;
   changed_fields?: string[];
   result: string;
   created_at: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 interface AuditStats {

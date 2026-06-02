@@ -1,18 +1,29 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { Wallet } from 'ethers';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Alert, AlertDescription } from '../ui/alert';
-import { Shield, Copy, Download, Eye, EyeOff, CheckCircle, AlertTriangle, Key, FileText } from 'lucide-react';
+import { Shield, CheckCircle } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
 import { useToast } from '../ui/use-toast';
 
 interface SecureWalletManagerProps {
   userId: string;
   onWalletCreated?: (data: any) => void;
 }
+
+type WalletSecurityState =
+  | 'UNINITIALIZED'
+  | 'GENERATING'
+  | 'UNBACKED'
+  | 'VIEWING_SECRET'
+  | 'VERIFYING_BACKUP'
+  | 'SECURE'
+  | 'AT_RISK';
 
 export default function SecureWalletManager({ userId, onWalletCreated }: SecureWalletManagerProps) {
   const [password, setPassword] = useState('');
@@ -26,8 +37,12 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
   const [wordCount, setWordCount] = useState<12 | 24>(12);
   const [walletAddress, setWalletAddress] = useState('');
   const [step, setStep] = useState<'create' | 'backup' | 'complete'>('create');
+  const [walletSecurityState, setWalletSecurityState] = useState<WalletSecurityState>('UNINITIALIZED');
   const [useEncryption, setUseEncryption] = useState(true);
   const { toast } = useToast();
+  // verification challenge inputs
+  const [verifyIndices, setVerifyIndices] = useState<number[]>([]);
+  const [verifyInputs, setVerifyInputs] = useState<Record<number, string>>({});
 
   const handleCreateWallet = async () => {
     // Validation
@@ -44,6 +59,7 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
     }
 
     setLoading(true);
+    setWalletSecurityState('GENERATING');
     try {
       console.log('Creating wallet with:', { wordCount, useEncryption });
 
@@ -72,10 +88,9 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
         setWalletAddress(data.wallet.address);
         setPrivateKey(data.wallet.privateKey || '');
         setStep('backup');
-        toast({
-          title: 'Wallet Created',
-          description: 'Please backup your recovery phrase now!'
-        });
+        // newly created wallets are UNBACKED until user verifies
+        setWalletSecurityState('UNBACKED');
+        toast({ title: 'Wallet Created', description: 'Your wallet is ready. Please back up your recovery phrase.' });
         onWalletCreated?.(data);
       } else {
         throw new Error(data.error || 'Failed to create wallet');
@@ -131,23 +146,37 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
       toast({ title: 'Error', description: 'Private key and password are required', variant: 'destructive' });
       return;
     }
-
+    // Instead of sending raw private keys to the server, sign a local challenge
     setLoading(true);
     try {
+      // Normalize and validate private key locally
+      const pk = privateKey.trim();
+      const wallet = new Wallet(pk);
+      const address = await wallet.getAddress();
+
+      // Create a signed challenge message with timestamp and nonce to prevent replay
+      const ts = Date.now();
+      const nonce = Math.floor(Math.random() * 1e9);
+      const message = `MtaaDAO wallet import verification\naddress: ${address}\ntimestamp: ${ts}\nnonce: ${nonce}`;
+
+      const signature = await wallet.signMessage(message);
+
       const response = await fetch('/api/v1/wallets/setup/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, privateKey: privateKey.trim(), password })
+        body: JSON.stringify({ userId, address, message, signature })
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
         toast({ title: 'Success', description: 'Wallet imported successfully' });
         onWalletCreated?.(data);
         setStep('complete');
+        // Imported private-key-only wallets are AT_RISK (no recovery phrase)
+        setWalletSecurityState('AT_RISK');
       } else {
-        throw new Error(data.error);
+        throw new Error(data.error || 'Import failed');
       }
     } catch (error) {
       toast({
@@ -158,6 +187,48 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
     } finally {
       setLoading(false);
     }
+  };
+
+  // Begin backup verification by selecting three indices
+  const startVerification = () => {
+    const total = (mnemonic || '').split(' ').length || wordCount;
+    // pick distinct indices (1-based) - prefer 3,8,11 if available
+    const preferred = [3, 8, 11].filter((i) => i <= total);
+    const indices: number[] = [];
+    for (const p of preferred) {
+      if (indices.length < 3) indices.push(p);
+    }
+    // fill with random if needed
+    while (indices.length < 3) {
+      const n = Math.floor(Math.random() * total) + 1;
+      if (!indices.includes(n)) indices.push(n);
+    }
+    setVerifyIndices(indices);
+    setVerifyInputs({});
+    setWalletSecurityState('VERIFYING_BACKUP');
+  };
+
+  const submitVerification = async () => {
+    const words = (mnemonic || '').split(' ');
+    for (const idx of verifyIndices) {
+      const expected = (words[idx - 1] || '').trim().toLowerCase();
+      const given = (verifyInputs[idx] || '').trim().toLowerCase();
+      if (expected !== given) {
+        toast({ title: 'Verification Failed', description: 'One or more words are incorrect', variant: 'destructive' });
+        return;
+      }
+    }
+    // Mark backed up and secure
+    setBackedUp(true);
+    setWalletSecurityState('SECURE');
+    // notify server of backup confirmation
+    try {
+      await fetch('/api/v1/wallets/setup/backup/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    } catch (e) {
+      console.warn('Failed to notify server of backup confirmation', e);
+    }
+    toast({ title: 'Backup Verified', description: 'Your recovery phrase has been confirmed' });
+    setStep('complete');
   };
 
   const confirmBackup = async () => {
@@ -237,133 +308,141 @@ Created: ${new Date().toISOString()}
     element.click();
     document.body.removeChild(element);
   };
-
+  const securityPill = useMemo(() => {
+    const map: Record<WalletSecurityState, { color: string; text: string }> = {
+      UNINITIALIZED: { color: 'bg-gray-200 text-gray-700', text: 'UNINITIALIZED' },
+      GENERATING: { color: 'bg-blue-100 text-blue-800', text: 'GENERATING' },
+      UNBACKED: { color: 'bg-amber-100 text-amber-800', text: 'UNBACKED' },
+      VIEWING_SECRET: { color: 'bg-amber-100 text-amber-800', text: 'VIEWING_SECRET' },
+      VERIFYING_BACKUP: { color: 'bg-amber-200 text-amber-900', text: 'VERIFYING_BACKUP' },
+      SECURE: { color: 'bg-green-100 text-green-800', text: 'SECURE' },
+      AT_RISK: { color: 'bg-red-100 text-red-800', text: 'AT_RISK' }
+    };
+    return map[walletSecurityState];
+  }, [walletSecurityState]);
   if (step === 'backup' && mnemonic) {
     return (
       <div className="max-w-2xl mx-auto p-6 space-y-6">
-        <div className="text-center space-y-2">
-          <Shield className="mx-auto h-12 w-12 text-yellow-600" />
-          <h1 className="text-3xl font-bold">⚠️ Backup Your Wallet</h1>
-          <p className="text-gray-600">This is the ONLY way to recover your wallet if you lose access</p>
+        <div className="flex items-start justify-between">
+          <div className="space-y-2">
+            <Shield className="h-12 w-12 text-green-600" />
+            <h1 className="text-3xl font-bold">{walletSecurityState === 'UNBACKED' ? 'YOUR WALLET IS READY' : 'Wallet Backup'}</h1>
+            {walletSecurityState === 'UNBACKED' && (
+              <p className="text-gray-600">This is a self-custody wallet. Only you control recovery access. MtaaDAO cannot recover lost wallets.</p>
+            )}
+          </div>
+          <div className={`px-3 py-1 rounded-full ${securityPill.color} flex items-center gap-2`}>● <span className="text-xs font-semibold">{securityPill.text}</span></div>
         </div>
 
-        <Card className="border-yellow-500 border-2">
+        {/* Permanent Non-Custodial Card */}
+        <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Recovery Phrase ({wordCount} words)
-            </CardTitle>
-            <CardDescription>
-              Write down these words in order and store them safely offline.
-            </CardDescription>
+            <CardTitle>Non-Custodial Security</CardTitle>
+            <CardDescription>Important information about who can recover this wallet</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="relative">
-              <div className={`grid ${wordCount === 12 ? 'grid-cols-3' : 'grid-cols-4'} gap-3 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg ${!showMnemonic ? 'blur-sm' : ''}`}>
-                {mnemonic.split(' ').map((word, i) => (
-                  <div key={i} className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded border">
-                    <span className="text-xs text-gray-500 font-mono w-6">{i + 1}.</span>
-                    <span className="font-mono font-semibold">{word}</span>
+          <CardContent>
+            <ul className="list-disc ml-4 space-y-1">
+              <li>You own your recovery phrase</li>
+              <li>Your keys are never stored by MtaaDAO</li>
+              <li>No password reset exists</li>
+              <li>Losing your phrase means permanent loss of access</li>
+            </ul>
+          </CardContent>
+        </Card>
+
+        {/* Main content by security state */}
+        {walletSecurityState === 'UNBACKED' && (
+          <Card className="border-amber-300">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" /> Backup Required</CardTitle>
+              <CardDescription>Your recovery phrase has not been backed up.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="mb-4">If this device is lost, damaged, or reset, your funds cannot be recovered.</p>
+              <div className="mb-4">
+                <strong>Recovery Capability Matrix</strong>
+                <table className="w-full text-sm mt-2">
+                  <tbody>
+                    <tr><td>You</td><td className="text-right">YES</td></tr>
+                    <tr><td>MtaaDAO</td><td className="text-right">NO</td></tr>
+                    <tr><td>Support Team</td><td className="text-right">NO</td></tr>
+                    <tr><td>Blockchain</td><td className="text-right">NO</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <Button onClick={() => { setShowMnemonic(true); setWalletSecurityState('VIEWING_SECRET'); }} className="w-full" size="lg">
+                Reveal Recovery Phrase
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {(walletSecurityState === 'VIEWING_SECRET' || showMnemonic) && (
+          <div className="relative">
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-10"></div>
+            <Card className="relative z-20">
+              <CardHeader>
+                <CardTitle>Recovery Phrase ({wordCount} words)</CardTitle>
+                <CardDescription>Reveal and securely record your recovery phrase. Avoid screenshots.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className={`grid ${wordCount === 12 ? 'grid-cols-3' : 'grid-cols-4'} gap-3 p-4 bg-white rounded-lg`}>
+                  {mnemonic.split(' ').map((word, i) => (
+                    <div key={i} className="flex items-center gap-2 p-2 bg-gray-50 rounded border">
+                      <span className="text-xs text-gray-500 font-mono w-6">{i + 1}.</span>
+                      <span className="font-mono font-semibold">{word}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex gap-2 mt-4">
+                  <Button onClick={() => copyToClipboard(mnemonic, 'Recovery phrase')} variant="outline" className="flex-1">Copy</Button>
+                  <Button onClick={downloadMnemonic} variant="outline" className="flex-1">Download</Button>
+                  <Button onClick={() => { setShowMnemonic(false); setWalletSecurityState('UNBACKED'); }} variant="outline" className="flex-1">Hide</Button>
+                </div>
+
+                <div className="mt-6">
+                  <Button onClick={startVerification} className="w-full" size="lg">Verify Backup</Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {walletSecurityState === 'VERIFYING_BACKUP' && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Verify Your Backup</CardTitle>
+              <CardDescription>Prove you recorded the recovery phrase by entering a few words.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-3">
+                {verifyIndices.map((idx) => (
+                  <div key={idx}>
+                    <Label>Word #{idx}</Label>
+                    <Input value={verifyInputs[idx] || ''} onChange={(e) => setVerifyInputs({ ...verifyInputs, [idx]: e.target.value })} />
                   </div>
                 ))}
               </div>
-              {!showMnemonic && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <Button onClick={() => setShowMnemonic(true)} variant="default" size="lg">
-                    <Eye className="h-4 w-4 mr-2" />
-                    Reveal Recovery Phrase
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            {showMnemonic && (
-              <>
-                <div className="flex gap-2">
-                  <Button onClick={() => copyToClipboard(mnemonic, 'Recovery phrase')} variant="outline" className="flex-1">
-                    <Copy className="h-4 w-4 mr-2" />
-                    Copy
-                  </Button>
-                  <Button onClick={downloadMnemonic} variant="outline" className="flex-1">
-                    <Download className="h-4 w-4 mr-2" />
-                    Download
-                  </Button>
-                  <Button onClick={() => setShowMnemonic(false)} variant="outline" className="flex-1">
-                    <EyeOff className="h-4 w-4 mr-2" />
-                    Hide
-                  </Button>
-                </div>
-
-                {privateKey && (
-                  <div className="mt-6 pt-6 border-t">
-                    <h3 className="font-semibold mb-2 flex items-center gap-2">
-                      <Key className="h-4 w-4" />
-                      Private Key (Advanced)
-                    </h3>
-                    <div className="relative">
-                      <Input
-                        type={showPrivateKey ? 'text' : 'password'}
-                        value={privateKey}
-                        readOnly
-                        className="font-mono text-xs pr-20"
-                      />
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setShowPrivateKey(!showPrivateKey)}
-                        >
-                          {showPrivateKey ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => copyToClipboard(privateKey, 'Private key')}
-                        >
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                    <Button onClick={downloadPrivateKey} variant="outline" size="sm" className="mt-2 w-full">
-                      <Download className="h-3 w-3 mr-2" />
-                      Download Private Key
-                    </Button>
-                  </div>
-                )}
-              </>
-            )}
-
-            <Alert className="border-red-500 bg-red-50 dark:bg-red-950">
-              <AlertTriangle className="h-4 w-4 text-red-600" />
-              <AlertDescription className="text-red-800 dark:text-red-200">
-                <strong>Critical Security Warning:</strong>
-                <ul className="list-disc ml-4 mt-2 space-y-1">
-                  <li>Never share your recovery phrase or private key with anyone</li>
-                  <li>MtaaDAO support will NEVER ask for your recovery phrase</li>
-                  <li>Anyone with this information can steal all your funds</li>
-                  <li>Store it offline in a secure location</li>
-                </ul>
-              </AlertDescription>
-            </Alert>
-
-            <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg">
-              <p className="text-sm font-medium mb-2">Your Wallet Address:</p>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 bg-white dark:bg-gray-900 px-3 py-2 rounded text-xs font-mono break-all">
-                  {walletAddress}
-                </code>
-                <Button size="sm" variant="outline" onClick={() => copyToClipboard(walletAddress, 'Wallet address')}>
-                  <Copy className="h-3 w-3" />
-                </Button>
+              <div className="mt-4">
+                <Button onClick={submitVerification} className="w-full">Confirm</Button>
               </div>
-            </div>
+            </CardContent>
+          </Card>
+        )}
 
-            <Button onClick={confirmBackup} className="w-full" size="lg" disabled={!showMnemonic}>
-              <CheckCircle className="h-4 w-4 mr-2" />
-              I've Backed Up My Recovery Phrase
-            </Button>
-          </CardContent>
-        </Card>
+        {walletSecurityState === 'AT_RISK' && (
+          <Card className="border-red-300">
+            <CardHeader>
+              <CardTitle>Wallet At Risk</CardTitle>
+              <CardDescription>This wallet has no recovery phrase recorded.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="mb-4">Imported private-key wallets do not include a recovery phrase. Create an encrypted backup to avoid permanent loss.</p>
+              <Button onClick={downloadPrivateKey} className="w-full">Download Encrypted Backup</Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
     );
   }

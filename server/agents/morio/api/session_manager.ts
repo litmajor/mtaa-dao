@@ -6,6 +6,7 @@
 
 import type { Session } from '../types';
 import type { UserContext } from '../../../core/nuru/types';
+import { storage } from '../../../storage';
 
 export class SessionManager {
   private sessions: Map<string, Session>;
@@ -38,6 +39,14 @@ export class SessionManager {
     };
 
     this.sessions.set(userId, newSession);
+    // Persist initial session snapshot for durability (use generic audit log)
+    try {
+      await storage.createAuditLog({ level: 'info', service: 'morio.session', message: 'session_created', metadata: { userId, sessionId: newSession.id, snapshot: newSession } });
+    } catch (e) {
+      // non-fatal
+      // eslint-disable-next-line no-console
+      console.warn('Failed to persist session snapshot:', e);
+    }
     return newSession;
   }
 
@@ -55,6 +64,13 @@ export class SessionManager {
     session.lastActivity = new Date();
 
     this.sessions.set(userId, session);
+    // Persist updated session metadata for longer-term memory (use generic audit log)
+    try {
+      await storage.createAuditLog({ level: 'info', service: 'morio.session', message: 'session_updated', metadata: { userId, sessionId: session.id, snapshot: session, updates } });
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to persist session update:', e);
+    }
   }
 
   /**

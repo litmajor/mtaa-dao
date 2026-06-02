@@ -86,6 +86,23 @@ const TRANSACTION_COLORS = {
   escrow: { bg: 'bg-blue-600/20', text: 'text-blue-400' },
 };
 
+// Surface role definitions for DAO UI (institutional, restrained)
+// NOTE: Removed pervasive borders — use tonal separation, spacing, and elevation instead
+const PRIMARY_SURFACE = 'bg-slate-900 rounded-lg p-6 shadow-sm';
+const SECONDARY_SURFACE = 'bg-slate-900/70 rounded-xl p-4 md:p-6';
+const TERTIARY_SURFACE = 'bg-slate-800/60 rounded-md p-3 text-sm';
+
+// Tier aliases for clarity
+const TIER1_PRIMARY = PRIMARY_SURFACE; // strongest contrast
+const TIER2_SUPPORT = SECONDARY_SURFACE; // calmer, support surfaces
+const TIER3_AMBIENT = TERTIARY_SURFACE; // ambient, quiet
+
+// Surface wrapper component — choose tier: 'primary' | 'support' | 'ambient'
+const Surface = ({ tier = 'support', className = '', children }: { tier?: 'primary' | 'support' | 'ambient'; className?: string; children?: React.ReactNode }) => {
+  const base = tier === 'primary' ? TIER1_PRIMARY : tier === 'ambient' ? TIER3_AMBIENT : TIER2_SUPPORT;
+  return <div className={`${base} ${className}`.trim()}>{children}</div>;
+};
+
 /* ============================================================================
  * LAZY LOADED COMPONENTS
  * ============================================================================
@@ -141,6 +158,8 @@ const RecurringPaymentModal = lazy(() =>
     default: mod.default || mod.RecurringPaymentModal 
   }))
 );
+// Record Payment modal (OKEDI)
+const RecordPaymentModal = lazy(() => import('@/components/modals/RecordPaymentModal').then((mod:any)=>({ default: mod.default || mod.RecordPaymentModal })));
 
 /* ============================================================================
  * SIMPLIFIED UI COMPONENTS (For Artifact)
@@ -153,7 +172,7 @@ const Button = ({ children, variant = 'default', size = 'default', className = '
   
   const variants: Record<string, string> = {
     default: 'bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-500',
-    outline: 'border border-slate-600 bg-transparent hover:bg-slate-700 text-white focus-visible:ring-slate-500',
+    outline: 'bg-transparent hover:bg-slate-700 text-white focus-visible:ring-slate-500',
     ghost: 'hover:bg-slate-700 text-white focus-visible:ring-slate-500',
   };
   
@@ -260,7 +279,7 @@ const Repeat = ({ className = '' }: { className?: string }) => (
  */
 
 const SkeletonCard = () => (
-  <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 animate-pulse">
+  <div className={SECONDARY_SURFACE}>
     <div className="h-6 bg-slate-700 rounded w-1/3 mb-4"></div>
     <div className="space-y-3">
       <div className="h-4 bg-slate-700 rounded w-full"></div>
@@ -272,11 +291,11 @@ const SkeletonCard = () => (
 
 const SkeletonDashboard = () => (
   <div className="space-y-6">
-    <div className="h-32 bg-slate-800 rounded-xl animate-pulse"></div>
-    <div className="h-48 bg-gradient-to-r from-slate-800 to-slate-700 rounded-xl animate-pulse"></div>
+      <div className="h-32 bg-slate-800 rounded-xl"></div>
+        <div className="h-48 bg-slate-800/80 rounded-xl"></div>
     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
       {[...Array(6)].map((_, i) => (
-        <div key={i} className="h-32 bg-slate-800 rounded-lg animate-pulse"></div>
+        <div key={i} className="h-32 bg-slate-800 rounded-lg"></div>
       ))}
     </div>
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -359,7 +378,7 @@ const BalanceHeader = React.memo(({ data }: { data?: any }) => {
   }, [data?.totalBalance]);
 
   return (
-    <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-6 md:p-8 text-white shadow-lg">
+    <div className="bg-slate-800/80 rounded-xl p-6 md:p-8 text-white shadow-sm">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <div>
           <p className="text-blue-100 text-sm mb-2">💳 Personal Balance</p>
@@ -403,12 +422,56 @@ const BalanceHeader = React.memo(({ data }: { data?: any }) => {
 BalanceHeader.displayName = 'BalanceHeader';
 
 // ============================================================================
+// GLOBAL STATE BAR
+// Persistent topmost organizational heartbeat
+// ============================================================================
+const GlobalStateBar = React.memo(({ data, online, lastUpdated }: { data?: any; online?: boolean; lastUpdated?: Date }) => {
+  const navItems = [
+    { id: 'treasury', label: 'Treasury NAV', value: data?.totalBalance },
+    { id: 'proposals', label: 'Active Proposals', value: data?.activeProposals?.length || 0 },
+    { id: 'members', label: 'Total Members', value: data?.memberCount || data?.membersCount || 0 },
+    { id: 'exposure', label: 'Treasury Exposure', value: data?.treasuryExposure || '—' },
+    { id: 'regime', label: 'Market Regime', value: data?.marketRegime || 'Neutral' },
+    { id: 'exchanges', label: 'Connected Exchanges', value: (data?.connectedExchanges || []).length || 0 },
+    { id: 'risk', label: 'Risk Level', value: data?.riskLevel || 'Medium' },
+    { id: 'pending', label: 'Pending Actions', value: data?.pendingActions?.length || 0 },
+  ];
+
+  return (
+    <div className="w-full">
+      <Surface tier="primary" className="p-2 md:p-3 flex items-center justify-between gap-3">
+        <div className="flex-1 flex items-center gap-3 overflow-x-auto">
+          {navItems.map((n) => (
+            <div key={n.id} className="min-w-[140px] flex-0 bg-slate-700/30 rounded-md p-2 md:p-3">
+              <div className="text-xs text-slate-400">{n.label}</div>
+              <div className="text-white font-semibold">{typeof n.value === 'number' ? n.value : n.value ?? '—'}</div>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-4 ml-4">
+          <div className="text-sm">{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : ''}</div>
+          <div className={`text-sm ${online ? 'text-green-400' : 'text-amber-400'}`}>{online ? 'Connected' : 'Offline'}</div>
+        </div>
+      </Surface>
+    </div>
+  );
+});
+
+GlobalStateBar.displayName = 'GlobalStateBar';
+
+// ============================================================================
+// DOMAIN NAV (Top-level organizational domains)
+// ============================================================================
+const DOMAIN_LIST = ['Treasury','Governance','Markets','Members','Intelligence','Automation','Operations'];
+
+
+// ============================================================================
 // QUICK ACTIONS COMPONENT
 // ============================================================================
 // FIXED: Replaced 'any[]' type with proper QuickAction interface
 const QuickActions = React.memo(({ actions, onActionClick }: QuickActionsProps) => {
   return (
-    <div className="bg-slate-800 rounded-xl p-4 md:p-6 border border-slate-700">
+    <div className={SECONDARY_SURFACE}>
       <h3 className="text-lg font-bold text-white mb-4">Quick Actions</h3>
       
       <div className="lg:grid lg:grid-cols-6 flex overflow-x-auto lg:overflow-visible gap-3 pb-2 -mx-2 px-2 lg:mx-0 lg:px-0">
@@ -426,7 +489,7 @@ const QuickActions = React.memo(({ actions, onActionClick }: QuickActionsProps) 
                 onClick={handleClick}
                 className="flex-shrink-0 w-28 lg:w-auto" 
               >
-                <div className="h-full bg-slate-700 hover:bg-slate-600 rounded-lg p-3 md:p-4 flex flex-col items-center justify-center gap-2 cursor-pointer border border-slate-600 transition-all transform hover:scale-105 active:scale-95">
+                <div className="h-full bg-slate-700 hover:bg-slate-600 rounded-lg p-3 md:p-4 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors hover:shadow-sm">
                   <div className={`${action.color} p-2 md:p-3 rounded-lg text-white`}>
                     {action.icon}
                   </div>
@@ -444,7 +507,7 @@ const QuickActions = React.memo(({ actions, onActionClick }: QuickActionsProps) 
               onClick={handleClick}
               className="flex-shrink-0 w-28 lg:w-auto focus:outline-none" 
             >
-              <div className="h-full bg-slate-700 hover:bg-slate-600 rounded-lg p-3 md:p-4 flex flex-col items-center justify-center gap-2 cursor-pointer border border-slate-600 transition-all transform hover:scale-105 active:scale-95">
+              <div className="h-full bg-slate-700 hover:bg-slate-600 rounded-lg p-3 md:p-4 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all transform hover:scale-105 active:scale-95 hover:shadow-sm">
                 <div className={`${action.color} p-2 md:p-3 rounded-lg text-white`}>
                   {action.icon}
                 </div>
@@ -456,7 +519,7 @@ const QuickActions = React.memo(({ actions, onActionClick }: QuickActionsProps) 
         })}
         
         <Link to="/features" className="flex-shrink-0 w-28 lg:w-auto" onClick={undefined}>
-          <div className="h-full bg-slate-700 hover:bg-slate-600 rounded-lg p-3 md:p-4 flex flex-col items-center justify-center gap-2 cursor-pointer border border-slate-600 transition-all transform hover:scale-105 active:scale-95">
+          <div className="h-full bg-slate-700 hover:bg-slate-600 rounded-lg p-3 md:p-4 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all transform hover:scale-105 active:scale-95 hover:shadow-sm">
             <div className="bg-slate-500 p-2 md:p-3 rounded-lg text-white">
               <MoreHorizontal className="h-5 w-5" />
             </div>
@@ -510,7 +573,7 @@ const KycBanner = ({ data, onStartKyc }: { data?: any; onStartKyc?: () => void }
               <div>Current limits: <strong className="text-white">{limits.daily.toLocaleString()} / day</strong> • <strong className="text-white">{limits.monthly.toLocaleString()} / month</strong></div>
               <div className="hidden md:block">After KYC: <strong className="text-white">{limits.verifiedDaily.toLocaleString()} / day</strong> • <strong className="text-white">{limits.verifiedMonthly.toLocaleString()} / month</strong></div>
             </div>
-            <div className="mt-2 w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+            <div className="mt-2 w-full bg-slate-800 rounded-full h-2 overflow-hidden" role="progressbar" aria-label="KYC verification progress" aria-valuenow={Math.round(Math.min(Math.max(progress, 0), 100))} aria-valuemin={0} aria-valuemax={100}>
               <div className="bg-amber-500 h-2" style={{ width: `${Math.min(Math.max(progress, 0), 100)}%` }} />
             </div>
             <div className="mt-2 text-xs text-slate-400">{progress}% complete • KYC speeds up larger transfers and reduces hold times</div>
@@ -578,7 +641,7 @@ const AnalyticsPanel = React.memo(({ data }: AnalyticsPanelProps) => {
   const path = sparkPath(amounts, 200, 40);
 
   return (
-    <div className="bg-slate-800 rounded-xl p-4 md:p-6 border border-slate-700">
+    <div className={SECONDARY_SURFACE}>
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-lg font-bold text-white flex items-center gap-2">📈 Quick Analytics</h3>
         <div className="text-sm text-slate-400">Last {count} txs</div>
@@ -626,7 +689,7 @@ const ProposalCard = React.memo(({ proposal }: { proposal?: any }) => {
 
   return (
     <Link to={`/proposal/${proposal?.id}`} onClick={undefined}>
-      <div className="bg-slate-700 rounded-lg p-4 hover:bg-slate-600 transition-colors cursor-pointer border border-slate-600">
+      <div className="bg-slate-700 rounded-lg p-4 hover:bg-slate-600 transition-colors cursor-pointer">
         <div className="flex items-start justify-between mb-2 gap-2">
           <h4 className="text-white font-medium flex-1 line-clamp-2">{proposal?.title}</h4>
           <Badge className={`text-xs ${STATUS_COLORS[proposal?.status as keyof typeof STATUS_COLORS] || STATUS_COLORS.active}`}>
@@ -643,10 +706,10 @@ const ProposalCard = React.memo(({ proposal }: { proposal?: any }) => {
             style={{ width: `${progressPercentage}%` } as React.CSSProperties}
             role="progressbar"
             aria-label="Proposal votes"
-            aria-valuenow={Math.round(progressPercentage)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            title={`${progressPercentage}% votes received`}
+            aria-valuenow={Math.round(progressPercentage) as number}
+            aria-valuemin={0 as number}
+            aria-valuemax={100 as number}
+            title={`${progressPercentage.toFixed(1)}% votes received`}
           />
         </div>
         
@@ -731,7 +794,7 @@ const Toast = ({ message, type = 'info', onClose }: { message: string; type?: st
   }, [onClose]);
 
   return (
-    <div className={`fixed bottom-4 right-4 ${colors[type] || colors.info} border-2 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 z-50 animate-in slide-in-from-bottom`}>
+    <div className={`fixed bottom-4 right-4 ${colors[type] || colors.info} text-white px-6 py-3 rounded-lg shadow-sm flex items-center gap-3 z-50 transition-opacity`}>
       <span>{message}</span>
       <button onClick={onClose} className="hover:opacity-70" title="Close notification">
         <Check className="h-4 w-4" />
@@ -765,10 +828,19 @@ export default function OkediDashboard() {
   const [kycRequired, setKycRequired] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [toast, setToast] = useState<any>(null);
+  const [showFirstRun, setShowFirstRun] = useState(false);
+  const [chamaName, setChamaName] = useState('');
+  const [showOnboardingChecklist, setShowOnboardingChecklist] = useState(false);
+  const [onboardingState, setOnboardingState] = useState<any>(null);
   const [showBatchTransferModal, setShowBatchTransferModal] = useState(false);
   const [showBillSplitModal, setShowBillSplitModal] = useState(false);
   const [showRecurringPaymentModal, setShowRecurringPaymentModal] = useState(false);
+  const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false);
+  const [recentPayments, setRecentPayments] = useState<any[]>([]);
   const [userAddress, setUserAddress] = useState<string>('');
+  const [selectedUserForRole, setSelectedUserForRole] = useState<string | null>(null);
+  const [showRoleProgressModal, setShowRoleProgressModal] = useState(false);
+  const userId = data?.currentUser?.id || '';
   
   // Governance State
   const [showCreateProposalModal, setShowCreateProposalModal] = useState(false);
@@ -794,6 +866,22 @@ export default function OkediDashboard() {
         
         if (isMounted) {
           setData(dashboardData);
+          // show first-run modal if user has no DAOs
+          if ((dashboardData?.myDAOs || []).length === 0) {
+            setShowFirstRun(true);
+          }
+          // if there is a DAO and onboarding not complete, show checklist
+          const firstDao = (dashboardData?.myDAOs || [])[0];
+          if (firstDao) {
+            const onboard = firstDao.onboarding || firstDao.onboardingState || null;
+            // treat null as not complete
+            if (!onboard || !onboard.complete) {
+              setShowOnboardingChecklist(true);
+              setOnboardingState(onboard || { created: true, inviteSent: false, firstContribution: false, firstVote: false, walletConfigured: false });
+            } else {
+              setShowOnboardingChecklist(false);
+            }
+          }
           setLoading(false);
         }
       } catch (err) {
@@ -813,6 +901,114 @@ export default function OkediDashboard() {
       isMounted = false;
     };
   }, []);
+
+  // Fetch recent payments for primary DAO (first DAO) to show a quick list
+  useEffect(() => {
+    const firstDao = (data?.myDAOs || [])[0];
+    if (!firstDao) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/daos/${firstDao.id}/payments`);
+        if (!res.ok) return;
+        const j = await res.json();
+        if (mounted) setRecentPayments(j.data || []);
+      } catch (err) {
+        // ignore
+      }
+    })();
+    return () => { mounted = false; };
+  }, [data?.myDAOs]);
+
+  // Minimal first-run component: collects chama name then routes into simplified flow
+  const FirstRun = ({ userName }: { userName?: string }) => {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-slate-800 rounded-xl p-6 text-center">
+          <h2 className="text-2xl font-bold mb-4">Welcome{userName ? `, ${userName}` : ''}.</h2>
+          <p className="text-slate-300 mb-4">Let's set up your chama — it takes less than a minute.</p>
+          <label className="text-sm text-slate-400 mb-2 block text-left">What's your chama called?</label>
+          <input
+            value={chamaName}
+            onChange={(e) => setChamaName(e.target.value)}
+            className="w-full mb-4 px-3 py-2 rounded bg-slate-700 text-white"
+            placeholder="e.g., Umoja Savings Group"
+            aria-label="Chama name"
+          />
+          <div className="flex gap-2 justify-center">
+            <Button
+              onClick={async () => {
+                if (!chamaName.trim()) { setToast({ message: 'Please enter a name', type: 'error' }); return; }
+                try {
+                  // call simplified create endpoint (assumes existing API)
+                  setLoading(true);
+                  const res = await fetch('/api/daos/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: chamaName.trim(), type: 'collective' }),
+                    credentials: 'include',
+                  });
+                  if (res.ok) {
+                    // proceed to the simplified 4-step flow (route placeholder)
+                    window.location.href = '/onboarding/okedi/quick-setup';
+                    return;
+                  }
+                  const payload = await res.json();
+                  setToast({ message: payload?.error?.message || 'Failed to create chama', type: 'error' });
+                } catch (err) {
+                  console.error(err);
+                  setToast({ message: 'Network error', type: 'error' });
+                } finally { setLoading(false); }
+              }}
+            >
+              Continue →
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Poller: periodically refresh dashboard data and update live timestamps/statuses
+  useEffect(() => {
+    let mounted = true;
+    const intervalMs = 30000; // 30s
+
+    const poll = async () => {
+      try {
+        const refreshed = await getOkediDashboard();
+        if (!mounted) return;
+        setData((prev: any) => ({ ...(prev || {}), ...(refreshed || {}) }));
+        setLastUpdated(new Date());
+        setStrategyStatuses(refreshed?.strategyStatuses || []);
+        setTreasuryChanges(refreshed?.treasuryChanges || []);
+      } catch (err) {
+        console.warn('Dashboard poll failed:', err);
+      }
+    };
+
+    const tick = () => {
+      setIsOnline(typeof navigator !== 'undefined' ? navigator.onLine : true);
+      poll();
+    };
+
+    const id = setInterval(tick, intervalMs);
+
+    // initial tick
+    tick();
+
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+
+    return () => {
+      mounted = false;
+      clearInterval(id);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
   
   // ============================================================================
   // MEMOIZED VALUES
@@ -821,31 +1017,16 @@ export default function OkediDashboard() {
   
   const trackQuickActionClick = useCallback((actionId: string, actionLabel: string) => {
     // Track engagement analytics for Quick Actions
-    if (window?.analytics) {
-      window.analytics.track('Quick Action Clicked', {
-        actionId,
-        actionLabel,
-        timestamp: new Date().toISOString(),
-        dashboard: 'okedi',
-      });
-    }
+    const analytics = (window as any)?.analytics;
+    analytics?.track?.('Quick Action Clicked', {
+      actionId,
+      actionLabel,
+      timestamp: new Date().toISOString(),
+      dashboard: 'okedi',
+    });
   }, []);
 
-  const quickActions = useMemo(() => [
-    { id: 'receive', label: 'Receive', icon: <ArrowUpRight className="h-5 w-5" />, onClick: () => { trackQuickActionClick('receive', 'Receive'); setShowReceiveModal(true); }, color: 'bg-green-600', description: 'Get funds' },
-    { id: 'send', label: 'Send', icon: <Send className="h-5 w-5" />, onClick: () => { trackQuickActionClick('send', 'Send'); handleSend(''); }, color: 'bg-blue-600', description: 'Send funds' },
-    { id: 'transfer', label: 'Transfer', icon: <ArrowLeftRight className="h-5 w-5" />, onClick: () => { trackQuickActionClick('transfer', 'Transfer'); setShowTransferModal(true); }, color: 'bg-orange-600', description: 'Move between' },
-    { id: 'links', label: 'Payment Links', icon: <Share className="h-5 w-5" />, onClick: () => { trackQuickActionClick('links', 'Payment Links'); setShowPaymentLinksModal(true); }, color: 'bg-cyan-600', description: 'Create & manage' },
-    { id: 'split', label: 'Batch Transfer', icon: <Users className="h-5 w-5" />, onClick: () => { trackQuickActionClick('split', 'Batch Transfer'); setShowBatchTransferModal(true); }, color: 'bg-pink-600', description: 'Send to many' },
-    { id: 'bill', label: 'Bill Split', icon: <Split className="h-5 w-5" />, onClick: () => { trackQuickActionClick('bill', 'Bill Split'); setShowBillSplitModal(true); }, color: 'bg-red-600', description: 'Split expenses' },
-    { id: 'recurring', label: 'Recurring', icon: <Repeat className="h-5 w-5" />, onClick: () => { trackQuickActionClick('recurring', 'Recurring Payments'); setShowRecurringPaymentModal(true); }, color: 'bg-indigo-600', description: 'Automate payments' },
-    { id: 'escrow', label: 'Escrow', icon: <Lock className="h-5 w-5" />, onClick: () => { trackQuickActionClick('escrow', 'Escrow'); window.location.href = '/wallet?action=escrow'; }, color: 'bg-purple-600', description: 'Secure payment' },
-    { id: 'vote', label: 'Vote', icon: <CheckCircle className="h-5 w-5" />, onClick: () => { trackQuickActionClick('vote', 'Vote'); window.location.href = '/governance'; }, color: 'bg-amber-600', description: 'Vote now' },
-    { id: 'refer', label: 'Refer', icon: <Gift className="h-5 w-5" />, onClick: () => { trackQuickActionClick('refer', 'Refer'); window.location.href = '/referrals'; }, color: 'bg-yellow-600', description: 'Earn rewards' },
-    { id: 'settings', label: 'Settings', icon: <Settings className="h-5 w-5" />, onClick: () => { trackQuickActionClick('settings', 'Settings'); window.location.href = '/settings'; }, color: 'bg-slate-600', description: 'Account' },
-    { id: 'analytics', label: 'Analytics', icon: <TrendingUp className="h-5 w-5" />, onClick: () => { trackQuickActionClick('analytics', 'Analytics'); window.location.href = '/wallet?action=analytics'; }, color: 'bg-indigo-600', description: 'View stats' },
-    { id: 'chat', label: 'Chat', icon: <MessageCircle className="h-5 w-5" />, onClick: () => { trackQuickActionClick('chat', 'Chat'); window.location.href = '/dao-chat'; }, color: 'bg-teal-600', description: 'DAO chat' },
-  ], [trackQuickActionClick, handleSend, setShowTransferModal]);
+  // quickActions moved below callbacks to avoid TDZ when referencing `handleSend`
   
   // ============================================================================
   // CALLBACKS
@@ -886,13 +1067,12 @@ export default function OkediDashboard() {
       return;
     }
     
-    if (window?.analytics) {
-      window.analytics.track('Send Modal Opened', {
-        daoId,
-        source: 'quick-actions',
-        timestamp: new Date().toISOString(),
-      });
-    }
+    const analytics = (window as any)?.analytics;
+    analytics?.track?.('Send Modal Opened', {
+      daoId,
+      source: 'quick-actions',
+      timestamp: new Date().toISOString(),
+    });
     
     console.log('Sending to DAO:', daoId);
     setShowSendModal(true);
@@ -902,10 +1082,182 @@ export default function OkediDashboard() {
     console.log('Managing DAO:', daoId);
     window.location.href = `/dao/${daoId}/manage`;
   }, []);
+
+  const quickActions = useMemo(() => [
+    { id: 'record-payment', label: 'Record Payment', icon: <Plus className="h-5 w-5" />, onClick: () => { trackQuickActionClick('record-payment', 'Record Payment'); setShowRecordPaymentModal(true); }, color: 'bg-emerald-600', description: 'Record M-Pesa or cash' },
+    { id: 'receive', label: 'Receive', icon: <ArrowUpRight className="h-5 w-5" />, onClick: () => { trackQuickActionClick('receive', 'Receive'); setShowReceiveModal(true); }, color: 'bg-green-600', description: 'Get funds' },
+    { id: 'send', label: 'Send', icon: <Send className="h-5 w-5" />, onClick: () => { trackQuickActionClick('send', 'Send'); handleSend(''); }, color: 'bg-blue-600', description: 'Send funds' },
+    { id: 'transfer', label: 'Transfer', icon: <ArrowLeftRight className="h-5 w-5" />, onClick: () => { trackQuickActionClick('transfer', 'Transfer'); setShowTransferModal(true); }, color: 'bg-orange-600', description: 'Move between' },
+    { id: 'links', label: 'Payment Links', icon: <Share className="h-5 w-5" />, onClick: () => { trackQuickActionClick('links', 'Payment Links'); setShowPaymentLinksModal(true); }, color: 'bg-cyan-600', description: 'Create & manage' },
+    { id: 'split', label: 'Batch Transfer', icon: <Users className="h-5 w-5" />, onClick: () => { trackQuickActionClick('split', 'Batch Transfer'); setShowBatchTransferModal(true); }, color: 'bg-pink-600', description: 'Send to many' },
+    { id: 'bill', label: 'Bill Split', icon: <Split className="h-5 w-5" />, onClick: () => { trackQuickActionClick('bill', 'Bill Split'); setShowBillSplitModal(true); }, color: 'bg-red-600', description: 'Split expenses' },
+    { id: 'recurring', label: 'Recurring', icon: <Repeat className="h-5 w-5" />, onClick: () => { trackQuickActionClick('recurring', 'Recurring Payments'); setShowRecurringPaymentModal(true); }, color: 'bg-indigo-600', description: 'Automate payments' },
+    { id: 'escrow', label: 'Escrow', icon: <Lock className="h-5 w-5" />, onClick: () => { trackQuickActionClick('escrow', 'Escrow'); window.location.href = '/wallet?action=escrow'; }, color: 'bg-purple-600', description: 'Secure payment' },
+    { id: 'vote', label: 'Vote', icon: <CheckCircle className="h-5 w-5" />, onClick: () => { trackQuickActionClick('vote', 'Vote'); window.location.href = '/governance'; }, color: 'bg-amber-600', description: 'Vote now' },
+    { id: 'refer', label: 'Refer', icon: <Gift className="h-5 w-5" />, onClick: () => { trackQuickActionClick('refer', 'Refer'); window.location.href = '/referrals'; }, color: 'bg-yellow-600', description: 'Earn rewards' },
+    { id: 'settings', label: 'Settings', icon: <Settings className="h-5 w-5" />, onClick: () => { trackQuickActionClick('settings', 'Settings'); window.location.href = '/settings'; }, color: 'bg-slate-600', description: 'Account' },
+    { id: 'analytics', label: 'Analytics', icon: <TrendingUp className="h-5 w-5" />, onClick: () => { trackQuickActionClick('analytics', 'Analytics'); window.location.href = '/wallet?action=analytics'; }, color: 'bg-indigo-600', description: 'View stats' },
+    { id: 'chat', label: 'Chat', icon: <MessageCircle className="h-5 w-5" />, onClick: () => { trackQuickActionClick('chat', 'Chat'); window.location.href = '/dao-chat'; }, color: 'bg-teal-600', description: 'DAO chat' },
+  ], [trackQuickActionClick, handleSend]);
   
   const handleActionClick = useCallback((actionId: string) => {
     console.log('Quick action clicked:', actionId);
   }, []);
+
+  // Active organizational domain (focus workspace) - does not replace full page
+  const [activeDomain, setActiveDomain] = useState<string>('Treasury');
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [strategyStatuses, setStrategyStatuses] = useState<Array<any>>([]);
+  const [treasuryChanges, setTreasuryChanges] = useState<Array<any>>([]);
+
+  // Intelligence rail component (persistent side rail)
+  const IntelligenceRail = React.memo(({ data }: { data?: any }) => {
+    const items: Array<{id:string,title:string,ts?:string,source?:string}> = [];
+    (data?.treasuryAlerts || []).forEach((a:any,i:number)=> items.push({ id:`ta-${i}`, title: a.title || a.message || 'Treasury alert', ts: a.timestamp, source: 'Treasury' }));
+    (data?.governanceActivity || []).forEach((g:any,i:number)=> items.push({ id:`ga-${i}`, title: g.title || g.summary || 'Governance', ts: g.timestamp, source: 'Governance' }));
+    (data?.marketAnomalies || []).forEach((m:any,i:number)=> items.push({ id:`ma-${i}`, title: m.title || m.summary || 'Market anomaly', ts: m.timestamp, source: 'Markets' }));
+    (data?.strategyTriggers || []).forEach((s:any,i:number)=> items.push({ id:`st-${i}`, title: s.title || s.note || 'Strategy trigger', ts: s.timestamp, source: 'Strategy' }));
+    (data?.proposalDeadlines || []).forEach((p:any,i:number)=> items.push({ id:`pd-${i}`, title: p.title || 'Proposal deadline', ts: p.deadline, source: 'Governance' }));
+    (data?.liquidityChanges || []).forEach((l:any,i:number)=> items.push({ id:`lc-${i}`, title: l.title || 'Liquidity change', ts: l.timestamp, source: 'Liquidity' }));
+    (data?.riskEvents || []).forEach((r:any,i:number)=> items.push({ id:`re-${i}`, title: r.title || r.summary || 'Risk event', ts: r.timestamp, source: 'Risk' }));
+
+    if (items.length === 0) {
+      return (
+        <Surface tier="ambient">
+          <h4 className="text-sm font-semibold text-white mb-2">Intelligence</h4>
+          <p className="text-slate-300 text-sm">No alerts — systems nominal</p>
+        </Surface>
+      );
+    }
+
+    return (
+      <Surface tier="ambient">
+        <h4 className="text-sm font-semibold text-white mb-3">Intelligence</h4>
+        <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+          {items.slice(0,50).map(it => (
+            <div key={it.id} className="bg-slate-700 rounded-md p-2 text-sm flex items-start justify-between">
+              <div>
+                <div className="text-white font-medium truncate">{it.title}</div>
+                <div className="text-xs text-slate-400">{it.source} • {it.ts ? new Date(it.ts).toLocaleString() : ''}</div>
+              </div>
+              <div className="text-xs text-slate-300 ml-2">›</div>
+            </div>
+          ))}
+        </div>
+      </Surface>
+    );
+  });
+
+  IntelligenceRail.displayName = 'IntelligenceRail';
+
+  // Connectivity indicator
+  const ConnectivityIndicator = ({ online }: { online: boolean }) => (
+    <div className={`text-xs ${online ? 'text-green-400' : 'text-amber-400'} flex items-center gap-2`}> 
+      <span className={`inline-block w-2 h-2 rounded-full ${online ? 'bg-green-400' : 'bg-amber-400'}`} />
+      <span>{online ? 'Connected' : 'Offline'}</span>
+    </div>
+  );
+
+  // Live timestamp
+  const LiveTimestamp = ({ ts }: { ts: Date }) => (
+    <div className="text-xs text-slate-400">Updated {ts.toLocaleTimeString()}</div>
+  );
+
+  // Focus panel shows a small workspace-specific view while preserving context
+  // Contextual workspace components
+  const TreasuryWorkspace = React.memo(() => (
+    <div className={TERTIARY_SURFACE}>
+      <div className="flex items-start justify-between mb-2">
+        <div>
+          <h4 className="text-sm font-semibold text-white mb-1">Treasury Workspace</h4>
+          <p className="text-slate-300 text-sm">Allocations, positions, liquidity, risk.</p>
+        </div>
+        <div className="text-right">
+          <ConnectivityIndicator online={isOnline} />
+          <LiveTimestamp ts={lastUpdated} />
+        </div>
+      </div>
+      <div className="mt-3 space-y-3">
+        <UnifiedBalance totalBalance={data.totalBalance} currency={data.cryptoCurrency || 'cUSD'} balances={data.balances} />
+        <AnalyticsPanel data={data} />
+        <div>
+          <h5 className="text-xs text-slate-400 mb-2">Recent Treasury Changes</h5>
+          <div className="space-y-2">
+            {(treasuryChanges || []).slice(0,3).map((c,i)=> (
+              <div key={i} className="text-xs text-slate-300">{c.summary || c.note || 'Change recorded'} • {c.ts ? new Date(c.ts).toLocaleString() : ''}</div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  ));
+
+  const GovernanceWorkspace = React.memo(() => (
+    <div className={TERTIARY_SURFACE}>
+      <div className="flex items-start justify-between mb-2">
+        <div>
+          <h4 className="text-sm font-semibold text-white mb-1">Governance Workspace</h4>
+          <p className="text-slate-300 text-sm">Active proposals, voting, execution status.</p>
+        </div>
+        <div className="text-right">
+          <ConnectivityIndicator online={isOnline} />
+          <LiveTimestamp ts={lastUpdated} />
+        </div>
+      </div>
+      <div className="mt-3 space-y-3">
+        {data?.activeProposals?.slice(0,5).map((p:any)=> <ProposalResultsCard key={p.id} proposal={p} />)}
+        <div>
+          <h5 className="text-xs text-slate-400 mb-2">Proposal Progress</h5>
+          <div className="space-y-2">
+            {data?.activeProposals?.slice(0,4).map((p:any)=> (
+              <div key={p.id} className="text-xs text-slate-300">{p.title} • {Math.round(((p.currentVotes||0)/(p.votesRequired||1))*100)}%</div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  ));
+
+  const IntelligenceWorkspace = React.memo(() => (
+    <div className={TERTIARY_SURFACE}>
+      <div className="flex items-start justify-between mb-2">
+        <div>
+          <h4 className="text-sm font-semibold text-white mb-1">Intelligence Workspace</h4>
+          <p className="text-slate-300 text-sm">Anomalies, AI summaries, opportunities, risk analysis.</p>
+        </div>
+        <div className="text-right">
+          <ConnectivityIndicator online={isOnline} />
+          <LiveTimestamp ts={lastUpdated} />
+        </div>
+      </div>
+      <div className="mt-3 space-y-3">
+        <IntelligenceRail data={data} />
+        <div>
+          <h5 className="text-xs text-slate-400 mb-2">Strategy Statuses</h5>
+          <div className="space-y-2">
+            {strategyStatuses.slice(0,5).map((s, i) => (
+              <div key={i} className="text-xs text-slate-300">{s.name} — {s.state} • {s.lastRun ? new Date(s.lastRun).toLocaleTimeString() : '—'}</div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  ));
+
+  const FocusPanel = React.memo(({ domain }: { domain: string }) => {
+    if (domain === 'Treasury') return <TreasuryWorkspace />;
+    if (domain === 'Governance') return <GovernanceWorkspace />;
+    if (domain === 'Intelligence') return <IntelligenceWorkspace />;
+    // default: render a lightweight snapshot
+    return (
+      <div className={TERTIARY_SURFACE}>
+        <h4 className="text-sm font-semibold text-white mb-2">{domain} Focus</h4>
+        <p className="text-slate-300 text-sm">Workspace snapshot</p>
+      </div>
+    );
+  });
+
   
   // ============================================================================
   // RENDER ERROR STATE
@@ -940,6 +1292,128 @@ export default function OkediDashboard() {
       </div>
     );
   }
+
+    // ============================================================================
+    // ONBOARDING CHECKLIST (blocks full dashboard until complete)
+    // ============================================================================
+    if (showOnboardingChecklist && onboardingState) {
+      const firstDao = (data?.myDAOs || [])[0];
+      const daoId = firstDao?.id;
+
+      const markStep = async (step: string) => {
+        try {
+          setLoading(true);
+          // Use central onboarding service: map our logical step to onboarding step IDs
+          // Attempt to complete via /api/onboarding/complete/:stepId
+          const stepMap: Record<string, string> = {
+            inviteSent: 'invite-first-member',
+            firstContribution: 'record-first-contribution',
+            firstVote: 'create-first-proposal',
+            walletConfigured: 'configure-wallet',
+          };
+
+          const stepId = stepMap[step] || step;
+          const res = await fetch(`/api/onboarding/complete/${encodeURIComponent(stepId)}`, {
+            method: 'POST',
+            credentials: 'include',
+          });
+
+          if (res.ok) {
+            // detect completed steps and refresh progress
+            await fetch('/api/onboarding/detect', { method: 'POST', credentials: 'include' });
+            const refreshed = await getOkediDashboard();
+            setData(refreshed);
+            const fd = (refreshed?.myDAOs || [])[0];
+            const onboard = fd?.onboarding || fd?.onboardingState || null;
+            setOnboardingState(onboard || { created: true, inviteSent: false, firstContribution: false, firstVote: false, walletConfigured: false });
+            if (onboard && onboard.complete) setShowOnboardingChecklist(false);
+          } else {
+            const p = await res.json();
+            setToast({ message: p?.error?.message || 'Failed to mark step', type: 'error' });
+          }
+        } catch (err) {
+          console.error(err);
+          setToast({ message: 'Network error', type: 'error' });
+        } finally { setLoading(false); }
+      };
+
+      const stepDone = (k: string) => Boolean(onboardingState && onboardingState[k]);
+
+      return (
+        <div className="min-h-screen bg-slate-900 text-white p-6 flex items-center justify-center">
+          <div className="max-w-2xl w-full bg-slate-800 rounded-xl p-6">
+            <h2 className="text-2xl font-bold mb-4">Your chama is live. Here's what's next:</h2>
+            <ul className="space-y-3">
+              <li className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-green-400">✅</span>
+                  <div>
+                    <div className="font-semibold">Create your group</div>
+                    <div className="text-sm text-slate-400">Your chama has been created</div>
+                  </div>
+                </div>
+                <div />
+              </li>
+
+              <li className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-white">{stepDone('inviteSent') ? '✅' : '⬜'}</span>
+                  <div>
+                    <div className="font-semibold">Invite your first member</div>
+                    <div className="text-sm text-slate-400">Share the invite link with one member</div>
+                  </div>
+                </div>
+                <div>
+                  <Button size="sm" onClick={() => markStep('inviteSent')}>Share link</Button>
+                </div>
+              </li>
+
+              <li className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-white">{stepDone('firstContribution') ? '✅' : '⬜'}</span>
+                  <div>
+                    <div className="font-semibold">Record your first contribution</div>
+                    <div className="text-sm text-slate-400">Add a payment to the treasury</div>
+                  </div>
+                </div>
+                <div>
+                  <Button size="sm" onClick={() => markStep('firstContribution')}>Add payment</Button>
+                </div>
+              </li>
+
+              <li className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-white">{stepDone('firstVote') ? '✅' : '⬜'}</span>
+                  <div>
+                    <div className="font-semibold">Make your first group decision</div>
+                    <div className="text-sm text-slate-400">Create and vote on a proposal</div>
+                  </div>
+                </div>
+                <div>
+                  <Button size="sm" onClick={() => markStep('firstVote')}>Create vote</Button>
+                </div>
+              </li>
+
+              <li className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-white">{stepDone('walletConfigured') ? '✅' : '⬜'}</span>
+                  <div>
+                    <div className="font-semibold">Set up your group wallet</div>
+                    <div className="text-sm text-slate-400">Configure treasury & signers</div>
+                  </div>
+                </div>
+                <div>
+                  <Button size="sm" onClick={() => markStep('walletConfigured')}>Configure treasury</Button>
+                </div>
+              </li>
+            </ul>
+            <div className="mt-6 text-right">
+              <Button variant="outline" onClick={() => { setShowOnboardingChecklist(false); }}>Skip for now</Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
   
   // ============================================================================
   // MAIN RENDER
@@ -951,7 +1425,7 @@ export default function OkediDashboard() {
         <div className="max-w-7xl mx-auto space-y-6">
           
           {/* TOP HEADER */}
-          <div className="bg-slate-900 border border-slate-700 rounded-lg px-4 md:px-6 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className={SECONDARY_SURFACE + " px-4 md:px-6 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4"}>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lg">💳</span>
@@ -980,8 +1454,24 @@ export default function OkediDashboard() {
             </div>
           </div>
           
+          {/* GLOBAL DAO STATE BAR (persistent heartbeat) */}
+          <div className="mt-4">
+            <GlobalStateBar data={data} online={isOnline} lastUpdated={lastUpdated} />
+          </div>
+
+          {/* DOMAIN NAV */}
+          <div className="mt-3 flex gap-2 items-center flex-wrap">
+            {DOMAIN_LIST.map((d) => (
+              <button key={d} onClick={() => setActiveDomain(d)} className={`px-3 py-1 rounded-md text-sm ${activeDomain===d? 'bg-purple-600 text-white':'bg-slate-700 text-slate-200'}`}>
+                {d}
+              </button>
+            ))}
+          </div>
+
           {/* BALANCE HEADER */}
-          <BalanceHeader data={data} />
+          <div className="mt-3">
+            <BalanceHeader data={data} />
+          </div>
           
           {/* UNIFIED BALANCE BREAKDOWN */}
           {data?.balances && (
@@ -1020,7 +1510,11 @@ export default function OkediDashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* MY DAOs */}
             <div className="lg:col-span-2">
-              <div className="bg-slate-800 rounded-xl p-4 md:p-6 border border-slate-700">
+              {/* Focus Panel - workspace-specific but non-destructive */}
+              <div className="mb-4">
+                <FocusPanel domain={activeDomain} />
+              </div>
+              <div className={SECONDARY_SURFACE}>
                 <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                   <h3 className="text-lg font-bold text-white flex items-center gap-2">
                     <Users className="h-5 w-5 text-purple-400" />
@@ -1045,9 +1539,15 @@ export default function OkediDashboard() {
                     <ErrorBoundary key={dao.id}>
                       <DAOCardComponent
                         dao={{
-                          ...dao,
-                          activityPoints: dao.activityPoints || 0,
-                          promotionEligible: dao.promotionEligible || false,
+                          id: dao.id,
+                          name: dao.name,
+                          description: (dao as any).description,
+                          memberCount: (dao as any).memberCount,
+                          role: ((dao as any).role === 'founder' ? 'admin' : (dao as any).role) as 'member' | 'elder' | 'admin',
+                          treasury: (dao as any).treasury,
+                          activityPoints: (dao as any).activityPoints || 0,
+                          promotionEligible: (dao as any).promotionEligible || false,
+                          type: (dao as any).type,
                         }}
                         onVote={handleVote}
                         onSend={handleSend}
@@ -1077,11 +1577,51 @@ export default function OkediDashboard() {
             </div>
             
             {/* GOVERNANCE STATS */}
-            <div className="bg-slate-800 rounded-xl p-4 md:p-6 border border-slate-700">
+            <div className={SECONDARY_SURFACE}>
               <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                 📊 Governance Stats
               </h3>
               <div className="space-y-3">
+                  {/* Recent payments (quick view) */}
+                  {recentPayments && recentPayments.length > 0 && (
+                    <div className="bg-slate-800 rounded p-3">
+                      <h4 className="text-sm font-semibold text-white mb-2">Recent Payments</h4>
+                      <div className="space-y-2">
+                        {recentPayments.slice(0,5).map(p => (
+                          <div key={p.id} className="flex items-center justify-between bg-slate-700 rounded p-2 text-xs">
+                            <div>
+                              <div className="text-white font-medium">{p.contributorId}</div>
+                              <div className="text-slate-400">{p.amount} {p.currency} • {p.status}</div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {p.status === 'pending' && (
+                                <button onClick={async () => {
+                                  try {
+                                    const res = await fetch(`/api/daos/${p.daoId}/payments/${p.id}/confirm`, { method: 'POST' });
+                                    if (res.ok) {
+                                      // refresh the payments list for the primary DAO
+                                      const firstDao = (data?.myDAOs || [])[0];
+                                      if (firstDao) {
+                                        const rr = await fetch(`/api/daos/${firstDao.id}/payments`);
+                                        if (rr.ok) {
+                                          const jj = await rr.json();
+                                          setRecentPayments(jj.data || []);
+                                        }
+                                      }
+                                      setToast({ message: 'Payment confirmed', type: 'success' });
+                                    } else {
+                                      const j = await res.json();
+                                      setToast({ message: j?.error || 'Failed to confirm', type: 'error' });
+                                    }
+                                  } catch (e) { setToast({ message: 'Network error', type: 'error' }); }
+                                }} className="px-2 py-1 bg-green-600 rounded text-xs">Confirm</button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 <div className="bg-slate-700 rounded-lg p-3">
                   <p className="text-sm text-slate-300">Total Votes Cast</p>
                   <p className="text-2xl font-bold text-white">{data?.governanceStats?.votesCast || 0}</p>
@@ -1101,19 +1641,28 @@ export default function OkediDashboard() {
                 </div>
                 
                 {data?.activeProposals?.length > 0 && (
-                  <div className="mt-4 border-t border-slate-600 pt-4">
-                    <h4 className="text-sm font-bold text-white mb-2">🗳️ Recent Votes</h4>
-                    <div className="space-y-2 max-h-40 overflow-y-auto">
-                      {data.activeProposals.slice(0, PREVIEW_LIMITS.RECENT_VOTES).map((proposal: any) => (
-                        <div key={proposal.id} className="bg-slate-700 rounded p-2">
-                          <p className="text-xs text-white font-medium line-clamp-1">{proposal.title}</p>
-                          <p className="text-xs text-slate-400">
-                            ✅ Active • {proposal.currentVotes}/{proposal.votesRequired}
-                          </p>
-                        </div>
-                      ))}
+                  <>
+                    <div className="mt-4 pt-4">
+                      <h4 className="text-sm font-bold text-white mb-2">🗳️ Recent Votes</h4>
+                      <div className="space-y-2 max-h-40 overflow-y-auto">
+                        {data.activeProposals.slice(0, PREVIEW_LIMITS.RECENT_VOTES).map((proposal: any) => (
+                          <div key={proposal.id} className="bg-slate-700 rounded p-2">
+                            <p className="text-xs text-white font-medium line-clamp-1">{proposal.title}</p>
+                            <p className="text-xs text-slate-400">
+                              ✅ Active • {proposal.currentVotes}/{proposal.votesRequired}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+
+                    {/* Intelligence Rail - persistent right column */}
+                    <div className="lg:col-span-1">
+                      <div className="sticky top-24">
+                        <IntelligenceRail data={data} />
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
             </div>
@@ -1121,7 +1670,7 @@ export default function OkediDashboard() {
           
           {/* ACTIVE PROPOSALS */}
           {data?.activeProposals && data.activeProposals.length > 0 && (
-            <div className="bg-slate-800 rounded-xl p-4 md:p-6 border border-slate-700">
+            <div className={SECONDARY_SURFACE}>
               <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                 🗳️ Active Proposals ({data.activeProposals.length})
               </h3>
@@ -1145,21 +1694,21 @@ export default function OkediDashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* ACTIVE ESCROWS */}
             {data?.activeEscrows && data.activeEscrows.length > 0 && (
-              <div className="bg-slate-800 rounded-xl p-4 md:p-6 border border-slate-700">
+              <div className={SECONDARY_SURFACE}>
                 <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                   🔒 Active Escrows ({data.activeEscrows.length})
                 </h3>
                 <div className="space-y-3">
                   {data.activeEscrows.slice(0, PREVIEW_LIMITS.ESCROWS).map((escrow: EscrowInfo) => (
                     <Link key={escrow.id} to={`/escrow/${escrow.id}`}>
-                      <div className="bg-slate-700 rounded-lg p-4 hover:bg-slate-600 transition-colors cursor-pointer border border-slate-600">
+                      <div className="bg-slate-700 rounded-lg p-4 hover:bg-slate-600 transition-colors cursor-pointer hover:shadow-sm">
                         <div className="flex items-start justify-between mb-2 gap-2">
                           <div className="flex-1 min-w-0">
                             <h4 className="text-white font-medium">
                               ${escrow.amount} {escrow.currency}
                             </h4>
-                            <p className="text-slate-300 text-sm mt-1 line-clamp-2">{escrow.description}</p>
-                            <p className="text-xs text-slate-400 mt-1">With: {escrow.participantName}</p>
+                            <p className="text-slate-300 text-sm mt-1 line-clamp-2">{(escrow as any).description}</p>
+                            <p className="text-xs text-slate-400 mt-1">With: {(escrow as any).participantName}</p>
                           </div>
                           <Badge className={STATUS_COLORS[escrow.status as keyof typeof STATUS_COLORS] || STATUS_COLORS.active}>
                             {STATUS_ICONS[escrow.status as keyof typeof STATUS_ICONS]} {escrow.status}
@@ -1167,7 +1716,7 @@ export default function OkediDashboard() {
                         </div>
                         <p className="text-xs text-slate-400 mb-3">
                           <Heart className="h-3 w-3 inline mr-1" />
-                          {escrow.daysLeft} days left
+                          {(escrow as any).daysLeft ?? '—'} days left
                         </p>
                         <div className="flex gap-2 flex-wrap">
                           <Button size="xs" variant="outline" className="flex-1">
@@ -1195,7 +1744,7 @@ export default function OkediDashboard() {
             )}
             
             {/* RECENT ACTIVITY */}
-            <div className="bg-slate-800 rounded-xl p-4 md:p-6 border border-slate-700">
+            <div className={SECONDARY_SURFACE}>
               <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                 📊 Recent Activity
               </h3>
@@ -1218,7 +1767,7 @@ export default function OkediDashboard() {
           
           {/* REFERRAL PROGRAM */}
           {data?.referralStats && (
-            <div className="bg-slate-800 rounded-xl p-4 md:p-6 border border-slate-700">
+            <div className={SECONDARY_SURFACE}>
               <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                 🎁 Referral Program & Earnings
               </h3>
@@ -1296,17 +1845,17 @@ export default function OkediDashboard() {
           
           {/* DAO CHAT */}
           {data?.daoChat && (
-            <div className="bg-slate-800 rounded-xl p-4 md:p-6 border border-slate-700">
+            <div className={SECONDARY_SURFACE}>
               <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                 💬 DAO Chat - {data.daoChat.daoName}
               </h3>
               <div className="space-y-2 max-h-64 overflow-y-auto bg-slate-700 rounded-lg p-4 mb-4">
                 {data.daoChat.messages?.slice(-PREVIEW_LIMITS.CHAT_MESSAGES).map((msg: ChatMessage) => (
                   <div key={msg.id} className="text-sm">
-                    <span className="font-medium text-white">{msg.author}:</span>
-                    <span className="text-slate-300 ml-2">{msg.text}</span>
+                    <span className="font-medium text-white">{(msg as any).author || 'Anonymous'}:</span>
+                    <span className="text-slate-300 ml-2">{(msg as any).text || (msg as any).message}</span>
                     <span className="text-xs text-slate-500 ml-2">
-                      {new Date(msg.timestamp).toLocaleTimeString()}
+                      {new Date((msg as any).timestamp || Date.now()).toLocaleTimeString()}
                     </span>
                   </div>
                 ))}
@@ -1315,7 +1864,7 @@ export default function OkediDashboard() {
                 <input
                   type="text"
                   placeholder="Type message..."
-                  className="flex-1 bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 bg-slate-700 rounded px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   aria-label="Chat message"
                 />
                 <Button variant="outline" className="text-xs h-auto">
@@ -1331,7 +1880,7 @@ export default function OkediDashboard() {
           )}
           
           {/* TIP OF THE DAY */}
-          <div className="bg-slate-800 rounded-xl p-4 md:p-6 border border-slate-700">
+          <div className={SECONDARY_SURFACE}>
             <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
               <Gift className="h-5 w-5 text-yellow-400" />
               Tip of the Day
@@ -1361,43 +1910,28 @@ export default function OkediDashboard() {
         {/* SEND MODAL - NEW MULTI-CONTEXT MODAL */}
         {showSendModal && (
           <Suspense fallback={<div>Loading...</div>}>
-            <SendModal
-              isOpen={showSendModal}
-              onClose={() => setShowSendModal(false)}
-            />
+            {React.createElement(SendModal as any, { isOpen: showSendModal, onClose: () => setShowSendModal(false) })}
           </Suspense>
         )}
 
         {/* RECEIVE MODAL - NEW MULTI-TAB MODAL */}
         {showReceiveModal && (
           <Suspense fallback={<div>Loading...</div>}>
-            <ReceiveModal
-              isOpen={showReceiveModal}
-              onClose={() => setShowReceiveModal(false)}
-            />
+            {React.createElement(ReceiveModal as any, { isOpen: showReceiveModal, onClose: () => setShowReceiveModal(false) })}
           </Suspense>
         )}
 
         {/* PAYMENT LINK MODAL */}
         {showPaymentLinksModal && (
           <Suspense fallback={<div>Loading...</div>}>
-            <PaymentLinkModal
-              isOpen={showPaymentLinksModal}
-              onClose={() => setShowPaymentLinksModal(false)}
-              userAddress={data?.walletAddress || ''}
-            />
+            {React.createElement(PaymentLinkModal as any, { isOpen: showPaymentLinksModal, onClose: () => setShowPaymentLinksModal(false), userAddress: data?.walletAddress || '' })}
           </Suspense>
         )}
 
         {/* TRANSFER MODAL */}
         {showTransferModal && (
           <Suspense fallback={<div>Loading...</div>}>
-            <TransferModal
-              isOpen={showTransferModal}
-              onClose={() => setShowTransferModal(false)}
-              userAddress={data?.walletAddress || ''}
-              accounts={[]}
-            />
+            {React.createElement(TransferModal as any, { isOpen: showTransferModal, onClose: () => setShowTransferModal(false), userAddress: data?.walletAddress || '', accounts: [] })}
           </Suspense>
         )}
 
@@ -1416,7 +1950,7 @@ export default function OkediDashboard() {
                   </button>
                 </div>
                 <div className="p-6">
-                  <BatchTransferModal address={data?.walletAddress || ''} />
+                  {React.createElement(BatchTransferModal as any, { address: data?.walletAddress || '' })}
                 </div>
               </div>
             </div>
@@ -1426,50 +1960,39 @@ export default function OkediDashboard() {
         {/* BILL SPLIT MODAL */}
         {showBillSplitModal && (
           <Suspense fallback={<div>Loading...</div>}>
-            <BillSplitModal
-              isOpen={showBillSplitModal}
-              onClose={() => setShowBillSplitModal(false)}
-              onSuccess={() => {
-                setShowBillSplitModal(false);
-                showToast('Bill split created successfully!', 'success');
-              }}
-            />
+            {React.createElement(BillSplitModal as any, { isOpen: showBillSplitModal, onClose: () => setShowBillSplitModal(false), onSuccess: () => { setShowBillSplitModal(false); showToast('Bill split created successfully!', 'success'); } })}
           </Suspense>
         )}
 
         {/* RECURRING PAYMENT MODAL */}
         {showRecurringPaymentModal && (
           <Suspense fallback={<div>Loading...</div>}>
-            <RecurringPaymentModal
-              isOpen={showRecurringPaymentModal}
-              onClose={() => setShowRecurringPaymentModal(false)}
-              onSuccess={() => {
-                setShowRecurringPaymentModal(false);
-                showToast('Recurring payment created successfully!', 'success');
-              }}
-            />
+            {React.createElement(RecurringPaymentModal as any, { isOpen: showRecurringPaymentModal, onClose: () => setShowRecurringPaymentModal(false), onSuccess: () => { setShowRecurringPaymentModal(false); showToast('Recurring payment created successfully!', 'success'); } })}
+          </Suspense>
+        )}
+
+        {/* RECORD PAYMENT MODAL (OKEDI) */}
+        {showRecordPaymentModal && (
+          <Suspense fallback={<div>Loading...</div>}>
+            {React.createElement(RecordPaymentModal as any, { isOpen: showRecordPaymentModal, daoId: (data?.myDAOs||[])[0]?.id, onClose: () => setShowRecordPaymentModal(false), onSuccess: (res:any) => { setToast({ message: 'Payment recorded', type: 'success' }); setRecentPayments(prev => [ ...(prev||[]).slice(0,9), { id: res.paymentId, contributorId: (data?.currentUser?.id || ''), amount: Number((res.amountKES||0)), currency: 'KES', status: 'pending', daoId: (data?.myDAOs||[])[0]?.id } ]); } })}
           </Suspense>
         )}
 
         {/* CREATE PROPOSAL MODAL */}
         {showCreateProposalModal && selectedDAOForProposal && (
-          <CreateProposalModal
-            daoId={selectedDAOForProposal}
-            daoType={data?.myDAOs?.find((d: any) => d.id === selectedDAOForProposal)?.type || 'collective'}
-            userRole={data?.myDAOs?.find((d: any) => d.id === selectedDAOForProposal)?.role || 'member'}
-            isOpen={showCreateProposalModal}
-            onClose={() => {
-              setShowCreateProposalModal(false);
-              setSelectedDAOForProposal(null);
-            }}
-            onSuccess={(proposalId: string) => {
+          React.createElement(CreateProposalModal as any, {
+            daoId: selectedDAOForProposal,
+            daoType: data?.myDAOs?.find((d: any) => d.id === selectedDAOForProposal)?.type || 'collective',
+            userRole: data?.myDAOs?.find((d: any) => d.id === selectedDAOForProposal)?.role || 'member',
+            isOpen: showCreateProposalModal,
+            onClose: () => { setShowCreateProposalModal(false); setSelectedDAOForProposal(null); },
+            onSuccess: (proposalId: string) => {
               showToast(`Proposal created successfully! ID: ${proposalId}`, 'success');
               setShowCreateProposalModal(false);
               setSelectedDAOForProposal(null);
-              // Refresh DAOs data to show updated proposal
               setData((prev: any) => ({ ...prev }));
-            }}
-          />
+            }
+          })
         )}
       </div>
     </ErrorBoundary>

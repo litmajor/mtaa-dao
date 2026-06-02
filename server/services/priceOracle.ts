@@ -128,11 +128,23 @@ class PriceOracleService {
   private async acquireFetchLock(symbol: string): Promise<boolean> {
     try {
       const lockKey = `${this.DEDUP_PREFIX}${symbol}`;
-      await redis.set(lockKey, 'fetching', this.DEDUP_TTL);
-      return true; // Lock acquired
+      // Use set-if-not-exists (NX) to acquire lock atomically across instances
+      const acquired = await redis.setnx(lockKey, 'fetching', this.DEDUP_TTL);
+      return Boolean(acquired);
     } catch (error) {
       logger.debug(`[PriceOracle] Lock acquisition failed for ${symbol}:`, error);
-      return true; // Allow fetch if Redis fails
+      // Fail-open: allow fetch when Redis is unavailable
+      return true;
+    }
+  }
+
+  /** Release a previously acquired fetch lock */
+  private async releaseFetchLock(symbol: string): Promise<void> {
+    try {
+      const lockKey = `${this.DEDUP_PREFIX}${symbol}`;
+      await redis.del(lockKey);
+    } catch (error) {
+      logger.debug(`[PriceOracle] Failed to release lock for ${symbol}:`, error);
     }
   }
 
@@ -175,6 +187,20 @@ class PriceOracleService {
       this.MAX_BACKOFF_MULTIPLIER
     );
     logger.warn(`[PriceOracle] Applying backoff of ${backoffTime}ms (multiplier: ${this.rateLimitState.backoffMultiplier / 2}x)`);
+  }
+
+  /**
+   * Increment the rate limit counter using a sliding window.
+   * Resets the window when it has expired.
+   */
+  private incrementRateLimitCounter(): void {
+    const now = Date.now();
+    if (now - this.rateLimitState.resetTime > this.RATE_LIMIT_WINDOW) {
+      this.rateLimitState.requestCount = 1;
+      this.rateLimitState.resetTime = now;
+    } else {
+      this.incrementRateLimitCounter();
+    }
   }
 
   /**
@@ -332,8 +358,8 @@ class PriceOracleService {
         throw new Error(`CoinGecko API error: ${response.statusText}`);
       }
 
-      // Reset rate limit on success
-      if (this.rateLimitState.requestCount % this.RATE_LIMIT_THRESHOLD === 0) {
+      // Reset rate limit state if we had previously backed off
+      if (this.rateLimitState.backoffMultiplier > 1) {
         this.resetRateLimitState();
       }
 

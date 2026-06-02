@@ -30,6 +30,7 @@ export interface Action {
   type: string;
   label: string;
   data?: Record<string, any>;
+  requiresConfirmation?: boolean;
 }
 
 export interface Session {

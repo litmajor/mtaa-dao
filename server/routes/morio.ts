@@ -340,3 +340,84 @@ router.get('/user-context', [authenticateToken], async (req: any, res: Response)
 });
 
 export default router;
+
+/**
+ * POST /api/morio/confirm-action
+ * Execute a previously-created pending action (requires ownership/permission)
+ */
+router.post('/confirm-action', [authenticateToken], async (req: any, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const { token } = req.body;
+
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    if (!token) return res.status(400).json({ error: 'Missing pending action token' });
+
+    const { kwetuService } = await import('../services/kwetuService');
+
+    try {
+      const result = await kwetuService.safeExecuteAction(token, userId);
+      res.json({ success: true, result });
+    } catch (e) {
+      res.status(400).json({ error: (e as Error).message });
+    }
+  } catch (error) {
+    console.error('Confirm action error:', error);
+    res.status(500).json({ error: 'Failed to confirm action' });
+  }
+});
+
+/**
+ * GET /api/morio/stream/:jobId
+ * Server-Sent Events stream for job updates (partial results + final)
+ * Authenticated users only (must own the job)
+ */
+router.get('/stream/:jobId', [authenticateToken], async (req: any, res: Response) => {
+  const { jobId } = req.params;
+  const requestingUserId = req.user?.id;
+
+  if (!jobId) return res.status(400).send('Missing jobId');
+
+  // Set headers for SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  let closed = false;
+  req.on('close', () => {
+    closed = true;
+  });
+
+  let lastSeen: string | null = null;
+
+  const interval = setInterval(async () => {
+    if (closed) return clearInterval(interval);
+    try {
+      const jobResult = await jobQueueService.getJobResult(jobId);
+      if (!jobResult) return;
+
+      const payload = JSON.stringify(jobResult);
+      if (payload === lastSeen) return;
+      lastSeen = payload;
+
+      res.write(`event: morio_job_update\n`);
+      res.write(`data: ${payload}\n\n`);
+
+      // If job is complete, close stream
+      if (jobResult && jobResult.status === 'completed') {
+        res.write(`event: morio_job_complete\n`);
+        res.write(`data: ${JSON.stringify({ jobId, status: 'complete' })}\n\n`);
+        clearInterval(interval);
+        res.end();
+      }
+    } catch (e) {
+      // send error event
+      res.write(`event: morio_job_error\n`);
+      res.write(`data: ${JSON.stringify({ error: 'stream_error', details: (e as Error).message })}\n\n`);
+      clearInterval(interval);
+      res.end();
+    }
+  }, 500);
+
+});

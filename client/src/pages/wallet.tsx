@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Send, ArrowUpRight, ArrowDownLeft, Wallet, TrendingUp, Shield, DollarSign, Users, Settings } from 'lucide-react';
 
+
 import { Line, Pie, Bar } from 'react-chartjs-2';
+import Decimal from 'decimal.js';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -27,7 +29,9 @@ import RecurringPaymentsManager from '@/components/wallet/RecurringPaymentsManag
 import GiftCardVoucher from '@/components/wallet/GiftCardVoucher';
 import { useWallet } from './hooks/useWallet';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import Shell from '../components/ui/shell';
+import { Grid } from '../components/ui/grid';
 import PaymentRequestModal from '@/components/wallet/PaymentRequestModal';
 import PhonePaymentModal from '@/components/wallet/PhonePaymentModal';
 import SplitBillModal from '@/components/wallet/SplitBillModal';
@@ -41,19 +45,26 @@ import TokenSwapModal from '@/components/wallet/TokenSwapModal';
 import StakingModal from '@/components/wallet/StakingModal';
 import EscrowInitiator from '@/components/wallet/EscrowInitiator';
 
+// Capital state and surfaces
+import useCapitalOperatingState from '../hooks/useCapitalOperatingState';
+import CapitalLayer from '../components/wallet/CapitalLayer';
+import { useWalletOperatingStore, parseDecimal } from '../stores/wallet-operating-store';
+import type { Transaction } from '../types/wallet';
+import useWalletActions from '../hooks/useWalletActions';
+
 
 const EnhancedWalletPage = () => {
   const [activeTab, setActiveTab] = useState("overview");
-  const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>();
-  const [selectedAccount, setSelectedAccount] = useState<any>(null);
+  const store = useWalletOperatingStore();
+  const actions = useWalletActions();
+  const { vaults, transactions, setVaults, setTransactions, selectedAccount, setSelectedAccount, selectedAccountId, setSelectedAccountId } = store
   const [depositOpen, setDepositOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [paymentRequestOpen, setPaymentRequestOpen] = useState(false);
   const [selectedVault, setSelectedVault] = useState<any>(null);
   const [balanceVisible, setBalanceVisible] = useState(true);
-  const [vaults, setVaults] = useState<any[]>([]);
-  const [transactions, setTransactions] = useState<any[]>([]);
+  // vaults and transactions are managed by the wallet operating store
   const [phonePaymentOpen, setPhonePaymentOpen] = useState(false);
   const [splitBillOpen, setSplitBillOpen] = useState(false);
   const [paymentLinkOpen, setPaymentLinkOpen] = useState(false);
@@ -73,6 +84,28 @@ const EnhancedWalletPage = () => {
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [analyticsError, setAnalyticsError] = useState('');
 
+  // Sparkline data for subtle capital-flow visualization
+  const sparklineData = analytics && analytics.valueOverTime ? {
+    labels: Object.keys(analytics.valueOverTime),
+    datasets: [{
+      data: Object.values(analytics.valueOverTime),
+      borderColor: '#94a3b8',
+      backgroundColor: 'transparent',
+      tension: 0.3,
+      pointRadius: 0,
+    }]
+  } : {
+    labels: ['-4','-3','-2','-1','now'],
+    datasets: [{ data: [0,0,0,0,0], borderColor: '#94a3b8', backgroundColor: 'transparent', tension: 0.3, pointRadius: 0 }]
+  };
+
+  const sparklineOptions = {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    elements: { line: { borderWidth: 2 } },
+    scales: { x: { display: false }, y: { display: false } }
+  };
+
   useEffect(() => {
     // Fetch wallet balance, portfolio, and transaction status from API
     async function fetchWalletData() {
@@ -82,6 +115,7 @@ const EnhancedWalletPage = () => {
         // Portfolio (tokens)
         const portfolioData = await apiPost('/api/v1/wallets/balance/portfolio', { tokenAddresses: [] });
         // Compose vaults array for UI
+        type Token = { address?: string; symbol?: string; balance?: string | number }
         const vaultsArr = [
           {
             id: 'native',
@@ -90,7 +124,7 @@ const EnhancedWalletPage = () => {
             type: 'personal',
             monthlyGoal: '0',
           },
-          ...(Array.isArray(portfolioData) ? portfolioData.map((token: any, i: number) => ({
+          ...(Array.isArray(portfolioData) ? portfolioData.map((token: Token, i: number) => ({
             id: token.address || `token-${i}`,
             currency: token.symbol || 'TOKEN',
             balance: token.balance || '0',
@@ -101,8 +135,8 @@ const EnhancedWalletPage = () => {
         setVaults(vaultsArr);
         // Transactions: (for demo, fetch last 10 txs for native address)
       } catch (error) {
-        console.error('Error fetching wallet data:', error);
-      }
+          console.error('Error fetching wallet data:', error);
+        }
     }
     
     if (isConnected && address) {
@@ -122,16 +156,43 @@ const EnhancedWalletPage = () => {
   const [showSwapModal, setShowSwapModal] = useState(false);
   const [totalBalance, setTotalBalance] = useState(0);
 
+  // derive netFlow30d and recentTxs for CapitalLayer
+  const txsForCapital = transactions || [];
+  const parseAmtForCapital = (v: unknown) => parseDecimal(v);
+  const netFlow30dDec = (txsForCapital as Transaction[]).reduce((s: Decimal, t: Transaction) => s.plus(parseAmtForCapital(t.amount)), new Decimal(0));
+  type RecentTx = { id: string; type: 'in' | 'swap' | 'out'; label?: string; time?: string; amount: number };
+  const recentTxs: RecentTx[] = (txsForCapital as Transaction[]).slice(0, 4).map((tx: Transaction) => {
+    const txType = tx.type === 'received' ? 'in' : tx.type === 'swap' ? 'swap' : 'out';
+    const rawTime = tx.timeAgo ?? tx.time ?? '';
+    const isDate = (v: unknown): v is Date => v instanceof Date;
+    let timeStr: string | undefined = undefined;
+    if (typeof rawTime === 'number') timeStr = new Date(rawTime).toISOString();
+    else if (isDate(rawTime)) timeStr = rawTime.toISOString();
+    else if (typeof rawTime === 'string') timeStr = rawTime;
+
+    const label = tx.description ?? tx.memo ?? tx.type ?? '';
+
+    return {
+      id: String(tx.id ?? `${tx.type}-${Math.random().toString(36).slice(2, 8)}`),
+      type: txType,
+      label,
+      time: timeStr,
+      amount: Number(parseAmtForCapital(tx.amount).toNumber())
+    };
+  });
+
   // Handle send native
   const handleSendNative = useCallback(async () => {
     setActionLoading(true);
     setActionError('');
     try {
-      await apiPost('/api/v1/wallets/transfers/send-native', { toAddress: sendTo, amount: sendAmount });
+      const res = await actions.send({ toAddress: sendTo, amount: sendAmount, currency: selectedCurrency });
+      if (!res.success) throw new Error(res.error || 'Send failed');
       setSendAmount('');
       setSendTo('');
-    } catch (e: any) {
-      setActionError(e.message);
+    } catch (err: unknown) {
+      const msg = (err instanceof Error ? err.message : String(err));
+      setActionError(msg);
     } finally {
       setActionLoading(false);
     }
@@ -141,23 +202,25 @@ const EnhancedWalletPage = () => {
     setActionLoading(true);
     setActionError('');
     try {
-      // For demo, treat deposit as send-native (or use /api/v1/wallets/transfers/send-native)
-      await apiPost('/api/v1/wallets/transfers/send-native', { toAddress: sendTo, amount: depositAmount });
+      const res = await actions.send({ toAddress: sendTo, amount: depositAmount, currency: selectedCurrency });
+      if (!res.success) throw new Error(res.error || 'Deposit failed');
       setDepositAmount('');
       setPaymentOpen(false);
-    } catch (e: any) {
-      setActionError(e.message);
+    } catch (err: unknown) {
+      const msg = (err instanceof Error ? err.message : String(err));
+      setActionError(msg);
     } finally { setActionLoading(false); }
   }
 
   async function handleWithdraw() {
     setActionLoading(true); setActionError('');
     try {
-      // For demo, treat withdraw as send-native (or use /api/v1/wallets/transfers/send-native)
-      await apiPost('/api/v1/wallets/transfers/send-native', { toAddress: sendTo, amount: withdrawAmount });
+      const res = await actions.withdraw({ to: sendTo, amount: withdrawAmount, currency: selectedCurrency });
+      if (!res.success) throw new Error(res.error || 'Withdraw failed');
       setWithdrawAmount(''); setWithdrawOpen(false);
-    } catch (e: any) {
-      setActionError(e.message);
+    } catch (err: unknown) {
+      const msg = (err instanceof Error ? err.message : String(err));
+      setActionError(msg);
     } finally { setActionLoading(false); }
   }
 
@@ -190,7 +253,7 @@ const EnhancedWalletPage = () => {
   };
 
   const CustomCard: React.FC<{ children: React.ReactNode; className?: string; hover?: boolean }> = ({ children, className = "", hover = false }) => (
-    <div className={`bg-white/90 backdrop-blur-xl rounded-2xl shadow-lg border border-white/20 ${hover ? 'hover:shadow-2xl hover:scale-[1.02] transition-all duration-300' : ''} ${className}`}>
+    <div className={`bg-gray-900/80 text-white rounded-2xl shadow-sm border border-gray-800 ${hover ? 'hover:shadow-md transition-all duration-150' : ''} ${className}`}>
       {children}
     </div>
   );
@@ -206,12 +269,12 @@ const EnhancedWalletPage = () => {
     variant?: BadgeVariant;
   }) => {
     const variants: Record<BadgeVariant, string> = {
-      default: "bg-gradient-to-r from-blue-500 to-purple-600",
-      emerald: "bg-gradient-to-r from-emerald-400 to-teal-500",
-      gold: "bg-gradient-to-r from-yellow-400 to-orange-500",
-      purple: "bg-gradient-to-r from-purple-500 to-pink-500",
-      orange: "bg-gradient-to-r from-orange-400 to-pink-500",
-      outline: "border-2 border-gray-200 text-gray-700 bg-white/80"
+      default: "bg-gray-800 text-white",
+      emerald: "bg-emerald-600 text-white",
+      gold: "bg-amber-600 text-white",
+      purple: "bg-purple-700 text-white",
+      orange: "bg-amber-500 text-white",
+      outline: "border-2 border-gray-700 text-gray-200 bg-gray-900/60"
     };
 
     return (
@@ -232,11 +295,11 @@ const EnhancedWalletPage = () => {
 
   const Button: React.FC<ButtonProps> = ({ children, className = "", variant = "default", onClick, disabled = false }) => {
     const variants = {
-      default: "bg-gradient-to-r from-blue-600 via-purple-600 to-blue-700 hover:from-blue-700 hover:via-purple-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl",
-      outline: "border-2 border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 bg-white/80",
-      emerald: "bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-emerald-500/25",
-      purple: "bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white shadow-purple-500/25",
-      glass: "bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm"
+      default: "bg-gray-800 text-white shadow-sm",
+      outline: "border border-gray-700 text-gray-200 bg-gray-900/60",
+      emerald: "bg-emerald-600 text-white shadow-sm",
+      purple: "bg-purple-700 text-white shadow-sm",
+      glass: "bg-white/6 text-white border border-gray-800 backdrop-blur-sm"
     };
 
     return (
@@ -265,7 +328,27 @@ const EnhancedWalletPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 relative overflow-hidden">
+    <Shell
+      brand={
+        <div className="flex items-center space-x-4">
+          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl flex items-center justify-center shadow-lg">
+            <Wallet className="w-8 h-8 text-white" />
+          </div>
+          <div>
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">Personal Wallet</h1>
+            <p className="text-gray-600 text-lg">Secure digital asset management</p>
+          </div>
+        </div>
+      }
+      userActions={
+        <div className="flex items-center gap-3">
+          {isConnected && (
+            <Button onClick={disconnect} variant="outline" size="sm" className="text-red-600">Disconnect</Button>
+          )}
+        </div>
+      }
+    >
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 dark:bg-gray-950 relative overflow-hidden">
       {/* Connected Wallet Header */}
       {isConnected && address && (
         <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-40">
@@ -366,16 +449,35 @@ const EnhancedWalletPage = () => {
           </div>
         ) : null}
       </div>
-      {/* Animated Background Elements */}
-      <div className="absolute inset-0 bg-gradient-to-br from-blue-400/5 via-purple-400/5 to-pink-400/5" />
-      <div className="absolute top-0 left-0 w-96 h-96 bg-gradient-to-br from-blue-400/10 to-purple-400/10 rounded-full blur-3xl animate-pulse" />
-      <div className="absolute bottom-0 right-0 w-72 h-72 bg-gradient-to-br from-purple-400/10 to-pink-400/10 rounded-full blur-3xl animate-pulse delay-1000" />
-      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-gradient-to-br from-emerald-400/10 to-teal-400/10 rounded-full blur-3xl animate-pulse delay-500" />
+      {/* Subtle background wash for calm surface */}
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent to-white/2 opacity-5" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
         {/* Backup Reminder */}
         {isConnected && address && (
           <WalletBackupReminder userId={user?.id} walletAddress={address} />
+        )}
+
+        {/* Capital overview layer (replaced multiple surfaces with a single focused component) */}
+        {isConnected && address && (
+          <CapitalLayer
+            address={address}
+            total={store.total}
+            liquidity={store.liquidity}
+            deployed={store.deployed}
+            pending={store.pendingTotal || '0'}
+            pendingCount={store.pendingCount}
+            walletHealth={store.walletHealth}
+            availableVaults={store.availableVaults}
+            deployedVaults={store.deployedVaults}
+            recentTxs={recentTxs}
+            netFlow30d={netFlow30dDec.toNumber()}
+            flowBars={undefined}
+            onSend={() => setDepositOpen(true)}
+            onAddFunds={() => setPaymentOpen(true)}
+            onSwap={() => setShowSwapModal(true)}
+            onViewAll={() => setActiveTab('transactions')}
+          />
         )}
 
         {/* Header with Settings Icon */}
@@ -509,39 +611,27 @@ const EnhancedWalletPage = () => {
             </div>
           </div>
 
-          {/* Token/Asset List - Trust Wallet Style */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100">
-            <div className="p-6 border-b">
-              <h3 className="text-lg font-bold text-gray-900">Your Assets</h3>
-            </div>
-            <div className="divide-y">
-              {balanceVisible && vaults?.length > 0 ? (
-                vaults.map((vault, index) => {
-                  const vaultBalance = parseFloat(vault.balance.replace(/,/g, ''));
-                  return (
-                    <div key={vault.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                      <div className="flex items-center space-x-4">
-                        <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-xs">
-                          {vault.currency.substring(0, 1)}
-                        </div>
-                        <div>
-                          <p className="font-semibold text-gray-900">{vault.currency}</p>
-                          <p className="text-sm text-gray-500">{vault.type === 'personal' ? 'Personal' : 'Token'}</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-gray-900">${vaultBalance.toLocaleString()}</p>
-                        <p className="text-sm text-emerald-600">+2.5%</p>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="p-8 text-center text-gray-500">
-                  {balanceVisible ? 'No assets yet. Add funds to get started.' : 'Balance hidden'}
+          {/* Surfaces: Capital sections delegated to feature surfaces */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-semibold text-gray-900">Capital Overview</h3>
+              <div className="flex items-center gap-4">
+                <div className="text-sm text-gray-500">Capital Flow</div>
+                <div className="w-48">
+                  <Line data={sparklineData} options={sparklineOptions} height={40} />
                 </div>
-              )}
+              </div>
             </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="lg:col-span-2 space-y-4">
+                  {/* Liquidity and Deployed panels are replaced by CapitalLayer above. */}
+                </div>
+
+                <div className="lg:col-span-1 space-y-4">
+                  {/* Health/summary handled by CapitalLayer */}
+                </div>
+              </div>
           </div>
         </div>
 
@@ -550,36 +640,36 @@ const EnhancedWalletPage = () => {
           <h2 className="text-2xl font-bold text-gray-900 mb-6">Features & Services</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Swap Tokens */}
-            <div className="bg-white p-6 rounded-xl border border-gray-100 hover:shadow-lg transition-all cursor-pointer" onClick={() => setShowSwapModal(true)}>
-              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mb-4">
-                <ArrowUpRight className="w-5 h-5 text-blue-600" />
+            <div className="bg-gray-50/80 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-800 p-6 rounded-xl hover:shadow-md transition-colors cursor-pointer" onClick={() => setShowSwapModal(true)}>
+              <div className="w-10 h-10 bg-gray-800/10 rounded-lg flex items-center justify-center mb-4">
+                <ArrowUpRight className="w-5 h-5 text-gray-400" />
               </div>
               <h3 className="font-semibold text-gray-900 mb-1">Swap Tokens</h3>
               <p className="text-sm text-gray-500">Exchange between tokens instantly</p>
             </div>
 
             {/* Stake & Earn */}
-            <div className="bg-white p-6 rounded-xl border border-gray-100 hover:shadow-lg transition-all cursor-pointer" onClick={() => setShowStakingModal(true)}>
-              <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center mb-4">
-                <TrendingUp className="w-5 h-5 text-emerald-600" />
+            <div className="bg-gray-50/80 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-800 p-6 rounded-xl hover:shadow-md transition-colors cursor-pointer" onClick={() => setShowStakingModal(true)}>
+              <div className="w-10 h-10 bg-gray-800/10 rounded-lg flex items-center justify-center mb-4">
+                <TrendingUp className="w-5 h-5 text-gray-400" />
               </div>
               <h3 className="font-semibold text-gray-900 mb-1">Stake & Earn</h3>
               <p className="text-sm text-gray-500">Earn rewards from your assets</p>
             </div>
 
             {/* Vaults */}
-            <div className="bg-white p-6 rounded-xl border border-gray-100 hover:shadow-lg transition-all cursor-pointer" onClick={() => window.location.href = '/vault-dashboard'}>
-              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mb-4">
-                <Shield className="w-5 h-5 text-purple-600" />
+            <div className="bg-gray-50/80 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-800 p-6 rounded-xl hover:shadow-md transition-colors cursor-pointer" onClick={() => window.location.href = '/vault-dashboard'}>
+              <div className="w-10 h-10 bg-gray-800/10 rounded-lg flex items-center justify-center mb-4">
+                <Shield className="w-5 h-5 text-gray-400" />
               </div>
               <h3 className="font-semibold text-gray-900 mb-1">Vaults</h3>
               <p className="text-sm text-gray-500">Secure your savings with vaults</p>
             </div>
 
             {/* P2P Escrow */}
-            <div className="bg-white p-6 rounded-xl border border-gray-100 hover:shadow-lg transition-all cursor-pointer">
-              <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center mb-4">
-                <Send className="w-5 h-5 text-orange-600" />
+            <div className="bg-gray-50/80 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-800 p-6 rounded-xl hover:shadow-md transition-colors cursor-pointer">
+              <div className="w-10 h-10 bg-gray-800/10 rounded-lg flex items-center justify-center mb-4">
+                <Send className="w-5 h-5 text-gray-400" />
               </div>
               <h3 className="font-semibold text-gray-900 mb-1">Peer Escrow</h3>
               {userKycStatus === 'verified' ? (
@@ -601,7 +691,7 @@ const EnhancedWalletPage = () => {
             {/* Pay by Phone */}
             <button
               onClick={() => setPhonePaymentOpen(true)}
-              className="bg-white p-6 rounded-xl border border-gray-100 hover:shadow-lg transition-all text-left"
+              className="bg-gray-50/80 dark:bg-gray-900/40 p-6 rounded-xl border border-gray-200 dark:border-gray-800 hover:shadow-md transition-colors text-left"
             >
               <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mb-4">
                 <Users className="w-5 h-5 text-blue-600" />
@@ -613,7 +703,7 @@ const EnhancedWalletPage = () => {
             {/* Split Bill */}
             <button
               onClick={() => setSplitBillOpen(true)}
-              className="bg-white p-6 rounded-xl border border-gray-100 hover:shadow-lg transition-all text-left"
+              className="bg-gray-50/80 dark:bg-gray-900/40 p-6 rounded-xl border border-gray-200 dark:border-gray-800 hover:shadow-md transition-colors text-left"
             >
               <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mb-4">
                 <Users className="w-5 h-5 text-green-600" />
@@ -625,7 +715,7 @@ const EnhancedWalletPage = () => {
             {/* Request Payment */}
             <button
               onClick={() => setPaymentRequestOpen(true)}
-              className="bg-white p-6 rounded-xl border border-gray-100 hover:shadow-lg transition-all text-left"
+              className="bg-gray-50/80 dark:bg-gray-900/40 p-6 rounded-xl border border-gray-200 dark:border-gray-800 hover:shadow-md transition-colors text-left"
             >
               <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mb-4">
                 <Plus className="w-5 h-5 text-purple-600" />
@@ -656,9 +746,9 @@ const EnhancedWalletPage = () => {
           {selectedAccount && (
             <Card className="mt-6">
               <CardHeader>
-                <CardTitle>Selected Account: {selectedAccount.type.charAt(0).toUpperCase() + selectedAccount.type.slice(1)}</CardTitle>
+                <CardTitle>Selected Account: {((selectedAccount as any)?.type ? ((selectedAccount as any).type.charAt(0).toUpperCase() + (selectedAccount as any).type.slice(1)) : 'Account')}</CardTitle>
                 <CardDescription>
-                  Balance: {parseFloat(selectedAccount.balance).toFixed(2)} {selectedAccount.currency}
+                  Balance: {Number((selectedAccount as any)?.balance ?? 0).toFixed(2)} {(selectedAccount as any)?.currency ?? ''}
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -777,19 +867,19 @@ const EnhancedWalletPage = () => {
 
       {withdrawOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <Card className="p-8 max-w-md w-full mx-4">
+          <CustomCard className="p-8 max-w-md w-full mx-4">
             <div className="flex items-center space-x-3 mb-6">
-              <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl flex items-center justify-center">
-                <ArrowUpRight className="w-6 h-6 text-white" />
+              <div className="w-12 h-12 bg-gray-800/20 rounded-xl flex items-center justify-center">
+                <ArrowUpRight className="w-6 h-6 text-gray-400" />
               </div>
               <h3 className="text-xl font-bold">Withdraw Funds</h3>
             </div>
-            <input type="text" placeholder="Recipient Address" className="w-full mb-3 p-2 border rounded" value={sendTo} onChange={e => setSendTo(e.target.value)} />
-            <input type="number" placeholder="Amount" className="w-full mb-3 p-2 border rounded" value={withdrawAmount} onChange={e => setWithdrawAmount(e.target.value)} />
-            {actionError && <p className="text-red-500 mb-2">{actionError}</p>}
+            <input type="text" placeholder="Recipient Address" className="w-full mb-3 p-2 border rounded bg-transparent text-white" value={sendTo} onChange={e => setSendTo(e.target.value)} />
+            <input type="number" placeholder="Amount" className="w-full mb-3 p-2 border rounded bg-transparent text-white" value={withdrawAmount} onChange={e => setWithdrawAmount(e.target.value)} />
+            {actionError && <p className="text-amber-300 mb-2">{actionError}</p>}
             <Button onClick={handleWithdraw} className="w-full" disabled={actionLoading}>{actionLoading ? 'Withdrawing...' : 'Withdraw'}</Button>
             <Button onClick={() => setWithdrawOpen(false)} className="w-full mt-2" variant="outline">Close</Button>
-          </Card>
+          </CustomCard>
         </div>
       )}
 
@@ -831,6 +921,7 @@ const EnhancedWalletPage = () => {
         </>
       )}
     </div>
+    </Shell>
   );
 };
 

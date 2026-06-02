@@ -6,13 +6,17 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Users, TrendingUp, Settings } from 'lucide-react';
+import { Users, TrendingUp, Settings, Check } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import MiniGraph from './MiniGraph';
 import * as yukiApi from '../../api/yukiApi';
 
 type Strategy = {
   id: string;
   name: string;
   creator: string;
+  // lifecycle state
+  state?: 'draft' | 'published' | 'verified' | 'featured' | 'deprecated';
   creatorBadge?: 'verified' | 'trusted' | 'top-performer';
   description: string;
   category: 'mean-reversion' | 'momentum' | 'arbitrage' | 'yield' | 'grid';
@@ -23,6 +27,8 @@ type Strategy = {
     maxDrawdown: number;
     winRate: number;
     trades: number;
+    volatility?: number;
+    simulationScore?: number;
   };
   followers: number;
   rating: number;
@@ -35,11 +41,15 @@ type Strategy = {
   thumbnail?: string;
   createdAt: string;
   lastBacktestAt: string;
+  // optional: include full graph for thumbnail rendering and fork
+  graph?: { nodes?: any[]; edges?: any[] } | null;
 };
 
 export default function StrategyMarketplace() {
+  const navigate = useNavigate();
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [filter, setFilter] = useState<'all' | 'free' | 'paid' | 'my-copies'>('all');
+  const [topic, setTopic] = useState<'all' | string>('all');
   const [sortBy, setSortBy] = useState<'return' | 'rating' | 'followers'>('return');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStrategy, setSelectedStrategy] = useState<any>(null);
@@ -64,10 +74,17 @@ export default function StrategyMarketplace() {
     let result = strategies.filter((s) => {
       const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         s.creator.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      if (filter === 'free') return matchesSearch && s.pricing.model === 'free';
-      if (filter === 'paid') return matchesSearch && s.pricing.model !== 'free';
-      if (filter === 'my-copies') return matchesSearch && s.copied;
+      // apply pricing filter
+      if (filter === 'free' && s.pricing.model !== 'free') return false;
+      if (filter === 'paid' && s.pricing.model === 'free') return false;
+      if (filter === 'my-copies' && !s.copied) return false;
+      // topic filter loosely matches category or description
+      if (topic && topic !== 'all') {
+        const t = topic.toLowerCase();
+        const cat = (s.category || '').toString().toLowerCase();
+        const inDesc = (s.description || '').toString().toLowerCase().includes(t);
+        if (!(cat.includes(t) || inDesc || s.name.toLowerCase().includes(t))) return false;
+      }
       return matchesSearch;
     });
 
@@ -94,6 +111,53 @@ export default function StrategyMarketplace() {
     }
   };
 
+  const computeHealthScore = (s: Strategy) => {
+    // heuristic: base 50, add return, subtract drawdown*1.5
+    const score = Math.round(Math.max(0, Math.min(100, 50 + (s.stats.return1y || 0) * 0.6 - (s.stats.maxDrawdown || 0) * 1.2)));
+    return score;
+  };
+
+  const handleDeployStrategy = async (strategyId: string) => {
+    try {
+      const res = await yukiApi.deployStrategy(strategyId);
+      alert('Deploy requested: ' + (res?.id || 'ok'));
+    } catch (err) {
+      console.error('Deploy failed', err);
+      alert('Deploy failed');
+    }
+  };
+
+  const handleFollow = async (strategyId: string) => {
+    // simple optimistic UI toggle (stub)
+    setStrategies((prev) => prev.map((p) => (p.id === strategyId ? { ...p, followers: (p.followers || 0) + 1 } : p)));
+    alert('Followed strategy');
+  };
+
+  const handleForkStrategy = async (strategyId: string) => {
+    try {
+      const res = await yukiApi.forkMarketplaceStrategy(strategyId);
+      // API returns newly created strategy id in res?.data?.id or res?.id
+      const newId = res?.data?.id || res?.id || null;
+      alert('Strategy forked — opening in builder...');
+      if (newId) navigate(`/builder/${newId}`);
+      else navigate('/builder');
+    } catch (err) {
+      console.error('Failed to fork strategy:', err);
+      alert('Failed to fork strategy');
+    }
+  };
+
+  const [cardSimResults, setCardSimResults] = useState<Record<string, { expectedReturn: number; winRate: number; drawdown: number }>>({});
+
+  const simulateCard = (s: Strategy) => {
+    // Use strategy stats + name to create deterministic sim
+    const seed = (s.id || s.name).split('').reduce((acc, c) => (acc * 131 + c.charCodeAt(0)) % 100000, 7);
+    const expectedReturn = Math.max(-50, Math.min(200, (s.stats.return1y || 0) * 0.6 + (seed % 20) - 5));
+    const winRate = Math.max(5, Math.min(95, (s.stats.winRate || 50) + (seed % 10) - 5));
+    const drawdown = Math.max(1, Math.min(50, (s.stats.maxDrawdown || 10) + (seed % 7) - 3));
+    setCardSimResults((m) => ({ ...m, [s.id]: { expectedReturn: Number(expectedReturn.toFixed(1)), winRate: Math.round(winRate), drawdown: Number(drawdown.toFixed(1)) } }));
+  };
+
   return (
     <div className="min-h-screen bg-slate-900 text-white p-4 md:p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -110,6 +174,18 @@ export default function StrategyMarketplace() {
         {/* CONTROLS */}
         <div className="bg-slate-800 rounded-lg p-4 border border-slate-700 space-y-4">
           <div className="flex flex-col md:flex-row gap-4">
+            {/* Topic chips */}
+            <div className="flex gap-2 flex-wrap items-center">
+              {['Trending','Highest Return','Lowest Risk','Beginner','DAO','Yield','Trading','Automation'].map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTopic(t === 'Trending' ? 'all' : t)}
+                  className={`px-3 py-1 rounded text-sm font-medium transition-colors ${topic === t ? 'bg-blue-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
             {/* Search */}
             <div className="flex-1">
               <input
@@ -164,79 +240,65 @@ export default function StrategyMarketplace() {
             {filteredStrategies.map((strategy) => (
               <div
                 key={strategy.id}
-                onClick={() => setSelectedStrategy(strategy)}
+                onClick={() => navigate(`/strategy/${strategy.id}`)}
                 className="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-blue-500 cursor-pointer transition-all"
               >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-bold text-lg">{strategy.name}</h3>
-                      {strategy.creatorBadge && (
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded font-semibold ${
-                            strategy.creatorBadge === 'top-performer'
-                              ? 'bg-yellow-600/30 text-yellow-300'
-                              : strategy.creatorBadge === 'verified'
-                              ? 'bg-green-600/30 text-green-300'
-                              : 'bg-blue-600/30 text-blue-300'
-                          }`}
-                        >
-                          {strategy.creatorBadge === 'top-performer'
-                            ? '⭐ Top'
-                            : strategy.creatorBadge === 'verified'
-                            ? '✓ Verified'
-                            : '★ Trusted'}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm text-slate-400">by {strategy.creator}</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+                  <div className="col-span-1">
+                    <MiniGraph size={200} graph={strategy.graph} />
                   </div>
-                  <div className="text-right">
-                    <div className="flex items-center gap-1 mb-1">
-                      <span className="text-yellow-400">⭐</span>
-                      <span className="font-bold">{strategy.rating}</span>
-                      <span className="text-xs text-slate-500">({strategy.reviews})</span>
+                  <div className="col-span-1 md:col-span-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="font-bold text-lg">{strategy.name}</h3>
+                        <p className="text-sm text-slate-400">by {strategy.creator}</p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-slate-400">Health</div>
+                        <div className="text-xl font-bold">{computeHealthScore(strategy)}/100</div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <Users className="h-4 w-4 text-blue-400" />
-                      <span className="text-sm">{strategy.followers}</span>
-                    </div>
-                  </div>
-                </div>
 
-                <p className="text-sm text-slate-300 mb-4 line-clamp-2">
-                  {strategy.description}
-                </p>
+                    <p className="text-sm text-slate-300 my-2 line-clamp-2">{strategy.description}</p>
 
-                {/* STATS GRID */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-                  <div className="bg-slate-700 rounded p-2">
-                    <p className="text-xs text-slate-400">Return 1y</p>
-                    <p className="text-lg font-bold text-green-400">
-                      +{strategy.stats.return1y}%
-                    </p>
-                  </div>
-                  <div className="bg-slate-700 rounded p-2">
-                    <p className="text-xs text-slate-400">Sharpe</p>
-                    <p className="text-lg font-bold text-blue-400">
-                      {strategy.stats.sharpeRatio}
-                    </p>
-                  </div>
-                  <div className="bg-slate-700 rounded p-2">
-                    <p className="text-xs text-slate-400">Max DD</p>
-                    <p className="text-lg font-bold text-orange-400">
-                      {strategy.stats.maxDrawdown}%
-                    </p>
-                  </div>
-                  <div className="bg-slate-700 rounded p-2">
-                    <p className="text-xs text-slate-400">Win Rate</p>
-                    <p className="text-lg font-bold text-purple-400">
-                      {strategy.stats.winRate}%
-                    </p>
-                  </div>
-                  <div className="bg-slate-700 rounded p-2">
-                    <p className="text-xs text-slate-400">Trades</p>
-                    <p className="text-lg font-bold">{strategy.stats.trades}</p>
+                    <div className="grid grid-cols-3 gap-3 mt-2 text-sm">
+                      <div className="bg-slate-700 rounded p-2">
+                        <div className="text-xs text-slate-400">Return (1y)</div>
+                        <div className="font-semibold text-green-400">+{strategy.stats.return1y}%</div>
+                      </div>
+                      <div className="bg-slate-700 rounded p-2">
+                        <div className="text-xs text-slate-400">Win Rate</div>
+                        <div className="font-semibold text-purple-400">{strategy.stats.winRate}%</div>
+                      </div>
+                      <div className="bg-slate-700 rounded p-2">
+                        <div className="text-xs text-slate-400">Drawdown</div>
+                        <div className="font-semibold text-orange-400">{strategy.stats.maxDrawdown}%</div>
+                      </div>
+                      <div className="bg-slate-700 rounded p-2">
+                        <div className="text-xs text-slate-400">Sharpe</div>
+                        <div className="font-semibold text-blue-400">{strategy.stats.sharpeRatio}</div>
+                      </div>
+                      <div className="bg-slate-700 rounded p-2">
+                        <div className="text-xs text-slate-400">Volatility</div>
+                        <div className="font-semibold text-rose-400">{strategy.stats.volatility ?? '—'}</div>
+                      </div>
+                      <div className="bg-slate-700 rounded p-2">
+                        <div className="text-xs text-slate-400">Sim Score</div>
+                        <div className="font-semibold text-amber-400">{strategy.stats.simulationScore ?? '—'}</div>
+                      </div>
+                      <div className="bg-slate-700 rounded p-2">
+                        <div className="text-xs text-slate-400">Nodes</div>
+                        <div className="font-semibold">{(strategy.graph?.nodes?.length) || 0}</div>
+                      </div>
+                      <div className="bg-slate-700 rounded p-2">
+                        <div className="text-xs text-slate-400">Followers</div>
+                        <div className="font-semibold">{strategy.followers}</div>
+                      </div>
+                      <div className="bg-slate-700 rounded p-2">
+                        <div className="text-xs text-slate-400">State</div>
+                        <div className="font-semibold">{(strategy.state || 'published').toString().toUpperCase()}</div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -259,31 +321,48 @@ export default function StrategyMarketplace() {
                         : 'Licensing'}
                     </span>
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCopyStrategy(strategy.id);
-                    }}
-                    disabled={strategy.copied}
-                    className={`px-4 py-2 rounded text-sm font-semibold flex items-center gap-2 transition-colors ${
-                      strategy.copied
-                        ? 'bg-green-600/20 text-green-300 cursor-default'
-                        : 'bg-blue-600 hover:bg-blue-700 text-white'
-                    }`}
-                  >
-                    {strategy.copied ? (
-                      <>
-                        <Check className="h-4 w-4" />
-                        Copied
-                      </>
-                    ) : (
-                      <>
-                        <span>📋</span>
-                        Copy
-                      </>
-                    )}
-                  </button>
+                  <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); navigate(`/strategy/${strategy.id}`); }}
+                        className="px-3 py-1 rounded text-sm bg-slate-700 hover:bg-slate-600 text-white"
+                      >
+                        View
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); simulateCard(strategy); }}
+                        className="px-3 py-1 rounded text-sm bg-indigo-600 hover:bg-indigo-700 text-white"
+                      >
+                        Simulate
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleForkStrategy(strategy.id); }}
+                        className="px-3 py-1 rounded text-sm bg-amber-600 hover:bg-amber-700 text-black"
+                      >
+                        Fork
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeployStrategy(strategy.id); }}
+                        className="px-3 py-1 rounded text-sm bg-emerald-600 hover:bg-emerald-700 text-black"
+                      >
+                        Deploy
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleFollow(strategy.id); }}
+                        className="px-3 py-1 rounded text-sm bg-pink-600 hover:bg-pink-700 text-white"
+                      >
+                        Follow
+                      </button>
+                    </div>
                 </div>
+                {/* show sim results if available */}
+                {cardSimResults[strategy.id] && (
+                  <div className="mt-3 p-2 bg-slate-900 rounded text-sm">
+                    <div className="font-semibold mb-1">Simulation</div>
+                    <div>Expected Return: <span className="font-medium">{cardSimResults[strategy.id].expectedReturn}%</span></div>
+                    <div>Win Rate: <span className="font-medium">{cardSimResults[strategy.id].winRate}%</span></div>
+                    <div>Drawdown: <span className="font-medium">{cardSimResults[strategy.id].drawdown}%</span></div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

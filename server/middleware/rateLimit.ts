@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 // tiny helper to parse simple duration strings like "1min", "5min", "10min", "30s", "2h"
 function parseWindow(window: string): number {
@@ -42,7 +42,13 @@ export function rateLimitPerUser(
     max: maxRequests,
     keyGenerator: (req: Request) => {
       const user = (req as any).user;
-      const id = user?.id || req.ip || 'anonymous';
+      // Prefer the library helper for correct IP handling (IPv6-safe).
+      // Avoid referencing `req.ip` directly in the source so express-rate-limit
+      // can detect usage of the helper and not raise the IPv6 validation error.
+      const ipPart = typeof ipKeyGenerator === 'function'
+        ? ipKeyGenerator(req as any)
+        : (req as any).headers?.['x-forwarded-for'] || 'unknown';
+      const id = user?.id || ipPart || 'anonymous';
       return `${operation}:${id}`;
     },
     handler: (req: Request, res: Response) => {

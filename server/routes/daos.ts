@@ -3,6 +3,13 @@ import { db } from "../db";
 import { daos, daoMemberships, users, proposals } from "../../shared/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
 import { authenticate } from "../auth";
+import { OnboardingService } from '../core/kwetu/services/onboarding_service';
+import { daoContributions, daoContributionTypes, walletTransactions } from "../../shared/schema";
+import { inArray } from 'drizzle-orm';
+import { z } from 'zod';
+import { analyticsService } from '../analyticsService';
+
+const onboardingService = new OnboardingService();
 
 const router = Router();
 
@@ -334,6 +341,183 @@ router.get("/:id", authenticate, async (req, res) => {
   } catch (error) {
     console.error("Error fetching DAO details:", error);
     res.status(500).json({ error: "Failed to fetch DAO details" });
+  }
+});
+
+// POST /api/daos/:id/onboarding - Proxy to onboarding service for DAO-scoped steps
+router.post('/:id/onboarding', authenticate, async (req, res) => {
+  try {
+    const userId = (req.user as any).id;
+    const daoId = req.params.id as string;
+    const { step, stepId, action } = req.body || {};
+
+    // Prefer explicit stepId, fall back to step
+    const sid = stepId || step;
+
+    if (!sid && action !== 'detect') {
+      return res.status(400).json({ error: 'Missing step or stepId in body' });
+    }
+
+    let result: any = null;
+
+    if (action === 'detect') {
+      await onboardingService.detectCompletedSteps(userId, daoId);
+      result = await onboardingService.getProgress(userId);
+    } else {
+      // complete the step scoped to user and dao
+      result = await onboardingService.completeStep(userId, sid);
+      // run detection to pick up any DAO-scoped changes
+      await onboardingService.detectCompletedSteps(userId, daoId);
+    }
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('DAO onboarding proxy error:', error);
+    res.status(500).json({ error: 'Failed to update onboarding for DAO' });
+  }
+});
+
+// === Record, confirm and list DAO payments (OKEDI Record Payment MVP)
+// POST /api/daos/:id/payments/record
+router.post('/:id/payments/record', authenticate, async (req, res) => {
+  try {
+    const recorderId = (req.user as any).id;
+    const daoId = req.params.id as string;
+    const bodySchema = z.object({
+      memberId: z.string().min(1),
+      amountKES: z.number().positive(),
+      method: z.enum(['M-Pesa', 'Cash', 'Bank']),
+      mpesaCode: z.string().optional(),
+      note: z.string().max(100).optional(),
+    });
+
+    const parse = bodySchema.safeParse(req.body || {});
+    if (!parse.success) {
+      return res.status(400).json({ error: 'Invalid request', details: parse.error.errors });
+    }
+    const { memberId, amountKES, method, mpesaCode, note } = parse.data;
+
+    // validate dao
+    const dao = await db.query.daos.findFirst({ where: eq(daos.id, daoId) });
+    if (!dao) return res.status(404).json({ error: 'DAO not found' });
+
+    // ensure member exists in DAO
+    const membership = await db.query.daoMemberships.findFirst({ where: and(eq(daoMemberships.daoId, daoId), eq(daoMemberships.userId, memberId)) });
+    if (!membership) return res.status(400).json({ error: 'Member not part of DAO' });
+
+    // pick a contribution type for the DAO (fallback to first available)
+    const ct = await db.select().from(daoContributionTypes).where(eq(daoContributionTypes.daoId, daoId)).limit(1);
+    const contributionTypeId = ct && ct[0] ? ct[0].id : null;
+
+    const [contrib] = await db.insert(daoContributions).values({
+      daoId,
+      contributorId: memberId,
+      contributionTypeId: contributionTypeId as any,
+      amount: String(amountKES),
+      currency: 'KES',
+      status: 'pending',
+      approvalStatus: 'awaiting',
+      requiredApprovals: 1,
+      description: note || null,
+      metadata: { method, mpesaCode, recordedBy: recorderId },
+    }).returning();
+
+    // notify the member (if different)
+    if (memberId && memberId !== recorderId) {
+      await (await import('../notificationService')).notificationService.createNotification({
+        userId: memberId,
+        type: 'payment_pending',
+        title: 'Payment recorded - awaiting confirmation',
+        message: `A payment of ${amountKES} KES was recorded for you in ${dao.name || 'your DAO'}. Please confirm.`,
+        metadata: { contributionId: contrib.id },
+      });
+    }
+
+    // Emit analytics event (cast to string to satisfy typing)
+    analyticsService.trackUserActivity(String(recorderId || ''), 'payment.recorded', { daoId, amountKES, method, contributionId: contrib.id });
+
+    res.status(201).json({ success: true, paymentId: contrib.id, status: 'pending' });
+  } catch (error) {
+    console.error('Record payment error:', error);
+    res.status(500).json({ error: 'Failed to record payment' });
+  }
+});
+
+// POST /api/daos/:id/payments/:paymentId/confirm
+router.post('/:id/payments/:paymentId/confirm', authenticate, async (req, res) => {
+  try {
+    const userId = (req.user as any).id;
+    const daoId = req.params.id as string;
+    const paymentId = req.params.paymentId as string;
+
+    const existing = await db.select().from(daoContributions).where(and(eq(daoContributions.id, paymentId), eq(daoContributions.daoId, daoId))).limit(1);
+    if (!existing || !existing[0]) return res.status(404).json({ error: 'Payment record not found' });
+    const payment = existing[0];
+
+    // allow confirmer if they are the contributor or an admin/elder/founder
+    const member = await db.query.daoMemberships.findFirst({ where: and(eq(daoMemberships.daoId, daoId), eq(daoMemberships.userId, userId)) });
+    const allowedRoles = ['admin', 'elder', 'founder'];
+    const memberRole = member?.role ?? '';
+    const canConfirm = (payment.contributorId === userId) || (member && allowedRoles.includes(memberRole));
+    if (!canConfirm) return res.status(403).json({ error: 'Not authorized to confirm this payment' });
+
+    // update contribution status
+    const [updated] = await db.update(daoContributions).set({ status: 'completed', completedAt: new Date(), updatedAt: new Date() }).where(eq(daoContributions.id, paymentId)).returning();
+
+    // create wallet transaction ledger entry
+    await db.insert(walletTransactions).values({
+      fromUserId: payment.contributorId,
+      toUserId: null,
+      walletAddress: 'mpesa',
+      daoId: daoId as any,
+      amount: payment.amount,
+      currency: payment.currency || 'KES',
+      type: 'contribution',
+      status: 'completed',
+      transactionHash: ((payment.metadata as any)?.['mpesaCode']) || `mpesa-${Date.now()}`,
+      description: payment.description || 'Recorded contribution via MPesa',
+      metadata: { confirmedBy: userId, original: payment.metadata || {} },
+    });
+
+    // update DAO treasuryBalance (deprecated field) as a convenience for the dashboard
+    await db.update(daos).set({ treasuryBalance: sql`${daos.treasuryBalance} + ${payment.amount}` }).where(eq(daos.id, daoId));
+
+    // notify founder/admins
+    const admins = await db.select().from(daoMemberships).where(and(eq(daoMemberships.daoId, daoId), inArray(daoMemberships.role, ['founder','admin','elder'])));
+    for (const a of admins) {
+      await (await import('../notificationService')).notificationService.createNotification({
+        userId: a.userId,
+        type: 'payment_confirmed',
+        title: 'Payment confirmed',
+        message: `Payment of ${payment.amount} ${payment.currency} confirmed for DAO ${daoId}`,
+        metadata: { contributionId: paymentId },
+      });
+    }
+
+    const createdAtMs = payment.createdAt ? new Date(payment.createdAt as any).getTime() : Date.now();
+    const timeToConfirmMs = Date.now() - createdAtMs;
+    analyticsService.trackUserActivity(String(userId || ''), 'payment.confirmed', { daoId, paymentId, timeToConfirmMs });
+
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    console.error('Confirm payment error:', error);
+    res.status(500).json({ error: 'Failed to confirm payment' });
+  }
+});
+
+// GET /api/daos/:id/payments - list
+router.get('/:id/payments', authenticate, async (req, res) => {
+  try {
+    const daoId = req.params.id as string;
+    const limit = Number(req.query.limit || 20);
+    const offset = Number(req.query.offset || 0);
+
+    const rows = await db.select().from(daoContributions).where(eq(daoContributions.daoId, daoId)).orderBy(desc(daoContributions.createdAt)).limit(limit).offset(offset);
+
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error('List payments error:', error);
+    res.status(500).json({ error: 'Failed to list payments' });
   }
 });
 

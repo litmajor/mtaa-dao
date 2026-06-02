@@ -43,16 +43,28 @@ interface WatchlistItem {
 export default function YukiDashboard() {
   const [activeTab, setActiveTab] = useState<'overview' | 'cex' | 'dex' | 'charts' | 'watchlist' | 'opportunities' | 'strategies' | 'alerts'>('overview');
   const [marketData, setMarketData] = useState<MarketData | null>(null);
-  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([
-    { symbol: 'ETH/USDT', price: 2450, change: '+5.2%', exchanges: ['Binance', 'Coinbase', 'Kraken'] },
-    { symbol: 'BTC/USDT', price: 48200, change: '+2.1%', exchanges: ['Binance', 'Kraken', 'OKX'] },
-  ]);
+  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
+  const [opportunities, setOpportunities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchMarketData = async () => {
       try {
-        // Fetch initial market data
+        // Fetch initial market data, watchlist, and opportunities from Yuki API
+        try {
+          const wl = await (yukiApi as any).fetchWatchlist?.();
+          if (wl && Array.isArray(wl)) setWatchlist(wl as WatchlistItem[]);
+        } catch (err) {
+          console.warn('No watchlist API available or fetch failed', err);
+        }
+
+        try {
+          const ops = await (yukiApi as any).fetchOpportunities?.();
+          if (ops && Array.isArray(ops)) setOpportunities(ops);
+        } catch (err) {
+          console.warn('No opportunities API available or fetch failed', err);
+        }
+
         setLoading(false);
       } catch (error) {
         console.error('Error fetching market data:', error);
@@ -64,75 +76,123 @@ export default function YukiDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-white p-4 md:p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* HEADER */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center gap-2">
-              📈 Yuki Trading Dashboard
-            </h1>
-            <p className="text-slate-400 text-sm mt-1">
-              Market intelligence • Execution • Strategy automation
-            </p>
+      <div className="max-w-7xl mx-auto">
+        {/* LAYER 1 — GLOBAL MARKET STATE (persistent) */}
+        <div className="sticky top-4 z-40 bg-slate-800/90 backdrop-blur rounded-xl border border-slate-700 p-4 mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div>
+              <h2 className="text-lg font-semibold">Global Market State</h2>
+              <p className="text-sm text-slate-400">Market regime • Volatility • Connectivity • Opportunities</p>
+            </div>
+            <div className="hidden sm:flex items-center gap-6 ml-6 text-sm text-slate-300">
+              <div>Regime: <span className="font-medium text-emerald-300">Bull</span></div>
+              <div>Volatility: <span className="font-medium">Low</span></div>
+              <div>Exchanges: <span className="font-medium">6</span></div>
+              <div>Ops: <span className="font-medium text-amber-300">3</span></div>
+            </div>
           </div>
-          <button className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 flex items-center gap-2 transition-colors">
-            <Settings className="h-4 w-4" />
-            Settings
-          </button>
+          <div className="flex items-center gap-3">
+            <button className="px-3 py-2 rounded bg-slate-700 hover:bg-slate-600 text-sm">Refresh</button>
+            <button className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm flex items-center gap-2"><Settings className="h-4 w-4" />Settings</button>
+          </div>
         </div>
 
-        {/* TABS */}
-        <div className="flex gap-2 border-b border-slate-700 overflow-x-auto pb-2">
-          {[
-            { id: 'overview' as const, label: '📊 Overview' },
-            { id: 'cex' as const, label: '🏦 CEX Markets' },
-            { id: 'dex' as const, label: '🔄 DEX Swaps' },
-            { id: 'charts' as const, label: '📈 Charts & TA' },
-            { id: 'watchlist' as const, label: '⭐ Watchlist' },
-            { id: 'opportunities' as const, label: '⚡ Opportunities' },
-            { id: 'strategies' as const, label: '🤖 Strategies' },
-            { id: 'alerts' as const, label: '🔔 Alerts' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
-                activeTab === tab.id
-                  ? 'border-blue-500 text-blue-400'
-                  : 'border-transparent text-slate-400 hover:text-slate-300'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        {/* LAYER 2 + 3 — ACTIVE WORKSPACE + INTELLIGENCE STREAM */}
+        <div className="grid grid-cols-12 gap-4">
+          {/* Active Workspace (primary + secondary surfaces) */}
+          <main className="col-span-12 lg:col-span-8 space-y-4">
+            {/* Workspace Tabs (contextual focus surface) */}
+            <div className="bg-slate-900 border border-slate-600 rounded-lg p-2 flex items-center">
+              <div className="flex gap-2 overflow-x-auto">
+                {[
+                  { id: 'overview' as const, label: '📊 Overview' },
+                  { id: 'cex' as const, label: '🏦 CEX Markets' },
+                  { id: 'dex' as const, label: '🔄 DEX Swaps' },
+                  { id: 'charts' as const, label: '📈 Charts & TA' },
+                  { id: 'watchlist' as const, label: '⭐ Watchlist' },
+                  { id: 'opportunities' as const, label: '⚡ Opportunities' },
+                  { id: 'strategies' as const, label: '🤖 Strategies' },
+                  { id: 'alerts' as const, label: '🔔 Alerts' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`px-3 py-2 rounded text-sm transition-colors whitespace-nowrap ${
+                      activeTab === tab.id
+                        ? 'bg-blue-600 text-white'
+                        : 'text-slate-300 hover:text-slate-200 hover:bg-slate-800/50'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        {/* CONTENT SECTIONS */}
-        <div>
-          {activeTab === 'overview' && (
-            <OverviewSection watchlist={watchlist} marketData={marketData} />
-          )}
-          {activeTab === 'cex' && (
-            <CexManager />
-          )}
-          {activeTab === 'dex' && (
-            <DexSwapSection />
-          )}
-          {activeTab === 'charts' && (
-            <ChartsSection />
-          )}
-          {activeTab === 'watchlist' && (
-            <WatchlistSection watchlist={watchlist} setWatchlist={setWatchlist} />
-          )}
-          {activeTab === 'opportunities' && (
-            <OpportunityScannerDashboard />
-          )}
-          {activeTab === 'strategies' && (
-            <StrategyMarketplace />
-          )}
-          {activeTab === 'alerts' && (
-            <AlertsSection />
-          )}
+            {/* Primary execution / content surface */}
+            <section className="bg-slate-900 border border-slate-600 rounded-lg p-6">
+              {activeTab === 'overview' && (
+                <OverviewSection watchlist={watchlist} marketData={marketData} />
+              )}
+              {activeTab === 'cex' && (
+                <div className="space-y-4">
+                  <div className="bg-slate-800 p-4 rounded border border-slate-700"> <CexManager /> </div>
+                </div>
+              )}
+              {activeTab === 'dex' && (
+                <div className="bg-slate-800 p-4 rounded border border-slate-700"> <DexSwapSection /> </div>
+              )}
+              {activeTab === 'charts' && (
+                <div className="bg-slate-800 p-4 rounded border border-slate-700"> <ChartsSection /> </div>
+              )}
+              {activeTab === 'watchlist' && (
+                <div className="bg-slate-800 p-4 rounded border border-slate-700"> <WatchlistSection watchlist={watchlist} setWatchlist={setWatchlist} /> </div>
+              )}
+              {activeTab === 'opportunities' && (
+                <div className="bg-slate-800 p-4 rounded border border-slate-700"> <OpportunityScannerDashboard /> </div>
+              )}
+              {activeTab === 'strategies' && (
+                <div className="bg-slate-800 p-4 rounded border border-slate-700"> <StrategyMarketplace /> </div>
+              )}
+              {activeTab === 'alerts' && (
+                <div className="bg-slate-800 p-4 rounded border border-slate-700"> <AlertsSection /> </div>
+              )}
+            </section>
+          </main>
+
+          {/* Intelligence Stream (tertiary surface) */}
+          <aside className="col-span-12 lg:col-span-4 space-y-4">
+            <div className="bg-slate-800/60 rounded-lg border border-slate-700 p-4 text-sm">
+              <h4 className="font-semibold mb-2">Signals & Alerts</h4>
+              <AlertsSection />
+            </div>
+
+            <div className="bg-slate-800/60 rounded-lg border border-slate-700 p-4 text-sm">
+              <h4 className="font-semibold mb-2">Opportunity Feed</h4>
+              <div className="space-y-2">
+                {opportunities && opportunities.length > 0 ? (
+                  opportunities.map((op, idx) => (
+                    <div key={idx} className="p-3 bg-slate-900 rounded flex items-start justify-between">
+                      <div>
+                        <div className="text-sm font-medium">{op.title || op.symbol || 'Opportunity'}</div>
+                        <div className="text-xs text-slate-400">{op.summary || op.description || ''}</div>
+                      </div>
+                      <div className="text-right text-xs text-slate-300">
+                        <div className={`inline-block px-2 py-1 rounded text-xs ${op.severity === 'high' ? 'bg-red-600' : op.severity === 'medium' ? 'bg-amber-600' : 'bg-emerald-600'}`}>{op.severity ? op.severity.toUpperCase() : 'LOW'}</div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-slate-300">No opportunities detected — scanner idle.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-slate-800/60 rounded-lg border border-slate-700 p-4 text-sm">
+              <h4 className="font-semibold mb-2">Strategy Triggers</h4>
+              <div className="text-slate-300">Recent fills and strategy triggers.</div>
+            </div>
+          </aside>
         </div>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 
 export default function SettingsFeatures() {
@@ -92,12 +93,23 @@ export default function SettingsFeatures() {
   }
 
   async function handleDeleteAccount() {
-    if (window.confirm("Are you sure you want to delete your account? This cannot be undone.")) {
+    setConfirmDeleteOpen(true);
+  }
+
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
+  const confirmDeleteAccount = async () => {
+    try {
       await apiDelete("/api/user");
       window.location.href = "/";
       alert("Account deleted successfully");
+    } catch (e) {
+      console.error('Failed to delete account', e);
+      alert('Failed to delete account');
+    } finally {
+      setConfirmDeleteOpen(false);
     }
-  }
+  };
 
   return (
     <div className="space-y-10">
@@ -202,6 +214,15 @@ export default function SettingsFeatures() {
         <h2 className="text-lg font-bold mb-2 text-red-600">Danger Zone</h2>
         <button className="bg-red-700 text-white px-4 py-2 rounded" onClick={handleDeleteAccount}>Delete Account</button>
       </section>
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="Delete account"
+        description="Are you sure you want to delete your account? This action cannot be undone."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onClose={(open: boolean) => setConfirmDeleteOpen(open)}
+        onConfirm={confirmDeleteAccount}
+      />
     </div>
   );
 }

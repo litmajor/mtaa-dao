@@ -12,6 +12,7 @@
 import { cacheService } from './cacheService';
 import { logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
+import { publishExecutionEvent } from './executionEvents';
 
 export interface ExecutionRecord {
   id: string;
@@ -209,6 +210,17 @@ export class ExecutionTrackingService {
     await cacheService.set(historyKey, filtered, 86400); // 24-hour TTL
 
     logger.info(`✅ Recorded execution: ${quoteId} - Score: ${record.executionQualityScore}`);
+    // Publish recorded execution for real-time consumers
+    try {
+      publishExecutionEvent(`execution:${quoteId}`, {
+        quoteId,
+        exchange: record.exchange,
+        symbol: record.symbol,
+        status: record.status,
+        score: record.executionQualityScore,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
+    } catch (e) {}
     return record;
   }
 

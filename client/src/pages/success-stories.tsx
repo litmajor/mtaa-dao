@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
 import { Heart, Users, DollarSign, TrendingUp, MapPin, Calendar, Star, ArrowRight, Eye, Share2, Sparkles, Award, Target } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -402,10 +403,10 @@ export default function SuccessStoriesPage() {
                 </div>
 
                 {/* Read More Button */}
-                <button className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white py-2 rounded-xl font-medium hover:shadow-lg transition-all duration-300 flex items-center justify-center">
+                <Button variant="primary" className="w-full py-2 rounded-xl font-medium hover:shadow-lg transition-all duration-300 flex items-center justify-center">
                   Read Full Story
                   <ArrowRight className="w-4 h-4 ml-2" />
-                </button>
+                </Button>
               </motion.div>
             ))}
           </AnimatePresence>
@@ -421,9 +422,9 @@ export default function SuccessStoriesPage() {
             decentralized financial solutions.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-8 py-4 rounded-xl font-bold text-lg hover:shadow-lg transition-all duration-300 transform hover:scale-105">
+            <Button variant="primary" className="px-8 py-4 rounded-xl font-bold text-lg transform hover:scale-105">
               Start Your DAO Today
-            </button>
+            </Button>
             <button className="bg-white text-orange-600 px-8 py-4 rounded-xl font-bold text-lg border-2 border-orange-500 hover:bg-orange-50 transition-all duration-300">
               Learn More
             </button>
@@ -531,9 +532,9 @@ export default function SuccessStoriesPage() {
 
               {/* Action Buttons */}
               <div className="flex gap-4">
-                <button className="flex-1 bg-gradient-to-r from-orange-500 to-red-500 text-white py-3 rounded-xl font-medium hover:shadow-lg transition-all duration-300">
+                <Button variant="primary" className="flex-1 py-3 rounded-xl font-medium hover:shadow-lg transition-all duration-300">
                   Start Similar Project
-                </button>
+                </Button>
                 <button className="px-6 py-3 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 transition-all duration-300 flex items-center">
                   <Share2 className="w-4 h-4 mr-2" />
                   Share

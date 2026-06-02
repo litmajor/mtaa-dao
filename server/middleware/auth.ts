@@ -31,8 +31,16 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
   }
 
   try {
-    const secret = process.env.JWT_SECRET || 'your-secret-key';
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      console.error('JWT_SECRET not configured');
+      return res.status(500).json({ success: false, error: 'Server misconfiguration: JWT secret missing' });
+    }
     const decoded = jwt.verify(token, secret) as any;
+    // Reject temporary tokens issued for 2FA challenge flow
+    if (decoded && decoded.pending2FA === true) {
+      return res.status(403).json({ success: false, error: 'Two-factor authentication pending' });
+    }
     req.user = decoded;
     next();
   } catch (error) {

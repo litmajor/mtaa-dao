@@ -5,7 +5,8 @@
  */
 
 import React, { useState } from 'react';
-import { Position } from '@/client/hooks';
+import ConfirmDialog from '@/components/ConfirmDialog';
+import { Position } from '../../client/hooks';
 import { useLiquidationRisk, useUpdateTPSL, useClosePosition } from '@/client/hooks';
 
 interface PositionCardProps {
@@ -52,9 +53,14 @@ export default function PositionCard({
 
   // Handle close position
   const handleClosePosition = () => {
-    if (window.confirm(`Close ${position.side} position in ${position.pair}?`)) {
-      closePosition(position.positionId, position.exchange);
-    }
+    // open confirm dialog
+    setCloseConfirmOpen(true);
+  };
+
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
+
+  const confirmClose = () => {
+    closePosition(position.positionId, position.exchange);
   };
 
   return (
@@ -84,11 +90,11 @@ export default function PositionCard({
 
           {/* PnL & Risk */}
           <div className="text-right">
-            <div className={position.unrealizedPnL >= 0 ? 'text-green-400' : 'text-red-400'}>
-              {position.unrealizedPnL >= 0 ? '+' : ''} ${position.unrealizedPnL.toFixed(2)}
+            <div className={position.unrealizedPnl >= 0 ? 'text-green-400' : 'text-red-400'}>
+              {position.unrealizedPnl >= 0 ? '+' : ''} ${position.unrealizedPnl.toFixed(2)}
             </div>
             <div className="text-xs text-slate-400">
-              {position.unrealizedPnLPercent >= 0 ? '+' : ''} {position.unrealizedPnLPercent.toFixed(2)}%
+              {position.unrealizedPnlPercent >= 0 ? '+' : ''} {position.unrealizedPnlPercent.toFixed(2)}%
             </div>
           </div>
 
@@ -170,6 +176,16 @@ export default function PositionCard({
               {closeLoading ? 'Closing...' : 'Close'}
             </button>
           </div>
+
+          <ConfirmDialog
+            open={closeConfirmOpen}
+            onClose={setCloseConfirmOpen}
+            title="Close Position"
+            description={`Close ${position.side} position in ${position.pair}?`}
+            confirmLabel="Close"
+            cancelLabel="Cancel"
+            onConfirm={confirmClose}
+          />
 
           {/* TP/SL Input */}
           {showTPSL && (

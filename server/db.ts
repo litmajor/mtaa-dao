@@ -3,6 +3,11 @@ import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from "../shared/schema.js";
+import { metricsCollector } from './monitoring/metricsCollector';
+
+const DEFAULT_POOL_MAX = parseInt(process.env.DATABASE_POOL_MAX || '20', 10);
+const DEFAULT_IDLE_TIMEOUT = parseInt(process.env.DATABASE_POOL_IDLE_TIMEOUT_MS || '30000', 10);
+const DEFAULT_CONN_TIMEOUT = parseInt(process.env.DATABASE_POOL_CONN_TIMEOUT_MS || '15000', 10);
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -12,14 +17,13 @@ if (!process.env.DATABASE_URL) {
 
 export const pool = new Pool({ 
   connectionString: process.env.DATABASE_URL,
-  // Increased pool to handle concurrent startup logging (30+ services initializing)
-  max: 50, // Was 20, increased to 50 for concurrent startup operations
-  idleTimeoutMillis: 10000, // Was 30000, reduced to 10s to free connections faster
-  connectionTimeoutMillis: 15000, // Was 30000, reduced to 15s for faster failure detection
+  // Pool settings are configurable via env vars with safe defaults
+  max: DEFAULT_POOL_MAX,
+  idleTimeoutMillis: DEFAULT_IDLE_TIMEOUT,
+  connectionTimeoutMillis: DEFAULT_CONN_TIMEOUT,
   keepAlive: true,
   keepAliveInitialDelayMs: 10000,
-  // Add retry logic
-  ssl: false,
+  ssl: process.env.DATABASE_SSL === 'true' || false,
 });
 
 // Handle pool errors
@@ -53,3 +57,23 @@ testConnection();
 
 // Export typed database instance
 export const db: NodePgDatabase<typeof schema> = drizzle(pool, { schema });
+
+// Emit pool metrics periodically to metricsCollector
+try {
+  // report every 10s
+  setInterval(() => {
+    try {
+      const total = (pool as any).totalCount ?? 0;
+      const idle = (pool as any).idleCount ?? 0;
+      const waiting = (pool as any).waitingCount ?? 0;
+
+      // Report detailed pool gauges to metrics collector
+      metricsCollector.reportDbPoolMetrics(total, idle, waiting);
+    } catch (err) {
+      // avoid crashing the process if metric collection fails
+      console.error('Error collecting DB pool metrics:', err);
+    }
+  }, 10000);
+} catch (err) {
+  console.error('Failed to start DB metrics emitter:', err);
+}

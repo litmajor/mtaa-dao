@@ -288,6 +288,28 @@ class MetricsCollector {
     } as any);
   }
 
+  /**
+   * Report DB pool gauges for Prometheus-style metrics
+   */
+  public reportDbPoolMetrics(total: number, idle: number, waiting: number) {
+    const active = Math.max(0, total - idle);
+
+    // Update Prometheus gauges
+    prometheus.gauge('db_pool_total_connections', total);
+    prometheus.gauge('db_pool_idle_connections', idle);
+    prometheus.gauge('db_pool_waiting_requests', waiting);
+    prometheus.gauge('db_pool_active_connections', active);
+
+    // Also add a lightweight database metric record
+    this.addDatabaseMetric({
+      activeConnections: active,
+      totalQueries: 0,
+      slowQueries: 0,
+      avgQueryTime: 0,
+      errors: 0
+    });
+  }
+
   public addBusinessMetric(metric: BusinessMetrics) {
     this.metrics.business.push({
       ...metric,

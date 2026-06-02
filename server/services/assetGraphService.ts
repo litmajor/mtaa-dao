@@ -58,7 +58,7 @@ import { moolaAdapter } from './defiProtocols/moolaAdapter';
 import { lidoAdapter, curveAdapter } from './defiProtocols/lidoCurveAdapter';
 import { db } from '../db';
 import { walletConnections, walletTokenBalances, blockchainNetworks, blockchainTokens } from '@shared/walletIntegrationSchema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { redis } from './redis';
 import { EdgeRelationshipType } from '../core/assetGraph/types';
 import type {
@@ -124,6 +124,8 @@ class AssetGraphService {
   private updateIntervals: Map<string, NodeJS.Timer> = new Map();
   private priceUpdateIntervals: Map<string, NodeJS.Timer> = new Map();
   private priceWarmingInterval: NodeJS.Timer | null = null;
+  private walletCachePruneInterval: NodeJS.Timer | null = null;
+  private destroyed = false;
 
   /**
    * FIX #7: In-flight promise cache prevents duplicate concurrent loads for
@@ -433,33 +435,42 @@ class AssetGraphService {
     const nodes: AssetGraphNode[] = [];
 
     try {
-      for (const address of walletAddresses) {
-        const balances = await this.getWalletBalances(address);
+      // Run per-wallet balance fetches in parallel (bounded by withConcurrencyLimit)
+      const tasks = walletAddresses.map(address =>
+        this.withConcurrencyLimit(async () => {
+          const localNodes: AssetGraphNode[] = [];
+          const balances = await this.getWalletBalances(address);
 
-        for (const { symbol, balance, decimals } of balances) {
-          const normalised = balance / Math.pow(10, decimals);
-          const balanceUSD = normalised * getPrice(symbol);
+          for (const { symbol, balance, decimals } of balances) {
+            const normalised = balance / Math.pow(10, decimals);
+            const balanceUSD = normalised * getPrice(symbol);
 
-          if (balanceUSD < 1) continue;
+            if (balanceUSD < 1) continue;
 
-          nodes.push({
-            // FIX #4: address slug in ID prevents collision across wallets
-            id: `${userId}:${symbol}:direct:${address.toLowerCase()}`,
-            userId,
-            type: 'direct_holding',
-            symbol,
-            chain: 'ethereum',
-            address,
-            balance: normalised,
-            balanceUSD,
-            decimals,
-            unlocked: true,
-            riskLevel: 'low',
-            tags: ['wallet'],
-            lastUpdated: Date.now(),
-            dataSource: 'wallet_rpc',
-          });
-        }
+            localNodes.push({
+              id: `${userId}:${symbol}:direct:${address.toLowerCase()}`,
+              userId,
+              type: 'direct_holding',
+              symbol,
+              chain: 'ethereum',
+              address,
+              balance: normalised,
+              balanceUSD,
+              decimals,
+              unlocked: true,
+              riskLevel: 'low',
+              tags: ['wallet'],
+              lastUpdated: Date.now(),
+              dataSource: 'wallet_rpc',
+            });
+          }
+          return localNodes;
+        })
+      );
+
+      const settled = await Promise.all(tasks);
+      for (const res of settled) {
+        nodes.push(...res);
       }
 
       return { nodes, source: 'wallet_rpc', success: true };
@@ -476,79 +487,76 @@ class AssetGraphService {
     const nodes: AssetGraphNode[] = [];
 
     try {
-      for (const address of walletAddresses) {
-        // CACHING #2: Check cache first
-        const cachedNodes = this.getDiscoveryCacheForWallet(address, 'aave');
-        if (cachedNodes) {
-          nodes.push(...cachedNodes);
-          continue;
-        }
+      // Run per-wallet discovery in parallel (bounded by withConcurrencyLimit)
+      const tasks = walletAddresses.map(address =>
+        this.withConcurrencyLimit(async () => {
+          const localNodes: AssetGraphNode[] = [];
+          // CACHING #2: Check cache first
+          const cachedNodes = this.getDiscoveryCacheForWallet(address, 'aave');
+          if (cachedNodes) return cachedNodes;
 
-        const aavePositions = await aaveAdapter.discoverPositions(address);
+          const aavePositions = await aaveAdapter.discoverPositions(address);
 
-        const addressNodes: AssetGraphNode[] = [];
+          if (!aavePositions) return localNodes;
 
-        for (const aavePos of aavePositions) {
-          for (const supply of aavePos.supplied) {
-            const balanceUSD = supply.amount * getPrice(supply.asset);
+          for (const aavePos of aavePositions) {
+            for (const supply of aavePos.supplied) {
+              const balanceUSD = supply.amount * getPrice(supply.asset);
+              const node: AssetGraphNode = {
+                id: `${userId}:aave:${supply.asset}:supply:${aavePos.chain}:${address.slice(2, 10)}`,
+                userId,
+                type: 'protocol_position',
+                symbol: `a${supply.asset}`,
+                underlyingSymbol: supply.asset,
+                protocol: 'aave',
+                chain: aavePos.chain as any,
+                decimals: 18,
+                balance: supply.amount,
+                balanceUSD,
+                exchangeRate: 1.01,
+                apyRate: supply.apy,
+                apyMode: 'variable' as const,
+                yieldType: 'lending' as const,
+                unlocked: true,
+                riskLevel: 'low',
+                tags: ['lending', 'yield'],
+                lastUpdated: Date.now(),
+                dataSource: 'protocol_subgraph',
+              };
+              localNodes.push(node);
+            }
 
-            const node: AssetGraphNode = {
-              // FIX #4: address slug scopes ID to the wallet that holds the position
-              id: `${userId}:aave:${supply.asset}:supply:${aavePos.chain}:${address.slice(2, 10)}`,
-              userId,
-              type: 'protocol_position',
-              symbol: `a${supply.asset}`,
-              underlyingSymbol: supply.asset,
-              protocol: 'aave',
-              chain: aavePos.chain as any,
-              decimals: 18,
-              balance: supply.amount,
-              balanceUSD,
-              exchangeRate: 1.01,
-              apyRate: supply.apy,
-              apyMode: 'variable' as const,
-              yieldType: 'lending' as const,
-              unlocked: true,
-              riskLevel: 'low',
-              tags: ['lending', 'yield'],
-              lastUpdated: Date.now(),
-              dataSource: 'protocol_subgraph',
-            };
-            addressNodes.push(node);
-            nodes.push(node);
+            for (const borrow of aavePos.borrowed) {
+              const balanceUSD = borrow.amount * getPrice(borrow.asset);
+              const node: AssetGraphNode = {
+                id: `${userId}:aave:${borrow.asset}:borrow:${aavePos.chain}:${address.slice(2, 10)}`,
+                userId,
+                type: 'debt',
+                symbol: borrow.asset,
+                protocol: 'aave',
+                chain: aavePos.chain as any,
+                decimals: 18,
+                balance: -borrow.amount,
+                balanceUSD: -balanceUSD,
+                apyRate: borrow.borrowRate,
+                unlocked: true,
+                riskLevel: 'medium',
+                riskFactors: ['liquidation'],
+                tags: ['debt'],
+                lastUpdated: Date.now(),
+                dataSource: 'protocol_subgraph',
+              };
+              localNodes.push(node);
+            }
           }
 
-          for (const borrow of aavePos.borrowed) {
-            const balanceUSD = borrow.amount * getPrice(borrow.asset);
+          if (localNodes.length > 0) this.setDiscoveryCacheForWallet(address, 'aave', localNodes);
+          return localNodes;
+        })
+      );
 
-            const node: AssetGraphNode = {
-              id: `${userId}:aave:${borrow.asset}:borrow:${aavePos.chain}:${address.slice(2, 10)}`,
-              userId,
-              type: 'debt',
-              symbol: borrow.asset,
-              protocol: 'aave',
-              chain: aavePos.chain as any,
-              decimals: 18,
-              balance: -borrow.amount,
-              balanceUSD: -balanceUSD,
-              apyRate: borrow.borrowRate,
-              unlocked: true,
-              riskLevel: 'medium',
-              riskFactors: ['liquidation'],
-              tags: ['debt'],
-              lastUpdated: Date.now(),
-              dataSource: 'protocol_subgraph',
-            };
-            addressNodes.push(node);
-            nodes.push(node);
-          }
-        }
-
-        // CACHING #2: Store in cache
-        if (addressNodes.length > 0) {
-          this.setDiscoveryCacheForWallet(address, 'aave', addressNodes);
-        }
-      }
+      const settled = await Promise.all(tasks);
+      for (const res of settled) nodes.push(...res);
 
       return { nodes, source: 'aave', success: true };
     } catch (error: any) {
@@ -565,51 +573,48 @@ class AssetGraphService {
     const ethPrice = getPrice('ETH');
 
     try {
-      for (const address of walletAddresses) {
-        // CACHING #2: Check cache first
-        const cachedNodes = this.getDiscoveryCacheForWallet(address, 'lido');
-        if (cachedNodes) {
-          nodes.push(...cachedNodes);
-          continue;
-        }
+      const tasks = walletAddresses.map(address =>
+        this.withConcurrencyLimit(async () => {
+          const cachedNodes = this.getDiscoveryCacheForWallet(address, 'lido');
+          if (cachedNodes) return cachedNodes;
 
-        const lidoPos = await lidoAdapter.discoverPositions(address, ethPrice);
-        const addressNodes: AssetGraphNode[] = [];
+          const localNodes: AssetGraphNode[] = [];
+          const lidoPos = await lidoAdapter.discoverPositions(address, ethPrice);
 
-        if (lidoPos && lidoPos.stETHBalance > 0) {
-          const node: AssetGraphNode = {
-            // FIX #4: address slug prevents collision if user has multiple wallets with stETH
-            id: `${userId}:lido:steth:${address.slice(2, 10)}`,
-            userId,
-            type: 'derivative',
-            symbol: 'stETH',
-            underlyingSymbol: 'ETH',
-            protocol: 'lido',
-            chain: 'ethereum',
-            decimals: 18,
-            balance: lidoPos.stETHBalance,
-            balanceUSD: lidoPos.stETHBalanceUSD,
-            underlyingBalance: lidoPos.underlyingETH,
-            exchangeRate: 1.005,
-            exchangeRateExplanation: '1 stETH = 1.005 ETH (includes validator rewards)',
-            apyRate: lidoPos.apy,
-            apyMode: 'rebasing' as const,
-            yieldType: 'staking' as const,
-            unlocked: true,
-            riskLevel: 'low',
-            tags: ['staking', 'yield'],
-            lastUpdated: Date.now(),
-            dataSource: 'protocol_subgraph',
-          };
-          addressNodes.push(node);
-          nodes.push(node);
-        }
+          if (lidoPos && lidoPos.stETHBalance > 0) {
+            const node: AssetGraphNode = {
+              id: `${userId}:lido:steth:${address.slice(2, 10)}`,
+              userId,
+              type: 'derivative',
+              symbol: 'stETH',
+              underlyingSymbol: 'ETH',
+              protocol: 'lido',
+              chain: 'ethereum',
+              decimals: 18,
+              balance: lidoPos.stETHBalance,
+              balanceUSD: lidoPos.stETHBalanceUSD,
+              underlyingBalance: lidoPos.underlyingETH,
+              exchangeRate: 1.005,
+              exchangeRateExplanation: '1 stETH = 1.005 ETH (includes validator rewards)',
+              apyRate: lidoPos.apy,
+              apyMode: 'rebasing' as const,
+              yieldType: 'staking' as const,
+              unlocked: true,
+              riskLevel: 'low',
+              tags: ['staking', 'yield'],
+              lastUpdated: Date.now(),
+              dataSource: 'protocol_subgraph',
+            };
+            localNodes.push(node);
+          }
 
-        // CACHING #2: Store in cache
-        if (addressNodes.length > 0) {
-          this.setDiscoveryCacheForWallet(address, 'lido', addressNodes);
-        }
-      }
+          if (localNodes.length > 0) this.setDiscoveryCacheForWallet(address, 'lido', localNodes);
+          return localNodes;
+        })
+      );
+
+      const settled = await Promise.all(tasks);
+      for (const res of settled) nodes.push(...res);
 
       return { nodes, source: 'lido', success: true };
     } catch (error: any) {
@@ -625,48 +630,45 @@ class AssetGraphService {
     const nodes: AssetGraphNode[] = [];
 
     try {
-      for (const address of walletAddresses) {
-        // CACHING #2: Check cache first
-        const cachedNodes = this.getDiscoveryCacheForWallet(address, 'curve');
-        if (cachedNodes) {
-          nodes.push(...cachedNodes);
-          continue;
-        }
+      const tasks = walletAddresses.map(address =>
+        this.withConcurrencyLimit(async () => {
+          const cachedNodes = this.getDiscoveryCacheForWallet(address, 'curve');
+          if (cachedNodes) return cachedNodes;
 
-        const curvePositions = await curveAdapter.discoverPositions(address);
-        const addressNodes: AssetGraphNode[] = [];
+          const addressNodes: AssetGraphNode[] = [];
+          const curvePositions = await curveAdapter.discoverPositions(address);
 
-        for (const curve of curvePositions) {
-          const node: AssetGraphNode = {
-            // FIX #4: address slug scopes to wallet; pool address still in ID for uniqueness
-            id: `${userId}:curve:lp:${curve.poolAddress.slice(2, 10)}:${address.slice(2, 10)}`,
-            userId,
-            type: 'lp_share',
-            symbol: `CURVE-LP-${curve.poolAddress.slice(0, 6)}`,
-            protocol: 'curve',
-            chain: 'ethereum',
-            decimals: 18,
-            balance: curve.lpTokenBalance,
-            balanceUSD: curve.lpValueUSD,
-            apyRate: curve.apy,
-            apyMode: 'variable' as const,
-            yieldType: 'trading_fees' as const,
-            unlocked: true,
-            riskLevel: 'medium',
-            riskFactors: ['impermanent_loss'],
-            tags: ['lp', 'yield'],
-            lastUpdated: Date.now(),
-            dataSource: 'protocol_subgraph',
-          };
-          addressNodes.push(node);
-          nodes.push(node);
-        }
+          for (const curve of curvePositions) {
+            const node: AssetGraphNode = {
+              id: `${userId}:curve:lp:${curve.poolAddress.slice(2, 10)}:${address.slice(2, 10)}`,
+              userId,
+              type: 'lp_share',
+              symbol: `CURVE-LP-${curve.poolAddress.slice(0, 6)}`,
+              protocol: 'curve',
+              chain: 'ethereum',
+              decimals: 18,
+              balance: curve.lpTokenBalance,
+              balanceUSD: curve.lpValueUSD,
+              apyRate: curve.apy,
+              apyMode: 'variable' as const,
+              yieldType: 'trading_fees' as const,
+              unlocked: true,
+              riskLevel: 'medium',
+              riskFactors: ['impermanent_loss'],
+              tags: ['lp', 'yield'],
+              lastUpdated: Date.now(),
+              dataSource: 'protocol_subgraph',
+            };
+            addressNodes.push(node);
+          }
 
-        // CACHING #2: Store in cache
-        if (addressNodes.length > 0) {
-          this.setDiscoveryCacheForWallet(address, 'curve', addressNodes);
-        }
-      }
+          if (addressNodes.length > 0) this.setDiscoveryCacheForWallet(address, 'curve', addressNodes);
+          return addressNodes;
+        })
+      );
+
+      const settled = await Promise.all(tasks);
+      for (const res of settled) nodes.push(...res);
 
       return { nodes, source: 'curve', success: true };
     } catch (error: any) {
@@ -682,71 +684,66 @@ class AssetGraphService {
     const nodes: AssetGraphNode[] = [];
 
     try {
-      for (const address of walletAddresses) {
-        // CACHING #2: Check cache first
-        const cachedNodes = this.getDiscoveryCacheForWallet(address, 'moola');
-        if (cachedNodes) {
-          nodes.push(...cachedNodes);
-          continue;
-        }
+      const tasks = walletAddresses.map(address =>
+        this.withConcurrencyLimit(async () => {
+          const cachedNodes = this.getDiscoveryCacheForWallet(address, 'moola');
+          if (cachedNodes) return cachedNodes;
 
-        const moolaPos = await moolaAdapter.discoverPositions(address);
-        if (!moolaPos) continue;
+          const localNodes: AssetGraphNode[] = [];
+          const moolaPos = await moolaAdapter.discoverPositions(address);
+          if (!moolaPos) return localNodes;
 
-        const addressNodes: AssetGraphNode[] = [];
+          for (const supply of moolaPos.supplied) {
+            const node: AssetGraphNode = {
+              id: `${userId}:moola:${supply.asset}:supply:${address.slice(2, 10)}`,
+              userId,
+              type: 'protocol_position',
+              symbol: `m${supply.asset}`,
+              underlyingSymbol: supply.asset,
+              protocol: 'moola',
+              chain: 'celo',
+              decimals: 18,
+              balance: supply.amount,
+              balanceUSD: supply.amount * getPrice(supply.asset),
+              apyRate: supply.apy,
+              yieldType: 'lending' as const,
+              unlocked: true,
+              riskLevel: 'low',
+              tags: ['lending', 'yield'],
+              lastUpdated: Date.now(),
+              dataSource: 'protocol_subgraph',
+            };
+            localNodes.push(node);
+          }
 
-        for (const supply of moolaPos.supplied) {
-          const node: AssetGraphNode = {
-            // FIX #4: address slug scopes to wallet
-            id: `${userId}:moola:${supply.asset}:supply:${address.slice(2, 10)}`,
-            userId,
-            type: 'protocol_position',
-            symbol: `m${supply.asset}`,
-            underlyingSymbol: supply.asset,
-            protocol: 'moola',
-            chain: 'celo',
-            decimals: 18,
-            balance: supply.amount,
-            balanceUSD: supply.amount * getPrice(supply.asset),
-            apyRate: supply.apy,
-            yieldType: 'lending' as const,
-            unlocked: true,
-            riskLevel: 'low',
-            tags: ['lending', 'yield'],
-            lastUpdated: Date.now(),
-            dataSource: 'protocol_subgraph',
-          };
-          addressNodes.push(node);
-          nodes.push(node);
-        }
+          for (const borrow of moolaPos.borrowed) {
+            const node: AssetGraphNode = {
+              id: `${userId}:moola:${borrow.asset}:borrow:${address.slice(2, 10)}`,
+              userId,
+              type: 'debt',
+              symbol: borrow.asset,
+              protocol: 'moola',
+              chain: 'celo',
+              decimals: 18,
+              balance: -borrow.amount,
+              balanceUSD: -borrow.amount * getPrice(borrow.asset),
+              apyRate: borrow.apy,
+              unlocked: true,
+              riskLevel: 'medium',
+              tags: ['debt'],
+              lastUpdated: Date.now(),
+              dataSource: 'protocol_subgraph',
+            };
+            localNodes.push(node);
+          }
 
-        for (const borrow of moolaPos.borrowed) {
-          const node: AssetGraphNode = {
-            id: `${userId}:moola:${borrow.asset}:borrow:${address.slice(2, 10)}`,
-            userId,
-            type: 'debt',
-            symbol: borrow.asset,
-            protocol: 'moola',
-            chain: 'celo',
-            decimals: 18,
-            balance: -borrow.amount,
-            balanceUSD: -borrow.amount * getPrice(borrow.asset),
-            apyRate: borrow.apy,
-            unlocked: true,
-            riskLevel: 'medium',
-            tags: ['debt'],
-            lastUpdated: Date.now(),
-            dataSource: 'protocol_subgraph',
-          };
-          addressNodes.push(node);
-          nodes.push(node);
-        }
+          if (localNodes.length > 0) this.setDiscoveryCacheForWallet(address, 'moola', localNodes);
+          return localNodes;
+        })
+      );
 
-        // CACHING #2: Store in cache
-        if (addressNodes.length > 0) {
-          this.setDiscoveryCacheForWallet(address, 'moola', addressNodes);
-        }
-      }
+      const settled = await Promise.all(tasks);
+      for (const res of settled) nodes.push(...res);
 
       return { nodes, source: 'moola', success: true };
     } catch (error: any) {
@@ -970,9 +967,17 @@ class AssetGraphService {
       const criticalRisk = healthFactor < 1.05;
 
       if (atRisk) {
+        // Aggregate collateral symbols by contribution (top 3)
+        const contribMap: Record<string, number> = {};
+        for (const s of supplyNodes) {
+          contribMap[s.symbol] = (contribMap[s.symbol] || 0) + s.balanceUSD;
+        }
+        const sorted = Object.entries(contribMap).sort((a, b) => b[1] - a[1]);
+        const topSymbols = sorted.slice(0, 3).map(e => e[0]).join(',') || 'UNKNOWN';
+
         graph.liquidationRisks.push({
           edgeId: `${debtNode.id}:liquidation`,
-          collateralSymbol: supplyNodes[0]?.symbol || 'UNKNOWN',
+          collateralSymbol: topSymbols,
           collateralAmount: collateralUSD,
           debtSymbol: debtNode.symbol,
           debtAmount: debtUSD,
@@ -1065,7 +1070,9 @@ class AssetGraphService {
 
       // Detect significant changes (>1% balance change or any APY change)
       const balanceChanged = Math.abs(node.balance - old.balance) / Math.max(Math.abs(old.balance), 1) > 0.01;
-      const apyChanged = (node.apyRate || 0) !== (old.apyRate || 0);
+      const apyOld = old.apyRate || 0;
+      const apyNew = node.apyRate || 0;
+      const apyChanged = Math.abs(apyNew - apyOld) > 0.01;
 
       if (balanceChanged || apyChanged) {
         logger.debug(`[AssetGraph] Detected change in ${node.id}: balance=${node.balance} (was ${old.balance}), apy=${node.apyRate} (was ${old.apyRate})`);
@@ -1138,6 +1145,7 @@ class AssetGraphService {
    * 2. Slow discovery updates every 5 mins (full rebuild if needed)
    */
   private setupRealtimeUpdates(userId: string): void {
+    if (this.destroyed) return;
     // Fast price-only updates
     if (!this.priceUpdateIntervals.has(userId)) {
       const priceInterval = setInterval(async () => {
@@ -1167,6 +1175,28 @@ class AssetGraphService {
     }, 5 * 60 * 1000); // Every 5 minutes
 
     this.updateIntervals.set(userId, discoveryInterval);
+
+    // Start periodic wallet discovery cache pruning if not already running
+    if (!this.walletCachePruneInterval) {
+      this.walletCachePruneInterval = setInterval(() => {
+        try {
+          const now = Date.now();
+          for (const [address, protocols] of this.walletDiscoveryCache) {
+            for (const [protocol, entry] of Object.entries(protocols)) {
+              if (entry.expiresAt < now) {
+                delete (protocols as any)[protocol];
+              }
+            }
+            if (Object.keys(protocols).length === 0) {
+              this.walletDiscoveryCache.delete(address);
+            }
+          }
+          logger.debug('[AssetGraph] Pruned walletDiscoveryCache');
+        } catch (e) {
+          logger.debug('[AssetGraph] Wallet cache prune failed:', e);
+        }
+      }, 10 * 60 * 1000); // every 10 minutes
+    }
   }
 
   // ==========================================================================
@@ -1342,11 +1372,11 @@ class AssetGraphService {
         return parseInt(cached as string, 10);
       }
 
-      // Query blockchainTokens table
+      // Query blockchainTokens table for the specific symbol
       const token = await db
         .select({ decimals: blockchainTokens.decimals })
         .from(blockchainTokens)
-        .where(eq(blockchainTokens.chainId, chainId))
+        .where(and(eq(blockchainTokens.chainId, chainId), eq(blockchainTokens.tokenSymbol, symbol)))
         .limit(1);
 
       const decimals = token[0]?.decimals ?? 18;
@@ -1410,20 +1440,30 @@ class AssetGraphService {
         });
       }
 
-      // Add ERC20 token balances
-      for (const tokenBalance of tokenBalances) {
-        const balance = Number(tokenBalance.balance || 0);
-        if (balance > 0) {
-          const tokenSymbol = (tokenBalance.tokenId as string).toUpperCase() || 'UNKNOWN';
-          // Fetch token decimals from blockchainTokens table
-          const tokenDecimals = await this.getTokenDecimals(walletConn[0].chainId, tokenSymbol);
+      // Add ERC20 token balances — fetch decimals in parallel with concurrency control
+      const tokenEntries = tokenBalances.map(tb => ({
+        symbol: (tb.tokenId as string).toUpperCase() || 'UNKNOWN',
+        balance: Number(tb.balance || 0),
+      })).filter(t => t.balance > 0);
 
-          balances.push({
-            symbol: tokenSymbol,
-            balance,
-            decimals: tokenDecimals,
-          });
-        }
+      const decimalsResults = await Promise.all(
+        tokenEntries.map(te =>
+          this.withConcurrencyLimit(async () => {
+            const d = await this.getTokenDecimals(walletConn[0].chainId, te.symbol);
+            return { symbol: te.symbol, decimals: d };
+          })
+        )
+      );
+
+      const decimalsMap: Record<string, number> = {};
+      for (const r of decimalsResults) decimalsMap[r.symbol] = r.decimals;
+
+      for (const te of tokenEntries) {
+        balances.push({
+          symbol: te.symbol,
+          balance: te.balance,
+          decimals: decimalsMap[te.symbol] ?? 18,
+        });
       }
 
       // Cache in Redis for 2 minutes
@@ -1497,40 +1537,15 @@ class AssetGraphService {
     }
 
     logger.debug('[AssetGraph] ☀️ Warming price cache...');
-    
+    if (this.destroyed) {
+      logger.debug('[AssetGraph] Service destroyed; skipping warmPriceCache');
+      return;
+    }
+
     try {
-      const symbols = ['ETH', 'WETH', 'BTC', 'WBTC', 'USDC', 'USDT', 'DAI', 'CELO', 'cUSD', 'cEUR', 'LINK', 'UNI', 'AAVE', 'CRV'];
-      
-      // 🚀 Parallel fetch all symbols with concurrency limiting
-      const responses = await Promise.all(
-        symbols.map(symbol =>
-          this.withConcurrencyLimit(async () => {
-            try {
-              return await ohlcvService.getCandles(symbol, '1h', 1);
-            } catch (e) {
-              logger.debug(`[AssetGraph] Price warming failed for ${symbol}: ${(e as any).message}`);
-              return { data: [] };
-            }
-          })
-        )
-      );
-
-      const map: Record<string, number> = {};
-      symbols.forEach((symbol, index) => {
-        const response = responses[index];
-        if (response.data && response.data.length > 0) {
-          const latestCandle = response.data[response.data.length - 1];
-          map[symbol] = latestCandle.close;
-        }
-      });
-
-      // Populate cache
-      this.globalPriceCache = {
-        data: map,
-        expiresAt: now + this.PRICE_CACHE_TTL_MS,
-      };
+      // Reuse buildPriceMap which implements the same logic + caching
+      const map = await this.buildPriceMap();
       this.lastPriceWarmTime = now;
-
       logger.debug(`[AssetGraph] ✅ Price cache warmed (${Object.keys(map).length} symbols, expires in ${this.PRICE_CACHE_TTL_MS / 1000}s)`);
     } catch (error: any) {
       logger.warn(`[AssetGraph] Price cache warming failed: ${error.message}`);
@@ -1593,6 +1608,11 @@ class AssetGraphService {
     this.walletDiscoveryCache.clear();
     this.globalPriceCache = null;
     this.graphs.clear();
+    this.destroyed = true;
+    if (this.walletCachePruneInterval) {
+      clearInterval(this.walletCachePruneInterval as any);
+      this.walletCachePruneInterval = null;
+    }
     logger.info('✅ Asset Graph Service shut down');
   }
 }

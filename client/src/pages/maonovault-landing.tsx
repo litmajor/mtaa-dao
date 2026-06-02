@@ -80,7 +80,7 @@ export default function MaanoVaultLanding() {
             </Button>
           </Link>
           <Link href="/vault">
-            <Button className="bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 text-white">
+            <Button variant="primary">
               Launch Dashboard
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
@@ -106,7 +106,7 @@ export default function MaanoVaultLanding() {
 
           <div className="flex flex-wrap gap-4 justify-center mb-12">
             <Link href="/vault">
-              <Button size="lg" className="bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 text-white px-8 py-6 text-lg font-bold rounded-xl">
+              <Button size="lg" variant="primary" className="px-8 py-6 text-lg font-bold rounded-xl">
                 Get Started Now
                 <ArrowRight className="w-5 h-5 ml-2" />
               </Button>
@@ -220,7 +220,7 @@ export default function MaanoVaultLanding() {
           Join thousands of Kenyans earning passive income with MaanoVault. No experience needed.
         </p>
         <Link href="/vault">
-          <Button size="lg" className="bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 text-white px-10 py-6 text-xl font-bold rounded-xl shadow-2xl">
+          <Button size="lg" variant="primary" className="px-10 py-6 text-xl font-bold rounded-xl shadow-2xl">
             Launch MaanoVault Now
             <ArrowRight className="w-6 h-6 ml-2" />
           </Button>

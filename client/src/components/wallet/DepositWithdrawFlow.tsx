@@ -402,12 +402,12 @@ export function DepositWithdrawFlow() {
               Cancel
             </Button>
             {currentStep < steps.length && (
-              <Button onClick={handleNext} className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600" data-testid="button-next-step">
+              <Button onClick={handleNext} variant="primary" className="flex-1" data-testid="button-next-step">
                 Next Step
               </Button>
             )}
             {currentStep === steps.length && (
-              <Button onClick={handleReset} className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600" data-testid="button-complete-flow">
+              <Button onClick={handleReset} variant="primary" className="flex-1" data-testid="button-complete-flow">
                 Done
               </Button>
             )}
@@ -508,7 +508,7 @@ export function DepositWithdrawFlow() {
                   Fee: {methodInfo.fee} • Time: {methodInfo.time}
                 </p>
               </div>
-              <Button onClick={handleStart} className="w-full bg-gradient-to-r from-purple-600 to-pink-600" data-testid="button-start-flow">
+              <Button onClick={handleStart} variant="primary" className="w-full" data-testid="button-start-flow">
                 Start {flowType === 'deposit' ? 'Deposit' : 'Withdrawal'}
               </Button>
             </CardContent>
@@ -568,12 +568,12 @@ export function DepositWithdrawFlow() {
               Cancel
             </Button>
             {currentStep < steps.length && (
-              <Button onClick={handleNext} className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600" data-testid="button-next-step">
+              <Button onClick={handleNext} variant="primary" className="flex-1" data-testid="button-next-step">
                 Next Step
               </Button>
             )}
             {currentStep === steps.length && (
-              <Button onClick={handleReset} className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600" data-testid="button-complete-flow">
+              <Button onClick={handleReset} variant="primary" className="flex-1" data-testid="button-complete-flow">
                 Done
               </Button>
             )}

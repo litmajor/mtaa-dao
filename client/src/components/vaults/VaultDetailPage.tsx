@@ -235,12 +235,12 @@ export default function VaultDetailPage({ vaultId }: { vaultId: string }) {
                       <p className="font-semibold">${(pos.amount * pos.currentPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
                       <p
                         className={`text-sm ${
-                          pos.unrealizedPnL >= 0
+                          pos.unrealizedPnl >= 0
                             ? 'text-green-400'
                             : 'text-red-400'
                         }`}
                       >
-                        {pos.unrealizedPnL >= 0 ? '+' : ''}${pos.unrealizedPnL.toFixed(2)}
+                        {pos.unrealizedPnl >= 0 ? '+' : ''}${pos.unrealizedPnl.toFixed(2)}
                       </p>
                     </div>
                   </div>

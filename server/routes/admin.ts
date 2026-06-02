@@ -52,6 +52,11 @@ const requireSuperAdmin = requireRole('super_admin');
 
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+// Ensure JWT secret is configured
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable required');
+}
 
 // Type guard for user record
 function isUser(obj: any): obj is { id: string; email: string; password: string; roles: string } {
@@ -83,7 +88,7 @@ router.post('/auth/admin-login', async (req, res) => {
     if (!valid) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
-    const token = jwt.sign({ id: user.id, role: user.roles }, process.env.JWT_SECRET || 'changeme', { expiresIn: '1d' });
+    const token = jwt.sign({ id: user.id, role: user.roles }, JWT_SECRET, { expiresIn: '1d' });
     
     // Return user object with superuser flag
     const responseUser = {
@@ -153,7 +158,7 @@ router.post('/auth/superuser-register', requireSuperAdmin, async (req, res) => {
       isSuperUser: newUser.isSuperUser === true,
       isAdmin: newUser.roles === 'superUser' || newUser.roles === 'admin',
     };
-    const token = jwt.sign({ id: newUser.id, role: newUser.roles, isSuperUser: newUser.isSuperUser }, process.env.JWT_SECRET || 'changeme', { expiresIn: '1d' });
+    const token = jwt.sign({ id: newUser.id, role: newUser.roles, isSuperUser: newUser.isSuperUser }, JWT_SECRET, { expiresIn: '1d' });
     res.json({ success: true, data: { user: responseUser, accessToken: token } });
   } catch (err) {
     logger.error('Superuser register error:', err);

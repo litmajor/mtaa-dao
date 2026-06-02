@@ -14,6 +14,7 @@ import { dexService } from './dexIntegrationService';
 import { tokenService } from './tokenService';
 import { logger } from '../utils/logger';
 import NodeCache from 'node-cache';
+import { publishExecutionEvent } from './executionEvents';
 
 /**
  * Type Definitions
@@ -417,6 +418,22 @@ class OrderRouter {
     this.performanceMemory.set(record.exchange, memory);
 
     logger.info(`[SELF-CORRECT] ${record.exchange}: slippage=${memory.avgSlippage.toFixed(3)}%, fillRate=${(memory.fillRate * 100).toFixed(1)}%, trustScore=${memory.trustScore.toFixed(0)}`);
+
+    // Publish a lightweight execution event for real-time consumers
+    try {
+      const payload = {
+        exchange: record.exchange,
+        symbol: record.symbol,
+        slippage: record.slippage,
+        accuracy: record.accuracy,
+        success: record.success,
+        timestamp: (record.timestamp || new Date()).toISOString(),
+      } as any;
+      // global execution channel for aggregated metrics
+      publishExecutionEvent('execution:global', payload).catch(() => {});
+    } catch (err) {
+      // don't crash on publish failure
+    }
   }
 
   /**

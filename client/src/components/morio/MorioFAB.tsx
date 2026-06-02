@@ -35,15 +35,15 @@ export function MorioFAB({ userId, daoId, showOnboarding = false, variant = 'ful
   const [hasUnread, setHasUnread] = useState(false);
   const [showWelcome, setShowWelcome] = useState(showOnboarding);
 
-  // Fetch system health for real-time status
-  const { data: health } = useQuery<SystemHealth>({
+  // Fetch system health for real-time status (React Query v5 style)
+  const { data: health } = useQuery({
     queryKey: ['/api/morio/health'],
-    queryFn: async () => {
-      const res = await fetch('/api/morio/health');
+    queryFn: async (): Promise<SystemHealth> => {
+      const res = await fetch('/api/morio/health', { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch health');
-      return res.json();
+      return await res.json();
     },
-    refetchInterval: 10000
+    refetchInterval: 10000,
   });
 
   useEffect(() => {

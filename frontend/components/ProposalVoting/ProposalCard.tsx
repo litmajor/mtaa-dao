@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import styles from './ProposalVoting.module.css';
 
 interface Proposal {
@@ -25,10 +25,20 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
   onViewDetails,
   onVote
 }) => {
-  const quorumPercentage = (proposal.currentQuorum / proposal.quorumRequired) * 100;
-  const timeRemaining = Math.ceil(
-    (proposal.endDate.getTime() - Date.now()) / (1000 * 60 * 60)
-  );
+  const quorumPercentage = useMemo(() => {
+    return proposal.quorumRequired > 0
+      ? (proposal.currentQuorum / proposal.quorumRequired) * 100
+      : 0;
+  }, [proposal.currentQuorum, proposal.quorumRequired]);
+
+  const computeHours = () => Math.max(0, Math.ceil((proposal.endDate.getTime() - Date.now()) / (1000 * 60 * 60)));
+  const [timeRemaining, setTimeRemaining] = useState<number>(computeHours());
+  useEffect(() => {
+    setTimeRemaining(computeHours());
+    const id = setInterval(() => setTimeRemaining(computeHours()), 60_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposal.endDate]);
 
   const getStatusColor = (status: Proposal['status']) => {
     switch (status) {
@@ -43,12 +53,16 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
     }
   };
 
+  const formatStatus = (status: Proposal['status']) => status.charAt(0).toUpperCase() + status.slice(1);
+
+  const isActive = useMemo(() => proposal.status === 'active' && proposal.endDate.getTime() > Date.now(), [proposal.status, proposal.endDate]);
+
   return (
     <div className={styles.card}>
       <div className={styles.cardHeader}>
         <h3>{proposal.title}</h3>
         <span className={`${styles.status} ${getStatusColor(proposal.status)}`}>
-          {proposal.status.toUpperCase()}
+          {formatStatus(proposal.status)}
         </span>
       </div>
 
@@ -62,7 +76,7 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
         <div className={styles.progressBar}>
           <div
             className={styles.progressFill}
-            style={{ width: `${Math.min(quorumPercentage, 100)}%` }}
+            style={{ width: `${Math.min(quorumPercentage, 100)}%`, transition: 'width 600ms ease' }}
           />
         </div>
         <div className={styles.quorumDetail}>
@@ -88,23 +102,26 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
       </div>
 
       <div className={styles.timeRemaining}>
-        ⏱️ {timeRemaining} hours left to vote
+        ⏱️ {timeRemaining > 0 ? `${timeRemaining} hours left` : 'Ended'}
       </div>
 
-      {proposal.status === 'active' && !userVoted && (
+      {isActive && (
         <div className={styles.actions}>
           <button
             className={styles.buttonYes}
             onClick={() => onVote('yes')}
+            disabled={!!userVoted}
           >
             Vote Yes
           </button>
           <button
             className={styles.buttonNo}
             onClick={() => onVote('no')}
+            disabled={!!userVoted}
           >
             Vote No
           </button>
+          {userVoted && <div className={styles.youVoted}>You voted {userVoted.toUpperCase()}</div>}
         </div>
       )}
 

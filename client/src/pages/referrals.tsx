@@ -413,23 +413,25 @@ export default function Referrals() {
                         />
                         <Button
                           onClick={copyReferralLink}
-                          className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+                          variant="primary"
+                          className="flex items-center gap-2"
                         >
-                          <Link className="w-4 h-4 mr-2" />
+                          <Link className="w-4 h-4" />
                           Copy
                         </Button>
                         <Button
                           onClick={shareReferralLink}
-                          className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
+                          variant="primary"
+                          className="flex items-center gap-2"
                         >
-                          <TrendingUp className="w-4 h-4 mr-2" />
+                          <TrendingUp className="w-4 h-4" />
                           Share
                         </Button>
                       </div>
                     </div>
 
                     <div className="flex space-x-4 pt-4">
-                      <Button className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white shadow-lg transform hover:scale-105 transition-all duration-200">
+                      <Button variant="primary" className="flex items-center gap-2 shadow-lg transform hover:scale-105 transition-all duration-200">
                         <TrendingUp className="mr-2 h-4 w-4" />
                         Share Link
                       </Button>
