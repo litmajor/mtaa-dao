@@ -32,10 +32,10 @@ import {
   Download,
   RefreshCw,
   Activity,
-  BarChart3,
+  BarChart2,
   FileText,
   Calendar
-} from 'lucide-react';
+} from '../../lib/icons';
 
 interface AnalyticsMetrics {
   totalDaos: number;
