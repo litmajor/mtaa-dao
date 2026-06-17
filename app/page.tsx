@@ -12,6 +12,7 @@ import Shell from '../client/src/components/ui/shell';
 import Link from 'next/link';
 import { Grid } from '../client/src/components/ui/grid';
 import { Card } from '../client/src/components/ui/card';
+import CommunityGrowth from '../client/src/components/CommunityGrowth';
 
 export default function Home() {
   // Auto-redirect to dashboard (can be modified for auth check)
@@ -187,6 +188,14 @@ export default function Home() {
           <StatCard number="35+" label="Trading Hooks" />
           <StatCard number="24/7" label="Real-time Data" />
           <StatCard number="99.9%" label="Uptime SLA" />
+        </div>
+
+        <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6">
+          <CommunityGrowth />
+          <div className="p-4 bg-white rounded shadow-sm">
+            <h3 className="text-lg font-semibold">Core Metrics</h3>
+            <p className="mt-3 text-sm text-gray-600">Additional protocol metrics, token distribution, and recent proposals.</p>
+          </div>
         </div>
       </section>
 
