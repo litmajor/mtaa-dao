@@ -15,29 +15,35 @@
  * GET    /api/bots/:id/performance           - Get performance metrics
  */
 
-import type { NextApiRequest, NextApiResponse } from 'next';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../auth/[...nextauth]';
-import * as botRoutes from '@/server/api/routes/botRoutes';
+import * as botRoutes from '../../../server/api/routes/botRoutes';
+import { verifyAccessToken } from '../../../server/auth';
+import { storage } from '../../../server/storage';
 
-// Type for request with session
-interface SessionRequest extends NextApiRequest {
-  session?: any;
-}
+// Use untyped req/res here to avoid depending on Next.js types in this file
+// We'll attach `session` and `user` to `req` for downstream handlers
 
 /**
  * Main handler for all bot API routes
  */
-export default async function handler(req: SessionRequest, res: NextApiResponse) {
+export default async function handler(req: any, res: any) {
   try {
-    // 1. Get and validate session
-    const session = await getServerSession(req, res, authOptions);
+    // 1. Get and validate session via repo JWT auth
+    const token = req.cookies?.access_token || req.cookies?.accessToken || ((req.headers.authorization || '').startsWith('Bearer ') ? (req.headers.authorization || '').split(' ')[1] : undefined);
 
-    if (!session || !session.user) {
-      return res.status(401).json({ error: 'Unauthorized - Please login' });
+    const payload = token ? verifyAccessToken(token) : null;
+    if (!payload) return res.status(401).json({ error: 'Unauthorized - Please login' });
+
+    // Enrich with user role if missing
+    if (!payload.role) {
+      try {
+        const user = await storage.getUser(payload.sub);
+        payload.role = user?.role || 'user';
+      } catch (err) {
+        // ignore
+      }
     }
 
-    // Attach session to request for handlers
+    const session = { user: { id: payload.sub, email: payload.email, role: payload.role } };
     req.session = session;
     req.user = session.user;
 
