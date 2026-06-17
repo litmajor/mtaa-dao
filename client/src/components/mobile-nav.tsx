@@ -1,4 +1,4 @@
-import { Link, useLocation } from "wouter";
+import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   Home, FileText, Vault, Building, Wallet, Users,
@@ -10,11 +10,11 @@ import { useState } from "react";
 import { useAuth } from "@/pages/hooks/useAuth";
 
 export function MobileNav() {
-  const [location] = useLocation();
+  const location = useLocation();
   const [showMore, setShowMore] = useState(false);
   const { user } = useAuth();
 
-  const isActive = (path: string) => location === path;
+  const isActive = (path: string) => (location?.pathname || '') === path;
 
   // Updated primary navigation items 
   const primaryNavItems = [

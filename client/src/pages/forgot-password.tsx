@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "../components/ui/button";
 import { ArrowLeft, Mail, Phone, LoaderCircle, CheckCircle } from "lucide-react";
-import { Link } from "wouter";
+import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from '../components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -58,7 +58,7 @@ const ForgotPassword = () => {
         <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))] rounded-2xl"></div>
 
         <div className="relative w-full bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl p-8">
-          <Link href="/login" className="absolute top-4 left-4 text-gray-400 hover:text-white transition-colors">
+          <Link to="/login" className="absolute top-4 left-4 text-gray-400 hover:text-white transition-colors">
             <ArrowLeft className="w-5 h-5" />
           </Link>
 

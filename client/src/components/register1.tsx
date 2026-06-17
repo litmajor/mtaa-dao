@@ -1,20 +1,10 @@
 import React, { useState, useEffect } from 'react';
 /* eslint-disable */
-import * as Lucide from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, AlertCircle, UserPlus, Check, Phone, Send } from 'lucide-react';
 
 const IconFallback = (emoji: string) => (props: any) => (
   <span {...props} aria-hidden>{emoji}</span>
 );
-
-const Eye = (Lucide as any).Eye || IconFallback('👁️');
-const EyeOff = (Lucide as any).EyeOff || IconFallback('🙈');
-const Mail = (Lucide as any).Mail || IconFallback('✉️');
-const Lock = (Lucide as any).Lock || IconFallback('🔒');
-const AlertCircle = (Lucide as any).AlertCircle || IconFallback('⚠️');
-const UserPlus = (Lucide as any).UserPlus || IconFallback('➕');
-const Check = (Lucide as any).Check || IconFallback('✔️');
-const Phone = (Lucide as any).Phone || IconFallback('📞');
-const Send = (Lucide as any).Send || IconFallback('📨');
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 

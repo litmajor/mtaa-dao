@@ -33,10 +33,10 @@ export interface AuditResult {
   timestamp: string;
   projectRoot: string;
   duration: number;
-  todos: any[];
-  importIssues: any[];
-  routeViolations: any[];
-  ruleBreaches: any[];
+  todos: TodoItem[];
+  importIssues: ImportIssue[];
+  routeViolations: RouteViolation[];
+  ruleBreaches: RuleBreach[];
   entropy: {
     score: number;
     severity: 'critical' | 'high' | 'medium' | 'low';
@@ -53,6 +53,50 @@ export interface AuditResult {
   patches?: string[];
 }
 
+export interface TodoItem {
+  file: string;
+  line: number;
+  text: string;
+}
+
+export interface ImportIssue {
+  file: string;
+  importStatement: string;
+  type: 'unused' | 'missing' | 'invalid' | string;
+  message?: string;
+}
+
+export interface RouteViolation {
+  path: string;
+  method?: string;
+  middlewareCount?: number;
+  domain?: string;
+  fullDomain?: string;
+  severity?: 'error' | 'warning' | 'info';
+}
+
+export interface RuleBreach {
+  file: string;
+  rule?: string;
+  message: string;
+  severity?: 'error' | 'warning' | 'info';
+}
+
+export interface AgentConfig {
+  routesDir?: string;
+  runDir?: string;
+}
+
+export class AuditError extends Error {
+  scanId?: string;
+  constructor(message: string, opts?: { cause?: unknown; scanId?: string }) {
+    super(message);
+    if (opts?.cause) (this as any).cause = opts.cause;
+    this.name = 'AuditError';
+    this.scanId = opts?.scanId;
+  }
+}
+
 export class BackgroundRefactorAgent {
   private projectRoot: string;
   private todoScanner: TodoScanner;
@@ -62,9 +106,14 @@ export class BackgroundRefactorAgent {
   private reportGenerator: IntelligentReportGenerator;
   private diffProposer: DiffProposer;
   private userFiles: string[] = [];
+  private config: AgentConfig;
 
-  constructor(projectRoot: string) {
+  constructor(projectRoot: string, config: Partial<AgentConfig> = {}) {
     this.projectRoot = projectRoot;
+    this.config = {
+      routesDir: path.join('server', 'routes'),
+      ...config
+    };
 
     // Initialize all sub-agents
     this.todoScanner = new TodoScanner(projectRoot);
@@ -96,23 +145,35 @@ export class BackgroundRefactorAgent {
     try {
       // Phase 1: TODO Scanning
       logger.info('📝 Phase 1: Scanning TODOs...');
-      const todos = await this.todoScanner.scan();
+      const todos = await this.runWithTimeout(this.todoScanner.scan(), 60_000, 'todoScanner.scan');
       logger.info(`  ✓ Found ${todos.length} TODO items`);
 
       // Phase 2: Import Validation
       logger.info('📦 Phase 2: Validating imports...');
-      const importIssues = await this.importValidator.validate(this.userFiles);
+      const importIssues = await this.runWithTimeout(
+        this.importValidator.validate(this.userFiles),
+        60_000,
+        'importValidator.validate'
+      );
       logger.info(`  ✓ Found ${importIssues.length} import issues`);
 
       // Phase 3: Route Auditing
       logger.info('🛣️  Phase 3: Auditing routes...');
-      const routesDir = path.join(this.projectRoot, 'server', 'routes');
-      const routeViolations = await this.routeAuditor.audit(routesDir);
+      const routesDir = path.join(this.projectRoot, this.config.routesDir || 'server/routes');
+      const routeViolations = await this.runWithTimeout(
+        this.routeAuditor.audit(routesDir),
+        60_000,
+        'routeAuditor.audit'
+      );
       logger.info(`  ✓ Found ${routeViolations.length} route violations`);
 
       // Phase 4: Rule Enforcement
       logger.info('⚖️  Phase 4: Enforcing rules...');
-      const ruleBreaches = await this.ruleEngine.checkProject(this.userFiles);
+      const ruleBreaches = await this.runWithTimeout(
+        this.ruleEngine.checkProject(this.userFiles),
+        60_000,
+        'ruleEngine.checkProject'
+      );
       logger.info(`  ✓ Found ${ruleBreaches.length} rule breaches`);
 
       // Calculate entropy score
@@ -125,13 +186,10 @@ export class BackgroundRefactorAgent {
 
       // Generate patches for fixable issues
       logger.info('🔧 Phase 5: Generating patches...');
-      const patches = await this.diffProposer.savePatches(
-        [
-          ...this.proposeUnusedImportFixes(importIssues),
-          ...this.proposeNamingFixes(ruleBreaches),
-        ],
-        scanId
-      );
+      const patches = await this.diffProposer.savePatches([
+        ...this.proposeUnusedImportFixes(importIssues),
+        ...this.proposeNamingFixes(ruleBreaches),
+      ], scanId);
 
       // Calculate statistics
       const statistics = {
@@ -160,59 +218,14 @@ export class BackgroundRefactorAgent {
         patches,
       };
 
-      // Generate reports using unified visibility architecture
-      logger.info('📄 Generating intelligence-enhanced reports...');
-      
-      // Initialize timestamped run directory and integrated tracking
-      const runId = await this.reportGenerator.startRun();
-      logger.info(`📊 Run ID: ${runId}`);
-      
-      // Set external API tracker to save to same run directory
-      const runDir = this.reportGenerator.getCurrentRunDir();
-      externalAPITracker.setLogDirectory(runDir);
-      
-      // NEW: Extract raw route data for intelligence enrichment
-      logger.info('🧠 Enriching route intelligence...');
-      const routeIntelligenceReport = await this.reportGenerator.saveRouteIntelligence(
-        routeViolations.map((v: any) => ({
-          path: v.path,
-          methods: v.method || 'UNKNOWN',
-          methodCount: 1,
-          middlewareCount: v.middlewareCount || 0,
-          domain: v.domain || 'unknown',
-          fullDomain: v.fullDomain || 'unknown.unknown',
-        }))
-      );
-      logger.info(
-        `✓ Route intelligence: ${routeIntelligenceReport.summary.totalRoutes} routes, ` +
-        `${routeIntelligenceReport.summary.criticalCount} critical, ` +
-        `${routeIntelligenceReport.summary.totalMiddlewareGap} middleware gaps`
-      );
-      
-      // NEW: Save audit results with enriched intelligence
-      await this.reportGenerator.saveAuditResultsWithIntelligence(result, routeIntelligenceReport);
-      
-      // Export API tracking analysis to run directory
-      externalAPITracker.exportAnalysis(runDir);
-      
-      // Finalize the run with additional metrics from intelligence
-      await this.reportGenerator.finalizeRun({
-        discoveryTimeMs: Date.now() - startTime,
-        modulesScanned: this.userFiles.length,
-        routeMetrics: {
-          totalRoutes: routeIntelligenceReport.summary.totalRoutes,
-          criticalRoutes: routeIntelligenceReport.summary.criticalCount,
-          highRiskRoutes: routeIntelligenceReport.summary.highCount,
-          middlewareGapTotal: routeIntelligenceReport.summary.totalMiddlewareGap,
-          financialRoutes: routeIntelligenceReport.summary.financialRoutes,
-        },
-      });
+      // Post-processing: generate intelligence-enhanced reports
+      await this.enrichAndSaveReports(result, routeViolations, startTime);
 
       logger.info(`✅ Audit complete with enhanced intelligence. Scan ID: ${scanId}`);
       return result;
     } catch (error) {
       logger.error('❌ Audit failed:', error);
-      throw error;
+      throw new AuditError(`BackgroundRefactorAgent audit failed for ${scanId}`, { cause: error, scanId });
     }
   }
 
@@ -225,14 +238,21 @@ export class BackgroundRefactorAgent {
 
     // Only check critical items
     const routesDir = path.join(this.projectRoot, 'server', 'routes');
-    const routeViolations = await this.routeAuditor.audit(routesDir);
-    const ruleBreaches = await this.ruleEngine.checkProject(this.userFiles);
+    const routeViolations = await this.runWithTimeout(
+      this.routeAuditor.audit(routesDir),
+      30_000,
+      'routeAuditor.audit'
+    );
+    const ruleBreaches = await this.runWithTimeout(
+      this.ruleEngine.checkProject(this.userFiles),
+      30_000,
+      'ruleEngine.checkProject'
+    );
 
-    const critical = [
-      ...routeViolations.filter((v: any) => v.severity === 'error'),
-      ...ruleBreaches.filter((r: any) => r.severity === 'error'),
-    ];
+    const criticalRouteViolations = routeViolations.filter((v: RouteViolation) => v.severity === 'error');
+    const criticalRuleBreaches = ruleBreaches.filter((r: RuleBreach) => r.severity === 'error');
 
+    const critical = [...criticalRouteViolations, ...criticalRuleBreaches];
     logger.info(`🚨 Critical issues found: ${critical.length}`);
 
     return {
@@ -240,8 +260,8 @@ export class BackgroundRefactorAgent {
       timestamp: new Date().toISOString(),
       projectRoot: this.projectRoot,
       duration: Date.now() - startTime,
-      routeViolations: critical,
-      ruleBreaches: critical,
+      routeViolations: criticalRouteViolations,
+      ruleBreaches: criticalRuleBreaches,
       entropy: {
         score: Math.min(100, critical.length * 10),
         severity: critical.length > 5 ? 'critical' : 'high',
@@ -255,6 +275,21 @@ export class BackgroundRefactorAgent {
         warningBreaches: 0,
       },
     };
+  }
+
+  /**
+   * Helper: run a promise with a timeout to avoid hangs
+   */
+  private async runWithTimeout<T>(p: Promise<T>, ms: number, label?: string): Promise<T> {
+    let timer: NodeJS.Timeout;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label || 'operation'} timed out after ${ms}ms`)), ms);
+    });
+    try {
+      return await Promise.race([p, timeout]) as T;
+    } finally {
+      clearTimeout(timer!);
+    }
   }
 
   /**
@@ -314,7 +349,7 @@ export class BackgroundRefactorAgent {
     return importIssues
       .filter((i: any) => i.type === 'unused')
       .map((issue: any) => ({
-        id: `remove-unused-${Math.random().toString(36).slice(2, 9)}`,
+        id: `remove-unused-${uuidv4().slice(0, 8)}`,
         file: issue.file,
         type: 'remove-import' as const,
         description: `Remove unused import: ${issue.importStatement}`,
@@ -332,7 +367,7 @@ export class BackgroundRefactorAgent {
     return breaches
       .filter((b: any) => b.rule?.includes('naming'))
       .map((breach: any) => ({
-        id: `fix-naming-${Math.random().toString(36).slice(2, 9)}`,
+        id: `fix-naming-${uuidv4().slice(0, 8)}`,
         file: breach.file,
         type: 'rename' as const,
         description: `Fix naming violation: ${breach.message}`,
@@ -341,6 +376,58 @@ export class BackgroundRefactorAgent {
         riskLevel: 'high' as const,
         revertCommand: `git checkout -- ${breach.file}`,
       }));
+  }
+
+  /**
+   * Post-process audit result: generate intelligence reports, export analysis, and finalize run
+   */
+  private async enrichAndSaveReports(result: AuditResult, routeViolations: RouteViolation[], startTime?: number) {
+    logger.info('📄 Generating intelligence-enhanced reports...');
+
+    // Initialize timestamped run directory and integrated tracking
+    const runId = await this.reportGenerator.startRun();
+    logger.info(`📊 Run ID: ${runId}`);
+
+    // Set external API tracker to save to same run directory
+    const runDir = this.reportGenerator.getCurrentRunDir();
+    externalAPITracker.setLogDirectory(runDir);
+
+    // Extract raw route data for intelligence enrichment
+    logger.info('🧠 Enriching route intelligence...');
+    const routeIntelligenceReport = await this.reportGenerator.saveRouteIntelligence(
+      routeViolations.map((v) => ({
+        path: v.path,
+        methods: v.method || 'UNKNOWN',
+        methodCount: 1,
+        middlewareCount: v.middlewareCount || 0,
+        domain: v.domain || 'unknown',
+        fullDomain: v.fullDomain || 'unknown.unknown',
+      }))
+    );
+    logger.info(
+      `✓ Route intelligence: ${routeIntelligenceReport.summary.totalRoutes} routes, ` +
+        `${routeIntelligenceReport.summary.criticalCount} critical, ` +
+        `${routeIntelligenceReport.summary.totalMiddlewareGap} middleware gaps`
+    );
+
+    // Save audit results with enriched intelligence
+    await this.reportGenerator.saveAuditResultsWithIntelligence(result, routeIntelligenceReport);
+
+    // Export API tracking analysis to run directory
+    externalAPITracker.exportAnalysis(runDir);
+
+    // Finalize the run with additional metrics from intelligence
+    await this.reportGenerator.finalizeRun({
+      discoveryTimeMs: Date.now() - (startTime ?? Date.now()),
+      modulesScanned: this.userFiles.length,
+      routeMetrics: {
+        totalRoutes: routeIntelligenceReport.summary.totalRoutes,
+        criticalRoutes: routeIntelligenceReport.summary.criticalCount,
+        highRiskRoutes: routeIntelligenceReport.summary.highCount,
+        middlewareGapTotal: routeIntelligenceReport.summary.totalMiddlewareGap,
+        financialRoutes: routeIntelligenceReport.summary.financialRoutes,
+      },
+    });
   }
 
   /**

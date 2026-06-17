@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, ScatterChart, Scatter } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { Building2, Globe, Target, TrendingUp, RefreshCw, Filter } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -148,25 +149,13 @@ export default function AdminDAOAnalytics() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">DAO Types Distribution</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={byType}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, count }) => `${name}: ${count}`}
-                      outerRadius={100}
-                      fill="#8884d8"
-                      dataKey="count"
-                    >
-                      {byType.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  </PieChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="pie"
+                    data={{ labels: byType.map(b => b.name), datasets: [{ data: byType.map(b => b.count), backgroundColor: byType.map((_, i) => COLORS[i % COLORS.length]) }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${ctx.label}: ${ctx.raw}` } } } }}
+                  />
+                </div>
               </Card>
 
               <Card className="bg-slate-800 border-slate-700 p-6">
@@ -193,18 +182,13 @@ export default function AdminDAOAnalytics() {
 
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Type Performance Metrics</h3>
-              <ResponsiveContainer width="100%" height={350}>
-                <BarChart data={byType}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="name" stroke="#94a3b8" angle={-45} height={80} />
-                  <YAxis stroke="#94a3b8" yAxisId="left" />
-                  <YAxis stroke="#94a3b8" yAxisId="right" orientation="right" />
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  <Legend />
-                  <Bar yAxisId="left" dataKey="count" fill="#3b82f6" name="Count" />
-                  <Bar yAxisId="right" dataKey="health" fill="#10b981" name="Health Score" />
-                </BarChart>
-              </ResponsiveContainer>
+              <div style={{ height: 350 }}>
+                <Chart
+                  type="bar"
+                  data={{ labels: byType.map(b => b.name), datasets: [{ label: 'Count', data: byType.map(b => b.count), backgroundColor: '#3b82f6' }, { label: 'Health Score', data: byType.map(b => b.health), backgroundColor: '#10b981' }] }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }}
+                />
+              </div>
             </Card>
           </TabsContent>
 
@@ -213,15 +197,13 @@ export default function AdminDAOAnalytics() {
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Regional Distribution</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <ResponsiveContainer width="100%" height={350}>
-                  <BarChart data={byRegion}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="name" stroke="#94a3b8" angle={-45} height={80} />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Bar dataKey="count" fill="#3b82f6" name="DAOs" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <div style={{ height: 350 }}>
+                  <Chart
+                    type="bar"
+                    data={{ labels: byRegion.map(r => r.name), datasets: [{ label: 'DAOs', data: byRegion.map(r => r.count), backgroundColor: '#3b82f6' }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
+                  />
+                </div>
 
                 <div className="space-y-2">
                   {byRegion.map((region) => (
@@ -290,16 +272,13 @@ export default function AdminDAOAnalytics() {
           <TabsContent value="trends" className="space-y-4">
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">DAO Growth Trends</h3>
-              <ResponsiveContainer width="100%" height={350}>
-                <LineChart data={metrics}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="date" stroke="#94a3b8" />
-                  <YAxis stroke="#94a3b8" />
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  <Legend />
-                  <Line type="monotone" dataKey="total" stroke="#3b82f6" name="Total DAOs" strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
+              <div style={{ height: 350 }}>
+                <Chart
+                  type="line"
+                  data={{ labels: metrics.map(m => m.date), datasets: [{ label: 'Total DAOs', data: metrics.map(m => m.total), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.06)', tension: 0.2 }] }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
+                />
+              </div>
             </Card>
 
             <Card className="bg-slate-800 border-slate-700 p-6">

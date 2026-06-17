@@ -54,7 +54,7 @@ router.get('/cache', (req: Request, res: Response) => {
  * POST /api/cex/prices/cache/invalidate
  * Clear cache (with optional filtering)
  */
-router.post('/cache/invalidate', requireAdmin, (req: Request, res: Response) => {
+router.post('/cache/invalidate', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { exchange } = req.body;
     const cache = cacheManager.getCache('cex_prices');

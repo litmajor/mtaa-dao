@@ -1,13 +1,12 @@
 
 import React, { useState, useMemo } from 'react';
-import { Wallet } from 'ethers';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Alert, AlertDescription } from '../ui/alert';
-import { Shield, CheckCircle } from 'lucide-react';
+import { Shield, CheckCircle, FileText, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 import { authClient } from '@/utils/authClient';
 import { useToast } from '../ui/use-toast';
 
@@ -30,11 +29,13 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
   const [confirmPassword, setConfirmPassword] = useState('');
   const [mnemonic, setMnemonic] = useState('');
   const [privateKey, setPrivateKey] = useState('');
+  const [encryptedKeystore, setEncryptedKeystore] = useState<string | null>(null);
   const [showMnemonic, setShowMnemonic] = useState(false);
   const [showPrivateKey, setShowPrivateKey] = useState(false);
   const [backedUp, setBackedUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [wordCount, setWordCount] = useState<12 | 24>(12);
+  const [activeTab, setActiveTab] = useState<'create' | 'recover' | 'import'>('create');
   const [walletAddress, setWalletAddress] = useState('');
   const [step, setStep] = useState<'create' | 'backup' | 'complete'>('create');
   const [walletSecurityState, setWalletSecurityState] = useState<WalletSecurityState>('UNINITIALIZED');
@@ -61,40 +62,42 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
     setLoading(true);
     setWalletSecurityState('GENERATING');
     try {
-      console.log('Creating wallet with:', { wordCount, useEncryption });
+      // Generate entropy for requested mnemonic length using Web Crypto
+      const entropyBytes = wordCount === 24 ? 32 : 16; // 256-bit for 24 words, 128-bit for 12 words
+      const arr = new Uint8Array(entropyBytes);
+      crypto.getRandomValues(arr);
 
-      const response = await fetch('/api/v1/wallets/setup/create-mnemonic', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(await authClient.getAuthHeaders())
-        },
-        body: JSON.stringify({ 
-          password: useEncryption ? password : '', 
-          wordCount 
-        })
-      });
+      const { Wallet, utils } = await import('ethers');
+      const entropyHex = '0x' + Array.from(arr).map((b) => b.toString(16).padStart(2, '0')).join('');
+      const mnem = utils.entropyToMnemonic ? utils.entropyToMnemonic(entropyHex) : Wallet.createRandom().mnemonic.phrase;
+      const wallet = Wallet.fromMnemonic(mnem);
 
-      console.log('Response status:', response.status);
-      const data = await response.json();
-      console.log('Response data:', data);
-      
-      if (!response.ok) {
-        throw new Error(data.error || `Failed to create wallet (${response.status})`);
-      }
+      setMnemonic(mnem);
+      setWalletAddress(await wallet.getAddress());
 
-      if (data.success || data.wallet) {
-        setMnemonic(data.wallet.mnemonic);
-        setWalletAddress(data.wallet.address);
-        setPrivateKey(data.wallet.privateKey || '');
-        setStep('backup');
-        // newly created wallets are UNBACKED until user verifies
-        setWalletSecurityState('UNBACKED');
-        toast({ title: 'Wallet Created', description: 'Your wallet is ready. Please back up your recovery phrase.' });
-        onWalletCreated?.(data);
+      // Create encrypted keystore if password provided (recommended)
+      if (useEncryption && password) {
+        const keystore = await wallet.encrypt(password);
+        setEncryptedKeystore(keystore);
+        // send only address and keystore to server (server should never see raw mnemonic/privateKey)
+        await fetch('/api/v1/wallets/setup/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(await authClient.getAuthHeaders()) },
+          body: JSON.stringify({ address: await wallet.getAddress(), keystore })
+        });
       } else {
-        throw new Error(data.error || 'Failed to create wallet');
+        // Without encryption, still do not send raw private key. Send only address to the server.
+        await fetch('/api/v1/wallets/setup/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(await authClient.getAuthHeaders()) },
+          body: JSON.stringify({ address: await wallet.getAddress() })
+        });
       }
+
+      setStep('backup');
+      setWalletSecurityState('UNBACKED');
+      toast({ title: 'Wallet Created', description: 'Your wallet is ready. Please back up your recovery phrase.' });
+      onWalletCreated?.({ address: await wallet.getAddress() });
     } catch (error) {
       console.error('Wallet creation error:', error);
       toast({
@@ -108,34 +111,43 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
   };
 
   const handleRecoverWallet = async () => {
-    if (!mnemonic.trim() || !password) {
-      toast({ title: 'Error', description: 'Recovery phrase and password are required', variant: 'destructive' });
+    if (!mnemonic.trim()) {
+      toast({ title: 'Error', description: 'Recovery phrase is required', variant: 'destructive' });
       return;
     }
 
     setLoading(true);
     try {
+      const { Wallet } = await import('ethers');
+      // Recover wallet locally from mnemonic
+      const wallet = Wallet.fromMnemonic(mnemonic.trim());
+      const address = await wallet.getAddress();
+
+      // Create signed challenge similar to import flow
+      const ts = Date.now();
+      const nonceArr = new Uint32Array(1);
+      crypto.getRandomValues(nonceArr);
+      const nonce = nonceArr[0];
+      const message = `MtaaDAO wallet recover verification\naddress: ${address}\ntimestamp: ${ts}\nnonce: ${nonce}`;
+      const signature = await wallet.signMessage(message);
+
+      // Send only address, message, signature to server; never send mnemonic or private key
       const response = await fetch('/api/v1/wallets/setup/recover', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, mnemonic: mnemonic.trim(), password })
+        headers: { 'Content-Type': 'application/json', ...(await authClient.getAuthHeaders()) },
+        body: JSON.stringify({ userId, address, message, signature })
       });
 
       const data = await response.json();
-      
-      if (data.success) {
+      if (response.ok && data.success) {
         toast({ title: 'Success', description: 'Wallet recovered successfully' });
-        onWalletCreated?.(data);
         setStep('complete');
+        onWalletCreated?.(data);
       } else {
-        throw new Error(data.error);
+        throw new Error(data?.error || 'Failed to verify recovery with server');
       }
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to recover wallet',
-        variant: 'destructive'
-      });
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to recover wallet', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -151,12 +163,15 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
     try {
       // Normalize and validate private key locally
       const pk = privateKey.trim();
+      const { Wallet } = await import('ethers');
       const wallet = new Wallet(pk);
       const address = await wallet.getAddress();
 
       // Create a signed challenge message with timestamp and nonce to prevent replay
       const ts = Date.now();
-      const nonce = Math.floor(Math.random() * 1e9);
+      const nonceArr = new Uint32Array(1);
+      crypto.getRandomValues(nonceArr);
+      const nonce = nonceArr[0];
       const message = `MtaaDAO wallet import verification\naddress: ${address}\ntimestamp: ${ts}\nnonce: ${nonce}`;
 
       const signature = await wallet.signMessage(message);
@@ -191,16 +206,18 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
 
   // Begin backup verification by selecting three indices
   const startVerification = () => {
-    const total = (mnemonic || '').split(' ').length || wordCount;
+    const total = (mnemonic || '').split(' ').filter(Boolean).length || wordCount;
     // pick distinct indices (1-based) - prefer 3,8,11 if available
     const preferred = [3, 8, 11].filter((i) => i <= total);
     const indices: number[] = [];
     for (const p of preferred) {
       if (indices.length < 3) indices.push(p);
     }
-    // fill with random if needed
-    while (indices.length < 3) {
-      const n = Math.floor(Math.random() * total) + 1;
+    // fill with cryptographically secure random indices if needed
+    while (indices.length < 3 && total > 0) {
+      const arr = new Uint32Array(1);
+      crypto.getRandomValues(arr);
+      const n = (arr[0] % total) + 1;
       if (!indices.includes(n)) indices.push(n);
     }
     setVerifyIndices(indices);
@@ -221,92 +238,87 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
     // Mark backed up and secure
     setBackedUp(true);
     setWalletSecurityState('SECURE');
-    // notify server of backup confirmation
+    // notify server of backup confirmation (authorized)
     try {
-      await fetch('/api/v1/wallets/setup/backup/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      await fetch('/api/v1/wallets/setup/backup-confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authClient.getAuthHeaders()) },
+        body: JSON.stringify({ userId, address: walletAddress })
+      });
     } catch (e) {
       console.warn('Failed to notify server of backup confirmation', e);
     }
     toast({ title: 'Backup Verified', description: 'Your recovery phrase has been confirmed' });
     setStep('complete');
   };
-
-  const confirmBackup = async () => {
-    try {
-      await fetch('/api/v1/wallets/setup/backup-confirm', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(await authClient.getAuthHeaders())
-        },
-        body: JSON.stringify({ userId })
-      });
-      setBackedUp(true);
-      setStep('complete');
-      toast({ title: 'Success', description: 'Backup confirmed! Your wallet is ready.' });
-    } catch (error) {
-      console.error('Backup confirmation error:', error);
-      toast({ title: 'Error', description: 'Failed to confirm backup', variant: 'destructive' });
-    }
-  };
+ 
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     toast({ title: 'Copied', description: `${label} copied to clipboard` });
   };
+  const downloadEncryptedKeystore = async () => {
+    try {
+      // If we already have an encrypted keystore, download it
+      if (encryptedKeystore) {
+        const element = document.createElement('a');
+        const file = new Blob([encryptedKeystore], { type: 'application/json' });
+        element.href = URL.createObjectURL(file);
+        element.download = `mtaadao-keystore-${Date.now()}.json`;
+        document.body.appendChild(element);
+        element.click();
+        document.body.removeChild(element);
+        toast({ title: 'Downloaded', description: 'Encrypted keystore downloaded' });
+        return;
+      }
 
-  const downloadMnemonic = () => {
-    const content = `MtaaDAO Wallet Recovery Phrase
-========================================
-KEEP THIS SAFE AND NEVER SHARE WITH ANYONE!
+      // Otherwise try to build a keystore from available secrets and provided password
+      if (mnemonic && password) {
+        const { Wallet } = await import('ethers');
+        const wallet = Wallet.fromMnemonic(mnemonic.trim());
+        const keystore = await wallet.encrypt(password);
+        const element = document.createElement('a');
+        const file = new Blob([keystore], { type: 'application/json' });
+        element.href = URL.createObjectURL(file);
+        element.download = `mtaadao-keystore-${Date.now()}.json`;
+        document.body.appendChild(element);
+        element.click();
+        document.body.removeChild(element);
+        toast({ title: 'Downloaded', description: 'Encrypted keystore downloaded' });
+        return;
+      }
 
-Recovery Phrase (${wordCount} words):
-${mnemonic}
+      if (privateKey && password) {
+        const { Wallet } = await import('ethers');
+        const wallet = new Wallet(privateKey.trim());
+        const keystore = await wallet.encrypt(password);
+        const element = document.createElement('a');
+        const file = new Blob([keystore], { type: 'application/json' });
+        element.href = URL.createObjectURL(file);
+        element.download = `mtaadao-keystore-${Date.now()}.json`;
+        document.body.appendChild(element);
+        element.click();
+        document.body.removeChild(element);
+        toast({ title: 'Downloaded', description: 'Encrypted keystore downloaded' });
+        return;
+      }
 
-Wallet Address:
-${walletAddress}
-
-Created: ${new Date().toISOString()}
-
-⚠️ WARNING: Anyone with this recovery phrase can access your funds!
-⚠️ Store this in a secure location offline.
-⚠️ Never share it with anyone, including MtaaDAO support.
-`;
-
-    const element = document.createElement('a');
-    const file = new Blob([content], { type: 'text/plain' });
-    element.href = URL.createObjectURL(file);
-    element.download = `mtaadao-recovery-${Date.now()}.txt`;
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
+      toast({ title: 'Cannot download', description: 'Provide a password and either generated mnemonic or private key to produce an encrypted keystore', variant: 'destructive' });
+    } catch (e) {
+      console.error('Keystore download error', e);
+      toast({ title: 'Error', description: 'Failed to create/download keystore', variant: 'destructive' });
+    }
   };
-
-  const downloadPrivateKey = () => {
-    const content = `MtaaDAO Wallet Private Key
-========================================
-KEEP THIS SAFE AND NEVER SHARE WITH ANYONE!
-
-Private Key:
-${privateKey}
-
-Wallet Address:
-${walletAddress}
-
-Created: ${new Date().toISOString()}
-
-⚠️ WARNING: Anyone with this private key can access your funds!
-⚠️ Store this in a secure location offline.
-⚠️ Never share it with anyone, including MtaaDAO support.
-`;
-
-    const element = document.createElement('a');
-    const file = new Blob([content], { type: 'text/plain' });
-    element.href = URL.createObjectURL(file);
-    element.download = `mtaadao-privatekey-${Date.now()}.txt`;
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
+  // Secure download handler — do NOT export plaintext mnemonic to disk.
+  // For security we provide an encrypted keystore export instead.
+  const downloadMnemonic = async () => {
+    try {
+      toast({ title: 'Security Notice', description: 'Plaintext recovery phrase downloads are disabled for security. Exporting encrypted keystore instead.' });
+      await downloadEncryptedKeystore();
+    } catch (e) {
+      console.error('Download fallback error', e);
+      toast({ title: 'Error', description: 'Failed to export keystore', variant: 'destructive' });
+    }
   };
   const securityPill = useMemo(() => {
     const map: Record<WalletSecurityState, { color: string; text: string }> = {
@@ -439,7 +451,7 @@ Created: ${new Date().toISOString()}
             </CardHeader>
             <CardContent>
               <p className="mb-4">Imported private-key wallets do not include a recovery phrase. Create an encrypted backup to avoid permanent loss.</p>
-              <Button onClick={downloadPrivateKey} className="w-full">Download Encrypted Backup</Button>
+              <Button onClick={downloadEncryptedKeystore} className="w-full">Download Encrypted Backup</Button>
             </CardContent>
           </Card>
         )}
@@ -478,7 +490,7 @@ Created: ${new Date().toISOString()}
         <p className="text-gray-600">Create or recover your MtaaDAO wallet with advanced security</p>
       </div>
 
-      <Tabs defaultValue="create">
+      <Tabs value={activeTab} onValueChange={(val) => { setActiveTab(val as any); setPassword(''); setConfirmPassword(''); setPrivateKey(''); setEncryptedKeystore(null); }}>
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="create">Create New</TabsTrigger>
           <TabsTrigger value="recover">Recover</TabsTrigger>

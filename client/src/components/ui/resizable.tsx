@@ -42,4 +42,6 @@ const ResizableHandle = ({
   </ResizablePrimitive.PanelResizeHandle>
 )
 
-export { ResizablePanelGroup, ResizablePanel, ResizableHandle }
+const Resizable = ResizablePanelGroup
+
+export { Resizable, ResizablePanel, ResizableHandle }

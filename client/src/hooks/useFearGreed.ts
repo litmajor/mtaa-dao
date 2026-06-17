@@ -20,7 +20,7 @@ export function useFearGreedIndex(): UseQueryResult<{ fearGreedIndex: FearGreedI
   return useQuery({
     queryKey: ['sentiment:fearGreed'],
     queryFn: async () => {
-      const response = await fetch('/api/exchanges/sentiment/fear-greed');
+      const response = await fetch('/api/v1/yuki/exchanges/sentiment/fear-greed');
 
       if (!response.ok) {
         throw new Error('Failed to fetch Fear & Greed Index');
@@ -41,7 +41,7 @@ export function useMarketChanges(): UseQueryResult<{ marketChanges: MarketChange
   return useQuery({
     queryKey: ['sentiment:marketChanges'],
     queryFn: async () => {
-      const response = await fetch('/api/exchanges/sentiment/market-changes');
+      const response = await fetch('/api/v1/yuki/exchanges/sentiment/market-changes');
 
       if (!response.ok) {
         throw new Error('Failed to fetch market changes');
@@ -62,7 +62,7 @@ export function useBtcDominance(): UseQueryResult<{ btcDominance: BtcDominanceDa
   return useQuery({
     queryKey: ['sentiment:btcDominance'],
     queryFn: async () => {
-      const response = await fetch('/api/exchanges/sentiment/btc-dominance');
+      const response = await fetch('/api/v1/yuki/exchanges/sentiment/btc-dominance');
 
       if (!response.ok) {
         throw new Error('Failed to fetch BTC dominance');
@@ -83,7 +83,7 @@ export function useMarketSentiment(): UseQueryResult<{ sentiment: MarketSentimen
   return useQuery({
     queryKey: ['sentiment:complete'],
     queryFn: async () => {
-      const response = await fetch('/api/exchanges/sentiment/complete');
+      const response = await fetch('/api/v1/yuki/exchanges/sentiment/complete');
 
       if (!response.ok) {
         throw new Error('Failed to fetch market sentiment');

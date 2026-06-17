@@ -46,7 +46,7 @@ export default function DaoDashboard() {
 
   const fetchDashboardStats = async () => {
     try {
-      const data = await apiGet(`/api/daos/${daoId}/dashboard-stats`);
+      const data = await apiGet(`/api/v1/daos/${daoId}/dashboard-stats`);
       setStats(data);
     } catch (error) {
       toast({

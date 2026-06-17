@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Logo } from "@/components/ui/logo";
-import { Link } from 'wouter';
+import { Link } from 'react-router-dom';
 import PublicImpactFeed from '@/components/PublicImpactFeed';
 import DaoOfTheWeekBanner from '@/components/DaoOfTheWeekBanner';
 
@@ -72,7 +72,7 @@ function CoreFeaturesGrid() {
       {features.map((feature, index) => {
         const Icon = feature.icon;
         return (
-          <Link key={index} href={feature.path}>
+          <Link key={index} to={feature.path}>
             <Card className="group bg-white/10 backdrop-blur-sm border-white/20 hover:border-white/40 hover:scale-105 transition-all duration-300 h-full cursor-pointer">
               <CardContent className="p-6">
                 <div className={`w-16 h-16 bg-gradient-to-br ${feature.gradient} rounded-2xl flex items-center justify-center mb-4 shadow-xl group-hover:scale-110 transition-transform`}>
@@ -149,7 +149,7 @@ function WalletFeaturesGrid() {
                   </li>
                 ))}
               </ul>
-              <Link href={feature.path} className="text-orange-400 hover:text-orange-300 text-sm font-semibold flex items-center gap-1">
+              <Link to={feature.path} className="text-orange-400 hover:text-orange-300 text-sm font-semibold flex items-center gap-1">
                 Try it now <ArrowRight className="w-3 h-3" aria-hidden="true" />
               </Link>
             </CardContent>
@@ -400,13 +400,13 @@ export default function MtaaDAOLanding() {
         <nav className="hidden md:flex space-x-6 text-sm" aria-label="Main navigation">
           <a href="#features" className="text-purple-200 hover:text-white transition">Features</a>
           <a href="#how-it-works" className="text-purple-200 hover:text-white transition">How It Works</a>
-          <Link href="/blog" className="text-purple-200 hover:text-white transition">Blog</Link>
-          <Link href="/success-stories" className="text-purple-200 hover:text-white transition">Success Stories</Link>
-          <Link href="/pricing" className="text-purple-200 hover:text-white transition">Pricing</Link>
-          <Link href="/maonovault" className="text-purple-200 hover:text-white transition">MaanoVault</Link>
+          <Link to="/blog" className="text-purple-200 hover:text-white transition">Blog</Link>
+          <Link to="/success-stories" className="text-purple-200 hover:text-white transition">Success Stories</Link>
+          <Link to="/pricing" className="text-purple-200 hover:text-white transition">Pricing</Link>
+          <Link to="/maonovault" className="text-purple-200 hover:text-white transition">MaanoVault</Link>
           <a href="/whitepaper.html" target="_blank" rel="noopener noreferrer" className="text-purple-200 hover:text-white transition">Whitepaper</a>
         </nav>
-        <Link href="/register">
+        <Link to="/register">
           <Button variant="primary" className="px-6 py-2 rounded-xl font-bold shadow-lg">
             Get Started
           </Button>
@@ -456,7 +456,7 @@ export default function MtaaDAOLanding() {
 
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
-              <Link href="/register" className="w-full sm:w-auto">
+              <Link to="/register" className="w-full sm:w-auto">
                 <Button
                   size="lg"
                   className="w-full sm:w-auto bg-gradient-to-r from-orange-500 to-pink-600 hover:from-orange-600 hover:to-pink-700 text-white px-12 py-7 text-xl font-bold rounded-2xl shadow-2xl transform hover:scale-105 transition-all min-h-[56px]"
@@ -658,7 +658,7 @@ export default function MtaaDAOLanding() {
                     </li>
                   ))}
                 </ul>
-                <Link href="/wallet">
+                <Link to="/wallet">
                   <Button className="w-full bg-blue-600 hover:bg-blue-700">
                     Open your wallet <ArrowRight className="ml-2 w-4 h-4" aria-hidden="true" />
                   </Button>
@@ -688,7 +688,7 @@ export default function MtaaDAOLanding() {
                     </li>
                   ))}
                 </ul>
-                <Link href="/vault">
+                <Link to="/vault">
                   <Button className="w-full bg-green-600 hover:bg-green-700">
                     Start earning <ArrowRight className="ml-2 w-4 h-4" aria-hidden="true" />
                   </Button>
@@ -775,7 +775,7 @@ export default function MtaaDAOLanding() {
           </h2>
           <p className="text-xl text-white/90 mb-4 leading-relaxed">Free to start. No hidden fees.</p>
           <p className="text-lg text-white/80 mb-10">Join 500+ groups already growing their money</p>
-          <Link href="/register">
+          <Link to="/register">
             <Button
               size="lg"
               className="bg-white text-purple-600 hover:bg-gray-100 px-12 py-6 text-2xl font-bold rounded-2xl shadow-2xl transform hover:scale-105 transition-all"
@@ -796,14 +796,14 @@ export default function MtaaDAOLanding() {
               <span className="font-bold">&copy; 2025 Mtaa DAO</span>
             </div>
             <nav className="flex flex-wrap gap-6 text-sm justify-center md:justify-end" aria-label="Footer navigation">
-              <Link href="/success-stories" className="hover:text-white transition">Success Stories</Link>
-              <Link href="/pricing" className="hover:text-white transition">Pricing</Link>
+              <Link to="/success-stories" className="hover:text-white transition">Success Stories</Link>
+              <Link to="/pricing" className="hover:text-white transition">Pricing</Link>
               <a href="/whitepaper.html" target="_blank" rel="noopener noreferrer" className="hover:text-white transition">Whitepaper</a>
-              <Link href="/blog" className="hover:text-white transition">Blog</Link>
-              <Link href="/maonovault" className="hover:text-white transition">MaanoVault</Link>
-              <Link href="/support" className="hover:text-white transition">Support</Link>
-              <Link href="/help" className="hover:text-white transition">Help</Link>
-              <Link href="/careers" className="hover:text-white transition">Careers</Link>
+              <Link to="/blog" className="hover:text-white transition">Blog</Link>
+              <Link to="/maonovault" className="hover:text-white transition">MaanoVault</Link>
+              <Link to="/support" className="hover:text-white transition">Support</Link>
+              <Link to="/help" className="hover:text-white transition">Help</Link>
+              <Link to="/careers" className="hover:text-white transition">Careers</Link>
               <a href="https://t.me/mtaadao" target="_blank" rel="noopener noreferrer" className="hover:text-white transition">Telegram</a>
               <a href="https://twitter.com/mtaadao" target="_blank" rel="noopener noreferrer" className="hover:text-white transition">Twitter</a>
             </nav>

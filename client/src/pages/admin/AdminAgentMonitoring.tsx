@@ -5,7 +5,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ScatterChart, Scatter } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { Bot, Activity, Zap, TriangleAlert, CheckCircle, RefreshCw, TrendingUp } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -309,43 +310,37 @@ export default function AdminAgentMonitoring() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">CPU Usage Over Time</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={performance.slice(-30)}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="timestamp" stroke="#94a3b8" />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Line type="monotone" dataKey="cpu" stroke="#ef4444" dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="line"
+                    data={{ labels: performance.slice(-30).map(p => p.timestamp), datasets: [{ label: 'CPU', data: performance.slice(-30).map(p => p.cpu), borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.06)', fill: false, tension: 0.2, pointRadius: 0 }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${ctx.dataset.label}: ${ctx.raw}%` } } } }}
+                  />
+                </div>
               </Card>
 
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Memory Usage Over Time</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={performance.slice(-30)}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="timestamp" stroke="#94a3b8" />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Line type="monotone" dataKey="memory" stroke="#3b82f6" dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="line"
+                    data={{ labels: performance.slice(-30).map(p => p.timestamp), datasets: [{ label: 'Memory', data: performance.slice(-30).map(p => p.memory), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.06)', fill: false, tension: 0.2, pointRadius: 0 }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${ctx.dataset.label}: ${ctx.raw}%` } } } }}
+                  />
+                </div>
               </Card>
             </div>
 
             {currentAgent && (
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">{currentAgent.name} - Task Execution Time</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={taskLogs.filter(t => t.agent === currentAgent.name).slice(-10)}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="timestamp" stroke="#94a3b8" angle={-45} height={80} />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Bar dataKey="duration" fill="#10b981" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="bar"
+                    data={{ labels: taskLogs.filter(t => t.agent === currentAgent.name).slice(-10).map(t => t.timestamp), datasets: [{ label: 'Duration (ms)', data: taskLogs.filter(t => t.agent === currentAgent.name).slice(-10).map(t => t.duration), backgroundColor: '#10b981' }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { maxRotation: 45 } } } }}
+                  />
+                </div>
               </Card>
             )}
           </TabsContent>

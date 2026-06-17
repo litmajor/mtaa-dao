@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter, LineChart, Line } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { Activity, TrendingUp, AlertCircle, RefreshCw, Filter } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -228,15 +229,9 @@ export default function AdminLeaderboard() {
           <TabsContent value="stats" className="space-y-4">
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Score Distribution</h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={members.slice(0, 20)}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="name" stroke="#94a3b8" angle={-45} height={80} />
-                  <YAxis stroke="#94a3b8" />
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  <Bar dataKey="score" fill="#3b82f6" />
-                </BarChart>
-              </ResponsiveContainer>
+              <div style={{ height: 300 }}>
+                <Chart type="bar" data={{ labels: members.slice(0,20).map(m => m.name), datasets: [{ label: 'Score', data: members.slice(0,20).map(m => m.score), backgroundColor: '#3b82f6' }] }} options={{ responsive: true, maintainAspectRatio: false }} />
+              </div>
             </Card>
           </TabsContent>
         </Tabs>

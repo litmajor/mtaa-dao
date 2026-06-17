@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title DisputeResolution
@@ -169,7 +169,7 @@ contract DisputeResolution is Ownable, ReentrancyGuard {
 
     // ==================== INITIALIZATION ====================
 
-    constructor(address _feeRecipient) {
+    constructor(address _feeRecipient) Ownable(msg.sender) {
         feeRecipient = _feeRecipient;
     }
 
@@ -319,11 +319,28 @@ contract DisputeResolution is Ownable, ReentrancyGuard {
     function _finalizeDispute(uint256 disputeId) internal {
         Dispute storage dispute = disputes[disputeId];
 
-        // Count votes
-        mapping(ResolutionOutcome => uint256) storage outcomeCounts;
+        // Count votes using simple counters (mappings cannot be declared in function scope)
+        uint256 upheldCount = 0;
+        uint256 dismissedCount = 0;
+        uint256 otherCount = 0;
         for (uint256 i = 0; i < dispute.arbitrators.length; i++) {
             ResolutionOutcome vote = dispute.arbitratorVotes[dispute.arbitrators[i]];
-            // Simplified: assume majority wins
+            if (vote == ResolutionOutcome.UPHELD) {
+                upheldCount++;
+            } else if (vote == ResolutionOutcome.DISMISSED) {
+                dismissedCount++;
+            } else {
+                otherCount++;
+            }
+        }
+
+        // Determine final outcome by majority
+        if (upheldCount >= dismissedCount && upheldCount >= otherCount) {
+            dispute.finalOutcome = ResolutionOutcome.UPHELD;
+        } else if (dismissedCount >= upheldCount && dismissedCount >= otherCount) {
+            dispute.finalOutcome = ResolutionOutcome.DISMISSED;
+        } else {
+            dispute.finalOutcome = ResolutionOutcome.CUSTOM_REMEDY;
         }
 
         dispute.status = DisputeStatus.RESOLVED;

@@ -5,6 +5,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { ethers } from 'ethers';
 
 const router = Router();
 
@@ -386,6 +387,107 @@ router.get('/flash-loans/estimate/:strategy', (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error estimating profit:', error);
     res.status(500).json({ error: 'Failed to estimate profit' });
+  }
+});
+
+/**
+ * POST /api/lending/flash-loans/execute
+ * Execute a flash loan on-chain via the FlashLoanExecutor contract.
+ * Required env vars: RPC_URL, FLASH_EXECUTOR_ADDRESS, FLASH_EXECUTOR_PRIVATE_KEY
+ * Body params: { asset, loanAmount, strategy, strategyParams?, tokenDecimals? }
+ */
+router.post('/flash-loans/execute', async (req: Request, res: Response) => {
+  try {
+    const { asset, loanAmount, strategy, strategyParams = '0x', tokenDecimals } = req.body || {};
+
+    if (!asset || !loanAmount || !strategy) {
+      return res.status(400).json({ error: 'Missing required parameters: asset, loanAmount, strategy' });
+    }
+
+    const RPC_URL = process.env.RPC_URL;
+    const PRIVATE_KEY = process.env.FLASH_EXECUTOR_PRIVATE_KEY || process.env.PRIVATE_KEY;
+    const FLASH_EXECUTOR_ADDRESS = process.env.FLASH_EXECUTOR_ADDRESS;
+
+    if (!RPC_URL || !PRIVATE_KEY || !FLASH_EXECUTOR_ADDRESS) {
+      console.error('Missing on-chain configuration for flash loan execution');
+      return res.status(500).json({ error: 'Server not configured to execute on-chain flash loans' });
+    }
+
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const signer = new ethers.Wallet(PRIVATE_KEY, provider);
+
+    // Minimal ABI for executor
+    const executorAbi = [
+      'function executeFlashLoan(address asset,uint256 amount,address strategy,bytes params) external returns (bytes32)'
+    ];
+
+    // Minimal ERC20 ABI to read decimals
+    const erc20Abi = ['function decimals() view returns (uint8)'];
+
+    const executor = new ethers.Contract(FLASH_EXECUTOR_ADDRESS, executorAbi, signer);
+
+    // Determine token decimals (best-effort)
+    let decimals = 18;
+    if (tokenDecimals) {
+      decimals = Number(tokenDecimals);
+    } else {
+      try {
+        const token = new ethers.Contract(asset, erc20Abi, provider);
+        const d: any = await token.decimals();
+        decimals = Number(d ?? 18);
+      } catch (err) {
+        // ignore - fall back to 18
+      }
+    }
+
+    // Convert human amount to token units
+    const amount = ethers.parseUnits(String(loanAmount), decimals);
+
+    // Validate and prepare `strategyParams`.
+    let paramsBytes = '0x';
+
+    // If the client provided a JSON shape for params with types/values, encode server-side
+    if (strategyParams && typeof strategyParams === 'object' && Array.isArray(strategyParams.paramTypes) && Array.isArray(strategyParams.paramValues)) {
+      try {
+        paramsBytes = new ethers.AbiCoder().encode(strategyParams.paramTypes, strategyParams.paramValues);
+      } catch (err: any) {
+        console.error('Failed to ABI-encode strategyParams object', err);
+        return res.status(400).json({ error: 'Invalid strategyParams paramTypes/paramValues for ABI encoding' });
+      }
+    } else if (typeof strategyParams === 'string') {
+      // Accept '0x' or hex string. Validate format and size.
+      const hex = strategyParams;
+      if (hex === '0x' || hex === '') {
+        paramsBytes = '0x';
+      } else {
+        const isHex = /^0x[0-9a-fA-F]*$/.test(hex);
+        if (!isHex) return res.status(400).json({ error: 'strategyParams must be a hex string starting with 0x or an object with paramTypes/paramValues' });
+        const byteLen = (hex.length - 2) / 2;
+        const MAX_BYTES = 4096; // limit to 4KB of params
+        if (!Number.isInteger(byteLen) || byteLen < 0 || byteLen > MAX_BYTES) {
+          return res.status(400).json({ error: `strategyParams hex length invalid or exceeds ${MAX_BYTES} bytes` });
+        }
+        paramsBytes = hex;
+      }
+    } else {
+      paramsBytes = '0x';
+    }
+
+    // Basic validation for addresses and amount
+    if (!ethers.isAddress(asset)) return res.status(400).json({ error: 'Invalid asset address' });
+    if (!ethers.isAddress(strategy)) return res.status(400).json({ error: 'Invalid strategy address' });
+    const loanNum = Number(loanAmount);
+    if (!isFinite(loanNum) || loanNum <= 0) return res.status(400).json({ error: 'Invalid loanAmount' });
+
+    console.log('Submitting executeFlashLoan tx', { FLASH_EXECUTOR_ADDRESS, asset, amount: amount.toString(), strategy, paramsBytesLength: (paramsBytes || '').length });
+
+    const tx = await executor.executeFlashLoan(asset, amount, strategy, paramsBytes, { gasLimit: 1_500_000 });
+    const receipt = await tx.wait();
+
+    res.json({ txHash: tx.hash, receipt });
+  } catch (error: any) {
+    console.error('Error executing flash loan:', error);
+    res.status(500).json({ error: String(error?.message ?? error) });
   }
 });
 

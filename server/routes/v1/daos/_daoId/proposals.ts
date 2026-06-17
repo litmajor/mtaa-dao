@@ -36,6 +36,8 @@ import {
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import { createRateLimiter } from '../../../../middleware/rateLimiting';
 import { ProposalExecutionService } from '../../../../proposalExecutionService';
+import { enqueueEmail } from '../../../../workers/emailWorker';
+import { nanoid } from 'nanoid';
 
 const router: Router = express.Router({ mergeParams: true });
 
@@ -91,7 +93,7 @@ router.get('/', async (req: Request, res: Response) => {
       conditions.push(eq(proposals.status, String(status)));
     }
     if (proposer) {
-      conditions.push(eq(proposals.userId, String(proposer)));
+      conditions.push(eq(proposals.proposerId, String(proposer)));
     }
 
     // Get total count
@@ -180,7 +182,6 @@ router.post('/', proposalCreationLimiter, async (req: Request, res: Response) =>
       proposalType,
       userId,
       proposerId: userId,
-      proposer: userId,
       voteEndTime: new Date(voteEndTime),
       voteStartTime: new Date(),
       quorumRequired: quorumRequired || 100,
@@ -195,7 +196,38 @@ router.post('/', proposalCreationLimiter, async (req: Request, res: Response) =>
       abstainVotes: 0
     }).returning();
 
+    // Respond immediately
     res.status(201).json({ success: true, data: newProposal });
+
+    // Enqueue notification emails to DAO members (non-blocking)
+    try {
+      const members = await db
+        .select({ email: users.email, id: users.id })
+        .from(daoMemberships)
+        .innerJoin(users, eq(daoMemberships.userId, users.id))
+        .where(and(eq(daoMemberships.daoId, daoId)));
+
+      const appUrl = process.env.FRONTEND_URL || '';
+
+      for (const m of members) {
+        if (!m.email) continue;
+        const jobId = `proposal-notify:${newProposal.id}:${nanoid()}`;
+        enqueueEmail({ id: jobId, payload: {
+          to: m.email,
+          template: 'proposal-created',
+          variables: {
+            proposal: {
+              title: newProposal.title,
+              summary: (newProposal.description || '').slice(0, 400),
+              url: `${appUrl}/dao/${daoId}/proposals/${newProposal.id}`,
+            },
+            user: { id: m.id }
+          }
+        }} as any);
+      }
+    } catch (enqueueErr) {
+      logger.error('Failed to enqueue proposal notification emails', { error: enqueueErr, proposalId: newProposal.id });
+    }
   } catch (error: any) {
     logger.error(`Error creating proposal for DAO ${req.params.daoId}:`, error);
     res.status(500).json({ success: false, error: error.message });
@@ -340,7 +372,7 @@ router.delete('/:proposalId', proposalCreationLimiter, async (req: Request, res:
       ))
       .limit(1);
 
-    const isProposer = proposal[0].userId === userId;
+    const isProposer = proposal[0].proposerId === userId;
     const isAdmin = isMember.length && isMember[0].role === 'admin';
 
     if (!isProposer && !isAdmin) {

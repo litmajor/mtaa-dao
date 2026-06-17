@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { Users, TrendingUp, Award, DollarSign, Share2, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -138,34 +139,24 @@ export default function AdminReferrals() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Referral Growth</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={metrics}>
-                    <defs>
-                      <linearGradient id="colorReferrals" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="date" stroke="#94a3b8" />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Area type="monotone" dataKey="newReferrals" stroke="#3b82f6" fillOpacity={1} fill="url(#colorReferrals)" name="New Referrals" />
-                  </AreaChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="line"
+                    data={{ labels: metrics.map(m => m.date), datasets: [{ label: 'New Referrals', data: metrics.map(m => m.newReferrals), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.15)', fill: true, tension: 0.2 }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
+                  />
+                </div>
               </Card>
 
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Conversion Trend</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={metrics}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="date" stroke="#94a3b8" />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Line type="monotone" dataKey="conversionRate" stroke="#10b981" name="Conversion Rate (%)" strokeWidth={2} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="line"
+                    data={{ labels: metrics.map(m => m.date), datasets: [{ label: 'Conversion Rate (%)', data: metrics.map(m => m.conversionRate), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.06)', tension: 0.2 }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
+                  />
+                </div>
               </Card>
             </div>
           </TabsContent>
@@ -219,25 +210,13 @@ export default function AdminReferrals() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Referral Sources</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={sources}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ source, percentage }) => `${source}: ${percentage.toFixed(1)}%`}
-                      outerRadius={100}
-                      fill="#8884d8"
-                      dataKey="percentage"
-                    >
-                      {sources.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  </PieChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="pie"
+                    data={{ labels: sources.map(s => s.source), datasets: [{ data: sources.map(s => s.percentage), backgroundColor: sources.map((_, i) => COLORS[i % COLORS.length]) }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${ctx.label}: ${ctx.raw.toFixed(1)}%` } } } }}
+                  />
+                </div>
               </Card>
 
               <Card className="bg-slate-800 border-slate-700 p-6">
@@ -268,15 +247,13 @@ export default function AdminReferrals() {
           <TabsContent value="rewards" className="space-y-4">
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Rewards Distribution</h3>
-              <ResponsiveContainer width="100%" height={350}>
-                <BarChart data={metrics}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="date" stroke="#94a3b8" angle={-45} height={80} />
-                  <YAxis stroke="#94a3b8" />
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  <Bar dataKey="rewardsDistributed" fill="#f59e0b" name="Rewards ($)" />
-                </BarChart>
-              </ResponsiveContainer>
+              <div style={{ height: 350 }}>
+                <Chart
+                  type="bar"
+                  data={{ labels: metrics.map(m => m.date), datasets: [{ label: 'Rewards ($)', data: metrics.map(m => m.rewardsDistributed), backgroundColor: '#f59e0b' }] }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
+                />
+              </div>
             </Card>
 
             <Card className="bg-slate-800 border-slate-700 p-6">

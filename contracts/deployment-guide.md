@@ -403,11 +403,18 @@ const MTAADashboard = ({ userAddress, signer, provider }) => {
 // When users pay fees, 50% burned, 50% to treasury
 // This happens automatically in the token contract
 
-// DAO creation: 1000 MTAA fee
-await mtaaToken.payDAOCreationFee(); // Called by user
+// DAO creation: default fee can be paid in MTAA or an accepted stablecoin.
+// Front-end should compute MTAA amount using Chainlink price feed when paying in MTAA,
+// or pass a stablecoin address and amount directly.
+// Examples:
+// Pay in MTAA (frontend converts USD fee -> MTAA using Chainlink):
+await mtaaToken.payDAOCreationFeeWithToken(mtaaToken.address, amountInWei);
 
-// Vault deployment: 500 MTAA fee  
-await mtaaToken.payVaultDeploymentFee(); // Called by user
+// Pay with stablecoin (e.g., USDC):
+await mtaaToken.payDAOCreationFeeWithToken(usdcAddress, amountInSmallestUnit);
+
+// Vault deployment: same pattern
+await mtaaToken.payVaultDeploymentFeeWithToken(mtaaToken.address, amountInWei);
 ```
 
 ### 2. Staking Revenue

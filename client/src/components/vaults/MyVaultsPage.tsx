@@ -5,16 +5,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { TrendingUp, Wallet, AlertCircle, CheckCircle } from 'lucide-react';
 import { useWebSocket } from '@/hooks/useWebSocket';
 
@@ -254,28 +246,16 @@ export default function MyVaultsPage() {
         {performanceData.length > 0 && (
           <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
             <h3 className="text-lg font-bold mb-4">Portfolio Performance (90 Days)</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={performanceData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="timestamp" stroke="#94a3b8" />
-                <YAxis stroke="#94a3b8" />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#1e293b',
-                    border: '1px solid #475569',
-                    borderRadius: '8px',
-                  }}
-                />
-                <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="portfolioReturn"
-                  stroke="#10b981"
-                  name="Portfolio Return %"
-                  isAnimationActive={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="line"
+                    data={{
+                      labels: performanceData.map((p: any) => p.timestamp),
+                      datasets: [{ label: 'Portfolio Return %', data: performanceData.map((p: any) => p.portfolioReturn), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.06)', tension: 0.2 }]
+                    }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: true } } }}
+                  />
+                </div>
           </div>
         )}
 

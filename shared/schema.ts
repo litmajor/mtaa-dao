@@ -18,8 +18,10 @@ import {
   uuid,
   json,
   numeric, // Import numeric type
+  uniqueIndex,
   date,
-  unique
+  unique,
+  primaryKey
 } from "drizzle-orm/pg-core";
 import { sql } from 'drizzle-orm';
 import { createInsertSchema } from "drizzle-zod";
@@ -41,6 +43,8 @@ export const referralRewards = pgTable("referral_rewards", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+
 
 // DAO Treasury Credits - Track MTAA flowing into DAO treasuries
 export const daoTreasuryCredits = pgTable("dao_treasury_credits", {
@@ -148,7 +152,7 @@ export const taskTemplates = pgTable('task_templates', {
   updatedAt: timestamp('updated_at').defaultNow(),
 });
 
-export const taskTemplatesCreatedBy = taskTemplates.createdBy;
+// Removed stray export: taskTemplatesCreatedBy is unused
 import { relations } from "drizzle-orm";
 
 // User storage table
@@ -281,12 +285,44 @@ export const userContexts = pgTable("user_contexts", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
-  pk: {
-    columns: [table.userId, table.daoId],
-  },
+  pk: primaryKey({ columns: [table.userId, table.daoId] }),
   daoIdIdx: index("user_contexts_dao_id_idx").on(table.daoId),
   lastInteractionIdx: index("user_contexts_last_interaction_idx").on(table.lastInteraction),
 }));
+
+// Payment Sagas - long-running distributed transaction tracking
+export const paymentSagas = pgTable("payment_sagas", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  status: varchar("status").notNull(),
+  userId: varchar("user_id").references(() => users.id),
+  paymentId: varchar("payment_id"),
+  amount: numeric("amount"),
+  currency: varchar("currency"),
+  stepsCompleted: jsonb("steps_completed").default([]),
+  currentStep: varchar("current_step"),
+  compensationSteps: jsonb("compensation_steps").default([]),
+  attemptCount: integer("attempt_count").default(0),
+  maxAttempts: integer("max_attempts").default(5),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const paymentSagaEvents = pgTable("payment_saga_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sagaId: uuid("saga_id").references(() => paymentSagas.id, { onDelete: 'cascade' }).notNull(),
+  step: varchar("step"),
+  success: boolean("success"),
+  data: jsonb("data").default({}),
+  error: text("error"),
+  attemptNumber: integer("attempt_number").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type PaymentSaga = typeof paymentSagas.$inferSelect;
+export type InsertPaymentSaga = typeof paymentSagas.$inferInsert;
+export type PaymentSagaEvent = typeof paymentSagaEvents.$inferSelect;
+export type InsertPaymentSagaEvent = typeof paymentSagaEvents.$inferInsert;
 
 // User Activities table
 export const userActivities = pgTable('user_activities', {
@@ -294,36 +330,28 @@ export const userActivities = pgTable('user_activities', {
   userId: varchar('user_id').references(() => users.id).notNull(),
   dao_id: uuid('dao_id').references(() => daos.id),
   type: varchar('type').notNull(), // e.g., 'proposal', 'vote', 'task', 'comment', etc.
+  activityType: varchar('activity_type'),
   description: text('description'),
-  firstName: varchar("first_name"),
-  lastName: varchar("last_name"),
-  profileImageUrl: varchar("profile_image_url"),
-  roles: varchar("roles").default("member"), // member, proposer, elder
-  totalContributions: decimal("total_contributions", { precision: 10, scale: 2 }).default("0"),
-  currentStreak: integer("current_streak").default(0),
-  referralCode: varchar("referral_code").unique(),
-  referredBy: varchar("referred_by"),
-  totalReferrals: integer("total_referrals").default(0),
-  darkMode: boolean("dark_mode").default(false),
-  joinedAt: timestamp("joined_at").defaultNow(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-  otp: varchar("otp", { length: 10 }),
-  otpExpiresAt: timestamp("otp_expires_at"),
-  isEmailVerified: boolean("is_email_verified").default(false),
-  isPhoneVerified: boolean("is_phone_verified").default(false),
-  isBanned: boolean("is_banned").default(false),
-  banReason: text("ban_reason"),
-  isSuperUser: boolean("is_super_user").default(false), // for superuser dashboard access
-  votingPower: decimal("voting_power", { precision: 10, scale: 2 }).default("1.0"), // for weighted voting
-  telegramId: varchar("telegram_id"),
-  telegramChatId: varchar("telegram_chat_id"),
-  telegramUsername: varchar("telegram_username"),
-  activityType: varchar('activity_type'), // Added for admin analytics compatibility
-  metadata: jsonb('metadata'), // Added for admin analytics compatibility
+  metadata: jsonb('metadata'), // arbitrary activity metadata
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
 });
 
-export const userActivitiesDaoId = userActivities.dao_id;
+// User Identities table - links external OAuth providers to internal users
+export const userIdentities = pgTable('user_identities', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: varchar('user_id').references(() => users.id).notNull(),
+  provider: varchar('provider', { length: 50 }).notNull(), // e.g., 'google', 'telegram'
+  providerUserId: varchar('provider_user_id').notNull(),
+  profile: jsonb('profile').default({}),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+  unique_provider_user: unique('user_identities_provider_user_idx').on(table.provider, table.providerUserId),
+}));
+
+
+// Removed stray export: userActivitiesDaoId was unused and error-prone
 
 // DAOs table
 export const daos = pgTable("daos", {
@@ -336,10 +364,15 @@ export const daos = pgTable("daos", {
   creatorId: varchar("creator_id").references(() => users.id).notNull(),
   isPublic: boolean("is_public").default(true), // legacy, keep for now
   memberCount: integer("member_count").default(1),
-  // ⚠️ DEPRECATED: treasuryBalance is now computed from treasuryPositions + stableInflowEvents
+  //  DEPRECATED: treasuryBalance is now computed from treasuryPositions + stableInflowEvents
   // DO NOT UPDATE THIS DIRECTLY - it will drift from actual on-chain state
   // Query: SELECT SUM(tp.balance) FROM treasuryPositions tp WHERE tp.daoId = $1
   treasuryBalance: decimal("treasury_balance", { precision: 10, scale: 2 }).default("0"),
+  // New: integer smallest-unit representation for treasury (e.g. cents or wei)
+  // Use numeric(38,0) for arbitrarily large integer storage
+  treasuryBalanceUnits: numeric("treasury_balance_units", { precision: 38, scale: 0 }).default("0"),
+  // DB-backed rotation processing lock to avoid cross-instance races
+  rotationProcessing: boolean("rotation_processing").default(false),
   plan: varchar("plan").default("free"), // free, premium, short_term, collective
   daoType: varchar("dao_type").default("free"), // free, short_term, collective, governance, investment_club, meta
   planExpiresAt: timestamp("plan_expires_at"),
@@ -372,6 +405,9 @@ export const daos = pgTable("daos", {
   treasuryWithdrawalThreshold: decimal("treasury_withdrawal_threshold", { precision: 18, scale: 2 }).default("1000.00"), // $1K threshold
   treasuryDailyLimit: decimal("treasury_daily_limit", { precision: 18, scale: 2 }).default("10000.00"), // daily spending cap
   treasuryMonthlyBudget: decimal("treasury_monthly_budget", { precision: 18, scale: 2 }), // optional monthly budget limit
+  // On-chain vault addresses for rotation/distributions
+  vaultAddress: varchar("vault_address"),
+  chamaTreasuryAddress: varchar("chama_treasury_address"),
 
   // Withdrawal and duration configuration
   withdrawalMode: varchar("withdrawal_mode").default("multisig"), // direct, multisig, rotation
@@ -394,6 +430,20 @@ export const daos = pgTable("daos", {
   deleted_by: varchar("deleted_by"),
   delete_reason: text("delete_reason"),
   deleted_recovery_deadline: timestamp("deleted_recovery_deadline"),
+});
+
+// DAO Settings table (flexible JSON storage for per-DAO settings)
+export const daoSettings = pgTable("dao_settings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }).notNull(),
+  settingKey: varchar("setting_key", { length: 100 }).notNull(),
+  settingValue: jsonb("setting_value"),
+  settingType: varchar("setting_type", { length: 50 }),
+  category: varchar("category", { length: 50 }),
+  description: text("description"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // DAO Abuse Prevention Tables
@@ -441,7 +491,7 @@ export const platformRevenue = pgTable('platform_revenue', {
 
 });
 
-export const roles = ["member", "proposer", "elder", "admin", "superUser", "moderator"] as const;
+export const roles = ["member", "proposer", "elder", "admin", "superUser", "moderator", "secretary"] as const;
 
 export type Session = typeof sessions.$inferSelect;
 export type InsertSession = typeof sessions.$inferInsert;
@@ -462,23 +512,8 @@ export const sessions = pgTable("sessions", {
 
 export const createSessionSchema = createInsertSchema(sessions);
 export const sessionSchema = createSessionSchema;
-
-// Refresh Tokens table - for token revocation and rotation tracking
-export const refreshTokens = pgTable("refresh_tokens", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
-  tokenHash: varchar("token_hash").notNull(), // Hash of the actual refresh token (bcrypt)
-  expiresAt: timestamp("expires_at").notNull(),
-  revoked: boolean("revoked").default(false), // Mark as revoked for logout/force-logout
-  revokedAt: timestamp("revoked_at"), // When token was revoked
-  rotatedAt: timestamp("rotated_at"), // When token was rotated to new one (for tracking refresh chain)
-  ipAddress: varchar("ip_address"), // IP address that requested the token
-  userAgent: varchar("user_agent"), // User agent that requested token
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-export const createRefreshTokenSchema = createInsertSchema(refreshTokens);
+export { refreshTokens } from './securityEnhancedSchema';
+export const createRefreshTokenSchema = createInsertSchema(sessions); // placeholder - use securityEnhancedSchema.refreshTokens for inserts
 
 // Billing History table for DAOs
 export const billingHistory = pgTable("billing_history", {
@@ -526,6 +561,7 @@ export const proposals = pgTable("proposals", {
   userId: varchar("user_id").references(() => users.id).notNull(), // alias for proposerId for analyzer compatibility
   daoId: uuid("dao_id").references(() => daos.id).notNull(),
   status: varchar("status").default("active"), // draft, active, passed, failed, executed, expired
+  isDraft: boolean("is_draft").default(false), // draft support
   voteStartTime: timestamp("vote_start_time").defaultNow(),
   voteEndTime: timestamp("vote_end_time").notNull(),
   quorumRequired: integer("quorum_required").default(100),
@@ -577,6 +613,24 @@ export const votes = pgTable("votes", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// Cross-Chain Votes Ledger
+export const crossChainVotesLedger = pgTable("cross_chain_votes_ledger", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  proposalId: uuid("proposal_id").references(() => proposals.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  chain: varchar("chain").notNull(),
+  voteType: varchar("vote_type").notNull(),
+  weight: decimal("weight", { precision: 6, scale: 4 }).default("1.0"),
+  votingPower: decimal("voting_power", { precision: 18, scale: 6 }).default("0"),
+  txHash: varchar("tx_hash"),
+  metadata: jsonb("metadata").default({}),
+  recordedAt: timestamp("recorded_at").defaultNow(),
+});
+
+export type CrossChainVoteLedger = typeof crossChainVotesLedger.$inferSelect;
+export type InsertCrossChainVoteLedger = typeof crossChainVotesLedger.$inferInsert;
 
 // Quorum Calculations table (for historical tracking)
 export const quorumHistory = pgTable("quorum_history", {
@@ -698,6 +752,22 @@ export const vaults = pgTable("vaults", {
   updatedAt: timestamp("updated_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// Loan Facilities table - on-chain loan contract records for DAOs
+export const loanFacilities = pgTable("loan_facilities", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id).notNull(),
+  address: varchar("address"),
+  stablecoin: varchar("stablecoin"),
+  elderCouncil: varchar("elder_council"),
+  fundedAmount: decimal("funded_amount", { precision: 18, scale: 8 }).default("0"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type LoanFacility = typeof loanFacilities.$inferSelect;
+export type InsertLoanFacility = typeof loanFacilities.$inferInsert;
 
 // Budget Plans table
 export const budgetPlans = pgTable("budget_plans", {
@@ -869,7 +939,7 @@ export const stableAssetRegistry = pgTable("stable_asset_registry", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
-  chainTokenIdx: index("stable_asset_registry_chain_token_idx").on(table.chainId, table.tokenAddress),
+  chainTokenUniqueKey: uniqueIndex("stable_asset_registry_chain_token_unique_key").on(table.chainId, table.tokenAddress),
   symbolIdx: index("stable_asset_registry_symbol_idx").on(table.symbol),
   activeIdx: index("stable_asset_registry_active_idx").on(table.isActive),
 }));
@@ -890,10 +960,10 @@ export const stableInflowEvents = pgTable("stable_inflow_events", {
   tokenDecimals: integer("token_decimals").notNull(),
   toAddress: varchar("to_address", { length: 255 }).notNull(),
   fromAddress: varchar("from_address", { length: 255 }),
-  rawAmount: numeric("raw_amount", { precision: 78, scale: 0 }).notNull(),
+  rawAmount: decimal("raw_amount", { precision: 78, scale: 0 }).notNull(),
   normalizedTokenAmount: decimal("normalized_token_amount", { precision: 38, scale: 18 }).notNull(),
   normalizedAmountUsd: decimal("normalized_amount_usd", { precision: 24, scale: 8 }).notNull(),
-  stableUnitsMicroUsd: numeric("stable_units_microusd", { precision: 38, scale: 0 }).notNull(),
+  stableUnitsMicroUsd: decimal("stable_units_microusd", { precision: 38, scale: 0 }).notNull(),
   confirmations: integer("confirmations").default(0),
   minConfirmations: integer("min_confirmations").default(0),
   confirmationState: varchar("confirmation_state", { length: 30 }).notNull().default("pending"),
@@ -908,7 +978,7 @@ export const stableInflowEvents = pgTable("stable_inflow_events", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
-  idempotencyIdx: index("stable_inflow_events_idempotency_idx").on(
+  inflowIdempotencyUniqueKey: uniqueIndex("stable_inflow_events_idempotency_unique_key").on(
     table.chainId,
     table.txHash,
     table.logIndex,
@@ -947,6 +1017,54 @@ export const daoContributionTypes = pgTable("dao_contribution_types", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+/**
+ * Stable Outflow Events (append-only ledger for stablecoin outflows)
+ */
+export const stableOutflowEvents = pgTable("stable_outflow_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  source: varchar("source", { length: 50 }).notNull().default("internal"),
+  chain: varchar("chain", { length: 50 }).notNull(),
+  chainId: integer("chain_id").notNull(),
+  txHash: varchar("tx_hash", { length: 255 }).default("") ,
+  logIndex: integer("log_index").notNull().default(0),
+  tokenAddress: varchar("token_address", { length: 255 }).notNull(),
+  tokenSymbol: varchar("token_symbol", { length: 20 }).notNull(),
+  tokenDecimals: integer("token_decimals").notNull(),
+  fromAddress: varchar("from_address", { length: 255 }).notNull(),
+  toAddress: varchar("to_address", { length: 255 }),
+  rawAmount: numeric("raw_amount", { precision: 78, scale: 0 }).notNull(),
+  normalizedTokenAmount: decimal("normalized_token_amount", { precision: 38, scale: 18 }).notNull(),
+  normalizedAmountUsd: decimal("normalized_amount_usd", { precision: 24, scale: 8 }).notNull(),
+  stableUnitsMicroUsd: numeric("stable_units_microusd", { precision: 38, scale: 0 }).notNull(),
+  confirmations: integer("confirmations").default(0),
+  minConfirmations: integer("min_confirmations").default(0),
+  confirmationState: varchar("confirmation_state", { length: 30 }).notNull().default("pending"),
+  delayState: varchar("delay_state", { length: 30 }).notNull().default("unknown"),
+  observedConfirmationDelaySec: integer("observed_confirmation_delay_sec"),
+  pegTargetUsd: decimal("peg_target_usd", { precision: 18, scale: 8 }).default("1.00000000"),
+  observedPriceUsd: decimal("observed_price_usd", { precision: 24, scale: 8 }),
+  pegDeviationBps: integer("peg_deviation_bps").default(0),
+  riskFlags: jsonb("risk_flags").default({}),
+  status: varchar("status", { length: 30 }).notNull().default("sent"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  outflowIdempotencyUniqueKey: uniqueIndex("stable_outflow_events_idempotency_unique_key").on(
+    table.chainId,
+    table.txHash,
+    table.logIndex,
+    table.tokenAddress,
+    table.fromAddress
+  ),
+  statusIdx: index("stable_outflow_events_status_idx").on(table.status),
+  symbolIdx: index("stable_outflow_events_symbol_idx").on(table.tokenSymbol),
+  createdAtIdx: index("stable_outflow_events_created_at_idx").on(table.createdAt),
+}));
+
+export type StableOutflowEvent = typeof stableOutflowEvents.$inferSelect;
+export type InsertStableOutflowEvent = typeof stableOutflowEvents.$inferInsert;
 
 /**
  * DAO Contribution Requests
@@ -1189,9 +1307,21 @@ export const treasuryPositions = pgTable("treasury_positions", {
   nextDistributionIdx: index("treasury_positions_next_distribution_idx").on(table.nextDistributionWindow),
 }));
 
+// Lightweight indexer progress tracker: persists block cursor for indexers
+export const indexerProgress = pgTable("indexer_progress", {
+  indexerName: varchar("indexer_name", { length: 100 }).primaryKey(),
+  lastProcessedBlock: integer("last_processed_block").notNull(),
+  lastProcessedBlockHash: varchar("last_processed_block_hash", { length: 66 }),
+  chainId: integer("chain_id").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type IndexerProgress = typeof indexerProgress.$inferSelect;
+
 /**
  * Asset Graph Versions (Separate from Snapshots)
- * 
+
+
  * Stores the complete graph at a point in time.
  * Updated ONLY when graph changes (new bridge, new LP pair, new yield track).
  * Not updated with every shard cycle.
@@ -1573,6 +1703,9 @@ export const proposalComments = pgTable("proposal_comments", {
   content: text("content").notNull(),
   parentCommentId: uuid("parent_comment_id").references((): any => proposalComments.id), // for replies
   isEdited: boolean("is_edited").default(false),
+  editHistory: jsonb("edit_history").default([]),
+  lastEditedAt: timestamp("last_edited_at"),
+  lastEditedBy: varchar("last_edited_by"),
   likesCount: integer("likes_count").default(0), // Denormalized count for performance
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -1638,7 +1771,7 @@ export const withdrawalApprovals = pgTable("withdrawal_approvals", {
   id: uuid("id").primaryKey().defaultRandom(),
   vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
   daoId: uuid("dao_id").references(() => daos.id).notNull(),
-  userId: uuid("user_id").references(() => users.id).notNull(), // Requester
+  userId: varchar("user_id").references(() => users.id).notNull(), // Requester
   amount: decimal("amount", { precision: 25, scale: 8 }).notNull(),
   destination: varchar("destination").notNull(), // Address or recipient
   status: varchar("status").default("pending").notNull(), // pending|approved|rejected|executed|expired
@@ -1647,7 +1780,7 @@ export const withdrawalApprovals = pgTable("withdrawal_approvals", {
   signers: jsonb("signers").default([]).notNull(), // Array of signer info
   expiresAt: timestamp("expires_at").notNull(),
   executedAt: timestamp("executed_at"),
-  executedBy: uuid("executed_by").references(() => users.id),
+  executedBy: varchar("executed_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -1656,7 +1789,7 @@ export const withdrawalApprovals = pgTable("withdrawal_approvals", {
 export const multisigSignatures = pgTable("multisig_signatures", {
   id: uuid("id").primaryKey().defaultRandom(),
   approvalId: uuid("approval_id").references(() => withdrawalApprovals.id).notNull(),
-  signerId: uuid("signer_id").references(() => users.id).notNull(),
+  signerId: varchar("signer_id").references(() => users.id).notNull(),
   signerRole: varchar("signer_role").notNull(), // member|elder|admin
   signature: text("signature").notNull(), // Cryptographic signature or approval token
   signedAt: timestamp("signed_at").defaultNow().notNull(),
@@ -1779,9 +1912,12 @@ export const messageReactions = pgTable("message_reactions", {
   id: uuid("id").primaryKey().defaultRandom(),
   messageId: uuid("message_id").references(() => daoMessages.id, { onDelete: 'cascade' }).notNull(),
   userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id),
   emoji: varchar("emoji", { length: 10 }).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => ({
+  uniqueReaction: unique('unique_reaction_idx').on(table.messageId, table.userId, table.emoji),
+}));
 
 // Message Attachments table
 export const messageAttachments = pgTable("message_attachments", {
@@ -1809,18 +1945,9 @@ export const subscriptions = pgTable("subscriptions", {
 });
 
 // User Reputation table
-export const userReputation = pgTable("user_reputation", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: varchar("user_id").references(() => users.id).notNull(),
-  daoId: uuid("dao_id").references(() => daos.id),
-  totalScore: integer("total_score").default(0),
-  proposalScore: integer("proposal_score").default(0),
-  voteScore: integer("vote_score").default(0),
-  contributionScore: integer("contribution_score").default(0),
-  lastUpdated: timestamp("last_updated").defaultNow(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
+// Re-export canonical gamification table for backward compatibility
+import { userGamification } from './reputationSchema';
+export const userReputation = userGamification;
 
 // Platform Announcements table
 export const platformAnnouncements = pgTable("platform_announcements", {
@@ -2568,21 +2695,7 @@ export const activityFeed = pgTable("activity_feed", {
 });
 
 // API Keys for Developer Integration
-export const apiKeys = pgTable("api_keys", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
-  keyHash: varchar("key_hash").notNull().unique(), // Hash of actual key (never store plain key)
-  name: varchar("name").notNull(), // User-friendly name for the key
-  permissions: jsonb("permissions").default([]), // Array of permission scopes
-  rateLimit: integer("rate_limit").default(1000), // Requests per hour
-  lastUsedAt: timestamp("last_used_at"),
-  expiresAt: timestamp("expires_at"),
-  isActive: boolean("is_active").default(true),
-  ipWhitelist: jsonb("ip_whitelist").default([]), // Array of whitelisted IPs
-  metadata: jsonb("metadata").default({}),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
+export { apiKeys } from './securityEnhancedSchema';
 
 // File Uploads Metadata
 export const fileUploads = pgTable("file_uploads", {
@@ -2930,12 +3043,7 @@ export const activityFeedRelations = relations(activityFeed, ({ one }) => ({
   }),
 }));
 
-export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
-  user: one(users, {
-    fields: [apiKeys.userId],
-    references: [users.id],
-  }),
-}));
+// apiKeys relations moved to securityEnhancedSchema.ts to avoid duplicate table definitions
 
 export const fileUploadsRelations = relations(fileUploads, ({ one }) => ({
   user: one(users, {
@@ -3019,12 +3127,7 @@ export const contributionsRelations = relations(contributions, ({ one }) => ({
   }),
 }));
 
-export const vaultsRelations = relations(vaults, ({ one }) => ({
-  user: one(users, {
-    fields: [vaults.userId],
-    references: [users.id],
-  }),
-}));
+// Removed duplicate `vaultsRelations`. Use `vaultsFullRelations` for richer relations.
 
 // Add richer vault relations used by service code (tokenHoldings, transactions, performance)
 export const vaultsFullRelations = relations(vaults, ({ one, many }) => ({
@@ -3112,7 +3215,7 @@ export const insertUserKycSchema = createInsertSchema(userKyc);
 export const insertUserNotificationPreferencesSchema = createInsertSchema(userNotificationPreferences);
 export const insertUserFollowSchema = createInsertSchema(userFollows);
 export const insertActivityFeedSchema = createInsertSchema(activityFeed);
-export const insertApiKeySchema = createInsertSchema(apiKeys);
+// insertApiKeySchema moved to securityEnhancedSchema.ts
 export const insertFileUploadSchema = createInsertSchema(fileUploads);
 
 
@@ -3139,6 +3242,46 @@ export const notificationPreferences = pgTable("notification_preferences", {
   daoUpdates: boolean("dao_updates").default(true),
   proposalUpdates: boolean("proposal_updates").default(true),
   taskUpdates: boolean("task_updates").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Task Attachments table
+export const taskAttachments = pgTable("task_attachments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  taskId: uuid("task_id").references(() => tasks.id).notNull(),
+  fileUrl: varchar("file_url", { length: 500 }).notNull(),
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  mimeType: varchar("mime_type", { length: 100 }),
+  fileSize: integer("file_size"),
+  uploadedBy: varchar("uploaded_by").references(() => users.id),
+  attachmentType: varchar("attachment_type", { length: 50 }).default("document"),
+  isProof: boolean("is_proof").default(false),
+  verificationStatus: varchar("verification_status", { length: 50 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Notification Metadata table
+export const notificationMetadata = pgTable("notification_metadata", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  notificationId: uuid("notification_id"),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id),
+  notificationType: varchar("notification_type").notNull(),
+  sourceEntityType: varchar("source_entity_type"),
+  sourceEntityId: varchar("source_entity_id"),
+  actionUrl: varchar("action_url", { length: 500 }),
+  priority: varchar("priority").default("normal"),
+  isRead: boolean("is_read").default(false),
+  deliveryChannels: jsonb("delivery_channels").default([]),
+  deliveryStatus: jsonb("delivery_status").default({}),
+  customData: jsonb("custom_data").default({}),
+  expiresAt: timestamp("expires_at"),
+  isActioned: boolean("is_actioned").default(false),
+  actionedAt: timestamp("actioned_at"),
+  actionTaken: text("action_taken"),
+  readAt: timestamp("read_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -3231,8 +3374,7 @@ export type UserFollow = typeof userFollows.$inferSelect;
 export type InsertUserFollow = typeof userFollows.$inferInsert;
 export type ActivityFeedEntry = typeof activityFeed.$inferSelect;
 export type InsertActivityFeedEntry = typeof activityFeed.$inferInsert;
-export type ApiKey = typeof apiKeys.$inferSelect;
-export type InsertApiKey = typeof apiKeys.$inferInsert;
+
 export type FileUpload = typeof fileUploads.$inferSelect;
 export type InsertFileUpload = typeof fileUploads.$inferInsert;
 
@@ -3243,28 +3385,7 @@ export const insertTaskHistorySchema = createInsertSchema(taskHistory);
 export const insertProposalTemplateSchema = createInsertSchema(proposalTemplates);
 export const insertVoteDelegationSchema = createInsertSchema(voteDelegations);
 
-// Cross-chain transfers table
-export const crossChainTransfers = pgTable('cross_chain_transfers', {
-  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar('user_id').notNull().references(() => users.id),
-  sourceChain: text('source_chain').notNull(),
-  destinationChain: text('destination_chain').notNull(),
-  tokenAddress: text('token_address').notNull(),
-  amount: text('amount').notNull(),
-  destinationAddress: text('destination_address').notNull(),
-  vaultId: text('vault_id'),
-  status: text('status').notNull().default('pending'), // pending, bridging, completed, failed
-  txHashSource: text('tx_hash_source'),
-  txHashDestination: text('tx_hash_destination'),
-  bridgeProtocol: text('bridge_protocol'), // layerzero, axelar, wormhole
-  gasEstimate: text('gas_estimate'),
-  bridgeFee: text('bridge_fee'),
-  estimatedCompletionTime: timestamp('estimated_completion_time'),
-  completedAt: timestamp('completed_at'),
-  failureReason: text('failure_reason'),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow()
-});
+export { crossChainTransfers } from './accountSchema';
 
 // Cross-chain governance proposals
 export const crossChainProposals = pgTable('cross_chain_proposals', {
@@ -3869,7 +3990,7 @@ export type TreasuryTransaction = typeof treasuryTransactions.$inferSelect;
 export type InsertTreasuryTransaction = typeof treasuryTransactions.$inferInsert;
 
 export * from './vestingSchema';
-export * from './messageReactionsSchema';
+// messageReactionsSchema merged into this file (message_reactions now defined above)
 export * from './kycSchema';
 export * from './accountSchema';
 export * from './transactionFlowSchema';
@@ -3966,6 +4087,7 @@ export const liquidityPoolMetrics = pgTable('liquidity_pool_metrics', {
 export const revenueMetrics = pgTable('revenue_metrics', {
   id: uuid('id').primaryKey().defaultRandom(),
   date: text('date').notNull(),
+  timestamp: timestamp('timestamp').notNull().defaultNow(),
   totalRevenue: numeric('total_revenue', { precision: 20, scale: 8 }).notNull().default('0'),
   transactionFees: numeric('transaction_fees', { precision: 20, scale: 8 }).notNull().default('0'),
   platformFees: numeric('platform_fees', { precision: 20, scale: 8 }).notNull().default('0'),

@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { Activity, AlertTriangle, CheckCircle, AlertCircle, RefreshCw, Zap } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -218,25 +219,22 @@ export default function AdminHealthMonitoring() {
           <TabsContent value="performance" className="space-y-4">
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Latency Over Time</h3>
-              <ResponsiveContainer width="100%" height={400}>
-                <LineChart data={nodeMetrics.slice(-30)}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="timestamp" stroke="#94a3b8" />
-                  <YAxis stroke="#94a3b8" />
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  <Legend />
-                  {Array.from(new Set(nodeMetrics.map(m => m.chain))).slice(0, 3).map((chain, idx) => (
-                    <Line
-                      key={chain}
-                      type="monotone"
-                      dataKey="latency"
-                      stroke={['#3b82f6', '#10b981', '#f59e0b'][idx]}
-                      connectNulls
-                      name={chain}
-                    />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
+              <div style={{ height: 400 }}>
+                <Chart
+                  type="line"
+                  data={{
+                    labels: nodeMetrics.slice(-30).map(m => m.timestamp),
+                    datasets: Array.from(new Set(nodeMetrics.map(m => m.chain))).slice(0,3).map((chain, idx) => ({
+                      label: chain,
+                      data: nodeMetrics.slice(-30).filter(m => m.chain === chain).map(m => m.latency),
+                      borderColor: ['#3b82f6', '#10b981', '#f59e0b'][idx],
+                      backgroundColor: 'transparent',
+                      tension: 0.2,
+                    }))
+                  }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: true } } }}
+                />
+              </div>
             </Card>
           </TabsContent>
 
@@ -245,28 +243,24 @@ export default function AdminHealthMonitoring() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">CPU Usage</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={nodeMetrics.slice(-15)}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="timestamp" stroke="#94a3b8" angle={-45} height={80} />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Bar dataKey="cpu" fill="#ef4444" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="bar"
+                    data={{ labels: nodeMetrics.slice(-15).map(m => m.timestamp), datasets: [{ label: 'CPU', data: nodeMetrics.slice(-15).map(m => m.cpu), backgroundColor: '#ef4444' }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: true } } }}
+                  />
+                </div>
               </Card>
 
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Memory Usage</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={nodeMetrics.slice(-15)}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="timestamp" stroke="#94a3b8" angle={-45} height={80} />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Bar dataKey="memory" fill="#3b82f6" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="bar"
+                    data={{ labels: nodeMetrics.slice(-15).map(m => m.timestamp), datasets: [{ label: 'Memory', data: nodeMetrics.slice(-15).map(m => m.memory), backgroundColor: '#3b82f6' }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: true } } }}
+                  />
+                </div>
               </Card>
             </div>
           </TabsContent>

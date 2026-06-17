@@ -325,21 +325,8 @@ export default function StunningRegister() {
 
   // Handler for Google account creation
   const handleGoogleRegister = async () => {
-    try {
-      const response = await fetch('/api/auth/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to initialize Google sign-up');
-      }
-
-      const { url } = await response.json();
-      window.location.href = url;
-    } catch (err: any) {
-      setError(err.message || 'Failed to initialize Google sign-up');
-    }
+    // Redirect directly to the server OAuth initiation endpoint
+    window.location.href = '/api/auth/oauth/google?mode=register';
   };
 
   return (

@@ -51,6 +51,13 @@ export type { WalletProvider } from './wallet-provider-integrations';
 
 // ERC20 ABI export
 export { ENHANCED_ERC20_ABI } from './erc20-abi';
+import Web3 from 'web3';
+type Web3Type = InstanceType<typeof Web3>;
+
+interface SignerAccount {
+  address: string;
+  signTransaction(tx: Record<string, unknown>): Promise<any>;
+}
 
 /**
  * AgentWalletManager - Unified wallet service interface
@@ -59,17 +66,17 @@ export { ENHANCED_ERC20_ABI } from './erc20-abi';
  * Manages initialization and lifecycle of all service modules
  */
 export class AgentWalletManager {
-  private walletOperations?: any;
-  private tokenUtilities?: any;
-  private walletPersistence?: any;
-  private gasManager?: any;
-  private walletInfo?: any;
+  private walletOperations?: import('./wallet-operations').WalletOperationsService;
+  private tokenUtilities?: import('./token-utilities').TokenUtilitiesService;
+  private walletPersistence?: import('./wallet-persistence').WalletPersistenceService;
+  private gasManager?: import('./wallet-gas-manager').WalletGasManagerService;
+  private walletInfo?: import('./wallet-info').WalletInfoService;
   private isInitialized: boolean = false;
 
   /**
    * Initialize all wallet services
    */
-  async initialize(web3: any, account: any, chainId: number, dataDir?: string): Promise<void> {
+  async initialize(web3: Web3Type, account: SignerAccount, chainId: number, dataDir?: string): Promise<void> {
     try {
       const { createWalletOperationsService } = await import('./wallet-operations');
       const { createTokenUtilitiesService } = await import('./token-utilities');

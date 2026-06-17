@@ -11,7 +11,8 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { formatDistanceToNow, isPast } from 'date-fns';
+import formatDistanceToNow from 'date-fns/formatDistanceToNow';
+import isPast from 'date-fns/isPast';
 import { CheckCircle, XCircle, Clock, DollarSign, Users, AlertCircle } from 'lucide-react';
 
 interface Signer {

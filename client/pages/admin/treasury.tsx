@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useSession } from 'next-auth/react';
-import AdminLayout from '@/components/admin/AdminLayout';
+import AdminLayout from '@/pages/admin/AdminLayout';
 import AdminTable from '@/components/admin/AdminTable';
 import StatCard from '@/components/admin/StatCard';
 import styles from './treasury.module.css';
@@ -365,6 +365,7 @@ export default function TreasuryPage() {
             <div className={styles.filterSection}>
               <select
                 value={typeFilter}
+                aria-label="Filter by transaction type"
                 onChange={(e) => {
                   setTypeFilter(e.target.value);
                   setPage(1);
@@ -379,6 +380,7 @@ export default function TreasuryPage() {
               </select>
               <select
                 value={statusFilter}
+                aria-label="Filter by transaction status"
                 onChange={(e) => {
                   setStatusFilter(e.target.value);
                   setPage(1);

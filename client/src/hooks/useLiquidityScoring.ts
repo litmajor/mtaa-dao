@@ -51,7 +51,7 @@ async function fetchLiquidityScore(
 ): Promise<LiquidityMetrics> {
   try {
     const response = await fetch(
-      `/api/exchanges/liquidity/score?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}`
+      `/api/v1/yuki/exchanges/liquidity/score?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}`
     );
 
     if (!response.ok) {
@@ -89,7 +89,7 @@ export function useLiquidityScore(
 async function fetchLiquidityRanking(symbol: string, exchanges: string[]): Promise<LiquidityRanking> {
   try {
     const response = await fetch(
-      `/api/exchanges/liquidity/ranking?symbol=${encodeURIComponent(symbol)}&exchanges=${encodeURIComponent(exchanges.join(','))}`
+      `/api/v1/yuki/exchanges/liquidity/ranking?symbol=${encodeURIComponent(symbol)}&exchanges=${encodeURIComponent(exchanges.join(','))}`
     );
 
     if (!response.ok) {

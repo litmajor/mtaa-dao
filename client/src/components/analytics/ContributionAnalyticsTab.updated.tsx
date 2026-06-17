@@ -13,23 +13,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import {
-  AreaChart,
-  Area,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import {
   TrendingUp,
   TrendingDown,
@@ -355,20 +340,19 @@ export const ContributionAnalyticsTab: React.FC<ContributionAnalyticsTabProps> =
             <CardTitle>Contribution Trends</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={trendChartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Area type="monotone" dataKey="founder" stackId="1" stroke={COLORS[0]} fill={COLORS[0]} />
-                <Area type="monotone" dataKey="elder" stackId="1" stroke={COLORS[1]} fill={COLORS[1]} />
-                <Area type="monotone" dataKey="champion" stackId="1" stroke={COLORS[2]} fill={COLORS[2]} />
-                <Area type="monotone" dataKey="contributor" stackId="1" stroke={COLORS[3]} fill={COLORS[3]} />
-                <Area type="monotone" dataKey="participant" stackId="1" stroke={COLORS[4]} fill={COLORS[4]} />
-              </AreaChart>
-            </ResponsiveContainer>
+            <div style={{ height: 300 }}>
+              <Chart
+                type="line"
+                data={{ labels: trendChartData.map(t => t.date), datasets: [
+                  { label: 'Founder', data: trendChartData.map(t => t.founder), borderColor: COLORS[0], backgroundColor: `${COLORS[0]}22`, fill: true, tension: 0.2 },
+                  { label: 'Elder', data: trendChartData.map(t => t.elder), borderColor: COLORS[1], backgroundColor: `${COLORS[1]}22`, fill: true, tension: 0.2 },
+                  { label: 'Champion', data: trendChartData.map(t => t.champion), borderColor: COLORS[2], backgroundColor: `${COLORS[2]}22`, fill: true, tension: 0.2 },
+                  { label: 'Contributor', data: trendChartData.map(t => t.contributor), borderColor: COLORS[3], backgroundColor: `${COLORS[3]}22`, fill: true, tension: 0.2 },
+                  { label: 'Participant', data: trendChartData.map(t => t.participant), borderColor: COLORS[4], backgroundColor: `${COLORS[4]}22`, fill: true, tension: 0.2 }
+                ] }}
+                options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { x: { stacked: true }, y: { stacked: true } } }}
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -378,17 +362,13 @@ export const ContributionAnalyticsTab: React.FC<ContributionAnalyticsTabProps> =
             <CardTitle>Member Growth Over Time</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={trendChartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="founder" stroke={COLORS[0]} strokeWidth={2} />
-                <Line type="monotone" dataKey="elder" stroke={COLORS[1]} strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
+            <div style={{ height: 300 }}>
+              <Chart
+                type="line"
+                data={{ labels: trendChartData.map(t => t.date), datasets: [{ label: 'Founder', data: trendChartData.map(t => t.founder), borderColor: COLORS[0], backgroundColor: 'rgba(59,130,246,0.06)', tension: 0.2 }, { label: 'Elder', data: trendChartData.map(t => t.elder), borderColor: COLORS[1], backgroundColor: 'rgba(139,92,246,0.06)', tension: 0.2 }] }}
+                options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }}
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -398,25 +378,13 @@ export const ContributionAnalyticsTab: React.FC<ContributionAnalyticsTabProps> =
             <CardTitle>Member Tier Distribution</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={distributionChartData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, value }) => `${name} ${value.toFixed(1)}%`}
-                  outerRadius={100}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {distributionChartData.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value: any) => `${value.toFixed(1)}%`} />
-              </PieChart>
-            </ResponsiveContainer>
+            <div style={{ height: 300 }}>
+              <Chart
+                type="pie"
+                data={{ labels: distributionChartData.map(d => d.name), datasets: [{ data: distributionChartData.map(d => d.value), backgroundColor: distributionChartData.map((_, i) => COLORS[i % COLORS.length]) }] }}
+                options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${ctx.label} ${ctx.raw.toFixed(1)}%` } } } }}
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -426,18 +394,13 @@ export const ContributionAnalyticsTab: React.FC<ContributionAnalyticsTabProps> =
             <CardTitle>Top 10 Contributors</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart
-                data={top10Data}
-                layout="vertical"
-                margin={{ top: 5, right: 30, left: 200, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" />
-                <Tooltip formatter={(value: any) => formatNumber(value)} />
-                <Bar dataKey="score" fill={COLORS[0]} name="Weighted Score" />
-              </BarChart>
-            </ResponsiveContainer>
+            <div style={{ height: 300 }}>
+              <Chart
+                type="bar"
+                data={{ labels: top10Data.map(t => t.name), datasets: [{ label: 'Weighted Score', data: top10Data.map(t => t.score), backgroundColor: COLORS[0] }] }}
+                options={{ indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { callback: (v: any) => formatNumber(Number(v)) } } } }}
+              />
+            </div>
           </CardContent>
         </Card>
       </div>

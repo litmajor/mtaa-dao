@@ -1,6 +1,5 @@
 
 import { Logger } from '../utils/logger';
-import { tokenService } from './tokenService';
 
 const logger = Logger.getLogger();
 
@@ -15,148 +14,122 @@ interface GasPrice {
 }
 
 interface GasStrategy {
-  maxFeePerGas: string;
-  maxPriorityFeePerGas: string;
+  maxFeePerGas?: string;
+  maxPriorityFeePerGas?: string;
   gasPrice?: string;
 }
 
-export class GasPriceOracle {
-  private cachedPrices: GasPrice | null = null;
-  private cacheExpiry: number = 0;
-  private readonly CACHE_DURATION = 30000; // 30 seconds
-  private readonly SAFETY_MULTIPLIER = 1.2; // 20% buffer for network spikes
+const FEE_STRATEGIES: Record<string, { multiplier: number; priority: number; replacementBumpPct?: number }> = {
+  ethereum: { multiplier: 1.2, priority: 1.5, replacementBumpPct: 10 },
+  polygon: { multiplier: 1.5, priority: 2.0, replacementBumpPct: 20 },
+  arbitrum: { multiplier: 1.1, priority: 1.2, replacementBumpPct: 8 },
+  optimism: { multiplier: 1.15, priority: 1.25, replacementBumpPct: 10 },
+  bsc: { multiplier: 1.05, priority: 1.0, replacementBumpPct: 5 },
+  base: { multiplier: 1.1, priority: 1.2, replacementBumpPct: 8 },
+  avalanche: { multiplier: 1.1, priority: 1.2, replacementBumpPct: 8 }
+};
 
-  /**
-   * Get current gas prices from the network
-   */
-  async getCurrentGasPrices(): Promise<GasPrice> {
+export class GasPriceOracle {
+  private cached: Map<string, { prices: GasPrice; expiry: number }> = new Map();
+  private readonly DEFAULT_CACHE_MS = 30 * 1000;
+
+  // Get current gas prices for a specific provider + chain
+  async getCurrentGasPrices(provider: any, chain: string): Promise<GasPrice> {
     const now = Date.now();
-    
-    // Return cached prices if still valid
-    if (this.cachedPrices && now < this.cacheExpiry) {
-      return this.cachedPrices;
-    }
+    const cacheKey = chain || 'default';
+    const cached = this.cached.get(cacheKey);
+    if (cached && now < cached.expiry) return cached.prices;
 
     try {
-      const provider = tokenService.provider;
-      
-      // Try EIP-1559 pricing first (Celo supports this)
+      // Prefer EIP-1559 fee data when available
+      const feeData = await provider.getFeeData();
+      let baseFee: bigint | undefined;
+      let priorityFee: bigint | undefined;
       try {
-        const feeData = await provider.getFeeData();
         const block = await provider.getBlock('latest');
-        
-        if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas && block?.baseFeePerGas) {
-          const baseFee = block.baseFeePerGas;
-          const priorityFee = feeData.maxPriorityFeePerGas;
-          
-          this.cachedPrices = {
-            slow: (baseFee * BigInt(110) / BigInt(100)).toString(), // 1.1x base
-            standard: (baseFee * BigInt(120) / BigInt(100) + priorityFee).toString(), // 1.2x base + priority
-            fast: (baseFee * BigInt(150) / BigInt(100) + priorityFee * BigInt(2)).toString(), // 1.5x base + 2x priority
-            instant: (baseFee * BigInt(200) / BigInt(100) + priorityFee * BigInt(3)).toString(), // 2x base + 3x priority
-            baseFee: baseFee.toString(),
-            priorityFee: priorityFee.toString(),
-            timestamp: now
-          };
-        }
-      } catch (eip1559Error) {
-        logger.warn('EIP-1559 not available, falling back to legacy gas pricing');
+        baseFee = block?.baseFeePerGas as bigint | undefined;
+      } catch (e) {
+        // ignore
       }
 
-      // Fallback to legacy gas pricing
-      if (!this.cachedPrices) {
-        const gasPrice = await provider.getGasPrice();
-        
-        this.cachedPrices = {
-          slow: (gasPrice * BigInt(90) / BigInt(100)).toString(), // 0.9x
-          standard: gasPrice.toString(),
-          fast: (gasPrice * BigInt(120) / BigInt(100)).toString(), // 1.2x
-          instant: (gasPrice * BigInt(150) / BigInt(100)).toString(), // 1.5x
+      if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas && baseFee) {
+        priorityFee = feeData.maxPriorityFeePerGas as bigint;
+        const base = baseFee as bigint;
+        const prices: GasPrice = {
+          slow: (base * BigInt(110) / BigInt(100)).toString(),
+          standard: (base * BigInt(120) / BigInt(100) + priorityFee).toString(),
+          fast: (base * BigInt(150) / BigInt(100) + priorityFee * BigInt(2)).toString(),
+          instant: (base * BigInt(200) / BigInt(100) + priorityFee * BigInt(3)).toString(),
+          baseFee: base.toString(),
+          priorityFee: priorityFee.toString(),
           timestamp: now
         };
+        this.cached.set(cacheKey, { prices, expiry: now + this.DEFAULT_CACHE_MS });
+        return prices;
       }
 
-      this.cacheExpiry = now + this.CACHE_DURATION;
-      return this.cachedPrices;
-      
-    } catch (error) {
-      logger.error('Failed to fetch gas prices:', error);
-      // Return reasonable defaults instead of throwing to keep system operational
-      const defaultPrice = BigInt('2000000000'); // 2 Gwei fallback
-      this.cachedPrices = {
-        slow: (defaultPrice * BigInt(80) / BigInt(100)).toString(),
-        standard: defaultPrice.toString(),
-        fast: (defaultPrice * BigInt(120) / BigInt(100)).toString(),
-        instant: (defaultPrice * BigInt(150) / BigInt(100)).toString(),
+      // Legacy gasPrice fallback
+      const gasPrice = await provider.getGasPrice();
+      const prices: GasPrice = {
+        slow: (gasPrice * BigInt(90) / BigInt(100)).toString(),
+        standard: gasPrice.toString(),
+        fast: (gasPrice * BigInt(120) / BigInt(100)).toString(),
+        instant: (gasPrice * BigInt(150) / BigInt(100)).toString(),
         timestamp: now
       };
-      this.cacheExpiry = now + (this.CACHE_DURATION / 2); // Shorter cache for fallback
-      logger.warn('Using fallback gas prices due to RPC error');
-      return this.cachedPrices;
+
+      this.cached.set(cacheKey, { prices, expiry: now + this.DEFAULT_CACHE_MS });
+      return prices;
+    } catch (err: any) {
+      logger.warn('Gas price fetch failed, returning conservative defaults', { chain, error: err?.message });
+      const fallback = BigInt(2_000_000_000); // 2 Gwei
+      const prices: GasPrice = {
+        slow: (fallback * BigInt(80) / BigInt(100)).toString(),
+        standard: fallback.toString(),
+        fast: (fallback * BigInt(120) / BigInt(100)).toString(),
+        instant: (fallback * BigInt(150) / BigInt(100)).toString(),
+        timestamp: now
+      };
+      this.cached.set(cacheKey, { prices, expiry: now + (this.DEFAULT_CACHE_MS / 2) });
+      return prices;
     }
   }
 
-  /**
-   * Get optimal gas strategy based on urgency and network conditions
-   */
-  async getOptimalGasStrategy(urgency: 'slow' | 'standard' | 'fast' | 'instant' = 'standard'): Promise<GasStrategy> {
-    const prices = await this.getCurrentGasPrices();
-    
-    // Apply safety multiplier to prevent transaction failures during spikes
-    const selectedPrice = BigInt(prices[urgency]);
-    const safePrice = selectedPrice * BigInt(Math.floor(this.SAFETY_MULTIPLIER * 100)) / BigInt(100);
+  // Compute optimal gas strategy with chain-specific scaling
+  async getOptimalGasStrategy(provider: any, chain: string, urgency: 'slow' | 'standard' | 'fast' | 'instant' = 'standard'): Promise<GasStrategy> {
+    const strategy = FEE_STRATEGIES[chain] || { multiplier: 1.2, priority: 1.5, replacementBumpPct: 10 };
+    const prices = await this.getCurrentGasPrices(provider, chain);
 
-    // EIP-1559 strategy
+    // Selected base price
+    const selected = BigInt(prices[urgency]);
+    const scaled = selected * BigInt(Math.floor(strategy.multiplier * 100)) / BigInt(100);
+
     if (prices.baseFee && prices.priorityFee) {
-      const baseFee = BigInt(prices.baseFee);
-      const priorityFee = BigInt(prices.priorityFee);
-      
+      const priority = BigInt(prices.priorityFee);
       return {
-        maxFeePerGas: safePrice.toString(),
-        maxPriorityFeePerGas: (priorityFee * BigInt(Math.floor(this.SAFETY_MULTIPLIER * 100)) / BigInt(100)).toString()
+        maxFeePerGas: scaled.toString(),
+        maxPriorityFeePerGas: (priority * BigInt(Math.floor(strategy.priority * 100)) / BigInt(100)).toString()
       };
     }
 
-    // Legacy strategy
-    return {
-      gasPrice: safePrice.toString()
-    };
+    return { gasPrice: scaled.toString() };
   }
 
-  /**
-   * Estimate if current gas prices are high (network congestion)
-   */
-  async isNetworkCongested(): Promise<boolean> {
-    const prices = await this.getCurrentGasPrices();
-    const standardPrice = BigInt(prices.standard);
-    const slowPrice = BigInt(prices.slow);
-    
-    // Network is congested if standard is >50% higher than slow
-    return standardPrice > (slowPrice * BigInt(150) / BigInt(100));
+  // Provide a replacement price to bump a stuck transaction by a percentage
+  async getReplacementPrice(provider: any, chain: string, currentGasPrice: bigint | string, bumpPct?: number): Promise<string> {
+    const strategy = FEE_STRATEGIES[chain] || { multiplier: 1.2, priority: 1.5, replacementBumpPct: 10 };
+    const bump = bumpPct ?? strategy.replacementBumpPct ?? 10;
+    const current = typeof currentGasPrice === 'string' ? BigInt(currentGasPrice) : currentGasPrice;
+
+    // Fetch latest standard price to avoid underbidding
+    const latest = await this.getCurrentGasPrices(provider, chain).then(p => BigInt(p.standard));
+    const bumped = latest > current ? latest + (latest * BigInt(bump) / BigInt(100)) : current + (current * BigInt(bump) / BigInt(100));
+    return bumped.toString();
   }
 
-  /**
-   * Get recommended wait time in seconds based on urgency
-   */
-  async getRecommendedWaitTime(urgency: 'slow' | 'standard' | 'fast' | 'instant'): Promise<number> {
-    const isCongested = await this.isNetworkCongested();
-    
-    const baseWaitTimes = {
-      slow: isCongested ? 180 : 120,      // 2-3 minutes
-      standard: isCongested ? 90 : 60,    // 1-1.5 minutes
-      fast: isCongested ? 45 : 30,        // 30-45 seconds
-      instant: isCongested ? 20 : 15      // 15-20 seconds
-    };
-    
-    return baseWaitTimes[urgency];
-  }
-
-  /**
-   * Clear cache (useful for testing or manual refresh)
-   */
-  clearCache(): void {
-    this.cachedPrices = null;
-    this.cacheExpiry = 0;
+  clearCache(chain?: string) {
+    if (chain) this.cached.delete(chain);
+    else this.cached.clear();
   }
 }
 

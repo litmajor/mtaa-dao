@@ -4,8 +4,8 @@
  */
 
 import { relations } from 'drizzle-orm';
-import { bots, botTrades, botPerformance, botActionLog } from './bots';
-import { users } from './users';
+import { bots, botTrades, botPerformance, botActionLog } from '../schema/bots';
+import { users } from '../../../shared/schema';
 
 /**
  * Bot Relations

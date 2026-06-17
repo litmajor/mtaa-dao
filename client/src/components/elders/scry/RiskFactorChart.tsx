@@ -1,14 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend
-} from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 
 interface RiskFactorData {
   name: string;
@@ -58,46 +50,31 @@ export default function RiskFactorChart({ daoId, factors = DEFAULT_FACTORS }: Ri
       {/* Chart */}
       <div className="bg-slate-700/50 rounded-lg p-6 border border-slate-600">
         <h4 className="font-bold text-white mb-4">Risk Factor Analysis</h4>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={data} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.3)" />
-            <XAxis
-              dataKey="name"
-              stroke="rgba(148,163,184,0.5)"
-              tick={{ fontSize: 12 }}
-            />
-            <YAxis
-              domain={[0, 100]}
-              stroke="rgba(148,163,184,0.5)"
-              tick={{ fontSize: 12 }}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: 'rgba(15,23,42,0.9)',
-                border: '1px solid rgba(71,85,105,0.5)',
-                borderRadius: '0.5rem'
-              }}
-              labelStyle={{ color: '#e2e8f0' }}
-              formatter={(value) => `${Math.round(value as number)}%`}
-            />
-            <Legend
-              wrapperStyle={{ paddingTop: '20px' }}
-              iconType="square"
-            />
-            <Bar
-              dataKey="baseline"
-              fill="rgba(100,116,139,0.5)"
-              name="Baseline"
-              radius={[4, 4, 0, 0]}
-            />
-            <Bar
-              dataKey="current"
-              fill="#3b82f6"
-              name="Current"
-              radius={[4, 4, 0, 0]}
-            />
-          </BarChart>
-        </ResponsiveContainer>
+        <div style={{ height: 300 }}>
+          {
+            (() => {
+              const chartData = {
+                labels: data.map(d => d.name),
+                datasets: [
+                  { label: 'Baseline', data: data.map(d => d.baseline), backgroundColor: 'rgba(100,116,139,0.5)' },
+                  { label: 'Current', data: data.map(d => d.current), backgroundColor: '#3b82f6' }
+                ]
+              };
+
+              const chartOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: { position: 'top' },
+                  tooltip: { callbacks: { label: (ctx: any) => (Math.round((ctx.raw as number) || 0) + '%') } }
+                },
+                scales: { x: { stacked: false }, y: { min: 0, max: 100 } }
+              };
+
+              return <Chart type="bar" data={chartData} options={chartOptions} />;
+            })()
+          }
+        </div>
       </div>
 
       {/* Risk Factor Details */}

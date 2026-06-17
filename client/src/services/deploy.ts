@@ -7,9 +7,9 @@ export interface DeployResult {
   error?: string;
 }
 
-export async function deployCompiledStrategy(compiled: any): Promise<any> {
+export async function deployCompiledStrategy(compiled: any, deploymentConfig?: any): Promise<any> {
   try {
-    const res = await yukiApi.deployCompiledStrategy(compiled);
+    const res = await yukiApi.deployCompiledStrategy(compiled, deploymentConfig);
     return res?.data ?? res;
   } catch (err) {
     throw err;

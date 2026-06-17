@@ -28,7 +28,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Separator } from './ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { formatDistanceToNow } from 'date-fns';
+import formatDistanceToNow from 'date-fns/formatDistanceToNow';
 
 interface Notification {
   id: string;

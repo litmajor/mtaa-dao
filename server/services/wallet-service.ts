@@ -590,8 +590,7 @@ export async function verifyWalletOwnership(
 
   if (message && signature) {
     // Lazy import ethers to avoid heavy startup cost
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { ethers } = require('ethers');
+    const { ethers } = await import('ethers');
     let recovered: string;
     try {
       recovered = ethers.verifyMessage(message, signature);

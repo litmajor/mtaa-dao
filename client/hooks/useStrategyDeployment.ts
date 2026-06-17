@@ -46,6 +46,7 @@ export const useStrategyDeployment = () => {
     pairs: string[],
     initialCapital: number,
     botName: string
+  , options?: { dry_run?: boolean }
   ): Promise<ActiveBot> => {
     try {
       setLoading(true);
@@ -61,11 +62,17 @@ export const useStrategyDeployment = () => {
         initialCapital
       };
 
-      // API call to deploy
-      const response = await fetch('/api/bots/deploy', {
+      // If this is a live deploy, quick client-side 2FA check to improve UX
+      if (options?.dry_run === false) {
+        const check = await fetch('/api/v1/settings/2fa/check', { method: 'POST' });
+        if (check.status === 403) throw new Error('2FA verification required');
+      }
+
+      // API call to deploy (v1 route)
+      const response = await fetch('/api/v1/bots/deploy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config)
+        body: JSON.stringify({ ...config, enableRealTrading: options?.dry_run === false })
       });
 
       if (!response.ok) {

@@ -1,8 +1,8 @@
 
 import { Request, Response } from 'express';
 import { db } from '../db';
-import { users, userActivities, proposals, tasks } from '../../shared/schema';
-import { userActivitiesDaoId } from '../../shared/schema';
+import { users, proposals, tasks } from '../../shared/schema';
+import { userActivities } from '../../shared/schema';
 import { eq, desc, sql, and, gte } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
 import { AppError } from '../middleware/errorHandler';
@@ -108,7 +108,7 @@ export async function getDaoReputationLeaderboardHandler(req: Request, res: Resp
       .from(users)
       .innerJoin(userActivities, eq(users.id, userActivities.userId))
       .where(and(
-        eq(userActivitiesDaoId, daoId),
+        eq(userActivities, daoId),
         sql`${users.reputationScore} > 0`
       ))
       .groupBy(users.id)

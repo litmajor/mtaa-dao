@@ -23,11 +23,49 @@ export class ProposalStorage {
    * Create a new proposal
    * ⚠️ PERSISTENCE GAP: No draft state support, proposals must be published immediately
    */
-  async createProposal(proposal: any): Promise<any> {
+  async createProposal(proposal: Partial<InsertProposal>): Promise<Proposal> {
     if (!proposal.title || !proposal.daoId) throw new Error('Proposal must have title and daoId');
-    proposal.createdAt = new Date();
-    proposal.updatedAt = new Date();
-    const result = await this.db.insert(proposals).values(proposal).returning();
+    // Require proposer identity to satisfy schema
+    const proposerId = proposal.proposerId || proposal.userId || proposal.proposer;
+    if (!proposerId) throw new Error('Proposal must have proposerId/userId/proposer');
+
+    const insertObj: InsertProposal = {
+      title: proposal.title as string,
+      description: proposal.description || '',
+      proposalType: proposal.proposalType || 'general',
+      templateId: proposal.templateId,
+      tags: proposal.tags || [],
+      imageUrl: proposal.imageUrl,
+      pollOptions: proposal.pollOptions || [],
+      allowMultipleChoices: proposal.allowMultipleChoices,
+      proposer: (proposal.proposer as string) || (proposerId as string),
+      proposerId: (proposal.proposerId as string) || (proposerId as string),
+      userId: (proposal.userId as string) || (proposerId as string),
+      daoId: proposal.daoId as string,
+      status: proposal.status || 'active',
+      isDraft: !!proposal.isDraft,
+      voteStartTime: proposal.voteStartTime || new Date(),
+      voteEndTime: proposal.voteEndTime || new Date(Date.now() + 72 * 60 * 60 * 1000),
+      quorumRequired: proposal.quorumRequired,
+      yesVotes: proposal.yesVotes,
+      noVotes: proposal.noVotes,
+      abstainVotes: proposal.abstainVotes,
+      forVotes: proposal.forVotes,
+      againstVotes: proposal.againstVotes,
+      metadata: proposal.metadata,
+      totalVotingPower: proposal.totalVotingPower,
+      executionData: proposal.executionData,
+      executedAt: proposal.executedAt,
+      executedBy: proposal.executedBy,
+      executionTxHash: proposal.executionTxHash,
+      createdAt: proposal.createdAt || new Date(),
+      updatedAt: proposal.updatedAt || new Date(),
+      isFeatured: proposal.isFeatured,
+      likesCount: proposal.likesCount,
+      commentsCount: proposal.commentsCount,
+    } as InsertProposal;
+
+    const result = await this.db.insert(proposals).values(insertObj).returning();
     if (!result[0]) throw new Error('Failed to create proposal');
     return result[0];
   }
@@ -57,7 +95,7 @@ export class ProposalStorage {
   async updateProposal(id: string, data: any, userId: string): Promise<Proposal> {
     if (!id || !data.title) throw new Error('Proposal ID and title required');
     const proposal = await this.getProposal(id);
-    if (proposal.userId !== userId) throw new Error('Only proposal creator can update');
+    if (proposal.proposerId !== userId) throw new Error('Only proposal creator can update');
     const result = await this.db.update(proposals)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(proposals.id, id))
@@ -72,7 +110,7 @@ export class ProposalStorage {
   async deleteProposal(id: string, userId: string): Promise<void> {
     const proposal = await this.getProposal(id);
     // For now, just check creator - would need getDaoMembership for admin check
-    if (proposal.userId !== userId) {
+    if (proposal.proposerId !== userId) {
       throw new Error('Only proposal creator can delete');
     }
     await this.db.delete(proposals).where(eq(proposals.id, id));
@@ -101,6 +139,13 @@ export class ProposalStorage {
    */
   async createVote(vote: any): Promise<any> {
     if (!vote.proposalId || !vote.userId) throw new Error('Vote must have proposalId and userId');
+    // Ensure daoId is present on vote (schema requires daoId)
+    if (!vote.daoId) {
+      const prop = await this.db.select({ daoId: proposals.daoId }).from(proposals)
+        .where(eq(proposals.id, vote.proposalId)).limit(1);
+      if (!prop[0]) throw new Error('Proposal not found for vote');
+      vote.daoId = prop[0].daoId;
+    }
     vote.createdAt = new Date();
     vote.updatedAt = new Date();
     const result = await this.db.insert(votes).values(vote).returning();
@@ -141,9 +186,9 @@ export class ProposalStorage {
    * Count votes for a proposal in a DAO
    */
   async getVotesCount(daoId: string, proposalId: string): Promise<number> {
-    if (!proposalId || !daoId) throw new Error('User ID and DAO ID required');
+    if (!proposalId || !daoId) throw new Error('Proposal ID and DAO ID required');
     const result = await this.db.select().from(votes)
-      .where(and(eq(votes.userId, proposalId), eq(votes.daoId, daoId)));
+      .where(and(eq(votes.proposalId, proposalId), eq(votes.daoId, daoId)));
     return result.length;
   }
 
@@ -242,12 +287,20 @@ export class ProposalStorage {
       return null;
     }
 
-    const [newLike] = await this.db.insert(proposalLikes).values({
+    // ensure we include daoId (required by schema)
+    const prop = await this.db.select({ daoId: proposals.daoId }).from(proposals)
+      .where(eq(proposals.id, proposalId)).limit(1);
+    if (!prop[0]) throw new Error('Proposal not found');
+    const daoId = prop[0].daoId;
+
+    const likeInsert: InsertProposalLike = {
       proposalId,
       userId,
+      daoId,
       createdAt: new Date(),
-    }).returning();
+    } as InsertProposalLike;
 
+    const [newLike] = await this.db.insert(proposalLikes).values(likeInsert).returning();
     return newLike;
   }
 
@@ -286,12 +339,20 @@ export class ProposalStorage {
       return null;
     }
 
-    const [newLike] = await this.db.insert(commentLikes).values({
+    // include daoId required by schema
+    const commentRec = await this.db.select({ daoId: proposalComments.daoId }).from(proposalComments)
+      .where(eq(proposalComments.id, commentId)).limit(1);
+    if (!commentRec[0]) throw new Error('Comment not found');
+    const daoId = commentRec[0].daoId;
+
+    const commentLikeInsert: InsertCommentLike = {
       commentId,
       userId,
+      daoId,
       createdAt: new Date(),
-    }).returning();
+    } as InsertCommentLike;
 
+    const [newLike] = await this.db.insert(commentLikes).values(commentLikeInsert).returning();
     return newLike;
   }
 
@@ -312,22 +373,25 @@ export class ProposalStorage {
     if (!draftData.title || !draftData.daoId || !draftData.proposerId) {
       throw new Error('Draft must have title, daoId, and proposerId');
     }
-    const result = await this.db.insert(proposals).values({
+    const draftInsert: InsertProposal = {
       title: draftData.title,
       description: draftData.description || '',
       proposalType: draftData.proposalType || 'general',
-      proposerId: draftData.proposerId,
       proposer: draftData.proposerId,
+      proposerId: draftData.proposerId,
       userId: draftData.proposerId,
       daoId: draftData.daoId,
       status: 'draft',
       isDraft: true,
-      voteEndTime: draftData.voteEndTime || new Date(Date.now() + 72 * 60 * 60 * 1000), // 72 hours default
+      voteStartTime: draftData.voteStartTime || new Date(),
+      voteEndTime: draftData.voteEndTime || new Date(Date.now() + 72 * 60 * 60 * 1000),
       tags: draftData.tags || [],
       metadata: draftData.metadata,
       createdAt: new Date(),
       updatedAt: new Date(),
-    }).returning();
+    } as InsertProposal;
+
+    const result = await this.db.insert(proposals).values(draftInsert).returning();
     return result[0];
   }
 
@@ -381,7 +445,7 @@ export class ProposalStorage {
         eq(proposals.id, proposalId),
         eq(proposals.isDraft, true)
       ));
-    return result.rowCount > 0;
+    return (result?.rowCount ?? 0) > 0;
   }
 
   /**
@@ -392,18 +456,18 @@ export class ProposalStorage {
       throw new Error('Comment ID, previous content, new content, and edited by required');
     }
     
-    // Store in JSON for now - ideally should have dedicated table
+    // Store edit history as JSON array (jsonb column) rather than string
     const result = await this.db.update(proposalComments)
       .set({
         content: newContent,
-        editHistory: JSON.stringify([
+        editHistory: [
           {
             previousContent,
             newContent,
             editedBy,
             editedAt: new Date().toISOString(),
           }
-        ]),
+        ],
         lastEditedAt: new Date(),
         lastEditedBy: editedBy,
         updatedAt: new Date(),
@@ -422,9 +486,11 @@ export class ProposalStorage {
       .where(eq(proposalComments.id, commentId));
     
     if (!result[0]) throw new Error('Comment not found');
+    const raw = result[0].editHistory;
+    const editHistory = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw as any) : []);
     return {
       commentId,
-      editHistory: result[0].editHistory ? JSON.parse(result[0].editHistory) : [],
+      editHistory,
       lastEditedAt: result[0].lastEditedAt,
       lastEditedBy: result[0].lastEditedBy,
     };

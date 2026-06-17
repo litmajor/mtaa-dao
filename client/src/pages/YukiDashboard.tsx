@@ -12,9 +12,11 @@
  * - WebSocket real-time updates
  */
 
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { Helmet } from 'react-helmet-async';
-import YukiDashboard from '@/components/trading/YukiDashboard';
+import { PageLoading } from '@/components/ui/page-loading';
+
+const YukiDashboardLazy = lazy(() => import('@/components/trading/YukiDashboard'));
 
 export default function YukiDashboardPage() {
   return (
@@ -27,7 +29,9 @@ export default function YukiDashboardPage() {
         />
         <meta name="robots" content="noindex, nofollow" />
       </Helmet>
-      <YukiDashboard />
+      <Suspense fallback={<PageLoading />}>
+        <YukiDashboardLazy />
+      </Suspense>
     </>
   );
 }

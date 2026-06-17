@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { Wallet, AlertCircle, CheckCircle, Clock, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -153,38 +154,24 @@ export default function AdminPaymentProviders() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Transaction Status Distribution</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={stats}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ status, count }) => `${status}: ${count}`}
-                      outerRadius={100}
-                      fill="#8884d8"
-                      dataKey="count"
-                    >
-                      {stats.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={PROVIDER_COLORS[index % PROVIDER_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  </PieChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="pie"
+                    data={{ labels: stats.map(s => s.status), datasets: [{ data: stats.map(s => s.count), backgroundColor: stats.map((_, i) => PROVIDER_COLORS[i % PROVIDER_COLORS.length]) }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${ctx.label}: ${ctx.raw}` } } } }}
+                  />
+                </div>
               </Card>
 
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Provider Comparison</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={providers.slice(0, 6)}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="name" stroke="#94a3b8" angle={-45} height={80} />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Bar dataKey="volume24h" fill="#3b82f6" name="Volume" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="bar"
+                    data={{ labels: providers.slice(0, 6).map(p => p.name), datasets: [{ label: 'Volume', data: providers.slice(0, 6).map(p => p.volume24h), backgroundColor: '#3b82f6' }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
+                  />
+                </div>
               </Card>
             </div>
           </TabsContent>
@@ -307,15 +294,13 @@ export default function AdminPaymentProviders() {
 
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Success Rate by Provider</h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={providers}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="name" stroke="#94a3b8" angle={-45} height={80} />
-                  <YAxis stroke="#94a3b8" domain={[95, 100]} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  <Bar dataKey="successRate" fill="#10b981" />
-                </BarChart>
-              </ResponsiveContainer>
+              <div style={{ height: 300 }}>
+                <Chart
+                  type="bar"
+                  data={{ labels: providers.map(p => p.name), datasets: [{ label: 'Success Rate', data: providers.map(p => p.successRate), backgroundColor: '#10b981' }] }}
+                  options={{ responsive: true, maintainAspectRatio: false, scales: { y: { min: 95, max: 100 } }, plugins: { legend: { display: false } } }}
+                />
+              </div>
             </Card>
           </TabsContent>
 

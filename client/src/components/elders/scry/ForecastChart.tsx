@@ -1,15 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Area,
-  AreaChart
-} from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Line } from 'react-chartjs-2';
 
 interface ChartData {
   time: string;
@@ -46,49 +37,40 @@ export default function ForecastChart({ daoId, dataPoints = 24 }: ForecastChartP
     setData(mockData);
   }, [daoId, dataPoints]);
 
+  const labels = data.map(d => d.time);
+  const chartData = {
+    labels,
+    datasets: [
+      {
+        label: 'Health Score',
+        data: data.map(d => d.score),
+        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(59,130,246,0.15)',
+        fill: true,
+        tension: 0.2,
+        pointRadius: 2,
+        borderWidth: 2,
+      },
+    ],
+  };
+
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+    scales: {
+      x: { ticks: { color: 'rgba(148,163,184,0.9)' } },
+      y: { min: 0, max: 100, ticks: { color: 'rgba(148,163,184,0.9)' } },
+    },
+  } as any;
+
   return (
     <div className="bg-slate-700/50 rounded-lg p-6 border border-slate-600">
       <h4 className="font-bold text-white mb-4">24-Hour Health Forecast</h4>
-      <ResponsiveContainer width="100%" height={300}>
-        <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-          <defs>
-            <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.3)" />
-          <XAxis 
-            dataKey="time" 
-            stroke="rgba(148,163,184,0.5)"
-            tick={{ fontSize: 12 }}
-          />
-          <YAxis 
-            domain={[0, 100]} 
-            stroke="rgba(148,163,184,0.5)"
-            tick={{ fontSize: 12 }}
-          />
-          <Tooltip
-            contentStyle={{ 
-              backgroundColor: 'rgba(15,23,42,0.9)', 
-              border: '1px solid rgba(71,85,105,0.5)',
-              borderRadius: '0.5rem'
-            }}
-            labelStyle={{ color: '#e2e8f0' }}
-            formatter={(value) => `${Math.round(value as number)}%`}
-          />
-          <Area
-            type="monotone"
-            dataKey="score"
-            stroke="#3b82f6"
-            strokeWidth={2}
-            fillOpacity={1}
-            fill="url(#colorScore)"
-            isAnimationActive={false}
-          />
-        </AreaChart>
-      </ResponsiveContainer>
-      
+      <div style={{ height: 300 }}>
+        <Line data={chartData} options={options} />
+      </div>
+
       <div className="mt-4 pt-4 border-t border-slate-600">
         <p className="text-xs text-gray-400">
           <strong>Health Score:</strong> Overall DAO health metric combining treasury, governance, and community factors.

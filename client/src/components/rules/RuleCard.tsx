@@ -24,7 +24,7 @@ export default function RuleCard({ rule, daoId, onRefresh }: RuleCardProps) {
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/daos/${daoId}/rules/${rule.id}`, {
+      const response = await fetch(`/api/v1/daos/${daoId}/rules/${rule.id}`, {
         method: 'DELETE'
       });
 
@@ -44,7 +44,7 @@ export default function RuleCard({ rule, daoId, onRefresh }: RuleCardProps) {
   const toggleEnabled = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/daos/${daoId}/rules/${rule.id}`, {
+      const response = await fetch(`/api/v1/daos/${daoId}/rules/${rule.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: !rule.enabled })

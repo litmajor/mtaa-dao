@@ -1,184 +1,333 @@
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db';
-import { daos, daoMemberships, vaults, users, wallets, multisigWallets, multisigSigners } from '../../shared/schema';
+import {
+  daos,
+  daoMemberships,
+  vaults,
+  loanFacilities,
+  users,
+  wallets,
+  multisigWallets,
+  multisigSigners,
+} from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
 import { DAO_TYPE_CONFIG } from '../config/daoTypes';
-import { evaluateMemberCreationRules, formatRuleRejectionMessage, logRuleEvaluation } from '../services/rules-integration';
-
-// Validate if string is a valid Ethereum address
-const isAddress = (address: string): boolean => {
-  try {
-    return /^0x[a-fA-F0-9]{40}$/.test(address);
-  } catch {
-    return false;
-  }
-};
+import {
+  evaluateMemberCreationRules,
+  formatRuleRejectionMessage,
+  logRuleEvaluation,
+} from '../services/rules-integration';
+import {
+  getChamaTreasuryDeployer,
+  DAO_TYPE_ENUM,
+  type DaoTypeKey,
+} from '../../contracts/chamaTreasuryDeployer';
+import { ethers } from 'ethers';
+import { registerEscrowReferral } from '../services/referral-integration';
 
 const logger = new Logger('dao-deploy');
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Canonical DAO type IDs — must match DAO_TYPE_CONFIG keys and Solidity enum.
+ * Old keys (collective, governance, short_term, free, meta, investment_club)
+ * are normalized to these before any processing.
+ */
+type CanonicalDaoType =
+  | 'harambee'
+  | 'shortTerm'
+  | 'savings'
+  | 'merryGoRound'
+  | 'community'
+  | 'investment';
 
 export interface DaoDeployRequest {
   daoData: {
     name: string;
     description?: string;
-    daoType: 'shortTerm' | 'collective' | 'governance' | 'short_term' | 'free' | 'meta' | 'investment_club';
+    /** Accept canonical or legacy type IDs — normalized internally */
+    daoType: string;
     category?: string;
-    causeTags?: string[]; // Array of predefined cause tags
-    primaryCause?: string; // User's custom cause description
+    causeTags?: string[];
+    primaryCause?: string;
     treasuryType?: 'cusd' | 'dual' | 'custom';
-    customTokenAddress?: string; // For custom stablecoin treasury
+    customTokenAddress?: string;
     durationDays?: number;
     rotationFrequency?: string;
   };
   founderWallet: string;
   invitedMembers: string[];
-  selectedElders: string[]; // CRITICAL: Array of user IDs or wallet addresses to be elders
+  /** Wallet addresses or UUIDs of elders/trustees */
+  selectedElders: string[];
   multisig?: {
     enabled?: boolean;
     signers?: string[];
     requiredSignatures?: number;
+    /** If set, skip on-chain deployment and use this address directly */
     contractAddress?: string;
   };
 }
 
+// ── DAO type normalization ────────────────────────────────────────────────────
 
 /**
- * Deploy a new DAO with founder wallet and elders
- * CRITICAL FIX: Creates elders properly, founder can withdraw immediately
+ * Map any legacy or variant type string to the canonical type ID.
+ * Canonical IDs match DAO_TYPE_CONFIG keys and Solidity DAOType enum.
  */
+const LEGACY_TYPE_MAP: Record<string, CanonicalDaoType> = {
+  // Old keys
+  short_term:       'shortTerm',
+  shortterm:        'shortTerm',
+  collective:       'savings',
+  harambee_fund:    'harambee',
+  free:             'savings',
+  meta:             'community',
+  governance:       'community',
+  investment_club:  'investment',
+  // Already canonical — included for safety
+  harambee:         'harambee',
+  shortTerm:        'shortTerm',
+  savings:          'savings',
+  merryGoRound:     'merryGoRound',
+  community:        'community',
+  investment:       'investment',
+};
+
+function normalizeType(raw: string): CanonicalDaoType {
+  const key = raw.replace(/-/g, '_').replace(/\s/g, '_').toLowerCase();
+  // Try exact match first
+  if (LEGACY_TYPE_MAP[raw]) return LEGACY_TYPE_MAP[raw];
+  // Try lowercase normalized
+  const found = Object.entries(LEGACY_TYPE_MAP).find(
+    ([k]) => k.toLowerCase() === key
+  );
+  if (found) return found[1];
+  logger.warn(`Unknown daoType "${raw}" — defaulting to "savings"`);
+  return 'savings';
+}
+
+// ── Treasury config (aligned to canonical types) ─────────────────────────────
+
+interface TreasuryConfig {
+  requiredSignatures: number;
+  dailyLimit: string;
+  monthlyBudget: string;
+  withdrawalMode: 'direct' | 'multisig';
+  supportedTokens: string[];
+}
+
+const TREASURY_CONFIG: Record<CanonicalDaoType, Record<string, TreasuryConfig>> = {
+  harambee: {
+    cusd: {
+      requiredSignatures: 2,
+      dailyLimit: '5000.00',
+      monthlyBudget: '20000.00',
+      withdrawalMode: 'direct',
+      supportedTokens: ['cUSD'],
+    },
+  },
+  shortTerm: {
+    cusd: {
+      requiredSignatures: 2,
+      dailyLimit: '5000.00',
+      monthlyBudget: '50000.00',
+      withdrawalMode: 'direct',
+      supportedTokens: ['cUSD'],
+    },
+  },
+  savings: {
+    cusd: {
+      requiredSignatures: 2,
+      dailyLimit: '10000.00',
+      monthlyBudget: '100000.00',
+      withdrawalMode: 'multisig',
+      supportedTokens: ['cUSD'],
+    },
+    dual: {
+      requiredSignatures: 2,
+      dailyLimit: '15000.00',
+      monthlyBudget: '150000.00',
+      withdrawalMode: 'multisig',
+      supportedTokens: ['cUSD', 'CELO'],
+    },
+  },
+  merryGoRound: {
+    cusd: {
+      requiredSignatures: 2,
+      dailyLimit: '10000.00',
+      monthlyBudget: '100000.00',
+      withdrawalMode: 'multisig',
+      supportedTokens: ['cUSD'],
+    },
+  },
+  community: {
+    cusd: {
+      requiredSignatures: 3,
+      dailyLimit: '25000.00',
+      monthlyBudget: '250000.00',
+      withdrawalMode: 'multisig',
+      supportedTokens: ['cUSD'],
+    },
+    dual: {
+      requiredSignatures: 3,
+      dailyLimit: '35000.00',
+      monthlyBudget: '350000.00',
+      withdrawalMode: 'multisig',
+      supportedTokens: ['cUSD', 'CELO'],
+    },
+    custom: {
+      requiredSignatures: 4,
+      dailyLimit: '50000.00',
+      monthlyBudget: '500000.00',
+      withdrawalMode: 'multisig',
+      supportedTokens: ['cUSD', 'CELO', 'USDT', 'DAI'],
+    },
+  },
+  investment: {
+    cusd: {
+      requiredSignatures: 3,
+      dailyLimit: '20000.00',
+      monthlyBudget: '200000.00',
+      withdrawalMode: 'multisig',
+      supportedTokens: ['cUSD'],
+    },
+    dual: {
+      requiredSignatures: 3,
+      dailyLimit: '30000.00',
+      monthlyBudget: '300000.00',
+      withdrawalMode: 'multisig',
+      supportedTokens: ['cUSD', 'CELO'],
+    },
+    custom: {
+      requiredSignatures: 4,
+      dailyLimit: '50000.00',
+      monthlyBudget: '500000.00',
+      withdrawalMode: 'multisig',
+      supportedTokens: ['cUSD', 'CELO', 'USDT', 'DAI'],
+    },
+  },
+};
+
+// ── Validation helpers ────────────────────────────────────────────────────────
+
+const isAddress = (v: string) => /^0x[a-fA-F0-9]{40}$/.test(v);
+
+function resolveUserTier(
+  userProfile: any
+): 'free' | 'growth' | 'professional' | 'enterprise' {
+  const raw = String(
+    userProfile?.subscriptionPlan ||
+    userProfile?.plan ||
+    userProfile?.billingStatus ||
+    'free'
+  ).toLowerCase().replace(/[\s-]/g, '_');
+
+  if (['enterprise', 'meta', 'metadao'].includes(raw)) return 'enterprise';
+  if (['professional', 'pro', 'business'].includes(raw)) return 'professional';
+  if (['growth', 'premium', 'starter_plus'].includes(raw)) return 'growth';
+  return 'free';
+}
+
+const TIER_HIERARCHY = ['free', 'growth', 'professional', 'enterprise'];
+
+// ── Main handler ──────────────────────────────────────────────────────────────
+
 export async function daoDeployHandler(req: Request, res: Response) {
+  const { daoData, founderWallet, invitedMembers, selectedElders } =
+    req.body as DaoDeployRequest;
+
   try {
-    const { daoData, founderWallet, invitedMembers, selectedElders } = req.body as DaoDeployRequest;
+    logger.info(`Creating DAO: "${daoData.name}" for founder: ${founderWallet}`);
 
-    logger.info(`Creating DAO: ${daoData.name} for founder: ${founderWallet}`);
+    // ── 1. Validate inputs ──────────────────────────────────────────────────
 
-    // ============================================
-    // VALIDATION
-    // ============================================
-
-    // Validate founder wallet
     if (!founderWallet || !isAddress(founderWallet)) {
-      logger.error(`Invalid founder wallet: ${founderWallet}`);
       return res.status(400).json({ error: 'Invalid founder wallet address' });
     }
 
-    // Validate user can create this DAO type based on DAO_TYPE_CONFIG requiredTier
+    // Normalize DAO type early — used in all subsequent logic
+    const daoType = normalizeType(daoData.daoType);
+
+    // Tier check
     const userProfile = await db.query.users.findFirst({
-      where: eq(users.id, founderWallet)
+      where: eq(users.id, founderWallet),
     });
-
     const userTier = resolveUserTier(userProfile);
-    const typeKey = String(daoData.daoType || '');
-    const requiredTier = DAO_TYPE_CONFIG[typeKey]?.requiredTier || 'free';
+    const requiredTier =
+      (DAO_TYPE_CONFIG[daoType]?.requiredTier as string) || 'free';
 
-    const tierHierarchy = ['free', 'growth', 'professional', 'enterprise'];
-    const userTierIndex = tierHierarchy.indexOf(userTier as any);
-    const requiredTierIndex = tierHierarchy.indexOf(requiredTier as any);
-
-    if (userTierIndex < requiredTierIndex) {
-      logger.error(`User ${founderWallet} attempted to create ${daoData.daoType} DAO without proper tier (has: ${userTier}, needs: ${requiredTier})`);
+    if (
+      TIER_HIERARCHY.indexOf(userTier) <
+      TIER_HIERARCHY.indexOf(requiredTier)
+    ) {
       return res.status(403).json({
         error: 'Insufficient subscription tier',
-        message: `${daoData.daoType} DAOs require ${requiredTier} tier or higher`,
+        message: `${daoType} requires ${requiredTier} tier or higher`,
         currentTier: userTier,
-        requiredTier
+        requiredTier,
       });
     }
 
-    logger.info(`User ${founderWallet} validated for ${daoData.daoType} DAO creation (tier: ${userTier})`);
-
-    // CRITICAL: Validate elders
-    if (!selectedElders || selectedElders.length < 2) {
-      logger.error(`Insufficient elders: ${selectedElders?.length || 0}`);
+    // Elder validation
+    if (!selectedElders || selectedElders.length < 1) {
       return res.status(400).json({
-        error: 'Minimum 2 elders required for treasury multi-sig'
+        error: 'At least 1 elder required (founder is added automatically)',
       });
     }
 
-    // Validate selected elders
     for (const elder of selectedElders) {
-      const isValid = isAddress(elder) || /^[a-f0-9-]{36}$/.test(elder); // UUID format
-      if (!isValid) {
-        logger.error(`Invalid elder format: ${elder}`);
+      const validFormat =
+        isAddress(elder) || /^[a-f0-9-]{36}$/.test(elder);
+      if (!validFormat) {
         return res.status(400).json({ error: `Invalid elder format: ${elder}` });
       }
     }
 
-    // Ensure founder is in elders list
-    const elders = Array.from(new Set([founderWallet, ...selectedElders]));
-    if (elders.length > 5) {
-      logger.error(`Too many elders: ${elders.length}`);
-      return res.status(400).json({ error: 'Maximum 5 elders allowed' });
+    // Build final signer list: founder always first, deduped, max 10
+    const signers = Array.from(
+      new Set([founderWallet, ...selectedElders])
+    ).slice(0, 10);
+
+    if (signers.length > 10) {
+      return res.status(400).json({ error: 'Maximum 10 signers allowed' });
     }
 
-    // ============================================
-    // DETERMINE DAO CONFIGURATION BY TYPE & TREASURY
-    // ============================================
+    // ── 2. Resolve treasury config ──────────────────────────────────────────
 
-    // Normalize daoType (handle both camelCase and snake_case)
-    const normalizedDaoType = daoData.daoType.replace('_', '') === 'shortterm' ? 'shortTerm' : daoData.daoType;
-
-    let withdrawalMode = 'multisig';
-    let durationModel = 'time';
-    let minElders = 2;
-    let nextRotationDate: Date | null = null;
-    let treasuryConfig: TreasuryConfig | null = null;
-
-    // Get treasury config based on type and treasury type
     const treasuryType = daoData.treasuryType || 'cusd';
-    if (TREASURY_CONFIG[normalizedDaoType]) {
-      treasuryConfig = TREASURY_CONFIG[normalizedDaoType][treasuryType];
-      if (treasuryConfig) {
-        withdrawalMode = treasuryConfig.withdrawalMode;
-        minElders = treasuryConfig.requiredSignatures;
-      }
-    }
+    const treasuryConfig =
+      TREASURY_CONFIG[daoType]?.[treasuryType] ??
+      TREASURY_CONFIG[daoType]?.cusd ??
+      TREASURY_CONFIG.savings.cusd; // safe fallback
 
-    if (normalizedDaoType === 'shortTerm' || daoData.daoType === 'short_term') {
-      // Short-term DAOs (Chama, Merry-Go-Round)
+    const requiredSignatures = Math.max(
+      2,
+      Math.min(treasuryConfig.requiredSignatures, signers.length)
+    );
+
+    // ── 3. Duration / rotation ──────────────────────────────────────────────
+
+    let durationModel: 'time' | 'rotation' | 'ongoing' = 'ongoing';
+    let nextRotationDate: Date | null = null;
+
+    if (daoType === 'harambee' || daoType === 'shortTerm') {
       durationModel = 'time';
-      if (daoData.durationDays) {
-        // Store duration for later processing
-        logger.info(`Short-term DAO with ${daoData.durationDays} days duration`);
-      }
-
+    } else if (daoType === 'merryGoRound') {
+      durationModel = 'rotation';
       if (daoData.rotationFrequency) {
-        durationModel = 'rotation';
         nextRotationDate = calculateNextRotation(
           new Date(),
           daoData.rotationFrequency as 'weekly' | 'monthly' | 'quarterly'
         );
       }
-    } else if (normalizedDaoType === 'collective' || daoData.daoType === 'collective') {
-      // Collective DAOs (Harambee, Burial Fund)
-      durationModel = 'ongoing';
-    } else if (normalizedDaoType === 'governance' || daoData.daoType === 'governance') {
-      // Governance DAOs (Community councils, social impact)
-      durationModel = 'ongoing';
     }
 
-    if (daoData.daoType === 'investment_club') {
-      // Investment groups: accumulative treasury behavior
-      durationModel = 'ongoing';
-      withdrawalMode = 'multisig';
-    }
-
-    logger.info(`DAO Config: type=${normalizedDaoType}, treasuryType=${treasuryType}, withdrawalMode=${withdrawalMode}, elders=${elders.length}`);
-
-    // ============================================
-    // CREATE DAO RECORD
-    // ============================================
+    // ── 4. Create DAO record ────────────────────────────────────────────────
 
     const daoId = uuidv4();
-
-    // Auto-configure multi-sig based on DAO type
-    const multisigConfig = getMultisigConfigForDaoType(daoData.daoType);
-
-    const configuredRequiredSignatures = treasuryConfig?.requiredSignatures ?? multisigConfig.requiredSignatures;
-    const effectiveRequiredSignatures = Math.max(1, Math.min(configuredRequiredSignatures, elders.length));
-    const dailyLimit = treasuryConfig?.dailyLimit ?? getDailyLimitByType(daoData.daoType);
-    const monthlyBudget = treasuryConfig?.monthlyBudget ?? getMonthlyBudgetByType(daoData.daoType);
 
     const [dao] = await db
       .insert(daos)
@@ -188,54 +337,119 @@ export async function daoDeployHandler(req: Request, res: Response) {
         description: daoData.description || '',
         creatorId: founderWallet,
         founderId: founderWallet,
-        daoType: daoData.daoType,
+        daoType,
         access: 'public',
-        memberCount: 1 + elders.filter(e => e !== founderWallet).length,
+        memberCount: signers.length,
 
-        // Cause configuration
-        primaryCause: daoData.primaryCause || '', // User's custom cause
-        causeTags: daoData.causeTags || [], // Array of predefined tags
+        primaryCause: daoData.primaryCause || '',
+        causeTags: daoData.causeTags || [],
 
-        // Treasury configuration
         treasuryBalance: '0',
-        treasuryMultisigEnabled: multisigConfig.enabled,
-        treasuryRequiredSignatures: effectiveRequiredSignatures,
-        treasurySigners: elders, // CRITICAL: Set actual signer list (not empty!)
-        treasuryWithdrawalThreshold: String(multisigConfig.withdrawalThreshold),
-        treasuryDailyLimit: dailyLimit,
-        treasuryMonthlyBudget: monthlyBudget,
+        treasuryMultisigEnabled: true,
+        treasuryRequiredSignatures: requiredSignatures,
+        treasurySigners: signers,
+        treasuryWithdrawalThreshold: String(treasuryConfig.dailyLimit),
+        treasuryDailyLimit: treasuryConfig.dailyLimit,
+        treasuryMonthlyBudget: treasuryConfig.monthlyBudget,
 
-        // NEW: Withdrawal and duration configuration
-        withdrawalMode,
+        withdrawalMode: treasuryConfig.withdrawalMode,
         durationModel,
         rotationFrequency: daoData.rotationFrequency,
         nextRotationDate,
-        minElders,
-        maxElders: 5,
+        minElders: 2,
+        maxElders: 10,
 
-        // Governance configuration
-        quorumPercentage: daoData.daoType === 'short_term' ? 0 : 20,
+        // Governance defaults — deferred to Settings post-creation
+        quorumPercentage: 50,
         votingPeriod: 48,
         executionDelay: 24,
 
-        plan: daoData.daoType,
-        // Persist metadata including features and intended duration
+        plan: daoType,
         metadata: {
-          features: (daoData as any).features || DAO_TYPE_CONFIG[typeKey]?.features || {},
+          features: DAO_TYPE_CONFIG[daoType]?.features || {},
           durationDays: daoData.durationDays || null,
-          createdFromTemplate: typeKey
+          createdFromTemplate: daoType,
+          treasuryType,
+          customTokenAddress: daoData.customTokenAddress || null,
         },
         status: 'active',
         createdAt: new Date(),
         updatedAt: new Date(),
-      })
+      } as any)
       .returning();
 
-    logger.info(`DAO created: ${dao.id}, elders: ${elders.length}`);
+    logger.info(`DAO DB record created: ${dao.id}`);
 
-    // ============================================
-    // CREATE TREASURY VAULT
-    // ============================================
+    // Wire referral service: if a referrer was supplied, register it
+    const referrerId = (req.body as any).referrerId || (daoData as any).referrerId;
+    if (referrerId) {
+      try {
+        // Use daoId as escrowId surrogate for referral registration
+        await registerEscrowReferral(referrerId, founderWallet, dao.id);
+        logger.info(`Referral registered: ${referrerId} -> ${founderWallet}`);
+      } catch (err) {
+        logger.warn('Referral registration failed', err);
+      }
+    }
+
+    // ── 5. Deploy ChamaTreasury on-chain ────────────────────────────────────
+
+    let treasuryAddress: string | null = null;
+
+    // If client provided a pre-deployed contract address, use it directly
+    const clientContractAddress = req.body?.multisig?.contractAddress;
+    if (clientContractAddress) {
+      if (!isAddress(clientContractAddress)) {
+        return res.status(400).json({
+          error: `Invalid multisig contractAddress: ${clientContractAddress}`,
+        });
+      }
+      treasuryAddress = clientContractAddress;
+      logger.info(`Using client-provided treasury address: ${treasuryAddress}`);
+    } else {
+      // Primary path: deploy via ChamaTreasuryFactory
+      const factoryConfigured = !!process.env.CHAMA_FACTORY_CONTRACT_ADDRESS;
+
+      if (factoryConfigured) {
+        try {
+          const signerNames = signers.map((s, i) =>
+            i === 0 ? 'Founder' : `Elder ${i}`
+          );
+
+          const deployer = getChamaTreasuryDeployer();
+          const result = await deployer.deployTreasury({
+            chamaName: daoData.name,
+            daoId: dao.id,
+            signers,
+            signerNames,
+            requiredSignatures,
+            daoType: daoType as DaoTypeKey,
+          });
+
+          treasuryAddress = result.treasuryAddress;
+
+          logger.info(
+            `ChamaTreasury deployed: ${treasuryAddress} ` +
+            `tx: ${result.txHash} fee: ${result.deploymentFee}`
+          );
+        } catch (err) {
+          // Don't fail the whole DAO creation if on-chain deploy fails.
+          // Treasury can be deployed later. Log and continue.
+          logger.error('ChamaTreasury on-chain deployment failed', err);
+          treasuryAddress = null;
+        }
+      } else {
+        // Factory not configured — log warning, continue without on-chain treasury.
+        // Set CHAMA_FACTORY_CONTRACT_ADDRESS to enable on-chain deployment.
+        logger.warn(
+          'CHAMA_FACTORY_CONTRACT_ADDRESS not set — ' +
+          'skipping on-chain ChamaTreasury deployment. ' +
+          'DAO will use off-chain ledger only until factory is configured.'
+        );
+      }
+    }
+
+    // ── 6. Create vault record ──────────────────────────────────────────────
 
     const vaultId = uuidv4();
 
@@ -248,212 +462,268 @@ export async function daoDeployHandler(req: Request, res: Response) {
         name: `${dao.name} Treasury`,
         balance: '0',
         currency: treasuryType === 'dual' ? 'CELO' : 'cUSD',
+        address: treasuryAddress || null,
         createdAt: new Date(),
         updatedAt: new Date(),
-      })
+      } as any)
       .returning();
 
-    logger.info(`Vault created: ${vault.id}`);
+    logger.info(`Vault record created: ${vault.id}`);
 
-    // ============================================
-    // CREATE FOUNDER MEMBERSHIP AS ELDER
-    // ============================================
+    // Update DAO record with treasury address if we got one
+    if (treasuryAddress) {
+      await db
+        .update(daos)
+        .set({ treasuryAddress, updatedAt: new Date() } as any)
+        .where(eq(daos.id, dao.id));
+    }
 
-    await db
-      .insert(daoMemberships)
+    // ── 7. Create wallet + multisig records ─────────────────────────────────
+
+    const resolvedTreasuryAddress =
+      treasuryAddress || `pending-${dao.id}`; // placeholder if not yet deployed
+
+    const [daoWallet] = await db
+      .insert(wallets)
       .values({
         userId: founderWallet,
         daoId: dao.id,
-        role: 'elder', // CRITICAL FIX: Founder is elder
-        status: 'approved',
-        isAdmin: true,
-        isElder: true, // CRITICAL FIX: Set isElder flag
-        canInitiateWithdrawal: withdrawalMode === 'direct', // Can withdraw directly if mode is direct
-        canApproveWithdrawal: true, // Can approve multi-sig
+        currency: treasuryType === 'dual' ? 'CELO' : 'cUSD',
+        address: resolvedTreasuryAddress,
+        walletType: 'dao',
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as any)
+      .returning();
+
+    const chainId = Number(process.env.MULTISIG_CHAIN_ID || '42220');
+    const chainName =
+      chainId === 42220 ? 'celo' : chainId === 1 ? 'ethereum' : String(chainId);
+
+    const [multisig] = await db
+      .insert(multisigWallets)
+      .values({
+        walletId: daoWallet.id,
+        daoId: dao.id,
+        contractAddress: resolvedTreasuryAddress,
+        chain: chainName,
+        chainId,
+        requiredSignatures,
+        totalSigners: signers.length,
+        walletStandard: 'chama',   // distinguish from Gnosis
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as any)
+      .returning();
+
+    // Signer records
+    for (let i = 0; i < signers.length; i++) {
+      await db.insert(multisigSigners).values({
+        multisigWalletId: multisig.id,
+        signerAddress: signers[i],
+        userId: signers[i],
+        signerIndex: i,
+        role: i === 0 ? 'lead_signer' : 'signer',
+        isActive: true,
+        joinedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as any);
+    }
+
+    logger.info(
+      `Multisig record created: ${multisig.id} ` +
+      `required=${requiredSignatures} signers=${signers.length}`
+    );
+
+    // ── Optional: deploy LoanFacility contract and record it ───────────────
+    const wantLoanFacility = Boolean(
+      (daoData as any).enableLoanFacility || (daoData as any).loanFacility?.enabled
+    );
+
+    if (wantLoanFacility) {
+      const initialFundingStr = (daoData as any).loanFacility?.initialFunding || (daoData as any).initialLoanFund || '0';
+      const initialFunding = Number(initialFundingStr) || 0;
+      const stablecoinAddr = process.env.STABLECOIN_ADDRESS || null;
+      const elderCouncilAddr = resolvedTreasuryAddress; // multisig as elder council
+
+      if (!stablecoinAddr) {
+        logger.warn('STABLECOIN_ADDRESS not configured; skipping LoanFacility deploy');
+      } else {
+        try {
+          const deployer = getChamaTreasuryDeployer();
+          const fundingAtomic = BigInt(Math.round(initialFunding * 1e18));
+          const result = await deployer.deployLoanFacility({
+            chamaName: daoData.name,
+            daoId: dao.id,
+            stablecoin: stablecoinAddr,
+            elderCouncil: elderCouncilAddr,
+            initialFunding: fundingAtomic,
+          });
+
+          // Record in DB
+          await db.insert(loanFacilities).values({
+            id: uuidv4(),
+            daoId: dao.id,
+            address: result.loanFacilityAddress,
+            stablecoin: stablecoinAddr,
+            elderCouncil: elderCouncilAddr,
+            fundedAmount: String(initialFunding),
+            metadata: {},
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          } as any);
+
+          logger.info(`LoanFacility deployed: ${result.loanFacilityAddress}`);
+        } catch (err) {
+          logger.error('LoanFacility deployment failed', err);
+        }
+      }
+    }
+
+    // ── Optional: fund rewards manager by pulling from multisig treasury ────
+    // If frontend provided rewardsManagerAddress and initialFunding in MTAA (decimal), attempt pull
+    const rewardsManagerAddress = (daoData as any).rewardsManagerAddress || (req.body as any).rewardsManagerAddress;
+    const rewardsInitialFunding = Number((daoData as any).rewards?.initialFunding || (req.body as any).rewardsInitialFunding || 0);
+    if (rewardsManagerAddress && rewardsInitialFunding > 0) {
+      try {
+        const rpcUrl = process.env.CELO_RPC_URL || process.env.RPC_URL;
+        const pk = process.env.PLATFORM_PRIVATE_KEY;
+        if (!rpcUrl || !pk) throw new Error('Missing PLATFORM_PRIVATE_KEY or RPC URL');
+
+        const provider = new ethers.JsonRpcProvider(rpcUrl);
+        const wallet = new ethers.Wallet(pk, provider);
+
+        const REWARDS_ABI = [
+          'function pullRewardsFrom(address from, uint256 amount) external',
+        ];
+
+        const contract = new ethers.Contract(rewardsManagerAddress, REWARDS_ABI, wallet);
+        const amountWei = ethers.parseUnits(String(rewardsInitialFunding), 18);
+
+        // Attempt pull; this requires the multisig (treasury) to have approved the wallet to spend MTAA,
+        // or the wallet to be owner of rewards manager. If it fails, log and continue.
+        const tx = await contract.pullRewardsFrom(resolvedTreasuryAddress, amountWei);
+        const receipt = await tx.wait();
+        logger.info(`pullRewardsFrom executed tx: ${receipt.transactionHash}`);
+      } catch (err) {
+        logger.warn('Could not pull rewards automatically; ensure multisig approved or call pullRewardsFrom manually', err);
+      }
+    }
+
+    // ── 8. Create memberships ───────────────────────────────────────────────
+
+    // Founder — always elder, always approved
+    await db.insert(daoMemberships).values({
+      userId: founderWallet,
+      daoId: dao.id,
+      role: 'elder',
+      status: 'approved',
+      isAdmin: true,
+      isElder: true,
+      canInitiateWithdrawal: true,
+      canApproveWithdrawal: true,
+      joinedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    // Selected elders (excluding founder)
+    for (const elder of selectedElders) {
+      if (elder === founderWallet) continue;
+
+      const ruleResult = await evaluateMemberCreationRules(dao.id, {
+        memberAddress: elder,
+        role: 'elder',
+        joinedAt: new Date(),
+      });
+
+      if (!ruleResult.approved) {
+        logger.warn(
+          `Elder rejected by rules: ${elder} — ` +
+          formatRuleRejectionMessage(ruleResult.results)
+        );
+        logRuleEvaluation(dao.id, 'member_create', elder, ruleResult.results);
+        continue;
+      }
+
+      await db.insert(daoMemberships).values({
+        userId: elder,
+        daoId: dao.id,
+        role: 'elder',
+        status: 'pending',
+        isAdmin: false,
+        isElder: true,
+        canInitiateWithdrawal: false,
+        canApproveWithdrawal: true,
         joinedAt: new Date(),
         createdAt: new Date(),
         updatedAt: new Date(),
       });
 
-    logger.info(`Founder membership created as elder: ${founderWallet}`);
-
-    // ============================================
-    // CREATE ELDER MEMBERSHIPS
-    // ============================================
-
-    for (const elder of selectedElders) {
-      if (elder !== founderWallet) {
-        // Skip founder (already created above)
-
-        // Evaluate member creation rules
-        const ruleResult = await evaluateMemberCreationRules(dao.id, {
-          memberAddress: elder,
-          role: 'elder',
-          joinedAt: new Date(),
-        });
-
-        if (!ruleResult.approved) {
-          logger.warn(`Elder membership rejected by rules: ${elder} - ${formatRuleRejectionMessage(ruleResult.results)}`);
-          logRuleEvaluation(dao.id, 'member_create', elder, ruleResult.results);
-          continue; // Skip this elder and continue with next
-        }
-
-        await db
-          .insert(daoMemberships)
-          .values({
-            userId: elder,
-            daoId: dao.id,
-            role: 'elder',
-            status: 'pending', // Need to accept
-            isAdmin: false,
-            isElder: true,
-            canInitiateWithdrawal: withdrawalMode === 'direct',
-            canApproveWithdrawal: true,
-            joinedAt: new Date(),
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          });
-
-        logger.info(`Elder membership created (pending): ${elder}`);
-        logRuleEvaluation(dao.id, 'member_create', elder, ruleResult.results);
-      }
+      logRuleEvaluation(dao.id, 'member_create', elder, ruleResult.results);
     }
 
-    // ============================================
-    // CREATE INVITED MEMBER MEMBERSHIPS
-    // ============================================
-
+    // Regular invited members
     for (const member of invitedMembers || []) {
-      if (!elders.includes(member)) {
-        // Skip if already an elder
+      if (signers.includes(member)) continue; // already an elder
 
-        // Evaluate member creation rules
-        const ruleResult = await evaluateMemberCreationRules(dao.id, {
-          memberAddress: member,
-          role: 'member',
-          joinedAt: new Date(),
-        });
+      const ruleResult = await evaluateMemberCreationRules(dao.id, {
+        memberAddress: member,
+        role: 'member',
+        joinedAt: new Date(),
+      });
 
-        if (!ruleResult.approved) {
-          logger.warn(`Member membership rejected by rules: ${member} - ${formatRuleRejectionMessage(ruleResult.results)}`);
-          logRuleEvaluation(dao.id, 'member_create', member, ruleResult.results);
-          continue; // Skip this member and continue with next
-        }
-
-        await db
-          .insert(daoMemberships)
-          .values({
-            userId: member,
-            daoId: dao.id,
-            role: 'member',
-            status: 'pending',
-            isAdmin: false,
-            isElder: false,
-            canInitiateWithdrawal: false,
-            canApproveWithdrawal: false,
-            joinedAt: new Date(),
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          });
-
-        logger.info(`Regular member membership created (pending): ${member}`);
+      if (!ruleResult.approved) {
+        logger.warn(
+          `Member rejected by rules: ${member} — ` +
+          formatRuleRejectionMessage(ruleResult.results)
+        );
         logRuleEvaluation(dao.id, 'member_create', member, ruleResult.results);
+        continue;
       }
+
+      await db.insert(daoMemberships).values({
+        userId: member,
+        daoId: dao.id,
+        role: 'member',
+        status: 'pending',
+        isAdmin: false,
+        isElder: false,
+        canInitiateWithdrawal: false,
+        canApproveWithdrawal: false,
+        joinedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
     }
 
-        // ============================================
-        // CREATE DAO TREASURY WALLET + MULTISIG RECORD
-        // ============================================
-        {
-          // Use client-provided multisig config if present, otherwise fall back to elders
-          const clientMultisig = (req.body as any)?.multisig;
-          const signersToUse: string[] = (clientMultisig && clientMultisig.enabled && Array.isArray(clientMultisig.signers) && clientMultisig.signers.length)
-            ? clientMultisig.signers
-            : elders;
+    logger.info(`Memberships created for DAO: ${dao.id}`);
 
-          const requestedRequired = clientMultisig && typeof clientMultisig.requiredSignatures === 'number'
-            ? Number(clientMultisig.requiredSignatures)
-            : elders.length;
-
-          // Ensure requiredSignatures is at least 2 and not greater than signers count
-          const requiredSignatures = Math.max(2, Math.min(requestedRequired || elders.length, Math.max(2, signersToUse.length)));
-          const chainId = Number(process.env.MULTISIG_CHAIN_ID || '42220');
-
-          const multisigAddress = await resolveMultisigContractAddress({
-            clientMultisig,
-            daoId: dao.id,
-            signers: signersToUse,
-            requiredSignatures,
-            chainId,
-          });
-
-          // Create a wallets record for the DAO treasury
-          const insertedDaoWallets = await db.insert(wallets).values({
-            userId: founderWallet,
-            daoId: dao.id,
-            currency: treasuryType === 'dual' ? 'CELO' : 'cUSD',
-            address: multisigAddress,
-            walletType: 'dao',
-            isActive: true,
-            createdAt: new Date(),
-            updatedAt: new Date()
-          }).returning();
-          const daoWallet = insertedDaoWallets[0];
-
-          const insertedMultisigs = await db.insert(multisigWallets).values({
-            walletId: daoWallet.id,
-            daoId: dao.id,
-            contractAddress: multisigAddress,
-            chainId,
-            requiredSignatures,
-            totalSigners: signersToUse.length,
-            walletStandard: 'gnosis',
-            isActive: true,
-            createdAt: new Date(),
-            updatedAt: new Date()
-          }).returning();
-          const multisig = insertedMultisigs[0];
-
-          logger.info(`Created multisig record: ${multisig.id} contract: ${multisigAddress} required=${requiredSignatures} signers=${signersToUse.length}`);
-
-          // Create multisig signer entries for provided signers; attach userId when user exists
-          for (let i = 0; i < signersToUse.length; i++) {
-            const signer = signersToUse[i];
-            const existing = await db.select().from(users).where(eq(users.id, signer)).limit(1);
-            const signerRow: Record<string, any> = {
-              multisigWalletId: multisig.id,
-              signerAddress: signer,
-              signerIndex: i,
-              role: i === 0 ? 'lead_signer' : 'signer',
-              isActive: true,
-              joinedAt: new Date(),
-              createdAt: new Date(),
-              updatedAt: new Date()
-            };
-            if (existing.length) {
-              signerRow.userId = signer;
-            }
-            await db.insert(multisigSigners).values(signerRow);
-          }
-        }
-
-    // ============================================
-    // RESPONSE
-    // ============================================
+    // ── 9. Respond ──────────────────────────────────────────────────────────
 
     return res.status(201).json({
       success: true,
+      daoAddress: dao.id,
+      treasuryAddress: treasuryAddress || null,
+      treasuryPending: !treasuryAddress,
       dao: {
         id: dao.id,
         name: dao.name,
         founderId: dao.founderId,
+        daoType,
         vaultId: vault.id,
-        daoType: dao.daoType,
-        withdrawalMode,
+        withdrawalMode: treasuryConfig.withdrawalMode,
         durationModel,
-        elders: elders.map(e => ({ id: e, role: 'elder' })),
+        signers: signers.map((s, i) => ({
+          address: s,
+          role: i === 0 ? 'founder' : 'elder',
+        })),
+        requiredSignatures,
         memberCount: dao.memberCount,
-        capabilities: getDaoCapabilities(dao.daoType),
+        capabilities: getDaoCapabilities(daoType),
       },
     });
 
@@ -466,264 +736,35 @@ export async function daoDeployHandler(req: Request, res: Response) {
   }
 }
 
-interface MultisigAddressResolutionInput {
-  clientMultisig?: { contractAddress?: string };
-  daoId: string;
-  signers: string[];
-  requiredSignatures: number;
-  chainId: number;
-}
-
-async function resolveMultisigContractAddress(input: MultisigAddressResolutionInput): Promise<string> {
-  const directAddress = input.clientMultisig?.contractAddress;
-  if (directAddress) {
-    if (!isAddress(directAddress)) {
-      throw new Error(`Invalid multisig contract address: ${directAddress}`);
-    }
-    return directAddress;
-  }
-
-  const deployerEndpoint = process.env.MULTISIG_FACTORY_API_URL;
-  if (!deployerEndpoint) {
-    throw new Error('Multisig contract address is required: provide multisig.contractAddress or configure MULTISIG_FACTORY_API_URL');
-  }
-
-  const response = await fetch(deployerEndpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      daoId: input.daoId,
-      signers: input.signers,
-      requiredSignatures: input.requiredSignatures,
-      chainId: input.chainId,
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Failed multisig deployment: ${response.status} ${text}`);
-  }
-
-  const payload = await response.json() as any;
-  const contractAddress = payload?.contractAddress || payload?.address;
-
-  if (!contractAddress || !isAddress(contractAddress)) {
-    throw new Error('Multisig factory response missing valid contractAddress');
-  }
-
-  return contractAddress;
-}
-
-// ============================================
-// TREASURY CONFIGURATION BY DAO TYPE
-// ============================================
-
-interface TreasuryConfig {
-  requiredSignatures: number;
-  dailyLimit: string;
-  monthlyBudget: string;
-  withdrawalMode: string;
-  supportedTokens: string[];
-}
-
-const TREASURY_CONFIG: Record<string, Record<string, TreasuryConfig>> = {
-  'shortTerm': {
-    'cusd': {
-      requiredSignatures: 2,
-      dailyLimit: '5000.00',
-      monthlyBudget: '50000.00',
-      withdrawalMode: 'direct',
-      supportedTokens: ['cUSD']
-    }
-  },
-  'collective': {
-    'cusd': {
-      requiredSignatures: 3,
-      dailyLimit: '10000.00',
-      monthlyBudget: '100000.00',
-      withdrawalMode: 'multisig',
-      supportedTokens: ['cUSD']
-    },
-    'dual': {
-      requiredSignatures: 3,
-      dailyLimit: '15000.00',
-      monthlyBudget: '150000.00',
-      withdrawalMode: 'multisig',
-      supportedTokens: ['cUSD', 'CELO']
-    }
-  },
-  'governance': {
-    'cusd': {
-      requiredSignatures: 4,
-      dailyLimit: '25000.00',
-      monthlyBudget: '250000.00',
-      withdrawalMode: 'multisig',
-      supportedTokens: ['cUSD']
-    },
-    'dual': {
-      requiredSignatures: 4,
-      dailyLimit: '35000.00',
-      monthlyBudget: '350000.00',
-      withdrawalMode: 'multisig',
-      supportedTokens: ['cUSD', 'CELO']
-    },
-    'custom': {
-      requiredSignatures: 5,
-      dailyLimit: '50000.00',
-      monthlyBudget: '500000.00',
-      withdrawalMode: 'multisig',
-      supportedTokens: ['cUSD', 'CELO', 'USDT', 'DAI']
-    }
-  },
-  'investment_club': {
-    'cusd': {
-      requiredSignatures: 3,
-      dailyLimit: '20000.00',
-      monthlyBudget: '200000.00',
-      withdrawalMode: 'multisig',
-      supportedTokens: ['cUSD']
-    },
-    'dual': {
-      requiredSignatures: 3,
-      dailyLimit: '30000.00',
-      monthlyBudget: '300000.00',
-      withdrawalMode: 'multisig',
-      supportedTokens: ['cUSD', 'CELO']
-    },
-    'custom': {
-      requiredSignatures: 4,
-      dailyLimit: '50000.00',
-      monthlyBudget: '500000.00',
-      withdrawalMode: 'multisig',
-      supportedTokens: ['cUSD', 'CELO', 'USDT', 'DAI']
-    }
-  }
-};
-
-// ============================================
-// HELPER FUNCTIONS
-// ============================================
-
-function resolveUserTier(userProfile: any): 'free' | 'growth' | 'professional' | 'enterprise' {
-  const rawTier = String(
-    userProfile?.subscriptionPlan ||
-    userProfile?.plan ||
-    userProfile?.billingStatus ||
-    'free'
-  ).toLowerCase();
-
-  const normalized = rawTier
-    .replace(/\s+/g, '_')
-    .replace(/-/g, '_');
-
-  if (['enterprise', 'meta', 'metadao'].includes(normalized)) return 'enterprise';
-  if (['professional', 'pro', 'business'].includes(normalized)) return 'professional';
-  if (['growth', 'premium', 'starter_plus'].includes(normalized)) return 'growth';
-  return 'free';
-}
-
-function getDailyLimitByType(daoType: string): string {
-  switch (daoType) {
-    case 'short_term':
-      return '5000.00'; // $5K daily for chama
-    case 'collective':
-      return '10000.00'; // $10K daily for collective
-    default:
-      return '1000.00';
-  }
-}
-
-function getMonthlyBudgetByType(daoType: string): string {
-  switch (daoType) {
-    case 'short_term':
-      return '50000.00'; // $50K monthly for chama
-    case 'collective':
-      return '100000.00'; // $100K monthly for collective
-    default:
-      return '10000.00';
-  }
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function calculateNextRotation(
   from: Date,
   frequency: 'weekly' | 'monthly' | 'quarterly'
 ): Date {
   const next = new Date(from);
-  switch (frequency) {
-    case 'weekly':
-      next.setDate(next.getDate() + 7);
-      break;
-    case 'monthly':
-      next.setMonth(next.getMonth() + 1);
-      break;
-    case 'quarterly':
-      next.setMonth(next.getMonth() + 3);
-      break;
-  }
+  if (frequency === 'weekly') next.setDate(next.getDate() + 7);
+  else if (frequency === 'monthly') next.setMonth(next.getMonth() + 1);
+  else next.setMonth(next.getMonth() + 3);
   return next;
 }
 
-function getDaoCapabilities(daoType: string) {
+function getDaoCapabilities(daoType: CanonicalDaoType): string[] {
   const common = [
-    'Create proposals and vote on governance decisions',
-    'Manage pooled funds with role-based controls',
-    'Track treasury balances and vault performance',
-    'Use multi-signature approvals for withdrawals',
+    'Pooled treasury with transparent records',
+    'Multi-signature approvals for withdrawals',
+    'Member contribution tracking',
+    'Group proposals and voting',
   ];
 
-  switch (daoType) {
-    case 'investment_club':
-      return [
-        ...common,
-        'Run accumulative treasury strategies for long-term growth',
-        'Allocate capital to yield strategies and rebalance allocations',
-        'Track risk levels and enforce min/max deposit constraints',
-      ];
-    case 'short_term':
-      return [
-        ...common,
-        'Support rotation-based contribution cycles and distributions',
-        'Configure duration windows (30/60/90-day style operations)',
-      ];
-    case 'collective':
-      return [
-        ...common,
-        'Operate ongoing communal treasury contributions and withdrawals',
-        'Use configurable treasury budgets and signer thresholds',
-      ];
-    case 'governance':
-      return [
-        ...common,
-        'Run governance-heavy workflows with stronger signer requirements',
-        'Manage broader token support for treasury operations',
-      ];
-    default:
-      return common;
-  }
-}
+  const extras: Record<CanonicalDaoType, string[]> = {
+    harambee:     ['Fast collection and single disbursement', 'Auto-close after goal reached'],
+    shortTerm:    ['Milestone tracking', 'Time-bounded with configurable duration'],
+    savings:      ['Recurring contribution cycles', 'Weekly reconciliation digest'],
+    merryGoRound: ['Rotation schedule', 'Automated payout order tracking'],
+    community:    ['Governance proposals', 'Committee support', 'Elections'],
+    investment:   ['Portfolio tracking', 'Yield strategies', 'Dividend distribution', 'Performance reports'],
+  };
 
-// Helper: Multi-sig config per DAO type
-function getMultisigConfigForDaoType(type: string) {
-  if (type === 'free') {
-    return {
-      enabled: false, // Single-sig for free tier
-      requiredSignatures: 1,
-      withdrawalThreshold: 500, // $500 threshold
-      dailyLimit: 1000 // $1K/day
-    };
-  } else if (type === 'collective' || type === 'investment_club') {
-    return {
-      enabled: true, // 3-of-5 multi-sig
-      requiredSignatures: 3,
-      withdrawalThreshold: 1000, // $1K threshold
-      dailyLimit: type === 'investment_club' ? 10000 : 5000 // higher daily limit for investment clubs
-    };
-  } else { // governance/meta dao
-    return {
-      enabled: true, // 5-of-7 multi-sig
-      requiredSignatures: 5,
-      withdrawalThreshold: 5000, // $5K threshold
-      dailyLimit: 10000 // $10K/day
-    };
-  }
+  return [...common, ...(extras[daoType] || [])];
 }

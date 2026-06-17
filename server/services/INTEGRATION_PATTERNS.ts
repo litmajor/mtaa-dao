@@ -545,4 +545,4 @@ async function main() {
 // Uncomment to run:
 // main().catch(console.error);
 
-export { ShardOrchestratorWithDataSources };
+// Named export unnecessary — the class is exported above.

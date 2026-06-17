@@ -2,6 +2,8 @@
 // Add these tables to improve security, auditing, and user experience
 
 import { pgTable, uuid, varchar, text, timestamp, boolean, integer, jsonb } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
+import { createInsertSchema } from "drizzle-zod";
 import { users } from "./schema";
 
 /**
@@ -190,6 +192,16 @@ export const apiKeys = pgTable("api_keys", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// Relations, insert schema, and types for apiKeys (moved from shared/schema.ts)
+export const apiKeysRelations = relations(apiKeys, ({ one }: any) => ({
+  user: one(users, {
+    fields: [apiKeys.userId],
+    references: [users.id],
+  }),
+}));
+
+export const insertApiKeySchema = createInsertSchema(apiKeys);
 
 /**
  * 10. REFRESH TOKENS TABLE

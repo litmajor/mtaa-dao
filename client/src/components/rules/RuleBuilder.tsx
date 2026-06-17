@@ -82,7 +82,7 @@ export default function RuleBuilder({ daoId, onCreated, onCancel, templateId }: 
         operator
       };
 
-      const response = await fetch(`/api/daos/${daoId}/rules`, {
+      const response = await fetch(`/api/v1/daos/${daoId}/rules`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

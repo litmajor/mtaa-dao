@@ -5,7 +5,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { ArrowUpRight, ArrowDownLeft, TrendingUp, Eye, EyeOff } from 'lucide-react';
 
 interface VaultDetail {
@@ -256,28 +257,13 @@ export default function VaultDetailPage({ vaultId }: { vaultId: string }) {
           <div className="space-y-4">
             <h3 className="text-lg font-bold">Performance (90 Days)</h3>
             {performanceData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={performanceData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="timestamp" stroke="#94a3b8" />
-                  <YAxis stroke="#94a3b8" />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#1e293b',
-                      border: '1px solid #475569',
-                      borderRadius: '8px',
-                    }}
-                  />
-                  <Legend />
-                  <Line
-                    type="monotone"
-                    dataKey="dailyReturn"
-                    stroke="#10b981"
-                    name="Daily Return %"
-                    isAnimationActive={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              <div style={{ height: 300 }}>
+                <Chart
+                  type="line"
+                  data={{ labels: performanceData.map((p: any) => p.timestamp), datasets: [{ label: 'Daily Return %', data: performanceData.map((p: any) => p.dailyReturn), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.06)', tension: 0.2 }] }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: true } } }}
+                />
+              </div>
             ) : (
               <p className="text-slate-400 text-center py-8">No performance data yet</p>
             )}

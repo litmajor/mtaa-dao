@@ -5,11 +5,19 @@
  */
 
 import type { TransactionReceipt, Contract } from 'web3';
+import type {
+  Transaction as SharedTransaction,
+  SelectedAccount as SharedSelectedAccount,
+  NetworkInfo as SharedNetworkInfo,
+  WalletBalance as SharedWalletBalance,
+  TokenInfo as SharedTokenInfo,
+  TokenBalance as SharedTokenBalance,
+  Portfolio as SharedPortfolio,
+  PortfolioSnapshot as SharedPortfolioSnapshot
+} from '../../shared/types/wallet';
 
 // Transaction types
-export interface TransactionResult {
-  hash: string;
-  status: 'pending' | 'success' | 'failed';
+export interface TransactionResult extends SharedTransaction {
   blockNumber?: number;
   gasUsed?: number;
   effectiveGasPrice?: number;
@@ -23,16 +31,12 @@ export interface TransactionHistory {
   lastUpdated: number;
 }
 
+// Re-export shared aliases for convenience
+export type Transaction = SharedTransaction
+export type SelectedAccount = SharedSelectedAccount
+
 // Network types
-export interface NetworkInfo {
-  chainId: number;
-  latestBlock?: number;
-  gasPrice?: number;
-  connected: boolean;
-  error?: string;
-  networkName?: string;
-  explorerUrl?: string;
-}
+export type NetworkInfo = SharedNetworkInfo
 
 export interface NetworkConfig {
   rpcUrl: string;
@@ -48,49 +52,59 @@ export interface WalletCredentials {
   mnemonic?: string;
 }
 
-export interface WalletBalance {
-  native: bigint;
-  nativeFormatted: number;
-  nativeUsd?: number;
+export type WalletBalance = SharedWalletBalance & {
+  address?: string;
+  balance?: string;
+  balanceEth?: number;
+  nonce?: number;
+  isContract?: boolean;
+  transactionCount?: number;
+  codeLength?: number;
+  timestamp?: number;
+}
+
+export interface AccountInfo {
+  address: string;
+  balance: string;
+  balanceEth: number;
+  transactionCount: number;
+  isContract: boolean;
+  codeLength: number;
+  timestamp: number;
 }
 
 // Token types
-export interface TokenInfo {
-  symbol: string;
-  name: string;
-  decimals: number;
-  balance: string;
-  balanceFormatted: number;
-  error?: string;
-  priceUsd?: number;
-  totalSupply?: string;
+export type TokenInfo = SharedTokenInfo & { address?: string }
+export type TokenBalance = SharedTokenBalance & { accountAddress?: string }
+
+// Wallet config/state used by persistence
+export interface WalletConfig {
+  address: string;
+  chainId: number;
+  network: string;
+  privateKey?: string;
+  createdAt?: number;
 }
 
-export interface TokenBalance {
-  address: string;
-  symbol: string;
-  balance: string;
-  balanceFormatted: number;
-  valueUsd?: number;
+export interface WalletState {
+  unlocked?: boolean;
+  lastSeenBlock?: number;
+  nonce?: number;
+  balances?: WalletBalance;
+  tokens?: Record<string, TokenInfo>;
+  savedAt?: string;
+}
+
+// Gas price data
+export interface GasPriceData {
+  gasPrice: string;
+  baseFeePerGas?: string;
+  timestamp?: number;
 }
 
 // Portfolio types
-export interface Portfolio {
-  address: string;
-  nativeBalance: number;
-  nativeBalanceUsd?: number;
-  tokens: Record<string, TokenInfo>;
-  networkInfo: NetworkInfo;
-  totalValueUsd?: number;
-  lastUpdated: number;
-}
-
-export interface PortfolioSnapshot {
-  timestamp: number;
-  nativeBalance: number;
-  tokenBalances: Record<string, TokenInfo>;
-  totalValueUsd: number;
-}
+export type Portfolio = SharedPortfolio
+export type PortfolioSnapshot = SharedPortfolioSnapshot
 
 // Transaction types
 export interface Disbursement {

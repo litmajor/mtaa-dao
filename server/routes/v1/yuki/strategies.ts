@@ -558,6 +558,32 @@ router.post('/deploy', isAuthenticated, async (req: Request, res: Response) => {
     const compiled = parsed.compiled;
     const deployCfg = parsed.deploymentConfig || {};
 
+    // If this deployment enables real trading, enforce 2FA, KYC, and daily quota
+    const enablingRealTrading = !!deployCfg.enableRealTrading;
+    if (enablingRealTrading) {
+      // 1) 2FA check
+      const userRes = await pool.query(`SELECT two_factor_enabled, two_factor_verified_at FROM users WHERE id = $1 LIMIT 1`, [userId]);
+      if (userRes.rowCount === 0) return res.status(404).json({ success: false, error: 'User not found' });
+      const u = userRes.rows[0];
+      if (!u.two_factor_enabled) return res.status(403).json({ success: false, error: '2FA must be enabled to start live trading' });
+      const verifiedAt = u.two_factor_verified_at ? new Date(u.two_factor_verified_at) : null;
+      if (!verifiedAt || (Date.now() - verifiedAt.getTime()) > 15 * 60 * 1000) {
+        return res.status(403).json({ success: false, error: 'Recent 2FA verification required' });
+      }
+
+      // 2) KYC check
+      const kycRes = await pool.query(`SELECT verification_status FROM user_kyc WHERE user_id = $1 LIMIT 1`, [userId]);
+      const kycStatus = (kycRes.rowCount ?? 0) > 0 ? kycRes.rows[0]?.verification_status : 'not-started';
+      if (kycStatus !== 'verified') return res.status(403).json({ success: false, error: 'KYC verification required for live trading', kycStatus });
+
+      // 3) Daily deploy quota
+      const startOfDay = new Date(); startOfDay.setUTCHours(0,0,0,0);
+      const cntRes = await pool.query(`SELECT COUNT(*) as cnt FROM strategy_executions WHERE user_id = $1 AND created_at >= $2`, [userId, startOfDay.toISOString()]);
+      const deploysToday = parseInt(cntRes.rows[0]?.cnt || '0', 10);
+      const MAX_DEPLOYS_PER_DAY = parseInt(process.env.MAX_DEPLOYS_PER_DAY || '5', 10);
+      if (deploysToday >= MAX_DEPLOYS_PER_DAY) return res.status(429).json({ success: false, error: 'Daily deploy quota exceeded' });
+    }
+
     // Determine strategy id: reuse if compiled contains an id owned by user, otherwise create a draft
     let strategyId = compiled?.id || `strat_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 

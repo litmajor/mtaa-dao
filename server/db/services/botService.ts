@@ -3,7 +3,7 @@
  * Provides database operations for bot management
  */
 
-import { db } from '../index';
+import { db } from '../../db';
 import {
   bots,
   botTrades,
@@ -17,7 +17,7 @@ import {
   BotPerformanceInsert,
   BotActionLog,
   BotActionLogInsert,
-} from './schema/bots';
+} from '../schema/bots';
 import { eq, and, desc, asc, gte, lte, inArray } from 'drizzle-orm';
 
 /**
@@ -360,6 +360,18 @@ export async function getTopBots(
     .from(botPerformance)
     .orderBy(orderBy)
     .limit(limit);
+}
+
+/**
+ * Count number of deployments by a user since a given date
+ */
+export async function getUserDeployCountSince(userId: string, since: Date): Promise<number> {
+  const rows = await db
+    .select()
+    .from(bots)
+    .where(and(eq(bots.userId, userId), gte(bots.deployedAt, since)));
+
+  return rows.length;
 }
 
 /**

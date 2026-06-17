@@ -5,6 +5,22 @@ import { z } from "zod";
 import dotenv from "dotenv";
 
 dotenv.config();
+// Support legacy EMAIL_* env var names (e.g. from examples) by mapping them to SMTP_* aliases
+// This allows users to set either EMAIL_* or SMTP_* variables (Gmail examples use EMAIL_*)
+const aliasEnvMap: Array<[string, string]> = [
+  ['EMAIL_HOST', 'SMTP_HOST'],
+  ['EMAIL_PORT', 'SMTP_PORT'],
+  ['EMAIL_USER', 'SMTP_USER'],
+  ['EMAIL_PASS', 'SMTP_PASS'],
+  ['EMAIL_FROM', 'SMTP_FROM'],
+  ['EMAIL_FROM_NAME', 'SMTP_FROM_NAME'],
+];
+
+for (const [src, dest] of aliasEnvMap) {
+  if (process.env[src] && !process.env[dest]) {
+    process.env[dest] = process.env[src];
+  }
+}
 
 // Exchange configuration loader
 // Load exchanges config from JSON file
@@ -67,6 +83,8 @@ const envSchema = z.object({
   SMTP_SECURE: z.string().optional(),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().optional(),
+  SMTP_FROM_NAME: z.string().optional(),
   EMAIL_FROM: z.string().email().optional(),
   EMAIL_FROM_NAME: z.string().optional(),
 

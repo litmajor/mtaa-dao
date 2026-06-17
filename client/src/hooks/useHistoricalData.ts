@@ -81,7 +81,7 @@ export const useHistoricalData = (
     queryKey: ['historicalData', symbol, exchange, period],
     queryFn: async () => {
       const response = await fetch(
-        `/api/exchanges/historical?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}&period=${period}`
+        `/api/v1/yuki/exchanges/historical?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}&period=${period}`
       );
 
       if (!response.ok) {
@@ -105,7 +105,7 @@ export const useHistoricalComparison = (
     queryKey: ['historicalComparison', symbol, exchange],
     queryFn: async () => {
       const response = await fetch(
-        `/api/exchanges/historical/compare?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}`
+        `/api/v1/yuki/exchanges/historical/compare?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}`
       );
 
       if (!response.ok) {

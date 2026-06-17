@@ -1,52 +1,60 @@
-import {
-  createPublicClient,
-  createWalletClient as createViemWalletClient, // Renamed to avoid conflict
-  custom,
-  http,
-  parseEther, // For 18-decimal tokens like CELO
-  formatEther, // For 18-decimal tokens like CELO
-  parseUnits, // More general for ERC-20 tokens with varying decimals
-  formatUnits, // More general for ERC-20 tokens with varying decimals
-  encodeFunctionData, // For robust ERC-20 function calls
-  Abi, // For ABI type safety
-} from 'viem';
-import { celo, celoAlfajores } from 'viem/chains';
+// Lazy-load heavy `viem` library at runtime to avoid large client bundles.
+// We provide lightweight local helpers for common utilities (parse/format) and
+// a `publicClient` wrapper that initializes `viem` on first use.
 
-// --- Celo Network Configurations ---
-// Define Celo Mainnet
+// Minimal Celo network configs (avoid importing viem/chains at module load)
 export const celoMainnet = {
-  ...celo,
-  rpcUrls: {
-    default: { http: ['https://forno.celo.org'] },
-    public: { http: ['https://forno.celo.org'] }
-  },
-  blockExplorers: { // Add block explorers directly to chain config
-    default: { name: 'CeloScan', url: 'https://celoscan.io' },
-  },
+  id: 42220,
+  name: 'Celo Mainnet',
+  rpcUrls: { default: { http: ['https://forno.celo.org'] } },
+  blockExplorers: { default: { name: 'CeloScan', url: 'https://celoscan.io' } },
+  nativeCurrency: { name: 'Celo', symbol: 'CELO', decimals: 18 }
 };
 
-// Define Celo Alfajores Testnet
 export const alfajores = {
-  ...celoAlfajores,
-  rpcUrls: {
-    default: { http: ['https://alfajores-forno.celo-testnet.org'] },
-    public: { http: ['https://alfajores-forno.celo-testnet.org'] }
-  },
-  blockExplorers: { // Add block explorers directly to chain config
-    default: { name: 'CeloScan', url: 'https://alfajores.celoscan.io' },
-  },
+  id: 44787,
+  name: 'Alfajores Testnet',
+  rpcUrls: { default: { http: ['https://alfajores-forno.celo-testnet.org'] } },
+  blockExplorers: { default: { name: 'CeloScan', url: 'https://alfajores.celoscan.io' } },
+  nativeCurrency: { name: 'Celo', symbol: 'CELO', decimals: 18 }
 };
 
 // --- Current Network Selection ---
 // Use testnet for development. Change to celoMainnet for production.
 export const currentNetwork = alfajores; // Or celoMainnet;
 
-// --- Viem Clients ---
-// Public client for reading blockchain data (e.g., balances, contract calls)
-export const publicClient = createPublicClient({
-  chain: currentNetwork,
-  transport: http('https://alfajores-forno.celo-testnet.org')
-});
+// --- Lazy viem client ---
+let _publicClient: any = null;
+async function ensureViemClient() {
+  if (_publicClient) return _publicClient;
+  const mod = await import('viem');
+  // Support environments where the module is wrapped under a `default` property
+  const createPublicClient = (mod as any).createPublicClient ?? (mod as any).default?.createPublicClient;
+  const http = (mod as any).http ?? (mod as any).default?.http;
+  if (!createPublicClient || !http) {
+    throw new Error('viem createPublicClient/http not available');
+  }
+  const rpc = currentNetwork.rpcUrls?.default?.http?.[0] || 'https://alfajores-forno.celo-testnet.org';
+  _publicClient = createPublicClient({ chain: currentNetwork as any, transport: http(rpc) });
+  return _publicClient;
+}
+
+// Wrapper that exposes common publicClient methods and lazy-initializes viem.
+export const publicClient = {
+  async getBalance(args: any) {
+    const c = await ensureViemClient();
+    return c.getBalance(args);
+  },
+  async readContract(args: any) {
+    const c = await ensureViemClient();
+    return c.readContract(args);
+  },
+  async estimateGas(args: any) {
+    const c = await ensureViemClient();
+    return c.estimateGas(args);
+  },
+  // Add other delegated methods as needed
+};
 
 // --- Wallet Availability Checks ---
 // Type guard for window.ethereum
@@ -102,21 +110,23 @@ export const getMiniPayPhoneNumber = async (): Promise<string | null> => {
 // --- Wallet Client Initialization ---
 // Custom function to get a viem wallet client instance
 // Renamed from createWalletClient to avoid shadowing viem's createWalletClient
-export const getWalletClientInstance = () => {
+export const getWalletClientInstance = async () => {
   if (!isWalletAvailable()) {
     throw new Error('No wallet available. Please install MiniPay or another Celo wallet.');
   }
 
-  // Ensure window.ethereum is not null/undefined before passing to custom transport
   const ethereumProvider = (window as EthereumWindow).ethereum;
   if (!ethereumProvider) {
     throw new Error('Ethereum provider not found.');
   }
 
-  return createViemWalletClient({ // Use the aliased viem function
-    chain: currentNetwork,
-    transport: custom(ethereumProvider)
-  });
+  const mod = await import('viem');
+  const createWalletClient = (mod as any).createWalletClient ?? (mod as any).default?.createWalletClient;
+  const custom = (mod as any).custom ?? (mod as any).default?.custom;
+  if (!createWalletClient || !custom) {
+    throw new Error('viem createWalletClient/custom not available');
+  }
+  return createWalletClient({ chain: currentNetwork as any, transport: custom(ethereumProvider) });
 };
 
 // --- Balance Functions ---
@@ -143,7 +153,7 @@ export const getBalance = async (address: string): Promise<string> => {
     throw new Error('Invalid Celo address');
   }
   const balanceBigInt = await publicClient.getBalance({ address: address as `0x${string}` });
-  return formatEther(balanceBigInt);
+  return formatEther(balanceBigInt as bigint);
 };
 
 // --- cUSD Balance Fetching ---
@@ -151,14 +161,12 @@ export const getCUSDBalance = async (address: string): Promise<string> => {
   if (!isValidCeloAddress(address)) {
     throw new Error('Invalid Celo address');
   }
-  // Use viem publicClient to call balanceOf on cUSD contract
   const balanceBigInt = await publicClient.readContract({
     address: CUSD_TOKEN_ADDRESS as `0x${string}`,
     abi: ERC20_ABI,
     functionName: 'balanceOf',
     args: [address as `0x${string}`]
   });
-  // cUSD has 18 decimals
   return formatUnits(balanceBigInt as bigint, 18);
 };
 
@@ -169,13 +177,13 @@ export const sendCelo = async (
   to: string,
   amount: string // Amount in user-readable units (e.g., "0.5")
 ): Promise<string> => {
-  const walletClient = getWalletClientInstance();
+  const walletClient = await getWalletClientInstance();
   const [account] = await walletClient.getAddresses();
 
   const hash = await walletClient.sendTransaction({
     account,
     to: to as `0x${string}`,
-    value: parseEther(amount) // parseEther converts string (e.g., "0.5") to BigInt (0.5 * 10^18)
+    value: parseEther(amount) // returns bigint
   });
 
   return hash;
@@ -187,24 +195,17 @@ export const sendCUSD = async (
   amount: string // Amount in user-readable units (e.g., "10")
 ): Promise<string> => {
   if (!isValidCeloAddress(to)) {
-    throw new Error('Invalid recipient address');
+    throw new Error('Invalid Celo address');
   }
-  const walletClient = getWalletClientInstance();
+  const walletClient = await getWalletClientInstance();
   const [account] = await walletClient.getAddresses();
-  // Convert amount to BigInt (cUSD has 18 decimals)
   const amountBigInt = parseUnits(amount, 18);
-  // Encode transfer data
-  const data = encodeFunctionData({
-    abi: ERC20_ABI,
-    functionName: 'transfer',
-    args: [to as `0x${string}`, amountBigInt]
-  });
-  // Send transaction
-  const hash = await walletClient.sendTransaction({
-    account,
-    to: CUSD_TOKEN_ADDRESS as `0x${string}`,
-    data
-  });
+  // Lazy import encodeFunctionData from viem when needed
+  const mod = await import('viem');
+  const encodeFunctionData = (mod as any).encodeFunctionData ?? (mod as any).default?.encodeFunctionData;
+  if (!encodeFunctionData) throw new Error('viem encodeFunctionData not available');
+  const data = encodeFunctionData({ abi: ERC20_ABI as any, functionName: 'transfer', args: [to as `0x${string}`, amountBigInt] });
+  const hash = await walletClient.sendTransaction({ account, to: CUSD_TOKEN_ADDRESS as `0x${string}`, data });
   return hash;
 };
 
@@ -247,7 +248,10 @@ export const estimateCUSDGasFee = async (
     throw new Error('Invalid Celo address');
   }
   const amountBigInt = parseUnits(amount, 18);
-  // Encode transfer data
+  // Encode transfer data (lazy-import viem encoder)
+  const mod = await import('viem');
+  const encodeFunctionData = (mod as any).encodeFunctionData ?? (mod as any).default?.encodeFunctionData;
+  if (!encodeFunctionData) throw new Error('viem encodeFunctionData not available');
   const data = encodeFunctionData({
     abi: ERC20_ABI,
     functionName: 'transfer',
@@ -337,3 +341,34 @@ export const formatAddress = (address: string): string => {
 export const isValidCeloAddress = (address: string): boolean => {
   return /^0x[a-fA-F0-9]{40}$/.test(address);
 };
+
+// --- Lightweight unit helpers (synchronous, no external deps) ---
+function pow10(n: number) {
+  return BigInt(10) ** BigInt(n);
+}
+
+export function parseUnits(value: string, decimals = 18): bigint {
+  const parts = String(value).split('.');
+  const whole = parts[0] || '0';
+  const fraction = (parts[1] || '').slice(0, decimals).padEnd(decimals, '0');
+  const wholeBig = BigInt(whole) * pow10(decimals);
+  const fracBig = BigInt(fraction || '0');
+  return wholeBig + fracBig;
+}
+
+export function parseEther(value: string): bigint {
+  return parseUnits(value, 18);
+}
+
+export function formatUnits(value: bigint, decimals = 18): string {
+  const neg = value < 0n;
+  const v = neg ? -value : value;
+  const whole = v / pow10(decimals);
+  const frac = v % pow10(decimals);
+  const fracStr = frac.toString().padStart(decimals, '0').replace(/0+$/, '');
+  return `${neg ? '-' : ''}${whole.toString()}${fracStr ? `.${fracStr}` : ''}`;
+}
+
+export function formatEther(value: bigint): string {
+  return formatUnits(value, 18);
+}

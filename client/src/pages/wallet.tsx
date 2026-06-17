@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Send, ArrowUpRight, ArrowDownLeft, Wallet, TrendingUp, Shield, DollarSign, Users, Settings } from 'lucide-react';
 
 
@@ -20,13 +21,13 @@ import {
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, ArcElement, BarElement);
 
 // Import new components for wallet features
-import TransactionHistory from '../components/wallet/TransactionHistory';
-import AccountSelector from '../components/wallet/AccountSelector';
+const TransactionHistory = React.lazy(() => import('../components/wallet/TransactionHistory'));
+const AccountSelector = React.lazy(() => import('../components/wallet/AccountSelector'));
 import { apiGet, apiPost } from '@/lib/api';
-import RecurringPayments from '../components/wallet/RecurringPayments';
-import ExchangeRateWidget from '../components/wallet/ExchangeRateWidget';
-import RecurringPaymentsManager from '@/components/wallet/RecurringPaymentsManager';
-import GiftCardVoucher from '@/components/wallet/GiftCardVoucher';
+const RecurringPayments = React.lazy(() => import('../components/wallet/RecurringPayments'));
+const ExchangeRateWidget = React.lazy(() => import('../components/wallet/ExchangeRateWidget'));
+const RecurringPaymentsManager = React.lazy(() => import('@/components/wallet/RecurringPaymentsManager'));
+const GiftCardVoucher = React.lazy(() => import('@/components/wallet/GiftCardVoucher'));
 import { useWallet } from './hooks/useWallet';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -38,18 +39,18 @@ import SplitBillModal from '@/components/wallet/SplitBillModal';
 import PaymentLinkModal from '@/components/wallet/PaymentLinkModal';
 import BatchTransfer from '../components/batch-transfer';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import WalletConnectionManager from '@/components/wallet/WalletConnectionManager';
-import WalletBackupReminder from '@/components/wallet/WalletBackupReminder';
-import BackupWalletModal from '@/components/wallet/BackupWalletModal';
-import TokenSwapModal from '@/components/wallet/TokenSwapModal';
-import StakingModal from '@/components/wallet/StakingModal';
-import EscrowInitiator from '@/components/wallet/EscrowInitiator';
+const WalletConnectionManager = React.lazy(() => import('@/components/wallet/WalletConnectionManager'));
+const WalletBackupReminder = React.lazy(() => import('@/components/wallet/WalletBackupReminder'));
+const BackupWalletModal = React.lazy(() => import('@/components/wallet/BackupWalletModal'));
+const TokenSwapModal = React.lazy(() => import('@/components/wallet/TokenSwapModal'));
+const StakingModal = React.lazy(() => import('@/components/wallet/StakingModal'));
+const EscrowInitiator = React.lazy(() => import('@/components/wallet/EscrowInitiator'));
 
 // Capital state and surfaces
-import useCapitalOperatingState from '../hooks/useCapitalOperatingState';
-import CapitalLayer from '../components/wallet/CapitalLayer';
+const CapitalLayer = React.lazy(() => import('../components/wallet/CapitalLayer'));
 import { useWalletOperatingStore, parseDecimal } from '../stores/wallet-operating-store';
-import type { Transaction } from '../types/wallet';
+import type { Transaction, SelectedAccount } from '../../../shared/types/wallet';
+import type { Vault } from '../stores/wallet-operating-store';
 import useWalletActions from '../hooks/useWalletActions';
 
 
@@ -62,7 +63,7 @@ const EnhancedWalletPage = () => {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [paymentRequestOpen, setPaymentRequestOpen] = useState(false);
-  const [selectedVault, setSelectedVault] = useState<any>(null);
+  const [selectedVault, setSelectedVault] = useState<Vault | null>(null);
   const [balanceVisible, setBalanceVisible] = useState(true);
   // vaults and transactions are managed by the wallet operating store
   const [phonePaymentOpen, setPhonePaymentOpen] = useState(false);
@@ -78,17 +79,28 @@ const EnhancedWalletPage = () => {
   // Use real wallet data instead of mock data
   const { address, isConnected, balance, connectMetaMask, connectValora, connectMiniPay, isLoading, error, disconnect } = useWallet();
   const user = { id: address || 'no-wallet' };
+  const navigate = useNavigate();
 
   // Analytics state
-  const [analytics, setAnalytics] = useState<any>(null);
-  const [analyticsLoading, setAnalyticsLoading] = useState(true);
+  type Analytics = {
+    valueOverTime?: Record<string, number>
+    tokenBreakdown?: Record<string, number>
+    typeSummary?: Record<string, number>
+  }
+  const [analytics, setAnalytics] = useState<Analytics | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsError, setAnalyticsError] = useState('');
+  const [fetchLoading, setFetchLoading] = useState(false);
 
   // Sparkline data for subtle capital-flow visualization
-  const sparklineData = analytics && analytics.valueOverTime ? {
-    labels: Object.keys(analytics.valueOverTime),
+  const valueOverTime = analytics?.valueOverTime ?? {};
+  const tokenBreakdown = analytics?.tokenBreakdown ?? {};
+  const typeSummary = analytics?.typeSummary ?? {};
+
+  const sparklineData = Object.keys(valueOverTime).length > 0 ? {
+    labels: Object.keys(valueOverTime),
     datasets: [{
-      data: Object.values(analytics.valueOverTime),
+      data: Object.values(valueOverTime),
       borderColor: '#94a3b8',
       backgroundColor: 'transparent',
       tension: 0.3,
@@ -109,6 +121,7 @@ const EnhancedWalletPage = () => {
   useEffect(() => {
     // Fetch wallet balance, portfolio, and transaction status from API
     async function fetchWalletData() {
+      setFetchLoading(true);
       try {
         // Native balance
         const balanceData = await apiGet('/api/v1/wallets/balance');
@@ -135,14 +148,44 @@ const EnhancedWalletPage = () => {
         setVaults(vaultsArr);
         // Transactions: (for demo, fetch last 10 txs for native address)
       } catch (error) {
-          console.error('Error fetching wallet data:', error);
-        }
+        console.error('Error fetching wallet data:', error);
+      } finally {
+        setFetchLoading(false);
+      }
     }
     
     if (isConnected && address) {
       fetchWalletData();
     }
   }, [isConnected, address]);
+  
+  // Fetch analytics when connected
+  useEffect(() => {
+    let mounted = true;
+    const fetchAnalytics = async () => {
+      setAnalyticsLoading(true);
+      try {
+        const data = await apiGet('/api/v1/wallets/analytics');
+        if (!mounted) return;
+        setAnalytics(data || null);
+        setAnalyticsError('');
+      } catch (e) {
+        console.error('Analytics fetch error', e);
+        setAnalyticsError('Failed to load analytics');
+      } finally {
+        setAnalyticsLoading(false);
+      }
+    };
+
+    if (isConnected) fetchAnalytics();
+    return () => { mounted = false; };
+  }, [isConnected]);
+
+  // Compute derived total balance from vaults
+  useEffect(() => {
+    const total = (vaults || []).reduce((s: number, v: any) => s + Number(v.balance || 0), 0);
+    setTotalBalance(total);
+  }, [vaults]);
   
   const [depositAmount, setDepositAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
@@ -161,7 +204,7 @@ const EnhancedWalletPage = () => {
   const parseAmtForCapital = (v: unknown) => parseDecimal(v);
   const netFlow30dDec = (txsForCapital as Transaction[]).reduce((s: Decimal, t: Transaction) => s.plus(parseAmtForCapital(t.amount)), new Decimal(0));
   type RecentTx = { id: string; type: 'in' | 'swap' | 'out'; label?: string; time?: string; amount: number };
-  const recentTxs: RecentTx[] = (txsForCapital as Transaction[]).slice(0, 4).map((tx: Transaction) => {
+  const recentTxs: RecentTx[] = (txsForCapital as Transaction[]).slice(0, 4).map((tx: Transaction, i: number) => {
     const txType = tx.type === 'received' ? 'in' : tx.type === 'swap' ? 'swap' : 'out';
     const rawTime = tx.timeAgo ?? tx.time ?? '';
     const isDate = (v: unknown): v is Date => v instanceof Date;
@@ -173,7 +216,7 @@ const EnhancedWalletPage = () => {
     const label = tx.description ?? tx.memo ?? tx.type ?? '';
 
     return {
-      id: String(tx.id ?? `${tx.type}-${Math.random().toString(36).slice(2, 8)}`),
+      id: String(tx.id ?? `${tx.type}-${i}-${tx.time ?? ''}`),
       type: txType,
       label,
       time: timeStr,
@@ -202,10 +245,15 @@ const EnhancedWalletPage = () => {
     setActionLoading(true);
     setActionError('');
     try {
-      const res = await actions.send({ toAddress: sendTo, amount: depositAmount, currency: selectedCurrency });
-      if (!res.success) throw new Error(res.error || 'Deposit failed');
+      // Prefer platform on-ramp / deposit flow if available
+      if (typeof (actions as any).depositOnRamp === 'function') {
+        const res = await (actions as any).depositOnRamp({ amount: depositAmount, currency: selectedCurrency });
+        if (!res.success) throw new Error(res.error || 'Deposit failed');
+      } else {
+        // Fallback: open payment modal (external on-ramp integration)
+        setPaymentOpen(true);
+      }
       setDepositAmount('');
-      setPaymentOpen(false);
     } catch (err: unknown) {
       const msg = (err instanceof Error ? err.message : String(err));
       setActionError(msg);
@@ -284,37 +332,10 @@ const EnhancedWalletPage = () => {
     );
   };
 
-  type ButtonProps = {
-    children: React.ReactNode;
-    className?: string;
-    variant?: "default" | "outline" | "emerald" | "purple" | "glass";
-    onClick?: React.MouseEventHandler<HTMLButtonElement>;
-    disabled?: boolean;
-    size?: "sm" | "md" | "lg";
-  };
-
-  const Button: React.FC<ButtonProps> = ({ children, className = "", variant = "default", onClick, disabled = false }) => {
-    const variants = {
-      default: "bg-gray-800 text-white shadow-sm",
-      outline: "border border-gray-700 text-gray-200 bg-gray-900/60",
-      emerald: "bg-emerald-600 text-white shadow-sm",
-      purple: "bg-purple-700 text-white shadow-sm",
-      glass: "bg-white/6 text-white border border-gray-800 backdrop-blur-sm"
-    };
-
-    return (
-      <button
-        onClick={onClick}
-        disabled={disabled}
-        className={`${variants[variant]} px-6 py-3 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
-      >
-        {children}
-      </button>
-    );
-  };
+  // Use shared Button component (do not shadow import)
 
   // Loading state after connection
-  if (isConnected && !vaults.length && !transactions.length) {
+  if (isConnected && fetchLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center">
         <Card className="p-8 max-w-md text-center">
@@ -328,7 +349,8 @@ const EnhancedWalletPage = () => {
   }
 
   return (
-    <Shell
+    <React.Suspense fallback={<div className="p-8 text-center">Loading wallet...</div>}>
+      <Shell
       brand={
         <div className="flex items-center space-x-4">
           <div className="w-16 h-16 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl flex items-center justify-center shadow-lg">
@@ -385,11 +407,11 @@ const EnhancedWalletPage = () => {
               <h3 className="font-semibold mb-2">Portfolio Value Over Time</h3>
               <Line
                 data={{
-                  labels: Object.keys(analytics.valueOverTime),
+                  labels: Object.keys(valueOverTime),
                   datasets: [
                     {
                       label: 'Value',
-                      data: Object.values(analytics.valueOverTime),
+                      data: Object.values(valueOverTime),
                       borderColor: '#6366f1',
                       backgroundColor: 'rgba(99,102,241,0.1)',
                       fill: true,
@@ -408,10 +430,10 @@ const EnhancedWalletPage = () => {
               <h3 className="font-semibold mb-2">Token Breakdown</h3>
               <Pie
                 data={{
-                  labels: Object.keys(analytics.tokenBreakdown),
+                  labels: Object.keys(tokenBreakdown),
                   datasets: [
                     {
-                      data: Object.values(analytics.tokenBreakdown),
+                      data: Object.values(tokenBreakdown),
                       backgroundColor: [
                         '#6366f1', '#f59e42', '#10b981', '#f43f5e', '#a21caf', '#fbbf24', '#0ea5e9', '#14b8a6', '#eab308', '#f472b6'
                       ],
@@ -430,11 +452,11 @@ const EnhancedWalletPage = () => {
               <h3 className="font-semibold mb-2">Transaction Type Summary</h3>
               <Bar
                 data={{
-                  labels: Object.keys(analytics.typeSummary),
+                  labels: Object.keys(typeSummary),
                   datasets: [
                     {
                       label: 'Total',
-                      data: Object.values(analytics.typeSummary),
+                      data: Object.values(typeSummary),
                       backgroundColor: '#6366f1',
                     },
                   ],
@@ -492,11 +514,11 @@ const EnhancedWalletPage = () => {
                   Personal Wallet
                 </h1>
                 <div className="flex items-center space-x-2">
-                  <Button variant="outline" className="h-8 px-3 text-sm" onClick={() => window.location.href = '/dashboard'}>
+                  <Button variant="outline" className="h-8 px-3 text-sm" onClick={() => navigate('/dashboard')}>
                     <span className="w-4 h-4 mr-1">👥</span>
                     Community
                   </Button>
-                  <Button variant="outline" className="h-8 px-3 text-sm" onClick={() => window.location.href = '/vault-dashboard'}>
+                  <Button variant="outline" className="h-8 px-3 text-sm" onClick={() => navigate('/vault-dashboard')}>
                     <TrendingUp className="w-4 h-4 mr-1" />
                     DeFi Portfolio
                   </Button>
@@ -658,7 +680,7 @@ const EnhancedWalletPage = () => {
             </div>
 
             {/* Vaults */}
-            <div className="bg-gray-50/80 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-800 p-6 rounded-xl hover:shadow-md transition-colors cursor-pointer" onClick={() => window.location.href = '/vault-dashboard'}>
+            <div className="bg-gray-50/80 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-800 p-6 rounded-xl hover:shadow-md transition-colors cursor-pointer" onClick={() => navigate('/vault-dashboard')}>
               <div className="w-10 h-10 bg-gray-800/10 rounded-lg flex items-center justify-center mb-4">
                 <Shield className="w-5 h-5 text-gray-400" />
               </div>
@@ -736,19 +758,29 @@ const EnhancedWalletPage = () => {
         {/* 4-Account Structure Selector */}
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-gray-900 mb-6">Your Accounts</h2>
-          <AccountSelector 
+          <AccountSelector
             selectedAccountId={selectedAccountId}
             onAccountSelect={(account) => {
               setSelectedAccountId(account.id);
-              setSelectedAccount(account);
+              // Map local Account shape to shared SelectedAccount
+              const mapped: SelectedAccount = {
+                id: account.id,
+                address: account.address ?? '',
+                label: account.currency ? `${account.currency} (${account.type})` : account.type,
+                name: account.currency ?? account.type,
+                type: account.type,
+                balance: account.balance,
+                currency: account.currency
+              };
+              setSelectedAccount(mapped);
             }}
           />
           {selectedAccount && (
             <Card className="mt-6">
               <CardHeader>
-                <CardTitle>Selected Account: {((selectedAccount as any)?.type ? ((selectedAccount as any).type.charAt(0).toUpperCase() + (selectedAccount as any).type.slice(1)) : 'Account')}</CardTitle>
+                <CardTitle>Selected Account: {selectedAccount.type ? (selectedAccount.type.charAt(0).toUpperCase() + selectedAccount.type.slice(1)) : 'Account'}</CardTitle>
                 <CardDescription>
-                  Balance: {Number((selectedAccount as any)?.balance ?? 0).toFixed(2)} {(selectedAccount as any)?.currency ?? ''}
+                  Balance: {Number(selectedAccount.balance ?? 0).toFixed(2)} {selectedAccount.currency ?? ''}
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -759,7 +791,7 @@ const EnhancedWalletPage = () => {
         <div className="space-y-6">
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="transactions">Transactions</TabsTrigger>
               <TabsTrigger value="recurring">Recurring</TabsTrigger>
@@ -922,6 +954,7 @@ const EnhancedWalletPage = () => {
       )}
     </div>
     </Shell>
+    </React.Suspense>
   );
 };
 

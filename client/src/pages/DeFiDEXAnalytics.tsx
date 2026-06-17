@@ -15,23 +15,9 @@ import {
   CardTitle,
 } from '../components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  ScatterChart,
-  Scatter,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from 'recharts';
+// Recharts removed; chart components use Chart.js via ChartJSSetup and react-chartjs-2
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -414,36 +400,15 @@ const DeFiDEXAnalytics: React.FC = () => {
                 <CardDescription>TVL distribution across DEXes</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={dexBreakdown}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, value }) =>
-                          `${name}: $${(value / 1e6).toFixed(0)}M`
-                        }
-                        outerRadius={120}
-                        fill="#8884d8"
-                        dataKey="value"
-                      >
-                        {dexBreakdown.map((_, index) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={COLORS[index % COLORS.length]}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value: number) =>
-                          `$${(value / 1e6).toFixed(2)}M`
-                        }
+                  <div className="h-80">
+                    <div style={{ height: '100%' }}>
+                      <Chart
+                        type="pie"
+                        data={{ labels: dexBreakdown.map(d => d.name), datasets: [{ data: dexBreakdown.map(d => d.value), backgroundColor: dexBreakdown.map((_, i) => COLORS[i % COLORS.length]) }] }}
+                        options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `$${(ctx.raw as number / 1e6).toFixed(2)}M` } } } }}
                       />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
+                    </div>
+                  </div>
 
                 <div className="mt-8">
                   <Grid columns={2} gap="md">

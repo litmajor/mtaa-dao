@@ -216,9 +216,10 @@ export class CEXPriceBackgroundJob {
 
     } catch (error) {
       this.stats.failedCollections++;
-      const err = error instanceof Error ? error : new Error(String(error));
-      this.config.onError?.(err);
-      console.error('[CEXPriceBackgroundJob] Unexpected error during collection:', error);
+      const e: any = error;
+      const errObj = e instanceof Error ? { message: e.message, stack: e.stack } : { message: String(e) };
+      this.config.onError?.(e instanceof Error ? e : new Error(String(e)));
+      console.error('[CEXPriceBackgroundJob] Unexpected error during collection:', errObj);
     }
   }
 
@@ -254,9 +255,18 @@ export class CEXPriceBackgroundJob {
     // Log detailed results
     for (const result of results) {
       if (!result.success) {
-        const error = new Error(`Collection failed for ${result.exchange}: ${result.error}`);
+        const raw = result.error;
+        let errObj: { message: string; stack?: string | undefined };
+        if (typeof raw === 'string') {
+          errObj = { message: raw };
+        } else if (raw && typeof raw === 'object') {
+          errObj = { message: String((raw as any).message ?? JSON.stringify(raw)), stack: (raw as any).stack };
+        } else {
+          errObj = { message: String(raw) };
+        }
+        const error = new Error(`Collection failed for ${result.exchange}: ${errObj.message}`);
         this.config.onError?.(error);
-        console.error(`[CEXPriceBackgroundJob] ${result.exchange} failed:`, result.error);
+        console.error(`[CEXPriceBackgroundJob] ${result.exchange} failed:`, errObj);
       } else {
         console.log(
           `[CEXPriceBackgroundJob] ${result.exchange}: ${result.pairsProcessed}/${

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title Guardian
@@ -29,7 +29,9 @@ contract Guardian is Ownable, ReentrancyGuard {
         FREEZE_TREASURY,        // Disable all treasury movements
         EMERGENCY_WITHDRAWAL,   // Extract funds from vault to treasury
         UPGRADE_CONTRACT,       // Authorize contract upgrade
-        CUSTOM_CALL             // Execute custom function on target contract
+        CUSTOM_CALL,            // Execute custom function on target contract
+        UNPAUSE_CONTRACT,       // Remove pause on a contract (via proposal)
+        REPLACE_GUARDIAN        // Replace guardian at index (via proposal)
     }
 
     enum ActionStatus { PENDING, APPROVED, EXECUTED, REJECTED, EXPIRED }
@@ -130,7 +132,7 @@ contract Guardian is Ownable, ReentrancyGuard {
 
     // ==================== INITIALIZATION ====================
     
-    constructor(address[] memory _guardians) {
+    constructor(address[] memory _guardians) Ownable(msg.sender) {
         if (_guardians.length != 3) revert InvalidGuardian();
         
         for (uint256 i = 0; i < 3; i++) {
@@ -145,15 +147,9 @@ contract Guardian is Ownable, ReentrancyGuard {
      * @notice Replace a guardian (requires 2-of-3 approval)
      * @dev Only callable through proposal mechanism
      */
-    function replaceGuardian(uint256 index, address newGuardian) external onlyOwner {
-        if (index >= 3) revert InvalidGuardian();
-        if (newGuardian == address(0)) revert InvalidGuardian();
-        
-        address oldGuardian = guardians[index];
-        guardians[index] = newGuardian;
-        
-        emit GuardianChanged(index, oldGuardian, newGuardian);
-    }
+    // NOTE: Guardian replacement is performed via proposals (REPLACE_GUARDIAN)
+    // to ensure multisig consent. The `onlyOwner` replacement was removed
+    // to avoid a single-point takeover by the deployer/owner key.
 
     // ==================== PROPOSAL CREATION ====================
 
@@ -198,15 +194,18 @@ contract Guardian is Ownable, ReentrancyGuard {
         nonReentrant 
     {
         GuardianProposal storage proposal = proposals[proposalId];
-        
         if (proposal.status != ActionStatus.PENDING) revert ProposalLocked();
+        if (block.timestamp > proposal.proposedAt + PROPOSAL_EXPIRY) {
+            proposal.status = ActionStatus.EXPIRED;
+            emit GuardianProposalRejected(proposalId, "Proposal expired");
+            revert ProposalExpired();
+        }
         if (proposal.hasApproved[msg.sender]) revert AlreadyApproved();
 
         proposal.approvers.push(msg.sender);
         proposal.hasApproved[msg.sender] = true;
 
         uint256 approvalsNeeded = APPROVAL_THRESHOLD - proposal.approvers.length;
-        
         emit GuardianApprovalGiven(proposalId, msg.sender, approvalsNeeded);
 
         // Auto-approve if threshold reached
@@ -227,12 +226,13 @@ contract Guardian is Ownable, ReentrancyGuard {
         nonReentrant 
     {
         GuardianProposal storage proposal = proposals[proposalId];
-        
         if (proposal.status != ActionStatus.APPROVED) revert ProposalLocked();
         if (block.timestamp < proposal.executeAfter) revert TimelockNotMet();
-        if (block.timestamp > proposal.proposedAt + PROPOSAL_EXPIRY) revert ProposalExpired();
-
-        proposal.status = ActionStatus.EXECUTED;
+        if (block.timestamp > proposal.proposedAt + PROPOSAL_EXPIRY) {
+            proposal.status = ActionStatus.EXPIRED;
+            emit GuardianProposalRejected(proposalId, "Proposal expired at execution");
+            revert ProposalExpired();
+        }
 
         bool success;
         bytes memory result;
@@ -242,20 +242,43 @@ contract Guardian is Ownable, ReentrancyGuard {
             pausedContracts[proposal.targetContract] = true;
             emit ContractPaused(proposal.targetContract, proposal.rationale);
             success = true;
-            
+
         } else if (proposal.action == GuardianAction.FREEZE_TREASURY) {
             pausedContracts[proposal.targetContract] = true;
             emit ContractPaused(proposal.targetContract, "Treasury frozen");
             success = true;
-            
+
+        } else if (proposal.action == GuardianAction.UNPAUSE_CONTRACT) {
+            pausedContracts[proposal.targetContract] = false;
+            emit ContractUnpaused(proposal.targetContract);
+            success = true;
+
+        } else if (proposal.action == GuardianAction.EMERGENCY_WITHDRAWAL) {
+            // callData should encode the exact call on the target (e.g. emergencyWithdraw(address))
+            (success, result) = proposal.targetContract.call(proposal.callData);
+            if (!success) revert ExecutionFailed();
+
+        } else if (proposal.action == GuardianAction.REPLACE_GUARDIAN) {
+            (uint256 index, address newGuardian) = abi.decode(proposal.callData, (uint256, address));
+            if (index >= 3) revert InvalidGuardian();
+            if (newGuardian == address(0)) revert InvalidGuardian();
+            address old = guardians[index];
+            guardians[index] = newGuardian;
+            emit GuardianChanged(index, old, newGuardian);
+            success = true;
+
         } else if (proposal.action == GuardianAction.UPGRADE_CONTRACT) {
             // Authorize upgrade (implementation-specific)
             success = true;
-            
+
         } else if (proposal.action == GuardianAction.CUSTOM_CALL) {
             // Execute custom call to target contract
             (success, result) = proposal.targetContract.call(proposal.callData);
             if (!success) revert ExecutionFailed();
+        }
+
+        if (success) {
+            proposal.status = ActionStatus.EXECUTED;
         }
 
         emit GuardianProposalExecuted(proposalId, proposal.action, success);
@@ -263,13 +286,7 @@ contract Guardian is Ownable, ReentrancyGuard {
 
     // ==================== EMERGENCY UNPAUSE ====================
 
-    /**
-     * @notice Unpause a contract (requires 2-of-3 approval)
-     */
-    function unpauseContract(address contractAddress) external onlyGuardian {
-        pausedContracts[contractAddress] = false;
-        emit ContractUnpaused(contractAddress);
-    }
+    // Direct unpause removed — use proposals with `UNPAUSE_CONTRACT` action.
 
     // ==================== QUERY FUNCTIONS ====================
 
@@ -290,10 +307,15 @@ contract Guardian is Ownable, ReentrancyGuard {
         ) 
     {
         GuardianProposal storage proposal = proposals[proposalId];
+        ActionStatus statusLocal = proposal.status;
+        if (statusLocal == ActionStatus.PENDING && block.timestamp > proposal.proposedAt + PROPOSAL_EXPIRY) {
+            statusLocal = ActionStatus.EXPIRED;
+        }
+
         return (
             proposal.action,
             proposal.targetContract,
-            proposal.status,
+            statusLocal,
             proposal.approvers.length,
             proposal.executeAfter,
             proposal.rationale

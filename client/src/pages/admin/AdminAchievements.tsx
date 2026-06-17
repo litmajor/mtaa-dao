@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { Lightbulb, Target, Award, Plus, RefreshCw, Edit, Trash2, CheckCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -293,18 +294,16 @@ export default function AdminAchievements() {
           <TabsContent value="metrics" className="space-y-4">
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Achievement Metrics</h3>
-              <ResponsiveContainer width="100%" height={350}>
-                <LineChart data={metrics}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="date" stroke="#94a3b8" />
-                  <YAxis stroke="#94a3b8" yAxisId="left" />
-                  <YAxis stroke="#94a3b8" yAxisId="right" orientation="right" />
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  <Legend />
-                  <Line yAxisId="left" type="monotone" dataKey="totalEarned" stroke="#3b82f6" name="Total Earned" strokeWidth={2} />
-                  <Line yAxisId="right" type="monotone" dataKey="uniqueUsers" stroke="#10b981" name="Unique Users" strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
+              <div style={{ height: 350 }}>
+                <Chart
+                  type="line"
+                  data={{ labels: metrics.map(m => m.date), datasets: [
+                    { label: 'Total Earned', data: metrics.map(m => m.totalEarned), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.06)', yAxisID: 'left', tension: 0.2 },
+                    { label: 'Unique Users', data: metrics.map(m => m.uniqueUsers), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.06)', yAxisID: 'right', tension: 0.2 }
+                  ] }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { left: { position: 'left' }, right: { position: 'right' } }} }
+                />
+              </div>
             </Card>
           </TabsContent>
         </Tabs>

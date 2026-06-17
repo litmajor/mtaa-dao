@@ -1,6 +1,8 @@
 import { db } from '../db';
 import { eq, or, and, desc, sql } from 'drizzle-orm';
-import { users, sessions, walletAddresses, sessionAuditLogs } from '../../shared/schema';
+import { users, sessions } from '../../shared/schema';
+import { walletConnections } from '../../shared/walletIntegrationSchema';
+import { sessionAudits, SessionAudit } from '../../shared/securityEnhancedSchema';
 
 // Type aliases
 type User = typeof users.$inferSelect;
@@ -341,14 +343,15 @@ export class UserStorage {
     if (!userId || !walletData.address || !walletData.chainId) {
       throw new Error('User ID, address, and chain ID required');
     }
-    const result = await this.db.insert(walletAddresses).values({
+    const result = await this.db.insert(walletConnections).values({
       userId,
+      accountId: walletData.accountId ?? userId,
       chainId: walletData.chainId,
-      chainName: walletData.chainName,
-      address: walletData.address,
-      addressLabel: walletData.addressLabel,
+      walletAddress: walletData.address,
+      walletLabel: walletData.addressLabel,
       isPrimary: walletData.isPrimary || false,
       isVerified: false,
+      verificationSignature: walletData.verificationSignature,
       createdAt: new Date(),
       updatedAt: new Date(),
     }).returning();
@@ -361,13 +364,13 @@ export class UserStorage {
   async getWalletAddresses(userId: string, chainId?: number): Promise<any[]> {
     if (!userId) throw new Error('User ID required');
     if (chainId) {
-      return await this.db.select().from(walletAddresses)
-        .where(and(eq(walletAddresses.userId, userId), eq(walletAddresses.chainId, chainId)))
-        .orderBy(desc(walletAddresses.isPrimary));
+      return await this.db.select().from(walletConnections)
+        .where(and(eq(walletConnections.userId, userId), eq(walletConnections.chainId, chainId)))
+        .orderBy(desc(walletConnections.isPrimary));
     }
-    return await this.db.select().from(walletAddresses)
-      .where(eq(walletAddresses.userId, userId))
-      .orderBy(desc(walletAddresses.isPrimary));
+    return await this.db.select().from(walletConnections)
+      .where(eq(walletConnections.userId, userId))
+      .orderBy(desc(walletConnections.isPrimary));
   }
 
   /**
@@ -378,14 +381,14 @@ export class UserStorage {
       throw new Error('User ID, wallet ID, and chain ID required');
     }
     // Clear primary for this chain
-    await this.db.update(walletAddresses)
+    await this.db.update(walletConnections)
       .set({ isPrimary: false })
-      .where(and(eq(walletAddresses.userId, userId), eq(walletAddresses.chainId, chainId)));
+      .where(and(eq(walletConnections.userId, userId), eq(walletConnections.chainId, chainId)));
     
     // Set new primary
-    const result = await this.db.update(walletAddresses)
+    const result = await this.db.update(walletConnections)
       .set({ isPrimary: true, updatedAt: new Date() })
-      .where(eq(walletAddresses.id, walletId))
+      .where(eq(walletConnections.id, walletId))
       .returning();
     return result[0];
   }
@@ -395,13 +398,13 @@ export class UserStorage {
    */
   async verifyWalletAddress(walletId: string, signature: string): Promise<any> {
     if (!walletId || !signature) throw new Error('Wallet ID and signature required');
-    const result = await this.db.update(walletAddresses)
+    const result = await this.db.update(walletConnections)
       .set({ 
         isVerified: true, 
         verificationSignature: signature,
         updatedAt: new Date() 
       })
-      .where(eq(walletAddresses.id, walletId))
+      .where(eq(walletConnections.id, walletId))
       .returning();
     return result[0];
   }
@@ -411,9 +414,9 @@ export class UserStorage {
    */
   async deleteWalletAddress(walletId: string): Promise<boolean> {
     if (!walletId) throw new Error('Wallet ID required');
-    const result = await this.db.delete(walletAddresses)
-      .where(eq(walletAddresses.id, walletId));
-    return result.rowCount > 0;
+    const result = await this.db.delete(walletConnections)
+      .where(eq(walletConnections.id, walletId));
+    return (result?.rowCount ?? 0) > 0;
   }
 
   /**
@@ -423,21 +426,26 @@ export class UserStorage {
     if (!auditData.sessionId || !auditData.userId || !auditData.action) {
       throw new Error('Session ID, user ID, and action required');
     }
-    const result = await this.db.insert(sessionAuditLogs).values({
-      sessionId: auditData.sessionId,
-      userId: auditData.userId,
+    const meta: any = Object.assign({}, auditData.metadata || {}, {
       daoId: auditData.daoId,
-      action: auditData.action,
       resource: auditData.resource,
       resourceId: auditData.resourceId,
       method: auditData.method,
       endpoint: auditData.endpoint,
-      ipAddress: auditData.ipAddress,
-      userAgent: auditData.userAgent,
       status: auditData.status,
       duration: auditData.duration,
-      metadata: auditData.metadata,
-      severity: auditData.severity || 'info',
+      severity: auditData.severity || 'info'
+    });
+
+    const result = await this.db.insert(sessionAudits).values({
+      sessionId: auditData.sessionId,
+      userId: auditData.userId,
+      action: auditData.action,
+      ipAddress: auditData.ipAddress,
+      userAgent: auditData.userAgent,
+      deviceId: auditData.deviceId,
+      location: auditData.location,
+      metadata: meta,
       createdAt: new Date(),
     }).returning();
     return result[0];
@@ -450,14 +458,14 @@ export class UserStorage {
     if (!userId) throw new Error('User ID required');
     const { limit = 100, offset = 0, daoId } = options;
     
-    let whereClause = eq(sessionAuditLogs.userId, userId);
+    let whereClause: any = eq(sessionAudits.userId, userId);
     if (daoId) {
-      whereClause = and(whereClause, eq(sessionAuditLogs.daoId, daoId));
+      whereClause = and(whereClause, sql`(session_audits.metadata->>'daoId') = ${daoId}`);
     }
 
-    return await this.db.select().from(sessionAuditLogs)
+    return await this.db.select().from(sessionAudits)
       .where(whereClause)
-      .orderBy(desc(sessionAuditLogs.createdAt))
+      .orderBy(desc(sessionAudits.createdAt))
       .limit(limit)
       .offset(offset);
   }
@@ -467,9 +475,9 @@ export class UserStorage {
    */
   async getSessionAuditLogsBySessionId(sessionId: string): Promise<any[]> {
     if (!sessionId) throw new Error('Session ID required');
-    return await this.db.select().from(sessionAuditLogs)
-      .where(eq(sessionAuditLogs.sessionId, sessionId))
-      .orderBy(desc(sessionAuditLogs.createdAt));
+    return await this.db.select().from(sessionAudits)
+      .where(eq(sessionAudits.sessionId, sessionId))
+      .orderBy(desc(sessionAudits.createdAt));
   }
 
   /**
@@ -480,13 +488,13 @@ export class UserStorage {
     const sinceDate = new Date();
     sinceDate.setDate(sinceDate.getDate() - days);
     
-    return await this.db.select().from(sessionAuditLogs)
+    return await this.db.select().from(sessionAudits)
       .where(and(
-        eq(sessionAuditLogs.userId, userId),
-        eq(sessionAuditLogs.severity, 'critical'),
+        eq(sessionAudits.userId, userId),
+        sql`(session_audits.metadata->>'severity') = ${'critical'}`,
         sql`"created_at" >= ${sinceDate}`
       ))
-      .orderBy(desc(sessionAuditLogs.createdAt));
+      .orderBy(desc(sessionAudits.createdAt));
   }
 
   /**

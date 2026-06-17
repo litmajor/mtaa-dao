@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { AlertTriangle, CheckCircle, TrendingUp, Lock, Zap, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -208,17 +209,16 @@ export default function AdminDeFiMonitoring() {
           <TabsContent value="analytics" className="space-y-4">
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">TVL & APY Trends</h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={defiData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="date" stroke="#94a3b8" />
-                  <YAxis stroke="#94a3b8" />
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  <Legend />
-                  <Line type="monotone" dataKey="tvl" stroke="#3b82f6" name="TVL (M)" />
-                  <Line type="monotone" dataKey="apy" stroke="#10b981" name="Avg APY (%)" />
-                </LineChart>
-              </ResponsiveContainer>
+              <div style={{ height: 300 }}>
+                <Chart
+                  type="line"
+                  data={{ labels: defiData.map(d => d.date), datasets: [
+                    { label: 'TVL (M)', data: defiData.map(d => d.tvl), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.06)', tension: 0.2 },
+                    { label: 'Avg APY (%)', data: defiData.map(d => d.apy), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.06)', tension: 0.2 }
+                  ] }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: true } } }}
+                />
+              </div>
             </Card>
           </TabsContent>
         </Tabs>

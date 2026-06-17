@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card } from './card-design';
+import { Card } from '../ui';
 
 export interface DashboardLayoutProps {
   // Metadata
@@ -35,7 +35,7 @@ export interface DashboardLayoutProps {
 
 export interface DashboardGridProps {
   children: React.ReactNode;
-  columns?: 1 | 2 | 3 | 4 | 6;
+  columns?: 'auto' | 1 | 2 | 3 | 4 | 6;
   gap?: 'sm' | 'md' | 'lg';
   className?: string;
 }
@@ -186,11 +186,12 @@ export const DashboardCard = React.forwardRef<HTMLDivElement, DashboardCardProps
   ) => {
     const colspanClass = colspan > 1 ? `col-span-1 md:col-span-${Math.min(colspan, 2)} lg:col-span-${colspan}` : '';
 
+    const elevationClass = elevation === 0 ? 'shadow-none' : elevation === 1 ? 'shadow-sm' : elevation === 2 ? 'shadow' : elevation === 3 ? 'shadow-md' : 'shadow-lg';
+
     return (
       <Card
         ref={ref}
-        elevation={elevation}
-        className={`flex flex-col h-full ${colspanClass} ${className || ''}`}
+        className={`flex flex-col h-full ${colspanClass} ${elevationClass} ${className || ''}`}
       >
         {/* Header */}
         {(title || headerAction) && (

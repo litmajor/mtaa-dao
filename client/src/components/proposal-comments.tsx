@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { MessageCircle, Send, Edit, Trash2, Heart, AlertCircle, Loader2 } from "lucide-react";
 import { t } from '@/lib/uiLabels';
-import { formatDistanceToNow } from "date-fns";
+import formatDistanceToNow from "date-fns/formatDistanceToNow";
 
 interface Comment {
   id: string;

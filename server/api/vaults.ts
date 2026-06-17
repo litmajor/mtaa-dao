@@ -1,398 +1,266 @@
 import { Request, Response } from 'express';
-import { vaultService } from '../services/vaultService';
+import { vaultService, type CreateVaultRequest } from '../services/vaultService';
 import { TokenRegistry } from '../../shared/tokenRegistry';
 import { vaultValidation } from '../middleware/validation';
 import { asyncHandler } from '../middleware/errorHandler';
 import { Logger } from '../utils/logger';
 import { getGatewayAgentService } from '../core/agents/gateway/service';
+import {
+  createVaultBodySchema,
+  depositWithdrawBodySchema,
+  allocateToStrategyBodySchema,
+  vaultIdParamsSchema,
+} from '../validators/vaults';
 
 const logger = new Logger('vault-api');
 
-// Create a new vault
+// Helper to run express-style middleware inside handlers
+const runMiddleware = (req: Request, res: Response, mw: any) => {
+  return new Promise<void>((resolve, reject) => {
+    try {
+      mw(req, res, (err: any) => {
+        if (err) return reject(err);
+        resolve();
+      });
+    } catch (err) {
+      reject(err);
+    }
+  });
+};
+
 export async function createVaultHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.claims?.id;
-    if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
+    const userId = (req as any).user?.claims?.id;
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
+
+    // Run shared validation middleware for createVault (if routes call it this will be noop)
+    try {
+      await runMiddleware(req, res, vaultValidation.createVault);
+    } catch (err) {
+      logger.warn('Validation middleware rejected request', err);
+      return res.status(400).json({ error: 'Invalid request payload' });
     }
 
-    const {
-      name,
-      description,
-      daoId,
-      vaultType,
-      primaryCurrency,
-      yieldStrategy,
-      riskLevel,
-      minDeposit,
-      maxDeposit
-    } = req.body;
+    const validated = createVaultBodySchema.parse(req.body);
 
-    if (!name || !primaryCurrency || !vaultType) {
-      return res.status(400).json({ 
-        error: 'Name, primary currency, and vault type are required' 
-      });
+    // Normalise currency field (some validation layers use `currency`)
+    const primaryCurrency = (validated as any).primaryCurrency ?? (validated as any).currency;
+    // Validate primary currency against token registry
+    const token = TokenRegistry.getToken(primaryCurrency as string);
+    if (!token) {
+      return res.status(400).json({ error: 'Unsupported primary currency' });
     }
 
     const vault = await vaultService.createVault({
-      name,
-      description,
-      userId: daoId ? undefined : userId,
-      daoId: daoId || undefined,
-      vaultType,
-      primaryCurrency,
-      yieldStrategy,
-      riskLevel,
-      minDeposit,
-      maxDeposit
+      name: validated.name,
+      description: validated.description,
+      userId: validated.daoId ? undefined : userId,
+      daoId: validated.daoId || undefined,
+      vaultType: validated.vaultType as CreateVaultRequest['vaultType'],
+      primaryCurrency: validated.primaryCurrency as any,
+      yieldStrategy: validated.yieldStrategy,
+      riskLevel: validated.riskLevel,
+      minDeposit: validated.minDeposit !== undefined ? String(validated.minDeposit) : undefined,
+      maxDeposit: validated.maxDeposit !== undefined ? String(validated.maxDeposit) : undefined,
     });
 
-    res.json({ vault });
+    // Optionally enrich response with a price from the gateway agent if available
+    try {
+      const gateway = getGatewayAgentService();
+      if (typeof gateway.isHealthy === 'function' && gateway.isHealthy()) {
+        const priceMsg = await gateway.requestPrices([primaryCurrency]);
+        if (priceMsg && priceMsg.payload) {
+          (vault as any).price = priceMsg.payload.prices?.[primaryCurrency] || null;
+        }
+      }
+    } catch (e) {
+      logger.warn('Gateway price enrichment skipped:', e);
+    }
+
+    res.json({ success: true, vault });
   } catch (error: any) {
-    console.error('Error creating vault:', error);
+    logger.error('createVaultHandler error', error);
     res.status(500).json({ error: error.message || 'Failed to create vault' });
   }
 }
 
-// Allocate to vault (generic allocation, not strategy-specific)
-export async function allocateToVaultHandler(req: Request, res: Response) {
-  try {
-    const userId = req.user?.claims?.id;
-    const { vaultId } = req.params;
-    const { tokenSymbol, amount, allocationNote } = req.body;
-
-    if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-    if (!vaultId || !tokenSymbol || !amount) {
-      return res.status(400).json({ error: 'Vault ID, token symbol, and amount are required' });
-    }
-
-    // Call a generic allocation method in vaultService (implement if missing)
-    const allocation = await vaultService.allocateToVault({
-      vaultId,
-      userId,
-      tokenSymbol,
-      amount,
-      allocationNote
-    } as any);
-
-    res.json({ success: true, allocation });
-  } catch (error: any) {
-    console.error('Error allocating to vault:', error);
-    res.status(500).json({ error: error.message || 'Failed to allocate to vault' });
-  }
-}
-
-// Get user's vaults
-export async function getUserVaultsHandler(req: Request, res: Response) {
-  try {
-    const userId = req.user?.claims?.id;
-    if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    const { daoId } = req.query;
-
-    // For now, we'll implement a simple query to get vaults
-    // This should be enhanced with proper filtering in the VaultService
-  const vaults = await vaultService.getUserVaults(userId);
-
-    res.json({ vaults });
-  } catch (error: any) {
-    console.error('Error fetching vaults:', error);
-    res.status(500).json({ error: error.message || 'Failed to fetch vaults' });
-  }
-}
-
-// Get specific vault details
-export async function getVaultHandler(req: Request, res: Response) {
-  try {
-    const userId = req.user?.claims?.id;
-    const { vaultId } = req.params;
-
-    if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    const portfolio = await vaultService.getVaultPortfolio(vaultId, userId);
-
-    res.json(portfolio);
-  } catch (error: any) {
-    console.error('Error fetching vault:', error);
-    res.status(500).json({ error: error.message || 'Failed to fetch vault' });
-  }
-}
-
-// Deposit to vault
 export async function depositToVaultHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.claims?.id;
-    const { vaultId } = req.params;
-    const { tokenSymbol, amount, transactionHash } = req.body;
+    const userId = (req as any).user?.claims?.id;
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
-    if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
+    try {
+      await runMiddleware(req, res, vaultValidation.depositToVault);
+    } catch (err) {
+      logger.warn('Validation middleware rejected request', err);
+      return res.status(400).json({ error: 'Invalid request payload' });
     }
 
-    if (!tokenSymbol || !amount) {
-      return res.status(400).json({ 
-        error: 'Token symbol and amount are required' 
-      });
-    }
+    const params = vaultIdParamsSchema.parse(req.params);
+    const body = depositWithdrawBodySchema.parse(req.body);
 
-    const transaction = await vaultService.depositToken({
-      vaultId,
+    // Validate token symbol
+    const token = TokenRegistry.getToken(body.tokenSymbol);
+    if (!token) return res.status(400).json({ error: 'Unsupported token symbol' });
+
+    await vaultService.depositToken({
+      vaultId: params.vaultId,
       userId,
-      tokenSymbol,
-      amount,
-      transactionHash
+      tokenSymbol: body.tokenSymbol,
+      amount: String(body.amount),
+      transactionHash: body.transactionHash,
     });
 
-    res.json({ transaction });
+    res.json({ success: true });
   } catch (error: any) {
-    console.error('Error depositing to vault:', error);
+    logger.error('depositToVaultHandler error', error);
     res.status(500).json({ error: error.message || 'Failed to deposit to vault' });
   }
 }
 
-// Withdraw from vault
 export async function withdrawFromVaultHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.claims?.id;
-    const { vaultId } = req.params;
-    const { tokenSymbol, amount, transactionHash } = req.body;
+    const userId = (req as any).user?.claims?.id;
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
-    if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
+    try {
+      await runMiddleware(req, res, vaultValidation.withdrawFromVault);
+    } catch (err) {
+      logger.warn('Validation middleware rejected request', err);
+      return res.status(400).json({ error: 'Invalid request payload' });
     }
 
-    if (!tokenSymbol || !amount) {
-      return res.status(400).json({ 
-        error: 'Token symbol and amount are required' 
-      });
-    }
+    const params = vaultIdParamsSchema.parse(req.params);
+    const body = depositWithdrawBodySchema.parse(req.body);
 
-    const transaction = await vaultService.withdrawToken({
-      vaultId,
+    // Validate token symbol
+    const token = TokenRegistry.getToken(body.tokenSymbol);
+    if (!token) return res.status(400).json({ error: 'Unsupported token symbol' });
+
+    await vaultService.withdrawToken({
+      vaultId: params.vaultId,
       userId,
-      tokenSymbol,
-      amount,
-      transactionHash
+      tokenSymbol: body.tokenSymbol,
+      amount: String(body.amount),
+      transactionHash: body.transactionHash,
     });
 
-    res.json({ transaction });
+    res.json({ success: true });
   } catch (error: any) {
-    console.error('Error withdrawing from vault:', error);
+    logger.error('withdrawFromVaultHandler error', error);
     res.status(500).json({ error: error.message || 'Failed to withdraw from vault' });
   }
 }
 
-// Allocate to strategy
 export async function allocateToStrategyHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.claims?.id;
-    const { vaultId } = req.params;
-    const { strategyId, tokenSymbol, allocationPercentage } = req.body;
+    const userId = (req as any).user?.claims?.id;
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
-    if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
+    const params = vaultIdParamsSchema.parse(req.params);
+    const body = allocateToStrategyBodySchema.parse(req.body);
 
-    if (!strategyId || !tokenSymbol || allocationPercentage === undefined) {
-      return res.status(400).json({ 
-        error: 'Strategy ID, token symbol, and allocation percentage are required' 
-      });
-    }
+    // Ensure token symbol is supported for the strategy
+    const supported = TokenRegistry.getSupportedTokensForStrategy(body.strategyId as any);
+    const tokenOk = supported.some(t => t.symbol === body.tokenSymbol) || !!TokenRegistry.getToken(body.tokenSymbol);
+    if (!tokenOk) return res.status(400).json({ error: 'Token not supported for this strategy' });
 
     await vaultService.allocateToStrategy({
-      vaultId,
+      vaultId: params.vaultId,
       userId,
-      strategyId,
-      tokenSymbol,
-      allocationPercentage
+      strategyId: body.strategyId,
+      tokenSymbol: body.tokenSymbol,
+      allocationPercentage: body.allocationPercentage,
     });
 
-    res.json({ success: true, message: 'Strategy allocation updated' });
+    res.json({ success: true });
   } catch (error: any) {
-    console.error('Error allocating to strategy:', error);
+    logger.error('allocateToStrategyHandler error', error);
     res.status(500).json({ error: error.message || 'Failed to allocate to strategy' });
   }
 }
 
-// Rebalance vault
 export async function rebalanceVaultHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.claims?.id;
-    const { vaultId } = req.params;
+    const userId = (req as any).user?.claims?.id;
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
-    if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
+    const params = vaultIdParamsSchema.parse(req.params);
+
+    // Consult gateway agent for execution safety before rebalancing
+    try {
+      const gateway = getGatewayAgentService();
+      if (gateway && typeof gateway.isHealthy === 'function' && gateway.isHealthy()) {
+        const resp = await gateway.requestExecutionCheck({ vaultId: params.vaultId });
+        const isSafe = resp?.payload?.data?.isSafeToExecute;
+        if (isSafe === false) {
+          return res.status(409).json({ success: false, message: 'Rebalance deferred: gateway flagged unsafe to execute', details: resp?.payload?.data?.details ?? null });
+        }
+      }
+    } catch (e) {
+      logger.warn('Gateway execution check failed or unavailable, proceeding with rebalance:', e);
     }
 
-    await vaultService.rebalanceVault(vaultId, userId);
+    await vaultService.rebalanceVault(params.vaultId, userId);
 
     res.json({ success: true, message: 'Vault rebalanced successfully' });
   } catch (error: any) {
-    console.error('Error rebalancing vault:', error);
+    logger.error('rebalanceVaultHandler error', error);
     res.status(500).json({ error: error.message || 'Failed to rebalance vault' });
   }
 }
 
-// Get vault portfolio
-export async function getVaultPortfolioHandler(req: Request, res: Response) {
-  try {
-    const userId = req.user?.claims?.id;
-    const { vaultId } = req.params;
-
-    if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    const portfolio = await vaultService.getVaultPortfolio(vaultId, userId);
-
-    res.json(portfolio);
-  } catch (error: any) {
-    console.error('Error fetching vault portfolio:', error);
-    res.status(500).json({ error: error.message || 'Failed to fetch vault portfolio' });
-  }
-}
-
-// Get vault performance
 export async function getVaultPerformanceHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.claims?.id;
-    const { vaultId } = req.params;
+    const userId = (req as any).user?.claims?.id;
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
-    if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
+    const params = vaultIdParamsSchema.parse(req.params);
+
+    const performance = await vaultService.getVaultPerformance(params.vaultId, userId);
+
+    // Try to enrich performance with current price via gateway agent
+    try {
+      const gateway = getGatewayAgentService();
+      if (gateway && typeof gateway.isHealthy === 'function' && gateway.isHealthy()) {
+          const vault = await vaultService.getVaultById(params.vaultId);
+          const vaultCurrency = (vault as any)?.primaryCurrency ?? (vault as any)?.currency;
+          if (vaultCurrency) {
+            const priceMsg = await gateway.requestPrices([vaultCurrency]);
+            (performance as any).price = priceMsg?.payload?.prices?.[vaultCurrency] ?? null;
+          }
+        }
+    } catch (e) {
+      logger.warn('Gateway enrichment failed for performance:', e);
     }
-
-    const performance = await vaultService.getVaultPerformance(vaultId, userId);
 
     res.json({ performance });
   } catch (error: any) {
-    console.error('Error fetching vault performance:', error);
+    logger.error('getVaultPerformanceHandler error', error);
     res.status(500).json({ error: error.message || 'Failed to fetch vault performance' });
   }
 }
 
-// Assess vault risk
 export async function assessVaultRiskHandler(req: Request, res: Response) {
   try {
-    const userId = req.user?.claims?.id;
-    const { vaultId } = req.params;
+    const userId = (req as any).user?.claims?.id;
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
-    if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
+    const params = vaultIdParamsSchema.parse(req.params);
 
-    await vaultService.performRiskAssessment(vaultId);
-
-    res.json({ success: true, message: 'Risk assessment completed' });
+    await vaultService.performRiskAssessment(params.vaultId);
+    res.json({ success: true });
   } catch (error: any) {
-    console.error('Error assessing vault risk:', error);
+    logger.error('assessVaultRiskHandler error', error);
     res.status(500).json({ error: error.message || 'Failed to assess vault risk' });
   }
 }
 
-// Get vault transactions
-export const getVaultTransactionsHandler = [
-  vaultValidation.getVaultTransactions,
-  asyncHandler(async (req: Request, res: Response) => {
-    // isAuthenticated middleware guarantees req.user exists
-    const userId = req.user?.claims?.id!;
-
-    const requestLogger = logger.child({
-      requestId: Array.isArray(req.headers['x-request-id']) ? req.headers['x-request-id'][0] : req.headers['x-request-id'],
-      userId,
-      vaultId: req.params.vaultId,
-    });
-
-    const { vaultId } = req.params;
-    const { page, limit } = req.query as { page?: number; limit?: number };
-
-    requestLogger.info('Fetching vault transactions', { page, limit });
-
-    const transactions = await vaultService.getVaultTransactions(
-      vaultId, 
-      userId, 
-      page || 1, 
-      limit || 20
-    );
-
-    requestLogger.info('Vault transactions fetched successfully', { count: transactions.length });
-
-    res.json({ 
-      success: true,
-      data: { transactions },
-      message: 'Vault transactions fetched successfully'
-    });
-  })
-];
-
-// Get supported tokens
-export async function getSupportedTokensHandler(req: Request, res: Response) {
-  try {
-    const tokens = TokenRegistry.getAllTokens();
-    res.json({ tokens });
-  } catch (error: any) {
-    console.error('Error fetching supported tokens:', error);
-    res.status(500).json({ error: 'Failed to fetch supported tokens' });
-  }
-}
-
-// Get token price from Gateway Agent (multi-adapter price feeds)
-export async function getTokenPriceHandler(req: Request, res: Response) {
-  try {
-    const { tokenAddress } = req.params;
-
-    const token = TokenRegistry.getTokenByAddress(tokenAddress);
-    if (!token) {
-      return res.status(404).json({ error: 'Token not found' });
-    }
-
-    // Use Gateway Agent for real price feeds from 5+ adapters
-    const gatewayService = getGatewayAgentService();
-    
-    // Request prices with auto-failover through adapters
-    const priceRequest = await gatewayService.requestPrices(
-      [token.symbol],
-      ['celo', 'ethereum'],
-      undefined // auto-select best adapter
-    );
-
-    // Wait briefly for response from message bus
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    const priceData = priceRequest?.payload?.data?.[0];
-    
-    if (!priceData) {
-      logger.warn(`No price data found for ${token.symbol}`);
-      return res.status(503).json({ 
-        error: 'Price data unavailable',
-        message: 'Gateway adapters did not return price data'
-      });
-    }
-
-    res.json({
-      success: true,
-      token: token.symbol,
-      address: tokenAddress,
-      price: priceData.price,
-      currency: 'USD',
-      source: priceData.source,
-      timestamp: new Date().toISOString(),
-      metadata: {
-        adapters: priceData.adapters || [],
-        confidence: priceData.confidence || 'high'
-      }
-    });
-  } catch (error: any) {
-    logger.error('Error fetching token price:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch token price',
-      message: error.message 
-    });
-  }
-}
+// Export route-wrapped handlers (if routes import them directly)
+export const createVault = asyncHandler(createVaultHandler);
+export const depositToVault = asyncHandler(depositToVaultHandler);
+export const withdrawFromVault = asyncHandler(withdrawFromVaultHandler);
+export const allocateToStrategy = asyncHandler(allocateToStrategyHandler);
+export const rebalanceVault = asyncHandler(rebalanceVaultHandler);
+export const getVaultPerformance = asyncHandler(getVaultPerformanceHandler);
+export const assessVaultRisk = asyncHandler(assessVaultRiskHandler);

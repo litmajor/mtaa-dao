@@ -21,7 +21,7 @@ import {
   ExternalLink 
 } from "lucide-react";
 import { useState } from "react";
-import { formatDistanceToNow } from "date-fns";
+import formatDistanceToNow from "date-fns/formatDistanceToNow";
 import ProposalComments from "../components/proposal-comments";
 import ProposalLikeButton from "../components/proposal-like-button";
 import VotingModal from "../components/voting-modal";

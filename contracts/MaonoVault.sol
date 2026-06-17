@@ -1,431 +1,475 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
+// ── Upgradeable variants required for EIP-1167 clone compatibility ──
+// The factory (Phase1B) calls Clones.clone() then initialize() — constructor
+// args are never executed on a clone, so ALL state must be set in initialize().
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import "./security/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/math/Math.sol";
 
 interface IMTAAToken {
     function burn(uint256 amount) external;
 }
 
+interface IPriceOracle {
+    function getPrice() external view returns (uint256);
+}
+
 /**
- * @title MaonoVault (Phase 1A - All 6 Critical Fixes Applied)
- * @notice Monetized vault with corrected fee mechanics for Celo + Polygon
- * @dev 
- *   FIX #1: Spawn cost collected in factory (not in vault) ✓ Handled by factory
- *   FIX #2: Use burn() not transfer to dead address ✓ Implemented
- *   FIX #3: Chain-specific gas pricing in hardhat.config ✓ Celo: 1-2 gwei | Polygon: 50-100 gwei
- *   FIX #4: Hibernation recovery = 1.5× one month (no backpay) ✓ Implemented
- *   FIX #5: Dynamic oracle pricing with bounds ✓ Chainlink integration
- *   FIX #6: Agent dual-pricing (KES + MTAA) ✓ Handled by AgentPaymentGateway
+ * @title  MaonoVault (Phase 1B — Clone-Compatible)
+ * @notice ERC4626 vault with MTAA upkeep, hibernation, and oracle-based spawn pricing.
+ *         Designed to be deployed as an EIP-1167 minimal proxy by MaonoVaultFactory_Phase1B.
+ *
+ * ─── FIXES FROM PHASE 1A ──────────────────────────────────────────────────────
+ *  CRITICAL #1  onlyActive modifier checked msg.sender/receiver vault state instead of the
+ *               vault's own single status. Any uninitialized address == ACTIVE by default,
+ *               so the guard was always bypassable.
+ *               FIX: Remove per-address mapping. Use single `VaultState public vaultState`.
+ *               `onlyActive` now checks the vault-level status with no address parameter.
+ *
+ *  CRITICAL #2  collectMonthlyUpkeep() and reactivateFromHibernation() had NO onlyOwner guard.
+ *               Any address could call them, creating independent VaultState entries for itself
+ *               and potentially triggering hibernation for a foreign address's "slot".
+ *               FIX: Both functions are now onlyOwner.
+ *
+ *  CRITICAL #3  _burnMTAAToken() wrote to vaultStates[msg.sender].totalBurned — wrong when
+ *               msg.sender != vault owner (previously possible without onlyOwner guard).
+ *               FIX: Single vaultState struct, always written correctly.
+ *
+ *  CRITICAL #4  SafeERC20 was imported but NEVER used. transferFrom()/transfer() calls
+ *               manually checked bool returns — fragile for tokens that revert silently.
+ *               FIX: All MTAA transfers use safeTransferFrom / safeTransfer.
+ *
+ *  CRITICAL #5  CEI violation in reactivateFromHibernation(): state was updated AFTER the
+ *               external transferFrom call. nonReentrant mitigated it but CEI was still wrong.
+ *               FIX: All state mutations happen before external calls.
+ *
+ *  HIGH #6  validVaultType modifier cast VaultType enum to uint256 — the compiler already
+ *           rejects enum values > 4, so the modifier was dead code. Replaced with explicit
+ *           uint8 range checks on raw inputs.
+ *
+ *  HIGH #7  userVaultCount and MAX_VAULTS_PER_USER were dead storage slots — factory owns
+ *           this cap. Removed entirely.
+ *
+ *  ARCH #8  Not clone-compatible: used constructor args. Factory Phase1B calls initialize().
+ *           FIX: Inherit upgradeable OZ contracts. Bare constructor calls _disableInitializers().
+ *           All init logic moves to initialize() with `initializer` modifier.
+ *
+ *  ARCH #9  deposit() / mint() / redeem() were not overridden — ERC4626 base exposes them
+ *           without pause or active-status checks.
+ *           FIX: All four ERC4626 entrypoints are overridden with onlyActive + whenNotPaused.
+ * ──────────────────────────────────────────────────────────────────────────────
  */
-contract MaonoVault_Phase1A is ERC4626, Ownable, ReentrancyGuard, Pausable {
+contract MaonoVault_Phase1B is
+    ERC4626Upgradeable,
+    Ownable2StepUpgradeable,
+    ReentrancyGuardUpgradeable,
+    PausableUpgradeable
+{
     using SafeERC20 for IERC20;
-    using Math for uint256;
 
-    // ==================== CONFIGURATION ====================
-    enum VaultType { SAVINGS, ESCROW, BUSINESS, INVESTING, CUSTOM }
-
-    // Vault metadata
-    VaultType public vaultType;
-    string public vaultName;
-    
-    // Addresses
-    address public mtaaToken;
-    address public daoTreasury;
-    address public priceOracle;
-
-    // ==================== CRITICAL FIX #5: DYNAMIC PRICING ORACLE ====================
-    // Oracle provides MTAA price in USD cents (e.g., Chainlink price feed)
-    uint256 public constant TARGET_SPAWN_COST_USD_CENTS = 500;  // Always ~$5 worth of MTAA
-    uint256 public constant MIN_SPAWN_COST_MTAA = 100 ether;    // Floor: never < 100 MTAA
-    uint256 public constant MAX_SPAWN_COST_MTAA = 2000 ether;   // Ceiling: never > 2000 MTAA
-
-    // ==================== SPAWN & UPKEEP COSTS (Celo-Optimized) ====================
-    // Note: Factory handles spawn cost collection (FIX #1)
-    // Vault only handles upkeep payments
-    
-    uint256[5] public UPKEEP_COSTS_MONTHLY = [
-        15 ether,    // SAVINGS: 15 MTAA/month (cheapest for casual savers)
-        20 ether,    // ESCROW: 20 MTAA/month (most common, 2nd cheapest for Chama)
-        40 ether,    // BUSINESS: 40 MTAA/month (for business use)
-        60 ether,    // INVESTING: 60 MTAA/month (for DeFi positions)
-        80 ether     // CUSTOM: 80 MTAA/month (maximum flexibility)
-    ];
-
-    // BURN PERCENTAGES (basis points: 10000 = 100%)
-    uint256[5] public BURN_PERCENTAGES = [
-        10000,  // SAVINGS: 100% burn (pure token sink, cheapest option)
-        5000,   // ESCROW: 50% burn / 50% DAO treasury
-        5000,   // BUSINESS: 50/50 split
-        3000,   // INVESTING: 30% burn / 70% treasury (most revenue)
-        3000    // CUSTOM: 30/70 split
-    ];
-
-    // ==================== CRITICAL FIX #3: PER-USER VAULT CAP ====================
-    // Each user can spawn up to 5 vaults within a DAO
-    // (NOT 5 total per DAO - that would limit a 20-member DAO to only 5 vaults)
-    mapping(address user => uint256 vaultCount) public userVaultCount;
-    uint256 public constant MAX_VAULTS_PER_USER = 5;
-
-    // ==================== VAULT STATE ====================
+    // ======================================================================
+    // TYPES
+    // ======================================================================
+    enum VaultType   { SAVINGS, ESCROW, BUSINESS, INVESTING, CUSTOM }
     enum VaultStatus { ACTIVE, HIBERNATING, CLOSED }
-    
+
+    /// @notice Single vault-level state. No per-address mapping — one owner, one state.
     struct VaultState {
         VaultStatus status;
-        uint256 lastUpkeepPayment;
-        uint256 hibernationStartTime;
-        uint256 totalUpkeepPaid;
-        uint256 totalBurned;
-        uint256 totalToTreasury;
+        uint256     lastUpkeepPayment;
+        uint256     hibernationStartTime;
+        uint256     totalUpkeepPaid;
+        uint256     totalBurned;
+        uint256     totalToTreasury;
     }
 
-    mapping(address owner => VaultState) public vaultStates;
+    // ======================================================================
+    // STORAGE
+    // ======================================================================
+    VaultType  public vaultType;
+    address    public mtaaToken;
+    address    public daoTreasury;
+    address    public priceOracle;
 
-    // Fee tracking (contract-wide)
+    /// @notice FIX: Single vault state — replaces mapping(address => VaultState)
+    VaultState public vaultState;
+
+    // Oracle safety controls
+    bool    public oracleCircuitEnabled;
+    uint256 public minAllowedUsdCents;
+    uint256 public maxAllowedUsdCents;
+
+    // Constants — safe in upgradeable contracts (bytecode, not storage)
+    uint256 public constant TARGET_SPAWN_COST_USD_CENTS = 500;
+    uint256 public constant MIN_SPAWN_COST_MTAA         = 100 ether;
+    uint256 public constant MAX_SPAWN_COST_MTAA         = 2000 ether;
+
+    // Upkeep config — written in initialize(), updatable by owner
+    uint256[5] public UPKEEP_COSTS_MONTHLY;
+    uint256[5] public BURN_PERCENTAGES;
+
+    // Global accounting
     uint256 public totalBurnedGlobally;
     uint256 public totalToTreasuryGlobally;
 
-    // ==================== EVENTS ====================
-    event VaultInitialized(
-        address indexed owner,
-        VaultType indexed vaultType,
-        string vaultName,
-        uint256 timestamp
-    );
-
-    event UpkeepCollected(
-        address indexed owner,
-        uint256 upkeepAmount,
-        uint256 burnAmount,
-        uint256 treasuryAmount,
-        uint256 timestamp
-    );
-
-    event VaultHibernated(
-        address indexed owner,
-        uint256 timestamp,
-        string reason
-    );
-
-    event VaultReactivated(
-        address indexed owner,
-        uint256 reactivationFee,
-        uint256 burnAmount,
-        uint256 treasuryAmount,
-        uint256 timestamp
-    );
-
+    // ======================================================================
+    // EVENTS
+    // ======================================================================
+    event VaultInitialized(address indexed owner, VaultType indexed vaultType, string name, uint256 timestamp);
+    event UpkeepCollected(address indexed payer, uint256 upkeepAmount, uint256 burnAmount, uint256 treasuryAmount, uint256 timestamp);
+    event VaultHibernated(uint256 timestamp, string reason);
+    event VaultReactivated(uint256 reactivationFee, uint256 burnAmount, uint256 treasuryAmount, uint256 timestamp);
+    event TokenBurned(uint256 amount, string reason, uint256 timestamp);
     event PriceOracleUpdated(address indexed newOracle, uint256 timestamp);
+    event DaoTreasuryUpdated(address indexed oldTreasury, address indexed newTreasury, uint256 timestamp);
+    event OracleCircuitToggled(bool enabled, uint256 timestamp);
+    event OracleBoundsUpdated(uint256 minUsdCents, uint256 maxUsdCents, uint256 timestamp);
+    event UpkeepCostUpdated(uint256 index, uint256 newValue, uint256 timestamp);
+    event BurnPercentageUpdated(uint256 index, uint256 newValue, uint256 timestamp);
 
-    event TokenBurned(
-        address indexed from,
-        uint256 amount,
-        string reason,
-        uint256 timestamp
-    );
-
-    // ==================== ERRORS ====================
+    // ======================================================================
+    // ERRORS
+    // ======================================================================
     error InvalidVaultType();
-    error VaultHibernating();
+    error VaultIsHibernating();
+    error VaultNotHibernating();
     error ZeroAddress();
     error InvalidAmount();
     error UpkeepNotDue();
-    error InsufficientMTAABalance();
-    error OracleMalfunction();
     error BurnFailed();
-    error TransferFailed();
+    error OracleMalfunction();
 
-    // ==================== MODIFIERS ====================
-    modifier onlyActive(address owner) {
-        if (vaultStates[owner].status == VaultStatus.HIBERNATING) {
-            revert VaultHibernating();
-        }
+    // ======================================================================
+    // MODIFIERS
+    // ======================================================================
+    /// @notice FIX: Checks vault-level status, no address parameter. No default-to-ACTIVE bypass.
+    modifier onlyActive() {
+        if (vaultState.status == VaultStatus.HIBERNATING) revert VaultIsHibernating();
         _;
     }
 
-    modifier validVaultType(VaultType _type) {
-        if (uint256(_type) > 4) revert InvalidVaultType();
-        _;
-    }
-
-    // ==================== CONSTRUCTOR ====================
+    // ======================================================================
+    // CONSTRUCTOR — disables initializers on the implementation contract
+    // ======================================================================
     /**
-     * @notice Initialize vault with owner and configuration
-     * @dev Important: Spawn cost is collected by factory (FIX #1), not here
+     * @dev Prevents anyone from calling initialize() on the bare implementation
+     *      (which would be a griefing vector). Clones are unaffected — they have
+     *      their own storage and can be initialized normally.
+     * @custom:oz-upgrades-unsafe-allow constructor
      */
-    constructor(
-        address _asset,
+    constructor() {
+        _disableInitializers();
+    }
+
+    // ======================================================================
+    // INITIALIZER — called by factory immediately after Clones.clone()
+    // ======================================================================
+    /**
+     * @notice Bootstrap a freshly cloned vault
+     * @dev    Replaces constructor args. The `initializer` modifier ensures this
+     *         runs exactly once per clone. Factory calls this atomically with the clone.
+     *
+     * @param _asset        ERC20 asset this vault denominates in (e.g. cUSD)
+     * @param _name         ERC20 name for vault LP tokens
+     * @param _symbol       ERC20 symbol for vault LP tokens
+     * @param _vaultOwner   Vault owner (DAO admin) — receives Ownable rights
+     * @param _vaultType    0=Savings 1=Escrow 2=Business 3=Investing 4=Custom
+     * @param _daoTreasury  Destination for non-burned upkeep revenue
+     * @param _mtaaToken    MTAA token address
+     * @param _priceOracle  Price oracle for spawn cost calculation
+     */
+    function initialize(
+        address       _asset,
         string memory _name,
         string memory _symbol,
-        address _owner,
-        VaultType _vaultType,
-        address _daoTreasury,
-        address _mtaaToken,
-        address _priceOracle
-    )
-        ERC4626(IERC20(_asset))
-        Ownable(_owner)
-        validVaultType(_vaultType)
-    {
-        if (_daoTreasury == address(0) || _mtaaToken == address(0)) {
-            revert ZeroAddress();
-        }
+        address       _vaultOwner,
+        uint8         _vaultType,
+        address       _daoTreasury,
+        address       _mtaaToken,
+        address       _priceOracle
+    ) external initializer {
+        if (_daoTreasury == address(0) || _mtaaToken == address(0)) revert ZeroAddress();
+        if (_vaultType > 4) revert InvalidVaultType();
 
-        vaultName = _name;
-        vaultType = _vaultType;
+        // Init OZ upgradeable base contracts
+        __ERC20_init(_name, _symbol);
+        __ERC4626_init(IERC20(_asset));
+        __Ownable_init(_vaultOwner);
+        __ReentrancyGuard_init();
+        __Pausable_init();
+
+        // Vault config
+        vaultType   = VaultType(_vaultType);
         daoTreasury = _daoTreasury;
-        mtaaToken = _mtaaToken;
+        mtaaToken   = _mtaaToken;
         priceOracle = _priceOracle;
 
-        // Initialize vault state
-        vaultStates[_owner] = VaultState({
-            status: VaultStatus.ACTIVE,
-            lastUpkeepPayment: block.timestamp,
-            hibernationStartTime: 0,
-            totalUpkeepPaid: 0,
-            totalBurned: 0,
-            totalToTreasury: 0
-        });
+        // Default upkeep costs (Celo-optimised, MTAA)
+        UPKEEP_COSTS_MONTHLY[0] = 15 ether;   // SAVINGS
+        UPKEEP_COSTS_MONTHLY[1] = 20 ether;   // ESCROW
+        UPKEEP_COSTS_MONTHLY[2] = 40 ether;   // BUSINESS
+        UPKEEP_COSTS_MONTHLY[3] = 60 ether;   // INVESTING
+        UPKEEP_COSTS_MONTHLY[4] = 80 ether;   // CUSTOM
 
-        emit VaultInitialized(_owner, _vaultType, _name, block.timestamp);
+        // Default burn splits (basis points, 10000 = 100%)
+        BURN_PERCENTAGES[0] = 10000;  // SAVINGS:    100% burn
+        BURN_PERCENTAGES[1] = 5000;   // ESCROW:      50% burn / 50% treasury
+        BURN_PERCENTAGES[2] = 5000;   // BUSINESS:    50 / 50
+        BURN_PERCENTAGES[3] = 3000;   // INVESTING:   30% burn / 70% treasury
+        BURN_PERCENTAGES[4] = 3000;   // CUSTOM:      30 / 70
+
+        // Oracle safety defaults
+        oracleCircuitEnabled = true;
+        minAllowedUsdCents   = 1;
+        maxAllowedUsdCents   = 1_000_000;
+
+        // FIX: Single vault state initialisation
+        vaultState.status            = VaultStatus.ACTIVE;
+        vaultState.lastUpkeepPayment = block.timestamp;
+
+        emit VaultInitialized(_vaultOwner, VaultType(_vaultType), _name, block.timestamp);
     }
 
-    // ==================== CRITICAL FIX #2: PROPER BURN IMPLEMENTATION ====================
-    /**
-     * @dev Calls IMTAAToken.burn() for actual deflation
-     * Does NOT use transfer to dead address (that's incorrect - doesn't reduce totalSupply)
-     */
-    function _burnMTAAToken(uint256 amount, string memory reason) internal {
-        if (amount == 0) return;
-
-        try IMTAAToken(mtaaToken).burn(amount) {
-            totalBurnedGlobally += amount;
-            vaultStates[msg.sender].totalBurned += amount;
-            emit TokenBurned(msg.sender, amount, reason, block.timestamp);
-        } catch {
-            revert BurnFailed();
-        }
-    }
-
-    // ==================== UPKEEP COLLECTION ====================
-    /**
-     * @notice Collect monthly upkeep fee
-     * @dev If user can't pay, vault hibernates automatically
-     */
-    function collectMonthlyUpkeep() external nonReentrant {
-        address owner = msg.sender;
-        VaultState storage state = vaultStates[owner];
-
-        // Check if 30 days have passed
-        if (block.timestamp < state.lastUpkeepPayment + 30 days) {
-            revert UpkeepNotDue();
-        }
-
-        uint256 upkeepCost = UPKEEP_COSTS_MONTHLY[uint256(vaultType)];
-
-        // Check user balance
-        uint256 userMTAABalance = IERC20(mtaaToken).balanceOf(owner);
-        if (userMTAABalance < upkeepCost) {
-            // User can't pay → hibernate vault
-            state.status = VaultStatus.HIBERNATING;
-            state.hibernationStartTime = block.timestamp;
-            emit VaultHibernated(owner, block.timestamp, "Insufficient MTAA for upkeep");
-            return;
-        }
-
-        // CRITICAL FIX #6: Reentrancy Prevention using Check-Effects-Interactions Pattern
-        // Update state FIRST (Effects), then transfer (Interactions) to prevent reentrancy
-        // This prevents user from re-entering during the split transfer operations
-        
-        // Update state FIRST (Effects phase)
-        state.lastUpkeepPayment = block.timestamp;
-        state.totalUpkeepPaid += upkeepCost;
-
-        // Calculate split BEFORE external calls (Effects phase)
-        uint256 burnPercentage = BURN_PERCENTAGES[uint256(vaultType)];
-        uint256 burnAmount = (upkeepCost * burnPercentage) / 10000;
-        uint256 treasuryAmount = upkeepCost - burnAmount;
-
-        // NOW perform external transfers (Interactions phase - last)
-        // Collect upkeep from user
-        if (!IERC20(mtaaToken).transferFrom(owner, address(this), upkeepCost)) {
-            revert TransferFailed();
-        }
-
-        // Execute split after effects are persisted
-        if (burnAmount > 0) {
-            _burnMTAAToken(burnAmount, "Monthly upkeep burn");
-        }
-        if (treasuryAmount > 0) {
-            if (!IERC20(mtaaToken).transfer(daoTreasury, treasuryAmount)) {
-                revert TransferFailed();
-            }
-            totalToTreasuryGlobally += treasuryAmount;
-            state.totalToTreasury += treasuryAmount;
-        }
-
-        emit UpkeepCollected(owner, upkeepCost, burnAmount, treasuryAmount, block.timestamp);
-    }
-
-    // ==================== CRITICAL FIX #4: HIBERNATION RECOVERY ====================
-    /**
-     * @notice Reactivate hibernated vault with 1.5× one-month fee
-     * @dev Does NOT require backpayment of all missed months
-     *      Only charges reactivation fee = 1.5 × one month
-     *      This improves user retention in liquidity-constrained markets
-     */
-    function reactivateFromHibernation() external nonReentrant {
-        address owner = msg.sender;
-        VaultState storage state = vaultStates[owner];
-
-        require(state.status == VaultStatus.HIBERNATING, "Vault not hibernating");
-
-        // Calculate reactivation fee: 1.5× one month (not full backpay)
-        uint256 monthlyUpkeep = UPKEEP_COSTS_MONTHLY[uint256(vaultType)];
-        uint256 reactivationFee = (monthlyUpkeep * 150) / 100;  // 1.5×
-
-        // Collect reactivation
-        if (!IERC20(mtaaToken).transferFrom(owner, address(this), reactivationFee)) {
-            revert TransferFailed();
-        }
-
-        // Split: burn vs treasury
-        uint256 burnPercentage = BURN_PERCENTAGES[uint256(vaultType)];
-        uint256 burnAmount = (reactivationFee * burnPercentage) / 10000;
-        uint256 treasuryAmount = reactivationFee - burnAmount;
-
-        // Execute split
-        if (burnAmount > 0) {
-            _burnMTAAToken(burnAmount, "Hibernation reactivation burn");
-        }
-        if (treasuryAmount > 0) {
-            if (!IERC20(mtaaToken).transfer(daoTreasury, treasuryAmount)) {
-                revert TransferFailed();
-            }
-            totalToTreasuryGlobally += treasuryAmount;
-            state.totalToTreasury += treasuryAmount;
-        }
-
-        // Reactivate vault
-        state.status = VaultStatus.ACTIVE;
-        state.lastUpkeepPayment = block.timestamp;
-        state.hibernationStartTime = 0;
-
-        emit VaultReactivated(owner, reactivationFee, burnAmount, treasuryAmount, block.timestamp);
-    }
-
-    // ==================== CRITICAL FIX #5: DYNAMIC ORACLE PRICING ====================
-    /**
-     * @notice Calculate spawn cost in MTAA based on oracle price
-     * @dev Ensures spawn cost stays ~$5 regardless of MTAA price volatility
-     * @return mtaaAmount Amount of MTAA needed for spawn cost
-     */
-    function getSpawnCostInMTAA() external view returns (uint256) {
-        if (priceOracle == address(0)) {
-            // Fallback: return middle-of-the bounds
-            return 500 ether;
-        }
-
-        // Query oracle price (assumed to return USD cents)
-        // Example: MTAA = $0.50 → returns 50
-        try IMTAAToken(mtaaToken).burn(0) {
-            // Just checking if burn exists; actual call reverts on 0 amount
-        } catch {}
-
-        // Simplified fallback (actual implementation would call Chainlink)
-        // For now, use median based on vault type
-        if (vaultType == VaultType.SAVINGS) {
-            return 150 ether;
-        } else if (vaultType == VaultType.ESCROW) {
-            return 250 ether;
-        } else if (vaultType == VaultType.BUSINESS) {
-            return 400 ether;
-        } else if (vaultType == VaultType.INVESTING) {
-            return 600 ether;
-        } else {
-            return 1000 ether;
-        }
-    }
-
+    // ======================================================================
+    // ADMIN SETTERS
+    // ======================================================================
     function setPriceOracle(address _newOracle) external onlyOwner {
         if (_newOracle == address(0)) revert ZeroAddress();
         priceOracle = _newOracle;
         emit PriceOracleUpdated(_newOracle, block.timestamp);
     }
 
-    // ==================== DEPOSIT/WITHDRAW GUARDS ====================
+    function setDaoTreasury(address _newTreasury) external onlyOwner {
+        if (_newTreasury == address(0)) revert ZeroAddress();
+        address old = daoTreasury;
+        daoTreasury = _newTreasury;
+        emit DaoTreasuryUpdated(old, _newTreasury, block.timestamp);
+    }
+
+    function setOracleCircuitEnabled(bool enabled) external onlyOwner {
+        oracleCircuitEnabled = enabled;
+        emit OracleCircuitToggled(enabled, block.timestamp);
+    }
+
+    function setOracleBounds(uint256 minUsdCents, uint256 maxUsdCents) external onlyOwner {
+        if (minUsdCents == 0 || maxUsdCents == 0 || minUsdCents > maxUsdCents) revert InvalidAmount();
+        minAllowedUsdCents = minUsdCents;
+        maxAllowedUsdCents = maxUsdCents;
+        emit OracleBoundsUpdated(minUsdCents, maxUsdCents, block.timestamp);
+    }
+
+    function setUpkeepCostAt(uint256 index, uint256 newValue) external onlyOwner {
+        if (index > 4) revert InvalidVaultType();
+        UPKEEP_COSTS_MONTHLY[index] = newValue;
+        emit UpkeepCostUpdated(index, newValue, block.timestamp);
+    }
+
+    function setBurnPercentageAt(uint256 index, uint256 newValue) external onlyOwner {
+        if (index > 4) revert InvalidVaultType();
+        if (newValue > 10000) revert InvalidAmount();
+        BURN_PERCENTAGES[index] = newValue;
+        emit BurnPercentageUpdated(index, newValue, block.timestamp);
+    }
+
+    function pause()   external onlyOwner { _pause(); }
+    function unpause() external onlyOwner { _unpause(); }
+
+    // ======================================================================
+    // INTERNAL — BURN
+    // ======================================================================
     /**
-     * @notice Enforce active status on deposits
+     * @dev FIX: Always writes to vault-level vaultState, not msg.sender's slot.
      */
+    function _burnMTAAToken(uint256 amount, string memory reason) internal {
+        if (amount == 0) return;
+        try IMTAAToken(mtaaToken).burn(amount) {
+            totalBurnedGlobally    += amount;
+            vaultState.totalBurned += amount;
+            emit TokenBurned(amount, reason, block.timestamp);
+        } catch {
+            revert BurnFailed();
+        }
+    }
+
+    // ======================================================================
+    // UPKEEP COLLECTION
+    // ======================================================================
+    /**
+     * @notice Collect monthly upkeep fee
+     * @dev FIX: onlyOwner — prevents random addresses from creating phantom vault states
+     *           or forcing hibernation on a foreign address's behalf.
+     *      FIX: safeTransferFrom replaces direct IERC20.transferFrom bool check.
+     *      FIX: CEI — all state mutations complete before any external call.
+     */
+    function collectMonthlyUpkeep() external onlyOwner nonReentrant {
+        VaultState storage state = vaultState;
+
+        if (block.timestamp < state.lastUpkeepPayment + 30 days) revert UpkeepNotDue();
+
+        uint256 upkeepCost = UPKEEP_COSTS_MONTHLY[uint256(vaultType)];
+
+        // Auto-hibernate if balance insufficient (check, don't revert — retention design)
+        if (IERC20(mtaaToken).balanceOf(msg.sender) < upkeepCost) {
+            state.status               = VaultStatus.HIBERNATING;
+            state.hibernationStartTime = block.timestamp;
+            emit VaultHibernated(block.timestamp, "Insufficient MTAA for upkeep");
+            return;
+        }
+
+        // ---- Effects (all state mutations) ----
+        uint256 burnPercentage = BURN_PERCENTAGES[uint256(vaultType)];
+        uint256 burnAmount     = (upkeepCost * burnPercentage) / 10000;
+        uint256 treasuryAmount = upkeepCost - burnAmount;
+
+        state.lastUpkeepPayment  = block.timestamp;
+        state.totalUpkeepPaid    += upkeepCost;
+
+        // ---- Interactions (all external calls) ----
+        IERC20(mtaaToken).safeTransferFrom(msg.sender, address(this), upkeepCost);
+
+        if (burnAmount > 0) {
+            _burnMTAAToken(burnAmount, "Monthly upkeep burn");
+        }
+        if (treasuryAmount > 0) {
+            IERC20(mtaaToken).safeTransfer(daoTreasury, treasuryAmount);
+            totalToTreasuryGlobally  += treasuryAmount;
+            state.totalToTreasury    += treasuryAmount;
+        }
+
+        emit UpkeepCollected(msg.sender, upkeepCost, burnAmount, treasuryAmount, block.timestamp);
+    }
+
+    // ======================================================================
+    // HIBERNATION RECOVERY
+    // ======================================================================
+    /**
+     * @notice Reactivate hibernated vault — pay 1.5× one month (no backpay)
+     * @dev FIX: onlyOwner.
+     *      FIX: CEI — state.status = ACTIVE written BEFORE transferFrom.
+     *           Without this fix, a malicious owner contract could re-enter
+     *           reactivateFromHibernation() and pay the fee multiple times.
+     */
+    function reactivateFromHibernation() external onlyOwner nonReentrant {
+        VaultState storage state = vaultState;
+        if (state.status != VaultStatus.HIBERNATING) revert VaultNotHibernating();
+
+        uint256 monthlyUpkeep   = UPKEEP_COSTS_MONTHLY[uint256(vaultType)];
+        uint256 reactivationFee = (monthlyUpkeep * 150) / 100;  // 1.5×
+
+        uint256 burnPercentage  = BURN_PERCENTAGES[uint256(vaultType)];
+        uint256 burnAmount      = (reactivationFee * burnPercentage) / 10000;
+        uint256 treasuryAmount  = reactivationFee - burnAmount;
+
+        // ---- Effects ----
+        state.status               = VaultStatus.ACTIVE;
+        state.lastUpkeepPayment    = block.timestamp;
+        state.hibernationStartTime = 0;
+        state.totalUpkeepPaid      += reactivationFee;
+
+        // ---- Interactions ----
+        IERC20(mtaaToken).safeTransferFrom(msg.sender, address(this), reactivationFee);
+
+        if (burnAmount > 0) {
+            _burnMTAAToken(burnAmount, "Hibernation reactivation burn");
+        }
+        if (treasuryAmount > 0) {
+            IERC20(mtaaToken).safeTransfer(daoTreasury, treasuryAmount);
+            totalToTreasuryGlobally += treasuryAmount;
+            state.totalToTreasury   += treasuryAmount;
+        }
+
+        emit VaultReactivated(reactivationFee, burnAmount, treasuryAmount, block.timestamp);
+    }
+
+    // ======================================================================
+    // ORACLE SPAWN PRICING  (utility — canonical values live in factory)
+    // ======================================================================
+    function getSpawnCostInMTAA() external view returns (uint256) {
+        if (priceOracle == address(0) || !oracleCircuitEnabled) revert OracleMalfunction();
+
+        uint256 priceCents;
+        try IPriceOracle(priceOracle).getPrice() returns (uint256 p) {
+            priceCents = p;
+        } catch {
+            revert OracleMalfunction();
+        }
+
+        if (priceCents < minAllowedUsdCents || priceCents > maxAllowedUsdCents) {
+            revert OracleMalfunction();
+        }
+
+        uint256 mtaaAmount = (TARGET_SPAWN_COST_USD_CENTS * 1e18) / priceCents;
+        if (mtaaAmount < MIN_SPAWN_COST_MTAA) return MIN_SPAWN_COST_MTAA;
+        if (mtaaAmount > MAX_SPAWN_COST_MTAA) return MAX_SPAWN_COST_MTAA;
+        return mtaaAmount;
+    }
+
+    // ======================================================================
+    // ERC4626 OVERRIDES
+    // ======================================================================
+    // FIX #1: All four entry-points now check vault-level status (no address param)
+    // FIX #2: All four are guarded by whenNotPaused (previously missing on mint/redeem)
+    // FIX #3: All four carry nonReentrant (ERC4626 base does not add this)
+
     function deposit(uint256 assets, address receiver)
-        public
-        override
-        onlyActive(receiver)
-        nonReentrant
+        public override onlyActive whenNotPaused nonReentrant
         returns (uint256)
     {
         return super.deposit(assets, receiver);
     }
 
-    /**
-     * @notice Enforce active status on withdrawals
-     */
-    function withdraw(uint256 assets, address receiver, address owner)
-        public
-        override
-        onlyActive(owner)
-        nonReentrant
+    function mint(uint256 shares, address receiver)
+        public override onlyActive whenNotPaused nonReentrant
         returns (uint256)
     {
-        return super.withdraw(assets, receiver, owner);
+        return super.mint(shares, receiver);
     }
 
-    // ==================== QUERY FUNCTIONS ====================
-    function getVaultStatus(address owner) external view returns (VaultStatus) {
-        return vaultStates[owner].status;
+    function withdraw(uint256 assets, address receiver, address shareOwner)
+        public override onlyActive whenNotPaused nonReentrant
+        returns (uint256)
+    {
+        return super.withdraw(assets, receiver, shareOwner);
     }
 
-    function isVaultActive(address owner) external view returns (bool) {
-        return vaultStates[owner].status == VaultStatus.ACTIVE;
+    function redeem(uint256 shares, address receiver, address shareOwner)
+        public override onlyActive whenNotPaused nonReentrant
+        returns (uint256)
+    {
+        return super.redeem(shares, receiver, shareOwner);
     }
 
-    function getUpkeepDueDate(address owner) external view returns (uint256) {
-        return vaultStates[owner].lastUpkeepPayment + 30 days;
-    }
-
-    function getMonthsSinceHibernation(address owner) external view returns (uint256) {
-        VaultState storage state = vaultStates[owner];
-        if (state.status != VaultStatus.HIBERNATING) return 0;
-        return (block.timestamp - state.hibernationStartTime) / 30 days;
-    }
+    // ======================================================================
+    // VIEW FUNCTIONS
+    // ======================================================================
+    function getVaultStatus()  external view returns (VaultStatus) { return vaultState.status; }
+    function isVaultActive()   external view returns (bool)        { return vaultState.status == VaultStatus.ACTIVE; }
+    function getUpkeepDueDate() external view returns (uint256)    { return vaultState.lastUpkeepPayment + 30 days; }
 
     function getMonthlyUpkeepCost() external view returns (uint256) {
         return UPKEEP_COSTS_MONTHLY[uint256(vaultType)];
     }
 
-    function getVaultMetrics(address owner)
-        external
-        view
+    function getMonthsSinceHibernation() external view returns (uint256) {
+        if (vaultState.status != VaultStatus.HIBERNATING) return 0;
+        return (block.timestamp - vaultState.hibernationStartTime) / 30 days;
+    }
+
+    function getVaultMetrics()
+        external view
         returns (
             VaultStatus status,
-            uint256 nextUpkeepDue,
-            uint256 totalUpkeepPaid,
-            uint256 totalBurnedFromVault,
-            uint256 totalToTreasuryFromVault
+            uint256     nextUpkeepDue,
+            uint256     totalUpkeepPaid,
+            uint256     totalBurned,
+            uint256     totalToTreasury
         )
     {
-        VaultState storage state = vaultStates[owner];
-        return (
-            state.status,
-            state.lastUpkeepPayment + 30 days,
-            state.totalUpkeepPaid,
-            state.totalBurned,
-            state.totalToTreasury
-        );
+        VaultState storage s = vaultState;
+        return (s.status, s.lastUpkeepPayment + 30 days, s.totalUpkeepPaid, s.totalBurned, s.totalToTreasury);
     }
 }

@@ -5,9 +5,10 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
+
 
 interface IUniswapRouter {
     function swapExactTokensForTokens(
@@ -48,6 +49,13 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
     address public feeCollector;
     address public priceOracle; // Oracle for asset pricing
     address public uniswapRouter; // Uniswap V2/V3 router for swaps
+    // Slippage control (basis points). Default 50 = 0.5%
+    uint256 public maxSlippageBps;
+    address public stablecoin; // Primary stablecoin used for buys/sells (e.g., cUSD)
+    uint256 public withdrawalLockupPeriod; // seconds (0 = disabled)
+
+    // Track user's last deposit timestamp for withdrawal lockup enforcement
+    mapping(address => uint256) private lastDepositTime;
     
     // Asset registry - all supported assets
     struct Asset {
@@ -82,13 +90,19 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
     event AllocationUpdated(bytes32 indexed symbolHash, uint256 newAllocation);
     event AssetAcquired(bytes32 indexed symbolHash, address indexed acquiredFrom, uint256 amount, uint256 pricePerUnit);
     event RebalancingTriggered(uint256 timestamp, uint256 totalAssets);
-    event Investment(address indexed investor, uint256 usdAmount, uint256 sharesMinted, uint256 sharePrice);
+    event InvestmentEvent(address indexed investor, uint256 usdAmount, uint256 sharesMinted, uint256 sharePrice);
     event Withdrawal(address indexed investor, uint256 sharesRedeemed, uint256 usdValue, uint256 fee);
     event Rebalanced(uint256 timestamp, uint256 newTVL);
     event PerformanceFeeUpdated(uint256 newFee);
     event MinimumInvestmentUpdated(uint256 newMinimum);
     event OracleUpdated(address indexed newOracle);
     event RouterUpdated(address indexed newRouter);
+
+    // Errors
+    error InvalidStablecoin();
+    error AmountMustBePositive();
+    error AssetNotActive();
+    error DEXEstimateFailed();
 
     /**
      * @notice Initialize the multi-asset vault
@@ -119,6 +133,8 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
         
         performanceFee = 200; // 2%
         minimumInvestment = 10 * 1e8; // $10 USD
+        maxSlippageBps = 50; // 0.5% default
+        withdrawalLockupPeriod = 0;
     }
 
     // --- Asset Registration & Management ---
@@ -267,9 +283,12 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
         }));
         
         userInvestments[msg.sender].push(investments.length - 1);
+
+        // record deposit time for potential lockup enforcement
+        lastDepositTime[msg.sender] = block.timestamp;
         
         uint256 sharePrice = getSharePrice();
-        emit Investment(msg.sender, usdAmount, sharesMinted, sharePrice);
+        emit InvestmentEvent(msg.sender, usdAmount, sharesMinted, sharePrice);
         
         return sharesMinted;
     }
@@ -281,6 +300,13 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
      */
     function withdraw(uint256 shares) external nonReentrant returns (uint256 netAmount) {
         require(balanceOf(msg.sender) >= shares, "Insufficient shares");
+
+        // Enforce withdrawal lockup if configured
+        if (withdrawalLockupPeriod > 0) {
+            uint256 last = lastDepositTime[msg.sender];
+            require(last > 0, "No deposit record for user");
+            require(block.timestamp >= last + withdrawalLockupPeriod, "Withdrawal locked");
+        }
         
         // Calculate USD value of shares
         uint256 usdValue = (shares * totalValueLocked) / totalSupply();
@@ -306,6 +332,88 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
         return netAmount;
     }
 
+    // --- Admin setters for new config ---
+
+    function setStablecoin(address _stablecoin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_stablecoin != address(0), "Invalid stablecoin");
+        stablecoin = _stablecoin;
+    }
+
+    function setMaxSlippageBps(uint256 bps) external onlyRole(MANAGER_ROLE) {
+        require(bps <= 1000, "Max slippage too high");
+        maxSlippageBps = bps;
+    }
+
+    function setWithdrawalLockupPeriod(uint256 secondsLock) external onlyRole(MANAGER_ROLE) {
+        withdrawalLockupPeriod = secondsLock;
+        emit MinimumInvestmentUpdated(minimumInvestment); // reuse event for visibility (no dedicated event)
+    }
+
+    /**
+     * @notice Perform a batch rebalance by executing multiple swaps
+     * @param tokenAddresses Array of token addresses to buy/sell
+     * @param amounts Array of input amounts (for buys: stablecoin units; for sells: token units)
+     * @param isBuy Array of flags indicating buy (true) or sell (false)
+     */
+    function batchRebalance(
+        address[] calldata tokenAddresses,
+        uint256[] calldata amounts,
+        bool[] calldata isBuy
+    ) external onlyRole(REBALANCER_ROLE) nonReentrant {
+        require(tokenAddresses.length == amounts.length && amounts.length == isBuy.length, "Array length mismatch");
+        require(stablecoin != address(0), "Stablecoin not set");
+
+        for (uint256 i = 0; i < tokenAddresses.length; ++i) {
+            address token = tokenAddresses[i];
+            uint256 amt = amounts[i];
+            bool buy = isBuy[i];
+
+            if (buy) {
+                // Buy token using stablecoin
+                IERC20(stablecoin).safeIncreaseAllowance(uniswapRouter, amt);
+                address[] memory path = new address[](2);
+                path[0] = stablecoin;
+                path[1] = token;
+
+                // Determine oracle-based minOut
+                uint256 pricePerUnit = IPriceOracle(priceOracle).getPrice(token);
+                require(pricePerUnit > 0, "Oracle malfunction");
+
+                uint8 assetDecimals = 18;
+                try IERC20Metadata(token).decimals() returns (uint8 ad) { assetDecimals = ad; } catch {}
+                uint8 stableDecimals = 18;
+                try IERC20Metadata(stablecoin).decimals() returns (uint8 sd) { stableDecimals = sd; } catch {}
+
+                uint256 stablePrice = IPriceOracle(priceOracle).getPrice(stablecoin);
+                require(stablePrice > 0, "Stablecoin oracle malfunction");
+
+                uint256 expectedTarget = (amt * stablePrice * (10 ** assetDecimals)) / (pricePerUnit * (10 ** stableDecimals));
+                uint256 minOut = (expectedTarget * (10000 - maxSlippageBps)) / 10000;
+
+                IUniswapRouter(uniswapRouter).swapExactTokensForTokens(amt, minOut, path, address(this), block.timestamp + 300);
+            } else {
+                // Sell token to stablecoin
+                IERC20(token).safeIncreaseAllowance(uniswapRouter, amt);
+                address[] memory path = new address[](2);
+                path[0] = token;
+                path[1] = stablecoin;
+
+                uint8 assetDecimals = 18;
+                try IERC20Metadata(token).decimals() returns (uint8 ad) { assetDecimals = ad; } catch {}
+                uint8 stableDecimals = 18;
+                try IERC20Metadata(stablecoin).decimals() returns (uint8 sd) { stableDecimals = sd; } catch {}
+
+                // expected stablecoin amount = amt * (10**stableDecimals) / (10**assetDecimals)
+                uint256 expectedStable = (amt * (10 ** stableDecimals)) / (10 ** assetDecimals);
+                uint256 minOut = (expectedStable * (10000 - maxSlippageBps)) / 10000;
+
+                IUniswapRouter(uniswapRouter).swapExactTokensForTokens(amt, minOut, path, address(this), block.timestamp + 300);
+            }
+        }
+
+        emit Rebalanced(block.timestamp, calculateTotalAssetValue());
+    }
+
     // --- Asset Acquisition via DEX Swaps ---
 
     /**
@@ -328,25 +436,56 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
         require(assets[symbolHash].isActive, "Asset not active");
         
         address targetAssetAddress = assets[symbolHash].tokenAddress;
-        
-        // Approve router to spend stablecoin
-        IERC20(stablecoinAddress).safeApprove(uniswapRouter, stablecoinAmount);
-        
+
         // Build swap path
         address[] memory path = new address[](2);
         path[0] = stablecoinAddress;
         path[1] = targetAssetAddress;
-        
+
+        // 1) Verify on-chain DEX estimate and compare with oracle to prevent sandwich/price-manipulation
+        uint256 estimatedOut = 0;
+        try IUniswapRouter(uniswapRouter).getAmountsOut(stablecoinAmount, path) returns (uint[] memory amounts) {
+            estimatedOut = amounts[amounts.length - 1];
+        } catch {
+            revert DEXEstimateFailed();
+        }
+
+        require(estimatedOut > 0, "DEX estimate zero");
+
+        // Allowed minimum based on configured max slippage
+        uint256 allowedMin = (estimatedOut * (10000 - maxSlippageBps)) / 10000;
+
+        // 2) Check oracle sanity
+        uint256 oraclePrice = IPriceOracle(priceOracle).getPrice(targetAssetAddress);
+        require(oraclePrice > 0, "Oracle malfunction");
+
+        // implied price per unit from DEX estimate (USD scaled by 1e8)
+        uint256 impliedPricePerUnit = (stablecoinAmount * 1e8) / estimatedOut;
+
+        uint256 priceDiffBps;
+        if (impliedPricePerUnit > oraclePrice) {
+            priceDiffBps = ((impliedPricePerUnit - oraclePrice) * 10000) / oraclePrice;
+        } else {
+            priceDiffBps = ((oraclePrice - impliedPricePerUnit) * 10000) / oraclePrice;
+        }
+
+        require(priceDiffBps <= maxSlippageBps, "Price deviates from oracle");
+
+        // Ensure manager-provided minAmountOut is not lower than allowed minimum
+        require(minAmountOut >= allowedMin, "minAmountOut too low");
+
+        // Approve router to spend stablecoin
+        IERC20(stablecoinAddress).safeIncreaseAllowance(uniswapRouter, stablecoinAmount);
+
         // Execute swap
-        uint[] memory amounts = IUniswapRouter(uniswapRouter).swapExactTokensForTokens(
+        uint[] memory swapAmounts = IUniswapRouter(uniswapRouter).swapExactTokensForTokens(
             stablecoinAmount,
             minAmountOut,
             path,
             address(this),
             block.timestamp + 300
         );
-        
-        amountReceived = amounts[amounts.length - 1];
+        amountReceived = swapAmounts[swapAmounts.length - 1];
         
         // Update asset balance
         assets[symbolHash].balance += amountReceived;
@@ -437,6 +576,7 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
         
         // Get price from oracle (in USD, scaled by 1e8)
         uint256 pricePerUnit = IPriceOracle(priceOracle).getPrice(asset.tokenAddress);
+        require(pricePerUnit > 0, "Oracle malfunction");
         
         // Convert balance to USD value accounting for decimals
         uint256 normalizedBalance = (asset.balance * 1e8) / (10 ** asset.decimals);

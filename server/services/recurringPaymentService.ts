@@ -5,9 +5,11 @@ import { eq, and, lte } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
 import { tokenService } from './tokenService';
 import { gasPriceOracle } from './gasPriceOracle';
+import { getMultiChainProvider } from './multiChainProvider';
 import { notificationService } from '../notificationService';
 import { WebSocketService } from './WebSocketService';
 import { getEventEmitter } from '../middleware/websocket-event-emitter';
+import { paymentRecoverySAGA } from './PaymentRecoverySAGAOrchestrator';
 
 const logger = Logger.getLogger();
 
@@ -115,8 +117,13 @@ export class RecurringPaymentService {
       }
 
       // Step 2: Check gas prices and network congestion
-      const gasStrategy = await gasPriceOracle.getOptimalGasStrategy('standard');
-      const isCongested = await gasPriceOracle.isNetworkCongested();
+      const provider = getMultiChainProvider().getProvider('polygon');
+      const gasStrategy = await gasPriceOracle.getOptimalGasStrategy(provider, 'polygon', 'standard');
+
+      // Heuristic: consider network congested when instant price >> standard price
+      const prices = await gasPriceOracle.getCurrentGasPrices(provider, 'polygon');
+      const isCongested = !!(prices.instant && prices.standard &&
+        BigInt(prices.instant) > (BigInt(prices.standard) * BigInt(150) / BigInt(100)));
 
       if (isCongested) {
         logger.warn(`Network congested, delaying payment ${payment.id}`);
@@ -124,50 +131,86 @@ export class RecurringPaymentService {
         return;
       }
 
-      // Step 3: Execute the payment
-      const txHash = await tokenService.sendToken(
-        payment.currency,
-        payment.toAddress,
-        payment.amount
-      );
-
-      // Step 4: Update payment status
-      await db.update(walletTransactions)
-        .set({
-          status: 'completed',
-          transactionHash: txHash,
-          updatedAt: new Date(),
-          metadata: { 
-            executedAt: new Date().toISOString(),
-            gasUsed: gasStrategy.maxFeePerGas || gasStrategy.gasPrice
-          }
-        })
-        .where(eq(walletTransactions.id, payment.id));
-
-      // Step 5: Notify user of success
-      await this.notifySuccess(payment, txHash);
-
-      // Step 6: Schedule next payment
-      await this.scheduleNextPayment(payment);
-      
-      // Step 7: Emit WebSocket event for payment completion
+      // Step 3: Execute the payment via the Payment Recovery SAGA orchestrator
       try {
-        const wsEmitter = getEventEmitter();
-        wsEmitter.emitActivity('payment', payment.id, payment.userId, 'recurring_completed', {
-          recurring: true,
-          toAddress: payment.toAddress,
-          amount: payment.amount,
+        // Resolve user's wallet address for the saga
+        const userRow = await db.query.users.findFirst({ where: eq(users.id, payment.userId) });
+        const walletFrom = (userRow as any)?.walletAddress || payment.userId;
+
+        const saga = await paymentRecoverySAGA.executePaymentSAGA({
+          userId: payment.userId,
+          amount: Number(payment.amount),
           currency: payment.currency,
-          frequency: payment.frequency,
-          transactionHash: txHash,
-          nextPayment: payment.nextPayment,
-          status: 'completed'
+          walletFrom,
+          walletTo: payment.toAddress,
+          vaultId: (payment as any)?.metadata?.vaultId,
+          metadata: (payment as any)?.metadata || {}
         });
-      } catch (wsError) {
-        logger.warn('Failed to emit WebSocket event for recurring payment completion', wsError);
+
+        // Reflect saga outcome in the recurring payment record
+        const baseMetadata = (payment as any)?.metadata || {};
+
+        if (saga?.status === 'succeeded') {
+          await db.update(walletTransactions)
+            .set({
+              status: 'completed',
+              updatedAt: new Date(),
+              metadata: {
+                ...baseMetadata,
+                executedAt: new Date().toISOString(),
+                sagaId: saga.id
+              }
+            })
+            .where(eq(walletTransactions.id, payment.id));
+
+          // Notify user (no txHash available here; the saga writes on-chain records to its events table)
+          await this.notifySuccess(payment, (saga as any)?.paymentId ?? '');
+
+          // Schedule next payment and emit websocket event
+          await this.scheduleNextPayment(payment);
+          try {
+            const wsEmitter = getEventEmitter();
+            wsEmitter.emitActivity('payment', payment.id, payment.userId, 'recurring_completed', {
+              recurring: true,
+              toAddress: payment.toAddress,
+              amount: payment.amount,
+              currency: payment.currency,
+              frequency: payment.frequency,
+              sagaId: saga.id,
+              nextPayment: payment.nextPayment,
+              status: 'completed'
+            });
+          } catch (wsError) {
+            logger.warn('Failed to emit WebSocket event for recurring payment completion', wsError);
+          }
+
+          logger.info(`Recurring payment ${payment.id} processed successfully via SAGA ${saga.id}`);
+        } else {
+          // Saga failed or is compensating
+          await db.update(walletTransactions)
+            .set({
+              status: 'failed',
+              updatedAt: new Date(),
+              metadata: {
+                ...baseMetadata,
+                lastFailureReason: saga?.lastError || 'saga_failed',
+                sagaId: saga?.id
+              }
+            })
+            .where(eq(walletTransactions.id, payment.id));
+
+          await this.handlePaymentFailure(payment, new Error(saga?.lastError || 'saga_failed'));
+        }
+
+      } catch (sagaError) {
+        logger.error(`SAGA execution error for recurring payment ${payment.id}:`, sagaError);
+        // Fallback: mark failed and handle failure
+        await db.update(walletTransactions)
+          .set({ status: 'failed', updatedAt: new Date(), metadata: { ...(payment as any)?.metadata, lastFailureReason: String(sagaError) } })
+          .where(eq(walletTransactions.id, payment.id));
+
+        await this.handlePaymentFailure(payment, sagaError);
       }
-      
-      logger.info(`Recurring payment ${payment.id} processed successfully`);
       
     } catch (error) {
       logger.error(`Failed to process recurring payment ${payment.id}:`, error);
@@ -199,7 +242,8 @@ export class RecurringPaymentService {
       const requiredAmount = BigInt(payment.amount);
 
       // Estimate gas cost
-      const gasStrategy = await gasPriceOracle.getOptimalGasStrategy('standard');
+      const provider = getMultiChainProvider().getProvider('polygon');
+      const gasStrategy = await gasPriceOracle.getOptimalGasStrategy(provider, 'polygon', 'standard');
       const estimatedGas = BigInt(21000); // Standard transfer
       const gasCost = BigInt(gasStrategy.maxFeePerGas || gasStrategy.gasPrice || '0') * estimatedGas;
 

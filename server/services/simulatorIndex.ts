@@ -158,108 +158,285 @@ export {
  * Simulator Registry
  * Map of all available simulators for dynamic instantiation (64 total)
  */
-export const SimulatorRegistry = {
+export const SimulatorRegistry: Record<string, () => Promise<any>> = {
   // Category 1: Payment Flow
-  PAYMENT_DEPOSIT: () => new (require('./paymentFlowSimulator').PaymentDepositSimulator)(),
-  PAYMENT_WITHDRAWAL: () => new (require('./paymentFlowSimulator').PaymentWithdrawalSimulator)(),
-  PAYMENT_P2P: () => new (require('./paymentFlowSimulator').PaymentP2PTransferSimulator)(),
-  RECURRING_PAYMENT: () => new (require('./paymentFlowSimulator').RecurringPaymentSetupSimulator)(),
-  PAYMENT_SETTLEMENT: () => new (require('./paymentFlowSimulator').PaymentSettlementSimulator)(),
+  PAYMENT_DEPOSIT: async () => {
+    const { PaymentDepositSimulator } = await import('./paymentFlowSimulator.js');
+    return new PaymentDepositSimulator();
+  },
+  PAYMENT_WITHDRAWAL: async () => {
+    const { PaymentWithdrawalSimulator } = await import('./paymentFlowSimulator.js');
+    return new PaymentWithdrawalSimulator();
+  },
+  PAYMENT_P2P: async () => {
+    const { PaymentP2PTransferSimulator } = await import('./paymentFlowSimulator.js');
+    return new PaymentP2PTransferSimulator();
+  },
+  RECURRING_PAYMENT: async () => {
+    const { RecurringPaymentSetupSimulator } = await import('./paymentFlowSimulator.js');
+    return new RecurringPaymentSetupSimulator();
+  },
+  PAYMENT_SETTLEMENT: async () => {
+    const { PaymentSettlementSimulator } = await import('./paymentFlowSimulator.js');
+    return new PaymentSettlementSimulator();
+  },
 
   // Category 2: Trading & DEX
-  SPOT_TRADE: () => new (require('./tradingDexSimulator').SpotTradeSimulator)(),
-  MARGIN_TRADE: () => new (require('./tradingDexSimulator').MarginTradeSimulator)(),
-  PERPETUALS_FUTURES: () => new (require('./tradingDexSimulator').PerpetualsFuturesSimulator)(),
-  DEX_SWAP: () => new (require('./tradingDexSimulator').DexSwapSimulator)(),
-  FLASH_LOAN: () => new (require('./tradingDexSimulator').FlashLoanSimulator)(),
+  SPOT_TRADE: async () => {
+    const { SpotTradeSimulator } = await import('./tradingDexSimulator.js');
+    return new SpotTradeSimulator();
+  },
+  MARGIN_TRADE: async () => {
+    const { MarginTradeSimulator } = await import('./tradingDexSimulator.js');
+    return new MarginTradeSimulator();
+  },
+  PERPETUALS_FUTURES: async () => {
+    const { PerpetualsFuturesSimulator } = await import('./tradingDexSimulator.js');
+    return new PerpetualsFuturesSimulator();
+  },
+  DEX_SWAP: async () => {
+    const { DexSwapSimulator } = await import('./tradingDexSimulator.js');
+    return new DexSwapSimulator();
+  },
+  FLASH_LOAN: async () => {
+    const { FlashLoanSimulator } = await import('./tradingDexSimulator.js');
+    return new FlashLoanSimulator();
+  },
 
   // Category 4: Investment Operations
-  PORTFOLIO_REBALANCE: () => new (require('./investmentOperationsSimulator').PortfolioRebalanceSimulator)(),
-  DIVIDEND_REINVESTMENT: () => new (require('./investmentOperationsSimulator').DividendReinvestmentSimulator)(),
-  MARGIN_LENDING: () => new (require('./investmentOperationsSimulator').MarginLendingSimulator)(),
-  FIXED_INCOME: () => new (require('./investmentOperationsSimulator').FixedIncomeSimulator)(),
+  PORTFOLIO_REBALANCE: async () => {
+    const { PortfolioRebalanceSimulator } = await import('./investmentOperationsSimulator.js');
+    return new PortfolioRebalanceSimulator();
+  },
+  DIVIDEND_REINVESTMENT: async () => {
+    const { DividendReinvestmentSimulator } = await import('./investmentOperationsSimulator.js');
+    return new DividendReinvestmentSimulator();
+  },
+  MARGIN_LENDING: async () => {
+    const { MarginLendingSimulator } = await import('./investmentOperationsSimulator.js');
+    return new MarginLendingSimulator();
+  },
+  FIXED_INCOME: async () => {
+    const { FixedIncomeSimulator } = await import('./investmentOperationsSimulator.js');
+    return new FixedIncomeSimulator();
+  },
 
   // Category 5: Cross-Chain Bridges
-  BRIDGE_TRANSFER: () => new (require('./crossChainBridgesSimulator').BridgeTransferSimulator)(),
-  CROSS_CHAIN_ARBITRAGE: () => new (require('./crossChainBridgesSimulator').CrossChainArbitrageSimulator)(),
+  BRIDGE_TRANSFER: async () => {
+    const { BridgeTransferSimulator } = await import('./crossChainBridgesSimulator.js');
+    return new BridgeTransferSimulator();
+  },
+  CROSS_CHAIN_ARBITRAGE: async () => {
+    const { CrossChainArbitrageSimulator } = await import('./crossChainBridgesSimulator.js');
+    return new CrossChainArbitrageSimulator();
+  },
 
   // Category 6: Escrow & Settlements
-  ESCROW_RELEASE: () => new (require('./escrowSettlementsSimulator').EscrowReleaseSimulator)(),
-  DISPUTE_RESOLUTION: () => new (require('./escrowSettlementsSimulator').DisputeResolutionSimulator)(),
-  SETTLEMENT_FINALITY: () => new (require('./escrowSettlementsSimulator').SettlementFinalitySimulator)(),
-  ESCROW_RECOVERY: () => new (require('./escrowSettlementsSimulator').EscrowRecoverySimulator)(),
+  ESCROW_RELEASE: async () => {
+    const { EscrowReleaseSimulator } = await import('./escrowSettlementsSimulator.js');
+    return new EscrowReleaseSimulator();
+  },
+  DISPUTE_RESOLUTION: async () => {
+    const { DisputeResolutionSimulator } = await import('./escrowSettlementsSimulator.js');
+    return new DisputeResolutionSimulator();
+  },
+  SETTLEMENT_FINALITY: async () => {
+    const { SettlementFinalitySimulator } = await import('./escrowSettlementsSimulator.js');
+    return new SettlementFinalitySimulator();
+  },
+  ESCROW_RECOVERY: async () => {
+    const { EscrowRecoverySimulator } = await import('./escrowSettlementsSimulator.js');
+    return new EscrowRecoverySimulator();
+  },
 
   // Category 7: DAO Treasury
-  TREASURY_REBALANCE: () => new (require('./daoTreasurySimulator').TreasuryRebalanceSimulator)(),
-  ASSET_ALLOCATION: () => new (require('./daoTreasurySimulator').AssetAllocationSimulator)(),
-  GRANT_DISTRIBUTION: () => new (require('./daoTreasurySimulator').GrantDistributionSimulator)(),
+  TREASURY_REBALANCE: async () => {
+    const { TreasuryRebalanceSimulator } = await import('./daoTreasurySimulator.js');
+    return new TreasuryRebalanceSimulator();
+  },
+  ASSET_ALLOCATION: async () => {
+    const { AssetAllocationSimulator } = await import('./daoTreasurySimulator.js');
+    return new AssetAllocationSimulator();
+  },
+  GRANT_DISTRIBUTION: async () => {
+    const { GrantDistributionSimulator } = await import('./daoTreasurySimulator.js');
+    return new GrantDistributionSimulator();
+  },
 
   // Category 8: Vaults
-  VAULT_DEPOSIT: () => new (require('./vaultsSimulator').VaultDepositSimulator)(),
-  VAULT_WITHDRAWAL: () => new (require('./vaultsSimulator').VaultWithdrawalSimulator)(),
-  VAULT_LIQUIDATION: () => new (require('./vaultsSimulator').VaultLiquidationSimulator)(),
-  VAULT_STRATEGY: () => new (require('./vaultsSimulator').VaultStrategySimulator)(),
+  VAULT_DEPOSIT: async () => {
+    const { VaultDepositSimulator } = await import('./vaultsSimulator.js');
+    return new VaultDepositSimulator();
+  },
+  VAULT_WITHDRAWAL: async () => {
+    const { VaultWithdrawalSimulator } = await import('./vaultsSimulator.js');
+    return new VaultWithdrawalSimulator();
+  },
+  VAULT_LIQUIDATION: async () => {
+    const { VaultLiquidationSimulator } = await import('./vaultsSimulator.js');
+    return new VaultLiquidationSimulator();
+  },
+  VAULT_STRATEGY: async () => {
+    const { VaultStrategySimulator } = await import('./vaultsSimulator.js');
+    return new VaultStrategySimulator();
+  },
 
   // Category 9: Governance
-  CREATE_PROPOSAL: () => new (require('./governanceSimulator').CreateProposalSimulator)(),
-  VOTE_PROPOSAL: () => new (require('./governanceSimulator').VoteOnProposalSimulator)(),
-  EXECUTE_PROPOSAL: () => new (require('./governanceSimulator').ExecuteProposalSimulator)(),
-  PARAMETER_CHANGE: () => new (require('./governanceSimulator').ParameterChangeSimulator)(),
-  PERMISSION_GRANT: () => new (require('./governanceSimulator').PermissionGrantSimulator)(),
+  CREATE_PROPOSAL: async () => {
+    const { CreateProposalSimulator } = await import('./governanceSimulator.js');
+    return new CreateProposalSimulator();
+  },
+  VOTE_PROPOSAL: async () => {
+    const { VoteOnProposalSimulator } = await import('./governanceSimulator.js');
+    return new VoteOnProposalSimulator();
+  },
+  EXECUTE_PROPOSAL: async () => {
+    const { ExecuteProposalSimulator } = await import('./governanceSimulator.js');
+    return new ExecuteProposalSimulator();
+  },
+  PARAMETER_CHANGE: async () => {
+    const { ParameterChangeSimulator } = await import('./governanceSimulator.js');
+    return new ParameterChangeSimulator();
+  },
+  PERMISSION_GRANT: async () => {
+    const { PermissionGrantSimulator } = await import('./governanceSimulator.js');
+    return new PermissionGrantSimulator();
+  },
 
   // Category 9: Staking
-  SOLO_STAKING: () => new (require('./stakingSimulator').SoloStakingSimulator)(),
-  POOL_STAKING: () => new (require('./stakingSimulator').PoolStakingSimulator)(),
-  LIQUIDITY_POOL: () => new (require('./stakingSimulator').LiquidityPoolSimulator)(),
-  YIELD_FARMING: () => new (require('./stakingSimulator').YieldFarmingSimulator)(),
+  SOLO_STAKING: async () => {
+    const { SoloStakingSimulator } = await import('./stakingSimulator.js');
+    return new SoloStakingSimulator();
+  },
+  POOL_STAKING: async () => {
+    const { PoolStakingSimulator } = await import('./stakingSimulator.js');
+    return new PoolStakingSimulator();
+  },
+  LIQUIDITY_POOL: async () => {
+    const { LiquidityPoolSimulator } = await import('./stakingSimulator.js');
+    return new LiquidityPoolSimulator();
+  },
+  YIELD_FARMING: async () => {
+    const { YieldFarmingSimulator } = await import('./stakingSimulator.js');
+    return new YieldFarmingSimulator();
+  },
 
   // Category 10: Recurring Payments
-  SUBSCRIPTION: () => new (require('./recurringAndBillSimulator').SubscriptionSimulator)(),
-  INSTALLMENT: () => new (require('./recurringAndBillSimulator').InstallmentSimulator)(),
-  PAYMENT_AUTOMATION: () => new (require('./recurringAndBillSimulator').PaymentAutomationSimulator)(),
+  SUBSCRIPTION: async () => {
+    const { SubscriptionSimulator } = await import('./recurringAndBillSimulator.js');
+    return new SubscriptionSimulator();
+  },
+  INSTALLMENT: async () => {
+    const { InstallmentSimulator } = await import('./recurringAndBillSimulator.js');
+    return new InstallmentSimulator();
+  },
+  PAYMENT_AUTOMATION: async () => {
+    const { PaymentAutomationSimulator } = await import('./recurringAndBillSimulator.js');
+    return new PaymentAutomationSimulator();
+  },
 
   // Category 11: Bounties
-  BOUNTY_PROGRAM: () => new (require('./recurringAndBillSimulator').BountyProgramSimulator)(),
-  REWARD_DISTRIBUTION: () => new (require('./recurringAndBillSimulator').RewardDistributionSimulator)(),
-  BOUNTY_COMPLETION: () => new (require('./recurringAndBillSimulator').BountyCompletionSimulator)(),
+  BOUNTY_PROGRAM: async () => {
+    const { BountyProgramSimulator } = await import('./recurringAndBillSimulator.js');
+    return new BountyProgramSimulator();
+  },
+  REWARD_DISTRIBUTION: async () => {
+    const { RewardDistributionSimulator } = await import('./recurringAndBillSimulator.js');
+    return new RewardDistributionSimulator();
+  },
+  BOUNTY_COMPLETION: async () => {
+    const { BountyCompletionSimulator } = await import('./recurringAndBillSimulator.js');
+    return new BountyCompletionSimulator();
+  },
 
   // Category 12: Bill Split
-  BILL_SPLIT: () => new (require('./recurringAndBillSimulator').BillSplitSimulator)(),
-  EXPENSE_REIMBURSEMENT: () => new (require('./recurringAndBillSimulator').ExpenseReimbursementSimulator)(),
-  GROUP_SETTLEMENT: () => new (require('./recurringAndBillSimulator').GroupSettlementSimulator)(),
+  BILL_SPLIT: async () => {
+    const { BillSplitSimulator } = await import('./recurringAndBillSimulator.js');
+    return new BillSplitSimulator();
+  },
+  EXPENSE_REIMBURSEMENT: async () => {
+    const { ExpenseReimbursementSimulator } = await import('./recurringAndBillSimulator.js');
+    return new ExpenseReimbursementSimulator();
+  },
+  GROUP_SETTLEMENT: async () => {
+    const { GroupSettlementSimulator } = await import('./recurringAndBillSimulator.js');
+    return new GroupSettlementSimulator();
+  },
 
   // Agent Deployment
-  AGENT_DEPLOYMENT: () => new (require('./agentDeploymentSimulator').AgentDeploymentSimulator)(),
-  MULTI_AGENT_DEPLOYMENT: () => new (require('./agentDeploymentSimulator').MultiAgentDeploymentSimulator)(),
+  AGENT_DEPLOYMENT: async () => {
+    const { AgentDeploymentSimulator } = await import('./agentDeploymentSimulator.js');
+    return new AgentDeploymentSimulator();
+  },
+  MULTI_AGENT_DEPLOYMENT: async () => {
+    const { MultiAgentDeploymentSimulator } = await import('./agentDeploymentSimulator.js');
+    return new MultiAgentDeploymentSimulator();
+  },
 
   // Category 13: NFT Operations (TIER 3)
-  NFT_MINTING: () => new (require('./tierThreeSimulatorsNFT').NFTMintingSimulator)(),
-  NFT_MARKETPLACE_LISTING: () => new (require('./tierThreeSimulatorsNFT').NFTMarketplaceListingSimulator)(),
-  NFT_PURCHASE: () => new (require('./tierThreeSimulatorsNFT').NFTPurchaseSimulator)(),
-  NFT_ROYALTY_TRACKING: () => new (require('./tierThreeSimulatorsNFT').NFTRoyaltyTrackingSimulator)(),
+  NFT_MINTING: async () => {
+    const { NFTMintingSimulator } = await import('./tierThreeSimulatorsNFT.js');
+    return new NFTMintingSimulator();
+  },
+  NFT_MARKETPLACE_LISTING: async () => {
+    const { NFTMarketplaceListingSimulator } = await import('./tierThreeSimulatorsNFT.js');
+    return new NFTMarketplaceListingSimulator();
+  },
+  NFT_PURCHASE: async () => {
+    const { NFTPurchaseSimulator } = await import('./tierThreeSimulatorsNFT.js');
+    return new NFTPurchaseSimulator();
+  },
+  NFT_ROYALTY_TRACKING: async () => {
+    const { NFTRoyaltyTrackingSimulator } = await import('./tierThreeSimulatorsNFT.js');
+    return new NFTRoyaltyTrackingSimulator();
+  },
 
   // Category 14: Referral Programs (TIER 3)
-  REFERRAL_GENERATION: () => new (require('./tierThreeSimulatorsReferral').ReferralGenerationSimulator)(),
-  REFERRAL_REWARDS: () => new (require('./tierThreeSimulatorsReferral').ReferralRewardsSimulator)(),
-  REFERRAL_TIER: () => new (require('./tierThreeSimulatorsReferral').ReferralTierAdvancementSimulator)(),
-  REFERRAL_FRAUD_DETECTION: () => new (require('./tierThreeSimulatorsReferral').ReferralFraudDetectionSimulator)(),
+  REFERRAL_GENERATION: async () => {
+    const { ReferralGenerationSimulator } = await import('./tierThreeSimulatorsReferral.js');
+    return new ReferralGenerationSimulator();
+  },
+  REFERRAL_REWARDS: async () => {
+    const { ReferralRewardsSimulator } = await import('./tierThreeSimulatorsReferral.js');
+    return new ReferralRewardsSimulator();
+  },
+  REFERRAL_TIER: async () => {
+    const { ReferralTierAdvancementSimulator } = await import('./tierThreeSimulatorsReferral.js');
+    return new ReferralTierAdvancementSimulator();
+  },
+  REFERRAL_FRAUD_DETECTION: async () => {
+    const { ReferralFraudDetectionSimulator } = await import('./tierThreeSimulatorsReferral.js');
+    return new ReferralFraudDetectionSimulator();
+  },
 
   // Category 15: Micro-Transactions (TIER 3)
-  MICRO_WITHDRAWAL: () => new (require('./tierThreeSimulatorsMicro').MicroWithdrawalSimulator)(),
-  TIP_DONATION: () => new (require('./tierThreeSimulatorsMicro').TipDonationSimulator)(),
-  MICRO_LOAN: () => new (require('./tierThreeSimulatorsMicro').MicroLoanSimulator)(),
-  SAVINGS_CHALLENGE: () => new (require('./tierThreeSimulatorsMicro').SavingsChallengeSimulator)(),
+  MICRO_WITHDRAWAL: async () => {
+    const { MicroWithdrawalSimulator } = await import('./tierThreeSimulatorsMicro.js');
+    return new MicroWithdrawalSimulator();
+  },
+  TIP_DONATION: async () => {
+    const { TipDonationSimulator } = await import('./tierThreeSimulatorsMicro.js');
+    return new TipDonationSimulator();
+  },
+  MICRO_LOAN: async () => {
+    const { MicroLoanSimulator } = await import('./tierThreeSimulatorsMicro.js');
+    return new MicroLoanSimulator();
+  },
+  SAVINGS_CHALLENGE: async () => {
+    const { SavingsChallengeSimulator } = await import('./tierThreeSimulatorsMicro.js');
+    return new SavingsChallengeSimulator();
+  },
 };
 
 /**
  * Get simulator by name
  */
-export function getSimulator(name: string | keyof typeof SimulatorRegistry) {
+export async function getSimulator(name: string | keyof typeof SimulatorRegistry) {
   const creator = SimulatorRegistry[name as keyof typeof SimulatorRegistry];
   if (!creator) {
     throw new Error(`Simulator not found: ${name}`);
   }
-  return creator();
+  return await creator();
 }
 
 /**

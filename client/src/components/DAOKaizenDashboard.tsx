@@ -8,23 +8,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import {
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer
-} from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { authClient } from '@/utils/authClient';
 import {
   AlertCircle,
@@ -135,9 +120,7 @@ export default function DAOKaizenDashboard() {
         authClient.get(`/api/elders/kaizen/dao/${daoId}/trends?metric=${selectedMetric}&hours=168`),
         authClient.get(`/api/elders/kaizen/dao/${daoId}/anomalies?metric=${selectedMetric}&threshold=20`)
       ]);
-      const trendsData = trendsRes.ok ? await trendsRes.json() : {};
-      const anomaliesData = anomaliesRes.ok ? await anomaliesRes.json() : [];
-
+      
       setStatus(statusData?.data || statusData);
       setRecommendations(recsData?.data || recsData);
       setTrends(trendsData?.data || {});
@@ -287,30 +270,13 @@ export default function DAOKaizenDashboard() {
             {selectedMetric.charAt(0).toUpperCase() + selectedMetric.slice(1)} Trend (Last 7 Days)
           </h2>
           {chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
-                <XAxis dataKey="timestamp" stroke="#94a3b8" />
-                <YAxis stroke="#94a3b8" domain={[0, 100]} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px' }}
-                  labelStyle={{ color: '#f1f5f9' }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="value"
-                  stroke="#f59e0b"
-                  fillOpacity={1}
-                  fill="url(#colorValue)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            <div style={{ height: 300 }}>
+              <Chart
+                type="line"
+                data={{ labels: chartData.map(c => c.timestamp), datasets: [{ label: selectedMetric, data: chartData.map(c => c.value), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.15)', fill: true, tension: 0.2 }] }}
+                options={{ responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }}
+              />
+            </div>
           ) : (
             <div className="h-300 flex items-center justify-center text-slate-400">
               No trend data available

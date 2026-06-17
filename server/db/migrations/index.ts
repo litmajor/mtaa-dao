@@ -58,6 +58,8 @@ export async function runAllMigrations(): Promise<MigrationResult> {
       errors.push(`Cross-chain migration failed: ${err.message}`);
       // Non-critical, continue with other migrations
     }
+
+    const duration = Date.now() - startTime;
     console.log(`\n✅ All migrations completed in ${duration}ms`);
 
     return {

@@ -63,7 +63,7 @@ export default function VoteDelegationPanel({ daoId, currentUserId }: { daoId: s
 
   const fetchMembers = async () => {
     try {
-      const data = await apiGet<DaoMember[]>(`/api/daos/${daoId}/members`);
+      const data = await apiGet<DaoMember[]>(`/api/v1/daos/${daoId}/members`);
       setMembers((data || []).filter((m: DaoMember) => m.userId !== currentUserId));
     } catch (error) {
       console.error('Failed to fetch members:', error);

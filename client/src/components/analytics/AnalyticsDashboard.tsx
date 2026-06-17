@@ -6,22 +6,8 @@ import { Badge } from '../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Progress } from '../ui/progress';
-import { 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  AreaChart,
-  Area
-} from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -333,17 +319,20 @@ export default function AnalyticsDashboard({ daoId }: AnalyticsDashboardProps) {
                 </CardHeader>
                 <CardContent>
                   <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={historical}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="timestamp" />
-                        <YAxis />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="userCount" stroke="#8884d8" name="Users" />
-                        <Line type="monotone" dataKey="proposalCount" stroke="#82ca9d" name="Proposals" />
-                        <Line type="monotone" dataKey="transactionVolume" stroke="#ffc658" name="Volume" />
-                      </LineChart>
-                    </ResponsiveContainer>
+                    <div style={{ height: '100%' }}>
+                      <Chart
+                        type="line"
+                        data={{
+                          labels: historical.map(h => h.timestamp),
+                          datasets: [
+                            { label: 'Users', data: historical.map(h => h.userCount), borderColor: '#8884d8', backgroundColor: 'rgba(136,132,216,0.1)', fill: false, tension: 0.2 },
+                            { label: 'Proposals', data: historical.map(h => h.proposalCount), borderColor: '#82ca9d', backgroundColor: 'rgba(130,202,157,0.1)', fill: false, tension: 0.2 },
+                            { label: 'Volume', data: historical.map(h => h.transactionVolume), borderColor: '#ffc658', backgroundColor: 'rgba(255,198,88,0.1)', fill: false, tension: 0.2 }
+                          ]
+                        }}
+                        options={{ responsive: true, maintainAspectRatio: false }}
+                      />
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -356,15 +345,13 @@ export default function AnalyticsDashboard({ daoId }: AnalyticsDashboardProps) {
                 </CardHeader>
                 <CardContent>
                   <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={historical}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="timestamp" />
-                        <YAxis />
-                        <Tooltip />
-                        <Area type="monotone" dataKey="avgSuccessRate" stroke="#82ca9d" fill="#82ca9d" fillOpacity={0.6} />
-                      </AreaChart>
-                    </ResponsiveContainer>
+                    <div style={{ height: '100%' }}>
+                      <Chart
+                        type="line"
+                        data={{ labels: historical.map(h => h.timestamp), datasets: [{ label: 'Success Rate', data: historical.map(h => h.avgSuccessRate), borderColor: '#82ca9d', backgroundColor: 'rgba(130,202,157,0.15)', fill: true, tension: 0.2 }] }}
+                        options={{ responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }}
+                      />
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -377,15 +364,9 @@ export default function AnalyticsDashboard({ daoId }: AnalyticsDashboardProps) {
                 </CardHeader>
                 <CardContent>
                   <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={historical.slice(-7)}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="timestamp" />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="transactionVolume" fill="#8884d8" />
-                      </BarChart>
-                    </ResponsiveContainer>
+                    <div style={{ height: '100%' }}>
+                      <Chart type="bar" data={{ labels: historical.slice(-7).map(h => h.timestamp), datasets: [{ label: 'Volume', data: historical.slice(-7).map(h => h.transactionVolume), backgroundColor: '#8884d8' }] }} options={{ responsive: true, maintainAspectRatio: false }} />
+                    </div>
                   </div>
                 </CardContent>
               </Card>

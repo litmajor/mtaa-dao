@@ -7,7 +7,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import Web3 from 'web3';
+import type Web3 from 'web3';
 import {
   WALLET_PROVIDERS,
   getSupportedProviders,
@@ -68,7 +68,11 @@ export function useWalletProviders(chainId: number = 1) {
         throw new Error('No accounts returned from MetaMask');
       }
 
-      const web3 = new Web3(eth as any);
+      const Web3Module = await import('web3');
+      // @ts-ignore
+      const Web3Ctor: typeof Web3 = Web3Module.default || Web3Module;
+      // @ts-ignore
+      const web3 = new Web3Ctor(eth as any);
 
       setState({
         provider: WALLET_PROVIDERS.metamask,
@@ -102,7 +106,11 @@ export function useWalletProviders(chainId: number = 1) {
         throw new Error('No accounts returned from Coinbase Wallet');
       }
 
-      const web3 = new Web3(prov as any);
+      const Web3Module = await import('web3');
+      // @ts-ignore
+      const Web3Ctor: typeof Web3 = Web3Module.default || Web3Module;
+      // @ts-ignore
+      const web3 = new Web3Ctor(prov as any);
 
       setState({
         provider: WALLET_PROVIDERS.coinbase,

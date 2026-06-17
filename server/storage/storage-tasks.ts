@@ -391,7 +391,7 @@ export class TaskStorage {
     if (!attachmentId) throw new Error('Attachment ID required');
     const result = await this.db.delete(taskAttachments)
       .where(eq(taskAttachments.id, attachmentId));
-    return result.rowCount > 0;
+    return (result?.rowCount ?? 0) > 0;
   }
 
   /**

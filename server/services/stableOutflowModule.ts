@@ -1,20 +1,28 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { logger } from '../utils/logger';
 import { priceOracle } from './priceOracle';
-import { stableOutflowEvents } from '@shared/schema';
+import { stableOutflowEvents, InsertStableOutflowEvent } from '../../shared/schema';
 import { stableAssetRegistryService } from './stableAssetRegistryService';
 import { stableRiskMonitorService } from './stableRiskMonitorService';
-import type {
-  StableOutflowProcessResult,
-  StableRiskFlags,
-} from '../types/stableOutflow';
+import type { StableRiskFlags } from '../types/stableInflow';
+
+export interface StableOutflowProcessResult {
+  success: boolean;
+  stableOutflowEventId?: string;
+  duplicate?: boolean;
+  normalizedAmountUsd?: string;
+  stableUnitsMicroUsd?: string;
+  riskFlags?: StableRiskFlags;
+  confirmationState?: 'pending' | 'confirmed' | 'low_confirmations';
+  error?: string;
+}
 
 export interface StableOutflowPayload {
   source?: string;
   chain?: string;
   chainId: number;
-  txHash?: string; // Optional for initiated outflows
+  txHash?: string;
   logIndex?: number;
   tokenAddress: string;
   tokenSymbol: string;
@@ -25,64 +33,48 @@ export interface StableOutflowPayload {
   blockTimestamp?: number;
   confirmations?: number;
   provider?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
+  internalReference?: string; // CRITICAL: Fallback unique lock id for pre-flight transactions
 }
 
-function pow10(exp: number): bigint {
-  if (exp <= 0) return 1n;
-  return BigInt(`1${'0'.repeat(exp)}`);
+// Memory-isolated math utilities
+function pow10(exp: number): bigint { return exp <= 0 ? 1n : BigInt(`1${'0'.repeat(exp)}`); }
+function divideRound(num: bigint, den: bigint): bigint {
+  if (den === 0n) return 0n;
+  const quot = num / den;
+  const rem = num % den;
+  return rem * 2n >= den ? quot + 1n : quot;
 }
-
-function divideRound(numerator: bigint, denominator: bigint): bigint {
-  if (denominator === 0n) return 0n;
-  const quotient = numerator / denominator;
-  const remainder = numerator % denominator;
-  if (remainder * 2n >= denominator) {
-    return quotient + 1n;
-  }
-  return quotient;
+function normalizeAddress(addr?: string): string | undefined {
+  if (!addr) return undefined;
+  const trimmed = addr.trim();
+  return trimmed.startsWith('0x') ? trimmed.toLowerCase() : trimmed;
 }
-
-function normalizeAddress(address?: string): string | undefined {
-  if (!address) return undefined;
-  const trimmed = address.trim();
-  if (trimmed.startsWith('0x')) return trimmed.toLowerCase();
-  return trimmed;
+function decimalToScaledBigInt(val: string, scale: number): bigint {
+  const trimmed = val.trim();
+  const neg = trimmed.startsWith('-');
+  const pos = neg ? trimmed.slice(1) : trimmed;
+  const [intRaw, fracRaw = ''] = pos.split('.');
+  const paddedFrac = (fracRaw + '0'.repeat(scale)).slice(0, scale);
+  const nextDigit = fracRaw.length > scale ? fracRaw[scale] : '0';
+  let res = BigInt(intRaw || '0') * pow10(scale) + BigInt(paddedFrac || '0');
+  if (nextDigit >= '5') res += 1n;
+  return neg ? -res : res;
 }
-
-function decimalToScaledBigInt(value: string, scale: number): bigint {
-  const trimmed = value.trim();
-  const negative = trimmed.startsWith('-');
-  const positiveValue = negative ? trimmed.slice(1) : trimmed;
-  const [integerPartRaw, fractionalRaw = ''] = positiveValue.split('.');
-  const integerPart = integerPartRaw || '0';
-  const paddedFraction = (fractionalRaw + '0'.repeat(scale)).slice(0, scale);
-  const nextDigit = fractionalRaw.length > scale ? fractionalRaw[scale] : '0';
-
-  let result = BigInt(integerPart) * pow10(scale) + BigInt(paddedFraction || '0');
-  if (nextDigit >= '5') {
-    result += 1n;
-  }
-  return negative ? -result : result;
-}
-
-function scaledBigIntToDecimal(value: bigint, scale: number): string {
-  const negative = value < 0n;
-  const abs = negative ? -value : value;
+function scaledBigIntToDecimal(val: bigint, scale: number): string {
+  const neg = val < 0n;
+  const abs = neg ? -val : val;
   const divisor = pow10(scale);
   const whole = abs / divisor;
-  const fraction = abs % divisor;
-  const fractionStr = fraction.toString().padStart(scale, '0').replace(/0+$/, '');
-  const signedWhole = `${negative ? '-' : ''}${whole.toString()}`;
-  return fractionStr.length ? `${signedWhole}.${fractionStr}` : signedWhole;
+  const frac = abs % divisor;
+  const fracStr = frac.toString().padStart(scale, '0').replace(/0+$/, '');
+  const signedWhole = `${neg ? '-' : ''}${whole.toString()}`;
+  return fracStr.length ? `${signedWhole}.${fracStr}` : signedWhole;
 }
-
-function rawToTokenAmount(rawAmount: bigint, decimals: number): string {
-  const effectiveScale = Math.min(Math.max(decimals, 0), 18);
-  if (decimals <= 18) {
-    return scaledBigIntToDecimal(rawAmount * pow10(18 - decimals), 18);
-  }
-  return scaledBigIntToDecimal(divideRound(rawAmount, pow10(decimals - 18)), 18);
+function rawToTokenAmount(raw: bigint, dec: number): string {
+  return dec <= 18 
+    ? scaledBigIntToDecimal(raw * pow10(18 - dec), 18)
+    : scaledBigIntToDecimal(divideRound(raw, pow10(dec - 18)), 18);
 }
 
 function computeRiskFlags(input: {
@@ -99,53 +91,14 @@ function computeRiskFlags(input: {
     highRiskScore: input.riskScore >= 70,
     notes: [],
   };
-
-  if (flags.depegDetected) {
-    flags.notes.push(`Peg deviation ${input.pegDeviationBps}bps exceeds threshold`);
-  }
-  if (flags.delayedConfirmation) {
-    flags.notes.push('Confirmation delay exceeded policy threshold');
-  }
-  if (flags.lowLiquidity) {
-    flags.notes.push('Liquidity score below recommended threshold');
-  }
-  if (flags.highRiskScore) {
-    flags.notes.push('Risk score in high-risk zone');
-  }
-
+  if (flags.depegDetected) flags.notes.push(`Peg deviation ${input.pegDeviationBps}bps exceeds threshold`);
+  if (flags.delayedConfirmation) flags.notes.push('Confirmation delay exceeded policy threshold');
+  if (flags.lowLiquidity) flags.notes.push('Liquidity score below recommended threshold');
+  if (flags.highRiskScore) flags.notes.push('Risk score in high-risk zone');
   return flags;
 }
 
-function resolveChainFromId(chainId: number): string {
-  switch (chainId) {
-    case 42220: return 'celo';
-    case 1: return 'ethereum';
-    case 728126428: return 'tron';
-    case 101: return 'solana';
-    case 8453: return 'base';
-    case 43114: return 'avalanche';
-    case 137: return 'polygon';
-    case 42161: return 'arbitrum';
-    case 10: return 'optimism';
-    case 1285: return 'moonriver';
-    case 324: return 'zksync';
-    case 50: return 'xdc';
-    case 8217: return 'klaytn';
-    case 2222: return 'kava';
-    case 56: return 'bsc';
-    case 1101: return 'polygon-zkevm';
-    case 1284: return 'moonbeam';
-    case 288: return 'boba';
-    case 1313161554: return 'aurora';
-    case 250: return 'fantom';
-    case 9001: return 'evmos';
-    case 1666600000: return 'harmony';
-    case 100: return 'gnosis';
-    default: return 'unknown';
-  }
-}
-
-class StableOutflowModule {
+export class StableOutflowModule {
   private overlaySyncStarted = false;
 
   isEnabled(): boolean {
@@ -158,59 +111,30 @@ class StableOutflowModule {
     await stableAssetRegistryService.syncOverlayToDatabase();
   }
 
+  /**
+   * Hardened Outflow Processor handling both explicit block-events and internal keyless pre-flight sequences.
+   */
   async processStableOutflow(payload: StableOutflowPayload): Promise<StableOutflowProcessResult> {
     try {
       if (!this.isEnabled()) {
-        return {
-          success: false,
-          error: 'Stable outflow module is disabled',
-        };
+        return { success: false, error: 'Stable outflow module is disabled' };
       }
 
       await this.ensureOverlaySync();
 
-      const chain = payload.chain?.toLowerCase() || resolveChainFromId(payload.chainId);
+      const chain = payload.chain?.toLowerCase() || 'unknown';
       const tokenAddress = normalizeAddress(payload.tokenAddress);
       const fromAddress = normalizeAddress(payload.fromAddress);
       const toAddress = normalizeAddress(payload.toAddress);
       const logIndex = payload.logIndex ?? 0;
       const confirmations = payload.confirmations ?? 0;
+      const txHash = payload.txHash || ''; 
 
       if (!tokenAddress || !fromAddress) {
-        return {
-          success: false,
-          error: 'Missing tokenAddress or fromAddress for stable outflow processing',
-        };
+        return { success: false, error: 'Missing tokenAddress or fromAddress for stable outflow processing' };
       }
 
-      const txHash = payload.txHash || ''; // Allow outflows without txHash if initiated internally
-
-      const existing = await db
-        .select()
-        .from(stableOutflowEvents)
-        .where(
-          and(
-            eq(stableOutflowEvents.chainId, payload.chainId),
-            eq(stableOutflowEvents.txHash, txHash),
-            eq(stableOutflowEvents.logIndex, logIndex),
-            eq(stableOutflowEvents.tokenAddress, tokenAddress),
-            eq(stableOutflowEvents.fromAddress, fromAddress)
-          )
-        )
-        .limit(1);
-
-      if (existing[0]) {
-        return {
-          success: true,
-          duplicate: true,
-          stableOutflowEventId: existing[0].id,
-          normalizedAmountUsd: String(existing[0].normalizedAmountUsd),
-          stableUnitsMicroUsd: String(existing[0].stableUnitsMicroUsd),
-          riskFlags: (existing[0].riskFlags as StableRiskFlags) || undefined,
-          confirmationState: existing[0].confirmationState as any,
-        };
-      }
-
+      // 1. Resolve asset invariants from your definitions
       const asset = await stableAssetRegistryService.resolveStableAsset({
         chain,
         chainId: payload.chainId,
@@ -219,24 +143,15 @@ class StableOutflowModule {
       });
 
       if (!asset) {
-        return {
-          success: false,
-          error: `Stable asset not registered for chain ${chain} token ${tokenAddress}`,
-        };
+        return { success: false, error: `Stable asset not registered for chain ${chain} token ${tokenAddress}` };
       }
 
       const rawAmount = BigInt(payload.rawAmount);
-      if (rawAmount < 0n) {
-        return {
-          success: false,
-          error: 'Raw amount cannot be negative',
-        };
-      }
+      if (rawAmount < 0n) return { success: false, error: 'Raw amount cannot be negative' };
 
+      // 2. Perform Arbitrary Precision Matrix Pricing calculations
       const observedPrice = await priceOracle.getPrice(asset.symbol);
-      const observedPriceUsd = observedPrice?.priceUsd
-        ? observedPrice.priceUsd.toFixed(8)
-        : asset.pegTargetUsd;
+      const observedPriceUsd = observedPrice?.priceUsd ? observedPrice.priceUsd.toFixed(8) : asset.pegTargetUsd;
 
       const priceScaled8 = decimalToScaledBigInt(observedPriceUsd, 8);
       const usdScaled8 = divideRound(rawAmount * priceScaled8, pow10(asset.decimals));
@@ -248,26 +163,18 @@ class StableOutflowModule {
         ? Math.max(0, Math.floor(Date.now() / 1000) - payload.blockTimestamp)
         : undefined;
 
-      const confirmationState =
-        confirmations >= asset.minConfirmations
-          ? 'confirmed'
-          : confirmations > 0
-            ? 'low_confirmations'
-            : 'pending';
+      const confirmationState = confirmations >= asset.minConfirmations
+        ? 'confirmed'
+        : confirmations > 0 ? 'low_confirmations' : 'pending';
 
-      const delayState: 'on_time' | 'delayed' | 'unknown' =
-        typeof observedDelaySec !== 'number'
-          ? 'unknown'
-          : observedDelaySec > asset.maxConfirmationDelaySec
-            ? 'delayed'
-            : 'on_time';
+      const delayState = typeof observedDelaySec !== 'number'
+        ? 'unknown'
+        : observedDelaySec > asset.maxConfirmationDelaySec ? 'delayed' : 'on_time';
 
       const pegTarget = Number(asset.pegTargetUsd);
-      const observedPriceNum = Number(observedPriceUsd);
-      const pegDeviationBps =
-        pegTarget > 0
-          ? Math.round((Math.abs(observedPriceNum - pegTarget) / pegTarget) * 10_000)
-          : 0;
+      const pegDeviationBps = pegTarget > 0
+        ? Math.round((Math.abs(Number(observedPriceUsd) - pegTarget) / pegTarget) * 10_000)
+        : 0;
 
       const riskFlags = computeRiskFlags({
         pegDeviationBps,
@@ -277,154 +184,171 @@ class StableOutflowModule {
         riskScore: asset.riskScore,
       });
 
-      const status = riskFlags.depegDetected ||
-        riskFlags.delayedConfirmation ||
-        riskFlags.lowLiquidity ||
-        riskFlags.highRiskScore
+      const status = (riskFlags.depegDetected || riskFlags.delayedConfirmation || riskFlags.lowLiquidity || riskFlags.highRiskScore)
         ? 'flagged'
         : 'sent';
 
+      // 3. ATOMIC UPSERT WITH DUPLICATE LOG FILTERING
+      const insertPayload: InsertStableOutflowEvent = {
+        source: payload.source || 'internal',
+        chain: asset.chain,
+        chainId: payload.chainId,
+        txHash,
+        logIndex,
+        tokenAddress,
+        tokenSymbol: asset.symbol,
+        tokenDecimals: asset.decimals,
+        fromAddress,
+        toAddress,
+        rawAmount: rawAmount.toString(),
+        normalizedTokenAmount,
+        normalizedAmountUsd,
+        stableUnitsMicroUsd: stableUnitsMicroUsd.toString(),
+        confirmations,
+        minConfirmations: asset.minConfirmations,
+        confirmationState,
+        delayState,
+        observedConfirmationDelaySec: observedDelaySec,
+        pegTargetUsd: asset.pegTargetUsd,
+        observedPriceUsd,
+        pegDeviationBps,
+        riskFlags,
+        status,
+        metadata: {
+          provider: payload.provider,
+          internalReference: payload.internalReference,
+          ...(payload.metadata || {}),
+        },
+      };
+
       const insertResult = await db
         .insert(stableOutflowEvents)
-        .values({
-          source: payload.source || 'internal',
-          chain: asset.chain,
-          chainId: payload.chainId,
-          txHash,
-          logIndex,
-          tokenAddress,
-          tokenSymbol: asset.symbol,
-          tokenDecimals: asset.decimals,
-          fromAddress,
-          toAddress,
-          rawAmount: rawAmount.toString(),
-          normalizedTokenAmount,
+        .values(insertPayload)
+        .onConflictDoUpdate({
+          // Target your composite indexing parameters strictly
+          target: [
+            stableOutflowEvents.chainId,
+            stableOutflowEvents.txHash,
+            stableOutflowEvents.logIndex,
+            stableOutflowEvents.tokenAddress,
+            stableOutflowEvents.fromAddress
+          ],
+          set: {
+            confirmations: sql`EXCLUDED.confirmations`,
+            confirmationState: sql`EXCLUDED.confirmation_state`,
+            // If the transaction hash was updated from pre-flight to mined status, update it
+            txHash: sql`CASE WHEN stable_outflow_events.tx_hash = '' THEN EXCLUDED.tx_hash ELSE stable_outflow_events.tx_hash END`,
+            updatedAt: new Date()
+          }
+        })
+        .returning({ id: stableOutflowEvents.id, status: stableOutflowEvents.status });
+
+      const activeRecord = insertResult[0];
+      if (!activeRecord) {
+        return { success: false, error: 'Failed to persist stable outflow event' };
+      }
+
+      // Check if row existed previously or was freshly inserted
+      const isDuplicate = status === activeRecord.status;
+
+      if (isDuplicate) {
+        return {
+          success: true,
+          duplicate: true,
+          stableOutflowEventId: activeRecord.id,
           normalizedAmountUsd,
           stableUnitsMicroUsd: stableUnitsMicroUsd.toString(),
-          confirmations,
-          minConfirmations: asset.minConfirmations,
-          confirmationState,
-          delayState,
-          observedConfirmationDelaySec: observedDelaySec,
-          pegTargetUsd: asset.pegTargetUsd,
-          observedPriceUsd,
-          pegDeviationBps,
           riskFlags,
-          status,
-          metadata: {
-            provider: payload.provider,
-            ...payload.metadata,
-          },
-        } as any)
-        .returning({ id: stableOutflowEvents.id });
-
-      const stableOutflowEventId = insertResult[0]?.id;
-      if (!stableOutflowEventId) {
-        return {
-          success: false,
-          error: 'Failed to persist stable outflow event',
+          confirmationState,
         };
       }
 
+      // 4. Safe decoupling of Risk Monitor execution out of response pathway
       stableRiskMonitorService
-        .evaluateOutflow(
-          {
-            stableOutflowEventId,
-            source: payload.source || 'internal',
-            symbol: asset.symbol,
-            chain: asset.chain,
-            chainId: payload.chainId,
-            tokenAddress,
-            txHash,
-            normalizedAmountUsd,
-            stableUnitsMicroUsd: stableUnitsMicroUsd.toString(),
-            pegDeviationBps,
-            confirmationState,
-            delayState,
-            riskFlags,
-          },
-          asset
-        )
-        .catch((error) => {
-          logger.warn('[StableOutflowModule] Risk monitor evaluation failed', {
-            error: (error as Error).message,
-            stableOutflowEventId,
+        .evaluateInflow({
+          stableInflowEventId: activeRecord.id,
+          source: payload.source || 'internal',
+          symbol: asset.symbol,
+          chain: asset.chain,
+          chainId: payload.chainId,
+          tokenAddress,
+          txHash,
+          normalizedAmountUsd,
+          stableUnitsMicroUsd: stableUnitsMicroUsd.toString(),
+          pegDeviationBps,
+          confirmationState,
+          delayState,
+          riskFlags,
+        }, asset)
+        .catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.warn('[StableOutflowModule] Risk monitor async drop', {
+            error: msg,
+            stableOutflowEventId: activeRecord.id,
           });
         });
 
       return {
         success: true,
-        stableOutflowEventId,
+        stableOutflowEventId: activeRecord.id,
         normalizedAmountUsd,
         stableUnitsMicroUsd: stableUnitsMicroUsd.toString(),
         riskFlags,
         confirmationState,
       };
-    } catch (error) {
-      logger.warn('[StableOutflowModule] Failed to process stable outflow', {
-        error: (error as Error).message,
-      });
-      return {
-        success: false,
-        error: (error as Error).message,
-      };
+
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error('[StableOutflowModule CRITICAL] Fatal pipeline error', { error: msg });
+      return { success: false, error: msg };
     }
   }
 
-  async markConfirmed(
-    stableOutflowEventId: string,
-    confirmations: number,
-    txHash?: string
-  ): Promise<void> {
+  async markConfirmed(stableOutflowEventId: string, confirmations: number, txHash?: string): Promise<void> {
     try {
-      const existing = await db
-        .select({ metadata: stableOutflowEvents.metadata })
-        .from(stableOutflowEvents)
-        .where(eq(stableOutflowEvents.id, stableOutflowEventId))
-        .limit(1);
+      await db.transaction(async (tx) => {
+        const existing = await tx
+          .select({ metadata: stableOutflowEvents.metadata })
+          .from(stableOutflowEvents)
+          .where(eq(stableOutflowEvents.id, stableOutflowEventId))
+          .for('update') // Enforce strict transaction sequence write-lock mapping
+          .limit(1);
 
-      const currentMetadata = existing[0]?.metadata as Record<string, any> || {};
+        const currentMetadata = (existing[0]?.metadata as Record<string, unknown>) || {};
+        const updatePayload: Partial<InsertStableOutflowEvent> = {
+          status: 'confirmed',
+          confirmations,
+          updatedAt: new Date(),
+          metadata: {
+            ...currentMetadata,
+            confirmedAt: new Date().toISOString(),
+          },
+        };
 
-      const updatePayload: Record<string, any> = {
-        status: 'confirmed',
-        confirmations,
-        updatedAt: new Date(),
-      };
+        if (txHash) {
+          updatePayload.txHash = txHash;
+        }
 
-      if (txHash) {
-        updatePayload.txHash = txHash;
-      }
-
-      updatePayload.metadata = {
-        ...currentMetadata,
-        confirmedAt: new Date().toISOString(),
-      };
-
-      await db
-        .update(stableOutflowEvents)
-        .set(updatePayload as any)
-        .where(eq(stableOutflowEvents.id, stableOutflowEventId));
-    } catch (error) {
-      logger.warn('[StableOutflowModule] Failed to mark outflow as confirmed', {
-        stableOutflowEventId,
-        error: (error as Error).message,
+        await tx.update(stableOutflowEvents).set(updatePayload).where(eq(stableOutflowEvents.id, stableOutflowEventId));
       });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.warn('[StableOutflowModule] Failed to mark outflow as confirmed', { stableOutflowEventId, error: msg });
     }
   }
 
   async markFailed(stableOutflowEventId: string, reason: string): Promise<void> {
     try {
-      const existing = await db
-        .select({ metadata: stableOutflowEvents.metadata })
-        .from(stableOutflowEvents)
-        .where(eq(stableOutflowEvents.id, stableOutflowEventId))
-        .limit(1);
+      await db.transaction(async (tx) => {
+        const existing = await tx
+          .select({ metadata: stableOutflowEvents.metadata })
+          .from(stableOutflowEvents)
+          .where(eq(stableOutflowEvents.id, stableOutflowEventId))
+          .for('update')
+          .limit(1);
 
-      const currentMetadata = existing[0]?.metadata as Record<string, any> || {};
-
-      await db
-        .update(stableOutflowEvents)
-        .set({
+        const currentMetadata = (existing[0]?.metadata as Record<string, unknown>) || {};
+        const updatePayload: Partial<InsertStableOutflowEvent> = {
           status: 'failed',
           metadata: {
             ...currentMetadata,
@@ -432,15 +356,14 @@ class StableOutflowModule {
             failedAt: new Date().toISOString(),
           },
           updatedAt: new Date(),
-        } as any)
-        .where(eq(stableOutflowEvents.id, stableOutflowEventId));
-    } catch (error) {
-      logger.warn('[StableOutflowModule] Failed to mark outflow as failed', {
-        stableOutflowEventId,
-        error: (error as Error).message,
+        };
+
+        await tx.update(stableOutflowEvents).set(updatePayload).where(eq(stableOutflowEvents.id, stableOutflowEventId));
       });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.warn('[StableOutflowModule] Failed to mark outflow as failed', { stableOutflowEventId, error: msg });
     }
   }
 }
-
 export const stableOutflowModule = new StableOutflowModule();

@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePickerWithRange } from "../components/ui/date-picker-with-range";
-import { addDays } from "date-fns";
+import addDays from "date-fns/addDays";
 interface PaymentReconciliationReport {
   provider: string;
   totalPayments: number;

@@ -15,7 +15,7 @@ export const useExchangeStatus = () => {
   return useQuery({
     queryKey: ['exchange-status'],
     queryFn: async () => {
-      return authClient.get<any>('/api/exchanges/status');
+      return authClient.get<any>('/api/v1/yuki/exchanges/status');
     },
     staleTime: 30000, // 30 seconds
     retry: 1,
@@ -30,7 +30,7 @@ export const useExchangeAssets = (exchangeName: string | null) => {
     queryKey: ['exchange-assets', exchangeName],
     queryFn: async () => {
       if (!exchangeName) return [];
-      const data = await authClient.get<any>(`/api/exchanges/assets?exchange=${exchangeName}`);
+      const data = await authClient.get<any>(`/api/v1/yuki/exchanges/markets?exchange=${exchangeName}`);
       return data.assets || [];
     },
     staleTime: 3600000, // 1 hour (assets don't change often)
@@ -48,8 +48,10 @@ export const usePrices = (symbol: string | null, exchanges: string[]) => {
     queryFn: async () => {
       if (!symbol || exchanges.length === 0) return null;
       const exchangesParam = exchanges.join(',');
+      // v1 aggregated endpoint - returns per-exchange price data for the pair
+      const pair = encodeURIComponent(symbol);
       return authClient.get<any>(
-        `/api/exchanges/prices?symbol=${encodeURIComponent(symbol)}&exchanges=${exchangesParam}`
+        `/api/v1/yuki/exchanges?pair=${pair}&exchanges=${encodeURIComponent(exchangesParam)}&limit=500`
       );
     },
     staleTime: 30000, // 30 seconds (prices update frequently)
@@ -67,10 +69,10 @@ export const useBestPrice = (symbol: string | null, exchanges: string[]) => {
     queryKey: ['best-price', symbol, exchanges.join(',')],
     queryFn: async () => {
       if (!symbol || exchanges.length === 0) return null;
-      const exchangesParam = exchanges.join(',');
-      return authClient.get<any>(
-        `/api/exchanges/best-price?symbol=${encodeURIComponent(symbol)}&exchanges=${exchangesParam}`
-      );
+      const pair = encodeURIComponent(symbol);
+      // Use ranked endpoint to find best price (limit=1)
+      const resp = await authClient.get<any>(`/api/v1/yuki/exchanges/ranked?pair=${pair}&sortBy=price&limit=1`);
+      return resp;
     },
     staleTime: 30000,
     retry: 1,
@@ -93,7 +95,7 @@ export const useOHLCV = (
     queryFn: async () => {
       if (!exchange || !symbol) return null;
       return authClient.get<any>(
-        `/api/exchanges/ohlcv?exchange=${exchange}&symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}`
+        `/api/v1/yuki/exchanges/ohlcv?exchange=${exchange}&symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}`
       );
     },
     staleTime: 60000, // 1 minute
@@ -111,13 +113,66 @@ export const useExchangeBalance = (exchange: string | null) => {
     queryKey: ['exchange-balance', exchange],
     queryFn: async () => {
       if (!exchange) return null;
-      return authClient.get<any>(`/api/exchanges/balance?exchange=${exchange}`);
+      return authClient.get<any>(`/api/v1/yuki/exchanges/balance?exchange=${exchange}`);
     },
     staleTime: 30000,
     retry: 1,
     enabled: !!exchange,
   } as any);
 };
+
+  /**
+   * Fetch top assets aggregated by the backend (server-side fan-out)
+   */
+  export const useTopAssets = (limit: number = 100) => {
+    return useQuery({
+      queryKey: ['top-assets', limit],
+      queryFn: async () => {
+        try {
+          const resp = await authClient.get<any>(`/api/v1/yuki/market/top?limit=${limit}`);
+          const body = resp.data || {};
+          const list = body.data || [];
+          return list.map((a: any, idx: number) => ({ ...a, rank: a.rank || idx + 1 }));
+        } catch (error) {
+          console.error('Failed to fetch top assets:', error);
+          throw error;
+        }
+      },
+      staleTime: 60000, // 1 minute
+      retry: 2,
+    } as any);
+  };
+
+  /**
+   * Search for a base symbol across available exchanges.
+   * Calls the server aggregated exchange endpoint and returns a simplified result.
+   */
+  export const useFindSymbolAcrossExchanges = (baseSymbol: string | null, exchanges: string[] = []) => {
+    return useQuery({
+      queryKey: ['find-symbol', baseSymbol, exchanges.join(',')],
+      queryFn: async () => {
+        if (!baseSymbol) return { found: 0, exchanges: [] };
+        try {
+          // Use pair with USDT as common quote
+          const pair = `${baseSymbol}/USDT`;
+          const resp = await authClient.get<any>(`/api/v1/yuki/exchanges?pair=${encodeURIComponent(pair)}&limit=500`);
+          const body = resp.data || {};
+          const data = body.data || { exchanges: [] };
+          const list = data.exchanges || [];
+          return {
+            found: list.length,
+            exchanges: list.map((e: any) => ({ exchange: e.exchange || e.name || e.id, symbol: e.symbol || pair, price: e.price || e.last || 0, bid: e.bid, ask: e.ask, volume: e.volume || e.quoteVolume || 0 }))
+          };
+        } catch (error) {
+          console.error('Failed to find symbol across exchanges:', error);
+          return { found: 0, exchanges: [] };
+        }
+      },
+      staleTime: 30000,
+      retry: 1,
+      enabled: !!baseSymbol,
+    } as any);
+  };
 
 /**
  * Phase 2 Hook: Fetch user's open orders on an exchange
@@ -128,7 +183,7 @@ export const useExchangeOrders = (exchange: string | null) => {
     queryKey: ['exchange-orders', exchange],
     queryFn: async () => {
       if (!exchange) return null;
-      return authClient.get<any>(`/api/exchanges/orders?exchange=${exchange}`);
+      return authClient.get<any>(`/api/v1/yuki/exchanges/orders?exchange=${exchange}`);
     },
     staleTime: 10000, // Orders update frequently
     retry: 1,

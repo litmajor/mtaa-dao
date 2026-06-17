@@ -1,10 +1,10 @@
 /**
  * V1 DAO Treasury - Core Operations with Real Database Integration
  * 
- * ✅ IMPLEMENTED: All 10 endpoints with REAL database queries (no mock data)
- * ✅ VERIFIED: All unused variables from req.body are used in database operations
- * ✅ FIXED: All Decimal field type conversions for Drizzle ORM compatibility
- * ✅ COMPLETE: walletAddress field included in all transaction inserts
+ *  IMPLEMENTED: All 10 endpoints with REAL database queries (no mock data)
+ * VERIFIED: All unused variables from req.body are used in database operations
+ * FIXED: All Decimal field type conversions for Drizzle ORM compatibility
+ * COMPLETE: walletAddress field included in all transaction inserts
  */
 
 import express, { Request, Response } from 'express';
@@ -14,6 +14,7 @@ import { authenticate } from '../../../../../auth';
 import { rateLimitPerUser } from '../../../../../middleware/rateLimit';
 import { treasuryAdminGuard } from './security';
 import { logConsolidatedAuditEvent } from '../../../../../services/auditConsolidated';
+import { TreasuryService } from '../../../../../services/treasuryService';
 import treasuryConfig from '../../../../../config/treasury';
 import { 
   walletTransactions, 
@@ -149,7 +150,7 @@ router.get(
 
 /**
  * POST /deposit - Record treasury deposit
- * ⚠️ REQUIRES: treasuryAdminGuard
+ *  REQUIRES: treasuryAdminGuard
  */
 router.post(
   '/deposit',
@@ -181,17 +182,12 @@ router.post(
 
       const transaction = result[0];
 
-      // Update DAO treasury balance
-      const daoRecord: any = await db.query.daos.findFirst({
-        where: eq(daos.id, daoId as any),
-      }) as any;
-
-      if (daoRecord) {
-        const currentBalance = parseFloat(daoRecord.treasuryBalance?.toString() || '0');
-        const newBalance = (currentBalance + parseFloat(amount)).toString();
-        await db.update(daos)
-          .set({ treasuryBalance: newBalance as any })
-          .where(eq(daos.id, daoId as any));
+      // Recompute and persist stored treasury balance via TreasuryService (computed is source-of-truth)
+      try {
+        const computed = await TreasuryService.getBalance(daoId);
+        await TreasuryService.updateStoredTreasuryBalance(daoId, computed.total);
+      } catch (err) {
+        console.warn('[Treasury] Failed to recompute stored balance after deposit:', err);
       }
 
       // Log to audit
@@ -224,7 +220,7 @@ router.post(
 
 /**
  * POST /withdraw - Record treasury withdrawal
- * ⚠️ REQUIRES: treasuryAdminGuard
+ *  REQUIRES: treasuryAdminGuard
  * Checks multisig requirements
  */
 router.post(
@@ -384,10 +380,12 @@ router.post(
         });
 
         if (dao) {
-          const newBalance = Math.max(parseFloat(dao.treasuryBalance?.toString() || '0') - parseFloat(withdrawal.amount.toString()), 0).toString();
-          await db.update(daos)
-            .set({ treasuryBalance: newBalance as any })
-            .where(eq(daos.id, daoId as any));
+          try {
+            const computed = await TreasuryService.getBalance(daoId);
+            await TreasuryService.updateStoredTreasuryBalance(daoId, computed.total);
+          } catch (err) {
+            console.warn('[Treasury] Failed to recompute stored balance after withdrawal approval:', err);
+          }
         }
       }
 
@@ -704,10 +702,12 @@ router.post(
         });
 
         if (dao) {
-          const newBalance = (parseFloat(dao.treasuryBalance?.toString() || '0') + parseFloat(contribution.amount.toString())).toString();
-          await db.update(daos)
-            .set({ treasuryBalance: newBalance as any })
-            .where(eq(daos.id, daoId as any));
+          try {
+            const computed = await TreasuryService.getBalance(daoId);
+            await TreasuryService.updateStoredTreasuryBalance(daoId, computed.total);
+          } catch (err) {
+            console.warn('[Treasury] Failed to recompute stored balance after contribution approval:', err);
+          }
         }
       }
 

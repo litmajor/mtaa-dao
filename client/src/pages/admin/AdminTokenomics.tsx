@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { Coins, TrendingUp, Users, Lock, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -139,38 +140,27 @@ export default function AdminTokenomics() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Token Price & Market Cap</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={metrics}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="timestamp" stroke="#94a3b8" />
-                    <YAxis stroke="#94a3b8" yAxisId="left" />
-                    <YAxis stroke="#94a3b8" yAxisId="right" orientation="right" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Legend />
-                    <Line yAxisId="left" type="monotone" dataKey="price" stroke="#3b82f6" name="Price ($)" />
-                    <Line yAxisId="right" type="monotone" dataKey="marketCap" stroke="#10b981" name="Market Cap" />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="line"
+                    data={{ labels: metrics.map(m => m.timestamp), datasets: [
+                      { label: 'Price ($)', data: metrics.map(m => m.price), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.06)', tension: 0.2 },
+                      { label: 'Market Cap', data: metrics.map(m => m.marketCap), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.06)', tension: 0.2 }
+                    ] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }}
+                  />
+                </div>
               </Card>
 
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Supply Trend</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={metrics}>
-                    <defs>
-                      <linearGradient id="colorSupply" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.8} />
-                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="timestamp" stroke="#94a3b8" />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Legend />
-                    <Area type="monotone" dataKey="totalSupply" stroke="#8b5cf6" fillOpacity={1} fill="url(#colorSupply)" name="Total Supply" />
-                  </AreaChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="line"
+                    data={{ labels: metrics.map(m => m.timestamp), datasets: [{ label: 'Total Supply', data: metrics.map(m => m.totalSupply), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.12)', fill: true, tension: 0.2 }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
+                  />
+                </div>
               </Card>
             </div>
           </TabsContent>
@@ -180,25 +170,13 @@ export default function AdminTokenomics() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Token Distribution</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={distribution}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ category, percentage }) => `${category}: ${percentage.toFixed(1)}%`}
-                      outerRadius={100}
-                      fill="#8884d8"
-                      dataKey="percentage"
-                    >
-                      {distribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  </PieChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="pie"
+                    data={{ labels: distribution.map(d => d.category), datasets: [{ data: distribution.map(d => d.percentage), backgroundColor: distribution.map((_, i) => COLORS[i % COLORS.length]) }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${ctx.label}: ${ctx.raw.toFixed(1)}%` } } } }}
+                  />
+                </div>
               </Card>
 
               <Card className="bg-slate-800 border-slate-700 p-6">
@@ -235,18 +213,13 @@ export default function AdminTokenomics() {
           <TabsContent value="holders" className="space-y-4">
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Holder Distribution</h3>
-              <ResponsiveContainer width="100%" height={350}>
-                <BarChart data={holders}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="segment" stroke="#94a3b8" angle={-45} height={80} />
-                  <YAxis stroke="#94a3b8" yAxisId="left" />
-                  <YAxis stroke="#94a3b8" yAxisId="right" orientation="right" />
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  <Legend />
-                  <Bar yAxisId="left" dataKey="holders" fill="#3b82f6" name="Holders" />
-                  <Bar yAxisId="right" dataKey="tokenAmount" fill="#10b981" name="Token Amount" />
-                </BarChart>
-              </ResponsiveContainer>
+              <div style={{ height: 350 }}>
+                <Chart
+                  type="bar"
+                  data={{ labels: holders.map(h => h.segment), datasets: [{ label: 'Holders', data: holders.map(h => h.holders), backgroundColor: '#3b82f6' }, { label: 'Token Amount', data: holders.map(h => h.tokenAmount), backgroundColor: '#10b981' }] }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }}
+                />
+              </div>
             </Card>
 
             <Card className="bg-slate-800 border-slate-700 p-6">
@@ -278,15 +251,13 @@ export default function AdminTokenomics() {
           <TabsContent value="emissions" className="space-y-4">
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Token Emissions</h3>
-              <ResponsiveContainer width="100%" height={350}>
-                <BarChart data={metrics}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="timestamp" stroke="#94a3b8" angle={-45} height={80} />
-                  <YAxis stroke="#94a3b8" />
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  <Bar dataKey="emissions" fill="#f59e0b" />
-                </BarChart>
-              </ResponsiveContainer>
+              <div style={{ height: 350 }}>
+                <Chart
+                  type="bar"
+                  data={{ labels: metrics.map(m => m.timestamp), datasets: [{ label: 'Emissions', data: metrics.map(m => m.emissions), backgroundColor: '#f59e0b' }] }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
+                />
+              </div>
             </Card>
 
             <Card className="bg-slate-800 border-slate-700 p-6">

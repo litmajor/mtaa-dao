@@ -5,7 +5,7 @@ export enum SupportedChain {
   CELO_ALFAJORES = 'celo-alfajores',
   ETHEREUM = 'ethereum',
   POLYGON = 'polygon',
-  POLYGON_MUMBAI = 'polygon-mumbai',
+  POLYGON_AMOY = 'polygon-amoy', // FIX: Upgraded from deprecated Mumbai testnet to Amoy
   BSC = 'bsc',
   BSC_TESTNET = 'bsc-testnet',
   OPTIMISM = 'optimism',
@@ -16,12 +16,16 @@ export enum SupportedChain {
   TON_TESTNET = 'ton-testnet'
 }
 
+// FIX: Added distinct architecture types to protect execution loops
+export type ChainArchitecture = 'evm' | 'tvm' | 'ton';
+
 export interface ChainConfig {
   chainId: number;
   name: string;
   symbol: string;
   rpcUrl: string;
   blockExplorer: string;
+  architecture: ChainArchitecture; // FIX: Strict type tag for safe dynamic dispatch routing
   nativeCurrency: {
     name: string;
     symbol: string;
@@ -40,6 +44,7 @@ export const CHAIN_CONFIGS: Record<SupportedChain, ChainConfig> = {
     symbol: 'CELO',
     rpcUrl: 'https://forno.celo.org',
     blockExplorer: 'https://celoscan.io',
+    architecture: 'evm',
     nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
     isTestnet: false
   },
@@ -49,6 +54,7 @@ export const CHAIN_CONFIGS: Record<SupportedChain, ChainConfig> = {
     symbol: 'CELO',
     rpcUrl: 'https://alfajores-forno.celo-testnet.org',
     blockExplorer: 'https://alfajores.celoscan.io',
+    architecture: 'evm',
     nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
     isTestnet: true
   },
@@ -58,6 +64,7 @@ export const CHAIN_CONFIGS: Record<SupportedChain, ChainConfig> = {
     symbol: 'ETH',
     rpcUrl: process.env.ETHEREUM_RPC_URL || 'https://eth.llamarpc.com',
     blockExplorer: 'https://etherscan.io',
+    architecture: 'evm',
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
     isTestnet: false
   },
@@ -67,15 +74,17 @@ export const CHAIN_CONFIGS: Record<SupportedChain, ChainConfig> = {
     symbol: 'MATIC',
     rpcUrl: process.env.POLYGON_RPC_URL || 'https://polygon-rpc.com',
     blockExplorer: 'https://polygonscan.com',
+    architecture: 'evm',
     nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
     isTestnet: false
   },
-  [SupportedChain.POLYGON_MUMBAI]: {
-    chainId: 80001,
-    name: 'Polygon Mumbai Testnet',
+  [SupportedChain.POLYGON_AMOY]: {
+    chainId: 80002, // FIX: Updated to correct Amoy network specification ID
+    name: 'Polygon Amoy Testnet',
     symbol: 'MATIC',
-    rpcUrl: process.env.POLYGON_MUMBAI_RPC_URL || 'https://rpc-mumbai.maticvigil.com',
-    blockExplorer: 'https://mumbai.polygonscan.com',
+    rpcUrl: process.env.POLYGON_AMOY_RPC_URL || 'https://rpc-amoy.polygon.gateway.fm',
+    blockExplorer: 'https://amoy.polygonscan.com',
+    architecture: 'evm',
     nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
     isTestnet: true
   },
@@ -85,6 +94,7 @@ export const CHAIN_CONFIGS: Record<SupportedChain, ChainConfig> = {
     symbol: 'BNB',
     rpcUrl: process.env.BSC_RPC_URL || 'https://bsc-dataseed.binance.org',
     blockExplorer: 'https://bscscan.com',
+    architecture: 'evm',
     nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
     isTestnet: false
   },
@@ -94,6 +104,7 @@ export const CHAIN_CONFIGS: Record<SupportedChain, ChainConfig> = {
     symbol: 'BNB',
     rpcUrl: process.env.BSC_TESTNET_RPC_URL || 'https://data-seed-prebsc-1-s1.binance.org:8545',
     blockExplorer: 'https://testnet.bscscan.com',
+    architecture: 'evm',
     nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
     isTestnet: true
   },
@@ -103,6 +114,7 @@ export const CHAIN_CONFIGS: Record<SupportedChain, ChainConfig> = {
     symbol: 'ETH',
     rpcUrl: process.env.OPTIMISM_RPC_URL || 'https://mainnet.optimism.io',
     blockExplorer: 'https://optimistic.etherscan.io',
+    architecture: 'evm',
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
     isTestnet: false
   },
@@ -112,6 +124,7 @@ export const CHAIN_CONFIGS: Record<SupportedChain, ChainConfig> = {
     symbol: 'ETH',
     rpcUrl: process.env.ARBITRUM_RPC_URL || 'https://arb1.arbitrum.io/rpc',
     blockExplorer: 'https://arbiscan.io',
+    architecture: 'evm',
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
     isTestnet: false
   },
@@ -121,6 +134,7 @@ export const CHAIN_CONFIGS: Record<SupportedChain, ChainConfig> = {
     symbol: 'TRX',
     rpcUrl: process.env.TRON_RPC_URL || 'https://api.trongrid.io',
     blockExplorer: 'https://tronscan.org',
+    architecture: 'tvm', // FIX: Explicitly separated from standard EVM routing configurations
     nativeCurrency: { name: 'Tronix', symbol: 'TRX', decimals: 6 },
     isTestnet: false
   },
@@ -130,6 +144,7 @@ export const CHAIN_CONFIGS: Record<SupportedChain, ChainConfig> = {
     symbol: 'TRX',
     rpcUrl: process.env.TRON_SHASTA_RPC_URL || 'https://api.shasta.trongrid.io',
     blockExplorer: 'https://shasta.tronscan.org',
+    architecture: 'tvm',
     nativeCurrency: { name: 'Tronix', symbol: 'TRX', decimals: 6 },
     isTestnet: true
   },
@@ -139,6 +154,7 @@ export const CHAIN_CONFIGS: Record<SupportedChain, ChainConfig> = {
     symbol: 'TON',
     rpcUrl: process.env.TON_RPC_URL || 'https://toncenter.com/api/v2/jsonRPC',
     blockExplorer: 'https://tonscan.org',
+    architecture: 'ton', // FIX: Declared dedicated architecture model
     nativeCurrency: { name: 'Toncoin', symbol: 'TON', decimals: 9 },
     isTestnet: false
   },
@@ -148,24 +164,40 @@ export const CHAIN_CONFIGS: Record<SupportedChain, ChainConfig> = {
     symbol: 'TON',
     rpcUrl: process.env.TON_TESTNET_RPC_URL || 'https://testnet.toncenter.com/api/v2/jsonRPC',
     blockExplorer: 'https://testnet.tonscan.org',
+    architecture: 'ton',
     nativeCurrency: { name: 'Toncoin', symbol: 'TON', decimals: 9 },
     isTestnet: true
   }
 };
 
 export class ChainRegistry {
-  private static providers: Map<SupportedChain, ethers.JsonRpcProvider> = new Map();
+  private static evmProviders: Map<SupportedChain, ethers.JsonRpcProvider> = new Map();
 
   static getChainConfig(chain: SupportedChain): ChainConfig {
     return CHAIN_CONFIGS[chain];
   }
 
-  static getProvider(chain: SupportedChain): ethers.JsonRpcProvider {
-    if (!this.providers.has(chain)) {
-      const config = this.getChainConfig(chain);
-      this.providers.set(chain, new ethers.JsonRpcProvider(config.rpcUrl));
+  /**
+   * Safe EVM Provider Extractor.
+   * FIX: Throws explicit compiler exceptions if invoked on Non-EVM network layers.
+   */
+  static getEVMProvider(chain: SupportedChain): ethers.JsonRpcProvider {
+    const config = this.getChainConfig(chain);
+    if (config.architecture !== 'evm') {
+      throw new Error(`Execution error: Cannot instantiate ethers JSON-RPC wrapper for non-EVM protocol: ${chain}`);
     }
-    return this.providers.get(chain)!;
+
+    if (!this.evmProviders.has(chain)) {
+      this.evmProviders.set(chain, new ethers.JsonRpcProvider(config.rpcUrl));
+    }
+    return this.evmProviders.get(chain)!;
+  }
+
+  /**
+   * Generic HttpClient parameters extractor for custom Non-EVM protocol clients (TronWeb/TonWeb)
+   */
+  static getGenericRpcUrl(chain: SupportedChain): string {
+    return this.getChainConfig(chain).rpcUrl;
   }
 
   static getAllChains(): SupportedChain[] {

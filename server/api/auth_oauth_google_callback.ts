@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
 import { db } from '../storage';
-import { users } from '../../shared/schema';
-import { eq } from 'drizzle-orm';
+import { users, userIdentities } from '../../shared/schema';
+import { eq, and } from 'drizzle-orm';
+import crypto from 'crypto';
 import { generateTokens } from '../auth';
 import { Logger } from '../utils/logger';
 import { AppError } from '../middleware/errorHandler';
@@ -76,19 +77,25 @@ export async function authOauthGoogleCallbackHandler(req: Request, res: Response
       return res.redirect(`${FRONTEND_URL}/login?error=email_not_verified`);
     }
 
-    // Check if user exists
-    const existingUser = await db
+    // First try to find a linked identity by provider user id
+    const existingIdentity = await db
       .select()
-      .from(users)
-      .where(eq(users.email, googleUser.email))
+      .from(userIdentities)
+      .where(and(eq(userIdentities.provider, 'google'), eq(userIdentities.providerUserId, googleUser.id)))
       .limit(1);
 
     let user;
 
-    if (existingUser.length > 0) {
-      // User exists, update their info
-      user = existingUser[0];
-      
+    if (existingIdentity.length > 0) {
+      // Identity exists -> fetch the user
+      const identity = existingIdentity[0];
+      const userResult = await db.select().from(users).where(eq(users.id, identity.userId)).limit(1);
+      if (userResult.length === 0) {
+        logger.error('Identity exists but user not found', { identityId: identity.id });
+        return res.redirect(`${FRONTEND_URL}/login?error=oauth_error`);
+      }
+      user = userResult[0];
+      // Update basic profile fields
       await db
         .update(users)
         .set({
@@ -100,31 +107,77 @@ export async function authOauthGoogleCallbackHandler(req: Request, res: Response
         })
         .where(eq(users.id, user.id));
 
-      logger.info('Existing user logged in via Google OAuth', { userId: user.id });
+      logger.info('Existing user logged in via Google OAuth (via identity)', { userId: user.id });
     } else {
-      // Create new user
-      if (stateData.mode !== 'register') {
-        return res.redirect(`${FRONTEND_URL}/login?error=account_not_found`);
-      }
+      // No identity found - try to find user by email
+      const existingUser = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, googleUser.email))
+        .limit(1);
 
-      const newUserResult = await db
-        .insert(users)
-        .values({
-          id: crypto.randomUUID(), // Generate a unique ID for the user
-          email: googleUser.email,
-          firstName: googleUser.given_name,
-          lastName: googleUser.family_name,
-          profileImageUrl: googleUser.picture,
-          roles: 'member',
-          isEmailVerified: true,
-          password: '', // OAuth users don't have passwords
+      if (existingUser.length > 0) {
+        user = existingUser[0];
+        // Link the identity
+        await db.insert(userIdentities).values({
+          id: crypto.randomUUID(),
+          userId: user.id,
+          provider: 'google',
+          providerUserId: googleUser.id,
+          profile: { name: googleUser.name, picture: googleUser.picture, raw: googleUser },
           createdAt: new Date(),
           updatedAt: new Date(),
-        })
-        .returning();
+        });
 
-      user = newUserResult[0];
-      logger.info('New user created via Google OAuth', { userId: user.id });
+        await db
+          .update(users)
+          .set({
+            firstName: googleUser.given_name || user.firstName,
+            lastName: googleUser.family_name || user.lastName,
+            profileImageUrl: googleUser.picture || user.profileImageUrl,
+            isEmailVerified: true,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, user.id));
+
+        logger.info('Linked Google identity to existing user', { userId: user.id });
+      } else {
+        // Create new user if registration allowed
+        if (stateData.mode !== 'register') {
+          return res.redirect(`${FRONTEND_URL}/login?error=account_not_found`);
+        }
+
+        const newUserResult = await db
+          .insert(users)
+          .values({
+            id: crypto.randomUUID(), // Generate a unique ID for the user
+            email: googleUser.email,
+            firstName: googleUser.given_name,
+            lastName: googleUser.family_name,
+            profileImageUrl: googleUser.picture,
+            roles: 'member',
+            isEmailVerified: true,
+            password: '', // OAuth users don't have passwords
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .returning();
+
+        user = newUserResult[0];
+
+        // Insert identity linked to new user
+        await db.insert(userIdentities).values({
+          id: crypto.randomUUID(),
+          userId: user.id,
+          provider: 'google',
+          providerUserId: googleUser.id,
+          profile: { name: googleUser.name, picture: googleUser.picture, raw: googleUser },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        logger.info('New user created via Google OAuth', { userId: user.id });
+      }
     }
 
     // Generate tokens

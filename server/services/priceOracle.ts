@@ -77,9 +77,23 @@ class PriceOracleService {
   // the authoritative source for symbol resolution.
   private readonly CURRENCY_FALLBACKS: Record<string, string[]> = {};
   
-  // ❌ REMOVED: Hardcoded COIN_IDS map
-  // ✅ Dynamic resolution via collector service + assetRegistry
-  private symbolToGeckoId: Map<string, string> = new Map();
+  // Default symbol → CoinGecko ID mappings for well-known tokens
+  // These are seeded so common symbols (FTT, USDT, USDC, WBTC, BNB, MATIC) resolve
+  // even before discovery/collector runs. The dynamic registry may overwrite these.
+  private symbolToGeckoId: Map<string, string> = new Map<string, string>([
+    ['FTT', 'ftx-token'],
+    ['FTX', 'ftx-token'],
+    ['USDT', 'tether'],
+    ['USDC', 'usd-coin'],
+    ['WBTC', 'wrapped-bitcoin'],
+    ['BTC', 'bitcoin'],
+    ['ETH', 'ethereum'],
+    ['BNB', 'binancecoin'],
+    ['MATIC', 'matic-network'],
+    ['LDO', 'lido-dao'],
+    ['PEPE', 'pepe'],
+    ['SHIB', 'shiba-inu']
+  ]);
 
   /**
    * DYNAMIC SYMBOL RESOLUTION
@@ -199,7 +213,8 @@ class PriceOracleService {
       this.rateLimitState.requestCount = 1;
       this.rateLimitState.resetTime = now;
     } else {
-      this.incrementRateLimitCounter();
+      // Increment counter within current window
+      this.rateLimitState.requestCount = (this.rateLimitState.requestCount || 0) + 1;
     }
   }
 

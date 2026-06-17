@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title MetaGovernance
@@ -54,7 +54,7 @@ contract MetaGovernance is Ownable, Pausable {
     mapping(uint256 => DAOWeight) public daoWeights;
     mapping(uint256 => bool) public isChildDAO;
     mapping(uint256 => mapping(address => bool)) public hasVoted; // proposalId => member => voted
-    mapping(uint256 => uint256[]) public daoMembers;
+    mapping(uint256 => address[]) public daoMembers;
     
     // Events
     event ProposalCreated(
@@ -85,7 +85,7 @@ contract MetaGovernance is Ownable, Pausable {
     }
     
     // Constructor
-    constructor(uint256 _parentDAOId, address _federationAdmin) {
+    constructor(uint256 _parentDAOId, address _federationAdmin) Ownable(msg.sender) {
         parentDAOId = _parentDAOId;
         federationAdmin = _federationAdmin;
     }

@@ -13,7 +13,8 @@ import React from 'react';
 import { useBtcDominance } from '@/hooks/useFearGreed';
 import { formatChangePercent, formatLargeNumber } from '@/hooks/useFearGreed';
 import { formatNumberCompact } from '@/utils/dataVisualization';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Pie } from 'react-chartjs-2';
 
 export const BtcDominanceCard: React.FC = () => {
   const { data, isLoading, error } = useBtcDominance();
@@ -67,24 +68,12 @@ export const BtcDominanceCard: React.FC = () => {
           <div className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-4 text-center">
             Market Share
           </div>
-          <ResponsiveContainer width="100%" height={250}>
-            <PieChart>
-              <Pie 
-                data={pieData} 
-                cx="50%" 
-                cy="50%" 
-                innerRadius={60} 
-                outerRadius={100} 
-                dataKey="value"
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(1)}%`}
-                labelLine={false}
-              >
-                <Cell fill="#f7931a" /> {/* Bitcoin orange */}
-                <Cell fill="#6b7280" /> {/* Altcoins gray */}
-              </Pie>
-              <Tooltip formatter={(value: any) => `${(value as number).toFixed(1)}%`} />
-            </PieChart>
-          </ResponsiveContainer>
+          <div style={{ height: 250 }}>
+            <Pie
+              data={{ labels: pieData.map(p => p.name), datasets: [{ data: pieData.map(p => p.value), backgroundColor: ['#f7931a', '#6b7280'], borderWidth: 0 }] }}
+              options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx: any) => `${(ctx.raw as number).toFixed(1)}%` } } } }}
+            />
+          </div>
           <div className="flex gap-4 justify-center text-xs mt-4">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-orange-500 rounded-full"></div>

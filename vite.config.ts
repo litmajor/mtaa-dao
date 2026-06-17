@@ -1,16 +1,18 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindVite from '@tailwindcss/vite';
+// Optional: consider using unplugin-icons to compile icons at build time
+// import Icons from 'unplugin-icons/vite';
 import path from "path";
 import { fileURLToPath } from "url";
-import { dirname } from "path";
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const __dirname = path.dirname(__filename);
 
 export default defineConfig({
   root: "./client",
-  plugins: [react(), tailwindVite()],
+  plugins: [react(), tailwindVite() /*, Icons({ compiler: 'jsx', jsx: 'react' }) */],
+
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./client/src"),
@@ -18,18 +20,15 @@ export default defineConfig({
       "@assets": path.resolve(__dirname, "./attached_assets"),
     },
   },
+
   build: {
     outDir: "../dist/public",
     emptyOutDir: true,
     sourcemap: false,
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: true,
-        drop_debugger: true,
-      },
-    },
+    minify: 'esbuild',
+    reportCompressedSize: false,
     chunkSizeWarningLimit: 2000,
+
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, "client/index.html"),
@@ -38,52 +37,74 @@ export default defineConfig({
         manualChunks: (id) => {
           if (!id.includes('node_modules')) return undefined;
 
-          // React core and router
-          if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('react-router') || id.includes('wouter') || id.includes('/scheduler/')) {
+          // ─── NEVER bundle these entirely ───
+          // Viem is 500KB+ — must be tree-shaken at import level
+          if (id.includes('viem') && !id.includes('viem/chains')) {
+            return 'web3-core';
+          }
+          // Only bundle chains you actually use
+          if (id.includes('viem/chains')) {
+            return 'web3-chains';
+          }
+
+          if (id.includes('wagmi') || id.includes('@wagmi')) {
+            return 'web3-react';
+          }
+
+          if (id.includes('ethers')) {
+            return 'web3-legacy';
+          }
+
+          // ─── Framework core (stable, cacheable) ───
+          if (id.includes('/react/') || id.includes('/react-dom/') || 
+              id.includes('react-router') || id.includes('wouter') || 
+              id.includes('/scheduler/')) {
             return 'react-core';
           }
 
-          // Web3 and blockchain libs
-          if (id.includes('ethers') || id.includes('viem') || id.includes('/web3') || id.includes('wagmi') || id.includes('@wagmi')) {
-            return 'web3';
+          // ─── Charts — split by library ───
+          if (id.includes('chart.js') || id.includes('react-chartjs')) {
+            return 'charts-chartjs';
           }
 
-          // Charting libraries bundle
-          if (id.includes('recharts') || id.includes('chart.js') || id.includes('react-chartjs') || id.includes('react-chartjs-2')) {
-            return 'charts';
+          // ─── UI — Radix is heavy, split by component ───
+          if (id.includes('@radix-ui/react-dialog') || id.includes('@radix-ui/react-alert-dialog')) {
+            return 'ui-dialog';
           }
-
-          // UI libs (radix, icons, lucide)
-          if (id.includes('@radix-ui') || id.includes('lucide-react') || id.includes('react-icons')) {
-            return 'ui-lib';
+          if (id.includes('@radix-ui/react-select') || id.includes('@radix-ui/react-dropdown-menu')) {
+            return 'ui-select';
           }
+          if (id.includes('@radix-ui')) {
+            return 'ui-radix';
+          }
+          // Avoid forcing all `lucide-react` into a single chunk; prefer
+          // tree-shaking or compile-time icons (unplugin-icons) instead.
 
-          // Websocket / realtime
-          if (id.includes('socket.io-client') || id.includes('ws')) {
+          // ─── Utils ───
+          if (id.includes('socket.io-client')) {
             return 'realtime';
           }
-
-          // Heavy utils used across app
-          if (id.includes('@tanstack/react-query') || id.includes('date-fns') || id.includes('lodash')) {
-            return 'utils';
+          if (id.includes('@tanstack/react-query') || id.includes('@tanstack/query-core')) {
+            return 'query-client';
+          }
+          if (id.includes('date-fns')) {
+            return 'date-utils';
+          }
+          if (id.includes('lodash')) {
+            return 'lodash'; // or better: use lodash-es + specific imports
           }
 
           return undefined;
         },
-        chunkFileNames: 'assets/[name]-[hash].js',
-        entryFileNames: 'assets/[name]-[hash].js',
-        assetFileNames: 'assets/[name]-[hash].[ext]',
       },
     },
   },
+
   server: {
     host: '0.0.0.0',
     port: 5173,
     strictPort: false,
-    middlewareMode: false,
-    allowedHosts: 'all',
-    // Let Vite determine the correct HMR host/protocol based on the current connection.
-    // Removing hardcoded host/port avoids mismatched ws/wss when accessing via HTTPS or proxies.
+    allowedHosts: true,
     hmr: true,
     proxy: {
       "/api": {
@@ -92,38 +113,19 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },
-    // Optimize development server performance
     watch: {
-      // Ignore node_modules to prevent excessive recompilation
       ignored: ['**/node_modules/**', '**/.git/**', '**/dist/**'],
     },
   },
+
   optimizeDeps: {
     include: [
-      'react', 
-      'react-dom', 
+      'react',
+      'react-dom',
       'react-router-dom',
       '@tanstack/react-query',
-      'react-helmet-async',
-      'recharts',
-      'lucide-react',
-      'socket.io-client',
-      'web3',
-      'ethers',
-      'viem',
-      'wagmi',
-      '@wagmi/core',
-
-
     ],
-    // Force pre-bundling of heavy dependencies
-    force: true,
-  },
-  // Use Rolldown-specific options to control code-splitting behavior
-  rolldownOptions: {
-    output: {
-      codeSplitting: true,
-    },
+    // REMOVED: force: true
+    // REMOVED: recharts, viem, wagmi (let Vite discover these naturally)
   },
 });
-

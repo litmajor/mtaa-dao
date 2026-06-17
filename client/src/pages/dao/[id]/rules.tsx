@@ -26,7 +26,7 @@ export default function RulesDashboard() {
     setLoading(true);
     setError('');
     try {
-      const data = await authClient.get(`/api/daos/${daoId}/rules`);
+      const data = await authClient.get(`/api/v1/daos/${daoId}/rules`);
       setRules(data.data || data.rules || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load rules');

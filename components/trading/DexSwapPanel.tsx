@@ -9,6 +9,7 @@ import React, { useState } from 'react';
 import SimulationResultModal from '../SimulationResultModal';
 import { useSimulationPreview } from '../../hooks/useSimulationPreview';
 import { SimulationResult } from '../../server/services/simulationFramework';
+import { SwapEngine, SwapAnalysis } from './SwapEngine';
 
 interface SwapFormData {
   tokenFrom: string;
@@ -43,7 +44,7 @@ export const DexSwapPanel: React.FC<DexSwapPanelProps> = ({
   });
 
   const [exchangeRate, setExchangeRate] = useState<number>(1);
-  const [expectedAmountOut, setExpectedAmountOut] = useState<number>(0);
+  const [analysis, setAnalysis] = useState<SwapAnalysis | null>(null);
 
   // Simulation state
   const {
@@ -60,20 +61,18 @@ export const DexSwapPanel: React.FC<DexSwapPanelProps> = ({
     },
   });
 
-  // Calculate expected output with slippage
-  const calculateExpectedOutput = () => {
-    // Simple estimation (would fetch real rates from DEX API)
-    const baseOutput = formData.amountIn * exchangeRate;
-    const slippageAmount = baseOutput * (formData.slippageTolerance / 100);
-    const finalOutput = baseOutput - slippageAmount;
-
-    setExpectedAmountOut(finalOutput);
-    setFormData({
-      ...formData,
-      minAmountOut: finalOutput,
-    });
-
-    return finalOutput;
+  // Use SwapEngine to compute quote and analysis
+  const computeQuote = async () => {
+    const req = {
+      tokenIn: formData.tokenFrom,
+      tokenOut: formData.tokenTo,
+      amountIn: formData.amountIn,
+      slippageTolerance: formData.slippageTolerance,
+    };
+    const a = await SwapEngine.analyzeLive(req).catch(() => SwapEngine.analyze(req));
+    setAnalysis(a);
+    setFormData({ ...formData, minAmountOut: a.minimumOut });
+    return a;
   };
 
   // Handle preview button click
@@ -90,18 +89,18 @@ export const DexSwapPanel: React.FC<DexSwapPanelProps> = ({
       return;
     }
 
-    // Build token path
-    const tokenPath = [formData.tokenFrom, formData.tokenTo];
+    const a = await computeQuote();
 
-    // Run simulation
+    // Run simulation with quote
     await runSimulation(
       'DEX_SWAP',
       {
         userId,
-        tokenPath,
+        tokenPath: a.route,
         amountIn: formData.amountIn,
         slippageTolerance: formData.slippageTolerance,
-        minAmountOut: formData.minAmountOut,
+        minAmountOut: a.minimumOut,
+        quote: a,
       },
       userId
     );
@@ -115,10 +114,11 @@ export const DexSwapPanel: React.FC<DexSwapPanelProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId,
-          tokenPath: [formData.tokenFrom, formData.tokenTo],
+          tokenPath: analysis?.route || [formData.tokenFrom, formData.tokenTo],
           amountIn: formData.amountIn,
           minAmountOut: formData.minAmountOut,
           slippageTolerance: formData.slippageTolerance,
+          quote: analysis,
         }),
       });
 
@@ -133,15 +133,15 @@ export const DexSwapPanel: React.FC<DexSwapPanelProps> = ({
     }
   };
 
-  const priceImpact = ((formData.amountIn * exchangeRate - expectedAmountOut) / (formData.amountIn * exchangeRate)) * 100;
+  const priceImpact = analysis ? analysis.priceImpact : 0;
 
   return (
     <div className="dex-swap-panel">
       <div className="panel-header">
         <h3>DEX Swap</h3>
         <div className="header-info">
-          <span className="exchange-rate">
-            1 {formData.tokenFrom} = {exchangeRate.toFixed(6)} {formData.tokenTo}
+            <span className="exchange-rate">
+            1 {formData.tokenFrom} = {(analysis?.executionPrice ?? 0).toFixed(6)} {formData.tokenTo}
           </span>
         </div>
       </div>
@@ -172,7 +172,6 @@ export const DexSwapPanel: React.FC<DexSwapPanelProps> = ({
                 const amount = parseFloat(e.target.value) || 0;
                 setFormData({ ...formData, amountIn: amount });
               }}
-              onBlur={calculateExpectedOutput}
             />
           </div>
         </div>
@@ -216,7 +215,7 @@ export const DexSwapPanel: React.FC<DexSwapPanelProps> = ({
               step="0.0001"
               min="0"
               placeholder="0.0000"
-              value={expectedAmountOut}
+              value={(analysis?.expectedOut ?? 0)}
               readOnly
               className="output-field"
             />
@@ -238,7 +237,6 @@ export const DexSwapPanel: React.FC<DexSwapPanelProps> = ({
             onChange={(e) =>
               setFormData({ ...formData, slippageTolerance: parseFloat(e.target.value) })
             }
-            onChangeCapture={calculateExpectedOutput}
           />
           <div className="slippage-presets">
             <button
@@ -270,19 +268,41 @@ export const DexSwapPanel: React.FC<DexSwapPanelProps> = ({
           <div className="detail">
             <span>Price Impact</span>
             <span className={`value ${priceImpact > 1 ? 'warning' : ''}`}>
-              {priceImpact.toFixed(3)}%
+              {(priceImpact).toFixed(3)}%
             </span>
           </div>
 
           <div className="detail">
             <span>Min Amount Out</span>
-            <span className="value">{formData.minAmountOut.toFixed(6)} {formData.tokenTo}</span>
+            <span className="value">{(analysis?.minimumOut ?? formData.minAmountOut).toFixed(6)} {formData.tokenTo}</span>
           </div>
 
           <div className="detail">
             <span>Expected Fee</span>
-            <span className="value">0.25%</span>
+            <span className="value">{(analysis?.feePercent ?? 0).toFixed(2)}%</span>
           </div>
+
+          {analysis?.warnings?.length ? (
+            <div className="warning-message">
+              <span>⚠ {analysis.warnings.join(' — ')}</span>
+            </div>
+          ) : null}
+
+          {analysis && (analysis as any).hopDetails ? (
+            <div className="route-details">
+              <h5>Route</h5>
+              <ul>
+                {((analysis as any).hopDetails as any[]).map((h, idx) => (
+                  <li key={idx}>
+                    {h.dex}
+                    {h.feePercent ? (
+                      <span className="hop-fee"> — fee: {Number(h.feePercent).toFixed(3)}%</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
 
         {/* Error Display */}

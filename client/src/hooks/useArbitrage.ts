@@ -33,7 +33,7 @@ export function useArbitrageOpportunities(
     queryFn: async () => {
       const exchangeParam = exchanges.join(',');
       const response = await fetch(
-        `/api/exchanges/arbitrage/opportunities?symbol=${symbol}&exchanges=${exchangeParam}&minProfitPercent=${minProfitPercent}`
+        `/api/v1/yuki/exchanges/arbitrage/opportunities?symbol=${symbol}&exchanges=${exchangeParam}&minProfitPercent=${minProfitPercent}`
       );
 
       if (!response.ok) {
@@ -61,7 +61,7 @@ export function useBestArbitrage(
   return useQuery({
     queryKey: ['arbitrage:best', symbol || '', exchangeParam] as const,
     queryFn: async () => {
-      let url = `/api/exchanges/arbitrage/best?symbol=${symbol}`;
+      let url = `/api/v1/yuki/exchanges/arbitrage/best?symbol=${symbol}`;
       if (exchangeParam) {
         url += `&exchanges=${exchangeParam}`;
       }
@@ -88,7 +88,7 @@ export async function calculateArbitrageProfit(
   opportunity: ArbitrageOpportunity,
   tradeAmount: number = 1000
 ): Promise<TradeProfitCalculation> {
-  const response = await fetch('/api/exchanges/arbitrage/calculate', {
+  const response = await fetch('/api/v1/yuki/exchanges/arbitrage/calculate', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'

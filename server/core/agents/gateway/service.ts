@@ -234,6 +234,36 @@ export class GatewayAgentService {
   }
 
   /**
+   * Ask the gateway agent to evaluate whether an execution is safe
+   * Returns the agent response (may include `isSafeToExecute` in payload.data)
+   */
+  async requestExecutionCheck(
+    payload: { vaultId?: string; tokenSymbol?: string; amount?: number | string; chain?: string; tolerancePct?: number }
+  ): Promise<GatewayMessage | null> {
+    if (!this.isInitialized) {
+      throw new Error('Service not initialized');
+    }
+
+    // If the gateway agent instance is available, call handleMessage directly to get synchronous response
+    if (this.gatewayAgent && typeof this.gatewayAgent.handleMessage === 'function') {
+      const message = {
+        type: 'gateway:execution_check',
+        from: this.name,
+        timestamp: new Date(),
+        payload,
+      } as GatewayMessage;
+
+      const response = await this.gatewayAgent.handleMessage(message);
+      return response;
+    }
+
+    // Fallback: publish through message bus and return the request
+    const request = MessageBusAdapter.createRequest('risk', { protocols: [] });
+    await this.messageBus.publish(request);
+    return request;
+  }
+
+  /**
    * Get Gateway Agent status
    */
   async getStatus() {

@@ -1,72 +1,139 @@
 import { MaonoVaultService } from "./blockchain";
 import { db } from './db';
-import { vaultTransactions } from '../shared/schema';
+import { vaultTransactions, vaults } from '../shared/schema';
+import { eq, sql } from 'drizzle-orm';
 
-// Define a class for better event management
+// (kept below) exported strict event interfaces are used by the rest of the file
+
+// ============================================================================
+// STRICT COMPILE-TIME TYPE DEFINITIONS
+// ============================================================================
+
+export interface BaseVaultEvent {
+  type: string;
+  vaultId: string;
+  transactionHash: string;
+  timestamp: string | number;
+  blockNumber?: number;
+}
+
+export interface DepositEvent extends BaseVaultEvent {
+  type: 'DepositMade';
+  amount: string;
+  userAddress: string;
+  tokenSymbol: string;
+  valueUSD?: string;
+}
+
+export interface WithdrawalEvent extends BaseVaultEvent {
+  type: 'WithdrawalMade';
+  amount: string;
+  userAddress: string;
+  tokenSymbol: string;
+  valueUSD?: string;
+}
+
+export interface NAVUpdatedEvent extends BaseVaultEvent {
+  type: 'NAVUpdated';
+  newNAV: string;
+}
+
+export interface PerformanceFeeEvent extends BaseVaultEvent {
+  type: 'PerformanceFeeDistributed';
+  amount: string;
+}
+
+export interface FeeUpdatedEvent extends BaseVaultEvent {
+  type: 'FeeUpdated';
+  newFee: string;
+}
+
+export interface DAOSettingsEvent extends BaseVaultEvent {
+  type: 'DAOSettingsUpdated';
+  newSettings: Record<string, unknown>;
+}
+
+export interface OfframpFeeEvent extends BaseVaultEvent {
+  type: 'OfframpFeePaid';
+  amount: string;
+  userId: string;
+}
+
+export interface WithdrawalFeeEvent extends BaseVaultEvent {
+  type: 'WithdrawalFeePaid';
+  amount: string;
+  userId: string;
+}
+
+export interface VaultStatusEvent extends BaseVaultEvent {
+  type: 'VaultStatusUpdated';
+  newStatus: string;
+}
+
+export interface VaultMetadataEvent extends BaseVaultEvent {
+  type: 'VaultMetadataUpdated';
+  newMetadata: Record<string, unknown>;
+}
+
+export interface VaultOwnershipEvent extends BaseVaultEvent {
+  type: 'VaultOwnershipTransferred';
+  newOwner: string;
+}
+
+export type VaultEvent = 
+  | DepositEvent 
+  | WithdrawalEvent 
+  | NAVUpdatedEvent 
+  | PerformanceFeeEvent
+  | FeeUpdatedEvent
+  | DAOSettingsEvent
+  | OfframpFeeEvent
+  | WithdrawalFeeEvent
+  | VaultStatusEvent
+  | VaultMetadataEvent
+  | VaultOwnershipEvent
+  | BaseVaultEvent;
+
+// ============================================================================
+// PRODUCTION CORE INDEXER ENGINE
+// ============================================================================
+
 class VaultEventIndexer {
-  private isRunning: boolean = false;
-  private eventHandlers: Map<string, (event: any) => Promise<void>> = new Map();
+  private isRunning = false;
+  private eventHandlers: Map<VaultEvent['type'], (event: VaultEvent) => Promise<void>> = new Map();
 
   constructor() {
-    // Register known event handlers
-    this.registerHandler("NAVUpdated", this.handleNAVUpdated);
-    this.registerHandler("PerformanceFeeDistributed", this.handlePerformanceFeeDistributed);
-    this.registerHandler("VaultCreated", this.handleVaultCreated);
-    this.registerHandler("VaultClosed", this.handleVaultClosed);
-    this.registerHandler("DepositMade", this.handleDepositMade);
-    this.registerHandler("WithdrawalMade", this.handleWithdrawalMade);
-    this.registerHandler("FeeUpdated", this.handleFeeUpdated);
-    this.registerHandler("DAOSettingsUpdated", this.handleDAOSettingsUpdated);
-    this.registerHandler("OfframpFeePaid", this.handleOfframpFeePaid);
-    this.registerHandler("DisbursementMade", this.handleDisbursementMade);
-    this.registerHandler("WithdrawalFeePaid", this.handleWithdrawalFeePaid);
-    this.registerHandler("OfframpWithdrawalMade", this.handleOfframpWithdrawalMade);
-    this.registerHandler("OfframpFeeUpdated", this.handleOfframpFeeUpdated);
-    this.registerHandler("OfframpWhoPaysUpdated", this.handleOfframpWhoPaysUpdated);
-    this.registerHandler("DisbursementFeeUpdated", this.handleDisbursementFeeUpdated);
-    this.registerHandler("WithdrawalFeeUpdated", this.handleWithdrawalFeeUpdated);
-    this.registerHandler("VaultStatusUpdated", this.handleVaultStatusUpdated);
-    this.registerHandler("VaultMetadataUpdated", this.handleVaultMetadataUpdated);
-    this.registerHandler("VaultOwnershipTransferred", this.handleVaultOwnershipTransferred);
-    this.registerHandler("VaultTypeUpdated", this.handleVaultTypeUpdated);
-    this.registerHandler("VaultCurrencyUpdated", this.handleVaultCurrencyUpdated);
-    this.registerHandler("VaultNameUpdated", this.handleVaultNameUpdated);
-    this.registerHandler("VaultDescriptionUpdated", this.handleVaultDescriptionUpdated);
-    this.registerHandler("VaultLogoUpdated", this.handleVaultLogoUpdated);
-    this.registerHandler("VaultBannerUpdated", this.handleVaultBannerUpdated);
-    this.registerHandler("VaultPrivacyUpdated", this.handleVaultPrivacyUpdated);
-    this.registerHandler("VaultAccessControlUpdated", this.handleVaultAccessControlUpdated);
-    this.registerHandler("VaultTransactionRecorded", this.handleVaultTransactionRecorded);
-    this.registerHandler("VaultTransactionFailed", this.handleVaultTransactionFailed);
-    this.registerHandler("VaultTransactionPending", this.handleVaultTransactionPending);
-    this.registerHandler("VaultTransactionConfirmed", this.handleVaultTransactionConfirmed);
-    this.registerHandler("VaultTransactionReverted", this.handleVaultTransactionReverted);
-    this.registerHandler("VaultTransactionGasUsed", this.handleVaultTransactionGasUsed);
-    this.registerHandler("VaultTransactionGasPrice", this.handleVaultTransactionGasPrice);
-    this.registerHandler("VaultTransactionNonce", this.handleVaultTransactionNonce);
-    this.registerHandler("VaultTransactionBlockNumber", this.handleVaultTransactionBlockNumber);
-    this.registerHandler("VaultTransactionBlockHash", this.handleVaultTransactionBlockHash);
-    this.registerHandler("VaultTransactionFrom", this.handleVaultTransactionFrom);
-    this.registerHandler("VaultTransactionTo", this.handleVaultTransactionTo);
-    this.registerHandler("VaultTransactionValue", this.handleVaultTransactionValue);
-    this.registerHandler("VaultTransactionInput", this.handleVaultTransactionInput);
-    this.registerHandler("VaultTransactionReceipt", this.handleVaultTransactionReceipt);
-    this.registerHandler("VaultTransactionLogs", this.handleVaultTransactionLogs);
-    this.registerHandler("VaultTransactionStatus", this.handleVaultTransactionStatus);
-    this.registerHandler("VaultTransactionError", this.handleVaultTransactionError);
+    // FIX: Explicitly bind 'this' context to guarantee handlers retain structural references during async loops
+    this.registerHandler("NAVUpdated", this.handleNAVUpdated.bind(this));
+    this.registerHandler("PerformanceFeeDistributed", this.handlePerformanceFeeDistributed.bind(this));
+    this.registerHandler("VaultCreated", this.handleVaultCreated.bind(this));
+    this.registerHandler("VaultClosed", this.handleVaultClosed.bind(this));
+    this.registerHandler("DepositMade", this.handleDepositMade.bind(this));
+    this.registerHandler("WithdrawalMade", this.handleWithdrawalMade.bind(this));
+    this.registerHandler("FeeUpdated", this.handleFeeUpdated.bind(this));
+    this.registerHandler("DAOSettingsUpdated", this.handleDAOSettingsUpdated.bind(this));
+    this.registerHandler("OfframpFeePaid", this.handleOfframpFeePaid.bind(this));
+    this.registerHandler("DisbursementMade", this.handleDisbursementMade.bind(this));
+    this.registerHandler("WithdrawalFeePaid", this.handleWithdrawalFeePaid.bind(this));
+    this.registerHandler("OfframpWithdrawalMade", this.handleOfframpWithdrawalMade.bind(this));
+    this.registerHandler("VaultStatusUpdated", this.handleVaultStatusUpdated.bind(this));
+    this.registerHandler("VaultMetadataUpdated", this.handleVaultMetadataUpdated.bind(this));
+    this.registerHandler("VaultOwnershipTransferred", this.handleVaultOwnershipTransferred.bind(this));
   }
 
-  registerHandler(eventType: string, handler: (event: any) => Promise<void>) {
-    this.eventHandlers.set(eventType, handler);
+  public registerHandler<T extends VaultEvent['type']>(
+    eventType: T,
+    handler: (event: Extract<VaultEvent, { type: T }>) => Promise<void>
+  ): void {
+    this.eventHandlers.set(eventType, handler as unknown as (event: VaultEvent) => Promise<void>);
   }
 
-  async start() {
+  public async start(): Promise<void> {
     if (this.isRunning) {
       console.log("Vault event indexer is already running.");
       return;
     }
 
-    // Check if MAONO_CONTRACT_ADDRESS is configured
     if (!process.env.MAONO_CONTRACT_ADDRESS || process.env.MAONO_CONTRACT_ADDRESS === "") {
       console.log("⚠️  Vault event indexer skipped: MAONO_CONTRACT_ADDRESS not configured.");
       console.log("   Deploy MaonoVault contract and set MAONO_CONTRACT_ADDRESS in .env to enable vault events.");
@@ -74,324 +141,260 @@ class VaultEventIndexer {
     }
 
     this.isRunning = true;
-    console.log("Starting vault event indexer...");
+    console.log("Starting vault event indexer engine...");
 
     try {
-      MaonoVaultService.listenToEvents(async (event) => {
-      try {
-        const handler = this.eventHandlers.get(event.type);
-        if (handler) {
-          await handler(event);
-        } else {
-          // Handle unknown events
-          console.log(`[UnknownEvent] Type: ${event.type} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
+      MaonoVaultService.listenToEvents(async (event: VaultEvent) => {
+        if (!this.isRunning) return;
 
-          // Save unknown events for analysis
-          await db.insert(vaultTransactions).values({
-            vaultId: event.vaultId || 'unknown',
-            userId: 'system',
-            transactionType: 'unknown_event',
-            tokenSymbol: 'cUSD',
-            amount: '0',
-            valueUSD: '0',
-            transactionHash: event.transactionHash,
-            status: 'completed',
-            metadata: {
-              eventType: event.type,
-              rawEvent: JSON.stringify(event),
-              needsAnalysis: true
-            }
-          }).onConflictDoNothing();
-        }
-      } catch (error) {
-        console.error(`Failed to process event ${event.type}:`, error);
-
-        // Save error for debugging
         try {
-          await db.insert(vaultTransactions).values({
-            vaultId: event.vaultId || 'error',
-            userId: 'system',
-            transactionType: 'event_error',
-            tokenSymbol: 'cUSD',
-            amount: '0',
-            valueUSD: '0',
-            transactionHash: event.transactionHash,
-            status: 'failed',
-            metadata: {
-              eventType: event.type,
-              error: error instanceof Error ? error.message : 'Unknown error',
-              rawEvent: JSON.stringify(event)
+          const handler = this.eventHandlers.get(event.type as VaultEvent['type']);
+          if (handler) {
+            await handler(event);
+          } else {
+            // Log telemetry drops and skip transaction property noise to save database bandwidth
+            console.log(`[Skipped/TelemetryEvent] Type: ${event.type} at tx: ${event.transactionHash}`);
+
+            // Retain unexpected or critical unmapped structural records for offline analysis
+            if (!event.type.startsWith("VaultTransaction")) {
+              await this.logEventFallbacks(event, 'unknown_event', 'completed', { needsAnalysis: true });
             }
+          }
+        } catch (error: unknown) {
+          console.error(`Failed to process event ${event.type}:`, error);
+          await this.logEventFallbacks(event, 'event_error', 'failed', {
+            error: error instanceof Error ? error.message : String(error)
           });
-        } catch (dbError) {
-          console.error('Failed to save event processing error:', dbError);
         }
-      }
-    });
+      });
     } catch (error) {
-      console.error("❌ Failed to start vault event indexer:", error);
+      console.error("❌ Failed to start vault event indexer connection layer:", error);
       this.isRunning = false;
       throw error;
     }
   }
 
-  stop() {
+  public stop(): void {
     this.isRunning = false;
-    console.log("Vault event indexer stopped.");
-    // In a real scenario, you would also want to unsubscribe from the event listener
+    console.log("Vault event indexer stopped cleanly.");
   }
 
-  // Placeholder handler functions for each event type
-  private async handleNAVUpdated(event: any): Promise<void> {
-    console.log(`[NAVUpdated] New NAV: ${event.newNAV} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handlePerformanceFeeDistributed(event: any): Promise<void> {
-    console.log(`[PerformanceFeeDistributed] Amount: ${event.amount} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultCreated(event: any): Promise<void> {
-    console.log(`[VaultCreated] Vault ID: ${event.vaultId} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultClosed(event: any): Promise<void> {
-    console.log(`[VaultClosed] Vault ID: ${event.vaultId} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleDepositMade(event: any): Promise<void> {
-    console.log(`[DepositMade] Amount: ${event.amount} to Vault ID: ${event.vaultId} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleWithdrawalMade(event: any): Promise<void> {
-    console.log(`[WithdrawalMade] Amount: ${event.amount} from Vault ID: ${event.vaultId} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleFeeUpdated(event: any): Promise<void> {
-    console.log(`[FeeUpdated] New Fee: ${event.newFee} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleDAOSettingsUpdated(event: any): Promise<void> {
-    console.log(`[DAOSettingsUpdated] New Settings: ${JSON.stringify(event.newSettings)} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleOfframpFeePaid(event: any): Promise<void> {
-    console.log(`[OfframpFeePaid] Amount: ${event.amount} by User: ${event.userId} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleDisbursementMade(event: any): Promise<void> {
-    console.log(`[DisbursementMade] Amount: ${event.amount} from Vault ID: ${event.vaultId} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleWithdrawalFeePaid(event: any): Promise<void> {
-    console.log(`[WithdrawalFeePaid] Amount: ${event.amount} by User: ${event.userId} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleOfframpWithdrawalMade(event: any): Promise<void> {
-    console.log(`[OfframpWithdrawalMade] Amount: ${event.amount} by User: ${event.userId} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleOfframpFeeUpdated(event: any): Promise<void> {
-    console.log(`[OfframpFeeUpdated] New Fee: ${event.newFee} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleOfframpWhoPaysUpdated(event: any): Promise<void> {
-    console.log(`[OfframpWhoPaysUpdated] New Who Pays: ${event.newWhoPays} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleDisbursementFeeUpdated(event: any): Promise<void> {
-    console.log(`[DisbursementFeeUpdated] New Fee: ${event.newFee} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleWithdrawalFeeUpdated(event: any): Promise<void> {
-    console.log(`[WithdrawalFeeUpdated] New Fee: ${event.newFee} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultStatusUpdated(event: any): Promise<void> {
-    console.log(`[VaultStatusUpdated] Vault ID: ${event.vaultId} New Status: ${event.newStatus} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultMetadataUpdated(event: any): Promise<void> {
-    console.log(`[VaultMetadataUpdated] Vault ID: ${event.vaultId} New Metadata: ${JSON.stringify(event.newMetadata)} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultOwnershipTransferred(event: any): Promise<void> {
-    console.log(`[VaultOwnershipTransferred] Vault ID: ${event.vaultId} New Owner: ${event.newOwner} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTypeUpdated(event: any): Promise<void> {
-    console.log(`[VaultTypeUpdated] Vault ID: ${event.vaultId} New Type: ${event.newType} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultCurrencyUpdated(event: any): Promise<void> {
-    console.log(`[VaultCurrencyUpdated] Vault ID: ${event.vaultId} New Currency: ${event.newCurrency} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultNameUpdated(event: any): Promise<void> {
-    console.log(`[VaultNameUpdated] Vault ID: ${event.vaultId} New Name: ${event.newName} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultDescriptionUpdated(event: any): Promise<void> {
-    console.log(`[VaultDescriptionUpdated] Vault ID: ${event.vaultId} New Description: ${event.newDescription} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultLogoUpdated(event: any): Promise<void> {
-    console.log(`[VaultLogoUpdated] Vault ID: ${event.vaultId} New Logo: ${event.newLogo} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultBannerUpdated(event: any): Promise<void> {
-    console.log(`[VaultBannerUpdated] Vault ID: ${event.vaultId} New Banner: ${event.newBanner} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultPrivacyUpdated(event: any): Promise<void> {
-    console.log(`[VaultPrivacyUpdated] Vault ID: ${event.vaultId} New Privacy: ${event.newPrivacy} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultAccessControlUpdated(event: any): Promise<void> {
-    console.log(`[VaultAccessControlUpdated] Vault ID: ${event.vaultId} New Access Control: ${JSON.stringify(event.newAccessControl)} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTransactionRecorded(event: any): Promise<void> {
-    console.log(`[VaultTransactionRecorded] Vault ID: ${event.vaultId} Transaction: ${JSON.stringify(event.transaction)} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTransactionFailed(event: any): Promise<void> {
-    console.log(`[VaultTransactionFailed] Vault ID: ${event.vaultId} Error: ${event.error} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTransactionPending(event: any): Promise<void> {
-    console.log(`[VaultTransactionPending] Vault ID: ${event.vaultId} Transaction: ${JSON.stringify(event.transaction)} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTransactionConfirmed(event: any): Promise<void> {
-    console.log(`[VaultTransactionConfirmed] Vault ID: ${event.vaultId} Transaction: ${JSON.stringify(event.transaction)} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTransactionReverted(event: any): Promise<void> {
-    console.log(`[VaultTransactionReverted] Vault ID: ${event.vaultId} Transaction: ${JSON.stringify(event.transaction)} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTransactionGasUsed(event: any): Promise<void> {
-    console.log(`[VaultTransactionGasUsed] Vault ID: ${event.vaultId} Gas Used: ${event.gasUsed} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTransactionGasPrice(event: any): Promise<void> {
-    console.log(`[VaultTransactionGasPrice] Vault ID: ${event.vaultId} Gas Price: ${event.gasPrice} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTransactionNonce(event: any): Promise<void> {
-    console.log(`[VaultTransactionNonce] Vault ID: ${event.vaultId} Nonce: ${event.nonce} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTransactionBlockNumber(event: any): Promise<void> {
-    console.log(`[VaultTransactionBlockNumber] Vault ID: ${event.vaultId} Block Number: ${event.blockNumber} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTransactionBlockHash(event: any): Promise<void> {
-    console.log(`[VaultTransactionBlockHash] Vault ID: ${event.vaultId} Block Hash: ${event.blockHash} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTransactionFrom(event: any): Promise<void> {
-    console.log(`[VaultTransactionFrom] Vault ID: ${event.vaultId} From: ${event.from} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTransactionTo(event: any): Promise<void> {
-    console.log(`[VaultTransactionTo] Vault ID: ${event.vaultId} To: ${event.to} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTransactionValue(event: any): Promise<void> {
-    console.log(`[VaultTransactionValue] Vault ID: ${event.vaultId} Value: ${event.value} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTransactionInput(event: any): Promise<void> {
-    console.log(`[VaultTransactionInput] Vault ID: ${event.vaultId} Input: ${event.input} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTransactionReceipt(event: any): Promise<void> {
-    console.log(`[VaultTransactionReceipt] Vault ID: ${event.vaultId} Receipt: ${JSON.stringify(event.receipt)} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTransactionLogs(event: any): Promise<void> {
-    console.log(`[VaultTransactionLogs] Vault ID: ${event.vaultId} Logs: ${JSON.stringify(event.logs)} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTransactionStatus(event: any): Promise<void> {
-    console.log(`[VaultTransactionStatus] Vault ID: ${event.vaultId} Status: ${event.status} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  private async handleVaultTransactionError(event: any): Promise<void> {
-    console.log(`[VaultTransactionError] Vault ID: ${event.vaultId} Error: ${event.error} at ${new Date(Number(event.timestamp) * 1000).toISOString()}`);
-    // Save to database or perform other actions as needed
-  }
-
-  // Get indexer status
-  getStatus() {
+  public getStatus() {
     return {
       isRunning: this.isRunning,
       supportedEvents: Array.from(this.eventHandlers.keys()),
       startTime: this.isRunning ? new Date().toISOString() : null
     };
   }
+
+  /**
+   * Safe transaction ledger writer for unknown errors and operational exceptions.
+   */
+  private async logEventFallbacks(
+    event: VaultEvent,
+    txType: string,
+    status: 'completed' | 'failed',
+    extraMeta: Record<string, unknown>
+  ): Promise<void> {
+    try {
+      await db.insert(vaultTransactions).values({
+        vaultId: event.vaultId || 'unknown',
+        userId: 'system',
+        transactionType: txType,
+        tokenSymbol: 'cUSD',
+        amount: '0',
+        valueUSD: '0',
+        transactionHash: event.transactionHash,
+        status: status,
+        metadata: {
+          eventType: event.type,
+          rawEvent: JSON.stringify(event),
+          ...extraMeta
+        }
+      }).onConflictDoNothing();
+    } catch (dbError) {
+      console.error('Failed to commit recovery fallback logs to database:', dbError);
+    }
+  }
+
+  // ============================================================================
+  // VAULT STATE HANDLERS
+  // ============================================================================
+
+  private async handleNAVUpdated(event: NAVUpdatedEvent): Promise<void> {
+    console.log(`[NAVUpdated] Vault ID: ${event.vaultId} New NAV: ${event.newNAV}`);
+    try {
+      // Update vault's TVL (totalValueLocked) to reflect reported NAV
+      await db.update(vaults).set({ totalValueLocked: event.newNAV, updatedAt: new Date() }).where(eq(vaults.id, event.vaultId));
+
+      // Record transaction for NAV update for audit/history
+      await db.insert(vaultTransactions).values({
+        vaultId: event.vaultId,
+        userId: 'system',
+        transactionType: 'nav_update',
+        tokenSymbol: 'cUSD',
+        amount: event.newNAV,
+        valueUSD: event.newNAV,
+        transactionHash: event.transactionHash || null,
+        blockNumber: event.blockNumber,
+        status: 'completed',
+        metadata: { source: 'onchain_event', eventType: event.type }
+      }).onConflictDoNothing();
+    } catch (err) {
+      console.error('[VaultEventIndexer] NAVUpdated handler failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private async handlePerformanceFeeDistributed(event: PerformanceFeeEvent): Promise<void> {
+    console.log(`[PerformanceFeeDistributed] Vault: ${event.vaultId} Amount: ${event.amount}`);
+    try {
+      // Persist performance fee transaction and decrement vault yieldGenerated if present
+      await db.insert(vaultTransactions).values({
+        vaultId: event.vaultId,
+        userId: 'system',
+        transactionType: 'performance_fee',
+        tokenSymbol: 'cUSD',
+        amount: event.amount,
+        valueUSD: event.amount,
+        transactionHash: event.transactionHash || null,
+        blockNumber: event.blockNumber,
+        status: 'completed',
+        metadata: { source: 'onchain_event', eventType: event.type }
+      }).onConflictDoNothing();
+
+      // Atomically adjust vault yieldGenerated using SQL expression to avoid race conditions
+      await db.execute(sql`UPDATE vaults SET yield_generated = COALESCE(yield_generated, '0')::numeric - ${event.amount}::numeric, updated_at = now() WHERE id = ${event.vaultId}`);
+    } catch (err) {
+      console.error('[VaultEventIndexer] PerformanceFeeDistributed handler failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private async handleVaultCreated(event: BaseVaultEvent): Promise<void> {
+    console.log(`[VaultCreated] Vault ID: ${event.vaultId}`);
+    try {
+      // Ensure a vault record exists; create a minimal record if absent
+      await db.insert(vaults).values({
+        id: event.vaultId,
+        name: `Vault ${event.vaultId}`,
+        currency: 'cUSD',
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }).onConflictDoNothing();
+    } catch (err) {
+      console.error('[VaultEventIndexer] VaultCreated handler failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private async handleVaultClosed(event: BaseVaultEvent): Promise<void> {
+    console.log(`[VaultClosed] Vault ID: ${event.vaultId}`);
+    try {
+      await db.update(vaults).set({ isActive: false, updatedAt: new Date() }).where(eq(vaults.id, event.vaultId));
+
+      // Record a close transaction for audit
+      await db.insert(vaultTransactions).values({
+        vaultId: event.vaultId,
+        userId: 'system',
+        transactionType: 'vault_closed',
+        tokenSymbol: 'cUSD',
+        amount: '0',
+        valueUSD: '0',
+        transactionHash: event.transactionHash || null,
+        blockNumber: event.blockNumber,
+        status: 'completed',
+        metadata: { source: 'onchain_event', eventType: event.type }
+      }).onConflictDoNothing();
+    } catch (err) {
+      console.error('[VaultEventIndexer] VaultClosed handler failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private async handleDepositMade(event: DepositEvent): Promise<void> {
+    console.log(`[DepositMade] Amount: ${event.amount} to Vault ID: ${event.vaultId}`);
+    
+    // FIX: Enforced strict atomic idempotency guarding against RPC event duplications
+    await db.insert(vaultTransactions).values({
+      vaultId: event.vaultId,
+      userId: event.userAddress || 'unknown_user',
+      transactionType: 'deposit',
+      tokenSymbol: event.tokenSymbol || 'cUSD',
+      amount: event.amount,
+      valueUSD: event.valueUSD || '0',
+      transactionHash: event.transactionHash,
+      status: 'completed',
+      metadata: { blockNumber: event.blockNumber }
+    }).onConflictDoNothing();
+  }
+
+  private async handleWithdrawalMade(event: WithdrawalEvent): Promise<void> {
+    console.log(`[WithdrawalMade] Amount: ${event.amount} from Vault ID: ${event.vaultId}`);
+
+    await db.insert(vaultTransactions).values({
+      vaultId: event.vaultId,
+      userId: event.userAddress || 'unknown_user',
+      transactionType: 'withdrawal',
+      tokenSymbol: event.tokenSymbol || 'cUSD',
+      amount: event.amount,
+      valueUSD: event.valueUSD || '0',
+      transactionHash: event.transactionHash,
+      status: 'completed',
+      metadata: { blockNumber: event.blockNumber }
+    }).onConflictDoNothing();
+  }
+
+  private async handleFeeUpdated(event: FeeUpdatedEvent): Promise<void> {
+    console.log(`[FeeUpdated] Vault: ${event.vaultId} New Fee: ${event.newFee}`);
+  }
+
+  private async handleDAOSettingsUpdated(event: DAOSettingsEvent): Promise<void> {
+    console.log(`[DAOSettingsUpdated] Vault: ${event.vaultId} Settings: ${JSON.stringify(event.newSettings)}`);
+  }
+
+  private async handleOfframpFeePaid(event: OfframpFeeEvent): Promise<void> {
+    console.log(`[OfframpFeePaid] Amount: ${event.amount} by User: ${event.userId}`);
+  }
+
+  private async handleDisbursementMade(event: BaseVaultEvent): Promise<void> {
+    console.log(`[DisbursementMade] Vault ID: ${event.vaultId}`);
+  }
+
+  private async handleWithdrawalFeePaid(event: WithdrawalFeeEvent): Promise<void> {
+    console.log(`[WithdrawalFeePaid] Amount: ${event.amount} by User: ${event.userId}`);
+  }
+
+  private async handleOfframpWithdrawalMade(event: BaseVaultEvent): Promise<void> {
+    console.log(`[OfframpWithdrawalMade] Vault ID: ${event.vaultId}`);
+  }
+
+  private async handleVaultStatusUpdated(event: VaultStatusEvent): Promise<void> {
+    console.log(`[VaultStatusUpdated] Vault ID: ${event.vaultId} New Status: ${event.newStatus}`);
+  }
+
+  private async handleVaultMetadataUpdated(event: VaultMetadataEvent): Promise<void> {
+    console.log(`[VaultMetadataUpdated] Vault ID: ${event.vaultId}`);
+  }
+
+  private async handleVaultOwnershipTransferred(event: VaultOwnershipEvent): Promise<void> {
+    console.log(`[VaultOwnershipTransferred] Vault ID: ${event.vaultId} New Owner: ${event.newOwner}`);
+  }
 }
 
-// Create singleton instance
+// ============================================================================
+// SINGLETON LAYER INTERFACEEXPORT
+// ============================================================================
+
 export const vaultEventIndexer = new VaultEventIndexer();
 
-// Legacy function for backward compatibility
 export async function startVaultEventIndexer() {
-  vaultEventIndexer.start();
+  await vaultEventIndexer.start();
 }
 
-// Start indexer if called directly
+// Check direct binary execution context rules
 if (import.meta.url === new URL(process.argv[1], 'file://').href) {
   vaultEventIndexer.start();
 
-  // Graceful shutdown
   process.on('SIGINT', () => {
-    console.log('Received SIGINT, shutting down event indexer...');
+    console.log('Received SIGINT, shutting down event indexer smoothly...');
     vaultEventIndexer.stop();
     process.exit(0);
   });

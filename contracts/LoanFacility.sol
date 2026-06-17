@@ -2,9 +2,9 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title LoanFacility
@@ -84,7 +84,8 @@ contract LoanFacility is ReentrancyGuard, Ownable, Pausable {
     }
     
     // Constructor
-    constructor(address _stablecoin, address _elderCouncil) {
+    constructor(address _stablecoin, address _elderCouncil) Ownable(msg.sender) {
+        // Ownable constructor sets owner to deployer (msg.sender)
         stablecoin = IERC20(_stablecoin);
         elderCouncil = _elderCouncil;
     }

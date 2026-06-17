@@ -1,18 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { useStrategyRegistry } from '@/hooks/useStrategyRegistry';
-import { useStrategyDeployment } from '@/hooks/useStrategyDeployment';
+import useStrategyDeployment from '@/hooks/useStrategyDeployment';
 import { StrategyDeploymentWizard } from '@/components/strategies/StrategyDeploymentWizard';
+import { TwoFAVerificationModal } from '@/components/wallet/TwoFAVerificationModal';
 import { ActiveBotsList } from '@/components/strategies/ActiveBotsList';
 import AppLayout from '@/components/layout/AppLayout';
 
 type ViewMode = 'active' | 'deploy';
 
 export default function BotsPage() {
+  const [advancedMode, setAdvancedMode] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<ViewMode>('active');
   const [showWizard, setShowWizard] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [show2FAModal, setShow2FAModal] = useState(false);
+  const [pendingDeploy, setPendingDeploy] = useState<any | null>(null);
 
   const { strategies, loadStrategies } = useStrategyRegistry();
   const {
@@ -27,9 +31,38 @@ export default function BotsPage() {
 
   // Load data on mount
   useEffect(() => {
-    loadStrategies();
-    loadBots();
+    (async () => {
+      loadStrategies();
+      loadBots();
+      // Server-side auth probe: will 401 if not authenticated
+      try {
+        const res = await fetch('/api/v1/settings/advanced-mode');
+        if (res.status === 401) return window.location.replace('/login');
+        if (res.ok) {
+          const json = await res.json();
+          const adv = json?.data?.advancedMode === true;
+          setAdvancedMode(adv);
+          // persist locally for UI responsiveness
+          try { localStorage.setItem('advancedModeOptIn', adv ? '1' : '0'); } catch (e) {}
+        }
+      } catch (e) {
+        // network error — keep current behavior
+      }
+    })();
   }, []);
+
+  const toggleAdvancedMode = async () => {
+    try {
+      const enable = !advancedMode;
+      const res = await fetch('/api/v1/settings/advanced-mode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: enable }) });
+      if (res.ok) {
+        setAdvancedMode(enable);
+        try { localStorage.setItem('advancedModeOptIn', enable ? '1' : '0'); } catch (e) {}
+      }
+    } catch (e) {
+      // ignore
+    }
+  };
 
   const handleDeploy = async (
     strategyId: string,
@@ -37,16 +70,39 @@ export default function BotsPage() {
     riskControl: any,
     exchanges: string[],
     botName: string,
-    initialCapital: number
+    initialCapital: number,
+    options?: { dry_run?: boolean }
   ) => {
     try {
       setLoading(true);
       setError(null);
 
-      const strategy = strategies.find(s => s.id === strategyId);
+      const strategy = strategies.find((s: any) => s.id === strategyId);
       if (!strategy) throw new Error('Strategy not found');
 
-      await deployBot(strategy, inputs, riskControl, exchanges, botName, initialCapital);
+      // If this is a live deploy, pre-check 2FA on the client to show helpful UI
+      if (options?.dry_run === false) {
+        try {
+          const r = await fetch('/api/v1/settings/2fa/check', { method: 'POST' });
+          if (r.status === 403) {
+            const body = await r.json().catch(() => ({}));
+            // If 2FA not enabled, redirect to security settings
+            if (body?.error === '2FA not enabled') {
+              window.location.href = '/settings/security';
+              return;
+            }
+
+            // Otherwise require interactive 2FA verification flow
+            setPendingDeploy({ strategyId, inputs, riskControl, exchanges, botName, initialCapital, options });
+            setShow2FAModal(true);
+            return;
+          }
+        } catch (e) {
+          throw e;
+        }
+      }
+
+      await deployBot(strategy, inputs, riskControl, exchanges, botName, initialCapital, options);
 
       setSuccessMessage(`✓ Bot "${botName}" deployed successfully!`);
       setShowWizard(false);
@@ -56,6 +112,26 @@ export default function BotsPage() {
       setTimeout(() => setSuccessMessage(null), 5000);
 
       // Reload bots
+      await loadBots();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Deployment failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handle2FAVerified = async (_verificationToken?: string) => {
+    setShow2FAModal(false);
+    const p = pendingDeploy;
+    setPendingDeploy(null);
+    if (!p) return;
+    // Retry deploy now that 2FA was verified
+    try {
+      setLoading(true);
+      await deployBot(p.strategyId, p.inputs, p.riskControl, p.exchanges, p.botName, p.initialCapital, p.options);
+      setSuccessMessage(`✓ Bot "${p.botName}" deployed successfully!`);
+      setViewMode('active');
+      setTimeout(() => setSuccessMessage(null), 5000);
       await loadBots();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Deployment failed');
@@ -100,6 +176,7 @@ export default function BotsPage() {
   const totalPerformance = getTotalPerformance();
 
   return (
+    <>
     <AppLayout>
       <div className="space-y-6">
         {/* Header */}
@@ -119,6 +196,7 @@ export default function BotsPage() {
           >
             🚀 Deploy New Strategy
           </button>
+          <button onClick={toggleAdvancedMode} className="ml-3 px-4 py-2 bg-slate-700 text-slate-200 rounded-lg">{advancedMode ? 'Advanced: ON' : 'Advanced: OFF'}</button>
         </div>
 
         {/* Success Message */}
@@ -170,7 +248,7 @@ export default function BotsPage() {
               <h2 className="text-2xl font-bold text-white">Active Bots</h2>
               {bots.length > 0 && (
                 <div className="text-sm text-slate-400">
-                  {bots.filter(b => b.status === 'running').length} running •{' '}
+                  {bots.filter((b: any) => b.status === 'running').length} running •{' '}
                   {totalPerformance.trades} total trades
                 </div>
               )}
@@ -251,5 +329,7 @@ export default function BotsPage() {
         </div>
       </div>
     </AppLayout>
+    <TwoFAVerificationModal open={show2FAModal} onClose={() => setShow2FAModal(false)} onVerified={handle2FAVerified} method={'AUTHENTICATOR'} />
+  </>
   );
 }

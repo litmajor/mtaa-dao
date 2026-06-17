@@ -1,7 +1,10 @@
 "use client"
 
 import * as React from "react"
-import * as RechartsPrimitive from "recharts"
+
+// This file used to dynamically import `recharts` at runtime. Charts have
+// been migrated to Chart.js; keep these lightweight wrappers so consumers
+// can keep using the previous API while we migrate call-sites incrementally.
 
 import { cn } from "@/lib/utils"
 
@@ -38,14 +41,16 @@ const ChartContainer = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div"> & {
     config: ChartConfig
-    children: React.ComponentProps<
-      typeof RechartsPrimitive.ResponsiveContainer
-    >["children"]
+    children: React.ReactNode
   }
 >(({ id, className, children, config, ...props }, ref) => {
   const uniqueId = React.useId()
   const chartId = `chart-${id || uniqueId.replace(/:/g, "")}`
 
+  // Render children directly — charts now use Chart.js and consumers
+  // should provide their own responsive wrappers (or use this container
+  // for consistent sizing). We keep the same DOM structure and style
+  // hooks for backwards compatibility.
   return (
     <ChartContext.Provider value={{ config }}>
       <div
@@ -58,9 +63,9 @@ const ChartContainer = React.forwardRef<
         {...props}
       >
         <ChartStyle id={chartId} config={config} />
-        <RechartsPrimitive.ResponsiveContainer>
-          {children}
-        </RechartsPrimitive.ResponsiveContainer>
+        <div className="flex-1">
+          {children as any}
+        </div>
       </div>
     </ChartContext.Provider>
   )
@@ -100,19 +105,16 @@ ${colorConfig
   )
 }
 
-const ChartTooltip = RechartsPrimitive.Tooltip
+const ChartTooltip: React.FC<any> = (props) => {
+  // Passthrough wrapper: consumers may provide `content` (React node)
+  // or children; render whichever is provided. This keeps call-sites
+  // functional while migration completes.
+  if (props.content) return props.content
+  if (props.children) return props.children
+  return null
+}
 
-const ChartTooltipContent = React.forwardRef<
-  HTMLDivElement,
-  React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
-    React.ComponentProps<"div"> & {
-      hideLabel?: boolean
-      hideIndicator?: boolean
-      indicator?: "line" | "dot" | "dashed"
-      nameKey?: string
-      labelKey?: string
-    }
->(
+const ChartTooltipContent = React.forwardRef<any, any>(
   (
     {
       active,
@@ -185,7 +187,7 @@ const ChartTooltipContent = React.forwardRef<
       >
         {!nestLabel ? tooltipLabel : null}
         <div className="grid gap-1.5">
-          {payload.map((item, index) => {
+          {payload.map((item: any, index: number) => {
             const key = `${nameKey || item.name || item.dataKey || "value"}`
             const itemConfig = getPayloadConfigFromPayload(config, item, key)
             const indicatorColor = color || item.payload.fill || item.color
@@ -256,16 +258,13 @@ const ChartTooltipContent = React.forwardRef<
 )
 ChartTooltipContent.displayName = "ChartTooltip"
 
-const ChartLegend = RechartsPrimitive.Legend
+const ChartLegend: React.FC<any> = (props) => {
+  if (props.content) return props.content
+  if (props.children) return props.children
+  return null
+}
 
-const ChartLegendContent = React.forwardRef<
-  HTMLDivElement,
-  React.ComponentProps<"div"> &
-    Pick<RechartsPrimitive.LegendProps, "payload" | "verticalAlign"> & {
-      hideIcon?: boolean
-      nameKey?: string
-    }
->(
+const ChartLegendContent = React.forwardRef<any, any>(
   (
     { className, hideIcon = false, payload, verticalAlign = "bottom", nameKey },
     ref
@@ -285,7 +284,7 @@ const ChartLegendContent = React.forwardRef<
           className
         )}
       >
-        {payload.map((item) => {
+        {payload.map((item: any) => {
           const key = `${nameKey || item.dataKey || "value"}`
           const itemConfig = getPayloadConfigFromPayload(config, item, key)
 

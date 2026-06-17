@@ -400,9 +400,6 @@ contract LiquidationStrategy is IFlashLoanStrategy {
             // Position is liquidatable if health factor < 1.0
             // We use 0.95 threshold to avoid front-running
             bool liquidatable = healthFactor < MIN_HEALTH_FACTOR;
-            
-            emit HealthFactorChecked(user, healthFactor, liquidatable);
-            
             return liquidatable;
         } catch {
             // If we can't read health factor, assume not liquidatable
@@ -561,8 +558,11 @@ contract LiquidationStrategy is IFlashLoanStrategy {
         _;
     }
 
+    error ContractNotPaused();
+    error NoEthAccepted();
+
     modifier whenPaused() {
-        if (!paused) revert("Not paused");
+        if (!paused) revert ContractNotPaused();
         _;
     }
 
@@ -577,6 +577,6 @@ contract LiquidationStrategy is IFlashLoanStrategy {
      * @notice Reject direct ETH transfers
      */
     receive() external payable {
-        revert("No ETH accepted");
+        revert NoEthAccepted();
     }
 }

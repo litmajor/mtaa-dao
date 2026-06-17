@@ -540,6 +540,7 @@ QuickActions.displayName = 'QuickActions';
 const KycBanner = ({ data, onStartKyc }: { data?: any; onStartKyc?: () => void }) => {
   const kycStatus = data?.kycStatus || data?.kycLevel || data?.user?.kycStatus || data?.user?.kycLevel || 'not-started';
   const progress = data?.kycProgress ?? (kycStatus === 'verified' ? 100 : kycStatus === 'pending' ? 50 : 0);
+  const progressNumber = Math.round(Math.min(Math.max(progress, 0), 100));
 
   const limits = data?.transferLimits || {
     daily: data?.kycLimits?.daily || 100,
@@ -573,8 +574,8 @@ const KycBanner = ({ data, onStartKyc }: { data?: any; onStartKyc?: () => void }
               <div>Current limits: <strong className="text-white">{limits.daily.toLocaleString()} / day</strong> • <strong className="text-white">{limits.monthly.toLocaleString()} / month</strong></div>
               <div className="hidden md:block">After KYC: <strong className="text-white">{limits.verifiedDaily.toLocaleString()} / day</strong> • <strong className="text-white">{limits.verifiedMonthly.toLocaleString()} / month</strong></div>
             </div>
-            <div className="mt-2 w-full bg-slate-800 rounded-full h-2 overflow-hidden" role="progressbar" aria-label="KYC verification progress" aria-valuenow={Math.round(Math.min(Math.max(progress, 0), 100))} aria-valuemin={0} aria-valuemax={100}>
-              <div className="bg-amber-500 h-2" style={{ width: `${Math.min(Math.max(progress, 0), 100)}%` }} />
+            <div className="mt-2 w-full bg-slate-800 rounded-full h-2 overflow-hidden" role="progressbar" aria-label="KYC verification progress" aria-valuenow={progressNumber} aria-valuemin={0} aria-valuemax={100} aria-valuetext={`${progressNumber}% complete`}>
+              <div className="bg-amber-500 h-2" style={{ width: `${progressNumber}%` }} />
             </div>
             <div className="mt-2 text-xs text-slate-400">{progress}% complete • KYC speeds up larger transfers and reduces hold times</div>
           </div>
@@ -706,9 +707,9 @@ const ProposalCard = React.memo(({ proposal }: { proposal?: any }) => {
             style={{ width: `${progressPercentage}%` } as React.CSSProperties}
             role="progressbar"
             aria-label="Proposal votes"
-            aria-valuenow={Math.round(progressPercentage) as number}
-            aria-valuemin={0 as number}
-            aria-valuemax={100 as number}
+            aria-valuenow={Math.round(progressPercentage)}
+            aria-valuemin={0}
+            aria-valuemax={100}
             title={`${progressPercentage.toFixed(1)}% votes received`}
           />
         </div>
@@ -909,7 +910,7 @@ export default function OkediDashboard() {
     let mounted = true;
     (async () => {
       try {
-        const res = await fetch(`/api/daos/${firstDao.id}/payments`);
+        const res = await fetch(`/api/v1/daos/${firstDao.id}/payments`);
         if (!res.ok) return;
         const j = await res.json();
         if (mounted) setRecentPayments(j.data || []);
@@ -942,7 +943,7 @@ export default function OkediDashboard() {
                 try {
                   // call simplified create endpoint (assumes existing API)
                   setLoading(true);
-                  const res = await fetch('/api/daos/create', {
+                  const res = await fetch('/api/v1/daos/create', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name: chamaName.trim(), type: 'collective' }),
@@ -1597,12 +1598,12 @@ export default function OkediDashboard() {
                               {p.status === 'pending' && (
                                 <button onClick={async () => {
                                   try {
-                                    const res = await fetch(`/api/daos/${p.daoId}/payments/${p.id}/confirm`, { method: 'POST' });
+                                    const res = await fetch(`/api/v1/daos/${p.daoId}/payments/${p.id}/confirm`, { method: 'POST' });
                                     if (res.ok) {
                                       // refresh the payments list for the primary DAO
                                       const firstDao = (data?.myDAOs || [])[0];
                                       if (firstDao) {
-                                        const rr = await fetch(`/api/daos/${firstDao.id}/payments`);
+                                        const rr = await fetch(`/api/v1/daos/${firstDao.id}/payments`);
                                         if (rr.ok) {
                                           const jj = await rr.json();
                                           setRecentPayments(jj.data || []);
@@ -1637,7 +1638,7 @@ export default function OkediDashboard() {
                 <div className="bg-slate-700 rounded-lg p-3">
                   <p className="text-sm text-slate-300">Influence Rank</p>
                   <p className="text-2xl font-bold text-white">#{data?.governanceStats?.influenceRank || 0}</p>
-                  <p className="text-xs text-slate-400">of 1,234 users</p>
+                  <p className="text-xs text-slate-400">of users</p>
                 </div>
                 
                 {data?.activeProposals?.length > 0 && (

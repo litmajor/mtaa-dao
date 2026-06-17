@@ -54,7 +54,7 @@ async function fetchOrderBook(
 ): Promise<OrderBookMetrics> {
   try {
     const response = await fetch(
-      `/api/exchanges/orderbook?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}&limit=${limit}`
+      `/api/v1/yuki/exchanges/orderbook?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}&limit=${limit}`
     );
 
     if (!response.ok) {
@@ -101,7 +101,7 @@ async function fetchLiquidityAlerts(
 }> {
   try {
     const response = await fetch(
-      `/api/exchanges/orderbook/alerts?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}`
+      `/api/v1/yuki/exchanges/orderbook/alerts?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}`
     );
 
     if (!response.ok) {
@@ -149,7 +149,7 @@ async function fetchLiquidityProfile(
 > {
   try {
     const response = await fetch(
-      `/api/exchanges/orderbook/profile?symbol=${encodeURIComponent(symbol)}&exchanges=${encodeURIComponent(exchanges.join(','))}`
+      `/api/v1/yuki/exchanges/orderbook/profile?symbol=${encodeURIComponent(symbol)}&exchanges=${encodeURIComponent(exchanges.join(','))}`
     );
 
     if (!response.ok) {

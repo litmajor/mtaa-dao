@@ -14,28 +14,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import {
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  RadarChart,
-  Radar,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import {
   TrendingUp,
   TrendingDown,
@@ -360,21 +340,13 @@ export const VaultAnalyticsTab: React.FC<VaultAnalyticsTabProps> = ({
             <CardTitle>TVL Trend</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={tvlChartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip formatter={(value: any) => formatCurrency(value)} />
-                <Area
-                  type="monotone"
-                  dataKey="tvl"
-                  stroke={COLORS.primary}
-                  fill={COLORS.primary}
-                  fillOpacity={0.1}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            <div style={{ height: 300 }}>
+              <Chart
+                type="line"
+                data={{ labels: tvlChartData.map(d => d.date), datasets: [{ label: 'TVL', data: tvlChartData.map(d => d.tvl), borderColor: COLORS.primary, backgroundColor: 'rgba(59,130,246,0.08)', fill: true, tension: 0.2 }] }}
+                options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => formatCurrency(ctx.raw) } } }, scales: { x: { display: true }, y: { display: true } } }}
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -384,30 +356,13 @@ export const VaultAnalyticsTab: React.FC<VaultAnalyticsTabProps> = ({
             <CardTitle>APY Performance</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={apyChartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip formatter={(value: any) => formatPercent(value)} />
-                <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="apy"
-                  stroke={COLORS.primary}
-                  name="Vault APY"
-                  strokeWidth={2}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="benchmark"
-                  stroke={COLORS.secondary}
-                  name="Benchmark"
-                  strokeWidth={2}
-                  strokeDasharray="5 5"
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            <div style={{ height: 300 }}>
+              <Chart
+                type="line"
+                data={{ labels: apyChartData.map(a => a.date), datasets: [{ label: 'Vault APY', data: apyChartData.map(a => a.apy), borderColor: COLORS.primary, backgroundColor: 'rgba(59,130,246,0.06)', tension: 0.2 }, { label: 'Benchmark', data: apyChartData.map(a => a.benchmark), borderColor: COLORS.secondary, backgroundColor: 'rgba(139,92,246,0.06)', tension: 0.2 }] }}
+                options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => formatPercent(ctx.raw) } }, legend: { position: 'top' } } }}
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -417,25 +372,13 @@ export const VaultAnalyticsTab: React.FC<VaultAnalyticsTabProps> = ({
             <CardTitle>Asset Distribution</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={assetChartData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, value }) => `${name} ${value.toFixed(1)}%`}
-                  outerRadius={100}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {assetChartData.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={TIER_COLORS[index % TIER_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value: any) => formatPercent(value)} />
-              </PieChart>
-            </ResponsiveContainer>
+            <div style={{ height: 300 }}>
+              <Chart
+                type="pie"
+                data={{ labels: assetChartData.map(a => a.name), datasets: [{ data: assetChartData.map(a => a.value), backgroundColor: assetChartData.map((_, i) => TIER_COLORS[i % TIER_COLORS.length]) }] }}
+                options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${ctx.label} ${ctx.raw.toFixed(1)}%` } } } }}
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -445,15 +388,13 @@ export const VaultAnalyticsTab: React.FC<VaultAnalyticsTabProps> = ({
             <CardTitle>Withdrawal Activity</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={withdrawalChartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip formatter={(value: any) => formatCurrency(value)} />
-                <Bar dataKey="amount" fill={COLORS.warning} />
-              </BarChart>
-            </ResponsiveContainer>
+            <div style={{ height: 300 }}>
+              <Chart
+                type="bar"
+                data={{ labels: withdrawalChartData.map(w => w.date), datasets: [{ label: 'Withdrawals', data: withdrawalChartData.map(w => w.amount), backgroundColor: COLORS.warning }] }}
+                options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => formatCurrency(ctx.raw) } } } }}
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -463,21 +404,13 @@ export const VaultAnalyticsTab: React.FC<VaultAnalyticsTabProps> = ({
             <CardTitle>Risk Profile</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <RadarChart data={riskChartData}>
-                <PolarGrid />
-                <PolarAngleAxis dataKey="metric" />
-                <PolarRadiusAxis angle={90} domain={[0, 100]} />
-                <Radar
-                  name="Risk Metrics"
-                  dataKey="value"
-                  stroke={COLORS.primary}
-                  fill={COLORS.primary}
-                  fillOpacity={0.6}
-                />
-                <Tooltip formatter={(value: any) => `${value.toFixed(1)}%`} />
-              </RadarChart>
-            </ResponsiveContainer>
+            <div style={{ height: 300 }}>
+              <Chart
+                type="radar"
+                data={{ labels: riskChartData.map(r => r.metric), datasets: [{ label: 'Risk Metrics', data: riskChartData.map(r => r.value), backgroundColor: 'rgba(59,130,246,0.3)', borderColor: COLORS.primary, fill: true }] }}
+                options={{ responsive: true, maintainAspectRatio: false, scales: { r: { angleLines: { display: true }, suggestedMin: 0, suggestedMax: 100 } }, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${ctx.dataset.label}: ${ctx.raw.toFixed(1)}%` } } } }}
+              />
+            </div>
           </CardContent>
         </Card>
       </div>

@@ -1,4 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
+import { freemem } from 'os';
 import { Server as HttpServer } from 'http';
 import { logger } from '../utils/logger';
 import { wsConnectionManager } from './WebSocketConnectionManager';
@@ -282,7 +283,7 @@ export class WebSocketService {
       wsHealthMonitor.recordMetric('avgLatency', Math.random() * 150, 'ms'); // Placeholder
       wsHealthMonitor.recordMetric('packetLoss', Math.random() * 0.5, '%');
       wsHealthMonitor.recordMetric('errorRate', Math.random() * 0.1, '%');
-      wsHealthMonitor.recordMetric('memoryUsage', require('os').freemem() / 1024 / 1024, 'MB');
+      wsHealthMonitor.recordMetric('memoryUsage', freemem() / 1024 / 1024, 'MB');
     }, 30000);
     
     this.wss.on('close', () => {

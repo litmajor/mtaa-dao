@@ -71,20 +71,21 @@ export { Label } from './label';
 export { Menubar, MenubarMenu, MenubarTrigger, MenubarContent, MenubarItem, MenubarSeparator, MenubarLabel, MenubarCheckboxItem, MenubarRadioGroup, MenubarRadioItem, MenubarPortal, MenubarSub, MenubarSubContent, MenubarSubTrigger, MenubarShortcut, MenubarGroup } from './menubar';
 export { NavigationMenu, NavigationMenuList, NavigationMenuItem, NavigationMenuContent, NavigationMenuTrigger, NavigationMenuLink, NavigationMenuViewport } from './navigation-menu';
 export { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationEllipsis, PaginationNext, PaginationPrevious } from './pagination';
-export { Popover, PopoverTrigger, PopoverContent } from './popover';
+// Popover (kept above from './popover-design')
 export { Progress } from './progress';
 export { RadioGroup, RadioGroupItem } from './radio-group';
 export { Resizable, ResizableHandle, ResizablePanel } from './resizable';
 export { ScrollArea, ScrollBar } from './scroll-area';
-export { Select, SelectGroup, SelectValue, SelectTrigger, SelectContent, SelectLabel, SelectItem, SelectSeparator, SelectScrollUpButton, SelectScrollDownButton } from './select';
+// Select (kept above from './select-design')
 export { Separator } from './separator';
 export { Sheet, SheetTrigger, SheetClose, SheetContent, SheetHeader, SheetFooter, SheetTitle, SheetDescription, SheetPortal, SheetOverlay } from './sheet';
 export { Skeleton } from './skeleton';
 export { Switch } from './switch';
 export { Table, TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell, TableCaption } from './table';
-export { Tabs, TabsList, TabsTrigger, TabsContent } from './tabs';
+// Tabs (kept above from './tabs-design')
 export { Textarea } from './textarea';
-export { Toast, ToastAction, ToastClose, ToastTitle, ToastDescription, ToastProvider, useToast } from './toast';
-export { Toggle, ToggleGroup, ToggleGroupItem } from './toggle-group';
+// Toast (kept above from './toast-design')
+export { Toggle } from './toggle';
+export { ToggleGroup, ToggleGroupItem } from './toggle-group';
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './tooltip';
 

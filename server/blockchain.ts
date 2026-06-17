@@ -1,12 +1,27 @@
-// --- Imports ---
 import { ethers } from "ethers";
-// If your TypeScript or Node.js setup does not support 'assert', use the following instead:
-// import MaonoVaultArtifact = require("../contracts/MaonoVault.json");
 import MaonoVaultArtifact from "../contracts/MaonoVault.json" with { type: "json" };
-import { TokenService, tokenService } from './services/tokenService';
+import { tokenService } from './services/tokenService';
 import { TokenRegistry } from '../shared/tokenRegistry';
+import { db } from './db';
+import { indexerProgress } from '../shared/schema';
+import type { VaultEvent as IndexerVaultEvent } from './vaultEventsIndexer';
+import { eq } from 'drizzle-orm';
+// Local lightweight VaultEvent shape (avoid circular imports with vaultEventsIndexer)
+interface VaultEvent {
+  type: string;
+  vaultId: string;
+  transactionHash: string;
+  blockNumber?: number;
+  timestamp: number | string;
+  userAddress?: string | null;
+  tokenSymbol?: string;
+  amount?: string | number;
+  newNAV?: string | null;
+  newFee?: string | null;
+  newStatus?: string | null;
+  [key: string]: unknown;
+}
 
-// Enhanced multi-token transfer function for Phase 3
 export async function sendToken(
   symbol: string,
   to: string,
@@ -15,30 +30,25 @@ export async function sendToken(
   let amountStr: string;
 
   if (typeof amount === 'bigint') {
-    // Treat bigint as base units, need to get correct decimals
     const token = TokenRegistry.getToken(symbol);
     const decimals = token?.decimals || 18;
     amountStr = ethers.formatUnits(amount, decimals);
   } else {
-    amountStr = amount; // Already in human-readable units
+    amountStr = amount;
   }
 
   return tokenService.sendToken(symbol, to, amountStr);
 }
 
-// Legacy cUSD function for backward compatibility
 export async function sendCUSD(to: string, amount: string | bigint): Promise<string> {
   return sendToken('cUSD', to, amount);
 }
 
-// --- Configuration ---
-const PROVIDER_URL = process.env.RPC_URL || "https://alfajores-forno.celo-testnet.org";
-
-// --- Use tokenService provider and signer to avoid duplication ---
 const provider = tokenService.provider;
 const signer = tokenService.signer;
 
-// Helper to check if contract is configured (address is set and valid)
+const MAONO_CONTRACT_ADDRESS = process.env.MAONO_CONTRACT_ADDRESS || '0x0000000000000000000000000000000000000000';
+
 function isContractConfigured(): boolean {
   if (!MAONO_CONTRACT_ADDRESS || MAONO_CONTRACT_ADDRESS === "" || MAONO_CONTRACT_ADDRESS === "0x1234567890123456789012345678901234567890") {
     return false;
@@ -46,37 +56,15 @@ function isContractConfigured(): boolean {
   return ethers.isAddress(MAONO_CONTRACT_ADDRESS);
 }
 
-// --- MaonoVault Contract (ERC4626) ---
-// Contract addresses for Celo Alfajores testnet
-const MAONO_VAULT_ADDRESS = process.env.MAONO_VAULT_ADDRESS || '0x0000000000000000000000000000000000000000';
-const MAONO_CONTRACT_ADDRESS = process.env.MAONO_CONTRACT_ADDRESS || '0x0000000000000000000000000000000000000000';
-const MTAA_TOKEN_ADDRESS = process.env.MTAA_TOKEN_ADDRESS || '0x0000000000000000000000000000000000000000';
-const GOVERNANCE_ADDRESS = process.env.GOVERNANCE_ADDRESS || '0x0000000000000000000000000000000000000000';
-
-// Lazy initialization function for MaonoVault contract
 function getMaonoVaultContract(): ethers.Contract {
-  if (!MAONO_CONTRACT_ADDRESS || MAONO_CONTRACT_ADDRESS === "") {
-    throw new Error(
-      "MAONO_CONTRACT_ADDRESS is not configured. " +
-      "Please set it in your .env file or deploy the MaonoVault contract first."
-    );
+  if (!isContractConfigured()) {
+    throw new Error(`MAONO_CONTRACT_ADDRESS is unconfigured or invalid: "${MAONO_CONTRACT_ADDRESS}"`);
   }
-
-  if (!ethers.isAddress(MAONO_CONTRACT_ADDRESS)) {
-    throw new Error(`Invalid MAONO_CONTRACT_ADDRESS: "${MAONO_CONTRACT_ADDRESS}"`);
-  }
-
-  return new ethers.Contract(
-    MAONO_CONTRACT_ADDRESS,
-    MaonoVaultArtifact.abi,
-    signer || provider
-  );
+  return new ethers.Contract(MAONO_CONTRACT_ADDRESS, MaonoVaultArtifact.abi, signer || provider);
 }
 
-// Enhanced token service access
 export { tokenService };
 
-// --- Service Methods ---
 export const MaonoVaultService = {
   get contract() {
     return getMaonoVaultContract();
@@ -86,81 +74,65 @@ export const MaonoVaultService = {
   isConfigured: isContractConfigured,
 
   async getNAV() {
-    const maonoVault = getMaonoVaultContract();
-
-    // Verify contract exists on chain
     const code = await provider.getCode(MAONO_CONTRACT_ADDRESS);
     if (code === "0x") {
-      throw new Error(`No contract found at address ${MAONO_CONTRACT_ADDRESS}. Please verify the contract is deployed.`);
+      throw new Error(`No contract deployed at address ${MAONO_CONTRACT_ADDRESS}`);
     }
-
-    return maonoVault.previewNAV();
+    return getMaonoVaultContract().previewNAV();
   },
 
   async deposit(amount: bigint, userAddress: string) {
-    const maonoVault = getMaonoVaultContract();
-    // User must approve the vault to spend their cUSD before calling this
-    return maonoVault.deposit(amount, userAddress);
+    return getMaonoVaultContract().deposit(amount, userAddress);
   },
 
   async withdraw(amount: bigint, userAddress: string) {
-    const maonoVault = getMaonoVaultContract();
-    return maonoVault.withdraw(amount, userAddress, userAddress);
+    return getMaonoVaultContract().withdraw(amount, userAddress, userAddress);
   },
 
   async updateNAV(newNav: bigint) {
     if (!signer) throw new Error("No manager signer configured");
-    const maonoVault = getMaonoVaultContract();
-    return maonoVault.updateNAV(newNav);
+    return getMaonoVaultContract().updateNAV(newNav);
   },
 
   async distributePerformanceFee(profit: bigint) {
     if (!signer) throw new Error("No manager signer configured");
-    const maonoVault = getMaonoVaultContract();
-    return maonoVault.distributePerformanceFee(profit);
+    return getMaonoVaultContract().distributePerformanceFee(profit);
   },
 
-  async listenToEvents(callback: (event: any) => void) {
-    // Use polling instead of filters to avoid "filter not found" errors
-    let lastProcessedBlock = await provider.getBlockNumber();
-    const MAX_BLOCK_RANGE = 1000; // Celo RPC safe range
+  async listenToEvents(callback: (event: IndexerVaultEvent) => Promise<void> | void) {
+    const INDEXER_NAME = 'maono_vault_main_indexer';
+    const CHAIN_ID = Number(process.env.CHAIN_ID || 44787);
+    const START_BLOCK = Number(process.env.MAONO_START_BLOCK || 22000000);
+    const MAX_BLOCK_RANGE = 1000;
+
     const RETRY_CONFIG = {
       maxRetries: 3,
-      baseDelay: 2000, // 2s initial delay
-      maxDelay: 30000, // 30s max delay
+      baseDelay: 2000,
     };
+
+    // Recover last processed block from DB (durable cursor)
+    const progressRows = await db.select().from(indexerProgress).where(eq(indexerProgress.indexerName, INDEXER_NAME)).limit(1);
+    let lastProcessedBlock = progressRows[0]?.lastProcessedBlock ?? START_BLOCK;
+
+    if (!progressRows[0]) {
+      await db.insert(indexerProgress).values({
+        indexerName: INDEXER_NAME,
+        lastProcessedBlock: START_BLOCK,
+        chainId: CHAIN_ID,
+      }).onConflictDoNothing();
+    }
 
     const queryEventsWithRetry = async (fromBlock: number, toBlock: number, retryCount = 0): Promise<any[]> => {
       try {
-        console.log(`[Event Query] Fetching events from block ${fromBlock} to ${toBlock}`);
-        const events = await getMaonoVaultContract().queryFilter(
-          "*", // All events
-          fromBlock,
-          toBlock
-        );
-        return events || [];
+        return await getMaonoVaultContract().queryFilter("*", fromBlock, toBlock);
       } catch (error: any) {
-        const isBlockOutOfRange = error.message?.includes('block') && error.message?.includes('range');
-        const isTimeout = error.code === 'TIMEOUT' || error.message?.includes('timeout');
-        const isRateLimit = error.code === 'RATE_LIMIT' || error.status === 429;
-
-        if ((isBlockOutOfRange || isTimeout || isRateLimit) && retryCount < RETRY_CONFIG.maxRetries) {
-          // Exponential backoff: delay = min(baseDelay * 2^retryCount, maxDelay)
-          const delay = Math.min(
-            RETRY_CONFIG.baseDelay * Math.pow(2, retryCount),
-            RETRY_CONFIG.maxDelay
-          );
-          console.warn(`[Event Query] Retry ${retryCount + 1}/${RETRY_CONFIG.maxRetries} after ${delay}ms`,
-            { errorMsg: error.message });
-
+        if (retryCount < RETRY_CONFIG.maxRetries) {
+          const delay = RETRY_CONFIG.baseDelay * Math.pow(2, retryCount);
+          console.warn(`[Event Query] Retry ${retryCount + 1} after ${delay}ms due to: ${error.message}`);
           await new Promise(resolve => setTimeout(resolve, delay));
           return queryEventsWithRetry(fromBlock, toBlock, retryCount + 1);
         }
-
-        // Log error but don't throw - continue polling
-        if (!error.message?.includes('filter')) {
-          console.error('[Event Query] Error:', error.message);
-        }
+        console.error('[Event Query] Retries exhausted:', error.message);
         return [];
       }
     };
@@ -168,46 +140,75 @@ export const MaonoVaultService = {
     const pollEvents = async () => {
       try {
         const currentBlock = await provider.getBlockNumber();
+        if (currentBlock <= lastProcessedBlock) return;
 
-        if (currentBlock > lastProcessedBlock) {
-          // Limit query to safe block range (max 1000 blocks)
-          const fromBlock = Math.max(lastProcessedBlock + 1, currentBlock - MAX_BLOCK_RANGE);
-          const toBlock = currentBlock;
+        // FIX: Ensure no blocks are skipped if the service goes offline
+        const fromBlock = lastProcessedBlock + 1;
+        
+        // Split processing ranges into digestible, provider-safe chunks
+        const toBlock = Math.min(fromBlock + MAX_BLOCK_RANGE - 1, currentBlock);
+        
+        console.log(`[Event Loop] Syncing chunk: ${fromBlock} -> ${toBlock} (Current Tip: ${currentBlock})`);
+        const events = await queryEventsWithRetry(fromBlock, toBlock);
 
-          const events = await queryEventsWithRetry(fromBlock, toBlock);
+        // FIX: Use a shared local cache to batch and reuse block timestamps
+        const blockTimestampCache: Record<number, number> = {};
 
-          for (const event of events) {
-            try {
-              const eventName = event.eventName || event.fragment?.name;
-              if (!eventName) continue;
+        for (const event of events) {
+          try {
+            const eventName = event.eventName || event.fragment?.name;
+            if (!eventName) continue;
 
-              // Parse event based on type
-              callback({
-                type: eventName,
-                ...event.args,
-                transactionHash: event.transactionHash,
-                blockNumber: event.blockNumber,
-                timestamp: (await event.getBlock()).timestamp,
-              });
-            } catch (err) {
-              console.error('Error processing event:', err);
+            // Resolve block timestamp with minimal RPC overhead
+            if (!blockTimestampCache[event.blockNumber]) {
+              const block = await provider.getBlock(event.blockNumber);
+              blockTimestampCache[event.blockNumber] = block ? block.timestamp : Math.floor(Date.now() / 1000);
             }
-          }
 
-          lastProcessedBlock = currentBlock;
+            // Normalize fields safely using canonical mapping rules
+            const normalizedArgs: Record<string, any> = {};
+            if (event.args) {
+              const fragment = event.fragment;
+              fragment.inputs.forEach((input: any, index: number) => {
+                const value = event.args[index];
+                normalizedArgs[input.name] = typeof value === 'bigint' ? value.toString() : value;
+              });
+            }
+
+            // Extract core address keys
+            const userAddress = normalizedArgs.user || normalizedArgs.caller || normalizedArgs.owner || null;
+            const vaultId = normalizedArgs.vaultId || normalizedArgs.id || 'canonical_vault';
+
+            // Dispatch structured payload matching indexer interface
+            callback({
+              type: eventName,
+              vaultId: vaultId.toString(),
+              transactionHash: event.transactionHash ?? '',
+              blockNumber: event.blockNumber,
+              timestamp: blockTimestampCache[event.blockNumber] ?? Math.floor(Date.now() / 1000),
+              userAddress: userAddress ? userAddress.toLowerCase() : null,
+              tokenSymbol: normalizedArgs.symbol || 'cUSD',
+              amount: normalizedArgs.amount || normalizedArgs.value || '0',
+              newNAV: normalizedArgs.newNAV || null,
+              newFee: normalizedArgs.newFee || null,
+              newStatus: normalizedArgs.newStatus || null
+            });
+
+          } catch (err) {
+            console.error('Error processing event item:', err);
+          }
         }
+
+        // Commit the new block height pointer to the DB atomically, then advance local pointer
+        await db.update(indexerProgress).set({ lastProcessedBlock: toBlock, updatedAt: new Date() }).where(eq(indexerProgress.indexerName, INDEXER_NAME));
+        lastProcessedBlock = toBlock;
+
       } catch (error: any) {
-        // Suppress filter-related errors, log others
-        if (!error.message?.includes('filter')) {
-          console.error('[Event Listener] Error:', error.message);
-        }
+        console.error('[Event Listener Master] Fail:', error.message);
       }
     };
 
-    // Poll every 15 seconds
     setInterval(pollEvents, 15000);
-
-    // Initial poll
-    pollEvents();
+    await pollEvents();
   },
 };

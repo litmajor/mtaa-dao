@@ -338,6 +338,50 @@ export class BotExecutionEngine {
       filledAt: order.timestamp,
     };
 
+    // Try to post trade to internal API (engine → API) using internal auth token.
+    // If that fails, fall back to direct DB write for resilience.
+    const internalBase = process.env.INTERNAL_API_URL || `http://127.0.0.1:${process.env.PORT || 3000}`;
+    const url = `${internalBase.replace(/\/$/, '')}/api/v1/bots/${botId}/trades`;
+    const token = process.env.INTERNAL_API_TOKEN || '';
+
+    // Use global fetch when available, otherwise attempt dynamic import of node-fetch
+    let fetchFn: any = (global as any).fetch;
+    if (!fetchFn) {
+      try {
+        // dynamic import to avoid forcing dependency at module load
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const mod = await import('node-fetch');
+        fetchFn = mod.default || mod;
+      } catch (err) {
+        fetchFn = null;
+      }
+    }
+
+    if (fetchFn && token) {
+      try {
+        const res = await fetchFn(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify(trade),
+          // keep short timeout if supported by fetch implementation
+        });
+
+        if (res && (res.ok || res.status === 201 || res.status === 200)) {
+          return;
+        }
+
+        console.warn('Internal trade POST returned non-OK status', { status: res?.status });
+      } catch (err) {
+        console.warn('Failed to POST trade to internal API, falling back to DB write', err instanceof Error ? err.message : err);
+      }
+    } else {
+      console.warn('No fetch available or INTERNAL_API_TOKEN not set; writing trade directly to DB');
+    }
+
+    // Fallback: write directly to DB
     await botService.recordBotTrade(trade);
   }
 

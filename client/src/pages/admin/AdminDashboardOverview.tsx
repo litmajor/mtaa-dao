@@ -5,10 +5,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { 
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, 
-  Tooltip, Legend, ResponsiveContainer 
-} from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { 
   CheckCircle, Activity, DollarSign, Users, Wallet, 
   TrendingUp, ArrowUpRight, ArrowDownLeft, RefreshCw, AlertCircle
@@ -303,38 +301,25 @@ export default function AdminDashboardOverview() {
               {/* Volume Chart */}
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Trading Volume (24h)</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={volumeData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="time" stroke="#94a3b8" />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Line type="monotone" dataKey="volume" stroke="#3b82f6" dot={{ fill: '#3b82f6' }} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="line"
+                    data={{ labels: volumeData.map(v => v.time), datasets: [{ label: 'Volume', data: volumeData.map(v => v.volume), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.06)', tension: 0.2 }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: true } } }}
+                  />
+                </div>
               </Card>
 
               {/* Transaction Distribution */}
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Transaction Distribution</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={txDistribution}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, value }) => `${name}: ${value}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {txDistribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="doughnut"
+                    data={{ labels: txDistribution.map(t => t.name), datasets: [{ data: txDistribution.map(t => t.value), backgroundColor: COLORS }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: true } } }}
+                  />
+                </div>
               </Card>
             </div>
 

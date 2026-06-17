@@ -5,7 +5,7 @@ import { Input } from "../ui/input";
 import { useState } from "react";
 import { useAccount } from "wagmi";
 import { useVaultContract, useTokenBalance, useTokenApproval, useVaultDeposit } from "@/pages/hooks/useVault";
-import { parseEther, formatEther } from "viem";
+import { parseEther, formatEther } from '@/lib/blockchain';
 import { AlertCircle, CheckCircle, Loader2, Info, ExternalLink } from "lucide-react";
 import { Alert, AlertDescription } from "../ui/alert";
 import { currentNetwork } from "@/lib/blockchain";

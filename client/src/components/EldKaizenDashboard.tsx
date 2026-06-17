@@ -5,10 +5,11 @@
  * for all DAOs in the system
  */
 
-'use client';
+ 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { AlertCircle, TrendingUp, Users, Zap, Shield, DollarSign } from 'lucide-react';
 import { authClient } from '@/utils/authClient';
 
@@ -225,22 +226,18 @@ export default function EldKaizenDashboard() {
         {/* Performance Scores Chart */}
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 mb-8">
           <h2 className="text-xl font-bold text-white mb-4">DAO Performance Scores</h2>
-          <ResponsiveContainer width="100%" height={400}>
-            <BarChart data={scoresByDAO}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
-              <XAxis dataKey="name" stroke="#94a3b8" />
-              <YAxis stroke="#94a3b8" domain={[0, 100]} />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px' }}
-                labelStyle={{ color: '#f1f5f9' }}
-              />
-              <Legend />
-              <Bar dataKey="overall" fill="#f59e0b" />
-              <Bar dataKey="treasury" fill="#10b981" />
-              <Bar dataKey="governance" fill="#3b82f6" />
-              <Bar dataKey="community" fill="#8b5cf6" />
-            </BarChart>
-          </ResponsiveContainer>
+          <div style={{ height: 400 }}>
+            <Chart
+              type="bar"
+              data={{ labels: scoresByDAO.map(s => s.name), datasets: [
+                { label: 'Overall', data: scoresByDAO.map(s => s.overall), backgroundColor: '#f59e0b' },
+                { label: 'Treasury', data: scoresByDAO.map(s => s.treasury), backgroundColor: '#10b981' },
+                { label: 'Governance', data: scoresByDAO.map(s => s.governance), backgroundColor: '#3b82f6' },
+                { label: 'Community', data: scoresByDAO.map(s => s.community), backgroundColor: '#8b5cf6' }
+              ] }}
+              options={{ responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }}
+            />
+          </div>
         </div>
 
         {/* Critical Issues */}

@@ -1,9 +1,5 @@
-import {
-  AreaChart,
-  Area,
-  ResponsiveContainer,
-  Tooltip
-} from "recharts";
+import React from 'react';
+import { Line } from 'react-chartjs-2';
 
 export type SparklinePoint = {
   time: number;
@@ -84,56 +80,65 @@ export default function MarketSparkline({
   if (!data?.length) return null;
 
   const normalized = normalize(data);
-  
+
   // Determine direction: up if last value >= first value
   const isUp = data[data.length - 1].value >= data[0].value;
 
   // Green for gains, red for losses (CMC standard)
-  const color = isUp ? "#16c784" : "#ea3943";
+  const color = isUp ? '#16c784' : '#ea3943';
 
   // Adjust opacity based on type for visual hierarchy
-  const opacityStart = type === "volume" ? 0.3 : 0.4;
-  const opacityEnd = type === "volume" ? 0.02 : 0.05;
+  const opacityStart = type === 'volume' ? 0.3 : 0.4;
+  const opacityEnd = type === 'volume' ? 0.02 : 0.05;
+
+  const chartData = {
+    labels: normalized.map((d) => new Date(d.time).toISOString()),
+    datasets: [
+      {
+        data: normalized.map((d) => d.value),
+        borderColor: color,
+        borderWidth: 1.2,
+        tension: 0.25,
+        pointRadius: 0,
+        fill: true,
+        backgroundColor: (context: any) => {
+          const chart = context.chart;
+          const { ctx, chartArea } = chart;
+          if (!chartArea) return color;
+          const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+          gradient.addColorStop(0, `${color}${Math.floor(opacityStart * 255).toString(16).padStart(2, '0')}`);
+          gradient.addColorStop(1, `${color}${Math.floor(opacityEnd * 255).toString(16).padStart(2, '0')}`);
+          return gradient;
+        }
+      }
+    ]
+  };
+
+  const options: any = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        enabled: !!showTooltip,
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        callbacks: {
+          label: (ctx: any) => {
+            const val = ctx.parsed.y ?? 0;
+            return `${(val * 100).toFixed(1)}%`;
+          }
+        }
+      }
+    },
+    scales: {
+      x: { display: false, grid: { display: false } },
+      y: { display: false, grid: { display: false }, min: 0, max: 1 }
+    }
+  };
 
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <AreaChart data={normalized} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-        <defs>
-          <linearGradient id={`sparkGradient-${type}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity={opacityStart} />
-            <stop offset="100%" stopColor={color} stopOpacity={opacityEnd} />
-          </linearGradient>
-        </defs>
-
-        <Area
-          type="monotone"
-          dataKey="value"
-          stroke={color}
-          strokeWidth={1.5}
-          fill={`url(#sparkGradient-${type})`}
-          isAnimationActive={false}
-          dot={false}
-        />
-
-        {showTooltip && (
-          <Tooltip
-            cursor={false}
-            contentStyle={{
-              backgroundColor: "rgba(0, 0, 0, 0.8)",
-              border: "none",
-              borderRadius: "4px",
-              padding: "4px 8px",
-              fontSize: "12px",
-              color: color
-            }}
-            formatter={(value: number) => {
-              // Denormalize for display
-              const denorm = value * 100;
-              return [`${denorm.toFixed(1)}%`, "Trend"];
-            }}
-          />
-        )}
-      </AreaChart>
-    </ResponsiveContainer>
+    <div style={{ height }} className="w-full">
+      <Line data={chartData} options={options} />
+    </div>
   );
 }

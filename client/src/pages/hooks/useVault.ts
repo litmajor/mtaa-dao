@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
-import { parseEther, formatEther, ethers } from "ethers";
+// ethers is imported dynamically in query functions to reduce initial bundle size
 import { toast } from "sonner";
 
 // Temporarily disable the contract import to fix loading issues
@@ -53,6 +53,7 @@ export function useVaultInfo(vaultAddress: string) {
     queryKey,
     queryFn: async () => {
       if (!contract) return undefined;
+      const { ethers } = await import('ethers');
       const provider = ethers.getDefaultProvider();
       const c = new ethers.Contract(contract.address as string, contract.abi as any, provider);
       return await c['getVaultInfo']();
@@ -85,6 +86,7 @@ export function useVaultBalance(userAddress: string, vaultAddress: string) {
     queryKey: ["vaultShares", String(contract?.address), String(userAddress)],
     queryFn: async () => {
       if (!contract || !userAddress) return undefined;
+      const { ethers } = await import('ethers');
       const provider = ethers.getDefaultProvider();
       const c = new ethers.Contract(contract.address as string, contract.abi as any, provider);
       return (await c['balanceOf'](userAddress as string)) as bigint;
@@ -96,6 +98,7 @@ export function useVaultBalance(userAddress: string, vaultAddress: string) {
     queryKey: ["vaultAssets", String(contract?.address), String(sharesQuery.data ?? '')],
     queryFn: async () => {
       if (!contract || !sharesQuery.data) return undefined;
+      const { ethers } = await import('ethers');
       const provider = ethers.getDefaultProvider();
       const c = new ethers.Contract(contract.address as string, contract.abi as any, provider);
       return (await c['convertToAssets'](sharesQuery.data || BigInt(0))) as bigint;
@@ -122,6 +125,7 @@ export function useTokenBalance(userAddress: string, tokenAddress?: string) {
     return useQuery({
       queryKey: ["tokenBalance", String(tokenAddress), String(userAddress)],
       queryFn: async () => {
+        const { ethers } = await import('ethers');
         const provider = ethers.getDefaultProvider();
         const c = new ethers.Contract(tokenAddress as string, [
           {
@@ -144,6 +148,7 @@ export function useTokenApproval(userAddress: string, amount: string, tokenAddre
       ? useQuery({
           queryKey: ["tokenAllowance", String(tokenAddress), String(userAddress), String(vaultAddress)],
           queryFn: async () => {
+            const { ethers } = await import('ethers');
             const provider = ethers.getDefaultProvider();
             const c = new ethers.Contract(tokenAddress as string, [
               {
@@ -174,6 +179,7 @@ export function useTokenApproval(userAddress: string, amount: string, tokenAddre
     ],
     queryFn: async () => {
       if (!allowance || !amount) return false;
+      const { parseEther } = await import('ethers');
       return allowance < parseEther(amount);
     },
     enabled: !!allowance && !!amount,

@@ -16,6 +16,8 @@ export type GatewayMessageType =
   | "gateway:liquidity_update"
   | "gateway:apy_update"
   | "gateway:risk_update"
+  | "gateway:execution_check"
+  | "gateway:execution_check_update"
   | "gateway:cache_invalidate"
   | "gateway:status"
   | "gateway:adapter_status"

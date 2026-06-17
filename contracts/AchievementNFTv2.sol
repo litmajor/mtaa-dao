@@ -5,9 +5,9 @@ import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Burnable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "./utils/Counters.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title AchievementNFTv2 - Comprehensive NFT Achievement System
@@ -120,7 +120,7 @@ contract AchievementNFTv2 is
     
     // ============ Constructor ============
     
-    constructor() ERC721("Mtaa Achievement", "MTAA-ACH") {
+    constructor() ERC721("Mtaa Achievement", "MTAA-ACH") Ownable(msg.sender) {
         feeCollector = msg.sender;
         
         // Register default achievement categories
@@ -170,18 +170,48 @@ contract AchievementNFTv2 is
         bool tradeable,
         bool burnable,
         uint256 milestoneLevel
-    ) external onlyOwner nonReentrant returns (uint256) {
+    ) public onlyOwner nonReentrant returns (uint256) {
+        return _mintAchievement(
+            to,
+            name,
+            category,
+            tier,
+            rarity,
+            rewardPoints,
+            rewardTokens,
+            imageUrl,
+            metadataUri,
+            tradeable,
+            burnable,
+            milestoneLevel
+        );
+    }
+
+    function _mintAchievement(
+        address to,
+        string memory name,
+        string memory category,
+        uint8 tier,
+        uint256 rarity,
+        uint256 rewardPoints,
+        uint256 rewardTokens,
+        string memory imageUrl,
+        string memory metadataUri,
+        bool tradeable,
+        bool burnable,
+        uint256 milestoneLevel
+    ) internal returns (uint256) {
         require(to != address(0), "Invalid address");
         require(achievementCategories[category], "Invalid category");
         require(tier >= 1 && tier <= 6, "Invalid tier");
         require(rarity >= 1 && rarity <= 4, "Invalid rarity");
-        
+
         _tokenIdCounter.increment();
         uint256 newTokenId = _tokenIdCounter.current();
-        
+
         _safeMint(to, newTokenId);
         _setTokenURI(newTokenId, metadataUri);
-        
+
         achievements[newTokenId] = Achievement({
             name: name,
             category: category,
@@ -197,24 +227,17 @@ contract AchievementNFTv2 is
             originalMinter: to,
             milestoneLevel: milestoneLevel
         });
-        
+
         // Update user stats
         userAchievements[to].push(newTokenId);
-        userStats[to].achievementCount++;
-        userStats[to].totalRewardPoints += rewardPoints;
-        userStats[to].totalRewardTokens += rewardTokens;
-        if (tier > userStats[to].highestTier) {
-            userStats[to].highestTier = tier;
-        }
-        userStats[to].lastMintedAt = block.timestamp;
-        
+        _updateUserStats(to, tier, rewardPoints, rewardTokens);
+
         // Update reputation
         uint256 reputationGain = _calculateReputationGain(tier, rarity);
-        userReputation[to] += reputationGain;
-        
+        _increaseUserReputation(to, reputationGain);
+
         emit AchievementMinted(newTokenId, to, name, tier, rewardPoints);
-        emit UserRepuationUpdated(to, userReputation[to]);
-        
+
         return newTokenId;
     }
     
@@ -235,9 +258,9 @@ contract AchievementNFTv2 is
             tiers.length == rarities.length,
             "Array length mismatch"
         );
-        
+
         uint256[] memory tokenIds = new uint256[](recipients.length);
-        
+
         for (uint256 i = 0; i < recipients.length; i++) {
             tokenIds[i] = mintAchievement(
                 recipients[i],
@@ -481,6 +504,20 @@ contract AchievementNFTv2 is
         uint256 rarityBonus = rarity * 5;
         return baseReputation + rarityBonus;
     }
+
+    function _updateUserStats(address to, uint8 tier, uint256 rewardPoints, uint256 rewardTokens) internal {
+        userStats[to].achievementCount++;
+        userStats[to].totalRewardPoints += rewardPoints;
+        userStats[to].totalRewardTokens += rewardTokens;
+        if (tier > userStats[to].highestTier) {
+            userStats[to].highestTier = tier;
+        }
+        userStats[to].lastMintedAt = block.timestamp;
+    }
+
+    function _increaseUserReputation(address to, uint256 amount) internal {
+        userReputation[to] += amount;
+    }
     
     /**
      * @notice Add achievement category
@@ -490,24 +527,7 @@ contract AchievementNFTv2 is
         emit CategoryAdded(category);
     }
     
-    // ============ ERC721 Overrides ============
-    
-    function _beforeTokenTransfer(
-        address from,
-        address to,
-        uint256 tokenId,
-        uint256 batchSize
-    ) internal override whenNotPaused {
-        super._beforeTokenTransfer(from, to, tokenId, batchSize);
-    }
-    
-    function _burn(uint256 tokenId) 
-        internal 
-        override(ERC721, ERC721URIStorage) 
-    {
-        super._burn(tokenId);
-    }
-    
+    // tokenURI and supportsInterface must be explicitly overridden due to multiple inheritance.
     function tokenURI(uint256 tokenId)
         public
         view
@@ -516,7 +536,7 @@ contract AchievementNFTv2 is
     {
         return super.tokenURI(tokenId);
     }
-    
+
     function supportsInterface(bytes4 interfaceId)
         public
         view

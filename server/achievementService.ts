@@ -2,7 +2,9 @@
 import { db } from './db';
 import { eq, and, gte, sql } from 'drizzle-orm';
 import { achievements, userAchievements, achievementProgress } from '../shared/achievementSchema';
-import { msiaMoPoints, userReputation } from '../shared/reputationSchema';
+import { mintAchievementOnChain } from './services/achievement_contract';
+import { users } from '../shared/schema';
+import { msiaMoPoints, userGamification } from '../shared/reputationSchema';
 import { votes, proposals, contributions } from '../shared/schema';
 import { ReputationService } from './reputationService';
 
@@ -173,8 +175,8 @@ export class AchievementService {
       case 'daily_streak':
         const userRep = await db
           .select()
-          .from(userReputation)
-          .where(eq(userReputation.userId, userId));
+          .from(userGamification)
+          .where(eq(userGamification.userId, userId));
         return (userRep[0]?.currentStreak || 0) >= criteria.count;
 
       case 'referral':
@@ -192,8 +194,8 @@ export class AchievementService {
       case 'reputation_total':
         const reputation = await db
           .select()
-          .from(userReputation)
-          .where(eq(userReputation.userId, userId));
+          .from(userGamification)
+          .where(eq(userGamification.userId, userId));
         return (reputation[0]?.totalPoints || 0) >= criteria.count;
 
       default:
@@ -225,13 +227,17 @@ export class AchievementService {
 
     if (!achievement[0]) return;
 
-    // Create user achievement record
-    await db.insert(userAchievements).values({
+    // Create user achievement record (mark mintPending for rare+ achievements)
+    const isRarePlus = ['rare', 'epic', 'legendary'].includes((achievement[0].rarity || '').toLowerCase());
+    const inserted = await db.insert(userAchievements).values({
       userId,
       achievementId,
       isCompleted: true,
       rewardClaimed: false,
-    });
+      mintPending: isRarePlus,
+    }).returning();
+
+    const uaId = inserted?.[0]?.id;
 
     // Award reputation points
     if (achievement[0] && achievement[0].rewardPoints && achievement[0].rewardPoints > 0) {
@@ -243,6 +249,41 @@ export class AchievementService {
         `Unlocked achievement: ${achievement[0].name}`,
         1.0
       );
+    }
+
+    // If configured, asynchronously mint on-chain for rare+ rarities
+    if (isRarePlus) {
+      (async () => {
+        try {
+          // resolve user wallet address
+          const us = await db.select().from(users).where(eq(users.id, userId));
+          const wallet = us?.[0]?.walletAddress;
+          if (!wallet) {
+            console.warn('No wallet address for user', userId);
+            return;
+          }
+
+          const mintResult = await mintAchievementOnChain(wallet, {
+            name: achievement[0].name,
+            category: achievement[0].category,
+            tier: 1,
+            rarity: 0,
+            rewardPoints: achievement[0].rewardPoints || 0,
+            rewardTokens: Number(achievement[0].rewardTokens || '0'),
+            imageUrl: achievement[0].icon || '',
+            metadataUri: '',
+            tradeable: false,
+            burnable: false,
+            milestoneLevel: 0,
+          });
+
+          if (mintResult?.txHash && uaId) {
+            await db.update(userAchievements).set({ mintTxHash: mintResult.txHash }).where(eq(userAchievements.id, uaId));
+          }
+        } catch (err) {
+          console.warn('Failed to mint achievement on-chain:', err instanceof Error ? err.message : err);
+        }
+      })();
     }
   }
 
@@ -311,14 +352,27 @@ export class AchievementService {
 
     if (!userAchievement[0]) return false;
 
-    // Mark as claimed
-    await db
-      .update(userAchievements)
-      .set({
-        rewardClaimed: true,
-        claimedAt: new Date(),
-      })
-      .where(eq(userAchievements.id, userAchievement[0].id));
+    // Enqueue reward request for batch processing (idempotent)
+    const ua = userAchievement[0];
+    // Check if a reward_request already exists for this userAchievement
+    const existing = await db.select().from((await import('../shared/rewardsSchema')).reward_requests).where(eq((await import('../shared/rewardsSchema')).reward_requests.idempotencyKey, ua.id));
+    if (existing && existing.length > 0) {
+      return true; // already queued
+    }
+
+    // amountUnits: convert rewardTokens to smallest unit (assume 18 decimals)
+    const ach = await db.select().from(achievements).where(eq(achievements.id, achievementId));
+    const rewardTokensStr = ach?.[0]?.rewardTokens || '0';
+    const tokensNum = Number(rewardTokensStr || 0);
+    const amountUnits = BigInt(Math.round(tokensNum * 1e18));
+
+    await db.insert((await import('../shared/rewardsSchema')).reward_requests).values({
+      userId,
+      userAchievementId: ua.id,
+      amountUnits: amountUnits.toString(),
+      idempotencyKey: ua.id,
+      status: 'pending'
+    });
 
     return true;
   }

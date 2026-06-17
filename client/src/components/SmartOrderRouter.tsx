@@ -21,33 +21,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import {
-  AlertTriangle,
-  CheckCircle,
-  TrendingUp,
-  DollarSign,
-  Zap as ZapIcon,
-  Sliders,
-  RotateCw,
-  Activity,
-  Flame,
-  Target,
-  Lightbulb,
-} from 'lucide-react';
-import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  ScatterChart,
-  Scatter,
-} from 'recharts';
+// Lightweight icon placeholders to avoid strict lucide typing issues in migration
+const Icon: React.FC<{ className?: string; children?: React.ReactNode }> = ({ className, children }) => (
+  <span className={className} aria-hidden>{children}</span>
+);
+
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 
 interface SmartOrderRouterProps {
   defaultSymbol?: string;
@@ -77,14 +57,15 @@ export const SmartOrderRouter: React.FC<SmartOrderRouterProps> = ({
   const [limitPrice, setLimitPrice] = useState(0);
 
   // Fetch data from multiple sources
-  const routingQuery = useOrderRouting(symbol || null, amount || null);
-  const splittingQuery = useOrderSplitting(symbol || null, amount || null);
-  const bestVenueQuery = useBestExecutionVenue(symbol || null, amount || null);
+  const routingQuery = useOrderRouting(symbol || null, amount || null) as any;
+  const splittingQuery = useOrderSplitting(symbol || null, amount || null) as any;
+  const bestVenueQuery = useBestExecutionVenue(symbol || null, amount || null) as any;
   const pricesQuery = usePrices(
     symbol ? `${symbol}/USDT` : null,
     ['binance', 'coinbase', 'kraken', 'bybit', 'kucoin']
   );
-  const limitQuery = useLimitOrderAnalysis(symbol || null, limitPrice || null, amount || null);
+  const pricesQueryAny = pricesQuery as any;
+  const limitQuery = useLimitOrderAnalysis(symbol || null, limitPrice || null, amount || null) as any;
 
   const handleCalculate = () => {
     (routingQuery as any).refetch?.();
@@ -131,7 +112,7 @@ export const SmartOrderRouter: React.FC<SmartOrderRouterProps> = ({
     <Card className="col-span-full">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Zap className="w-5 h-5 text-yellow-500" />
+          <Icon className="w-5 h-5 text-yellow-500">⚡</Icon>
           Smart Order Router (Phase 3)
         </CardTitle>
         <CardDescription>
@@ -176,7 +157,7 @@ export const SmartOrderRouter: React.FC<SmartOrderRouterProps> = ({
                 >
                   {routingQuery.isLoading || pricesQuery.isLoading ? (
                     <>
-                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      <Icon className="w-4 h-4 mr-2 animate-spin">⟳</Icon>
                       Analyzing...
                     </>
                   ) : (
@@ -309,29 +290,17 @@ export const SmartOrderRouter: React.FC<SmartOrderRouterProps> = ({
                     <CardTitle className="text-base">Liquidity & Volume</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="h-48">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart
-                          data={routingMetrics.validExchanges.map((v) => ({
-                            name: v.exchange,
-                            volume: v.volume / 1e6,
-                            ask: v.ask,
-                          }))}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.3} />
-                          <XAxis dataKey="name" stroke="#94a3b8" />
-                          <YAxis yAxisId="left" stroke="#94a3b8" />
-                          <YAxis yAxisId="right" orientation="right" stroke="#94a3b8" />
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                              border: '1px solid #e2e8f0',
-                              borderRadius: '8px',
-                            }}
-                          />
-                          <Bar yAxisId="left" dataKey="volume" fill="#3b82f6" name="Volume (M $)" />
-                        </BarChart>
-                      </ResponsiveContainer>
+                    <div style={{ height: '100%' }}>
+                      <Chart
+                        type="bar"
+                        data={{
+                          labels: routingMetrics.validExchanges.map(v => v.exchange),
+                          datasets: [
+                            { label: 'Volume (M $)', data: routingMetrics.validExchanges.map(v => v.volume / 1e6), backgroundColor: '#3b82f6' }
+                          ]
+                        }}
+                        options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: true } }, scales: { x: { ticks: { color: '#94a3b8' } }, y: { ticks: { color: '#94a3b8' } } } }}
+                      />
                     </div>
                   </CardContent>
                 </Card>
@@ -399,7 +368,7 @@ export const SmartOrderRouter: React.FC<SmartOrderRouterProps> = ({
             {routingQuery.error && (
               <Card className="bg-red-50 dark:bg-red-900/20">
                 <CardContent className="pt-4 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+                    <Icon className="w-4 h-4 text-red-600 dark:text-red-400">!</Icon>
                   <span className="text-sm text-red-700 dark:text-red-300">
                     Failed to analyze routes: {(routingQuery.error as Error).message}
                   </span>
@@ -411,7 +380,7 @@ export const SmartOrderRouter: React.FC<SmartOrderRouterProps> = ({
           {/* Tab 2: Order Splitting - Smart Split Recommendations */}
           <TabsContent value="splitting" className="space-y-4">
             <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800 flex gap-3">
-              <ZapIcon className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+              <Icon className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5">⚡</Icon>
               <div className="text-sm text-blue-900 dark:text-blue-200">
                 <strong>Smart Order Splitting:</strong> Large orders are automatically split across the best-priced exchanges
                 to minimize slippage and execution costs while maximizing fill rates.
@@ -435,7 +404,7 @@ export const SmartOrderRouter: React.FC<SmartOrderRouterProps> = ({
                 >
                   {splittingQuery.isLoading ? (
                     <>
-                      <RotateCw className="w-4 h-4 mr-2 animate-spin" />
+                      <Icon className="w-4 h-4 mr-2 animate-spin">⟳</Icon>
                       Calculating...
                     </>
                   ) : (
@@ -543,30 +512,27 @@ export const SmartOrderRouter: React.FC<SmartOrderRouterProps> = ({
                       <CardTitle className="text-base">Distribution Analysis</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="h-48">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            data={((splittingQuery.data as any).splits).map((s: any) => ({
-                              name: s.venue === 'dex' ? 'DEX' : s.exchange,
-                              amount: parseFloat(s.amount),
-                              cost: s.cost,
-                            }))}
-                          >
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.3} />
-                            <XAxis dataKey="name" stroke="#94a3b8" />
-                            <YAxis yAxisId="left" stroke="#94a3b8" />
-                            <YAxis yAxisId="right" orientation="right" stroke="#94a3b8" />
-                            <Tooltip
-                              contentStyle={{
-                                backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                                border: '1px solid #e2e8f0',
-                                borderRadius: '8px',
-                              }}
-                            />
-                            <Bar yAxisId="left" dataKey="amount" fill="#3b82f6" name={`Amount (${symbol})`} />
-                            <Bar yAxisId="right" dataKey="cost" fill="#10b981" name="Cost ($)" />
-                          </BarChart>
-                        </ResponsiveContainer>
+                      <div className="h-48" style={{ height: '100%' }}>
+                        <Chart
+                          type="bar"
+                          data={{
+                            labels: ((splittingQuery.data as any).splits).map((s: any) => (s.venue === 'dex' ? 'DEX' : s.exchange)),
+                            datasets: [
+                              { label: `Amount (${symbol})`, data: ((splittingQuery.data as any).splits).map((s: any) => parseFloat(s.amount)), backgroundColor: '#3b82f6', yAxisID: 'y' },
+                              { label: 'Cost ($)', data: ((splittingQuery.data as any).splits).map((s: any) => s.cost), backgroundColor: '#10b981', yAxisID: 'y1' }
+                            ]
+                          }}
+                          options={{
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { tooltip: { enabled: true } },
+                            scales: {
+                              x: { ticks: { color: '#94a3b8' } },
+                              y: { position: 'left', ticks: { color: '#94a3b8' } },
+                              y1: { position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#94a3b8' } }
+                            }
+                          }}
+                        />
                       </div>
                     </CardContent>
                   </Card>
@@ -635,7 +601,7 @@ export const SmartOrderRouter: React.FC<SmartOrderRouterProps> = ({
                 >
                   {limitQuery.isLoading ? (
                     <>
-                      <RotateCw className="w-4 h-4 mr-2 animate-spin" />
+                      <Icon className="w-4 h-4 mr-2 animate-spin">⟳</Icon>
                       Analyzing...
                     </>
                   ) : (
@@ -695,30 +661,17 @@ export const SmartOrderRouter: React.FC<SmartOrderRouterProps> = ({
                     <CardTitle className="text-base">Price Target Analysis</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="h-56">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart
-                          data={[
-                            { name: 'Limit Price', price: limitPrice },
-                            { name: 'Best Bid', price: ((limitQuery.data as any).currentPrice) || 0 },
-                          ]}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.3} />
-                          <XAxis dataKey="name" stroke="#94a3b8" />
-                          <YAxis stroke="#94a3b8" domain={[((limitQuery.data as any).currentPrice || 0) * 0.98, limitPrice * 1.02]} />
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                              border: '1px solid #e2e8f0',
-                              borderRadius: '8px',
-                            }}
-                            formatter={(value) => `$${(value as number).toFixed(4)}`}
-                          />
-                          <Legend />
-                          <Line type="monotone" dataKey="price" stroke="#a855f7" strokeWidth={3} dot={{ fill: '#a855f7', r: 6 }} />
-                          <Line type="monotone" dataKey="price" stroke="#06b6d4" strokeWidth={2} dot={{ fill: '#06b6d4', r: 4 }} />
-                        </LineChart>
-                      </ResponsiveContainer>
+                    <div className="h-56" style={{ height: '100%' }}>
+                      <Chart
+                        type="line"
+                        data={{
+                          labels: ['Limit Price', 'Best Bid'],
+                          datasets: [
+                            { label: 'Price', data: [limitPrice, ((limitQuery.data as any).currentPrice) || 0], borderColor: '#a855f7', backgroundColor: 'rgba(168,85,247,0.08)', tension: 0.3 }
+                          ]
+                        }}
+                        options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `$${(ctx.raw as number).toFixed(4)}` } } } }}
+                      />
                     </div>
                   </CardContent>
                 </Card>
@@ -788,7 +741,7 @@ export const SmartOrderRouter: React.FC<SmartOrderRouterProps> = ({
                 <Card className="border-2 border-purple-300 dark:border-purple-700 bg-purple-50/50 dark:bg-purple-900/10">
                   <CardContent className="pt-4">
                     <div className="flex gap-3">
-                      <Lightbulb className="w-5 h-5 text-purple-600 dark:text-purple-400 flex-shrink-0 mt-0.5" />
+                      <Icon className="w-5 h-5 text-purple-600 dark:text-purple-400 flex-shrink-0 mt-0.5">💡</Icon>
                       <div>
                         <p className="font-semibold text-gray-900 dark:text-white mb-2">Smart Recommendation</p>
                         <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">

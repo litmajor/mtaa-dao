@@ -6,6 +6,9 @@
  */
 
 import React, { useState } from 'react';
+import { ethers } from 'ethers';
+import { FlashLoanEngine, FlashLoanAnalysis } from './FlashLoanEngine';
+import StateBadge from './StateBadge';
 import SimulationResultModal from '../SimulationResultModal';
 import { useSimulationPreview } from '../../hooks/useSimulationPreview';
 import { SimulationResult } from '../../server/services/simulationFramework';
@@ -17,6 +20,8 @@ interface FlashLoanFormData {
   executionPlan: string; // 'ARBITRAGE' | 'LIQUIDATION' | 'REFINANCE'
   estimatedProfit: number;
   repaymentAmount: number;
+  strategyAddress?: string;
+  strategyParamsHex?: string; // ABI-encoded hex params (optional)
 }
 
 interface FlashLoanPanelProps {
@@ -42,10 +47,15 @@ export const FlashLoanPanel: React.FC<FlashLoanPanelProps> = ({
     executionPlan: 'ARBITRAGE',
     estimatedProfit: 0,
     repaymentAmount: 0,
+    strategyAddress: '',
+    strategyParamsHex: '',
   });
 
-  const [profitMargin, setProfitMargin] = useState<number>(0);
-  const [isViableFlashloan, setIsViableFlashLoan] = useState<boolean>(false);
+  const [analysis, setAnalysis] = useState<FlashLoanAnalysis | null>(null);
+  const [paramTemplate, setParamTemplate] = useState<string>('none');
+  const [templateFields, setTemplateFields] = useState<Record<string,string>>({});
+  const [tokenDecimals, setTokenDecimals] = useState<number>(18);
+  const [chain, setChain] = useState<string>('ethereum');
 
   // Simulation state
   const {
@@ -62,22 +72,22 @@ export const FlashLoanPanel: React.FC<FlashLoanPanelProps> = ({
     },
   });
 
-  // Calculate repayment and profit margin
-  const calculateFlashLoanMetrics = () => {
-    const fee = formData.loanAmount * (formData.loanFeePercentage / 100);
-    const repayment = formData.loanAmount + fee;
-    const margin = formData.estimatedProfit - fee;
-    const isViable = margin > 0;
+  // Compute analysis using the domain engine
+  const computeAnalysis = () => {
+    const req = {
+      asset: formData.asset,
+      loanAmount: formData.loanAmount,
+      loanFeePercentage: formData.loanFeePercentage,
+      executionPlan: formData.executionPlan,
+      estimatedProfit: formData.estimatedProfit,
+      chain,
+      // optional: we could pass a chain-specific gas cost override here
+    };
 
-    setFormData({
-      ...formData,
-      repaymentAmount: repayment,
-    });
-
-    setProfitMargin(margin);
-    setIsViableFlashLoan(isViable);
-
-    return { repayment, margin, isViable };
+    const a = FlashLoanEngine.analyze(req);
+    setAnalysis(a);
+    setFormData({ ...formData, repaymentAmount: a.repaymentAmount });
+    return a;
   };
 
   // Handle preview button click
@@ -94,10 +104,10 @@ export const FlashLoanPanel: React.FC<FlashLoanPanelProps> = ({
       return;
     }
 
-    const { repayment } = calculateFlashLoanMetrics();
+    const a = computeAnalysis();
 
-    if (!isViableFlashloan) {
-      alert('This flash loan would result in a loss. Strategy is not viable.');
+    if (a.state === 'UNPROFITABLE' || a.state === 'HIGH_RISK' || a.state === 'DRAFT') {
+      alert('This flash loan is not in a viable state: ' + a.state + (a.warnings.length ? ' — ' + a.warnings.join('; ') : ''));
       return;
     }
 
@@ -111,7 +121,7 @@ export const FlashLoanPanel: React.FC<FlashLoanPanelProps> = ({
         loanFeePercentage: formData.loanFeePercentage,
         executionPlan: formData.executionPlan,
         estimatedProfit: formData.estimatedProfit,
-        repaymentAmount: repayment,
+        repaymentAmount: a.repaymentAmount,
       },
       userId
     );
@@ -120,7 +130,26 @@ export const FlashLoanPanel: React.FC<FlashLoanPanelProps> = ({
   // Handle flash loan execution
   const handleExecuteFlashLoan = async () => {
     try {
-      const response = await fetch('/api/flash-loan/execute', {
+      // Determine token decimals (best-effort) using window.ethereum if available
+      let tokenDecimals = 18;
+      try {
+        if ((window as any).ethereum && formData.asset) {
+          const provider = new ethers.BrowserProvider((window as any).ethereum);
+          const erc20 = new ethers.Contract(formData.asset, ['function decimals() view returns (uint8)'], provider);
+          const d: any = await erc20.decimals();
+          tokenDecimals = Number(d ?? 18);
+        }
+      } catch (err) {
+        // fallback to 18
+        tokenDecimals = 18;
+      }
+
+      if (!formData.strategyAddress) {
+        alert('Please provide the on-chain strategy contract address to execute');
+        return;
+      }
+
+      const response = await fetch('/api/lending/flash-loans/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -128,6 +157,9 @@ export const FlashLoanPanel: React.FC<FlashLoanPanelProps> = ({
           asset: formData.asset,
           loanAmount: formData.loanAmount,
           loanFeePercentage: formData.loanFeePercentage,
+          strategy: formData.strategyAddress,
+          strategyParams: formData.strategyParamsHex || '0x',
+          tokenDecimals,
           executionPlan: formData.executionPlan,
           repaymentAmount: formData.repaymentAmount,
         }),
@@ -167,7 +199,23 @@ export const FlashLoanPanel: React.FC<FlashLoanPanelProps> = ({
           <select
             id="asset"
             value={formData.asset}
-            onChange={(e) => setFormData({ ...formData, asset: e.target.value })}
+            onChange={async (e) => {
+              const newAsset = e.target.value;
+              setFormData({ ...formData, asset: newAsset });
+              // try to fetch decimals from wallet if available
+              try {
+                if ((window as any).ethereum) {
+                  const provider = new ethers.BrowserProvider((window as any).ethereum);
+                  const erc20 = new ethers.Contract(newAsset, ['function decimals() view returns (uint8)'], provider);
+                  const d: any = await erc20.decimals();
+                  setTokenDecimals(Number(d ?? 18));
+                } else {
+                  setTokenDecimals(18);
+                }
+              } catch (err) {
+                setTokenDecimals(18);
+              }
+            }}
           >
             {availableAssets.map((asset) => (
               <option key={asset} value={asset}>
@@ -188,7 +236,7 @@ export const FlashLoanPanel: React.FC<FlashLoanPanelProps> = ({
             placeholder="0.00"
             value={formData.loanAmount}
             onChange={(e) => setFormData({ ...formData, loanAmount: parseFloat(e.target.value) || 0 })}
-            onBlur={calculateFlashLoanMetrics}
+            onBlur={() => computeAnalysis()}
           />
         </div>
 
@@ -213,6 +261,15 @@ export const FlashLoanPanel: React.FC<FlashLoanPanelProps> = ({
             <option value="LIQUIDATION">Liquidation (flash loan + liquidation)</option>
             <option value="REFINANCE">Refinance (optimize debt position)</option>
           </select>
+
+          <div style={{ marginTop: 8 }}>
+            <label htmlFor="chain">Chain</label>
+            <select id="chain" value={chain} onChange={(e) => setChain(e.target.value)}>
+              <option value="ethereum">Ethereum</option>
+              <option value="polygon">Polygon</option>
+              <option value="arbitrum">Arbitrum</option>
+            </select>
+          </div>
 
           {/* Strategy Description */}
           <div className="strategy-description">
@@ -241,42 +298,146 @@ export const FlashLoanPanel: React.FC<FlashLoanPanelProps> = ({
             placeholder="0.00"
             value={formData.estimatedProfit}
             onChange={(e) => setFormData({ ...formData, estimatedProfit: parseFloat(e.target.value) || 0 })}
-            onBlur={calculateFlashLoanMetrics}
+            onBlur={() => computeAnalysis()}
           />
           <small>Expected profit after flash loan execution</small>
+        </div>
+
+        {/* Strategy Address (on-chain) */}
+        <div className="form-group">
+          <label htmlFor="strategyAddress">Strategy Contract Address</label>
+          <input
+            id="strategyAddress"
+            type="text"
+            placeholder="0x..."
+            value={formData.strategyAddress}
+            onChange={(e) => setFormData({ ...formData, strategyAddress: e.target.value })}
+          />
+          <small>On-chain strategy contract to be invoked by the executor (required for execute)</small>
+        </div>
+
+        {/* Strategy Params (ABI-encoded hex) */}
+        <div className="form-group">
+          <label htmlFor="strategyParams">Strategy Params (ABI hex)</label>
+          <input
+            id="strategyParams"
+            type="text"
+            placeholder="0x... (optional)"
+            value={formData.strategyParamsHex}
+            onChange={(e) => setFormData({ ...formData, strategyParamsHex: e.target.value })}
+          />
+          <small>Optional: ABI-encoded parameters for the strategy (hex). Leave empty for none.</small>
+        </div>
+
+        {/* Param Encoder Helper */}
+        <div className="form-group param-encoder">
+          <label>Param Encoder Helper</label>
+          <select value={paramTemplate} onChange={(e) => { setParamTemplate(e.target.value); setTemplateFields({}); }}>
+            <option value="none">None</option>
+            <option value="addr_uint">(address, uint256) — target, minProfit</option>
+            <option value="addr_uint_uint">(address, uint256, uint256) — target, amount, minReturn</option>
+          </select>
+
+          {paramTemplate === 'addr_uint' && (
+            <div className="template-fields">
+              <input
+                placeholder="target address"
+                value={templateFields.target || ''}
+                onChange={(e) => setTemplateFields({ ...templateFields, target: e.target.value })}
+              />
+              <input
+                placeholder="minProfit"
+                value={templateFields.minProfit || ''}
+                onChange={(e) => setTemplateFields({ ...templateFields, minProfit: e.target.value })}
+              />
+            </div>
+          )}
+
+          {paramTemplate === 'addr_uint_uint' && (
+            <div className="template-fields">
+              <input
+                placeholder="target address"
+                value={templateFields.target || ''}
+                onChange={(e) => setTemplateFields({ ...templateFields, target: e.target.value })}
+              />
+              <input
+                placeholder="amount"
+                value={templateFields.amount || ''}
+                onChange={(e) => setTemplateFields({ ...templateFields, amount: e.target.value })}
+              />
+              <input
+                placeholder="minReturn"
+                value={templateFields.minReturn || ''}
+                onChange={(e) => setTemplateFields({ ...templateFields, minReturn: e.target.value })}
+              />
+            </div>
+          )}
+
+          <div style={{ marginTop: 8 }}>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                try {
+                  if (paramTemplate === 'none') {
+                    setFormData({ ...formData, strategyParamsHex: '0x' });
+                    return;
+                  }
+
+                  if (paramTemplate === 'addr_uint') {
+                    const target = templateFields.target || '0x0000000000000000000000000000000000000000';
+                    const minProfit = templateFields.minProfit || '0';
+                    const encoded = new ethers.AbiCoder().encode(['address','uint256'], [target, ethers.parseUnits(minProfit || '0', tokenDecimals)]);
+                    setFormData({ ...formData, strategyParamsHex: encoded });
+                    return;
+                  }
+
+                  if (paramTemplate === 'addr_uint_uint') {
+                    const target = templateFields.target || '0x0000000000000000000000000000000000000000';
+                    const amount = templateFields.amount || '0';
+                    const minReturn = templateFields.minReturn || '0';
+                    const encoded = new ethers.AbiCoder().encode(['address','uint256','uint256'], [target, ethers.parseUnits(amount || '0', tokenDecimals), ethers.parseUnits(minReturn || '0', tokenDecimals)]);
+                    setFormData({ ...formData, strategyParamsHex: encoded });
+                    return;
+                  }
+                } catch (err) {
+                  console.error('Encoding error', err);
+                  alert('Failed to encode params: ' + String(err));
+                }
+              }}
+            >
+              Encode Params
+            </button>
+          </div>
         </div>
 
         {/* Flash Loan Metrics */}
         <div className="flash-loan-metrics">
           <div className="metric">
             <span>Repayment Amount</span>
-            <span className="value">{formData.repaymentAmount.toFixed(6)} {formData.asset}</span>
+            <span className="value">{(analysis?.repaymentAmount ?? formData.repaymentAmount).toFixed(6)} {formData.asset}</span>
           </div>
 
-          <div className={`metric ${profitMargin >= 0 ? 'positive' : 'negative'}`}>
+          <div className={`metric ${(analysis?.netProfit ?? 0) >= 0 ? 'positive' : 'negative'}`}>
             <span>Net Profit</span>
-            <span className={`value ${profitMargin >= 0 ? 'success' : 'danger'}`}>
-              {profitMargin.toFixed(6)} {formData.asset}
+            <span className={`value ${(analysis?.netProfit ?? 0) >= 0 ? 'success' : 'danger'}`}>
+              {(analysis?.netProfit ?? 0).toFixed(6)} {formData.asset}
             </span>
           </div>
 
           <div className="metric">
             <span>Profit Margin</span>
-            <span className={`value ${profitMargin > 0 ? 'success' : 'danger'}`}>
-              {((profitMargin / formData.loanAmount) * 100).toFixed(2)}%
+            <span className={`value ${(analysis?.profitMargin ?? 0) > 0 ? 'success' : 'danger'}`}>
+              {((analysis?.profitMarginPct ?? 0)).toFixed(2)}%
             </span>
           </div>
 
-          {isViableFlashloan && (
-            <div className="viability-indicator success">
-              ✓ Flash loan is profitable
-            </div>
-          )}
-          {!isViableFlashloan && formData.loanAmount > 0 && (
-            <div className="viability-indicator error">
-              ✗ Flash loan would result in loss
-            </div>
-          )}
+          <div style={{ marginTop: 8 }}>
+            <StateBadge state={analysis?.state ?? 'DRAFT'} />
+            {analysis?.warnings?.length ? (
+              <div className="warnings">{analysis.warnings.join(' — ')}</div>
+            ) : null}
+          </div>
         </div>
 
         {/* Risk Disclaimer */}
@@ -301,13 +462,17 @@ export const FlashLoanPanel: React.FC<FlashLoanPanelProps> = ({
         <div className="form-actions">
           <button
             type="submit"
-            disabled={isLoading || formData.loanAmount <= 0 || !isViableFlashloan}
+            disabled={
+              isLoading ||
+              formData.loanAmount <= 0 ||
+              !(analysis && (analysis.state === 'PROFITABLE' || analysis.state === 'READY_TO_EXECUTE'))
+            }
             className="btn btn-primary"
           >
             {isLoading ? 'Analyzing...' : 'Preview Flash Loan'}
           </button>
 
-          {!isViableFlashloan && formData.loanAmount > 0 && (
+          {analysis && analysis.state === 'UNPROFITABLE' && formData.loanAmount > 0 && (
             <span className="button-note">Not viable - would result in loss</span>
           )}
         </div>

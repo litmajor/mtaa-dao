@@ -52,7 +52,7 @@ export const useTechnicalIndicators = (
     queryKey: ['technicalIndicators', symbol, exchange, timeframe],
     queryFn: async () => {
       const response = await fetch(
-        `/api/exchanges/technicals?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}&timeframe=${encodeURIComponent(timeframe)}`
+        `/api/v1/yuki/exchanges/technicals?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}&timeframe=${encodeURIComponent(timeframe)}`
       );
 
       if (!response.ok) {

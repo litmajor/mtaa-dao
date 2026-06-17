@@ -36,18 +36,8 @@ import {
 } from '@/components/ui/pagination';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell
-} from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 // Note: Some icons may not exist in lucide-react, using available alternatives
 // import { TrendingUp, RefreshCcw, Lightbulb, AlertTriangle } from 'lucide-react';
 import { TrendingUp, RotateCw } from 'lucide-react';
@@ -113,7 +103,7 @@ const useMarketsScanner = ({
     queryKey: ['markets-scan', exchange, page, pageSize, search],
     queryFn: async () => {
       try {
-        const url = new URL(`/api/exchanges/markets?exchange=${exchange}`);
+        const url = new URL(`/api/v1/yuki/exchanges/markets?exchange=${exchange}`);
         url.searchParams.append('page', page.toString());
         url.searchParams.append('pageSize', pageSize.toString());
         if (search) url.searchParams.append('search', search);
@@ -150,7 +140,7 @@ const useExchangesStatistics = () => {
     queryKey: ['exchanges-stats'],
     queryFn: async () => {
       try {
-        const response = await fetch('/api/exchanges/statistics');
+        const response = await fetch('/api/v1/yuki/exchanges/statistics');
         if (!response.ok) {
           throw new Error('Failed to fetch exchange statistics');
         }
@@ -182,7 +172,7 @@ const useReloadMarkets = () => {
     queryKey: ['reload-all-markets'],
     queryFn: async () => {
       try {
-        const response = await fetch('/api/exchanges/reload-markets', { method: 'POST' });
+        const response = await fetch('/api/v1/yuki/exchanges/reload-markets', { method: 'POST' });
         if (!response.ok) {
           throw new Error('Failed to reload markets');
         }
@@ -716,25 +706,13 @@ export const MarketScanner: React.FC = () => {
                   {/* Pie Chart */}
                   {exchangeStats.length > 0 && (
                     <div className="h-80">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={exchangeStats}
-                            cx="50%"
-                            cy="50%"
-                            labelLine={false}
-                            label={({ name, value }) => `${name}: ${value.toLocaleString()}`}
-                            outerRadius={100}
-                            fill="#8884d8"
-                            dataKey="value"
-                          >
-                            {exchangeStats.map((entry: any, index: number) => (
-                              <Cell key={`cell-${index}`} fill={entry.color} />
-                            ))}
-                          </Pie>
-                          <Tooltip formatter={(value: any) => value.toLocaleString()} />
-                        </PieChart>
-                      </ResponsiveContainer>
+                      <div style={{ height: '100%' }}>
+                        <Chart
+                          type="pie"
+                          data={{ labels: exchangeStats.map((e: any) => e.name), datasets: [{ data: exchangeStats.map((e: any) => e.value), backgroundColor: exchangeStats.map((e: any) => e.color) }] }}
+                          options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${ctx.label}: ${ctx.raw.toLocaleString()}` } } } }}
+                        />
+                      </div>
                     </div>
                   )}
 
@@ -813,26 +791,15 @@ export const MarketScanner: React.FC = () => {
                   <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">
                     Markets per Exchange
                   </h3>
-                  <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={(statsData as any)?.exchanges
-                          ?.filter((s: ExchangeStats) => selectedExchanges.includes(s.exchange))
-                          .map((s: ExchangeStats) => ({
-                            name: s.exchange.toUpperCase(),
-                            active: s.activeMarkets || 0,
-                            total: s.totalMarkets || 0
-                          })) || []}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" stroke="#ccc" />
-                        <XAxis dataKey="name" />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="active" fill="#3b82f6" name="Active Markets" />
-                        <Bar dataKey="total" fill="#93c5fd" name="Total Markets" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                    <div className="h-80">
+                      <div style={{ height: '100%' }}>
+                        <Chart
+                          type="bar"
+                          data={{ labels: ((statsData as any)?.exchanges || []).filter((s: ExchangeStats) => selectedExchanges.includes(s.exchange)).map((s: ExchangeStats) => s.exchange.toUpperCase()), datasets: [{ label: 'Active Markets', data: ((statsData as any)?.exchanges || []).filter((s: ExchangeStats) => selectedExchanges.includes(s.exchange)).map((s: ExchangeStats) => s.activeMarkets || 0), backgroundColor: '#3b82f6' }, { label: 'Total Markets', data: ((statsData as any)?.exchanges || []).filter((s: ExchangeStats) => selectedExchanges.includes(s.exchange)).map((s: ExchangeStats) => s.totalMarkets || 0), backgroundColor: '#93c5fd' }] }}
+                          options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }}
+                        />
+                      </div>
+                    </div>
                 </div>
               )}
             </CardContent>

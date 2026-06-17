@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Trophy, Gift, Clock, TrendingUp, Award, Zap, Sparkles } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import formatDistanceToNow from "date-fns/formatDistanceToNow";
 
 interface RewardCardProps {
   reward: {

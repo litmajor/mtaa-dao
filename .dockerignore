@@ -1,39 +1,50 @@
-# Node modules and package manager artifacts
+# Dependencies
 node_modules
 npm-debug.log
 yarn-error.log
-pnpm-debug.log
 
-# Git
+# Build outputs (we rebuild in container)
+dist
+server/dist
+
+# Version control
 .git
 .gitignore
 
-# Environment files
+# Environment
 .env
 .env.local
 .env.*.local
+.env.production
+.env.local.example
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests
+coverage
+.nyc_output
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+__tests__
+__mocks__
 
 # Logs
 logs
 *.log
 
-# Build output
-dist
-client/dist
-server/dist
-*.sqlite
-coverage
-
-# Editor folders
-.vscode
-.idea
-
-# System files
-.DS_Store
-Thumbs.db
-
-# Docker files themselves
-Dockerfile
-Dockerfile.*
-docker-compose.yml
-docker-compose.yaml
+# Misc
+README.md
+*.md
+.docker
+docker-compose*.yml
+Dockerfile*

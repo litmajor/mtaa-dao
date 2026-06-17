@@ -84,6 +84,12 @@ export class DomainAggregatorAgent {
   // State tracking
   private lastDomainStates: Map<string, DomainSnapshot> = new Map();
   private slackWebhookUrl?: string;
+  // Retry / pause state for resilient polling
+  private pauseUntil?: number | null = null;
+  private maxRetriesPerPoll: number = 3;
+  private consecutiveFailures: number = 0;
+  private maxConsecutiveFailuresBeforePause: number = 5;
+  private pauseDurationMs: number = 15 * 60_000; // 15 minutes
 
   constructor(
     baseUrl: string = 'http://localhost:5000',
@@ -229,41 +235,58 @@ export class DomainAggregatorAgent {
   // ════════════════════════════════════════════════════════════════════════════════
 
   private async pollOnce(): Promise<void> {
-    try {
-      const response = await axios.get(`${this.baseUrl}/api/docs/stats/by-domain`, {
-        timeout: 10_000,
-      });
+    // respect pause after failures
+    if (this.pauseUntil && Date.now() < this.pauseUntil) {
+      logger.warn('[DOMAIN_AGGREGATOR] Poll paused until', new Date(this.pauseUntil).toISOString());
+      return;
+    }
 
-      const { domains } = response.data;
-      if (!domains) {
-        logger.warn('[DOMAIN_AGGREGATOR] No domain data in response');
+    let attempt = 0;
+    let lastError: any = null;
+    while (attempt <= this.maxRetriesPerPoll) {
+      try {
+        const response = await axios.get(`${this.baseUrl}/api/docs/stats/by-domain`, { timeout: 10_000 });
+        const { domains } = response.data as { domains?: Record<string, any> };
+        if (!domains || typeof domains !== 'object') {
+          logger.warn('[DOMAIN_AGGREGATOR] No domain data in response');
+          return;
+        }
+
+        for (const [domain, stats] of Object.entries(domains)) {
+          const statObj = stats as Record<string, any>;
+          const snapshot: DomainSnapshot = {
+            timestamp: new Date(),
+            domain: domain as string,
+            endpointCount: Number(statObj.endpointCount || 0),
+            callCount: Number(statObj.callCount || 0),
+            avgLatency: Number(statObj.avgLatency || 0),
+            p99Latency: Number(statObj.p99Latency || 0),
+            errorRate: Number(statObj.errorRate || 0),
+            isHealthy: Boolean(statObj.isHealthy),
+            trend: 'stable',
+          };
+
+          this.storeSnapshot(domain as string, snapshot);
+          await this.analyzeDomain(domain as string, snapshot);
+          this.lastDomainStates.set(domain as string, snapshot);
+        }
+
+        this.consecutiveFailures = 0;
         return;
+      } catch (err) {
+        lastError = err;
+        attempt += 1;
+        const waitMs = 300 * Math.pow(2, attempt);
+        logger.warn(`[DOMAIN_AGGREGATOR] Poll attempt ${attempt} failed — retrying in ${waitMs}ms`, err instanceof Error ? err.message : err);
+        await new Promise((res) => setTimeout(res, waitMs));
       }
+    }
 
-      // Process each domain
-      for (const [domain, stats] of Object.entries(domains)) {
-        const snapshot: DomainSnapshot = {
-          timestamp: new Date(),
-          domain: domain as string,
-          endpointCount: (stats as any).endpointCount,
-          callCount: (stats as any).callCount,
-          avgLatency: (stats as any).avgLatency,
-          p99Latency: (stats as any).p99Latency,
-          errorRate: (stats as any).errorRate,
-          isHealthy: (stats as any).isHealthy,
-          trend: 'stable',
-        };
-
-        // Store snapshot
-        this.storeSnapshot(domain as string, snapshot);
-
-        // Analyze
-        await this.analyzeDomain(domain as string, snapshot);
-
-        this.lastDomainStates.set(domain as string, snapshot);
-      }
-    } catch (error) {
-      logger.error('[DOMAIN_AGGREGATOR] Poll failed:', error instanceof Error ? error.message : error);
+    logger.error('[DOMAIN_AGGREGATOR] Poll failed after retries:', lastError instanceof Error ? lastError.message : lastError);
+    this.consecutiveFailures += 1;
+    if (this.consecutiveFailures >= this.maxConsecutiveFailuresBeforePause) {
+      this.pauseUntil = Date.now() + this.pauseDurationMs;
+      logger.error('[DOMAIN_AGGREGATOR] Pausing polling until', new Date(this.pauseUntil).toISOString());
     }
   }
 
@@ -334,7 +357,7 @@ export class DomainAggregatorAgent {
     }
 
     // Check recovery
-    if (previous && !snapshot.isHealthy && previous.isHealthy === false && snapshot.errorRate < this.thresholds.errorRateWarning) {
+    if (previous && previous.isHealthy === false && snapshot.isHealthy === true && snapshot.errorRate < this.thresholds.errorRateWarning) {
       await this.handleAlert({
         severity: 'warning',
         domain,

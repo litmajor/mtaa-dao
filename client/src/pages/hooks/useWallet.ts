@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getBalance, connectWallet, currentNetwork, publicClient } from '@/lib/blockchain';
-import { Interface, parseUnits } from 'ethers';
+// NOTE: ethers is large; import it dynamically where needed to reduce initial bundle size
 
 declare global {
   interface Window {
@@ -69,7 +69,7 @@ export const useWallet = () => {
         }
 
         // Get chain ID
-        const chainIdHex = await window.ethereum.request({ method: 'eth_chainId' });
+        const chainIdHex = (await window.ethereum.request({ method: 'eth_chainId' })) as string;
         chainId = parseInt(chainIdHex, 16);
       }
 
@@ -243,6 +243,7 @@ export const useWallet = () => {
             type: 'function',
           },
         ];
+        const { Interface, parseUnits } = await import('ethers');
         const iface = new Interface(abi as any);
         const transferData = iface.encodeFunctionData('transfer', [to as `0x${string}`, parseUnits(amount, 18)]);
 
@@ -254,6 +255,7 @@ export const useWallet = () => {
         };
       } else {
         // Native CELO transfer using viem for precise conversion
+        const { parseUnits } = await import('ethers');
         const value = parseUnits(amount, 18);
         // `parseUnits` returns a bigint; convert to hex string for the RPC payload
         const hex = '0x' + value.toString(16);

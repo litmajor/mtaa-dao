@@ -17,7 +17,7 @@ import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle, Dialog
 import { toast } from "sonner";
 import { useWallet } from "@/pages/hooks/useWallet";
 import { useAccount, useBalance } from "wagmi"; // For Celo wallet integration
-import { parseEther } from "viem"; // For gas estimates
+import { parseEther } from '@/lib/blockchain'; // For gas estimates
 
 interface Vault {
   address: string;

@@ -14,28 +14,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import {
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  RadarChart,
-  Radar,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import {
   TrendingUp,
   TrendingDown,
@@ -386,29 +366,13 @@ export const VaultAnalyticsTab: React.FC<VaultAnalyticsTabProps> = ({
             <CardTitle className="text-base">Total Value Locked Trend</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={analyticsData.tvlHistory}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 12 }}
-                  interval={Math.floor(analyticsData.tvlHistory.length / 4)}
-                />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip
-                  formatter={(value) => `$${(value as number / 1000).toFixed(1)}k`}
-                  labelFormatter={(label) => `Date: ${label}`}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  stroke="#3B82F6"
-                  strokeWidth={2}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            <div style={{ height: 300 }}>
+              <Chart
+                type="line"
+                data={{ labels: analyticsData.tvlHistory.map(d => d.date), datasets: [{ label: 'TVL', data: analyticsData.tvlHistory.map(d => d.value), borderColor: '#3B82F6', backgroundColor: 'rgba(59,130,246,0.1)', fill: false, tension: 0.2, pointRadius: 0 }] }}
+                options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `$${(ctx.raw as number / 1000).toFixed(1)}k` } } } }}
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -418,37 +382,16 @@ export const VaultAnalyticsTab: React.FC<VaultAnalyticsTabProps> = ({
             <CardTitle className="text-base">APY Performance vs Benchmark</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={analyticsData.apyHistory}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 12 }}
-                  interval={Math.floor(analyticsData.apyHistory.length / 4)}
-                />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip formatter={(value) => `${(value as number).toFixed(2)}%`} />
-                <Legend />
-                <Area
-                  type="monotone"
-                  dataKey="apy"
-                  fill="#10B981"
-                  stroke="#10B981"
-                  fillOpacity={0.2}
-                  name="Current APY"
-                  isAnimationActive={false}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="benchmark"
-                  fill="#F59E0B"
-                  stroke="#F59E0B"
-                  fillOpacity={0.2}
-                  name="Benchmark"
-                  isAnimationActive={false}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            <div style={{ height: 300 }}>
+              <Chart
+                type="line"
+                data={{ labels: analyticsData.apyHistory.map(d => d.date), datasets: [
+                  { label: 'Current APY', data: analyticsData.apyHistory.map(d => d.apy), borderColor: '#10B981', backgroundColor: 'rgba(16,185,129,0.15)', fill: true, tension: 0.2 },
+                  { label: 'Benchmark', data: analyticsData.apyHistory.map(d => d.benchmark), borderColor: '#F59E0B', backgroundColor: 'rgba(245,158,11,0.08)', fill: true, tension: 0.2 }
+                ] }}
+                options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: (ctx: any) => `${(ctx.raw as number).toFixed(2)}%` } } } }}
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -458,27 +401,9 @@ export const VaultAnalyticsTab: React.FC<VaultAnalyticsTabProps> = ({
             <CardTitle className="text-base">Asset Distribution</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col items-center">
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={analyticsData.assets}
-                  dataKey="value"
-                  nameKey="symbol"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={100}
-                  label={({ symbol, percentage }) => `${symbol} ${percentage}%`}
-                >
-                  {analyticsData.assets.map((_, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={['#3B82F6', '#10B981', '#F59E0B', '#EF4444'][index % 4]}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => `$${(value as number / 1000).toFixed(1)}k`} />
-              </PieChart>
-            </ResponsiveContainer>
+            <div style={{ height: 300 }}>
+              <Chart type="pie" data={{ labels: analyticsData.assets.map(a => a.symbol), datasets: [{ data: analyticsData.assets.map(a => a.value), backgroundColor: analyticsData.assets.map((_, i) => ['#3B82F6', '#10B981', '#F59E0B', '#EF4444'][i % 4]) }] }} options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `$${((ctx.raw as number)/1000).toFixed(1)}k` } } } }} />
+            </div>
             {/* Asset List */}
             <div className="mt-4 w-full space-y-2">
               {analyticsData.assets.map((asset) => (
@@ -507,19 +432,9 @@ export const VaultAnalyticsTab: React.FC<VaultAnalyticsTabProps> = ({
             <CardTitle className="text-base">Withdrawal Trends</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={analyticsData.withdrawals}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 12 }}
-                  interval={Math.floor(analyticsData.withdrawals.length / 4)}
-                />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip formatter={(value) => `$${(value as number / 1000).toFixed(1)}k`} />
-                <Bar dataKey="amount" fill="#EF4444" isAnimationActive={false} />
-              </BarChart>
-            </ResponsiveContainer>
+            <div style={{ height: 300 }}>
+              <Chart type="bar" data={{ labels: analyticsData.withdrawals.map(w => w.date), datasets: [{ label: 'Withdrawals', data: analyticsData.withdrawals.map(w => w.amount), backgroundColor: '#EF4444' }] }} options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `$${((ctx.raw as number)/1000).toFixed(1)}k` } } } }} />
+            </div>
           </CardContent>
         </Card>
 
@@ -529,24 +444,9 @@ export const VaultAnalyticsTab: React.FC<VaultAnalyticsTabProps> = ({
             <CardTitle className="text-base">Risk Metrics</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <RadarChart data={[analyticsData.risk]}>
-                <PolarGrid />
-                <PolarAngleAxis
-                  dataKey="metric"
-                  tick={{ fontSize: 12 }}
-                />
-                <PolarRadiusAxis angle={90} domain={[0, 100]} />
-                <Radar
-                  name="Risk"
-                  dataKey="riskScore"
-                  stroke="#F59E0B"
-                  fill="#F59E0B"
-                  fillOpacity={0.6}
-                  isAnimationActive={false}
-                />
-              </RadarChart>
-            </ResponsiveContainer>
+            <div style={{ height: 300 }}>
+              <Chart type="radar" data={{ labels: ['Liquidity', 'Concentration', 'Volatility', 'Risk Score'], datasets: [{ label: 'Risk', data: [analyticsData.risk.liquidityRatio * 100, analyticsData.risk.concentrationRisk * 100, analyticsData.risk.volatility * 100, analyticsData.risk.riskScore], backgroundColor: 'rgba(245,158,11,0.15)', borderColor: '#F59E0B', fill: true }] }} options={{ responsive: true, maintainAspectRatio: false, scales: { r: { min: 0, max: 100 } } }} />
+            </div>
           </CardContent>
         </Card>
       </div>

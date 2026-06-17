@@ -5,17 +5,19 @@
  */
 
 import Web3 from 'web3';
+type Web3Type = InstanceType<typeof Web3>;
 import type { GasConfig, GasPriceData } from './types';
+type TxObject = Record<string, unknown>;
 
 /**
  * WalletGasManagerService - Manages gas configuration and estimation
  */
 export class WalletGasManagerService {
-  private web3: Web3;
+  private web3: Web3Type;
   private gasMultiplier: number = 1.1; // 10% buffer
   private priorityTipPercentage: number = 0.1; // 10% of base fee
 
-  constructor(web3: Web3, gasMultiplier?: number) {
+  constructor(web3: Web3Type, gasMultiplier?: number) {
     this.web3 = web3;
     if (gasMultiplier) {
       this.gasMultiplier = gasMultiplier;
@@ -32,7 +34,7 @@ export class WalletGasManagerService {
         throw new Error('Unable to fetch block data');
       }
 
-      const baseFeePerGas = block.baseFeePerGas ? BigInt(block.baseFeePerGas) : BigInt(0);
+      const baseFeePerGas = block.baseFeePerGas ? BigInt(String(block.baseFeePerGas)) : BigInt(0);
       const gasPrice = await this.web3.eth.getGasPrice();
 
       return {
@@ -49,7 +51,7 @@ export class WalletGasManagerService {
   /**
    * Estimate gas for a transaction
    */
-  async estimateGas(transaction: any): Promise<number> {
+  async estimateGas(transaction: TxObject): Promise<number> {
     try {
       const gasEstimate = await this.web3.eth.estimateGas(transaction);
       return Number(gasEstimate);
@@ -63,7 +65,7 @@ export class WalletGasManagerService {
   /**
    * Estimate gas with safety buffer
    */
-  async estimateGasWithBuffer(transaction: any, bufferPercentage?: number): Promise<number> {
+  async estimateGasWithBuffer(transaction: TxObject, bufferPercentage?: number): Promise<number> {
     try {
       const baseGas = await this.estimateGas(transaction);
       const buffer = bufferPercentage || 20; // 20% default buffer
@@ -80,8 +82,8 @@ export class WalletGasManagerService {
   async getOptimalGasConfig(): Promise<GasConfig> {
     try {
       const gasPrices = await this.getGasPrices();
-      const gasPrice = BigInt(gasPrices.gasPrice);
-      const baseFeePerGas = BigInt(gasPrices.baseFeePerGas);
+      const gasPrice = BigInt(String(gasPrices.gasPrice ?? '0'));
+      const baseFeePerGas = BigInt(String(gasPrices.baseFeePerGas ?? '0'));
 
       // For EIP-1559 chains
       if (baseFeePerGas > BigInt(0)) {
@@ -178,6 +180,6 @@ export class WalletGasManagerService {
 }
 
 // Export singleton instance creator
-export const createWalletGasManagerService = (web3: Web3, gasMultiplier?: number): WalletGasManagerService => {
+export const createWalletGasManagerService = (web3: Web3Type, gasMultiplier?: number): WalletGasManagerService => {
   return new WalletGasManagerService(web3, gasMultiplier);
 };

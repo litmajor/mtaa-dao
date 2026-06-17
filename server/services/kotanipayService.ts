@@ -7,12 +7,13 @@
 import { db } from '../db';
 import { walletTransactions } from '../../shared/schema';
 import { userBalances as userBalancesTable, transactionFees as transactionFeesTable, mpesaTransactions as mpesaTransactionsTable } from '../../shared/financialEnhancedSchema';
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { notificationService } from '../notificationService';
 import { config } from '../../shared/config';
 import { exchangeRateService } from './exchangeRateService';
 import { stableInflowModule } from './stableInflowModule';
 import { stableAssetRegistryService } from './stableAssetRegistryService';
+import { paymentRecoverySAGA } from './PaymentRecoverySAGAOrchestrator';
 
 interface DepositRequest {
   userId: string;
@@ -83,10 +84,10 @@ export class KotanipayService {
       // Get current exchange rate
       const exchangeRate = await exchangeRateService.getUSDtoKESRate();
 
-      // Calculate conversion and fees
-      const fee = request.amountKES * DEPOSIT_FEE_PERCENTAGE;
-      const netKES = request.amountKES - fee;
-      const estimatedCUSD = netKES / exchangeRate;
+      // Calculate conversion and fees (round to avoid floating point drift)
+      const fee = Number((request.amountKES * DEPOSIT_FEE_PERCENTAGE).toFixed(2));
+      const netKES = Number((request.amountKES - fee).toFixed(2));
+      const estimatedCUSD = Number((netKES / exchangeRate).toFixed(8));
 
       // Record pending transaction
       const transaction = await (db as any).insert(mpesaTransactionsTable).values({
@@ -94,6 +95,7 @@ export class KotanipayService {
         phoneNumber: request.phone,
         transactionType: 'stk_push',
         amount: request.amountKES.toString(),
+        checkoutRequestId: transactionId,
         accountReference: `MtaaDAO-${request.userId.substring(0, 8)}`,
         transactionDesc: `MtaaDAO Deposit - ${transactionId}`,
         status: 'pending',
@@ -101,7 +103,7 @@ export class KotanipayService {
           transactionId,
           reference: request.reference,
           daoId: request.daoId,
-          amountCUSD: estimatedCUSD.toString(),
+          amountCUSD: estimatedCUSD.toFixed(8),
           exchangeRate: exchangeRate.toString(),
           estimatedKES: request.amountKES,
         },
@@ -481,50 +483,57 @@ export class KotanipayService {
     daoId?: string
   ): Promise<void> {
     try {
-      // Get current balance
-      const [currentBalance] = await (db as any)
-        .select()
-        .from(userBalancesTable)
-        .where(
-          and(
-            eq(userBalancesTable.userId, userId),
-            eq(userBalancesTable.currency, currency),
-            daoId ? eq(userBalancesTable.daoId, daoId) : isNull(userBalancesTable.daoId)
-          )
-        );
+      // Atomic DB-side update using drizzle's update with SQL expressions
+      const formattedAmount = amount.toString();
+      const condition = and(
+        eq(userBalancesTable.userId, userId),
+        eq(userBalancesTable.currency, currency),
+        daoId ? eq(userBalancesTable.daoId as any, daoId) : isNull(userBalancesTable.daoId)
+      );
 
-      const available = currentBalance ? parseFloat(currentBalance.availableBalance) : 0;
-      const newBalance = operation === 'add' ? available + amount : available - amount;
-
-      if (newBalance < 0) {
-        throw new Error(`Insufficient balance. Current: ${available}, Requested: ${amount}`);
-      }
-
-      // Update or create balance
-      if (currentBalance) {
-        await (db as any)
+      if (operation === 'add') {
+        const updated = await (db as any)
           .update(userBalancesTable)
           .set({
-            availableBalance: newBalance.toString(),
-            totalBalance: newBalance.toString(),
+            availableBalance: sql`CAST(${userBalancesTable.availableBalance} AS NUMERIC) + CAST(${formattedAmount} AS NUMERIC)`,
+            totalBalance: sql`CAST(${userBalancesTable.totalBalance} AS NUMERIC) + CAST(${formattedAmount} AS NUMERIC)`,
             lastUpdated: new Date(),
           })
-          .where(eq(userBalancesTable.id, currentBalance.id));
+          .where(condition)
+          .returning();
+
+        if (!updated || updated.length === 0) {
+          // row not present: insert as new
+          await (db as any).insert(userBalancesTable).values({
+            userId,
+            currency,
+            availableBalance: formattedAmount,
+            totalBalance: formattedAmount,
+            daoId,
+            createdAt: new Date(),
+            lastUpdated: new Date(),
+          });
+        }
       } else {
-        await (db as any).insert(userBalancesTable).values({
-          userId,
-          currency,
-          availableBalance: newBalance.toString(),
-          totalBalance: newBalance.toString(),
-          daoId,
-          createdAt: new Date(),
-          lastUpdated: new Date(),
-        });
+        // Subtract: perform guarded update to prevent overdraft
+        const guardedWhere = and(condition, sql`CAST(${userBalancesTable.availableBalance} AS NUMERIC) >= CAST(${formattedAmount} AS NUMERIC)`);
+
+        const updated = await (db as any)
+          .update(userBalancesTable)
+          .set({
+            availableBalance: sql`CAST(${userBalancesTable.availableBalance} AS NUMERIC) - CAST(${formattedAmount} AS NUMERIC)`,
+            totalBalance: sql`CAST(${userBalancesTable.totalBalance} AS NUMERIC) - CAST(${formattedAmount} AS NUMERIC)`,
+            lastUpdated: new Date(),
+          })
+          .where(guardedWhere)
+          .returning();
+
+        if (!updated || updated.length === 0) {
+          throw new Error(`Insufficient balance or balance row not found for ${userId}`);
+        }
       }
 
-      console.log(
-        `💰 Balance updated: ${userId} ${currency} ${operation} ${amount} = ${newBalance}`
-      );
+      console.log(`💰 Balance updated: ${userId} ${currency} ${operation} ${amount}`);
     } catch (error) {
       console.error('Balance update error:', error);
       throw error;

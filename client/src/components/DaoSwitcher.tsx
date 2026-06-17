@@ -15,9 +15,9 @@ export default function DaoSwitcher() {
 
   // Fetch user's DAOs
   const { data: daos = [] } = useQuery({
-    queryKey: ['/api/daos'],
+    queryKey: ['/api/v1/daos'],
     queryFn: async () => {
-      const data = await apiGet<any[]>('/api/daos');
+      const data = await apiGet<any[]>('/api/v1/daos');
       return Array.isArray(data) ? data.filter((d: any) => d.isJoined) : [];
     },
   });

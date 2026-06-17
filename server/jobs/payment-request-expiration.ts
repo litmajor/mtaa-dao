@@ -81,13 +81,15 @@ async function checkAndExpireRequests() {
         // Optional: Send notification to requester about expiration
         // TODO: Implement notification service call here
       } catch (error) {
-        console.error(`[Payment Request Expiration] Failed to expire request ${request.id}:`, error);
+        const errObj = error instanceof Error ? { message: error.message, stack: error.stack } : { message: String(error) };
+        console.error(`[Payment Request Expiration] Failed to expire request ${request.id}:`, errObj);
       }
     }
 
     console.log(`[Payment Request Expiration] Completed: ${successCount}/${expiredRequests.length} requests expired`);
   } catch (error) {
-    console.error('[Payment Request Expiration] Error checking requests:', error);
+    const errObj = error instanceof Error ? { message: error.message, stack: error.stack } : { message: String(error) };
+    console.error('[Payment Request Expiration] Error checking requests:', errObj);
   } finally {
     expirationJobRunning = false;
   }

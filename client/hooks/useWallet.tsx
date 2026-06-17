@@ -8,8 +8,9 @@
 'use client'; // For Next.js
 
 import { useState, useCallback, useEffect, useContext, createContext } from 'react';
-import Web3 from 'web3';
-import type { WalletConfig } from './types';
+import type Web3 from 'web3';
+import { getChainConfig } from './chains';
+import { portfolioService, type PortfolioState } from '../services/portfolioService';
 
 // Basic account and provider types
 export type Account = { address: string; chainId?: number; balance?: string } | null
@@ -95,18 +96,26 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!ethereum) throw new Error('No wallet provider found. Please install MetaMask or similar.');
 
       // Request account access
-      const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+      const accounts = (await ethereum.request({ method: 'eth_requestAccounts' })) as string[];
       if (!accounts || accounts.length === 0) {
         throw new Error('No accounts found');
       }
 
-      // Get chain ID
-      const chainIdHex = await ethereum.request({ method: 'eth_chainId' });
+      // Get chain ID (cast to string to satisfy TS)
+      const chainIdHex = (await ethereum.request({ method: 'eth_chainId' })) as string;
       const chainId = parseInt(chainIdHex, 16);
 
-      // Initialize Web3
-      const web3 = new Web3(ethereum);
-      const account = web3.eth.accounts.privateKeyToAccount(accounts[0]);
+      // Initialize Web3 (dynamic import to avoid bundling it into main chunk)
+      const Web3Module = await import('web3');
+      // Support both ESM default and CJS exports
+      // @ts-ignore
+      const Web3Ctor: typeof Web3 = Web3Module.default || Web3Module;
+      // @ts-ignore
+      const web3 = new Web3Ctor(ethereum);
+      // MetaMask returns an address, not a private key. Do NOT attempt to
+      // derive an account from a private key. Store the address instead.
+      const address = Array.isArray(accounts) ? accounts[0] : (accounts as unknown as string);
+      const account = { address } as Account;
 
       // Get balance
       const balance = await web3.eth.getBalance(accounts[0]);
@@ -123,6 +132,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         web3,
         account
       });
+
+      // Fetch portfolio for connected address (fire-and-forget)
+      try {
+        portfolioService.fetchPortfolio(address).then((portfolio: PortfolioState) => {
+          try { window.dispatchEvent(new CustomEvent('portfolio:updated', { detail: portfolio })); } catch(e){}
+        })
+      } catch (e) {
+        // ignore portfolio fetch errors
+      }
 
       // Listen for account changes
       if (typeof ethereum.on === 'function') {
@@ -161,6 +179,60 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Auto-reconnect: restore wallet state for returning users without prompting
+  // (uses `eth_accounts` which does not show a permission popup).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const w = window as unknown as { ethereum?: WindowEthereumShim };
+    const ethereum = w.ethereum;
+    let mounted = true;
+    if (!ethereum || typeof ethereum.request !== 'function') return;
+
+    (async () => {
+      try {
+        const accounts = (await ethereum.request({ method: 'eth_accounts' })) as string[];
+        const arr = Array.isArray(accounts) ? accounts : [];
+        if (!mounted || arr.length === 0) return;
+
+        // Get chain id and basic balance info, but don't request accounts (no popup)
+        const chainIdHex = (await ethereum.request({ method: 'eth_chainId' })) as string;
+        const chainId = parseInt(chainIdHex, 16);
+
+        const Web3Module = await import('web3');
+        // @ts-ignore
+        const Web3Ctor: typeof Web3 = Web3Module.default || Web3Module;
+        // @ts-ignore
+        const web3 = new Web3Ctor(ethereum as any);
+        const balance = await web3.eth.getBalance(arr[0]);
+        const balanceEth = Number(web3.utils.fromWei(balance, 'ether'));
+
+        setState(prev => ({
+          ...prev,
+          isConnected: true,
+          address: arr[0],
+          chainId,
+          balance: balance.toString(),
+          balanceEth,
+          web3,
+          account: { address: arr[0] }
+        }));
+
+        // Fetch portfolio on auto-reconnect
+        try {
+          portfolioService.fetchPortfolio(arr[0]).then((portfolio: PortfolioState) => {
+            try { window.dispatchEvent(new CustomEvent('portfolio:updated', { detail: portfolio })); } catch(e){}
+          })
+        } catch (e) {
+          // ignore
+        }
+      } catch (e) {
+        // ignore auto-reconnect errors
+      }
+    })();
+
+    return () => { mounted = false };
+  }, []);
+
   /**
    * Disconnect wallet
    */
@@ -193,11 +265,36 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           method: 'wallet_switchEthereumChain',
           params: [{ chainId: chainIdHex }]
         });
+        // update local chain id on success
+        setState(prev => ({ ...prev, chainId }));
       } catch (switchError: unknown) {
         // Chain not added, try to add it
         const se = switchError as { code?: number }
         if (se?.code === 4902) {
-          throw new Error('Chain not found. Please add it manually in your wallet.');
+          const cfg = getChainConfig(chainId)
+          if (!cfg) {
+            throw new Error('Chain not found and no registry entry available.');
+          }
+
+          // Attempt to request the wallet to add the chain
+          try {
+            await ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [{
+                chainId: chainIdHex,
+                chainName: cfg.name,
+                rpcUrls: cfg.rpcUrls || [],
+                nativeCurrency: cfg.nativeCurrency,
+                blockExplorerUrls: cfg.explorer ? [cfg.explorer] : undefined
+              }]
+            });
+            // After adding, attempt to switch again
+            await ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: chainIdHex }] });
+            setState(prev => ({ ...prev, chainId }));
+            return;
+          } catch (addErr) {
+            throw addErr;
+          }
         }
         throw switchError;
       }

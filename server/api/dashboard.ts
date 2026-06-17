@@ -117,7 +117,7 @@ export async function getDashboardProposalsHandler(req: Request, res: Response) 
         description: proposals.description,
         status: proposals.status,
         createdAt: proposals.createdAt,
-        proposer: proposals.proposer,
+        proposerId: proposals.proposerId,
       })
       .from(proposals)
       .where(
@@ -130,7 +130,7 @@ export async function getDashboardProposalsHandler(req: Request, res: Response) 
       .limit(10);
 
     // Get authors
-  const authorIds = [...new Set(activeProposals.map(p => p.proposer))];
+  const authorIds = [...new Set(activeProposals.map(p => p.proposerId))];
     const authors = await db
       .select({ id: users.id, username: users.username })
       .from(users)
@@ -153,7 +153,7 @@ export async function getDashboardProposalsHandler(req: Request, res: Response) 
         title: p.title,
         description: p.description || '',
         category: 'general',
-        author: authorMap.get(p.proposer) || 'Unknown',
+        author: authorMap.get(p.proposerId) || 'Unknown',
         votes: 0, // TODO: Get actual vote count
         timeLeft: daysLeft > 0 ? `${daysLeft}d left` : `${hoursLeft}h left`,
         status: p.status,

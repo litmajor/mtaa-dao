@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { Zap, AlertCircle, TrendingUp, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -152,58 +153,43 @@ export default function AdminAPIUsage() {
           <TabsContent value="overview" className="space-y-4">
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Request Volume Trend</h3>
-              <ResponsiveContainer width="100%" height={350}>
-                <LineChart data={usage}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="timestamp" stroke="#94a3b8" />
-                  <YAxis stroke="#94a3b8" />
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  <Legend />
-                  <Line type="monotone" dataKey="totalRequests" stroke="#3b82f6" name="Total" />
-                  <Line type="monotone" dataKey="successfulRequests" stroke="#10b981" name="Successful" />
-                  <Line type="monotone" dataKey="failedRequests" stroke="#ef4444" name="Failed" />
-                </LineChart>
-              </ResponsiveContainer>
+              <div style={{ height: 350 }}>
+                <Chart
+                  type="line"
+                  data={{ labels: usage.map(u => u.timestamp), datasets: [
+                    { label: 'Total', data: usage.map(u => u.totalRequests), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.06)', tension: 0.2 },
+                    { label: 'Successful', data: usage.map(u => u.successfulRequests), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.06)', tension: 0.2 },
+                    { label: 'Failed', data: usage.map(u => u.failedRequests), borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.06)', tension: 0.2 }
+                  ] }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: true } } }}
+                />
+              </div>
             </Card>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Request Status Distribution</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={[
-                        { name: 'Successful', value: usage.reduce((s, u) => s + u.successfulRequests, 0) },
-                        { name: 'Failed', value: usage.reduce((s, u) => s + u.failedRequests, 0) }
-                      ]}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={100}
-                      fill="#8884d8"
-                      dataKey="value"
-                      label
-                    >
-                      <Cell fill="#10b981" />
-                      <Cell fill="#ef4444" />
-                    </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  </PieChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="doughnut"
+                    data={{ labels: ['Successful', 'Failed'], datasets: [{ data: [usage.reduce((s, u) => s + u.successfulRequests, 0), usage.reduce((s, u) => s + u.failedRequests, 0)], backgroundColor: ['#10b981', '#ef4444'] }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: true } } }}
+                  />
+                </div>
               </Card>
 
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Response Time Trend</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={usage}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="timestamp" stroke="#94a3b8" />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Legend />
-                    <Line type="monotone" dataKey="avgResponseTime" stroke="#f59e0b" name="Avg" />
-                    <Line type="monotone" dataKey="p95ResponseTime" stroke="#ef4444" name="P95" />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="line"
+                    data={{ labels: usage.map(u => u.timestamp), datasets: [
+                      { label: 'Avg', data: usage.map(u => u.avgResponseTime), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.06)', tension: 0.2 },
+                      { label: 'P95', data: usage.map(u => u.p95ResponseTime), borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.06)', tension: 0.2 }
+                    ] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: true } } }}
+                  />
+                </div>
               </Card>
             </div>
           </TabsContent>
@@ -257,28 +243,24 @@ export default function AdminAPIUsage() {
           <TabsContent value="performance" className="space-y-4">
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Top Endpoints by Call Volume</h3>
-              <ResponsiveContainer width="100%" height={350}>
-                <BarChart data={endpoints.slice(0, 10)}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="endpoint" stroke="#94a3b8" angle={-45} height={100} />
-                  <YAxis stroke="#94a3b8" />
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  <Bar dataKey="calls" fill="#3b82f6" />
-                </BarChart>
-              </ResponsiveContainer>
+              <div style={{ height: 350 }}>
+                <Chart
+                  type="bar"
+                  data={{ labels: endpoints.slice(0,10).map(e => e.endpoint), datasets: [{ label: 'Calls', data: endpoints.slice(0,10).map(e => e.calls), backgroundColor: '#3b82f6' }] }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: true } }, scales: { x: { ticks: { color: '#94a3b8' } }, y: { ticks: { color: '#94a3b8' } } } }}
+                />
+              </div>
             </Card>
 
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Endpoint Error Rates</h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={endpoints.filter(e => e.errorRate > 0)}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="endpoint" stroke="#94a3b8" angle={-45} height={100} />
-                  <YAxis stroke="#94a3b8" />
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  <Bar dataKey="errorRate" fill="#ef4444" />
-                </BarChart>
-              </ResponsiveContainer>
+              <div style={{ height: 300 }}>
+                <Chart
+                  type="bar"
+                  data={{ labels: endpoints.filter(e => e.errorRate > 0).map(e => e.endpoint), datasets: [{ label: 'Error Rate', data: endpoints.filter(e => e.errorRate > 0).map(e => e.errorRate), backgroundColor: '#ef4444' }] }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: true } }, scales: { x: { ticks: { color: '#94a3b8' } }, y: { ticks: { color: '#94a3b8' } } } }}
+                />
+              </div>
             </Card>
           </TabsContent>
 

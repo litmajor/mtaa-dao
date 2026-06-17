@@ -17,13 +17,13 @@ export default function DaoOverviewPage() {
   }
 
   const { data: dao, isLoading, error } = useQuery({
-    queryKey: [`/api/daos/${daoId}`],
-    queryFn: () => apiGet(`/api/daos/${daoId}`),
+    queryKey: [`/api/v1/daos/${daoId}`],
+    queryFn: () => apiGet(`/api/v1/daos/${daoId}`),
   });
 
   const { data: stats } = useQuery({
-    queryKey: [`/api/daos/${daoId}/dashboard-stats`],
-    queryFn: () => apiGet(`/api/daos/${daoId}/dashboard-stats`),
+    queryKey: [`/api/v1/daos/${daoId}/dashboard-stats`],
+    queryFn: () => apiGet(`/api/v1/daos/${daoId}/dashboard-stats`),
   });
 
   if (isLoading) return <div className="p-4">Loading DAO...</div>;

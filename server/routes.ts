@@ -157,6 +157,8 @@ import { authenticateToken } from './middleware/auth';
 
 // RBAC middleware
 import { requireRole, requireDAORole, requirePermission } from './middleware/rbac';
+import { validate } from './middleware/validation';
+import { daoDeploySchema } from './validators/dao_deploy';
 
 // Rate limiting middleware
 import {
@@ -313,7 +315,21 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   });
   
   // Regular DAO operations (meta endpoints)
-  app.use('/api/daos', daosRoutes);
+  // Legacy DAO routes are deprecated. Add a tombstone redirect to the v1 router
+  // so callers receive a deprecation notice and are steered to `/api/v1/daos/*`.
+  app.use('/api/daos', (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      const newPath = `/api/v1/daos${req.path}`;
+      res.setHeader('X-Deprecated', 'true');
+      res.setHeader('X-Redirect-To', newPath);
+      res.setHeader('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+      console.warn(`[ROUTES] Legacy /api/daos request redirected to ${newPath}`);
+      return res.redirect(307, newPath);
+    } catch (err) {
+      console.warn('[ROUTES] Deprecation redirect failed, falling back to legacy handler', err);
+      return daosRoutes(req, res, next);
+    }
+  });
   // ⚠️ DAO treasury flows removed - functionality consolidated to V1 endpoints
 
   // Task and bounty routes
@@ -511,7 +527,7 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   // MTAA Staking & Governance - moved to v1 API
 
   // DAO deployment (canonical endpoint - requires canCreateDAO permission)
-  app.post('/api/dao/deploy', isAuthenticated, requireRole('admin', 'moderator'), async (req, res, next) => {
+  app.post('/api/dao/deploy', isAuthenticated, requireRole('admin', 'moderator'), validate({ body: daoDeploySchema }), async (req, res, next) => {
     try {
       req.body = sanitizeObject(req.body);
       await daoDeployHandler(req, res);
@@ -819,12 +835,18 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   v1DaosRouter = (await import('./routes/v1/daos')).default;
   v1TreasuryRouter = (await import('./routes/v1/treasury')).default;
   v1WalletsRouter = (await import('./routes/v1/wallets')).default;
+  const v1BotsRouter = (await import('./routes/v1/bots')).default;
+  const v1SettingsRouter = (await import('./routes/v1/settings')).default;
 
   app.use('/api/v1/daos', v1DaosRouter);
   // System-level treasury monitoring
   app.use('/api/v1/treasury', v1TreasuryRouter);
   // V1 wallets router (used by legacy 410 tombstones and new V1 wallets API)
   app.use('/api/v1/wallets', v1WalletsRouter);
+  // V1 bots (trading) router
+  app.use('/api/v1/bots', v1BotsRouter);
+  // V1 settings router (advanced mode toggle, 2FA check)
+  app.use('/api/v1/settings', v1SettingsRouter);
 
   // === PHONE VERIFICATION API ===
   app.use('/api/phone-verification', phoneVerificationRouter);

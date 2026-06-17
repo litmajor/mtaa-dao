@@ -129,9 +129,10 @@ export async function deployStrategy(id: string) {
 }
 
 // Deploy a fully compiled strategy object (used by the visual builder)
-export async function deployCompiledStrategy(compiled: any) {
+export async function deployCompiledStrategy(compiled: any, deploymentConfig?: any) {
   return authClient.post(`${API_BASE}/yuki/strategies/deploy`, {
     compiled,
+    deploymentConfig,
   });
 }
 

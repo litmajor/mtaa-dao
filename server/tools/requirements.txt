@@ -1,0 +1,13 @@
+# Python dependencies for the freqtrade wrapper and helpers
+# The wrapper itself only uses stdlib, but a real Freqtrade integration
+# will require the official Freqtrade package and its dependencies.
+# Uncomment or pin versions as needed for your environment.
+
+# freqtrade
+# pandas
+# numpy
+# python-dateutil
+# pyyaml
+
+# Example pinned (optional):
+# freqtrade==2023.11.0

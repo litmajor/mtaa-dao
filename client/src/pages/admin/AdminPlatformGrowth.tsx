@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { Users, TrendingUp, Zap, RefreshCw, FileText, Grid3x3 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -148,37 +149,28 @@ export default function AdminPlatformGrowth() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">User Growth Trend</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={growthData}>
-                    <defs>
-                      <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="date" stroke="#94a3b8" />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Area type="monotone" dataKey="activeUsers" stroke="#3b82f6" fillOpacity={1} fill="url(#colorUsers)" />
-                  </AreaChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="line"
+                    data={{ labels: growthData.map(g => g.date), datasets: [{ label: 'Active Users', data: growthData.map(g => g.activeUsers), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.12)', fill: true, tension: 0.2 }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
+                  />
+                </div>
               </Card>
 
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Platform Creations</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={growthData.slice(-10)}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="date" stroke="#94a3b8" angle={-45} height={80} />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Legend />
-                    <Bar dataKey="vaultsCreated" fill="#10b981" name="Vaults" />
-                    <Bar dataKey="daosCreated" fill="#8b5cf6" name="DAOs" />
-                    <Bar dataKey="escrowsCreated" fill="#f59e0b" name="Escrows" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="bar"
+                    data={{ labels: growthData.slice(-10).map(g => g.date), datasets: [
+                      { label: 'Vaults', data: growthData.slice(-10).map(g => g.vaultsCreated), backgroundColor: '#10b981' },
+                      { label: 'DAOs', data: growthData.slice(-10).map(g => g.daosCreated), backgroundColor: '#8b5cf6' },
+                      { label: 'Escrows', data: growthData.slice(-10).map(g => g.escrowsCreated), backgroundColor: '#f59e0b' }
+                    ] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }}
+                  />
+                </div>
               </Card>
             </div>
           </TabsContent>
@@ -187,17 +179,13 @@ export default function AdminPlatformGrowth() {
           <TabsContent value="users" className="space-y-4">
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">New Users vs Active Users</h3>
-              <ResponsiveContainer width="100%" height={400}>
-                <LineChart data={growthData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="date" stroke="#94a3b8" />
-                  <YAxis stroke="#94a3b8" />
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  <Legend />
-                  <Line type="monotone" dataKey="newUsers" stroke="#ef4444" name="New Users" />
-                  <Line type="monotone" dataKey="activeUsers" stroke="#3b82f6" name="Active Users" />
-                </LineChart>
-              </ResponsiveContainer>
+              <div style={{ height: 400 }}>
+                <Chart
+                  type="line"
+                  data={{ labels: growthData.map(g => g.date), datasets: [{ label: 'New Users', data: growthData.map(g => g.newUsers), borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.06)', tension: 0.2 }, { label: 'Active Users', data: growthData.map(g => g.activeUsers), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.06)', tension: 0.2 }] }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }}
+                />
+              </div>
             </Card>
           </TabsContent>
 
@@ -206,30 +194,24 @@ export default function AdminPlatformGrowth() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Vaults Created Over Time</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={growthData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="date" stroke="#94a3b8" angle={-45} height={80} />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Line type="monotone" dataKey="vaultsCreated" stroke="#10b981" />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="line"
+                    data={{ labels: growthData.map(g => g.date), datasets: [{ label: 'Vaults Created', data: growthData.map(g => g.vaultsCreated), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.06)', tension: 0.2 }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
+                  />
+                </div>
               </Card>
 
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Transaction Activity</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={growthData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="date" stroke="#94a3b8" angle={-45} height={80} />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Legend />
-                    <Line type="monotone" dataKey="swapsExecuted" stroke="#f59e0b" name="Swaps" />
-                    <Line type="monotone" dataKey="bridgesExecuted" stroke="#06b6d4" name="Bridges" />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="line"
+                    data={{ labels: growthData.map(g => g.date), datasets: [{ label: 'Swaps', data: growthData.map(g => g.swapsExecuted), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.06)', tension: 0.2 }, { label: 'Bridges', data: growthData.map(g => g.bridgesExecuted), borderColor: '#06b6d4', backgroundColor: 'rgba(6,182,212,0.06)', tension: 0.2 }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }}
+                  />
+                </div>
               </Card>
             </div>
 

@@ -5,8 +5,12 @@ import { eq, and } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { evaluateRotationRules, formatRuleRejectionMessage, logRuleEvaluation } from '../services/rules-integration';
+import { distributeToRecipientOnChain } from '../services/rotation_contract';
 
 const logger = new Logger('rotation-service');
+
+// In-process locks to avoid concurrent rotations for the same DAO
+const rotationLocks: Map<string, boolean> = new Map();
 
 export enum RotationSelectionMethod {
   SEQUENTIAL = 'sequential',        // Predetermined order
@@ -185,6 +189,36 @@ export async function processRotation(daoId: string) {
       throw new Error('DAO does not use rotation model');
     }
 
+    // Attempt to acquire a DB-backed lock to prevent cross-instance races
+    // Also keep an in-process lock to avoid duplicate work in this process
+    if (rotationLocks.get(daoId)) {
+      logger.warn(`Rotation already in progress for DAO ${daoId} (in-process)`);
+      return { status: 'skipped', reason: 'Rotation already in progress' };
+    }
+
+    rotationLocks.set(daoId, true);
+
+    let acquiredDbLock = false;
+    try {
+      const updated = await db
+        .update(daos)
+        .set({ rotationProcessing: true, updatedAt: new Date() })
+        .where(and(eq(daos.id, daoId), eq(daos.rotationProcessing, false)))
+        .returning();
+
+      if (!updated || (Array.isArray(updated) && updated.length === 0)) {
+        logger.warn(`Rotation already in progress for DAO ${daoId} (db-locked)`);
+        rotationLocks.delete(daoId);
+        return { status: 'skipped', reason: 'Rotation already in progress (db lock)' };
+      }
+
+      acquiredDbLock = true;
+    } catch (e) {
+      // If lock acquisition fails for any reason, release in-process lock and abort
+      rotationLocks.delete(daoId);
+      throw e;
+    }
+
     // Check if it's time for rotation
     if (!dao.nextRotationDate || new Date() < new Date(dao.nextRotationDate)) {
       logger.info(`Not yet time for rotation. Next rotation: ${dao.nextRotationDate}`);
@@ -211,62 +245,132 @@ export async function processRotation(daoId: string) {
       };
     }
 
-    // Calculate amount to distribute (total treasury balance)
-    const treasuryBalance = parseFloat(dao.treasuryBalance?.toString() || '0');
+    // Calculate amount to distribute (total treasury balance) using BigInt for safety
+    // Prefer new integer smallest-unit column when available
+    const treasuryRaw = (dao.treasuryBalanceUnits?.toString()) || dao.treasuryBalance?.toString() || '0';
 
-    if (treasuryBalance <= 0) {
+    // Reject floating-point balances: require integer smallest-unit representation
+    if (treasuryRaw.includes('.')) {
+      logger.error(`Treasury balance contains a decimal value for DAO ${daoId}. Use integer smallest-unit strings (e.g. wei). Value: ${treasuryRaw}`);
+      return { status: 'error', reason: 'Treasury balance must be integer smallest-unit string' };
+    }
+
+    let treasuryBalanceBig: bigint;
+    try {
+      treasuryBalanceBig = BigInt(treasuryRaw || '0');
+    } catch (e) {
+      logger.error(`Failed to parse treasury balance as BigInt for DAO ${daoId}: ${treasuryRaw}`);
+      throw e;
+    }
+
+    if (treasuryBalanceBig <= BigInt(0)) {
       logger.warn(`DAO has no treasury balance for rotation: ${daoId}`);
       return { status: 'skipped', reason: 'No treasury balance' };
     }
 
-    // Create rotation cycle record
-    const cycleNumber = (dao.currentRotationCycle || 0) + 1;
-    
-    const [cycle] = await db
-      .insert(daoRotationCycles)
-      .values({
-        id: uuidv4(),
-        daoId: daoId,
-        cycleNumber: cycleNumber,
-        recipientUserId: recipientUserId,
-        status: 'completed',
-        startDate: dao.nextRotationDate,
-        endDate: new Date(),
-        amountDistributed: treasuryBalance.toString(),
-        distributedAt: new Date(),
-        notes: `Automatic rotation distribution - ${selectionMethod} method`
-      })
-      .returning();
+    // Wrap DB changes in a transaction to ensure atomicity
+    const result = await db.transaction(async (tx) => {
+      // Re-read DAO inside transaction and verify balance and nextRotationDate
+      const daoTx = await tx
+        .select()
+        .from(daos)
+        .where(eq(daos.id, daoId))
+        .then(rows => rows[0]);
 
-    // Update DAO to next rotation date and cycle
-    const nextRotationDate = calculateNextRotationDate(
-      new Date(),
-      dao.rotationFrequency || 'monthly'
-    );
+      if (!daoTx) throw new Error(`DAO not found in transaction: ${daoId}`);
 
-    await db
-      .update(daos)
-      .set({
-        currentRotationCycle: cycleNumber,
-        nextRotationDate: nextRotationDate,
-        treasuryBalance: '0', // Treasury depletes
-        updatedAt: new Date()
-      })
-      .where(eq(daos.id, daoId));
+      const treasuryTxRaw = (daoTx.treasuryBalanceUnits?.toString()) || daoTx.treasuryBalance?.toString() || '0';
+      if (treasuryTxRaw !== treasuryRaw) {
+        throw new Error('Treasury balance changed since processing started; aborting rotation');
+      }
 
-    logger.info(`Rotation processed for DAO ${daoId}: Cycle ${cycleNumber}, Recipient: ${recipientUserId}, Amount: ${treasuryBalance}`);
+      const cycleNumber = (daoTx.currentRotationCycle || 0) + 1;
+
+      const [cycle] = await tx
+        .insert(daoRotationCycles)
+        .values({
+          daoId: daoId,
+          cycleNumber: cycleNumber,
+          recipientUserId: recipientUserId,
+          status: 'pending',
+          startDate: daoTx.nextRotationDate ?? new Date(),
+          endDate: new Date(),
+          amountDistributed: treasuryBalanceBig.toString(),
+          notes: `Automatic rotation distribution - ${selectionMethod} method`
+        })
+        .returning();
+
+      const nextRotationDate = calculateNextRotationDate(
+        new Date(),
+        daoTx.rotationFrequency || 'monthly'
+      );
+
+      await tx
+        .update(daos)
+        .set({
+          currentRotationCycle: cycleNumber,
+          nextRotationDate: nextRotationDate,
+          updatedAt: new Date()
+        })
+        .where(eq(daos.id, daoId));
+
+      return { cycleNumber, nextRotationDate, cycleId: cycle.id };
+    });
+    // Dispatch on-chain call asynchronously and reconcile DB on success/failure
+    (async () => {
+      try {
+        const vaultAddress = dao.vaultAddress || dao.chamaTreasuryAddress || '';
+        if (!vaultAddress) {
+          logger.warn(`No vault address configured for DAO ${daoId}; cannot dispatch on-chain`);
+          await db.update(daoRotationCycles).set({ status: 'failed', updatedAt: new Date(), notes: 'No vault address configured' }).where(eq(daoRotationCycles.id, result.cycleId));
+          return;
+        }
+
+        const onchainResult = await distributeToRecipientOnChain(vaultAddress);
+        logger.info(`On-chain distribution tx: ${onchainResult.txHash} @ block ${onchainResult.blockNumber}`);
+
+        // On success: clear treasury and mark cycle completed
+        await db.transaction(async (tx) => {
+          await tx.update(daoRotationCycles).set({ status: 'completed', transactionHash: onchainResult.txHash, distributedAt: new Date(), updatedAt: new Date() }).where(eq(daoRotationCycles.id, result.cycleId));
+          await tx.update(daos).set({ treasuryBalance: '0', treasuryBalanceUnits: '0', updatedAt: new Date() }).where(eq(daos.id, daoId));
+        });
+      } catch (err: any) {
+        logger.error(`Failed to dispatch on-chain rotation for DAO ${daoId}: ${err}`);
+        try {
+          await db.update(daoRotationCycles).set({ status: 'failed', updatedAt: new Date(), notes: `on-chain error: ${err?.message || String(err)}` }).where(eq(daoRotationCycles.id, result.cycleId));
+        } catch (uerr) {
+          logger.error('Failed to mark rotation cycle as failed in DB:', uerr);
+        }
+      }
+    })();
+
+    logger.info(`Rotation processed for DAO ${daoId}: Cycle ${result.cycleNumber}, Recipient: ${recipientUserId}, Amount: ${treasuryBalanceBig.toString()}`);
     logRuleEvaluation(daoId, 'rotation', recipientUserId, ruleResult.results);
 
     return {
       status: 'completed',
-      cycleNumber,
+      cycleNumber: result.cycleNumber,
       recipientUserId,
-      amountDistributed: treasuryBalance,
-      nextRotationDate
+      amountDistributed: treasuryBalanceBig.toString(),
+      nextRotationDate: result.nextRotationDate
     };
   } catch (err) {
     logger.error(`Error processing rotation: ${err}`);
     throw err;
+  }
+  finally {
+    try {
+      // Release DB lock if acquired
+      await db
+        .update(daos)
+        .set({ rotationProcessing: false, updatedAt: new Date() })
+        .where(eq(daos.id, daoId));
+    } catch (e) {
+      logger.warn(`Failed to clear DB rotation lock for DAO ${daoId}: ${e}`);
+    }
+
+    // Release in-process lock
+    rotationLocks.delete(daoId);
   }
 }
 

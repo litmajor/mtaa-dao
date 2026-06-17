@@ -25,6 +25,179 @@ import { redis } from '../../../services/redis';
 
 const router = express.Router();
 
+// GET /v1/yuki/market/top - Aggregated top assets across exchanges
+router.get('/top', async (req: Request, res: Response) => {
+  try {
+    const limit = parseInt((req.query.limit as string) || '500', 10);
+    const exchangesQuery = (req.query.exchanges as string) || '';
+    const requestedExchanges = exchangesQuery
+      ? exchangesQuery.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+      : ccxtService.getAvailableExchanges();
+
+    logger.info('[MARKET] Aggregating top assets', { limit, exchanges: requestedExchanges });
+
+    const allowedQuotes = new Set(['USDT', 'USDC', 'USD', 'BUSD', 'DAI', 'TUSD', 'USTC']);
+
+    // Aggregate volumes/prices by base symbol
+    const agg = new Map<string, {
+      symbol: string;
+      samples: number;
+      priceSum: number;
+      totalVolume: number;
+      exchanges: Set<string>;
+    }>();
+
+    // Fan-out: fetch markets + tickers per exchange
+    const exchangePromises = requestedExchanges.map(async (ex) => {
+      try {
+        const markets = await ccxtService.getMarkets(ex);
+        const filtered = markets.filter((m: any) => allowedQuotes.has((m.quote || '').toUpperCase()));
+
+        const tickerPromises = filtered.map((m: any) =>
+          ccxtService.getTickerFromExchange(ex, m.symbol)
+            .then((t) => ({ market: m, ticker: t }))
+            .catch((e) => {
+              logger.debug(`[MARKET] Ticker fetch failed ${ex} ${m.symbol}: ${e.message}`);
+              return null;
+            })
+        );
+
+        const results = await Promise.allSettled(tickerPromises);
+        results.forEach((r) => {
+          if (r.status !== 'fulfilled' || !r.value) return;
+          const payload = r.value as any;
+          const t = payload.ticker as any;
+          const m = payload.market as any;
+          if (!t || typeof t.last !== 'number') return;
+
+          const base = (m.base || m.symbol.split('/')[0] || '').toUpperCase();
+          if (!base) return;
+
+          const entry = agg.get(base) || { symbol: base, samples: 0, priceSum: 0, totalVolume: 0, exchanges: new Set<string>() };
+          entry.samples += 1;
+          entry.priceSum += (t.last || 0);
+          entry.totalVolume += (t.volume || 0);
+          entry.exchanges.add(ex);
+          agg.set(base, entry);
+        });
+      } catch (e: any) {
+        logger.warn(`[MARKET] Failed to process exchange ${ex}: ${e.message}`);
+      }
+    });
+
+    await Promise.allSettled(exchangePromises);
+
+    // Build sorted list by aggregated volume
+    const assets = Array.from(agg.values())
+      .map((v) => ({
+        symbol: v.symbol,
+        price: v.samples > 0 ? v.priceSum / v.samples : 0,
+        volume24h: v.totalVolume,
+        exchanges: Array.from(v.exchanges),
+      }))
+      .sort((a, b) => b.volume24h - a.volume24h)
+      .slice(0, limit);
+
+    // Enrich via priceOracle (marketCap, change24h) and authoritative CoinGecko for circulating supply
+    const bases = assets.map((a) => a.symbol);
+    const priceMap = await priceOracle.getPrices(bases);
+
+    // Map base symbol -> coinGeckoId via search, batched to avoid rate limits
+    const COINGECKO_RATE_LIMIT_MS = 250;
+    const COINGECKO_BATCH_SIZE = 4;
+
+    const symbolToGeckoId = new Map<string, string | null>();
+    for (let i = 0; i < bases.length; i += COINGECKO_BATCH_SIZE) {
+      const batch = bases.slice(i, i + COINGECKO_BATCH_SIZE);
+      const promises = batch.map(async (sym) => {
+        try {
+          const resp = await fetch(`https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(sym)}`);
+          if (!resp.ok) return [sym, null] as [string, string | null];
+          const data = await resp.json();
+          const coin = data.coins?.[0];
+          return [sym, coin?.id || null] as [string, string | null];
+        } catch (e) {
+          logger.debug(`[MARKET] CoinGecko id lookup failed for ${sym}: ${e}`);
+          return [sym, null] as [string, string | null];
+        }
+      });
+
+      const results = await Promise.allSettled(promises);
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          const [sym, id] = r.value as [string, string | null];
+          symbolToGeckoId.set(sym, id);
+        }
+      }
+
+      if (i + COINGECKO_BATCH_SIZE < bases.length) {
+        await new Promise((res) => setTimeout(res, COINGECKO_RATE_LIMIT_MS * COINGECKO_BATCH_SIZE));
+      }
+    }
+
+    // Fetch coin details for available ids to get circulating_supply and authoritative market data
+    const geckoIdToSupply = new Map<string, number | null>();
+    const uniqueIds = Array.from(new Set(Array.from(symbolToGeckoId.values()).filter(Boolean))) as string[];
+    for (let i = 0; i < uniqueIds.length; i += COINGECKO_BATCH_SIZE) {
+      const batch = uniqueIds.slice(i, i + COINGECKO_BATCH_SIZE);
+      const promises = batch.map(async (id) => {
+        try {
+          const resp = await fetch(`https://api.coingecko.com/api/v3/coins/${encodeURIComponent(id)}?localization=false`);
+          if (!resp.ok) return [id, null] as [string, number | null];
+          const data = await resp.json();
+          const circ = data?.market_data?.circulating_supply ?? null;
+          return [id, circ] as [string, number | null];
+        } catch (e) {
+          logger.debug(`[MARKET] CoinGecko detail fetch failed for ${id}: ${e}`);
+          return [id, null] as [string, number | null];
+        }
+      });
+
+      const results = await Promise.allSettled(promises);
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          const [id, circ] = r.value as [string, number | null];
+          geckoIdToSupply.set(id, circ);
+        }
+      }
+
+      if (i + COINGECKO_BATCH_SIZE < uniqueIds.length) {
+        await new Promise((res) => setTimeout(res, COINGECKO_RATE_LIMIT_MS * COINGECKO_BATCH_SIZE));
+      }
+    }
+
+    const enriched = assets.map((a, idx) => {
+      const p = priceMap.get(a.symbol) || null;
+      const geckoId = symbolToGeckoId.get(a.symbol) || null;
+      const circ = geckoId ? geckoIdToSupply.get(geckoId) ?? null : null;
+
+      return {
+        rank: idx + 1,
+        symbol: a.symbol,
+        name: p ? p.name : a.symbol,
+        price: p ? p.priceUsd : a.price,
+        change24h: p ? p.priceChange24h : 0,
+        marketCap: p ? p.marketCap : null,
+        circulatingSupply: circ !== null && circ !== undefined ? circ : (p && p.marketCap && p.priceUsd ? p.marketCap / p.priceUsd : null),
+        volume24h: a.volume24h,
+        exchanges: a.exchanges,
+      };
+    });
+
+    // Cache result briefly in Redis
+    try {
+      await redis.setex(`yuki:market:top:${limit}:${requestedExchanges.join(',')}`, 30, JSON.stringify(enriched));
+    } catch (e) {
+      logger.debug('[MARKET] Failed to cache top assets (non-blocking)');
+    }
+
+    return res.json({ success: true, data: enriched, timestamp: new Date().toISOString() });
+  } catch (error: any) {
+    logger.error('[MARKET] Failed to aggregate top assets', { error });
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ════════════════════════════════════════════════════════════════════════════════
 // Schemas
 // ════════════════════════════════════════════════════════════════════════════════

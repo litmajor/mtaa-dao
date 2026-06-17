@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Plus, TrendingUp, Target, DollarSign, ArrowUpRight, Sparkles, Crown, Award, Zap, Eye, RefreshCw, AlertTriangle, Rocket, Wallet as WalletIcon, Users, Activity, PieChart } from 'lucide-react';
 import { useAccount } from 'wagmi';
-import { formatEther } from 'viem';
+import { formatEther } from '@/lib/blockchain';
 import { useVaultInfo, useVaultBalance, useVaultPerformance, useVaultTransactions } from './hooks/useVault';
 import { useWallet } from './hooks/useWallet';
 import { DepositModal } from '../components/vault/DepositModal';

@@ -140,8 +140,8 @@ export const skillVerifications = pgTable("skill_verifications", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// User Reputation Summary table
-export const userReputation = pgTable("user_reputation", {
+// User gamification summary table (renamed from user_reputation)
+export const userGamification = pgTable("user_gamification", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: varchar("user_id").references(() => users.id).notNull().unique(),
   totalPoints: integer("total_points").default(0),
@@ -183,16 +183,16 @@ export const airdropEligibility = pgTable("airdrop_eligibility", {
 });
 
 export type MsiaMoPoints = typeof msiaMoPoints.$inferSelect;
-export type UserReputation = typeof userReputation.$inferSelect;
+export type UserGamification = typeof userGamification.$inferSelect;
 export type MsiaMoConversion = typeof msiaMoConversions.$inferSelect;
 export type AirdropEligibility = typeof airdropEligibility.$inferSelect;
 
 export type InsertMsiaMoPoints = typeof msiaMoPoints.$inferInsert;
-export type InsertUserReputation = typeof userReputation.$inferInsert;
+export type InsertUserGamification = typeof userGamification.$inferInsert;
 export type InsertMsiaMoConversion = typeof msiaMoConversions.$inferInsert;
 export type InsertAirdropEligibility = typeof airdropEligibility.$inferInsert;
 
 export const insertMsiaMoPointsSchema = createInsertSchema(msiaMoPoints);
-export const insertUserReputationSchema = createInsertSchema(userReputation);
+export const insertUserGamificationSchema = createInsertSchema(userGamification);
 export const insertMsiaMoConversionSchema = createInsertSchema(msiaMoConversions);
 export const insertAirdropEligibilitySchema = createInsertSchema(airdropEligibility);

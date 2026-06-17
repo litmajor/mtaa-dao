@@ -12,7 +12,8 @@ import React, { useMemo, useState } from 'react';
 import { useMarketChanges } from '@/hooks/useFearGreed';
 import { formatLargeNumber, formatChangePercent } from '@/hooks/useFearGreed';
 import { formatNumberCompact, calculateOptimalDomain } from '@/utils/dataVisualization';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import type { MarketChangeMetrics } from '@/types/exchanges';
 
 export const MarketChangesVisualization: React.FC = () => {
@@ -94,106 +95,41 @@ export const MarketChangesVisualization: React.FC = () => {
       {/* Market Cap Change Chart */}
       <div className="bg-white dark:bg-slate-800 rounded-lg p-6 border border-gray-200 dark:border-slate-700 shadow-sm">
         <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">Market Cap Change (%)</h3>
-        <ResponsiveContainer width="100%" height={300}>
+        <div style={{ height: 300 }}>
           {chartType === 'bar' ? (
-            <BarChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="period" stroke="#9ca3af" />
-              <YAxis stroke="#9ca3af" domain={percentageDomain} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#1f2937',
-                  border: '1px solid #374151',
-                  borderRadius: '8px',
-                  color: '#f3f4f6'
-                }}
-                formatter={(value: any) => `${(value as number).toFixed(1)}%`}
-                labelStyle={{ color: '#f3f4f6' }}
-              />
-              <Bar
-                dataKey="marketCapChange"
-                fill="#3b82f6"
-                radius={[8, 8, 0, 0]}
-                name="Market Cap Change %"
-              />
-            </BarChart>
+            <Chart
+              type="bar"
+              data={{ labels: chartData.map(c => c.period), datasets: [{ label: 'Market Cap Change %', data: chartData.map(c => c.marketCapChange), backgroundColor: '#3b82f6' }] }}
+              options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${(ctx.raw as number).toFixed(1)}%` } } } }}
+            />
           ) : (
-            <LineChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="period" stroke="#9ca3af" />
-              <YAxis stroke="#9ca3af" domain={percentageDomain} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#1f2937',
-                  border: '1px solid #374151',
-                  borderRadius: '8px',
-                  color: '#f3f4f6'
-                }}
-                formatter={(value: any) => `${(value as number).toFixed(1)}%`}
-                labelStyle={{ color: '#f3f4f6' }}
-              />
-              <Line
-                type="monotone"
-                dataKey="marketCapChange"
-                stroke="#3b82f6"
-                strokeWidth={3}
-                dot={{ fill: '#3b82f6', r: 5 }}
-                activeDot={{ r: 7 }}
-                name="Market Cap Change %"
-              />
-            </LineChart>
+            <Chart
+              type="line"
+              data={{ labels: chartData.map(c => c.period), datasets: [{ label: 'Market Cap Change %', data: chartData.map(c => c.marketCapChange), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.06)', tension: 0.2 }] }}
+              options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${(ctx.raw as number).toFixed(1)}%` } } } }}
+            />
           )}
-        </ResponsiveContainer>
+        </div>
       </div>
 
       {/* Volume Change Chart */}
       <div className="bg-white dark:bg-slate-800 rounded-lg p-6 border border-gray-200 dark:border-slate-700 shadow-sm">
         <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">24h Volume Change (%)</h3>
-        <ResponsiveContainer width="100%" height={300}>
+        <div style={{ height: 300 }}>
           {chartType === 'bar' ? (
-            <BarChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="period" stroke="#9ca3af" />
-              <YAxis stroke="#9ca3af" domain={percentageDomain} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#1f2937',
-                  border: '1px solid #374151',
-                  borderRadius: '8px',
-                  color: '#f3f4f6'
-                }}
-                formatter={(value: any) => `${(value as number).toFixed(1)}%`}
-                labelStyle={{ color: '#f3f4f6' }}
-              />
-              <Bar dataKey="volumeChange" fill="#10b981" radius={[8, 8, 0, 0]} name="Volume Change %" />
-            </BarChart>
+            <Chart
+              type="bar"
+              data={{ labels: chartData.map(c => c.period), datasets: [{ label: 'Volume Change %', data: chartData.map(c => c.volumeChange), backgroundColor: '#10b981' }] }}
+              options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${(ctx.raw as number).toFixed(1)}%` } } } }}
+            />
           ) : (
-            <LineChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="period" stroke="#9ca3af" />
-              <YAxis stroke="#9ca3af" domain={percentageDomain} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#1f2937',
-                  border: '1px solid #374151',
-                  borderRadius: '8px',
-                  color: '#f3f4f6'
-                }}
-                formatter={(value: any) => `${(value as number).toFixed(1)}%`}
-                labelStyle={{ color: '#f3f4f6' }}
-              />
-              <Line
-                type="monotone"
-                dataKey="volumeChange"
-                stroke="#10b981"
-                strokeWidth={3}
-                dot={{ fill: '#10b981', r: 5 }}
-                activeDot={{ r: 7 }}
-                name="Volume Change %"
-              />
-            </LineChart>
+            <Chart
+              type="line"
+              data={{ labels: chartData.map(c => c.period), datasets: [{ label: 'Volume Change %', data: chartData.map(c => c.volumeChange), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.06)', tension: 0.2 }] }}
+              options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${(ctx.raw as number).toFixed(1)}%` } } } }}
+            />
           )}
-        </ResponsiveContainer>
+        </div>
       </div>
 
       {/* Detailed Metrics Cards */}

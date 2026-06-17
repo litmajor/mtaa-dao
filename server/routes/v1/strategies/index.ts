@@ -62,7 +62,7 @@
  *         name: sortBy
  *         schema: { type: string, enum: [createdAt, updatedAt, performance] }
  *     responses:
- *       200:
+ *       '200':
  *         description: Strategies retrieved
  *   post:
  *     tags: [Strategies]
@@ -88,9 +88,9 @@
  *               riskLevel: { type: string, enum: [low, medium, high] }
  *               tags: { type: array, items: { type: string } }
  *     responses:
- *       201:
+ *       '201':
  *         description: Strategy created
- *       400:
+ *       '400':
  *         description: Validation error
  *     security: [{ bearerAuth: [] }]
  * 
@@ -105,9 +105,9 @@
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200:
+ *       '200':
  *         description: Strategy details
- *       404:
+ *       '404':
  *         description: Strategy not found
  *   put:
  *     tags: [Strategies]
@@ -129,9 +129,9 @@
  *               riskLevel: { type: string }
  *               tags: { type: array, items: { type: string } }
  *     responses:
- *       200:
+ *       '200':
  *         description: Strategy updated
- *       403:
+ *       '403':
  *         description: Unauthorized
  *     security: [{ bearerAuth: [] }]
  *   delete:
@@ -144,9 +144,9 @@
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200:
+ *       '200':
  *         description: Strategy deleted
- *       403:
+ *       '403':
  *         description: Unauthorized
  *     security: [{ bearerAuth: [] }]
  * 
@@ -160,7 +160,7 @@
  *         name: filter
  *         schema: { type: string, enum: [created, followed, all] }
  *     responses:
- *       200:
+ *       '200':
  *         description: User's strategies
  *     security: [{ bearerAuth: [] }]
  * 
@@ -178,7 +178,7 @@
  *         name: riskLevel
  *         schema: { type: string, enum: [low, medium, high] }
  *     responses:
- *       200:
+ *       '200':
  *         description: Search results
  * 
  * /v1/strategies/{strategyId}/backtest:
@@ -201,7 +201,7 @@
  *               timeframe: { type: string }
  *               timerange: { type: string }
  *     responses:
- *       202:
+ *       '202':
  *         description: Backtest queued (use statusUrl to poll)
  *     security: [{ bearerAuth: [] }]
  *   get:
@@ -214,7 +214,7 @@
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200:
+ *       '200':
  *         description: Backtest results
  * 
  * /v1/strategies/{strategyId}/backtest-status/{jobId}:
@@ -232,11 +232,11 @@
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       202:
+ *       '202':
  *         description: Still processing
- *       200:
+ *       '200':
  *         description: Complete with results
- *       404:
+ *       '404':
  *         description: Job expired
  * 
  * /v1/strategies/{strategyId}/follow:
@@ -250,7 +250,7 @@
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200:
+ *       '200':
  *         description: Strategy followed
  *     security: [{ bearerAuth: [] }]
  *   delete:
@@ -263,7 +263,7 @@
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200:
+ *       '200':
  *         description: Strategy unfollowed
  *     security: [{ bearerAuth: [] }]
  * 
@@ -284,7 +284,7 @@
  *         name: limit
  *         schema: { type: integer, default: 20 }
  *     responses:
- *       200:
+ *       '200':
  *         description: Paginated follower list
  * ═══════════════════════════════════════════════════════════════════════════════
  */

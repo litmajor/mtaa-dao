@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Wallet, TrendingUp, Vault, Lock } from 'lucide-react';
+import { Wallet, TrendingUp, Box, Lock } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiGet } from '@/lib/api';
@@ -16,8 +16,10 @@ interface Account {
   updatedAt: string;
 }
 
+import type { SelectedAccount } from '../../../../shared/types/wallet';
+
 interface AccountSelectorProps {
-  onAccountSelect?: (account: Account) => void;
+  onAccountSelect?: (account: SelectedAccount) => void;
   selectedAccountId?: string;
   className?: string;
 }
@@ -54,7 +56,7 @@ const AccountSelector: React.FC<AccountSelectorProps> = ({
       case 'trading':
         return <TrendingUp className="w-5 h-5" />;
       case 'vault':
-        return <Vault className="w-5 h-5" />;
+        return <Box className="w-5 h-5" />;
       case 'escrow':
         return <Lock className="w-5 h-5" />;
       default:
@@ -93,10 +95,21 @@ const AccountSelector: React.FC<AccountSelectorProps> = ({
   };
 
   const handleAccountSelect = (account: Account) => {
+    // Map to shared SelectedAccount shape
+    const mapped: SelectedAccount = {
+      id: account.id,
+      address: account.address ?? '',
+      label: account.currency ? `${account.currency} (${account.type})` : account.type,
+      name: account.currency ?? account.type,
+      type: account.type,
+      balance: account.balance,
+      currency: account.currency,
+    };
+
     // update operating store selection as the single source of truth
-    store.setSelectedAccountId(account.id);
-    store.setSelectedAccount(account);
-    onAccountSelect?.(account);
+    store.setSelectedAccountId(mapped.id);
+    store.setSelectedAccount(mapped);
+    onAccountSelect?.(mapped);
   };
   const filteredAccounts = accounts.filter((acc) => acc.type === selectedTab);
   const selectedAccount = accounts.find((acc) => acc.id === (selectedAccountId || store.selectedAccountId)) || filteredAccounts[0];
@@ -144,7 +157,7 @@ const AccountSelector: React.FC<AccountSelectorProps> = ({
             <span className="hidden sm:inline">Trading</span>
           </TabsTrigger>
           <TabsTrigger value="vault" className="flex items-center gap-2">
-            <Vault className="w-4 h-4" />
+            <Box className="w-4 h-4" />
             <span className="hidden sm:inline">Vault</span>
           </TabsTrigger>
           <TabsTrigger value="escrow" className="flex items-center gap-2">

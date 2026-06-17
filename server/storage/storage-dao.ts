@@ -1,6 +1,6 @@
 import { db } from '../db';
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
-import { daos, daoMemberships, users, contributions, daoSettings, daoReferralRewards } from '../../shared/schema';
+import { daos, daoMemberships, users, contributions, daoSettings, referralRewards } from '../../shared/schema';
 
 // Type aliases
 type Dao = typeof daos.$inferSelect;
@@ -91,15 +91,7 @@ export class DaoStorage {
   /**
    * Update DAO invite code
    */
-  async updateDaoInviteCode(daoId: string, code: string): Promise<any> {
-    if (!daoId || !code) throw new Error('DAO ID and code required');
-    const result = await this.db.update(daos)
-      .set({ inviteCode: code, updatedAt: new Date() })
-      .where(eq(daos.id, daoId))
-      .returning();
-    if (!result[0]) throw new Error('Failed to update invite code');
-    return result[0];
-  }
+  // `updateDaoInviteCode` removed; `setDaoInviteCode` is canonical.
 
   /**
    * Get DAO by invite code
@@ -259,7 +251,7 @@ export class DaoStorage {
     if (!daoId || !settingKey) throw new Error('DAO ID and setting key required');
     const result = await this.db.delete(daoSettings)
       .where(and(eq(daoSettings.daoId, daoId), eq(daoSettings.settingKey, settingKey)));
-    return result.rowCount > 0;
+    return (result?.rowCount ?? 0) > 0;
   }
 
   /**
@@ -269,17 +261,14 @@ export class DaoStorage {
     if (!rewardData.daoId || !rewardData.referrerId || !rewardData.referredUserId || !rewardData.rewardAmount) {
       throw new Error('DAO ID, referrer ID, referred user ID, and reward amount required');
     }
-    const result = await this.db.insert(daoReferralRewards).values({
+    const result = await this.db.insert(referralRewards).values({
       daoId: rewardData.daoId,
       referrerId: rewardData.referrerId,
       referredUserId: rewardData.referredUserId,
       rewardAmount: rewardData.rewardAmount.toString(),
-      rewardToken: rewardData.rewardToken || 'MTAA',
       rewardType: rewardData.rewardType || 'signup',
       status: 'pending',
-      expiresAt: rewardData.expiresAt,
-      tierLevel: rewardData.tierLevel,
-      metadata: rewardData.metadata,
+      awardedAt: rewardData.awardedAt,
       createdAt: new Date(),
       updatedAt: new Date(),
     }).returning();
@@ -292,16 +281,16 @@ export class DaoStorage {
   async getDaoReferralRewards(daoId: string, userId?: string): Promise<any[]> {
     if (!daoId) throw new Error('DAO ID required');
     if (userId) {
-      return await this.db.select().from(daoReferralRewards)
+      return await this.db.select().from(referralRewards)
         .where(and(
-          eq(daoReferralRewards.daoId, daoId),
-          eq(daoReferralRewards.referrerId, userId)
+          eq(referralRewards.daoId, daoId),
+          eq(referralRewards.referrerId, userId)
         ))
-        .orderBy(desc(daoReferralRewards.createdAt));
+        .orderBy(desc(referralRewards.createdAt));
     }
-    return await this.db.select().from(daoReferralRewards)
-      .where(eq(daoReferralRewards.daoId, daoId))
-      .orderBy(desc(daoReferralRewards.createdAt));
+    return await this.db.select().from(referralRewards)
+      .where(eq(referralRewards.daoId, daoId))
+      .orderBy(desc(referralRewards.createdAt));
   }
 
   /**
@@ -309,14 +298,14 @@ export class DaoStorage {
    */
   async claimDaoReferralReward(rewardId: string, userId: string): Promise<any> {
     if (!rewardId || !userId) throw new Error('Reward ID and user ID required');
-    const result = await this.db.update(daoReferralRewards)
+    const result = await this.db.update(referralRewards)
       .set({
         status: 'claimed',
-        claimedBy: userId,
+        claimed: true,
         claimedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(daoReferralRewards.id, rewardId))
+      .where(eq(referralRewards.id, rewardId))
       .returning();
     return result[0];
   }
@@ -327,13 +316,13 @@ export class DaoStorage {
   async getDaoReferralLeaderboard(daoId: string, limit: number = 10): Promise<any[]> {
     if (!daoId) throw new Error('DAO ID required');
     return await this.db.select({
-      referrerId: daoReferralRewards.referrerId,
+      referrerId: referralRewards.referrerId,
       totalReferrals: sql<number>`count(*)`,
       totalRewards: sql<string>`sum(reward_amount)`,
     })
-      .from(daoReferralRewards)
-      .where(eq(daoReferralRewards.daoId, daoId))
-      .groupBy(daoReferralRewards.referrerId)
+      .from(referralRewards)
+      .where(eq(referralRewards.daoId, daoId))
+      .groupBy(referralRewards.referrerId)
       .orderBy(sql`total_referrals DESC`)
       .limit(limit);
   }
@@ -343,12 +332,12 @@ export class DaoStorage {
    */
   async getDaoReferralRewardsByReferrer(referrerId: string, daoId: string): Promise<any[]> {
     if (!referrerId || !daoId) throw new Error('Referrer ID and DAO ID required');
-    return await this.db.select().from(daoReferralRewards)
+    return await this.db.select().from(referralRewards)
       .where(and(
-        eq(daoReferralRewards.referrerId, referrerId),
-        eq(daoReferralRewards.daoId, daoId)
+        eq(referralRewards.referrerId, referrerId),
+        eq(referralRewards.daoId, daoId)
       ))
-      .orderBy(desc(daoReferralRewards.createdAt));
+      .orderBy(desc(referralRewards.createdAt));
   }
 
   /**
@@ -359,10 +348,10 @@ export class DaoStorage {
     const result = await this.db.select({
       total: sql<number>`cast(sum(cast(reward_amount as decimal)) as decimal)`,
     })
-      .from(daoReferralRewards)
+      .from(referralRewards)
       .where(and(
-        eq(daoReferralRewards.daoId, daoId),
-        eq(daoReferralRewards.referrerId, referrerId)
+        eq(referralRewards.daoId, daoId),
+        eq(referralRewards.referrerId, referrerId)
       ));
     return result[0]?.total || 0;
   }
@@ -372,12 +361,12 @@ export class DaoStorage {
    */
   async updateDaoReferralRewardStatus(rewardId: string, status: string): Promise<any> {
     if (!rewardId || !status) throw new Error('Reward ID and status required');
-    const result = await this.db.update(daoReferralRewards)
+    const result = await this.db.update(referralRewards)
       .set({
         status,
         updatedAt: new Date(),
       })
-      .where(eq(daoReferralRewards.id, rewardId))
+      .where(eq(referralRewards.id, rewardId))
       .returning();
     return result[0];
   }

@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { AlertTriangle, CheckCircle, TrendingDown, TrendingUp, Droplet, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -133,28 +134,24 @@ export default function AdminLiquidityMonitoring() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Spread Analysis</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={metrics.slice(0, 10)}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="pair" stroke="#94a3b8" angle={-45} height={80} />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Bar dataKey="spread" fill="#3b82f6" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="bar"
+                    data={{ labels: metrics.slice(0,10).map(m => m.pair), datasets: [{ label: 'Spread', data: metrics.slice(0,10).map(m => m.spread), backgroundColor: '#3b82f6' }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: true } } }}
+                  />
+                </div>
               </Card>
 
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Slippage Impact</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={metrics.slice(0, 10)}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="pair" stroke="#94a3b8" angle={-45} height={80} />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Bar dataKey="slippage100k" fill="#ef4444" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="bar"
+                    data={{ labels: metrics.slice(0,10).map(m => m.pair), datasets: [{ label: 'Slippage (100K)', data: metrics.slice(0,10).map(m => m.slippage100k), backgroundColor: '#ef4444' }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: true } } }}
+                  />
+                </div>
               </Card>
             </div>
           </TabsContent>
@@ -207,30 +204,27 @@ export default function AdminLiquidityMonitoring() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Spread Trend</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={trends}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="date" stroke="#94a3b8" />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Line type="monotone" dataKey="spread" stroke="#3b82f6" dot={{ fill: '#3b82f6' }} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="line"
+                    data={{ labels: trends.map(t => t.date), datasets: [{ label: 'Spread', data: trends.map(t => t.spread), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.06)', tension: 0.2 }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: true } } }}
+                  />
+                </div>
               </Card>
 
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Depth & Slippage</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={trends}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="date" stroke="#94a3b8" />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Legend />
-                    <Line type="monotone" dataKey="depth" stroke="#10b981" name="Depth" />
-                    <Line type="monotone" dataKey="slippage" stroke="#ef4444" name="Slippage" />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="line"
+                    data={{ labels: trends.map(t => t.date), datasets: [
+                      { label: 'Depth', data: trends.map(t => t.depth), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.06)', tension: 0.2 },
+                      { label: 'Slippage', data: trends.map(t => t.slippage), borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.06)', tension: 0.2 }
+                    ] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: true } } }}
+                  />
+                </div>
               </Card>
             </div>
           </TabsContent>

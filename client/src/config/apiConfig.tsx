@@ -41,7 +41,7 @@ export const API_CONFIG = {
     
     // DAO Specific
     DAO_METRICS: (daoId: string) => `${API_BASE_URL}/api/dao/${daoId}/metrics`,
-    DAO_LIST: `${API_BASE_URL}/api/daos`,
+    DAO_LIST: `${API_BASE_URL}/api/v1/daos`,
     
     // Activity & Logs
     ACTIVITY_LOGS: `${API_BASE_URL}/api/admin/activity-logs`,
@@ -51,8 +51,8 @@ export const API_CONFIG = {
     ARBITRAGE_ASSET: (symbol: string) => `${API_BASE_URL}/api/discover/arbitrage/${symbol}`,
     
     // Market Data
-    EXCHANGE_PRICES: (pair: string) => `${API_BASE_URL}/api/exchanges/prices?pair=${pair}`,
-    MARKET_DATA: `${API_BASE_URL}/api/exchanges/market-data`,
+    EXCHANGE_PRICES: (pair: string) => `${API_BASE_URL}/api/v1/yuki/exchanges?pair=${pair}`,
+    MARKET_DATA: `${API_BASE_URL}/api/v1/yuki/exchanges/market-data`,
     
     // Global Metrics
     GLOBAL_METRICS: `${API_BASE_URL}/api/global-metrics`,

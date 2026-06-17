@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { DollarSign, TrendingUp, TrendingDown, RefreshCw, Download } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -183,38 +184,21 @@ export default function AdminRevenueTracking() {
           <TabsContent value="overview" className="space-y-4">
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Revenue Trend</h3>
-              <ResponsiveContainer width="100%" height={400}>
-                <AreaChart data={revenueHistory}>
-                  <defs>
-                    <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="date" stroke="#94a3b8" />
-                  <YAxis stroke="#94a3b8" />
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  <Area type="monotone" dataKey="total" stroke="#3b82f6" fillOpacity={1} fill="url(#colorTotal)" />
-                </AreaChart>
-              </ResponsiveContainer>
+                <div style={{ height: 400 }}>
+                  <Chart type="line" data={{ labels: revenueHistory.map(r => r.date), datasets: [{ label: 'Total Revenue', data: revenueHistory.map(r => r.total), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.15)', fill: true, tension: 0.2 }] }} options={{ responsive: true, maintainAspectRatio: false }} />
+                </div>
             </Card>
 
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Revenue by Type</h3>
-              <ResponsiveContainer width="100%" height={400}>
-                <BarChart data={revenueHistory}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="date" stroke="#94a3b8" />
-                  <YAxis stroke="#94a3b8" />
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                  <Legend />
-                  <Bar dataKey="tradingFees" stackId="a" fill="#3b82f6" name="Trading Fees" />
-                  <Bar dataKey="liquidityFees" stackId="a" fill="#10b981" name="Liquidity Fees" />
-                  <Bar dataKey="premiumFees" stackId="a" fill="#f59e0b" name="Premium Fees" />
-                  <Bar dataKey="affiliateFees" stackId="a" fill="#ef4444" name="Affiliate Fees" />
-                </BarChart>
-              </ResponsiveContainer>
+              <div style={{ height: 400 }}>
+                <Chart type="bar" data={{ labels: revenueHistory.map(r => r.date), datasets: [
+                  { label: 'Trading Fees', data: revenueHistory.map(r => r.tradingFees), backgroundColor: '#3b82f6' },
+                  { label: 'Liquidity Fees', data: revenueHistory.map(r => r.liquidityFees), backgroundColor: '#10b981' },
+                  { label: 'Premium Fees', data: revenueHistory.map(r => r.premiumFees), backgroundColor: '#f59e0b' },
+                  { label: 'Affiliate Fees', data: revenueHistory.map(r => r.affiliateFees), backgroundColor: '#ef4444' }
+                ] }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }} />
+              </div>
             </Card>
           </TabsContent>
 
@@ -252,25 +236,9 @@ export default function AdminRevenueTracking() {
           <TabsContent value="sources" className="space-y-4">
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Revenue Distribution</h3>
-              <ResponsiveContainer width="100%" height={400}>
-                <PieChart>
-                  <Pie
-                    data={breakdown}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ source, percentage }) => `${source}: ${percentage.toFixed(1)}%`}
-                    outerRadius={120}
-                    fill="#8884d8"
-                    dataKey="amount"
-                  >
-                    {breakdown.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={REVENUE_COLORS[index % REVENUE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                </PieChart>
-              </ResponsiveContainer>
+              <div style={{ height: 400 }}>
+                <Chart type="pie" data={{ labels: breakdown.map(b => b.source), datasets: [{ data: breakdown.map(b => b.amount), backgroundColor: breakdown.map((_, i) => REVENUE_COLORS[i % REVENUE_COLORS.length]) }] }} options={{ responsive: true, maintainAspectRatio: false }} />
+              </div>
             </Card>
           </TabsContent>
 

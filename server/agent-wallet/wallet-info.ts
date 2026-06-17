@@ -5,6 +5,7 @@
  */
 
 import Web3 from 'web3';
+type Web3Type = InstanceType<typeof Web3>;
 import { isAddress } from 'web3-validator';
 import type { WalletBalance, AccountInfo } from './types';
 
@@ -12,11 +13,11 @@ import type { WalletBalance, AccountInfo } from './types';
  * WalletInfoService - Manages wallet information retrieval
  */
 export class WalletInfoService {
-  private web3: Web3;
+  private web3: Web3Type;
   private balanceCache: Map<string, { balance: string; timestamp: number }> = new Map();
   private cacheDuration: number = 30000; // 30 seconds
 
-  constructor(web3: Web3) {
+  constructor(web3: Web3Type) {
     this.web3 = web3;
   }
 
@@ -62,7 +63,7 @@ export class WalletInfoService {
   /**
    * Get wallet information
    */
-  async getWalletInfo(address: string): Promise<WalletBalance> {
+  async getWalletInfo(address: string): Promise<AccountInfo> {
     if (!isAddress(address)) {
       throw new Error('Invalid address');
     }
@@ -80,8 +81,9 @@ export class WalletInfoService {
         address,
         balance,
         balanceEth,
-        nonce: Number(nonce),
+        transactionCount: Number(nonce),
         isContract: code !== '0x',
+        codeLength: code.length,
         timestamp: Date.now()
       };
     } catch (error) {
@@ -189,6 +191,6 @@ export class WalletInfoService {
 }
 
 // Export singleton instance creator
-export const createWalletInfoService = (web3: Web3): WalletInfoService => {
+export const createWalletInfoService = (web3: Web3Type): WalletInfoService => {
   return new WalletInfoService(web3);
 };

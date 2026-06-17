@@ -247,7 +247,7 @@ export class DataCache<T = any> {
         const pattern = this.redisKeyPrefix + '*';
         const keys = await redis.keys(pattern);
         if (keys.length > 0) {
-          await redis.del(...keys);
+          await redis.delMany(keys);
         }
       } catch (error) {
         this.logger.warn(`[DataCache] Redis clear failed:`, error);
@@ -322,7 +322,7 @@ export class DataCache<T = any> {
         const fullPattern = this.redisKeyPrefix + pattern;
         const keys = await redis.keys(fullPattern);
         if (keys.length > 0) {
-          await redis.del(...keys);
+          await redis.delMany(keys);
           count += keys.length;
         }
       } catch (error) {
@@ -406,7 +406,7 @@ export class DataCache<T = any> {
   private evictOne(): void {
     if (this.memCache.size === 0) return;
 
-    let victimKey = '';
+    let victimKey: string | undefined = undefined;
     let minScore = Infinity;
 
     // LRU: prioritize least recently used
@@ -420,7 +420,10 @@ export class DataCache<T = any> {
       }
     } else {
       // Default: FIFO
-      victimKey = this.memCache.keys().next().value;
+      const iter = this.memCache.keys().next();
+      if (!iter.done && typeof iter.value === 'string') {
+        victimKey = iter.value;
+      }
     }
 
     if (victimKey) {

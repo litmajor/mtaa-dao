@@ -10,7 +10,7 @@
  * - Multi-exchange price comparison
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { authClient } from '@/utils/authClient';
 import {
@@ -46,35 +46,27 @@ import {
   Activity,
   ArrowUpRight
 } from 'lucide-react';
-import { 
-  LineChart, 
-  Line, 
-  AreaChart, 
-  Area,
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  BarChart,
-  Bar
-} from 'recharts';
-import SmartOrderRouter from '@/components/SmartOrderRouter';
+// Removed LazyRecharts import; charts use Chart.js via ChartJSSetup
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
+const SmartOrderRouter = lazy(() => import('@/components/SmartOrderRouter'));
 import { useCoinGeckoMultiple, formatMarketCap, formatVolume } from '@/hooks/useCoinGecko';
 import { useTechnicalIndicators } from '@/hooks/useTechnicalIndicators';
 import { useHistoricalPriceData, useHistoricalMarketCapData, useHistoricalVolumeData } from '@/hooks/useHistoricalPriceData';
-import { RSIChart } from '@/components/RSIChart';
-import { MACDChart } from '@/components/MACDChart';
-import { BollingerBands } from '@/components/BollingerBands';
-import { MovingAverages } from '@/components/MovingAverages';
-import { HistoricalChart } from '@/components/HistoricalChart';
-import { OrderBookVisualization } from '@/components/OrderBookVisualization';
+import { usePrices, useBestPrice, useTopAssets, useFindSymbolAcrossExchanges } from '@/hooks/useExchangeData';
+const RSIChart = lazy(() => import('@/components/RSIChart').then(m => ({ default: m.RSIChart })));
+const MACDChart = lazy(() => import('@/components/MACDChart').then(m => ({ default: m.MACDChart })));
+const BollingerBands = lazy(() => import('@/components/BollingerBands').then(m => ({ default: m.BollingerBands })));
+const MovingAverages = lazy(() => import('@/components/MovingAverages').then(m => ({ default: m.MovingAverages })));
+const HistoricalChart = lazy(() => import('@/components/HistoricalChart').then(m => ({ default: m.HistoricalChart })));
+const OrderBookVisualization = lazy(() => import('@/components/OrderBookVisualization').then(m => ({ default: m.OrderBookVisualization })));
 import { LiquidityScoringCard } from '@/components/LiquidityScoringCard';
 import { ArbitrageOpportunitiesCard } from '@/components/ArbitrageOpportunitiesCard';
 import { FearGreedGauge } from '@/components/FearGreedGauge';
 import { MarketChangesVisualization } from '@/components/MarketChangesVisualization';
 import { BtcDominanceCard } from '@/components/BtcDominanceCard';
 import MarketSparkline, { SparklinePoint, SparklineStats } from '@/components/MarketSparkline';
+import { PageLoading } from '@/components/ui/page-loading';
 
 /**
  * Type Definitions
@@ -132,10 +124,13 @@ const useExchangeStatus = () => {
   return useQuery({
     queryKey: ['exchange-status'],
     queryFn: async () => {
-      const response = await authClient.get<any>('/api/v1/yuki/exchanges');
+      const response = await authClient.get<any>('/api/v1/yuki/exchanges/status');
+      const body = response.data || {};
+      const status = body.data || {};
+      const available = Object.keys(status.exchanges || {});
       return {
-        available: response.data || [],
-        health: { exchanges: {} }
+        available,
+        health: status,
       };
     },
     staleTime: 30000, // 30 seconds
@@ -151,7 +146,7 @@ const useExchangeAssets = (exchangeName: string | null) => {
     queryKey: ['exchange-assets', exchangeName],
     queryFn: async () => {
       if (!exchangeName) return [];
-      const data = await authClient.get<any>(`/api/exchanges/markets?exchange=${exchangeName}`);
+      const data = await authClient.get<any>(`/api/v1/yuki/exchanges/markets?exchange=${exchangeName}`);
       return data.markets || data || [];
     },
     staleTime: 3600000, // 1 hour
@@ -161,114 +156,23 @@ const useExchangeAssets = (exchangeName: string | null) => {
 };
 
 /**
- * Find which exchanges have a specific symbol
- */
-const useFindSymbolAcrossExchanges = (symbol: string | null, exchanges: string[]) => {
-  return useQuery({
-    queryKey: ['find-symbol', symbol, exchanges.join(',')],
-    queryFn: async () => {
-      if (!symbol || exchanges.length === 0) return null;
-      return authClient.get<any>(`/api/exchanges/find-symbol?symbol=${symbol}&exchanges=${exchanges.join(',')}`);
-    },
-    staleTime: 30000, // 30 seconds
-    retry: 1,
-    enabled: !!symbol && exchanges.length > 0,
-  } as any);
-};
-
-/**
- * Fetch prices for a symbol across exchanges
- */
-const usePrices = (symbol: string | null, exchanges: string[]) => {
-  return useQuery({
-    queryKey: ['prices', symbol, exchanges.join(',')],
-    queryFn: async () => {
-      if (!symbol || exchanges.length === 0) return null;
-      return authClient.post<any>('/api/v1/yuki/orders/route', { symbol, exchanges });
-    },
-    staleTime: 30000, // 30 seconds
-    retry: 1,
-    enabled: !!symbol && exchanges.length > 0,
-  } as any);
-};
-
-/**
- * Fetch best price across exchanges
- */
-const useBestPrice = (symbol: string | null, exchanges: string[]) => {
-  return useQuery({
-    queryKey: ['best-price', symbol, exchanges.join(',')],
-    queryFn: async () => {
-      if (!symbol || exchanges.length === 0) return null;
-      return authClient.post<any>('/api/v1/yuki/orders/best-venue', { symbol, exchanges });
-    },
-    staleTime: 30000,
-    retry: 1,
-    enabled: !!symbol && exchanges.length > 0,
-  } as any);
-};
-
-/**
- * Fetch top assets - real data from all exchanges with aggregation
- * Now supports top 500 tokens across all major exchanges
- */
-const useTopAssets = (limit: number = 500) => {
   return useQuery({
     queryKey: ['top-assets', limit],
     queryFn: async () => {
       try {
-        // Fetch from all major exchanges and aggregate
-        const exchanges = ['binance', 'coinbase', 'kraken', 'bybit', 'kucoin', 'okx'];
-        const assetMap = new Map<string, {
-          symbol: string;
-          name: string;
-          prices: { [key: string]: number };
-          volumes: { [key: string]: number };
-          exchanges: Set<string>;
-          changes: { [key: string]: number };
-        }>();
-        
-        for (const exchange of exchanges) {
-          try {
-            const data = await authClient.get<any>(`/api/exchanges/markets?exchange=${exchange}`);
-            const markets = Array.isArray(data) ? data : data.markets || [];
-            
-            if (!Array.isArray(markets) || markets.length === 0) {
-              continue;
-            }
-            
-            // Process all available markets (not limited to 100)
-            markets.forEach((market: any) => {
-              const symbol = market.symbol || market.id || '';
-              if (!symbol) return;
-              
-              const price = market.last || market.price || market.close || 0;
-              const volume = market.quoteVolume || market.volume || 0;
-              const changePercent = market.percentage || market.change || (Math.random() - 0.5) * 5;
-              
-              if (!assetMap.has(symbol)) {
-                assetMap.set(symbol, {
-                  symbol,
-                  name: market.name || symbol,
-                  prices: {},
-                  volumes: {},
-                  exchanges: new Set(),
-                  changes: {}
-                });
-              }
-              
-              const asset = assetMap.get(symbol)!;
-              if (price > 0) asset.prices[exchange] = price;
-              if (volume > 0) asset.volumes[exchange] = volume;
-              asset.exchanges.add(exchange);
-              asset.changes[exchange] = changePercent;
-            });
-          } catch (error) {
-            console.warn(`Error fetching from ${exchange}:`, error);
-          }
-        }
-        
-        // Convert to enhanced assets with aggregated data
+        const resp = await authClient.get<any>(`/api/v1/yuki/market/top?limit=${limit}`);
+        const body = resp.data || {};
+        // server returns { success: true, data: [ ... ] }
+        const list = body.data || [];
+        return list.map((a: any, idx: number) => ({ ...a, rank: a.rank || idx + 1 }));
+      } catch (error) {
+        console.error('Failed to fetch top assets:', error);
+        throw error;
+      }
+    },
+    staleTime: 60000, // 1 minute
+    retry: 2,
+  } as any);
         const assets: EnhancedAsset[] = Array.from(assetMap.entries())
           .filter(([symbol, data]) => {
             // Only include assets with price data from at least 1 exchange
@@ -285,22 +189,20 @@ const useTopAssets = (limit: number = 500) => {
             const avgChange24h = changeValues.length > 0 ? changeValues.reduce((a, b) => a + b, 0) / changeValues.length : 0;
             const totalVolume = volumeValues.reduce((a, b) => a + b, 0);
             
-            // Generate sparkline based on price
-            const sparkline = Array.from({ length: 24 }, () => 
-              avgPrice * (1 + (Math.random() - 0.5) * 0.05)
-            );
-            
+            // Generate a stable sparkline (flat) until CoinGecko historical data enriches it
+            const sparkline = Array.from({ length: 24 }, () => avgPrice || 0);
+
             return {
               rank: 0, // Will be set during sorting
               symbol,
               name: data.name,
               price: avgPrice,
-              change1h: (Math.random() - 0.5) * 1,
+              change1h: 0,
               change24h: avgChange24h,
-              change7d: (Math.random() - 0.5) * 8,
-              marketCap: avgPrice * (Math.random() * 5e10), // Estimate
+              change7d: 0,
+              marketCap: 0,
               volume24h: totalVolume,
-              circulatingSupply: `${(totalVolume / avgPrice / 1000000).toFixed(1)}M`,
+              circulatingSupply: '—',
               sparkline,
               category: data.exchanges.has('binance') || data.exchanges.has('coinbase') ? 'cefi' : 'defi',
               exchanges: Array.from(data.exchanges),
@@ -403,7 +305,6 @@ const ExchangeMarkets: React.FC = () => {
   // Strip pair notation (e.g., "BTC/USDT" -> "BTC") for CoinGecko
   const topAssetSymbols = useMemo(() => {
     const symbols = ((topAssets as any) || [])
-      .slice(0, 200)
       .map((a: any) => a.symbol.split('/')[0])  // Extract base symbol before "/"
       .filter((s: string, idx: number, arr: string[]) => arr.indexOf(s) === idx); // Remove duplicates
     return symbols;
@@ -421,7 +322,8 @@ const ExchangeMarkets: React.FC = () => {
         return {
           ...asset,
           marketCap: coinGeckoData[baseSymbol]?.marketCap,
-          volume24h: coinGeckoData[baseSymbol]?.volume24h
+          volume24h: coinGeckoData[baseSymbol]?.volume24h,
+          circulatingSupply: coinGeckoData[baseSymbol]?.circulatingSupply ?? asset.circulatingSupply ?? '—'
         };
       })
       .filter((asset: any) => {
@@ -506,7 +408,8 @@ const ExchangeMarkets: React.FC = () => {
   }, [filteredExchangeAssets, exchangeAssetsPage, exchangeAssetsPageSize]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-950">
+    <Suspense fallback={<PageLoading />}>
+      <div className="min-h-screen bg-gray-50 dark:bg-slate-950">
       {/* Header Stats Bar */}
       <div className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 sticky top-0 z-40 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80">
         <div className="max-w-[1800px] mx-auto px-4 py-4">
@@ -846,23 +749,13 @@ const ExchangeMarkets: React.FC = () => {
                           </td>
                           <td className="px-4 py-4">
                             <div className="w-32 h-12">
-                              <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={asset.sparkline.map((v: any) => ({ value: v }))}>
-                                  <defs>
-                                    <linearGradient id={`gradient-${asset.symbol}`} x1="0" y1="0" x2="0" y2="1">
-                                      <stop offset="0%" stopColor={isPositive7d ? '#10b981' : '#ef4444'} stopOpacity={0.3}/>
-                                      <stop offset="100%" stopColor={isPositive7d ? '#10b981' : '#ef4444'} stopOpacity={0}/>
-                                    </linearGradient>
-                                  </defs>
-                                  <Area 
-                                    type="monotone" 
-                                    dataKey="value" 
-                                    stroke={isPositive7d ? '#10b981' : '#ef4444'} 
-                                    fill={`url(#gradient-${asset.symbol})`}
-                                    strokeWidth={2}
-                                  />
-                                </AreaChart>
-                              </ResponsiveContainer>
+                              <div style={{ height: '100%' }}>
+                                <Chart
+                                  type="line"
+                                  data={{ labels: asset.sparkline.map((_, i) => i), datasets: [{ data: asset.sparkline, borderColor: isPositive7d ? '#10b981' : '#ef4444', backgroundColor: 'transparent', tension: 0.2, pointRadius: 0 }] }}
+                                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } } }}
+                                />
+                              </div>
                             </div>
                           </td>
                         </tr>
@@ -892,7 +785,7 @@ const ExchangeMarkets: React.FC = () => {
                         </PaginationItem>
                       )}
                       
-                      {Array.from({ length: Math.min(topAssetsTotalPages, 5) }, (_, i) => {
+                      {Array.from({ length: Math.min(topAssetsTotalPages, 5) }, (_: unknown, i: number) => {
                         const pageNum = topAssetsTotalPages <= 5 ? i + 1 : Math.max(1, topAssetsPage - 2) + i;
                         if (pageNum > topAssetsTotalPages) return null;
                         return (
@@ -1083,7 +976,7 @@ const ExchangeMarkets: React.FC = () => {
                             const ask = asset.ask || price * 1.01;
                             const spread = ask > 0 && bid > 0 ? ((ask - bid) / bid * 100) : 0;
                             const volume = asset.quoteVolume || asset.volume || 0;
-                            const change24h = (Math.random() - 0.5) * 10;
+                            const change24h = asset.percentage || asset.change24h || asset.change || 0;
                             const isPositive = change24h >= 0;
                             
                             // Ensure we have data
@@ -1145,13 +1038,13 @@ const ExchangeMarkets: React.FC = () => {
                                         symbol: assetSymbol,
                                         name: `${asset.base}/${asset.quote}` || assetSymbol,
                                         price: hasPrice ? price : 0,
-                                        change1h: (Math.random() - 0.5) * 1,
+                                        change1h: asset.change1h ?? 0,
                                         change24h: change24h,
-                                        change7d: (Math.random() - 0.5) * 10,
-                                        marketCap: hasPrice ? price * (Math.random() * 1e12) : 0,
+                                        change7d: asset.change7d ?? 0,
+                                        marketCap: 0,
                                         volume24h: volume,
-                                        circulatingSupply: `${(Math.random() * 1000).toFixed(1)}M`,
-                                        sparkline: Array.from({ length: 24 }, () => (hasPrice ? price : 1) * (1 + (Math.random() - 0.5) * 0.1)),
+                                        circulatingSupply: '—',
+                                        sparkline: Array.from({ length: 24 }, () => (hasPrice ? price : 0)),
                                         category: ['binance', 'coinbase'].includes(selectedExchange || '') ? 'cefi' : 'defi',
                                         exchanges: selectedExchange ? [selectedExchange] : [],
                                         displayName: `${asset.base}/${asset.quote}`,
@@ -1191,7 +1084,7 @@ const ExchangeMarkets: React.FC = () => {
                                 </PaginationItem>
                               )}
                               
-                              {Array.from({ length: Math.min(exchangeAssetsTotalPages, 5) }, (_, i) => {
+                              {Array.from({ length: Math.min(exchangeAssetsTotalPages, 5) }, (_: unknown, i: number) => {
                                 const pageNum = exchangeAssetsTotalPages <= 5 ? i + 1 : Math.max(1, exchangeAssetsPage - 2) + i;
                                 if (pageNum > exchangeAssetsTotalPages) return null;
                                 return (
@@ -1779,14 +1672,14 @@ const ExchangeMarkets: React.FC = () => {
                             </div>
                           </div>
                         ) : (
-                          <MarketSparkline
-                            data={detailAsset.sparkline.map((value, idx) => ({
-                              time: idx,
-                              value: (detailAsset.marketCap || 0) * (0.8 + Math.random() * 0.4)
-                            })) as SparklinePoint[]}
-                            height={60}
-                            type="marketCap"
-                          />
+                            <MarketSparkline
+                              data={detailAsset.sparkline.map((value, idx) => ({
+                                time: idx,
+                                value: detailAsset.marketCap || 0
+                              })) as SparklinePoint[]}
+                              height={60}
+                              type="marketCap"
+                            />
                         )}
                       </div>
                     </div>
@@ -1826,7 +1719,7 @@ const ExchangeMarkets: React.FC = () => {
                           <MarketSparkline
                             data={detailAsset.sparkline.map((value, idx) => ({
                               time: idx,
-                              value: (detailAsset.volume24h || 0) * (0.7 + Math.random() * 0.6)
+                              value: detailAsset.volume24h || 0
                             })) as SparklinePoint[]}
                             height={60}
                             type="volume"
@@ -1933,7 +1826,8 @@ const ExchangeMarkets: React.FC = () => {
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </Suspense>
   );
 };
 

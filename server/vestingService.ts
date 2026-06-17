@@ -2,7 +2,7 @@
 import { db } from './db';
 import { eq, and, lte, gte, sql } from 'drizzle-orm';
 import { vestingSchedules, vestingClaims, vestingMilestones } from '../shared/vestingSchema';
-import { userReputation } from '../shared/reputationSchema';
+import { userGamification } from '../shared/reputationSchema';
 import { users } from '../shared/schema';
 import { sendCUSD } from './blockchain';
 
@@ -329,8 +329,8 @@ export class VestingService {
         case 'reputation':
           const userRep = await db
             .select()
-            .from(userReputation)
-            .where(eq(userReputation.userId, schedule[0].userId));
+            .from(userGamification)
+            .where(eq(userGamification.userId, schedule[0].userId));
           currentValue = userRep[0]?.totalPoints || 0;
           break;
         

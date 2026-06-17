@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 // Icons replaced with lightweight emoji fallbacks to avoid lucide-react type issues
-import { formatDistanceToNow } from "date-fns";
+import formatDistanceToNow from "date-fns/formatDistanceToNow";
 import { MorioFAB } from '@/components/morio/MorioFAB';
 
 interface Message {

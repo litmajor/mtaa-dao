@@ -1,10 +1,13 @@
 import { Router } from "express";
+import fs from 'fs';
+import path from 'path';
+import multer from 'multer';
 import { db } from "../db";
 import { daos, daoMemberships, users, proposals } from "../../shared/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
 import { authenticate } from "../auth";
 import { OnboardingService } from '../core/kwetu/services/onboarding_service';
-import { daoContributions, daoContributionTypes, walletTransactions } from "../../shared/schema";
+import { daoContributions, daoContributionTypes, walletTransactions, paymentReceipts } from "../../shared/schema";
 import { inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { analyticsService } from '../analyticsService';
@@ -12,6 +15,28 @@ import { analyticsService } from '../analyticsService';
 const onboardingService = new OnboardingService();
 
 const router = Router();
+
+// File upload config for payment receipts
+const receiptsStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(process.cwd(), 'attached_assets', 'payment-receipts');
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const safe = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+    cb(null, `${unique}-${safe}`);
+  }
+});
+
+const receiptsFileFilter = (req: any, file: Express.Multer.File, cb: any) => {
+  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+  if (!allowed.includes(file.mimetype)) return cb(new Error('Invalid file type'), false);
+  cb(null, true);
+};
+
+const receiptsUpload = multer({ storage: receiptsStorage, fileFilter: receiptsFileFilter, limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
 
 // GET /api/daos - List all DAOs with user membership status
 router.get("/", authenticate, async (req, res) => {
@@ -479,8 +504,14 @@ router.post('/:id/payments/:paymentId/confirm', authenticate, async (req, res) =
       metadata: { confirmedBy: userId, original: payment.metadata || {} },
     });
 
-    // update DAO treasuryBalance (deprecated field) as a convenience for the dashboard
-    await db.update(daos).set({ treasuryBalance: sql`${daos.treasuryBalance} + ${payment.amount}` }).where(eq(daos.id, daoId));
+    // Recompute and persist stored treasury balance via TreasuryService (computed is source-of-truth)
+    try {
+      const { TreasuryService } = await import('../services/treasuryService');
+      const computed = await TreasuryService.getBalance(daoId);
+      await TreasuryService.updateStoredTreasuryBalance(daoId, computed.total);
+    } catch (err) {
+      console.warn('[DAO] Failed to recompute stored treasury balance after payment confirmation:', err);
+    }
 
     // notify founder/admins
     const admins = await db.select().from(daoMemberships).where(and(eq(daoMemberships.daoId, daoId), inArray(daoMemberships.role, ['founder','admin','elder'])));
@@ -518,6 +549,45 @@ router.get('/:id/payments', authenticate, async (req, res) => {
   } catch (error) {
     console.error('List payments error:', error);
     res.status(500).json({ error: 'Failed to list payments' });
+  }
+});
+
+// POST /api/daos/:id/payments/:paymentId/receipt - upload a receipt file for a recorded payment
+router.post('/:id/payments/:paymentId/receipt', authenticate, receiptsUpload.single('receipt'), async (req, res) => {
+  try {
+    const userId = (req.user as any).id;
+    const daoId = req.params.id as string;
+    const paymentId = req.params.paymentId as string;
+
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    // ensure payment exists
+    const existing = await db.select().from(daoContributions).where(and(eq(daoContributions.id, paymentId), eq(daoContributions.daoId, daoId))).limit(1);
+    if (!existing || !existing[0]) return res.status(404).json({ error: 'Payment record not found' });
+
+    const fileRelPath = path.join('attached_assets', 'payment-receipts', req.file.filename);
+    const pdfUrl = `/${fileRelPath.replace(/\\/g, '/')}`;
+
+    // insert a paymentReceipts row
+    const [receiptRow] = await db.insert(paymentReceipts).values({
+      transactionId: null,
+      paymentRequestId: null,
+      receiptNumber: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+      pdfUrl,
+      metadata: { daoId, contributionId: paymentId, uploadedBy: userId }
+    }).returning();
+
+    // update daoContributions metadata with receipt link
+    // metadata is stored as JSON; cast to `any` to allow dynamic properties
+    const meta = (existing[0].metadata || {}) as any;
+    meta.receiptUrl = pdfUrl;
+    meta.receiptId = receiptRow.id;
+    await db.update(daoContributions).set({ metadata: meta }).where(eq(daoContributions.id, paymentId));
+
+    res.status(201).json({ success: true, data: { receiptId: receiptRow.id, pdfUrl } });
+  } catch (error) {
+    console.error('Upload receipt error:', error);
+    res.status(500).json({ error: 'Failed to upload receipt' });
   }
 });
 

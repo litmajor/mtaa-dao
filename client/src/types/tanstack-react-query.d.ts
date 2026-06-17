@@ -28,7 +28,9 @@ declare module '@tanstack/react-query' {
 
   export function useMutation<TData = unknown, TError = unknown, TVariables = unknown>(
     options: { mutationFn: (variables: TVariables) => Promise<TData>; onSuccess?: (data: TData) => void; onError?: (error: TError) => void }
-  ): { mutate: (variables: TVariables) => void; isPending: boolean; isSuccess: boolean; error: TError | null };
+  ): {
+    mutateAsync(arg0: { amount: string; currency: "cUSD" | "CELO"; vaultAddress: string; }): unknown; mutate: (variables: TVariables) => void; isPending: boolean; isSuccess: boolean; error: TError | null 
+};
 
   export function useQueries<TData = unknown, TError = unknown>(options: { queries: Array<{ queryKey: any[]; queryFn: () => Promise<TData>; staleTime?: number; gcTime?: number }> }): Array<UseQueryResult<TData, TError>>;
 

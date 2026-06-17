@@ -26,19 +26,8 @@ import {
 } from '../../components/ui/select';
 import { Input } from '../../components/ui/input';
 import { useToast } from '../../components/ui/use-toast';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import {
   Filter,
   Download,
@@ -48,7 +37,8 @@ import {
   CheckCircle,
   ChevronDown,
 } from 'lucide-react';
-import { formatDistanceToNow, format } from 'date-fns';
+import formatDistanceToNow from 'date-fns/formatDistanceToNow';
+import format from 'date-fns/format';
 
 interface AuditLog {
   id: string;
@@ -273,15 +263,13 @@ export function AuditViewer() {
               <CardTitle className="text-lg">Actions by Type</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="#3b82f6" />
-                </BarChart>
-              </ResponsiveContainer>
+              <div style={{ height: 250 }}>
+                <Chart
+                  type="bar"
+                  data={{ labels: chartData.map(c => c.name), datasets: [{ label: 'Count', data: chartData.map(c => c.count), backgroundColor: '#3b82f6' }] }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
+                />
+              </div>
             </CardContent>
           </Card>
 
@@ -291,25 +279,13 @@ export function AuditViewer() {
                 <CardTitle className="text-lg">Results Distribution</CardTitle>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={250}>
-                  <PieChart>
-                    <Pie
-                      data={resultsData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, value }) => `${name}: ${value}`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {resultsData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
+                <div style={{ height: 250 }}>
+                  <Chart
+                    type="pie"
+                    data={{ labels: resultsData.map(r => r.name), datasets: [{ data: resultsData.map(r => r.value), backgroundColor: resultsData.map((_, i) => COLORS[i % COLORS.length]) }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${ctx.label}: ${ctx.raw}` } } } }}
+                  />
+                </div>
               </CardContent>
             </Card>
           )}

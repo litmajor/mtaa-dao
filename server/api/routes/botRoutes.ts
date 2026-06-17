@@ -3,7 +3,9 @@
  * Wire up handlers to Next.js API endpoints
  */
 
-import type { NextApiRequest, NextApiResponse } from 'next';
+// Avoid requiring `next` types in server-side code when Next.js isn't used for auth.
+type NextApiRequest = any;
+type NextApiResponse = any;
 import {
   deployBotHandler,
   listBotsHandler,

@@ -33,7 +33,7 @@ export default function GoalVaultsManager({ daoId }: { daoId: string }) {
 
   const fetchGoalVaults = async () => {
     try {
-      const data = await apiGet(`/api/daos/${daoId}/goal-vaults`);
+      const data = await apiGet(`/api/v1/daos/${daoId}/goal-vaults`);
       setVaults(data);
     } catch (error) {
       console.error('Failed to fetch goal vaults:', error);
@@ -42,7 +42,7 @@ export default function GoalVaultsManager({ daoId }: { daoId: string }) {
 
   const createGoalVault = async () => {
     try {
-      await apiPost(`/api/daos/${daoId}/goal-vaults`, newVault);
+      await apiPost(`/api/v1/daos/${daoId}/goal-vaults`, newVault);
       toast({ title: "Goal vault created successfully!" });
       setShowCreateModal(false);
       setNewVault({ name: '', goalAmount: '', lockUntilGoal: false });
@@ -69,16 +69,18 @@ export default function GoalVaultsManager({ daoId }: { daoId: string }) {
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div>
-                <Label>Vault Name</Label>
+                <Label htmlFor="newVaultName">Vault Name</Label>
                 <Input
+                  id="newVaultName"
                   placeholder="e.g., Wedding Fund, Emergency Fund"
                   value={newVault.name}
                   onChange={(e) => setNewVault({ ...newVault, name: e.target.value })}
                 />
               </div>
               <div>
-                <Label>Goal Amount (₭)</Label>
+                <Label htmlFor="newVaultGoal">Goal Amount (₭)</Label>
                 <Input
+                  id="newVaultGoal"
                   type="number"
                   placeholder="5000"
                   value={newVault.goalAmount}

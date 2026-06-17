@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title MultiSigTreasury
@@ -41,7 +41,7 @@ contract MultiSigTreasury is ReentrancyGuard {
     
     struct Transaction {
         address target;         // Where to send tokens or call
-        uint256 value;          // MTAA amount
+        uint256 value;          // MTAA amount (if targeting token)
         bytes data;             // Function call data (if any)
         uint256 confirmations;  // Number of signatures so far
         bool executed;
@@ -107,6 +107,7 @@ contract MultiSigTreasury is ReentrancyGuard {
      */
     function submitTransaction(
         address target,
+        uint256 value,
         bytes calldata data
     ) external onlySigner {
         require(target != address(0), "Invalid target");
@@ -115,10 +116,11 @@ contract MultiSigTreasury is ReentrancyGuard {
         
         Transaction storage txn = transactions[txnId];
         txn.target = target;
+        txn.value = value;
         txn.data = data;
         txn.scheduledFor = block.timestamp + TIMELOCK;
         
-        emit TransactionSubmitted(txnId, target, 0);
+        emit TransactionSubmitted(txnId, target, value);
     }
     
     /**
@@ -163,9 +165,15 @@ contract MultiSigTreasury is ReentrancyGuard {
         require(block.timestamp >= txn.scheduledFor, "Timelock not expired (48 hours required)");
         
         txn.executed = true;
-        
-        // Execute the call
-        (bool success,) = txn.target.call(txn.data);
+
+        // Restrict allowed targets to MTAA token calls or internal contract management
+        require(
+            txn.target == address(mtaaToken) || txn.target == address(this),
+            "Target not allowed"
+        );
+
+        // Execute the call (token transfer or internal management)
+        (bool success, ) = txn.target.call(txn.data);
         require(success, "Transaction failed");
         
         emit TransactionExecuted(txnId);
@@ -184,13 +192,34 @@ contract MultiSigTreasury is ReentrancyGuard {
         view
         returns (
             address target,
+            uint256 value,
             uint256 confirmations,
             bool executed,
             uint256 scheduledFor
         )
     {
         Transaction storage txn = transactions[txnId];
-        return (txn.target, txn.confirmations, txn.executed, txn.scheduledFor);
+        return (txn.target, txn.value, txn.confirmations, txn.executed, txn.scheduledFor);
+    }
+
+    /**
+     * @notice Replace an existing signer with a new address.
+     * @dev This must be called through the multisig itself (submitTransaction targeting this contract).
+     */
+    function replaceSigner(address oldSigner, address newSigner) external {
+        require(msg.sender == address(this), "Must go through multisig");
+        require(newSigner != address(0), "Invalid new signer");
+
+        for (uint i = 0; i < NUM_SIGNERS; i++) {
+            if (signers[i] == oldSigner) {
+                // Ensure newSigner is not already present
+                for (uint j = 0; j < NUM_SIGNERS; j++) {
+                    require(signers[j] != newSigner, "New signer already present");
+                }
+                signers[i] = newSigner;
+                break;
+            }
+        }
     }
     
     function hasConfirmed(uint256 txnId, address signer) external view returns (bool) {

@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Pie, Line, Bar } from 'react-chartjs-2';
 import { TrendingUp, TrendingDown, DollarSign, Wallet, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useQuery } from '@tanstack/react-query';
@@ -289,25 +290,15 @@ export function PortfolioOverview() {
             <CardTitle className="text-lg" data-testid="title-asset-allocation">Asset Allocation</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={chartData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => `$${value.toLocaleString()}`} />
-              </PieChart>
-            </ResponsiveContainer>
+            <div style={{ height: 300 }}>
+              <Pie
+                data={{
+                  labels: chartData.map(c => c.name),
+                  datasets: [{ data: chartData.map(c => c.value), backgroundColor: chartData.map(c => c.color), borderWidth: 0 }]
+                }}
+                options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx: any) => `$${ctx.raw.toLocaleString()}` } } } }}
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -334,54 +325,19 @@ export function PortfolioOverview() {
             </div>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
+            <div style={{ height: 300 }}>
               {timePeriod === '1d' || timePeriod === '7d' ? (
-                <LineChart data={getPerformanceData.data}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                  <XAxis 
-                    dataKey={getPerformanceData.xKey} 
-                    stroke="#888888"
-                    style={{ fontSize: '12px' }}
-                  />
-                  <YAxis 
-                    stroke="#888888"
-                    style={{ fontSize: '12px' }}
-                  />
-                  <Tooltip 
-                    formatter={(value) => `$${typeof value === 'number' ? value.toLocaleString() : value}`}
-                    contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '4px' }}
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="value" 
-                    stroke="#8B5CF6" 
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive={true}
-                  />
-                </LineChart>
+                <Line
+                  data={{ labels: getPerformanceData.data.map((d: any) => d[getPerformanceData.xKey]), datasets: [{ label: getPerformanceData.title, data: getPerformanceData.data.map((d: any) => d.value), borderColor: '#8B5CF6', backgroundColor: 'rgba(139,92,246,0.08)', fill: true, tension: 0.2, pointRadius: 0 }] }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx: any) => `$${ctx.raw.toLocaleString()}` } } } }}
+                />
               ) : (
-                <BarChart data={getPerformanceData.data}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                  <XAxis 
-                    dataKey={getPerformanceData.xKey}
-                    stroke="#888888"
-                    style={{ fontSize: '12px' }}
-                  />
-                  <YAxis 
-                    stroke="#888888"
-                    style={{ fontSize: '12px' }}
-                  />
-                  <Tooltip formatter={(value) => `$${typeof value === 'number' ? value.toLocaleString() : value}`} />
-                  <Bar 
-                    dataKey="value" 
-                    fill="#8B5CF6" 
-                    radius={[8, 8, 0, 0]}
-                    isAnimationActive={true}
-                  />
-                </BarChart>
+                <Bar
+                  data={{ labels: getPerformanceData.data.map((d: any) => d[getPerformanceData.xKey]), datasets: [{ label: getPerformanceData.title, data: getPerformanceData.data.map((d: any) => d.value), backgroundColor: '#8B5CF6', borderRadius: 8 }] }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx: any) => `$${ctx.raw.toLocaleString()}` } } } }}
+                />
               )}
-            </ResponsiveContainer>
+            </div>
           </CardContent>
         </Card>
       </div>

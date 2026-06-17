@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { TrendingUp, DollarSign, CheckCircle, AlertCircle, Clock } from 'lucide-react';
 import { apiGet } from '@/lib/api';
 
@@ -248,25 +249,13 @@ export function EscrowAnalyticsDashboard({ userId }: { userId: string }) {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={chartData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ status, count }) => `${status}: ${count}`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="count"
-                >
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+            <div style={{ height: 300 }}>
+              <Chart
+                type="pie"
+                data={{ labels: chartData.map(c => c.status), datasets: [{ data: chartData.map(c => c.count), backgroundColor: chartData.map((_, i) => COLORS[i % COLORS.length]) }] }}
+                options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${ctx.label}: ${ctx.raw}` } } } }}
+              />
+            </div>
 
             <div className="space-y-3">
               {chartData.map((item, index) => (
@@ -294,22 +283,13 @@ export function EscrowAnalyticsDashboard({ userId }: { userId: string }) {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={timeSeriesData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Line
-                  type="monotone"
-                  dataKey="escrows"
-                  stroke="#3b82f6"
-                  strokeWidth={2}
-                  dot={{ fill: '#3b82f6', r: 4 }}
-                  activeDot={{ r: 6 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            <div style={{ height: 300 }}>
+              <Chart
+                type="line"
+                data={{ labels: timeSeriesData.map(d => d.date), datasets: [{ label: 'Escrows', data: timeSeriesData.map(d => d.escrows), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.08)', fill: false, tension: 0.2, pointRadius: 3 }] }}
+                options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${ctx.dataset.label}: ${ctx.raw}` } } } }}
+              />
+            </div>
           </CardContent>
         </Card>
       )}

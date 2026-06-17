@@ -7,6 +7,7 @@ export default function RecordPaymentModal({ isOpen, onClose, daoId, onSuccess }
   const [method, setMethod] = useState<string>('M-Pesa');
   const [mpesaCode, setMpesaCode] = useState<string>('');
   const [note, setNote] = useState<string>('');
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -37,7 +38,7 @@ export default function RecordPaymentModal({ isOpen, onClose, daoId, onSuccess }
       if (!amountKES || Number(amountKES) <= 0) { setError('Enter amount'); setLoading(false); return; }
 
       const payload = { memberId, amountKES: Number(amountKES), method, mpesaCode: mpesaCode || undefined, note };
-      const res = await fetch(`/api/daos/${daoId}/payments/record`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const res = await fetch(`/api/v1/daos/${daoId}/payments/record`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!res.ok) {
         const j = await res.json();
         setError(j?.error || 'Failed to record payment');
@@ -46,6 +47,20 @@ export default function RecordPaymentModal({ isOpen, onClose, daoId, onSuccess }
       }
       const j = await res.json();
       onSuccess?.(j);
+      // if user attached a receipt file, upload it
+      if (receiptFile && j?.paymentId) {
+        try {
+          const form = new FormData();
+          form.append('receipt', receiptFile);
+          const up = await fetch(`/api/v1/daos/${daoId}/payments/${j.paymentId}/receipt`, { method: 'POST', body: form });
+          if (!up.ok) {
+            const uj = await up.json().catch(() => ({}));
+            console.warn('Receipt upload failed', uj);
+          }
+        } catch (e) {
+          console.warn('Receipt upload network error', e);
+        }
+      }
       const sel = members.find(m => m.userId === memberId);
       const name = sel?.userName || sel?.userEmail || 'member';
       setSuccessMsg(`✓ Payment recorded. Waiting for ${name} to confirm.`);
@@ -69,8 +84,8 @@ export default function RecordPaymentModal({ isOpen, onClose, daoId, onSuccess }
 
         <div className="space-y-3">
           <div>
-            <label className="text-xs text-slate-400">Member</label>
-            <select value={memberId} onChange={(e) => setMemberId(e.target.value)} className="w-full mt-1 p-2 bg-slate-800 rounded text-white">
+            <label htmlFor="memberSelect" className="text-xs text-slate-400">Member</label>
+            <select id="memberSelect" aria-label="Select member" value={memberId} onChange={(e) => setMemberId(e.target.value)} className="w-full mt-1 p-2 bg-slate-800 rounded text-white">
               {members.map(m => (
                 <option key={m.userId} value={m.userId}>{m.userName || m.userEmail || m.userId}</option>
               ))}
@@ -78,17 +93,17 @@ export default function RecordPaymentModal({ isOpen, onClose, daoId, onSuccess }
           </div>
 
           <div>
-            <label className="text-xs text-slate-400">Amount (KES)</label>
-            <input type="number" inputMode="numeric" min="1" placeholder="0"
+            <label htmlFor="amountInput" className="text-xs text-slate-400">Amount (KES)</label>
+            <input id="amountInput" type="number" inputMode="numeric" min="1" placeholder="0"
               value={amountKES} onChange={(e) => setAmountKES(e.target.value)} className="w-full mt-1 p-2 bg-slate-800 rounded text-white" />
           </div>
 
           <div>
             <label className="text-xs text-slate-400">Method</label>
-            <div className="mt-1 flex gap-2">
-              <label className="inline-flex items-center gap-2"><input type="radio" checked={method==='M-Pesa'} onChange={() => setMethod('M-Pesa')} /> M-Pesa</label>
-              <label className="inline-flex items-center gap-2"><input type="radio" checked={method==='Cash'} onChange={() => setMethod('Cash')} /> Cash</label>
-              <label className="inline-flex items-center gap-2"><input type="radio" checked={method==='Bank'} onChange={() => setMethod('Bank')} /> Bank</label>
+            <div className="mt-1 flex gap-2" role="radiogroup" aria-label="Payment method">
+              <label className="inline-flex items-center gap-2"><input name="paymentMethod" type="radio" checked={method==='M-Pesa'} onChange={() => setMethod('M-Pesa')} /> M-Pesa</label>
+              <label className="inline-flex items-center gap-2"><input name="paymentMethod" type="radio" checked={method==='Cash'} onChange={() => setMethod('Cash')} /> Cash</label>
+              <label className="inline-flex items-center gap-2"><input name="paymentMethod" type="radio" checked={method==='Bank'} onChange={() => setMethod('Bank')} /> Bank</label>
             </div>
           </div>
 
@@ -102,6 +117,12 @@ export default function RecordPaymentModal({ isOpen, onClose, daoId, onSuccess }
           <div>
             <label className="text-xs text-slate-400">Note (optional)</label>
             <input value={note} onChange={(e) => setNote(e.target.value)} className="w-full mt-1 p-2 bg-slate-800 rounded text-white" maxLength={100} />
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-400">Receipt (optional)</label>
+            <input id="receiptFileInput" type="file" accept="image/*,application/pdf" onChange={(e) => setReceiptFile(e.target.files ? e.target.files[0] : null)} className="w-full mt-1 text-sm text-slate-400" />
+            {receiptFile && <div className="text-xs text-slate-300 mt-1">Selected: {receiptFile.name}</div>}
           </div>
 
           {error && <div className="text-red-400 text-sm">{error}</div>}

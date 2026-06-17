@@ -400,4 +400,4 @@ export async function setupGatewayWithCoordinator(
   return await manager.initialize(customConfig);
 }
 
-export { GatewayCoordinatorIntegrationManager };
+// Named export unnecessary — the class is exported above.

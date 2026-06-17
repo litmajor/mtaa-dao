@@ -30,6 +30,11 @@ export const userAchievements = pgTable("user_achievements", {
   isCompleted: boolean("is_completed").default(false),
   rewardClaimed: boolean("reward_claimed").default(false),
   claimedAt: timestamp("claimed_at"),
+  // On-chain mint tracking
+  tokenId: varchar("token_id"),
+  mintPending: boolean("mint_pending").default(false),
+  mintTxHash: varchar("mint_tx_hash"),
+  mintedAt: timestamp("minted_at"),
 });
 
 // Achievement progress tracking

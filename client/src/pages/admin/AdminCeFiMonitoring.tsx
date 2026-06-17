@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { CheckCircle, TrendingUp, DollarSign, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -158,30 +159,24 @@ export default function AdminCeFiMonitoring() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Trading Volume Trend</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={tradingData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="date" stroke="#94a3b8" />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Line type="monotone" dataKey="volume" stroke="#3b82f6" dot={{ fill: '#3b82f6' }} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="line"
+                    data={{ labels: tradingData.map(t => t.date), datasets: [{ label: 'Volume', data: tradingData.map(t => t.volume), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.06)', tension: 0.2, pointRadius: 2 }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
+                  />
+                </div>
               </Card>
 
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Trades & Fees</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={tradingData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="date" stroke="#94a3b8" />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Legend />
-                    <Bar dataKey="trades" fill="#3b82f6" />
-                    <Bar dataKey="fees" fill="#10b981" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="bar"
+                    data={{ labels: tradingData.map(t => t.date), datasets: [{ label: 'Trades', data: tradingData.map(t => t.trades), backgroundColor: '#3b82f6' }, { label: 'Fees', data: tradingData.map(t => t.fees), backgroundColor: '#10b981' }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }}
+                  />
+                </div>
               </Card>
             </div>
           </TabsContent>

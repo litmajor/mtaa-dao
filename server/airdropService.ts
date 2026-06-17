@@ -1,7 +1,7 @@
 
 import { db } from './db';
 import { eq, and, gte, sql } from 'drizzle-orm';
-import { userReputation, msiaMoConversions, airdropEligibility } from '../shared/reputationSchema';
+import { userGamification, msiaMoConversions, airdropEligibility } from '../shared/reputationSchema';
 import { users } from '../shared/schema';
 import { sendCUSD } from './blockchain';
 
@@ -38,12 +38,12 @@ export class AirdropService {
   ): Promise<{ processed: number; eligible: number }> {
     const users = await db
       .select({
-        userId: userReputation.userId,
-        totalPoints: userReputation.totalPoints,
-        badge: userReputation.badge,
+        userId: userGamification.userId,
+        totalPoints: userGamification.totalPoints,
+        badge: userGamification.badge,
       })
-      .from(userReputation)
-      .where(gte(userReputation.totalPoints, minimumReputation));
+      .from(userGamification)
+      .where(gte(userGamification.totalPoints, minimumReputation));
 
     let processed = 0;
     let eligible = 0;
@@ -58,7 +58,7 @@ export class AirdropService {
       const badgeMultiplier = this.getBadgeMultiplier(badge);
       const finalAmount = airdropAmount * badgeMultiplier;
 
-      await db.insert(airdropEligibility).values({
+        await db.insert(airdropEligibility).values({
         userId: user.userId,
         airdropId,
         eligibleAmount: finalAmount.toString(),

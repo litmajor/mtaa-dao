@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -72,7 +72,7 @@ contract MoolaLendingStrategy is IStrategy, Ownable, Pausable {
         vault = _vault;
 
         // Infinite approval for LendingPool (gas-efficient)
-        IERC20(_asset).safeApprove(_lendingPool, type(uint256).max);
+        IERC20(_asset).forceApprove(_lendingPool, type(uint256).max);
     }
 
     /**
@@ -164,8 +164,8 @@ contract MoolaLendingStrategy is IStrategy, Ownable, Pausable {
         lendingPool = newPool;
 
         // Update approval
-        IERC20(assetAddress).safeApprove(oldPool, 0);
-        IERC20(assetAddress).safeApprove(newPool, type(uint256).max);
+        IERC20(assetAddress).forceApprove(oldPool, 0);
+        IERC20(assetAddress).forceApprove(newPool, type(uint256).max);
 
         emit LendingPoolUpdated(oldPool, newPool);
     }

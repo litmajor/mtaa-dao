@@ -227,10 +227,13 @@ export class ProposalExecutionService {
         throw new Error(`Insufficient treasury balance. Available: ${currentBalance}, Requested: ${amount}`);
       }
       
-      const newBalance = (currentBalance - amount).toString();
-      await db.update(daos)
-        .set({ treasuryBalance: newBalance })
-        .where(eq(daos.id, daoId));
+      try {
+        const { TreasuryService } = await import('./services/treasuryService');
+        const computed = await TreasuryService.getBalance(daoId);
+        await TreasuryService.updateStoredTreasuryBalance(daoId, computed.total);
+      } catch (err) {
+        console.warn('[ProposalExecution] Failed to recompute stored treasury balance after transfer:', err);
+      }
     }
     
     // Record the transfer transaction - PHASE 1 FIX: Include actual executor in audit
@@ -438,11 +441,14 @@ export class ProposalExecutionService {
       });
     }
     
-    // Update DAO treasury balance
-    const newBalance = (currentBalance - totalAmount).toString();
-    await db.update(daos)
-      .set({ treasuryBalance: newBalance })
-      .where(eq(daos.id, daoId));
+    // Recompute and persist stored treasury balance via TreasuryService
+    try {
+      const { TreasuryService } = await import('./services/treasuryService');
+      const computed = await TreasuryService.getBalance(daoId);
+      await TreasuryService.updateStoredTreasuryBalance(daoId, computed.total);
+    } catch (err) {
+      console.warn('[ProposalExecution] Failed to recompute stored treasury balance after disbursement:', err);
+    }
   }
   
   // Schedule a proposal for execution

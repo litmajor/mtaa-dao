@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { Gift, TrendingUp, Users, DollarSign, Clock, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -137,37 +138,24 @@ export default function AdminRewards() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Weekly Distribution</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={metrics}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="week" stroke="#94a3b8" />
-                    <YAxis stroke="#94a3b8" yAxisId="left" />
-                    <YAxis stroke="#94a3b8" yAxisId="right" orientation="right" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Legend />
-                    <Bar yAxisId="left" dataKey="distributed" fill="#10b981" name="Distributed ($)" />
-                    <Bar yAxisId="right" dataKey="claimedCount" fill="#3b82f6" name="Claims" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="bar"
+                    data={{ labels: metrics.map(m => m.week), datasets: [{ label: 'Distributed ($)', data: metrics.map(m => m.distributed), backgroundColor: '#10b981' }, { label: 'Claims', data: metrics.map(m => m.claimedCount), backgroundColor: '#3b82f6' }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }}
+                  />
+                </div>
               </Card>
 
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Claim Rate Trend</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={metrics}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="week" stroke="#94a3b8" />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                    <Line 
-                      type="monotone" 
-                      dataKey="claimedCount" 
-                      stroke="#8b5cf6" 
-                      name="Claims" 
-                      strokeWidth={2}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="line"
+                    data={{ labels: metrics.map(m => m.week), datasets: [{ label: 'Claims', data: metrics.map(m => m.claimedCount), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.06)', tension: 0.2 }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
+                  />
+                </div>
               </Card>
             </div>
           </TabsContent>
@@ -204,25 +192,13 @@ export default function AdminRewards() {
           <TabsContent value="distribution" className="space-y-4">
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Tier Distribution</h3>
-              <ResponsiveContainer width="100%" height={350}>
-                <PieChart>
-                  <Pie
-                    data={tiers}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ tier, percentage }) => `${tier}: ${percentage.toFixed(1)}%`}
-                    outerRadius={120}
-                    fill="#8884d8"
-                    dataKey="percentage"
-                  >
-                    {tiers.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
-                </PieChart>
-              </ResponsiveContainer>
+              <div style={{ height: 350 }}>
+                <Chart
+                  type="pie"
+                  data={{ labels: tiers.map(t => t.tier), datasets: [{ data: tiers.map(t => t.percentage), backgroundColor: tiers.map((_, i) => COLORS[i % COLORS.length]) }] }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${ctx.label}: ${ctx.raw.toFixed(1)}%` } } } }}
+                />
+              </div>
             </Card>
           </TabsContent>
 

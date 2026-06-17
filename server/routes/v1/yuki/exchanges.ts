@@ -24,6 +24,17 @@ import { redis } from '../../../services/redis';
 
 const router = express.Router();
 
+// Public health status for connected exchange adapters
+router.get('/status', async (_req: Request, res: Response) => {
+  try {
+    const status = await ccxtService.healthCheck();
+    return res.json({ success: true, data: status, timestamp: new Date().toISOString() });
+  } catch (error: any) {
+    logger.error('[YUKI] Failed to run exchange health check', { error });
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ════════════════════════════════════════════════════════════════════════════════
 // Utilities & Resilience
 // ════════════════════════════════════════════════════════════════════════════════

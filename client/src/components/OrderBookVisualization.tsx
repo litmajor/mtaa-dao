@@ -7,7 +7,8 @@
 /* stylelint-disable */
 
 import React, { useMemo } from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { TrendingUp } from 'lucide-react';
@@ -118,6 +119,43 @@ export const OrderBookVisualization: React.FC<OrderBookVisualizationProps> = ({
   const imbalancePercent = Math.abs(metrics.imbalance);
   const spreadBps = Math.round(orderBook.spreadPercent * 10000) / 100; // Convert to basis points
 
+  const labels = chartData.map(d => `$${d.price.toFixed(2)}`);
+  const chartJsData = {
+    labels,
+    datasets: [
+      {
+        type: 'line' as const,
+        label: 'Bids (Buy)',
+        data: chartData.map(d => d.bid),
+        borderColor: '#10b981',
+        backgroundColor: 'rgba(16,185,129,0.15)',
+        fill: true,
+        tension: 0.2,
+        pointRadius: 0,
+      },
+      {
+        type: 'line' as const,
+        label: 'Asks (Sell)',
+        data: chartData.map(d => d.ask),
+        borderColor: '#ef4444',
+        backgroundColor: 'rgba(239,68,68,0.15)',
+        fill: true,
+        tension: 0.2,
+        pointRadius: 0,
+      },
+    ],
+  };
+
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { position: 'top' }, tooltip: { mode: 'index', intersect: false } },
+    scales: {
+      x: { ticks: { callback: (val: any) => labels[val] } },
+      y: { ticks: { callback: (v: any) => formatVolume(v) } },
+    },
+  } as any;
+
   return (
     <div className="w-full space-y-4">
       {/* Main Order Book Chart */}
@@ -130,53 +168,9 @@ export const OrderBookVisualization: React.FC<OrderBookVisualizationProps> = ({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={350}>
-            <AreaChart
-              data={chartData}
-              margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis
-                dataKey="price"
-                type="number"
-                tickFormatter={(value) => `$${value.toFixed(2)}`}
-                width={60}
-              />
-              <YAxis
-                tickFormatter={(value) => formatVolume(value)}
-                width={60}
-              />
-              <Tooltip
-                cursor={{ strokeDasharray: '3 3' }}
-                formatter={(value) => formatVolume(value as number)}
-                labelFormatter={(label) => `$${(label as number).toFixed(2)}`}
-                contentStyle={{
-                  backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                  border: 'none',
-                  borderRadius: '8px',
-                  color: '#fff'
-                }}
-              />
-              <Area
-                type="monotone"
-                dataKey="bid"
-                stackId="1"
-                stroke="#10b981"
-                fill="#10b981"
-                fillOpacity={0.6}
-                name="Bids (Buy)"
-              />
-              <Area
-                type="monotone"
-                dataKey="ask"
-                stackId="2"
-                stroke="#ef4444"
-                fill="#ef4444"
-                fillOpacity={0.6}
-                name="Asks (Sell)"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          <div style={{ height: 350 }}>
+            <Chart type="bar" data={chartJsData} options={chartOptions} />
+          </div>
         </CardContent>
       </Card>
 

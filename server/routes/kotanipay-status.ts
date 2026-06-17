@@ -1,348 +1,240 @@
-
 import express from 'express';
 import { z } from 'zod';
+import crypto from 'crypto';
 import { db } from '../db';
-import { notificationService } from '../notificationService';
+import { mpesaTransactions } from '../../shared/financialEnhancedSchema';
+import { eq, and, gte, lte, sql } from 'drizzle-orm';
 import { authenticate } from '../auth';
+import { KotanipayService } from '../services/kotanipayService';
 
 const router = express.Router();
 
 // ════════════════════════════════════════════════════════════════════════════════
-// AUTHENTICATION MIDDLEWARE
+// 1. PUBLIC ENDPOINTS (No User Auth - Protected by Cryptographic Signatures)
 // ════════════════════════════════════════════════════════════════════════════════
 
-// All KotaniPay status operations require authentication
-router.use(authenticate);
-
-// Database schema for payments (mock - replace with your actual schema)
-interface Payment {
-  id: string;
-  transactionId: string;
-  status: 'pending' | 'completed' | 'failed' | 'cancelled';
-  amount: number;
-  currency: string;
-  phone: string;
-  daoId?: string;
-  reference?: string;
-  createdAt: string;
-  updatedAt: string;
-  retryCount?: number;
-  errorMessage?: string;
-}
-
-// In-memory store for KotaniPay payment status (replace with your database)
-const kotaniPaymentStatus = new Map<string, Payment>();
-const paymentRetryQueue = new Map<string, Payment>();
-
-// Validation schema for KotaniPay webhook
 const kotaniWebhookSchema = z.object({
-  transactionId: z.string(),
-  status: z.enum(['pending', 'completed', 'failed', 'cancelled']),
+  transactionId: z.string(), // Corresponds to checkoutRequestId / internal tracking ID
+  status: z.enum(['pending', 'completed', 'failed', 'cancelled', 'successful']),
   amount: z.number(),
   currency: z.string(),
   phone: z.string(),
-  reference: z.string().optional(),
-  timestamp: z.string().optional(),
-  errorCode: z.string().optional(),
+  mpesaReceipt: z.string().optional(),
+  conversationId: z.string().optional(),
   errorMessage: z.string().optional()
 });
 
-// Payment reconciliation service
-class PaymentReconciliationService {
-  static async reconcilePayment(transactionId: string, webhookData: any) {
-    const payment = kotaniPaymentStatus.get(transactionId);
-    if (!payment) {
-      console.warn(`Payment reconciliation: Transaction ${transactionId} not found`);
-      return false;
+/**
+ * POST /api/payments/kotanipay/callback
+ * Webhook consumer for KotaniPay infrastructure updates
+ */
+router.post('/callback', async (req, res) => {
+  try {
+    // 🛡️ Verify Webhook Payload Origin Authenticity
+    const signature = req.headers['x-kotani-signature'];
+    if (process.env.NODE_ENV === 'production' && !signature) {
+      return res.status(401).json({ success: false, message: 'Missing webhook signature context.' });
     }
 
-    // Verify amount and currency match
-    if (payment.amount !== webhookData.amount || payment.currency !== webhookData.currency) {
-      console.error(`Payment reconciliation failed: Amount/currency mismatch for ${transactionId}`);
-      return false;
+    if (signature && process.env.KOTANIPAY_WEBHOOK_SECRET) {
+      const computedHash = crypto
+        .createHmac('sha256', process.env.KOTANIPAY_WEBHOOK_SECRET)
+        .update(JSON.stringify(req.body))
+        .digest('hex');
+
+      if (signature !== computedHash) {
+        return res.status(401).json({ success: false, message: 'Tampered signature payload verification rejected.' });
+      }
     }
 
-    // Update payment status
-    payment.status = webhookData.status;
-    payment.updatedAt = new Date().toISOString();
-    if (webhookData.errorMessage) {
-      payment.errorMessage = webhookData.errorMessage;
-    }
-
-    kotaniPaymentStatus.set(transactionId, payment);
+    const webhook = kotaniWebhookSchema.parse(req.body);
     
-    // TODO: Update your actual database
-    // await db.update(payments).set(payment).where(eq(payments.transactionId, transactionId));
+    // Look up tracking context within the master PostgreSQL ledger
+    const [transaction] = await (db as any)
+      .select()
+      .from(mpesaTransactions)
+      .where(eq(mpesaTransactions.checkoutRequestId, webhook.transactionId));
 
-    return true;
-  }
-
-  static async processCompletedPayment(payment: Payment) {
-    try {
-      // Credit user account or update DAO premium status
-      if (payment.daoId) {
-        // TODO: Update DAO premium status
-        console.log(`Crediting DAO ${payment.daoId} with ${payment.amount} ${payment.currency}`);
-      }
-
-      // Send success notification
-      await notificationService.sendPaymentNotification(payment.phone, {
-        type: 'payment_success',
-        amount: payment.amount,
-        currency: payment.currency,
-        transactionId: payment.transactionId
-      });
-
-      return true;
-    } catch (error) {
-      console.error('Error processing completed payment:', error);
-      return false;
+    if (!transaction) {
+      return res.status(404).json({ code: 'TRANSACTION_NOT_FOUND', message: 'Transaction tracking index missing.' });
     }
-  }
 
-  static async processFailedPayment(payment: Payment) {
-    try {
-      // Add to retry queue if retries haven't been exhausted
-      if ((payment.retryCount || 0) < 3) {
-        payment.retryCount = (payment.retryCount || 0) + 1;
-        paymentRetryQueue.set(payment.transactionId, payment);
-        
-        // Schedule retry after delay
-        setTimeout(() => {
-          this.retryFailedPayment(payment.transactionId);
-        }, 30000 * payment.retryCount); // Exponential backoff
+    const rawStatus = webhook.status.toLowerCase();
+    const isSuccess = ['completed', 'successful'].includes(rawStatus);
+
+    if (isSuccess) {
+      if (transaction.transactionType === 'stk_push') {
+        // Handle M-Pesa → Stablecoin Inflow Execution Loop
+        await KotanipayService.completeDeposit(
+          webhook.transactionId,
+          webhook.mpesaReceipt || webhook.transactionId,
+          req.body
+        );
+      } else if (transaction.transactionType === 'b2c') {
+        // Handle Stablecoin → M-Pesa Outflow Clearing Pipeline
+        await KotanipayService.completeWithdrawal(
+          webhook.transactionId,
+          { ConversationID: webhook.conversationId || webhook.transactionId }
+        );
       }
-
-      // Send failure notification
-      await notificationService.sendPaymentNotification(payment.phone, {
-        type: 'payment_failed',
-        amount: payment.amount,
-        currency: payment.currency,
-        transactionId: payment.transactionId,
-        errorMessage: payment.errorMessage
-      });
-
-      return true;
-    } catch (error) {
-      console.error('Error processing failed payment:', error);
-      return false;
-    }
-  }
-
-  static async retryFailedPayment(transactionId: string) {
-    const payment = paymentRetryQueue.get(transactionId);
-    if (!payment) return;
-
-    try {
-      // TODO: Retry payment with KotaniPay API
-      console.log(`Retrying payment ${transactionId} (attempt ${payment.retryCount})`);
-      
-      // Mock retry logic - replace with actual KotaniPay API call
-      const retrySuccess = Math.random() > 0.5; // 50% chance of success
-      
-      if (retrySuccess) {
-        payment.status = 'completed';
-        paymentRetryQueue.delete(transactionId);
-        await this.processCompletedPayment(payment);
-      } else {
-        payment.status = 'failed';
-        await this.processFailedPayment(payment);
+    } else if (['failed', 'cancelled'].includes(rawStatus)) {
+      if (transaction.transactionType === 'stk_push') {
+        await KotanipayService.failDeposit(webhook.transactionId, webhook.errorMessage || 'Transaction rejected');
+      } else if (transaction.transactionType === 'b2c') {
+        await KotanipayService.refundWithdrawal(webhook.transactionId);
       }
-    } catch (error) {
-      console.error(`Retry failed for payment ${transactionId}:`, error);
     }
-  }
-}
 
-// GET /api/payments/kotanipay/status/:transactionId
+    res.json({ success: true, reconciled: true, status: webhook.status });
+  } catch (error: any) {
+    console.error('KotaniPay callback validation failure:', error);
+    res.status(400).json({ code: 'INVALID_CALLBACK', message: error.message });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// 2. AUTHENTICATED ENDPOINTS (Requires Standard User Session Authentication Headers)
+// ════════════════════════════════════════════════════════════════════════════════
+
+router.use(authenticate);
+
+/**
+ * GET /api/payments/kotanipay/status/:transactionId
+ * Safe database-driven lookup endpoint
+ */
 router.get('/status/:transactionId', async (req, res) => {
   const { transactionId } = req.params;
   
   try {
-    const status = kotaniPaymentStatus.get(transactionId);
+    const [statusRecord] = await (db as any)
+      .select()
+      .from(mpesaTransactions)
+      .where(eq(mpesaTransactions.checkoutRequestId, transactionId));
     
-    if (!status) {
-      return res.status(404).json({
-        code: 'TRANSACTION_NOT_FOUND',
-        message: 'Transaction not found'
-      });
+    if (!statusRecord) {
+      return res.status(404).json({ code: 'TRANSACTION_NOT_FOUND', message: 'Requested transaction registry index missing.' });
     }
 
     res.json({
       success: true,
-      payment: status,
-      retryInfo: paymentRetryQueue.has(transactionId) ? {
-        inRetryQueue: true,
-        retryCount: status.retryCount || 0
-      } : null
+      payment: {
+        id: statusRecord.checkoutRequestId,
+        transactionId: statusRecord.checkoutRequestId,
+        status: statusRecord.status,
+        amount: parseFloat(statusRecord.amount),
+        phone: statusRecord.phoneNumber,
+        type: statusRecord.transactionType,
+        createdAt: statusRecord.createdAt,
+        updatedAt: statusRecord.updatedAt,
+        metadata: statusRecord.metadata
+      }
     });
   } catch (error: any) {
-    res.status(500).json({
-      code: 'STATUS_CHECK_FAILED',
-      message: 'Failed to check payment status',
-      details: error.message
-    });
+    res.status(500).json({ code: 'STATUS_CHECK_FAILED', message: 'Failed to verify transaction ledger state.', details: error.message });
   }
 });
 
-// POST /api/payments/kotanipay/callback
-router.post('/callback', async (req, res) => {
-  try {
-    const webhook = kotaniWebhookSchema.parse(req.body);
-    
-    // Reconcile payment
-    const reconciled = await PaymentReconciliationService.reconcilePayment(
-      webhook.transactionId, 
-      webhook
-    );
-
-    if (!reconciled) {
-      return res.status(400).json({
-        code: 'RECONCILIATION_FAILED',
-        message: 'Payment reconciliation failed'
-      });
-    }
-
-    // Update payment status
-    const payment: Payment = {
-      id: webhook.transactionId,
-      transactionId: webhook.transactionId,
-      status: webhook.status,
-      amount: webhook.amount,
-      currency: webhook.currency,
-      phone: webhook.phone,
-      reference: webhook.reference,
-      createdAt: kotaniPaymentStatus.get(webhook.transactionId)?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      errorMessage: webhook.errorMessage
-    };
-
-    kotaniPaymentStatus.set(webhook.transactionId, payment);
-
-    // Process based on status
-    switch (webhook.status) {
-      case 'completed':
-        await PaymentReconciliationService.processCompletedPayment(payment);
-        break;
-      case 'failed':
-      case 'cancelled':
-        await PaymentReconciliationService.processFailedPayment(payment);
-        break;
-      case 'pending':
-        // Send pending notification
-        await notificationService.sendPaymentNotification(payment.phone, {
-          type: 'payment_pending',
-          amount: payment.amount,
-          currency: payment.currency,
-          transactionId: payment.transactionId
-        });
-        break;
-    }
-
-    console.log(`KotaniPay payment ${webhook.transactionId} status updated: ${webhook.status}`);
-
-    res.json({ 
-      success: true,
-      reconciled: true,
-      status: webhook.status
-    });
-  } catch (error: any) {
-    console.error('KotaniPay callback error:', error);
-    res.status(400).json({
-      code: 'INVALID_CALLBACK',
-      message: 'Invalid callback data',
-      details: error.message
-    });
-  }
-});
-
-// GET /api/payments/kotanipay/retry/:transactionId
+/**
+ * POST /api/payments/kotanipay/retry/:transactionId
+ * Atomic retry state tracking handler
+ */
 router.post('/retry/:transactionId', async (req, res) => {
   const { transactionId } = req.params;
   
   try {
-    const payment = kotaniPaymentStatus.get(transactionId);
+    const [transaction] = await (db as any)
+      .select()
+      .from(mpesaTransactions)
+      .where(eq(mpesaTransactions.checkoutRequestId, transactionId));
     
-    if (!payment) {
-      return res.status(404).json({
-        code: 'TRANSACTION_NOT_FOUND',
-        message: 'Transaction not found'
+    if (!transaction) {
+      return res.status(404).json({ code: 'TRANSACTION_NOT_FOUND', message: 'Target entry was not discovered.' });
+    }
+
+    if (transaction.status !== 'failed') {
+      return res.status(400).json({ code: 'INVALID_STATUS', message: 'Only transactions marked explicitly as failed can enter the manual correction loop.' });
+    }
+
+    const currentRetries = (transaction.metadata as any)?.retryCount || 0;
+    if (currentRetries >= 3) {
+      return res.status(400).json({ code: 'RETRY_LIMIT_EXCEEDED', message: 'Maximum engine fallback recovery thresholds exceeded.' });
+    }
+
+    // Atomically increment retry indexes within row execution metadata logs
+    const updatedMetadata = {
+      ...(typeof transaction.metadata === 'object' ? transaction.metadata : {}),
+      retryCount: currentRetries + 1,
+      lastRetryAt: new Date().toISOString()
+    };
+
+    await (db as any)
+      .update(mpesaTransactions)
+      .set({
+        status: 'pending',
+        metadata: updatedMetadata,
+        updatedAt: new Date()
+      })
+      .where(eq(mpesaTransactions.checkoutRequestId, transactionId));
+
+    // Re-dispatch target operational task context to service engine
+    if (transaction.transactionType === 'stk_push') {
+      await KotanipayService.initiateDeposit({
+        userId: transaction.userId,
+        phone: transaction.phoneNumber,
+        amountKES: parseFloat(transaction.amount),
+        reference: transaction.checkoutRequestId,
+        daoId: (transaction.metadata as any)?.daoId
       });
     }
 
-    if (payment.status !== 'failed') {
-      return res.status(400).json({
-        code: 'INVALID_STATUS',
-        message: 'Can only retry failed payments'
-      });
-    }
-
-    if ((payment.retryCount || 0) >= 3) {
-      return res.status(400).json({
-        code: 'RETRY_LIMIT_EXCEEDED',
-        message: 'Maximum retry attempts exceeded'
-      });
-    }
-
-    // Add to retry queue
-    payment.retryCount = (payment.retryCount || 0) + 1;
-    paymentRetryQueue.set(transactionId, payment);
-    
-    // Retry immediately
-    await PaymentReconciliationService.retryFailedPayment(transactionId);
-
-    res.json({
-      success: true,
-      message: 'Payment retry initiated',
-      retryCount: payment.retryCount
-    });
+    res.json({ success: true, message: 'Kotani Pay transactional queue recovery sequence re-dispatched.', retryCount: currentRetries + 1 });
   } catch (error: any) {
-    res.status(500).json({
-      code: 'RETRY_FAILED',
-      message: 'Failed to retry payment',
-      details: error.message
-    });
+    res.status(500).json({ code: 'RETRY_FAILED', message: error.message });
   }
 });
 
-// GET /api/payments/kotanipay/reconcile
+/**
+ * GET /api/payments/kotanipay/reconcile
+ * Historical analytics compiler engine
+ */
 router.get('/reconcile', async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     
-    // Get all payments in date range
-    const payments = Array.from(kotaniPaymentStatus.values()).filter(payment => {
-      if (startDate && payment.createdAt < startDate) return false;
-      if (endDate && payment.createdAt > endDate) return false;
-      return true;
-    });
+    let queryConditions = [];
+    if (startDate) queryConditions.push(sql`${mpesaTransactions.createdAt} >= ${new Date(startDate as string)}`);
+    if (endDate) queryConditions.push(sql`${mpesaTransactions.createdAt} <= ${new Date(endDate as string)}`);
+
+    const records = await (db as any)
+      .select()
+      .from(mpesaTransactions)
+      .where(queryConditions.length > 0 ? and(...queryConditions) : undefined);
 
     const reconciliation = {
-      totalPayments: payments.length,
-      completed: payments.filter(p => p.status === 'completed').length,
-      failed: payments.filter(p => p.status === 'failed').length,
-      pending: payments.filter(p => p.status === 'pending').length,
-      cancelled: payments.filter(p => p.status === 'cancelled').length,
-      inRetryQueue: paymentRetryQueue.size,
-      totalAmount: payments
-        .filter(p => p.status === 'completed')
-        .reduce((sum, p) => sum + p.amount, 0)
+      totalPayments: records.length,
+      completed: records.filter((r: any) => r.status === 'completed').length,
+      failed: records.filter((r: any) => r.status === 'failed').length,
+      pending: records.filter((r: any) => r.status === 'pending').length,
+      cancelled: records.filter((r: any) => r.status === 'cancelled').length,
+      totalAmountKES: records
+        .filter((r: any) => r.status === 'completed' && r.transactionType === 'stk_push')
+        .reduce((sum: number, r: any) => sum + parseFloat(r.amount), 0)
     };
 
     res.json({
       success: true,
       reconciliation,
-      payments: payments.map(p => ({
-        ...p,
-        inRetryQueue: paymentRetryQueue.has(p.transactionId)
+      payments: records.map((r: any) => ({
+        transactionId: r.checkoutRequestId,
+        status: r.status,
+        amount: parseFloat(r.amount),
+        type: r.transactionType,
+        phone: r.phoneNumber,
+        createdAt: r.createdAt
       }))
     });
   } catch (error: any) {
-    res.status(500).json({
-      code: 'RECONCILIATION_FAILED',
-      message: 'Failed to generate reconciliation report',
-      details: error.message
-    });
+    res.status(500).json({ code: 'RECONCILIATION_FAILED', message: 'Failed to compile active ledger evaluation report.', details: error.message });
   }
 });
 

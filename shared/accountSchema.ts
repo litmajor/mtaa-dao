@@ -416,6 +416,10 @@ export const crossChainTransfers = pgTable(
     // Bridge information
     bridgeProtocol: varchar('bridge_protocol').notNull().default('none'), // layerzero, axelar, wormhole, stargate, direct
     bridgeTransactionHash: varchar('bridge_tx_hash'),
+    // Requestor
+    userId: varchar('user_id'),
+    // Optional estimate fields
+    gasEstimate: varchar('gas_estimate'),
     
     // Status tracking
     status: varchar('status').notNull().default('pending'), // pending, bridging, confirmed, failed, refunded

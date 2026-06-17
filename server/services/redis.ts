@@ -8,6 +8,7 @@ class RedisService {
   private hasLoggedFallback = false;
   private isConnecting = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private subscriber: Redis | null = null;
   private redisOptions: RedisOptions = {};
 
   async connect(): Promise<void> {
@@ -149,6 +150,47 @@ class RedisService {
     }
   }
 
+  /**
+   * Retrieve keys matching a pattern. Uses ioredis `keys` when connected,
+   * otherwise returns an empty array for the fallback store.
+   */
+  async keys(pattern: string): Promise<string[]> {
+    await this.ensureConnected();
+    try {
+      if (this.client && this.isConnected) {
+        return await this.client.keys(pattern);
+      }
+    } catch (error) {
+      logger.debug('[Redis] KEYS failed:', (error as Error).message);
+      this.isConnected = false;
+    }
+    // Fallback: scan in-memory fallback store
+    const out: string[] = [];
+    for (const k of this.fallbackStore.keys()) {
+      if (k.match(pattern.replace(/\*/g, '.*'))) out.push(k);
+    }
+    return out;
+  }
+
+  /**
+   * Delete many keys at once. Uses single `del` call with variadic args when connected.
+   */
+  async delMany(keys: string[]): Promise<void> {
+    if (!keys || keys.length === 0) return;
+    await this.ensureConnected();
+    try {
+      if (this.client && this.isConnected) {
+        await this.client.del(...keys);
+      } else {
+        for (const k of keys) this.fallbackStore.delete(k);
+      }
+    } catch (error) {
+      logger.debug('[Redis] DEL many failed:', (error as Error).message);
+      this.isConnected = false;
+      for (const k of keys) this.fallbackStore.delete(k);
+    }
+  }
+
   async publish(channel: string, message: string): Promise<number> {
     await this.ensureConnected();
     try {
@@ -286,10 +328,46 @@ class RedisService {
 
   async disconnect(): Promise<void> {
     if (this.client) {
-      await this.client.quit();
+      try {
+        await this.client.quit();
+      } catch (e) {
+        // ignore
+      }
       this.isConnected = false;
       this.client = null;
     }
+
+    if (this.subscriber) {
+      try {
+        await this.subscriber.quit();
+      } catch (e) {
+        // ignore
+      }
+      this.subscriber = null;
+    }
+  }
+
+  /**
+   * Return a dedicated subscriber client for pub/sub use.
+   * Reuses a single subscriber connection to avoid multiple new connections.
+   */
+  async getSubscriber(): Promise<Redis> {
+    if (this.subscriber) return this.subscriber;
+
+    // Ensure base options are prepared
+    if (!this.redisOptions || Object.keys(this.redisOptions).length === 0) {
+      // Lazy initialize options from env
+      await this.connect();
+    }
+
+    this.subscriber = new Redis(this.redisOptions);
+    this.subscriber.on('error', (err: Error) => {
+      logger.warn('[Redis][subscriber] Error:', err.message);
+    });
+    this.subscriber.on('connect', () => logger.info('[Redis][subscriber] connected'));
+    this.subscriber.on('ready', () => logger.info('[Redis][subscriber] ready'));
+
+    return this.subscriber;
   }
 
   cleanupFallbackStore(): void {

@@ -124,6 +124,9 @@ export class GatewayAgent {
         case "gateway:risk_request":
           response = await this.handleRiskRequest(message, requestId);
           break;
+        case "gateway:execution_check":
+          response = await this.handleExecutionCheck(message, requestId);
+          break;
         case "gateway:cache_invalidate":
           await this.invalidateCache(message.payload);
           response = this.createResponse(message.type, true, {}, requestId);
@@ -151,6 +154,50 @@ export class GatewayAgent {
         { error: (error as Error).message },
         requestId
       );
+    }
+  }
+
+  /**
+   * Handle execution check request (is it safe to execute a swap/rebalance)
+   */
+  private async handleExecutionCheck(message: GatewayMessage, requestId: string): Promise<GatewayMessage> {
+    const { vaultId, tokenSymbol, amount, chain, tolerancePct } = message.payload || {};
+
+    // Basic validation
+    if (!tokenSymbol || !amount) {
+      return this.createResponse(message.type, false, { isSafeToExecute: false, details: { reason: 'missing parameters' } }, requestId);
+    }
+
+    try {
+      // Request price and liquidity data for the token
+      const priceData = await this.fetchWithFailover('price', { symbol: tokenSymbol }, requestId);
+      const liquidityData = await this.fetchWithFailover('liquidity', { protocol: 'primary', pools: [], chain }, requestId);
+
+      const price = Array.isArray(priceData) ? (priceData[0]?.value as number) : (priceData as any)?.value;
+      const liquidity = Array.isArray(liquidityData) ? (liquidityData[0]?.value as number) : (liquidityData as any)?.value;
+
+      // Simple heuristics:
+      // - If liquidity is absent or below a conservative threshold relative to amount, mark unsafe
+      // - If estimated impact (amount / liquidity) > tolerancePct (default 1%), mark unsafe
+      const amt = Number(amount);
+      const tol = typeof tolerancePct === 'number' ? tolerancePct : 1; // percent
+
+      const details: any = { price: price ?? null, liquidity: liquidity ?? null };
+
+      if (!liquidity || Number(liquidity) <= 0) {
+        return this.createResponse(message.type, true, { isSafeToExecute: false, details: { ...details, reason: 'insufficient_liquidity' } }, requestId);
+      }
+
+      // Compute estimated impact as percent
+      const notional = (price || 1) * amt;
+      const impactPct = (notional / Number(liquidity)) * 100;
+      details.estimatedImpactPct = impactPct;
+
+      const isSafe = impactPct <= tol;
+
+      return this.createResponse(message.type, true, { isSafeToExecute: isSafe, details }, requestId);
+    } catch (err: any) {
+      return this.createResponse(message.type, false, { isSafeToExecute: false, details: { error: err?.message || String(err) } }, requestId);
     }
   }
 

@@ -9,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
 import { Wallet, Plus, Upload, Eye, EyeOff, Copy, Download, CheckCircle, Shield, TriangleAlert } from 'lucide-react';
-import { Wallet as EthersWallet } from 'ethers';
 import { useToast } from './ui/use-toast';
 import SeedPhraseModal from './modals/SeedPhraseModal';
 
@@ -158,6 +157,7 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
     try {
       // Do not send raw private keys to the server. Request a server challenge, sign it locally, then submit.
       const pk = privateKey.trim();
+      const { Wallet: EthersWallet } = await import('ethers');
       const wallet = new EthersWallet(pk);
       const address = await wallet.getAddress();
 

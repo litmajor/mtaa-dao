@@ -15,7 +15,8 @@ import {
   index,
   foreignKey,
 } from 'drizzle-orm/pg-core';
-import { users } from './users'; // Assuming you have a users table
+
+import { users } from '../../../shared/schema';
 
 /**
  * Bot Table

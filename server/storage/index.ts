@@ -58,7 +58,6 @@ export interface IStorage {
   getDaoCount(): Promise<number>;
   incrementDaoMemberCount(daoId: string): Promise<any>;
   setDaoInviteCode(daoId: string, code: string): Promise<any>;
-  updateDaoInviteCode(daoId: string, code: string): Promise<any>;
   getDaoByInviteCode(code: string): Promise<any>;
   createDaoMembership(args: any): Promise<any>;
   getDaoMembership(daoId: string, userId: string): Promise<any>;
@@ -292,7 +291,6 @@ export class DatabaseStorage implements IStorage {
   async getDaoCount() { return this.daoStorage.getDaoCount(); }
   async incrementDaoMemberCount(daoId: string) { return this.daoStorage.incrementDaoMemberCount(daoId); }
   async setDaoInviteCode(daoId: string, code: string) { return this.daoStorage.setDaoInviteCode(daoId, code); }
-  async updateDaoInviteCode(daoId: string, code: string) { return this.daoStorage.updateDaoInviteCode(daoId, code); }
   async getDaoByInviteCode(code: string) { return this.daoStorage.getDaoByInviteCode(code); }
   async createDaoMembership(args: any) { return this.daoStorage.createDaoMembership(args); }
   async getDaoMembership(daoId: string, userId: string) { return this.daoStorage.getDaoMembership(daoId, userId); }
@@ -522,7 +520,7 @@ export const getAllDaos = (args?: any) => storage.getAllDaos(args);
 export const getDaoCount = () => storage.getDaoCount();
 export const incrementDaoMemberCount = (daoId: string) => storage.incrementDaoMemberCount(daoId);
 export const setDaoInviteCode = (daoId: string, code: string) => storage.setDaoInviteCode(daoId, code);
-export const updateDaoInviteCode = (daoId: string, code: string) => storage.updateDaoInviteCode(daoId, code);
+// `updateDaoInviteCode` removed; use `setDaoInviteCode` instead
 export const getDaoByInviteCode = (code: string) => storage.getDaoByInviteCode(code);
 export const createDaoMembership = (args: any) => storage.createDaoMembership(args);
 export const getDaoMembership = (daoId: string, userId: string) => storage.getDaoMembership(daoId, userId);

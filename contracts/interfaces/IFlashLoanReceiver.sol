@@ -11,9 +11,9 @@ interface IFlashLoanReceiver {
      * Must return true and repay the loan + premium
      */
     function executeOperation(
-        address asset,
-        uint256 amount,
-        uint256 premium,
+        address[] calldata assets,
+        uint256[] calldata amounts,
+        uint256[] calldata premiums,
         address initiator,
         bytes calldata params
     ) external returns (bool);

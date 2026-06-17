@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title BailForfeiture
@@ -72,7 +72,7 @@ contract BailForfeiture is Ownable, Pausable {
     }
     
     // Constructor
-    constructor(address _oracle, address _treasury) {
+    constructor(address _oracle, address _treasury) Ownable(msg.sender) {
         oracle = _oracle;
         treasury = _treasury;
     }

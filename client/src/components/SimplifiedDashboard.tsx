@@ -2,7 +2,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TrendingUp, Users, Plus, ArrowRight, CheckCircle } from "lucide-react";
-import { Link } from "wouter";
+import { Link } from "react-router-dom";
 
 interface SimplifiedDashboardProps {
   userSavings?: number;
@@ -67,7 +67,7 @@ export default function SimplifiedDashboard({
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
               Growing automatically. Earning 8-12% yearly.
             </p>
-            <Link href="/vault">
+            <Link to="/vault">
               <Button className="w-full" size="lg">
                 Add Money
               </Button>
@@ -95,7 +95,7 @@ export default function SimplifiedDashboard({
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
               Higher returns, monitored daily.
             </p>
-            <Link href="/investment-pools">
+            <Link to="/investment-pools">
               <Button variant="outline" className="w-full" size="lg">
                 See Details
               </Button>
@@ -135,13 +135,13 @@ export default function SimplifiedDashboard({
             
             {/* Action Buttons */}
             <div className="flex gap-3">
-              <Link href="/daos" className="flex-1">
+              <Link to="/daos" className="flex-1">
                 <Button variant="primary" className="w-full shadow-lg hover:shadow-xl transition-all duration-300 group/btn" size="lg">
                   View Groups
                   <ArrowRight className="w-4 h-4 ml-2 group-hover/btn:translate-x-1 transition-transform" />
                 </Button>
               </Link>
-              <Link href="/create-dao" className="flex-1">
+              <Link to="/create-dao" className="flex-1">
                 <Button variant="outline" className="w-full hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors" size="lg">
                   <Plus className="w-4 h-4" />
                 </Button>
@@ -163,7 +163,7 @@ export default function SimplifiedDashboard({
                 <p className="text-gray-700 dark:text-gray-300 mb-4">
                   Your groups need you to vote on important decisions
                 </p>
-                <Link href="/proposals">
+                <Link to="/proposals">
                   <Button variant="primary" size="lg">
                     Vote Now
                     <ArrowRight className="ml-2 h-5 w-5" />
@@ -177,7 +177,7 @@ export default function SimplifiedDashboard({
 
       {/* Quick Actions */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Link href="/create-dao">
+        <Link to="/create-dao">
           <Card className="hover:shadow-lg transition-shadow cursor-pointer">
             <CardContent className="p-6 flex items-center gap-4">
               <div className="bg-gradient-to-br from-purple-500 to-pink-500 rounded-full p-3">
@@ -191,7 +191,7 @@ export default function SimplifiedDashboard({
           </Card>
         </Link>
 
-        <Link href="/referrals">
+        <Link to="/referrals">
           <Card className="hover:shadow-lg transition-shadow cursor-pointer">
             <CardContent className="p-6 flex items-center gap-4">
               <div className="bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full p-3">

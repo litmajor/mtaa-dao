@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title ChildDAORegistry
@@ -151,6 +151,9 @@ contract ChildDAORegistry is Ownable, ReentrancyGuard {
         if (dividendId == 0 || dividendId >= dividendCounter) revert DividendNotFound();
         _;
     }
+
+    // Constructor
+    constructor() Ownable(msg.sender) {}
 
     // ==================== REGISTRATION ====================
 

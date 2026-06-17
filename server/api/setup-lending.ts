@@ -7,6 +7,7 @@
 
 import lendingProtocolsRouter from './lending_protocols';
 import flashLoansRouter from './flash_loans';
+import dexProxyRouter from './dex_proxy';
 
 /**
  * Register API routes
@@ -18,6 +19,9 @@ export function setupLendingAPIs(app: any) {
 
   // Flash loan routes
   app.use('/api/lending', flashLoansRouter);
+
+  // DEX proxy (1inch) - server-side caching + decimals handling
+  app.use('/api/dex', dexProxyRouter);
 
   console.log('✅ Lending and Flash Loan APIs initialized');
   console.log('Available endpoints:');

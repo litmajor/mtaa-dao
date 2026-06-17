@@ -1,174 +1,132 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
 /**
  * @title TokenDistributionInitializer
- * @notice Executes initial token distribution with vesting escrow model
- * 
- * CRITICAL CONTEXT: The Vesting Overhang Problem
- * ===============================================
- * 
- * Vesting Schedule (from MTAA_3YEAR_SIMULATION.md):
- *   Community Rewards: 300M over 48mo → 6.25M/month
- *   Ecosystem Dev:     200M over 36mo → 5.56M/month
- *   Partners:          100M from mo7 → 4.17M/month
- *   Team:              150M from mo13 → 4.17M/month
- * 
- * Month 18 Problem:
- *   ALL vesting streams active simultaneously
- *   Total: ~20M MTAA/month hitting market
- *   At KES 5/token: KES 100M monthly sell pressure
- *   Risk: Token becomes "vesting farm" not "utility token"
- * 
- * The Killer: If staking doesn't absorb >35%, price collapse before narrative builds
- * 
- * PHASE 1.3 SOLUTION: Staking Absorption Rate Engine
- * ===================================================
- * 
- * The FloatingAPYCalculator + Reputation Multiplier work together:
- * 
- * 1. High APY when TVL is low (18% for first 5-10% adoption)
- *    → Incentivizes early stayers to lock long-term
- *    → Creates TVL flywheel
- * 
- * 2. Reputation multiplier (SHOGUN = 3x rewards)
- *    → Early adopters who hold through vesting cliff get max rewards
- *    → Creates "stickiness" for long-term believers
- *    → Reputation locked: can't sell without losing status
- * 
- * 3. Daily challenges + streaks (up to 5x multiplier)
- *    → Active users earn more
- *    → Engagement creates moat against passive sellers
- * 
- * Target: 40% of circulating supply in locked staking by month 18
- *   300M circulating → 120M staked at 365-day lock
- *   At 18% APY: 21.6M MTAA/month rewards
- *   Versus 20M/month vesting → Net positive inflow
- * 
- * EXECUTION TIMELINE
- * ==================
- * Week 1: Deploy contracts, mint initial tokens, lock in treasury
- * Week 2-4: Distribute to founders, advisors, partners (with cliff locks)
- * Month 2-12: Community farming opens (high APY to bootstrap TVL)
- * Month 13: Team vesting starts (already staking incentives active)
- * Month 18: All vesting active (staking absorption should be 40%+)
+ * @notice One-shot contract to initialize MTAA token vesting schedules
+ *
+ * Vesting schedule (1B total supply):
+ *   Community Rewards:  300M (30%) — 6mo cliff, 48mo linear
+ *   Ecosystem Dev:      200M (20%) — 3mo cliff, 36mo linear
+ *   Strategic Partners: 100M (10%) — 7mo cliff, 36mo linear
+ *   Team:               150M (15%) — 13mo cliff, 48mo linear
+ *   Early Stakers:       75M  (7%) — 0 cliff, distributed via airdrop
+ *   Owner reserve:      175M (17%) — held by owner (contingency + governance)
+ *   ─────────────────────────────────
+ *   Total:             1000M (100%)
+ *
+ * Critical constraint:
+ *   MTAAToken constructor mints only 125M to owner (12.5% = liquidity + public sale).
+ *   Full 825M vesting allocation requires owner to have acquired those tokens first.
+ *   executeDistribution() validates owner balance before proceeding.
+ *   If balance is insufficient, use executePartialDistribution() which scales
+ *   proportionally to available balance.
  */
 
-/**
- * PHASE 1: Initial Token Allocation & Escrow Setup
- * 
- * MtaaToken total supply: 1B tokens
- * Initial mint to owner: 125M (12.5%)
- * 
- * Why escrow model?
- * - Owner can't dump (tokens locked in vesting contracts)
- * - Community sees predictable releases
- * - No rug pull risk (verified on-chain)
- */
+interface IMTAAToken {
+    function createVestingSchedule(
+        address beneficiary,
+        uint256 amount,
+        uint256 startTime,
+        uint256 duration,
+        uint256 cliffPeriod,
+        uint8 vestingType
+    ) external;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+    function balanceOf(address account) external view returns (uint256);
+    function totalSupply() external view returns (uint256);
+}
 
 contract TokenDistributionInitializer {
-    
-    IERC20 public mtaaToken;
+    using SafeERC20 for IERC20;
+
+    // ── Constants ─────────────────────────────────────────────────────────────
+
+    uint256 public constant TOTAL_SUPPLY         = 1_000_000_000 * 1e18;
+
+    uint256 public constant COMMUNITY_AMOUNT     = 300_000_000 * 1e18;
+    uint256 public constant ECOSYSTEM_AMOUNT     = 200_000_000 * 1e18;
+    uint256 public constant PARTNERS_AMOUNT      = 100_000_000 * 1e18;
+    uint256 public constant TEAM_AMOUNT          = 150_000_000 * 1e18;
+    uint256 public constant AIRDROP_RESERVE      =  75_000_000 * 1e18;
+    // Owner keeps 175M: 50M contingency + 50M emergency + 75M future governance
+
+    uint256 public constant TOTAL_VESTING        = 825_000_000 * 1e18;
+
+    // Vesting durations in seconds
+    uint256 public constant MONTHS_3  =  90 days;
+    uint256 public constant MONTHS_6  = 180 days;
+    uint256 public constant MONTHS_7  = 210 days;
+    uint256 public constant MONTHS_13 = 390 days;
+    uint256 public constant MONTHS_36 = 1080 days;
+    uint256 public constant MONTHS_48 = 1440 days;
+
+    // MTAAToken VestingType enum values
+    uint8 public constant VTYPE_COMMUNITY  = 0; // COMMUNITY_REWARDS
+    uint8 public constant VTYPE_ECOSYSTEM  = 2; // ECOSYSTEM_DEV
+    uint8 public constant VTYPE_PARTNERS   = 3; // STRATEGIC_PARTNERS
+    uint8 public constant VTYPE_TEAM       = 1; // TEAM_ADVISORS
+
+    // ── State ─────────────────────────────────────────────────────────────────
+
+    IMTAAToken public mtaaToken;
     address public owner;
-    
-    struct VestingAllocation {
-        string name;
-        address beneficiary;
-        uint256 amount;           // Total tokens to vest
-        uint256 cliffMonths;      // Cliff period (locked)
-        uint256 durationMonths;   // Total vesting duration
-        uint256 percentage;       // Of 1B supply
-    }
-    
-    VestingAllocation[] public allocations;
-    
+    bool public distributed;
+
+    // Beneficiary addresses set at distribution time
+    address public treasuryDAO;
+    address public partnerFund;
+    address public teamMultisig;
+    address public stakersAirdropFund;
+
+    // ── Events ────────────────────────────────────────────────────────────────
+
+    event DistributionExecuted(
+        address indexed executor,
+        uint256 communityAmount,
+        uint256 ecosystemAmount,
+        uint256 partnersAmount,
+        uint256 teamAmount,
+        uint256 airdropAmount,
+        uint256 timestamp
+    );
+
+    event PartialDistributionExecuted(
+        address indexed executor,
+        uint256 scaleFactor,   // scaled by 1e18
+        uint256 totalDistributed,
+        uint256 timestamp
+    );
+
+    // ── Errors ────────────────────────────────────────────────────────────────
+
+    error OnlyOwner();
+    error AlreadyDistributed();
+    error InvalidAddress();
+    error InsufficientOwnerBalance(uint256 available, uint256 required);
+
+    // ── Constructor ───────────────────────────────────────────────────────────
+
     constructor(address _mtaaToken, address _owner) {
-        mtaaToken = IERC20(_mtaaToken);
+        if (_mtaaToken == address(0) || _owner == address(0)) revert InvalidAddress();
+        mtaaToken = IMTAAToken(_mtaaToken);
         owner = _owner;
-        
-        // Define all vesting allocations
-        _defineAllocations();
     }
-    
-    function _defineAllocations() internal {
-        // [CRITICAL] All percentages sum to 100% + 0% unclaimed = full allocation
-        
-        // Community Rewards: 300M (30%)
-        // 6-month cliff, then 42-month linear unlock
-        // Released to DAO treasury starting month 6
-        allocations.push(VestingAllocation({
-            name: "Community Rewards",
-            beneficiary: address(0), // Set to TreasuryDAO later
-            amount: 300_000_000 * 1e18,
-            cliffMonths: 6,
-            durationMonths: 48,
-            percentage: 30
-        }));
-        
-        // Ecosystem Dev: 200M (20%)
-        // 3-month cliff, 36-month linear unlock
-        // Released to DAO treasury starting month 3
-        allocations.push(VestingAllocation({
-            name: "Ecosystem Dev",
-            beneficiary: address(0), // Set to TreasuryDAO later
-            amount: 200_000_000 * 1e18,
-            cliffMonths: 3,
-            durationMonths: 36,
-            percentage: 20
-        }));
-        
-        // Strategic Partners: 100M (10%)
-        // 7-month cliff, 36-month linear unlock
-        // Released starting month 7
-        allocations.push(VestingAllocation({
-            name: "Strategic Partners",
-            beneficiary: address(0), // Set later
-            amount: 100_000_000 * 1e18,
-            cliffMonths: 7,
-            durationMonths: 36,
-            percentage: 10
-        }));
-        
-        // Team Allocation: 150M (15%)
-        // 13-month cliff (ensures product MKT fit reached before unlock)
-        // 48-month linear unlock starting month 13
-        allocations.push(VestingAllocation({
-            name: "Team",
-            beneficiary: address(0), // Set later
-            amount: 150_000_000 * 1e18,
-            cliffMonths: 13,
-            durationMonths: 48,
-            percentage: 15
-        }));
-        
-        // Early Stakers Reserve: 75M (7.5%)
-        // Airdrops to users who stake >100K MTAA in first 90 days
-        allocations.push(VestingAllocation({
-            name: "Early Staker Airdrops",
-            beneficiary: address(0), // Distributed via airdrops
-            amount: 75_000_000 * 1e18,
-            cliffMonths: 0,
-            durationMonths: 0,
-            percentage: 7.5
-        }));
-        
-        // [TOTAL SO FAR: 825M = 82.5%]
-        // Remaining: 175M (17.5%) stays in owner wallet for:
-        // - Contingency reserves (5%)
-        // - Emergency mint authority (5%)
-        // - Future governance allocation (7.5%)
-    }
-    
+
+    // ── Full distribution (requires owner to hold full 825M) ─────────────────
+
     /**
-     * @notice Execute initial token distribution with escrow locks
-     * 
-     * Flow:
-     * 1. Owner has 125M minted in constructor
-     * 2. Owner calls this function to lock tokens in vesting schedules
-     * 3. Each vesting schedule takes custody of its allocation
-     * 4. Tokens cannot be moved until cliff period ends + proportional unlock
+     * @notice Execute full vesting distribution
+     * @dev Owner must hold >= 825M MTAA before calling.
+     *      This is the production path once full token supply is available.
+     *
+     * @param _treasuryDAO      Receives community rewards + ecosystem dev vesting
+     * @param _partnerFund      Receives strategic partners vesting
+     * @param _teamMultisig     Receives team vesting
+     * @param _stakersAirdropFund Receives early staker airdrop reserve
      */
     function executeDistribution(
         address _treasuryDAO,
@@ -176,248 +134,265 @@ contract TokenDistributionInitializer {
         address _teamMultisig,
         address _stakersAirdropFund
     ) external {
-        require(msg.sender == owner, "Only owner can execute");
-        require(_treasuryDAO != address(0), "Invalid treasury");
-        require(_partnerFund != address(0), "Invalid partner");
-        require(_teamMultisig != address(0), "Invalid team");
-        
-        // Update beneficiaries
-        allocations[0].beneficiary = _treasuryDAO;      // Community
-        allocations[1].beneficiary = _treasuryDAO;      // Ecosystem Dev
-        allocations[2].beneficiary = _partnerFund;      // Partners
-        allocations[3].beneficiary = _teamMultisig;     // Team
-        allocations[4].beneficiary = _stakersAirdropFund; // Airdrops
-        
-        /*
-         * CRITICAL: Owner must hold tokens before vesting scheduled
-         * 
-         * Current state: Owner has 125M MTAA
-         * Total vesting scheduled: 825M MTAA
-         * 
-         * Problem: 825M > 125M available
-         * 
-         * Solution (3 options):
-         * 
-         * OPTION A (Immediate):
-         *   Owner swaps KES for MTAA at market price
-         *   Locks all into vesting
-         *   Proves commitment to community
-         * 
-         * OPTION B (Staggered):
-         *   Month 1: Lock 125M in vesting (what owner has)
-         *   Month 2-12: Farming rewards flow to ecosystem Dev fund
-         *   Month 3+: As vesting schedules unlock, owner's cut flows back
-         *   Communities fund own expansion
-         * 
-         * OPTION C (Token Sale):
-         *   Conduct private fundraise ($500K-$1M)
-         *   Deploy capital into treasury
-         *   Lock proceeds in vesting with treasury DAO
-         * 
-         * RECOMMENDATION: OPTION B (Staggered)
-         *   - Aligns owner skin-in-game with community
-         *   - Launches with what's available (125M)
-         *   - Overflow handled by farming rewards
-         *   - Creates urgency for staking (needed to fill gaps)
-         */
-        
-        // For now, distribute what owner has (125M)
-        uint256 ownerBalance = mtaaToken.balanceOf(owner);
-        require(ownerBalance >= 125_000_000 * 1e18, "Insufficient owner balance");
-        
-        // Calculate proportional distribution from available tokens
-        // Scale all vesting by: ownerBalance / totalRequested
-        uint256 totalRequested = 825_000_000 * 1e18;
-        uint256 scale = (ownerBalance * 1e18) / totalRequested;
-        
-        // Create vesting schedules (scaled)
-        _createVestingForCommunity(_treasuryDAO, scale);
-        _createVestingForEcosystem(_treasuryDAO, scale);
-        _createVestingForPartners(_partnerFund, scale);
-        _createVestingForTeam(_teamMultisig, scale);
-        
-        // Reserve for early staker airdrops
-        // (Minted directly, not from vesting)
-        uint256 airdropAmount = (75_000_000 * 1e18 * scale) / 1e18;
-        // Kept in owner wallet, distributed via merkle tree
+        if (msg.sender != owner) revert OnlyOwner();
+        if (distributed) revert AlreadyDistributed();
+        if (_treasuryDAO == address(0)) revert InvalidAddress();
+        if (_partnerFund == address(0)) revert InvalidAddress();
+        if (_teamMultisig == address(0)) revert InvalidAddress();
+        if (_stakersAirdropFund == address(0)) revert InvalidAddress();
+
+        uint256 balance = mtaaToken.balanceOf(owner);
+        if (balance < TOTAL_VESTING) {
+            revert InsufficientOwnerBalance(balance, TOTAL_VESTING);
+        }
+
+        distributed = true;
+        treasuryDAO = _treasuryDAO;
+        partnerFund = _partnerFund;
+        teamMultisig = _teamMultisig;
+        stakersAirdropFund = _stakersAirdropFund;
+
+        uint256 startTime = block.timestamp;
+
+        // Community Rewards: 300M, 6mo cliff, 48mo linear
+        mtaaToken.createVestingSchedule(
+            _treasuryDAO,
+            COMMUNITY_AMOUNT,
+            startTime,
+            MONTHS_48,
+            MONTHS_6,
+            VTYPE_COMMUNITY
+        );
+
+        // Ecosystem Dev: 200M, 3mo cliff, 36mo linear
+        mtaaToken.createVestingSchedule(
+            _treasuryDAO,
+            ECOSYSTEM_AMOUNT,
+            startTime,
+            MONTHS_36,
+            MONTHS_3,
+            VTYPE_ECOSYSTEM
+        );
+
+        // Strategic Partners: 100M, 7mo cliff, 36mo linear
+        mtaaToken.createVestingSchedule(
+            _partnerFund,
+            PARTNERS_AMOUNT,
+            startTime,
+            MONTHS_36,
+            MONTHS_7,
+            VTYPE_PARTNERS
+        );
+
+        // Team: 150M, 13mo cliff, 48mo linear
+        mtaaToken.createVestingSchedule(
+            _teamMultisig,
+            TEAM_AMOUNT,
+            startTime,
+            MONTHS_48,
+            MONTHS_13,
+            VTYPE_TEAM
+        );
+
+        // Airdrop reserve: transfer directly to airdrop fund
+        // (not vesting — distributed via merkle tree to early stakers)
+        IERC20(address(mtaaToken)).safeTransferFrom(
+            owner,
+            _stakersAirdropFund,
+            AIRDROP_RESERVE
+        );
+
+        emit DistributionExecuted(
+            msg.sender,
+            COMMUNITY_AMOUNT,
+            ECOSYSTEM_AMOUNT,
+            PARTNERS_AMOUNT,
+            TEAM_AMOUNT,
+            AIRDROP_RESERVE,
+            block.timestamp
+        );
     }
-    
-    // ─────────────────────────────────────────────────────────────────────────
-    // Staking Absorption Strategy: Counter the Vesting Overhang
-    // ─────────────────────────────────────────────────────────────────────────
-    
+
+    // ── Partial / staggered distribution (Option B — launch with 125M) ────────
+
     /**
-     * @notice Calculate the vesting pressure over 36 months
-     * 
-     * Shows why staking MUST absorb >35% to stay stable
+     * @notice Execute proportionally scaled distribution with available balance
+     * @dev Use when owner only has 125M (constructor mint).
+     *      Scales all vesting allocations proportionally.
+     *      Remaining allocations added as more tokens become available.
+     *
+     * Example: Owner has 125M of 825M needed → scale = 15.15%
+     *   Community gets: 300M × 15.15% = 45.45M
+     *   Ecosystem gets: 200M × 15.15% = 30.30M
+     *   etc.
      */
-    function getVestingPressureChart() external view returns (string memory) {
-        return string(abi.encodePacked(
-            "MONTHLY VESTING RELEASE FORECAST\n",
-            "==================================\n\n",
-            "Months 1-5:   6.25M/mo (Community only)\n",
-            "Months 6-6:   10.81M/mo (Community + Ecosystem)\n",
-            "Months 7-12:  15M/mo (Community + Ecosystem + Partners)\n",
-            "Months 13-48: ~20M/mo (ALL vesting active)\n\n",
-            "CRITICAL: Month 18 onward\n",
-            "Total: 20M MTAA/month hitting market\n",
-            "At KES 5: KES 100M monthly sell pressure\n\n",
-            "REQUIRED: 40%+ of supply locked in staking\n",
-            "If 300M circulating → 120M staked\n",
-            "At 18% APY → 21.6M rewards/mo\n",
-            "Offsets 20M vesting outflow ✅\n\n",
-            "If staking <35%:\n",
-            "Net outflow: 20M > rewards\n",
-            "Price pressure begins immediately ❌"
-        ));
+    function executePartialDistribution(
+        address _treasuryDAO,
+        address _partnerFund,
+        address _teamMultisig,
+        address _stakersAirdropFund
+    ) external {
+        if (msg.sender != owner) revert OnlyOwner();
+        if (distributed) revert AlreadyDistributed();
+        if (_treasuryDAO == address(0)) revert InvalidAddress();
+        if (_partnerFund == address(0)) revert InvalidAddress();
+        if (_teamMultisig == address(0)) revert InvalidAddress();
+
+        uint256 balance = mtaaToken.balanceOf(owner);
+        if (balance == 0) revert InsufficientOwnerBalance(0, 1);
+
+        // Scale factor: how much of the full allocation we can fund now
+        // e.g., 125M / 825M = 0.1515... → scale = 151515... (18 decimals)
+        uint256 scale = (balance * 1e18) / TOTAL_VESTING;
+
+        distributed = true;
+        treasuryDAO = _treasuryDAO;
+        partnerFund = _partnerFund;
+        teamMultisig = _teamMultisig;
+        stakersAirdropFund = _stakersAirdropFund;
+
+        uint256 startTime = block.timestamp;
+        uint256 totalDistributed;
+
+        // Scaled community
+        uint256 communityScaled = (COMMUNITY_AMOUNT * scale) / 1e18;
+        if (communityScaled > 0) {
+            mtaaToken.createVestingSchedule(
+                _treasuryDAO, communityScaled, startTime,
+                MONTHS_48, MONTHS_6, VTYPE_COMMUNITY
+            );
+            totalDistributed += communityScaled;
+        }
+
+        // Scaled ecosystem
+        uint256 ecosystemScaled = (ECOSYSTEM_AMOUNT * scale) / 1e18;
+        if (ecosystemScaled > 0) {
+            mtaaToken.createVestingSchedule(
+                _treasuryDAO, ecosystemScaled, startTime,
+                MONTHS_36, MONTHS_3, VTYPE_ECOSYSTEM
+            );
+            totalDistributed += ecosystemScaled;
+        }
+
+        // Scaled partners
+        uint256 partnersScaled = (PARTNERS_AMOUNT * scale) / 1e18;
+        if (partnersScaled > 0) {
+            mtaaToken.createVestingSchedule(
+                _partnerFund, partnersScaled, startTime,
+                MONTHS_36, MONTHS_7, VTYPE_PARTNERS
+            );
+            totalDistributed += partnersScaled;
+        }
+
+        // Scaled team
+        uint256 teamScaled = (TEAM_AMOUNT * scale) / 1e18;
+        if (teamScaled > 0) {
+            mtaaToken.createVestingSchedule(
+                _teamMultisig, teamScaled, startTime,
+                MONTHS_48, MONTHS_13, VTYPE_TEAM
+            );
+            totalDistributed += teamScaled;
+        }
+
+        // Airdrop reserve — skip if _stakersAirdropFund not provided
+        if (_stakersAirdropFund != address(0)) {
+            uint256 airdropScaled = (AIRDROP_RESERVE * scale) / 1e18;
+            if (airdropScaled > 0) {
+                IERC20(address(mtaaToken)).safeTransferFrom(
+                    owner, _stakersAirdropFund, airdropScaled
+                );
+                totalDistributed += airdropScaled;
+            }
+        }
+
+        emit PartialDistributionExecuted(
+            msg.sender,
+            scale,
+            totalDistributed,
+            block.timestamp
+        );
     }
-    
+
+    // ── View functions ────────────────────────────────────────────────────────
+
     /**
-     * @notice Staking absorption metric (track via dashboard)
-     * 
-     * This should be monitored continuously
+     * @notice Preview what a partial distribution would allocate
+     * @param availableBalance Tokens available (e.g., 125M)
+     * @return scale Scale factor (18 decimals)
+     * @return community Community allocation
+     * @return ecosystem Ecosystem allocation
+     * @return partners Partners allocation
+     * @return team Team allocation
+     * @return airdrop Airdrop allocation
      */
-    function getStakingAbsorptionTarget() external pure returns (uint256) {
-        // 40% of circulating supply should be in locked staking
-        // This is the break-even point against vesting pressure
-        return 40; // percentage
+    function previewPartialDistribution(uint256 availableBalance)
+        external
+        pure
+        returns (
+            uint256 scale,
+            uint256 community,
+            uint256 ecosystem,
+            uint256 partners,
+            uint256 team,
+            uint256 airdrop
+        )
+    {
+        scale     = (availableBalance * 1e18) / TOTAL_VESTING;
+        community = (COMMUNITY_AMOUNT * scale) / 1e18;
+        ecosystem = (ECOSYSTEM_AMOUNT * scale) / 1e18;
+        partners  = (PARTNERS_AMOUNT  * scale) / 1e18;
+        team      = (TEAM_AMOUNT      * scale) / 1e18;
+        airdrop   = (AIRDROP_RESERVE  * scale) / 1e18;
     }
-    
-    // ─────────────────────────────────────────────────────────────────────────
-    // Vesting Schedule Creation (would call MTAAToken.createVestingSchedule)
-    // ─────────────────────────────────────────────────────────────────────────
-    
-    function _createVestingForCommunity(address treasury, uint256 scale) internal view {
-        // Community Rewards: 300M scaled by available tokens
-        // 6-month cliff, 48-month total
-        uint256 amount = (300_000_000 * 1e18 * scale) / 1e18;
-        
-        // Call: MTAAToken(mtaaToken).createVestingSchedule(
-        //     treasury,
-        //     amount,
-        //     block.timestamp + 6 months,  // cliff
-        //     48 months,                    // duration
-        //     VestingType.COMMUNITY_REWARDS
-        // );
+
+    /**
+     * @notice Monthly vesting release forecast (months 1-48)
+     * @dev Static forecast based on full allocation amounts
+     */
+    function getMonthlyReleaseSchedule()
+        external
+        pure
+        returns (uint256[] memory months, uint256[] memory releasesPerMonth)
+    {
+        months = new uint256[](48);
+        releasesPerMonth = new uint256[](48);
+
+        // Community: 300M over 48mo starting month 6 = 6.25M/mo
+        uint256 communityMonthly = COMMUNITY_AMOUNT / 48;
+        // Ecosystem: 200M over 36mo starting month 3 = 5.56M/mo
+        uint256 ecosystemMonthly = ECOSYSTEM_AMOUNT / 36;
+        // Partners: 100M over 36mo starting month 7 = 2.78M/mo
+        uint256 partnersMonthly  = PARTNERS_AMOUNT  / 36;
+        // Team: 150M over 48mo starting month 13 = 3.125M/mo
+        uint256 teamMonthly      = TEAM_AMOUNT      / 48;
+
+        for (uint256 i = 0; i < 48; i++) {
+            uint256 month = i + 1;
+            months[i] = month;
+            uint256 release = 0;
+
+            if (month >= 6)  release += communityMonthly;
+            if (month >= 3)  release += ecosystemMonthly;
+            if (month >= 7)  release += partnersMonthly;
+            if (month >= 13) release += teamMonthly;
+
+            releasesPerMonth[i] = release;
+        }
     }
-    
-    function _createVestingForEcosystem(address treasury, uint256 scale) internal view {
-        uint256 amount = (200_000_000 * 1e18 * scale) / 1e18;
-        // 3-month cliff, 36-month total
+
+    /**
+     * @notice Check if owner has enough balance for full distribution
+     */
+    function canExecuteFullDistribution() external view returns (bool) {
+        return mtaaToken.balanceOf(owner) >= TOTAL_VESTING;
     }
-    
-    function _createVestingForPartners(address partners, uint256 scale) internal view {
-        uint256 amount = (100_000_000 * 1e18 * scale) / 1e18;
-        // 7-month cliff, 36-month total
-    }
-    
-    function _createVestingForTeam(address team, uint256 scale) internal view {
-        uint256 amount = (150_000_000 * 1e18 * scale) / 1e18;
-        // 13-month cliff, 48-month total
+
+    /**
+     * @notice Shortfall for full distribution
+     */
+    function getShortfall() external view returns (uint256) {
+        uint256 balance = mtaaToken.balanceOf(owner);
+        if (balance >= TOTAL_VESTING) return 0;
+        return TOTAL_VESTING - balance;
     }
 }
-
-/**
- * DEPLOYMENT SCRIPT (TypeScript/Hardhat)
- * ======================================
- * 
- * Key sequence to avoid vesting overhang:
- */
-
-/*
-// 1. Deploy MtaaToken
-const mtaa = await MTAAToken.deploy(owner);
-
-// 2. Deploy all Phase 1 contracts
-const treasury = await MultiSigTreasury.deploy(mtaa.address, signers);
-const reputation = await ReputationEngine.deploy(mtaa.address, owner);
-const apy = await FloatingAPYCalculator.deploy(mtaa.address);
-
-// 3. Wire Phase 1 into MtaaToken
-await mtaa.setMultiSigTreasury(treasury.address);
-await mtaa.setReputationEngine(reputation.address);
-await mtaa.setAPYCalculator(apy.address);
-
-// 4. Initialize distribution
-const distributor = await TokenDistributionInitializer.deploy(mtaa.address, owner);
-
-// 5. CRITICAL: Set high APY for early stakers
-//    This is the ONLY way to hit >35% absorption rate
-await apy.updateAPYParameters(
-    1800,  // baseAPY = 18% (max)
-    100    // scaleDivisor (aggressive scaling)
-);
-
-// 6. Execute distribution (owner must have tokens)
-const treasuryDAO = treasury.address; // Multisig receives releases
-await distributor.executeDistribution(
-    treasuryDAO,           // Community & Ecosystem go here
-    partnerFund,           // Partners
-    teamMultisig,          // Team
-    stakersAirdropFund     // Early staker rewards
-);
-
-console.log("✅ All vesting locked, APY set to 18% to bootstrap staking");
-console.log("📊 Monitor: Staking absorption must reach 40% by month 12");
-console.log("⚠️  If <35% by month 6: increase APY or reduce vesting cliff");
-
-// 7. Launch community farming (month 1)
-//    Users who stake >100K MTAA get early access to airdrops
-//    This creates urgency before month 6 cliff
-await mtaa.setFee(FEE_VAULT_DEPLOY, 50); // Reduced fee to encourage DAOs
-console.log("🚀 Community farming live - high APY until 40% absorbed");
-
-// 8. Monitor monthly
-//    Dashboard should track:
-//    - TVL in staking (must reach 40%)
-//    - Average lock period (must be high)
-//    - Reputation distribution (SHOGUN tier sticky)
-//    - Vesting releases (should match predictions)
-//    - Price impact (if >5% monthly drop while staking <35%: CRISIS)
-*/
-
-/**
- * ANTI-VESTING-OVERHANG PLAYBOOK
- * ==============================
- * 
- * If Month 6 arrives and staking <35%:
- * 
- * IMMEDIATE ACTIONS (Days 1-7):
- * 1. Increase APY to 25% for new 365-day locks
- * 2. Announce: "Early founders get 3x multiplier if locked until month 12"
- * 3. Launch partner incentive: "Protocols that stake 1M+ get governance seat"
- * 4. Create scarcity: "First 50M into staking get airdrop priority"
- * 
- * MEDIUM TERM (Weeks 2-4):
- * 1. Reduce vesting cliff for Community (6mo → 4mo) to smooth pressure
- * 2. Execute treasury buyback: MultiSig buys back on market dips
- * 3. Redirect 50% of farming fees into buyback fund
- * 4. Launch "loyalty tokens": stakers earn extra for holding through cliff
- * 
- * LONG TERM (Months 2-3):
- * 1. If still <35%: Extend vesting duration (48mo → 60mo) for new allocations
- * 2. Create staking tiers: SHOGUN holders get governance vote multiplier
- * 3. Lock team/partner tokens: Show alignment by matching community lock period
- * 4. Announce: Next vesting tranche conditional on 40% absorption
- * 
- * SUCCESS METRICS (Track Weekly):
- * - TVL in staking (Target: 40%+)
- * - Average lock period (Target: >270 days)
- * - Reputation distribution (Target: 50% SHOGUN/ARCHITECT)
- * - Daily active users (Target: growing)
- * - Price stability (Target: <±5% weekly vs market)
- * 
- * RED FLAGS (React Immediately):
- * - TVL drops below 30%
- * - Average lock drops below 180 days
- * - Price drops >10% while staking is stable
- * - Daily active users declining
- * - Reputation median score drops
- * 
- * IF RED FLAGS:
- * 1. Pause all new vesting releases (freeze cliff)
- * 2. Increase staking APY to 30%
- * 3. Launch emergency buyback program
- * 4. Investigate: Is there a news event? Competitor launch? Market crash?
- * 5. Communicate: "We're extending vesting cliff to preserve token value"
- */

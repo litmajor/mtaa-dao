@@ -150,8 +150,6 @@ router.post('/', isAuthenticated, proposalCreationLimiter, async (req, res) => {
       description,
       proposalType,
       proposerId: userId,
-      proposer: userId,
-      userId,
       voteEndTime: new Date(voteEndTime),
       voteStartTime: new Date(),
       quorumRequired: quorumRequired || 100,
@@ -190,7 +188,7 @@ router.put('/:proposalId', isAuthenticated, proposalCreationLimiter, async (req,
     }
 
     // Only proposer can update
-    if (proposal[0].proposerId !== userId && proposal[0].proposer !== userId) {
+    if (proposal[0].proposerId !== userId) {
       return res.status(403).json({ error: 'You can only update your own proposals' });
     }
 
@@ -244,7 +242,7 @@ router.delete('/:proposalId', isAuthenticated, proposalCreationLimiter, async (r
       ))
       .limit(1);
 
-    const isProposer = proposal[0].proposerId === userId || proposal[0].proposer === userId;
+    const isProposer = proposal[0].proposerId === userId;
     const isAdmin = isMember.length && isMember[0].role === 'admin';
 
     if (!isProposer && !isAdmin) {

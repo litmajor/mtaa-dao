@@ -7,7 +7,7 @@ import { metricsCollector } from './monitoring/metricsCollector';
 
 const DEFAULT_POOL_MAX = parseInt(process.env.DATABASE_POOL_MAX || '20', 10);
 const DEFAULT_IDLE_TIMEOUT = parseInt(process.env.DATABASE_POOL_IDLE_TIMEOUT_MS || '30000', 10);
-const DEFAULT_CONN_TIMEOUT = parseInt(process.env.DATABASE_POOL_CONN_TIMEOUT_MS || '15000', 10);
+const DEFAULT_CONN_TIMEOUT = parseInt(process.env.DATABASE_POOL_CONN_TIMEOUT_MS || '30000', 10);
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -22,7 +22,7 @@ export const pool = new Pool({
   idleTimeoutMillis: DEFAULT_IDLE_TIMEOUT,
   connectionTimeoutMillis: DEFAULT_CONN_TIMEOUT,
   keepAlive: true,
-  keepAliveInitialDelayMs: 10000,
+  keepAliveInitialDelayMillis: 10000,
   ssl: process.env.DATABASE_SSL === 'true' || false,
 });
 
@@ -31,8 +31,13 @@ pool.on('error', (err) => {
   console.error('Unexpected PostgreSQL pool error:', err);
 });
 
-// Test connection on startup with retry logic
-async function testConnection(retries = 5, delay = 2000) {
+// Export a wait helper for startup to block until DB is available.
+// Uses exponential backoff and configurable retries via env or params.
+export async function waitForDatabase(options?: { retries?: number; initialDelayMs?: number; maxDelayMs?: number }) {
+  const retries = options?.retries ?? parseInt(process.env.DATABASE_WAIT_RETRIES || '10', 10);
+  const initialDelayMs = options?.initialDelayMs ?? parseInt(process.env.DATABASE_WAIT_INITIAL_DELAY_MS || '2000', 10);
+  const maxDelayMs = options?.maxDelayMs ?? parseInt(process.env.DATABASE_WAIT_MAX_DELAY_MS || '60000', 10);
+
   for (let i = 0; i < retries; i++) {
     try {
       const client = await pool.connect();
@@ -41,19 +46,18 @@ async function testConnection(retries = 5, delay = 2000) {
       return;
     } catch (err: any) {
       const attempt = i + 1;
+      const delay = Math.min(initialDelayMs * Math.pow(2, i), maxDelayMs);
       if (attempt < retries) {
-        console.log(`⏳ PostgreSQL connection attempt ${attempt}/${retries} failed, retrying in ${delay/1000}s...`);
+        console.log(`⏳ PostgreSQL connection attempt ${attempt}/${retries} failed, retrying in ${Math.round(delay/1000)}s...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       } else {
-        console.error('❌ Failed to connect to PostgreSQL:', err.message);
-        console.error('   Please check your DATABASE_URL in .env file');
-        console.error('   Example: DATABASE_URL=postgresql://user:password@localhost:5432/database');
+        console.error('❌ Failed to connect to PostgreSQL after retries:', err?.message || err);
+        console.error('   Please check your DATABASE_URL and network connectivity');
+        throw err;
       }
     }
   }
 }
-
-testConnection();
 
 // Export typed database instance
 export const db: NodePgDatabase<typeof schema> = drizzle(pool, { schema });

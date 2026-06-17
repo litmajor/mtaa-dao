@@ -8,7 +8,7 @@ import compression from 'compression';
 import { registerRoutes } from "./routes";
 import { setupWeeklyRewardsDistribution } from "./jobs/weeklyRewardsDistribution";
 import { setupInvestmentPoolsAutomation } from "./jobs/investmentPoolsAutomation";
-import { setupVite, serveStatic } from './vite';
+// Dev-only Vite helpers are dynamically imported later to avoid bundling Vite into the production server build
 import { logger, requestLogger, logStartup } from './utils/logger';
 import { initializeConsoleLogger, getConsoleLogger } from './utils/console-logger';
 import path from "path";
@@ -33,17 +33,16 @@ import {
   asyncHandler
 } from './middleware/errorHandler';
 import { metricsCollector } from './monitoring/metricsCollector';
+import metricsRegister, { metricsEndpoint } from './utils/metrics';
 import { ProposalExecutionService } from './proposalExecutionService';
 import { vaultEventIndexer } from './vaultEventsIndexer';
 import { ScheduledAggregationJobs } from './services/metricsAggregationService';
 import { vaultAutomationService } from './vaultAutomation';
 import { activityTracker } from './middleware/activityTracker';
-// ⚠️ TODO: Migrate activityTracker to auditService (Phase 5)
-// Old:  app.use(activityTracker()) at line 206
-// New:  Use auditService.logUserAction() in route handlers/services instead
-// See deprecation notice in activityTracker.ts for migration guide
 import { bridgeRelayerService } from './services/bridgeRelayerService';
 import { performanceMonitor } from './middleware/performance';
+
+// Route Imports
 import paymentReconciliationRoutes from './routes/payment-reconciliation';
 import healthRoutes from './routes/health';
 import analyticsRoutes from './routes/analytics';
@@ -52,10 +51,10 @@ import systemRoutes from './routes/system';
 import proposalExecutionRouter from './routes/proposal-execution';
 import pollProposalsRouter from './routes/poll-proposals';
 import jobHealthRoutes from './routes/jobHealthRoutes';
-import './middleware/validation'; // Added for validation middleware
-import { ReputationService } from './reputationService'; // Added for ReputationService
+import './middleware/validation'; 
+import { ReputationService } from './reputationService'; 
 import { authenticate, isAuthenticated, refreshTokenHandler, logoutHandler, authUserHandler, authLoginHandler, authRegisterHandler } from './auth';
-import reputationRoutes from './routes/reputation'; // Added for reputation routes
+import reputationRoutes from './routes/reputation'; 
 import operationalFrameworkRoutes from './routes/admin/operational-framework';
 import healthAdminRoutes from './routes/admin/health';
 import kotaniPayStatusRoutes from './routes/kotanipay-status';
@@ -63,14 +62,12 @@ import mpesaStatusRoutes from './routes/mpesa-status';
 import stripeStatusRoutes from './routes/stripe-status';
 import referralsRoutes from './routes/referrals';
 import eventsRoutes from './routes/events';
-import treasuryManagementRoutes from './routes/treasuryManagement'; // PHASE 2: Treasury management routes
-import multisigRoutes from './routes/multisig'; // PHASE 2: Multisig approval routes
+import treasuryManagementRoutes from './routes/treasuryManagement'; 
+import multisigRoutes from './routes/multisig'; 
 import userPreferencesRoutes from './routes/user-preferences';
 import jwt from 'jsonwebtoken';
-// Import NFT Marketplace routes
 import nftMarketplaceRouter from './routes/nft-marketplace';
 import paymentGatewayRoutes from './routes/payment-gateway';
-// Import KYC routes
 import kycRouter from './routes/kyc';
 import referralRewardsRouter from './routes/referral-rewards';
 import economyRouter from './routes/economy';
@@ -80,6 +77,20 @@ import morioElderInsightsRoutes from './routes/morio-elder-insights';
 import jobRoutes from './routes/jobs';
 import websocketMonitoringRoutes from './routes/websocket-monitoring';
 import logsRoutes from './routes/logs';
+import publicStatsRoutes from './routes/public-stats';
+import analyzerRoutes from './routes/analyzer';
+import defenderRoutes from './routes/defender'; 
+import exchangeRoutes from './routes/exchanges'; 
+import featureAnalyticsRoutes from './routes/featureAnalytics';
+import graphPropagationRoutes from './routes/graph-propagation'; 
+import personasRouter from './routes/personas';
+import paymentRequestsRoutes from './routes/payment-requests';
+import dexScreenerRoutes from './routes/dex-screener'; 
+import amaraRoutes from './routes/amara'; 
+import strategiesRouter from './routes/v1/strategies'; 
+import adminConsolidated from './routes/adminConsolidated'; 
+
+// Core & Advanced Infrastructure Services
 import { initializeWorkers, shutdownWorkers } from './workers';
 import { transactionMonitor } from './services/transactionMonitor';
 import { recurringPaymentService } from './services/recurringPaymentService';
@@ -92,163 +103,98 @@ import { initializeGatewayAgent } from './core/agents/gateway/initialize';
 import { opportunityEngine } from './services/opportunityEngine';
 import { opportunityStream } from './websocket/opportunityStream';
 import { marketStreamService } from './services/marketStreamService';
-import { pool } from './db';
+import { pool, waitForDatabase } from './db';
 import { startPriceCollectionJob } from './services/cexPriceBackgroundJob';
 import { initTreasuryMonitoring, stopTreasuryMonitoring } from './services/treasury-monitoring.service';
+import { startRotationEventListener } from './services/rotation_listener';
+import { startAchievementListener } from './services/achievement_listener';
+import { startRewardsBatchWorker } from './services/rewards_batch_worker';
 import { schemaValidator } from './utils/schemaValidator';
 import { runAllMigrations } from './db/migrations';
-
-// Graph Propagation Engine (Phase A, B, C)
 import { graphPropagationEngine, initializeNode } from './services/graphPropagationEngine';
 import { ohlcvPropagationAdapter } from './services/ohlcvPropagationAdapter';
 import { technicalAnalysisPropagationAdapter } from './services/technicalAnalysisPropagationAdapter';
 import { nuruPropagationAdapter } from './services/nuruPropagationAdapter';
 import { propagationMonitoringService } from './services/propagationMonitoringService';
 import { productionHardeningService, circuitBreaker } from './services/productionHardeningService';
-
-// System Visibility Stack
 import { createRouteUsageLogger } from './middleware/routeUsageLogger';
 import { SystemVisibility } from './middleware/systemVisibility';
 import { externalAPITracker } from './services/externalAPITracker';
-
-// Defender Agent Integration
 import { setupDefenderAgent } from './middleware/defender-setup';
-
-// Event Loop Saturation Prevention & System Health Monitoring
 import { initializeSystemMonitoring } from './utils/systemHealthMonitor';
 import createDiagnosticsRouter from './utils/diagnosticsAPI';
 import { executeGuardedJob } from './utils/jobExecutionGuard';
-
-// Circuit Breaker & Error Handling (Phase 6)
-import { 
-  withCircuitBreaker, 
-  getAllCircuitMetrics, 
+import {  
+  withCircuitBreaker,  
+  getAllCircuitMetrics,  
   isAnyCircuitOpen,
   circuitBreakerMiddleware,
   resetAllCircuits
 } from './services/circuitBreakerService';
-import { 
-  classifyError, 
-  formatErrorResponse, 
-  shouldRetry 
+import {  
+  classifyError,  
+  formatErrorResponse,  
+  shouldRetry  
 } from './utils/errorHandler';
-
-// Singleton Verification (Phase 7.1)
-import { 
+import {  
   verifySingletonInstances,
   getSingletonHealthStatus
 } from './utils/singletonVerifier';
-
-// Real-time API Metrics & Registry
 import { metricsMiddleware, startMetricsReporting } from './middleware/metricsMiddleware';
 import apiRegistryRoutes from './routes/apiRegistry';
-// Agents now run in isolated worker process (not blocking main thread)
 import { getAgentWorkerManager } from './workers/agent-worker-manager';
 import { isolatedWorkerManager } from './services/IsolatedWorkerManager';
 import { PerformanceOptimizerBufferedWriter } from './services/PerformanceOptimizerBufferedWriter';
-
-// Import example function for wallet demonstration
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// Import public stats routes
-import publicStatsRoutes from './routes/public-stats';
-import analyzerRoutes from './routes/analyzer';
-import defenderRoutes from './routes/defender'; // Added for defender routes
-import exchangeRoutes from './routes/exchanges'; // CCXT Service Phase 1
-import featureAnalyticsRoutes from './routes/featureAnalytics';
-import graphPropagationRoutes from './routes/graph-propagation'; // Graph Propagation Engine monitoring
-import personasRouter from './routes/personas';
-import paymentRequestsRoutes from './routes/payment-requests';
-import dexScreenerRoutes from './routes/dex-screener'; // ✅ DexScreener API integration
-import amaraRoutes from './routes/amara'; // 🎨 Amara Portfolio Dashboard routes
-// ✅ V1 ROUTERS (Architecture Modernization - Phase 2)
-import strategiesRouter from './routes/v1/strategies'; // 📈 V1 Strategies (core + execution + social)
-import adminConsolidated from './routes/adminConsolidated'; // 👤 Consolidated Admin routes (admin.ts + admin-ai-metrics.ts)
-// Asset Graph and Strategy Dashboard services
-import { assetGraphService } from './services/assetGraphService'; // 📊 Asset Graph for portfolio tracking
-import { strategyDashboardService } from './services/strategyDashboardService'; // 📊 Strategy Dashboard service
-
-// Import cache and execution tracking services
+import { assetGraphService } from './services/assetGraphService'; 
+import { strategyDashboardService } from './services/strategyDashboardService'; 
 import { cacheService } from './services/cacheService';
 import { ExecutionTrackingService } from './services/executionTrackingService';
-
-// Import contribution indexer service
 import { contributionIndexer } from './services/contributionIndexerService';
-
-// Import auto-promotion job
 import { initializeAutoPromotionJob } from './jobs/auto-promotion';
-
-// Import payment request expiration job
 import { initializePaymentRequestExpirationJob } from './jobs/payment-request-expiration';
-
-// Import Swagger documentation middleware
+import { initRetentionJob } from './jobs/retention';
 import swaggerMiddleware from './middleware/swaggerMiddleware';
 
-// Mount routes
-
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 
-// Setup process error handlers
+// Setup early process global diagnostics error catchers
 setupProcessErrorHandlers();
 
-// Add global handler for unhandled promise rejections from blockchain services (only register if none exist)
 if (process.listenerCount('unhandledRejection') === 0) {
-  process.on('unhandledRejection', (reason: Error | string, promise: Promise<any>) => {
-  const message = reason instanceof Error ? reason.message : String(reason);
-
-  // Check if it's a known blockchain timeout error - these are non-critical
-  if (message.includes('TIMEOUT') || message.includes('timeout') ||
-      message.includes('JsonRpcProvider failed') || message.includes('network')) {
-    logger.warn(`⚠️ Blockchain RPC timeout (non-critical): ${message}`);
-    logger.warn('   Continuing server operation - blockchain features may be degraded');
-    return;  // Don't crash, just log and continue
-  }
-
-  // For other unhandled rejections, log and continue
-  logger.error('Unhandled Promise Rejection:', {
-    reason: message,
-    stack: reason instanceof Error ? reason.stack : undefined
+  process.on('unhandledRejection', (reason: Error | string) => {
+    const message = reason instanceof Error ? reason.message : String(reason);
+    if (message.includes('TIMEOUT') || message.includes('timeout') || message.includes('network') || message.includes('JsonRpcProvider')) {
+      logger.warn(`⚠️ Blockchain RPC timeout (non-critical): ${message}`);
+      return; 
+    }
+    logger.error('Unhandled Promise Rejection:', {
+      reason: message,
+      stack: reason instanceof Error ? reason.stack : undefined
+    });
   });
-  });
-} else {
-  console.log('[STARTUP] unhandledRejection handler already registered; skipping duplicate registration (top-level)');
 }
 
-// Initialize Socket.IO
-// Note: 'server' variable is used here but not defined in the provided snippet. Assuming it's to be defined by `createServer`.
-const server = createServer(app); // Assuming server is created here for Socket.IO initialization
+const server = createServer(app);
 const io = new SocketIOServer(server, {
   cors: corsConfig,
-  // Allow token authentication via query or handshake
   allowEIO3: true,
 });
 
-// Trust proxy for accurate IP addresses
 app.set('trust proxy', 1);
 
-// Response compression (gzip/deflate) - must be early in middleware chain, but after security
-// Note: Will be applied after helmet and security middleware
 const compressionMiddleware = compression({
-  level: 6, // Compression level (0-9)
-  threshold: 1024, // Only compress responses > 1KB
+  level: 6,
+  threshold: 1024,
   filter: (req: Request, res: Response) => {
     const contentType = res.getHeader('Content-Type') as string || '';
-    // Don't compress already-compressed formats
-    if (contentType.includes('image/') ||
-        contentType.includes('video/') ||
-        contentType.includes('application/zip') ||
-        contentType.includes('application/pdf')) {
+    if (contentType.includes('image/') || contentType.includes('video/') || contentType.includes('application/zip') || contentType.includes('application/pdf')) {
       return false;
     }
-    // Use default compression filter for text-based responses
     return compression.filter(req, res);
   }
 });
 
-// NOTE: Body parsing is applied after CORS and security headers to avoid parsing
-// large request bodies from blocked origins (reduces DoS surface).
-
-// CORS Configuration - Whitelist approved origins
 const allowedOrigins = (
   process.env.ALLOWED_ORIGINS?.split(',') || [
     'http://localhost:5000',
@@ -260,176 +206,99 @@ const allowedOrigins = (
   ]
 ).map(origin => origin.trim());
 
-const corsOptions = {
-  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) {
-      return callback(null, true);
-    }
-    
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.warn(`[CORS] Blocked request from unauthorized origin: ${origin}`);
-      callback(new Error('CORS policy violation'));
-    }
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    console.warn(`[CORS] Blocked request from unauthorized origin: ${origin}`);
+    callback(new Error('CORS policy violation'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  maxAge: 86400 // 24 hours
-};
-
-app.use(cors(corsOptions));
-
-// Security headers middleware
-app.use(helmet());
-
-// Request logging middleware (before other middleware)
-app.use(requestLogger);
-
-// Body parsing middleware (after security headers and CORS)
-app.use(express.json({
-  limit: process.env.BODY_LIMIT || '1mb',
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf;
-  }
+  maxAge: 86400
 }));
-app.use(express.urlencoded({ extended: true, limit: process.env.BODY_LIMIT || '1mb' }));
 
-// Apply security middleware (rate limiting handled per-route in API)
 app.use(sanitizeInput);
 app.use(preventSqlInjection);
 app.use(preventXSS);
 app.use(auditMiddleware);
 setupOperationalAuditLogging(app);
-
-// Apply compression AFTER security middleware
 app.use(compressionMiddleware);
+app.use(performanceMonitor(1000));
 
-// Performance monitoring - must be early to track all requests
-app.use(performanceMonitor(1000)); // Log requests > 1000ms
-
-// Add metrics collection
 app.use(metricsCollector.requestMiddleware());
-// Mark metrics collector as mounted to prevent duplicate mounts elsewhere
 (app as any).locals = (app as any).locals || {};
 (app as any).locals.metricsCollectorMounted = true;
 
-// User activity tracking middleware
 app.use(activityTracker());
-
-// System Visibility Stack - Route usage logging and anomaly detection (non-blocking)
 app.use(createRouteUsageLogger(path.join(__dirname, '../visibility/route-usage.csv')));
-logger.info('✅ Route usage logger middleware mounted (streamed writes)');
-
-// NOTE: Removed previous `metricsMiddleware()` mount to avoid double-counting.
-logger.info('✅ metricsCollector.requestMiddleware mounted; skipping legacy metricsMiddleware to avoid duplicate metrics');
-
-// Circuit Breaker middleware (Phase 6) - protects and monitors API endpoints
 app.use('/api', circuitBreakerMiddleware);
-logger.info('✅ Circuit breaker middleware mounted on /api');
-// Initialize system visibility dashboard
-const systemVisibility = new SystemVisibility(app, path.join(__dirname, '../visibility'));
-logger.info('✅ System visibility dashboard initialized');
 
-// Initialize external API tracker for system visibility
+const systemVisibility = new SystemVisibility(app, path.join(__dirname, '../visibility'));
+
 if (typeof (externalAPITracker as any).initialize === 'function') {
   (externalAPITracker as any).initialize();
-  logger.info('✅ External API Tracker initialized');
 }
 
-// Initialize Socket.IO unified WebSocket service (replaces raw ws)
 import { getSocketIOService } from './services/SocketIOWebSocketService';
 const socketIOService = getSocketIOService(server);
 app.locals.socketIOService = socketIOService;
-logger.info('✅ Socket.IO WebSocket service initialized (unified, no ws.router warnings)');
 
-// Initialize Opportunity Engine WebSocket stream
 opportunityStream.initialize(server);
-logger.info('✅ Opportunity Engine WebSocket stream initialized');
-
-// Initialize Market Stream WebSocket service (real-time market data)
 marketStreamService.initialize(server);
-logger.info('✅ Market Stream WebSocket service initialized at /api/market-stream');
 
-// Store user socket connections
 const userSockets = new Map();
 
-// Socket.IO authentication middleware
 io.use(async (socket: any, next) => {
   try {
-    // Get token from handshake query or auth
     const token = socket.handshake.query.token || socket.handshake.auth?.token;
-
     if (!token) {
-      // Allow connection but mark as unauthenticated
       socket.userId = null;
       return next();
     }
-
-    // Verify JWT token — require JWT_SECRET to be configured; do NOT fall back to a public default
     const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) {
-      logger.error('JWT_SECRET not configured — rejecting token-based Socket.IO authentication');
+      logger.error('JWT_SECRET not configured — rejecting Socket.IO authentication');
       socket.userId = null;
       return next();
     }
-
     const decoded = jwt.verify(token, jwtSecret) as any;
     socket.userId = decoded.userId || decoded.id;
-    logger.info('Socket.IO client authenticated via token', { userId: socket.userId, socketId: socket.id });
     next();
   } catch (error) {
-    logger.warn('Socket.IO auth failed, allowing unauthenticated connection', { error: (error as Error).message });
     socket.userId = null;
-    next(); // Allow connection even if auth fails
+    next();
   }
 });
 
-// Handle Socket.IO connections for notifications and other real-time events
 io.on('connection', (socket: any) => {
-  logger.info('Socket.IO client connected:', { socketId: socket.id, userId: socket.userId || 'guest' });
-
-  // If authenticated via middleware, join user room automatically
   if (socket.userId) {
     userSockets.set(socket.userId, socket.id);
     socket.join(`user_${socket.userId}`);
   }
-
-  // Legacy authenticate event for backwards compatibility
   socket.on('authenticate', (userId: string) => {
-    logger.info('Socket.IO client authenticated via event', { userId, socketId: socket.id });
     socket.userId = userId;
     userSockets.set(userId, socket.id);
     socket.join(`user_${userId}`);
   });
-
   socket.on('disconnect', () => {
-    // Remove user from socket map
-    if (socket.userId) {
-      userSockets.delete(socket.userId);
-    }
-    logger.info('Socket.IO user disconnected:', { socketId: socket.id, userId: socket.userId || 'guest' });
+    if (socket.userId) userSockets.delete(socket.userId);
   });
 });
 
-// Extend notification service with real-time capabilities
 notificationService.on('notification_created', (data) => {
   io.to(`user_${data.userId}`).emit('new_notification', data);
 });
 
-// Expose Socket.IO instance via app locals only (avoid polluting global scope)
-(app as any).locals.socketIO = io;
+app.locals.socketIO = io;
 
-
-// Logging middleware
+// Injected Tracking Custom JSON Capture Logger Middleware
 app.use((req, res, next) => {
   const start = Date.now();
   const reqPath = req.path;
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
   const originalResJson = res.json;
+
   res.json = function (bodyJson, ...args) {
     capturedJsonResponse = bodyJson;
     return originalResJson.apply(res, [bodyJson, ...args]);
@@ -439,22 +308,83 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (reqPath.startsWith("/api")) {
       let logLine = `${req.method} ${req.url} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
+      if (capturedJsonResponse) logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       if (logLine.length > 80) logLine = logLine.slice(0, 79) + "…";
       logger.info(logLine);
     }
   });
-
   next();
 });
 
-console.log('[STARTUP] Starting async initialization...');
+// Dynamic Route Registry Definitions 
+const router = express.Router();
+router.use('/payment-reconciliation', paymentReconciliationRoutes);
+router.use('/health', healthRoutes);
+router.use('/analytics', analyticsRoutes);
+router.use('/notifications', notificationRoutes);
+router.use('/system', systemRoutes);
+router.use('/proposal-execution', proposalExecutionRouter);
+router.use('/poll-proposals', pollProposalsRouter);
+router.use('/job-health', jobHealthRoutes);
+router.use('/reputation', reputationRoutes);
+router.use('/admin/operational-framework', operationalFrameworkRoutes);
+router.use('/admin/health', healthAdminRoutes);
+router.use('/kotanipay-status', kotaniPayStatusRoutes);
+router.use('/mpesa-status', mpesaStatusRoutes);
+router.use('/stripe-status', stripeStatusRoutes);
+router.use('/referrals', referralsRoutes);
+router.use('/events', eventsRoutes);
+router.use('/treasury-management', treasuryManagementRoutes);
+router.use('/multisig', multisigRoutes);
+router.use('/user-preferences', userPreferencesRoutes);
+router.use('/nft-marketplace', nftMarketplaceRouter);
+router.use('/payment-gateway', paymentGatewayRoutes);
+router.use('/kyc', kycRouter);
+router.use('/referral-rewards', referralRewardsRouter);
+router.use('/economy', economyRouter);
+router.use('/morio', morioRoutes);
+router.use('/morio-data-hub', morioDataHubRoutes);
+router.use('/morio-elder-insights', morioElderInsightsRoutes);
+router.use('/jobs', jobRoutes);
+router.use('/websocket-monitoring', websocketMonitoringRoutes);
+router.use('/logs', logsRoutes);
+router.use('/public-stats', publicStatsRoutes);
+router.use('/analyzer', analyzerRoutes);
+router.use('/defender', defenderRoutes);
+router.use('/exchanges', exchangeRoutes);
+router.use('/feature-analytics', featureAnalyticsRoutes);
+router.use('/graph-propagation', graphPropagationRoutes);
+router.use('/personas', personasRouter);
+router.use('/payment-requests', paymentRequestsRoutes);
+router.use('/dex-screener', dexScreenerRoutes);
+router.use('/amara', amaraRoutes);
+router.use('/v1/strategies', strategiesRouter);
+router.use('/admin-consolidated', adminConsolidated);
+router.use('/api-registry', apiRegistryRoutes);
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// GLOBAL ERROR HANDLERS (Must be set up BEFORE any async operations)
-// ═══════════════════════════════════════════════════════════════════════════════
+app.use('/api', router);
+
+// Expose Prometheus metrics endpoint
+app.get('/metrics', async (_req, res) => {
+  try {
+    const body = await metricsEndpoint();
+    res.set('Content-Type', metricsRegister.contentType);
+    res.send(body);
+  } catch (err) {
+    res.status(500).send('Failed to collect metrics');
+  }
+});
+
+// Mount core application routers via default generator pipeline
+// Route registration is performed later in the async startup block with the HTTP server instance
+
+// Fallback error-handling mappings
+app.use(notFoundHandler);
+app.use(errorHandler);
+
+console.log('[STARTUP] Starting async initialization lifecycle...');
+
+// Global process exception bindings
 if (process.listenerCount('unhandledRejection') === 0) {
   process.on('unhandledRejection', (reason, promise) => {
     logger.error('🚨 Unhandled Promise Rejection:', {
@@ -462,50 +392,99 @@ if (process.listenerCount('unhandledRejection') === 0) {
       stack: reason instanceof Error ? reason.stack : undefined,
       promise: String(promise),
     });
-    console.error('[CRITICAL] Unhandled rejection:', reason);
   });
-} else {
-  logger.info('[STARTUP] unhandledRejection handler already present; skipping duplicate registration (IIFE)');
 }
 
 process.on('uncaughtException', (error) => {
-  logger.error('🚨 Uncaught Exception:', {
-    message: error.message,
-    stack: error.stack,
-  });
-  console.error('[CRITICAL] Uncaught exception:', error);
-  // Give time to log before exit
-  setTimeout(() => {
-    process.exit(1);
-  }, 1000);
+  logger.error('🚨 Uncaught Exception:', { message: error.message, stack: error.stack });
+  setTimeout(() => { process.exit(1); }, 1000);
 });
 
-// Mark server as starting to skip non-critical logging during initialization
 (global as any).isServerStarting = true;
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ASYNC INITIALIZATION BLOCK (STAGE A TO STAGE E)
+// ═══════════════════════════════════════════════════════════════════════════════
 (async () => {
   try {
-    // Initialize console logger (captures all output to timestamped log file)
     const consoleLogger = initializeConsoleLogger();
     console.log('[STARTUP] Console logging to:', consoleLogger.getCurrentLogPath());
+    console.log('[STARTUP] Initializing server database connections...');
     
-    console.log('[STARTUP] Initializing server...');
-    
-    // Initialize Redis connection (NON-BLOCKING - fire and forget)
+    // STAGE A: REDIS CACHING GATEWAY HANDSHAKE (BLOCKING TIMEOUT)
     console.log('[STARTUP] Connecting to Redis...');
     const { redis } = await import('./services/redis');
-    
-    // Fire off Redis connection WITHOUT blocking startup (runs in background)
-    redis.connect()
-      .then(() => console.log('[STARTUP] ✅ Redis connected successfully'))
-      .catch(() => console.log('[STARTUP] Redis unavailable - using in-memory fallback'));
-    // NOTE: Non-blocking, startup continues immediately
+    try {
+      await Promise.race([
+        redis.connect(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Redis connect timeout')), 5000))
+      ]);
+      console.log('[STARTUP] ✅ Redis connected successfully');
+    } catch (redisErr) {
+      console.warn('[STARTUP] Redis unavailable - falling back to internal in-memory system storage matrices.', redisErr instanceof Error ? redisErr.message : redisErr);
+    }
+    const migrationResult: any = await runAllMigrations();
+    if (migrationResult?.success) {
+      logger.info('[STARTUP] ✅ Database migrations completed successfully');
+      try {
+        initRetentionJob();
+        logger.info('[STARTUP] ✅ Retention job initialized');
+      } catch (e) {
+        logger.warn('[STARTUP] Retention job failed to initialize:', e instanceof Error ? e.message : e);
+      }
+    } else {
+      logger.warn('[STARTUP] Database migrations completed with baseline environment warnings', { errors: migrationResult.errors });
+      try {
+        initRetentionJob();
+      } catch (e) {}
+    }
 
-    // Initialize backup system
+    console.log('[STARTUP] Validating database schema...');
+    const schemaValid = await schemaValidator.validateDatabaseSchema();
+    if (!schemaValid) {
+      logger.error('[STARTUP] ❌ Database schema validation failed. Re-executing structure sync migrations...');
+      await runAllMigrations();
+    } else {
+      logger.info('[STARTUP] ✅ Database schema validation passed');
+    }
+
+    // STAGE C: CONSOLIDATED SUBSYSTEMS (CIRCUIT BREAKERS, SAGAS, SINGLETONS)
+    console.log('[STARTUP] Initializing consolidated systems...');
+    const { circuitBreakerRegistry } = await import('./core/consolidation/CircuitBreakerConsolidation');
+    const { healthRegistry } = await import('./core/consolidation/HealthRegistryConsolidation');
+    const { cacheManager } = await import('./core/consolidation/DataCacheConsolidation');
+    const { paymentRecoverySAGA } = await import('./services/PaymentRecoverySAGAOrchestrator');
+    
+    if (circuitBreaker) {
+      const apiBreakerConfig = {
+        name: 'api-calls',
+        domain: 'media' as const,
+        failureThreshold: 5,
+        resetTimeout: 60000,
+        monitoringWindow: 60000,
+        ...circuitBreaker
+      };
+      circuitBreakerRegistry.getOrCreate('api-calls', 'media', apiBreakerConfig);
+      logger.info('[STARTUP] ✅ Circuit Breaker registry system loaded.');
+    }
+    
+    if (healthRegistry) logger.info('[STARTUP] ✅ Health Registry initialized');
+    if (cacheManager) logger.info('[STARTUP] ✅ Data Cache Manager initialized');
+    if (paymentRecoverySAGA) logger.info('[STARTUP] ✅ Payment Recovery SAGA Orchestrator initialized');
+
+    console.log('[STARTUP] Running Phase 7.1 System Singleton Verification...');
+    const verification: any = await verifySingletonInstances();
+    if (!verification?.success) {
+      logger.error('❌ Critical Singleton Conflict Matrix found during startup phase verification:', verification?.errors);
+    } else {
+      logger.info('✅ Singleton instances verification check passed.');
+    }
+
+    // STAGE D: CORE BACKGROUND WORKERS & SCHEDULERS
     console.log('[STARTUP] Initializing backup system...');
     const backupConfig = {
       enabled: process.env.BACKUPS_ENABLED === 'true',
-      schedule: '0 2 * * *', // Daily at 2 AM
+      schedule: '0 2 * * *', 
       retentionDays: 30,
       location: process.env.BACKUP_LOCATION || './backups',
       encryptionKey: process.env.BACKUP_ENCRYPTION_KEY
@@ -517,58 +496,67 @@ process.on('uncaughtException', (error) => {
       scheduler.start();
       logger.info('✅ Backup system initialized');
     }
-    console.log('[STARTUP] Backup system complete');
 
-    // Setup weekly rewards distribution job
-    console.log('[STARTUP] Setting up reward distribution...');
     setupWeeklyRewardsDistribution();
     setupInvestmentPoolsAutomation();
-    console.log('[STARTUP] Reward distribution setup complete');
-
-    // Initialize auto-promotion job for governance
-    console.log('[STARTUP] Initializing auto-promotion job...');
     initializeAutoPromotionJob();
-    console.log('[STARTUP] Auto-promotion job initialized');
-
-    // Initialize payment request expiration job
-    console.log('[STARTUP] Initializing payment request expiration job...');
     initializePaymentRequestExpirationJob();
-    console.log('[STARTUP] Payment request expiration job initialized');
-
-    // Initialize scheduled metrics aggregation jobs
-    console.log('[STARTUP] Initializing metrics aggregation jobs...');
     ScheduledAggregationJobs.initializeScheduledJobs();
-    console.log('[STARTUP] Metrics aggregation jobs initialized');
-
-    // Initialize Opportunity Engine (Real-time arbitrage scanning)
-    console.log('[STARTUP] Starting Opportunity Engine...');
+    // Start on-chain RotationModule event listener to reconcile rotation cycles
     try {
-      await opportunityEngine.startScanning(10000); // Scan every 10 seconds
-      const status = opportunityEngine.getStatus();
-      logger.info('✅ Opportunity Engine started', status);
-    } catch (opportunityError) {
-      logger.error('Failed to start Opportunity Engine:', opportunityError);
-      // Don't fail startup - opportunity engine is optional
+      startRotationEventListener();
+      logger.info('[STARTUP] ✅ Rotation event listener started');
+    } catch (err) {
+      logger.warn('[STARTUP] Rotation event listener failed to start:', err);
     }
+
+    try {
+      startAchievementListener();
+      logger.info('[STARTUP] ✅ Achievement event listener started');
+    } catch (err) {
+      logger.warn('[STARTUP] Achievement event listener failed to start:', err);
+    }
+
+    try {
+      startRewardsBatchWorker();
+      logger.info('[STARTUP] ✅ Rewards batch worker started');
+    } catch (err) {
+      logger.warn('[STARTUP] Rewards batch worker failed to start:', err);
+    }
+
+    // STAGE E: AGENT NETWORK & REAL-TIME INGESTION STREAM AUTOMATION 
+    console.log('[STARTUP] Spawning decoupled agent networks and running graph adaptors...');
+    try {
+      // initializeNode is called later with explicit node ids; skip no-arg invocation here
+      await (graphPropagationEngine as any)?.initialize?.();
+      (ohlcvPropagationAdapter as any)?.initialize?.();
+      (technicalAnalysisPropagationAdapter as any)?.initialize?.();
+      (nuruPropagationAdapter as any)?.initialize?.();
+      await (propagationMonitoringService as any)?.initialize?.();
+      logger.info('✅ Graph Propagation Cluster engine nodes mapped seamlessly');
+    } catch (graphError) {
+      logger.error('[STARTUP] Non-fatal exception occurred spinning up graph propagation instances:', graphError);
+    }
+    
+    // (Deferred background job startup moved later to ensure single server.listen)
+    // NOTE: Deferred until HTTP server is listening to ensure network interfaces and cache
+    // subsystems are fully available. Will be started after `server.listen` below.
+    const _deferStartOpportunityEngine = true;
+    const _opportunityEngineScanIntervalMs = 10000;
 
     // Initialize CEX Price Background Job (for SmartRouter)
-    console.log('[STARTUP] Initializing CEX Price Background Job...');
-    try {
-      const priceJobConfig = {
-        collectionIntervalSeconds: 30,
-        maxConcurrentExchanges: 6,
-        tradingPairs: [
-          'BTC/USDT', 'ETH/USDT', 'USDC/USDT', 'USDT/USDT',
-          'DAI/USDT', 'cUSD/USDT', 'cEUR/USDT', 'CELO/USDT',
-          'MATIC/USDT', 'AAVE/USDT', 'LINK/USDT', 'UNI/USDT', 'SUSHI/USDT'
-        ],
-      };
-      await startPriceCollectionJob(pool, priceJobConfig);
-      console.log('[STARTUP] ✅ CEX Price Background Job initialized');
-    } catch (priceJobError) {
-      logger.error('[STARTUP] Failed to initialize CEX Price Background Job:', priceJobError);
-      // Don't fail startup - price collection is optional
-    }
+    // NOTE: Defer starting price collection until after server is listening to avoid
+    // race with cache/redis initialization.
+    const _deferStartPriceJob = true;
+    const _pendingPriceJobConfig = {
+      collectionIntervalSeconds: 30,
+      maxConcurrentExchanges: 6,
+      tradingPairs: [
+        'BTC/USDT', 'ETH/USDT', 'USDC/USDT', 'USDT/USDT',
+        'DAI/USDT', 'cUSD/USDT', 'cEUR/USDT', 'CELO/USDT',
+        'MATIC/USDT', 'AAVE/USDT', 'LINK/USDT', 'UNI/USDT', 'BNB/USDT'
+      ],
+    };
 
     // Initialize Market Discovery System (Symbol Universe Phase 2)
     console.log('[STARTUP] Initializing Market Discovery System...');
@@ -648,11 +636,11 @@ process.on('uncaughtException', (error) => {
         logger.error('[STARTUP] ❌ Database schema validation failed');
         logger.info('[STARTUP] 🔄 Running database migrations to set up missing tables...');
         try {
-          const migrationResult = await runAllMigrations();
-          if (migrationResult.success) {
+          const migrationResult: any = await runAllMigrations();
+          if (migrationResult?.success) {
             logger.info('[STARTUP] ✅ Database migrations completed successfully');
           } else {
-            logger.error('[STARTUP] ⚠️ Some migrations had warnings:', migrationResult.errors);
+            logger.error('[STARTUP] ⚠️ Some migrations had warnings:', migrationResult?.errors);
           }
         } catch (migrationError) {
           logger.error('[STARTUP] ❌ CRITICAL: Migration failed:', migrationError);
@@ -1336,9 +1324,19 @@ process.on('uncaughtException', (error) => {
 
     // Setup Vite dev server or serve static files
     if (env.NODE_ENV === "development") {
-      await setupVite(app, server);
+      try {
+        const { setupVite } = await import('./vite');
+        await setupVite(app, server);
+      } catch (err) {
+        logger.warn('⚠️ Dev Vite setup failed:', err);
+      }
     } else {
-      serveStatic(app);
+      try {
+        const { serveStatic } = await import('./vite');
+        serveStatic(app);
+      } catch (err) {
+        logger.warn('⚠️ serveStatic import failed:', err);
+      }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -1381,6 +1379,46 @@ process.on('uncaughtException', (error) => {
       
       // Health Monitor Agent already initialized above (Tier 1 - Real-time health surveillance)
       logger.info('🏥 Health Monitor Agent running (polling every 15s)');
+
+      // Start deferred background jobs that require network/cache to be hot
+      (async () => {
+        if (typeof _deferStartOpportunityEngine !== 'undefined' && _deferStartOpportunityEngine) {
+          try {
+            await opportunityEngine.startScanning(_opportunityEngineScanIntervalMs);
+            logger.info('✅ Opportunity Engine started (deferred)');
+          } catch (err) {
+            logger.error('Failed to start Opportunity Engine (deferred):', err);
+          }
+        }
+
+        if (typeof _deferStartPriceJob !== 'undefined' && _deferStartPriceJob) {
+          try {
+            await startPriceCollectionJob(pool, _pendingPriceJobConfig);
+            logger.info('✅ CEX Price Background Job initialized (deferred)');
+          } catch (err) {
+            logger.error('Failed to initialize CEX Price Background Job (deferred):', err);
+          }
+        }
+        // Start SAGA reconciliation job (background)
+        try {
+          const { startSagaReconciliationJob } = await import('./jobs/sagaReconciliationJob');
+          const { startSagaWorker } = await import('./queues/sagaQueue');
+          // start worker first to process enqueued jobs
+          startSagaWorker();
+          startSagaReconciliationJob();
+          logger.info('✅ SAGA reconciliation job scheduled (background)');
+        } catch (err) {
+          logger.error('Failed to initialize SAGA reconciliation job:', err);
+        }
+        // Start webhook reconciliation worker (periodic catch-up for missed webhooks)
+        try {
+          const { startWebhookReconciliationWorker } = await import('./workers/webhookReconciliationWorker');
+          startWebhookReconciliationWorker();
+          logger.info('✅ Webhook reconciliation worker started (background)');
+        } catch (err) {
+          logger.error('Failed to initialize webhook reconciliation worker:', err);
+        }
+      })();
       
       // ═══════════════════════════════════════════════════════════════════════════════
       // TIER 2: Advanced Monitoring Agents (Isolated Worker)

@@ -1,10 +1,12 @@
 
 import { useQuery } from '@tanstack/react-query';
+import { authClient } from '@/utils/authClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Brain, Heart, MessageCircle, Activity, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 
 interface AIMetrics {
   nuru: {
@@ -39,8 +41,12 @@ interface AIMetrics {
 export default function AILayerMonitoring() {
   const { data: metrics, isLoading } = useQuery<AIMetrics>({
     queryKey: ['/api/admin/ai-metrics'],
+    queryFn: async () => {
+      const res = await authClient.get<any>('/api/admin/ai-metrics');
+      return res.data || res;
+    },
     refetchInterval: 10000 // Refresh every 10 seconds
-  });
+  } as any);
 
   if (isLoading || !metrics) {
     return (
@@ -175,15 +181,13 @@ export default function AILayerMonitoring() {
                 <CardDescription>Most frequently classified user intents</CardDescription>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={metrics.nuru.topIntents}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="intent" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="count" fill="#8b5cf6" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="bar"
+                    data={{ labels: metrics.nuru.topIntents.map(i => i.intent), datasets: [{ label: 'Count', data: metrics.nuru.topIntents.map(i => i.count), backgroundColor: '#8b5cf6' }] }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
+                  />
+                </div>
               </CardContent>
             </Card>
 

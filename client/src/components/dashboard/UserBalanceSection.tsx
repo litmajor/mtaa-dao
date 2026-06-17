@@ -1,6 +1,7 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Pie } from 'react-chartjs-2';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Wallet, Lock, Zap, ArrowUpRight } from 'lucide-react';
 
@@ -139,33 +140,26 @@ export function UserBalanceSection({
             </div>
           ) : (
             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={balanceData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percentage }) => `${name} ${percentage.toFixed(0)}%`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="amount"
-                  >
-                    {balanceData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    formatter={(value: number) => `$${value.toLocaleString('en-US', { maximumFractionDigits: 0 })}`}
-                    contentStyle={{
-                      backgroundColor: '#1e293b',
-                      border: '1px solid #475569',
-                      borderRadius: '8px',
-                      color: '#f1f5f9',
-                    }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+              <Pie
+                data={{
+                  labels: balanceData.map(b => b.daoName),
+                  datasets: [
+                    {
+                      data: balanceData.map(b => b.amount),
+                      backgroundColor: balanceData.map(b => b.color),
+                      borderWidth: 0,
+                    },
+                  ],
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx: any) => {
+                    const v = ctx.raw as number;
+                    return `$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+                  } } } },
+                }}
+              />
             </div>
           )}
         </CardContent>

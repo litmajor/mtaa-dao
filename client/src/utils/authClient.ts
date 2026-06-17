@@ -2,7 +2,7 @@
  * Centralized Auth Client
  * 
  * Security Architecture:
- * - NO localStorage/sessionStorage usage
+ * - Prefer httpOnly cookies for tokens (no active storage usage)
  * - Tokens stored in httpOnly cookies (auto-included by fetch)
  * - Auto-refresh on 401 (token expiry)
  * - Single point of error handling
@@ -80,6 +80,7 @@ async function refreshToken(): Promise<void> {
   return refreshPromise;
 }
 
+
 /**
  * Core authFetch function - used by all auth methods
  * Automatically includes credentials and handles 401 refresh.
@@ -98,24 +99,41 @@ async function authFetch(
   const method = (options.method || 'GET').toUpperCase();
   const csrfToken = getCsrfToken();
 
+  // Respect explicit headers and avoid forcing Content-Type when sending FormData
+  const explicitHeaders = ((options.headers as Record<string, string>) || {});
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...((options.headers as Record<string, string>) || {}),
+    ...explicitHeaders,
   };
+
+  // Set JSON content-type only when body is not FormData and Content-Type not already provided
+  const bodyIsFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  if (!bodyIsFormData && !headers['Content-Type'] && !headers['content-type']) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   // Attach CSRF token for state-changing requests
   if (csrfToken && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
     headers['X-CSRF-Token'] = csrfToken;
   }
 
-  const response = await fetch(fullUrl, {
-    ...options,
-    credentials: 'include', // Auto-include httpOnly cookies
-    signal: controller.signal,
-    headers,
-  });
-
-  clearTimeout(timeout); 
+  let response: Response;
+  try {
+    try {
+      response = await fetch(fullUrl, {
+        ...options,
+        credentials: 'include', // Auto-include httpOnly cookies
+        signal: controller.signal,
+        headers,
+      });
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        throw new Error('Request timed out');
+      }
+      throw error;
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
 
   // If token expired or user is unauthorized
   if (response.status === 401 && retry) {
@@ -139,17 +157,35 @@ async function authFetch(
  * - Clear any remaining client-side storage
  */
 function handleAuthFailure(): void {
-  // Clear any old localStorage/sessionStorage tokens
-  localStorage.removeItem('accessToken');
-  localStorage.removeItem('token');
-  localStorage.removeItem('authToken');
-  localStorage.removeItem('mtaa_dao_auth_token');
-  sessionStorage.removeItem('authToken');
-  sessionStorage.removeItem('sessionToken');
+  // Legacy cleanup for older auth systems (no active use of local/session storage)
+  try {
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('token');
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('mtaa_dao_auth_token');
+    sessionStorage.removeItem('authToken');
+    sessionStorage.removeItem('sessionToken');
+  } catch (e) {
+    // ignore (storage may be unavailable in some environments)
+  }
 
   // Clear CSRF cookie as well
   if (typeof document !== 'undefined') {
-    document.cookie = 'csrf_token=; Max-Age=0; path=/;';
+    // Prefer server-side logout to ensure cookies (including Domain/Path/Secure flags) are cleared
+    try {
+      const csrfToken = getCsrfToken();
+      const logoutHeaders: Record<string, string> | undefined = csrfToken
+        ? { 'X-CSRF-Token': csrfToken }
+        : undefined;
+
+      void fetch(`${API_BASE}/api/auth/logout`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: logoutHeaders,
+      });
+    } catch (e) {
+      // best-effort
+    }
   }
 
   // Notify other tabs/windows via BroadcastChannel/localStorage fallback
@@ -193,10 +229,16 @@ export const authClient = {
    * POST request
    */
   async post<T = any>(url: string, body?: any, options?: RequestInit): Promise<T> {
+    const payload = (typeof FormData !== 'undefined' && body instanceof FormData)
+      ? body
+      : body
+        ? JSON.stringify(body)
+        : undefined;
+
     const response = await authFetch(url, {
       ...options,
       method: 'POST',
-      body: body ? JSON.stringify(body) : undefined,
+      body: payload,
     });
 
     if (!response.ok) {
@@ -212,10 +254,16 @@ export const authClient = {
    * PUT request
    */
   async put<T = any>(url: string, body?: any, options?: RequestInit): Promise<T> {
+    const payload = (typeof FormData !== 'undefined' && body instanceof FormData)
+      ? body
+      : body
+        ? JSON.stringify(body)
+        : undefined;
+
     const response = await authFetch(url, {
       ...options,
       method: 'PUT',
-      body: body ? JSON.stringify(body) : undefined,
+      body: payload,
     });
 
     if (!response.ok) {
@@ -231,10 +279,16 @@ export const authClient = {
    * PATCH request
    */
   async patch<T = any>(url: string, body?: any, options?: RequestInit): Promise<T> {
+    const payload = (typeof FormData !== 'undefined' && body instanceof FormData)
+      ? body
+      : body
+        ? JSON.stringify(body)
+        : undefined;
+
     const response = await authFetch(url, {
       ...options,
       method: 'PATCH',
-      body: body ? JSON.stringify(body) : undefined,
+      body: payload,
     });
 
     if (!response.ok) {
@@ -270,6 +324,17 @@ export const authClient = {
    */
   async fetch(url: string, options?: RequestInit): Promise<Response> {
     return authFetch(url, options);
+  },
+  
+  /**
+   * Return headers required for authenticated requests (CSRF token if present).
+   * Synchronous by design so callers may use it with or without `await`.
+   */
+  getAuthHeaders(): Record<string, string> {
+    const csrfToken = getCsrfToken();
+    const headers: Record<string, string> = {};
+    if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+    return headers;
   },
 };
 

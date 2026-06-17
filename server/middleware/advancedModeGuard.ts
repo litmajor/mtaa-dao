@@ -16,7 +16,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { db } from '../storage';
-import { users } from '../storage/schema';
+import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 import { logger } from '../utils/logger';
 
@@ -45,7 +45,7 @@ export async function advancedModeGuard(
     // Query database for current advanced mode status (NOT cached)
     const userRecord = await db.select()
       .from(users)
-      .where(eq(users.id, userId as any))
+      .where(eq(users.id, userId as string))
       .limit(1);
 
     if (!userRecord || userRecord.length === 0) {

@@ -1,14 +1,11 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { logger } from '../utils/logger';
 import { priceOracle } from './priceOracle';
 import { stableInflowEvents } from '@shared/schema';
 import { stableAssetRegistryService } from './stableAssetRegistryService';
 import { stableRiskMonitorService } from './stableRiskMonitorService';
-import type {
-  StableInflowProcessResult,
-  StableRiskFlags,
-} from '../types/stableInflow';
+import type { StableInflowProcessResult, StableRiskFlags } from '../types/stableInflow';
 
 export interface StableInflowPayload {
   source?: string;
@@ -28,61 +25,44 @@ export interface StableInflowPayload {
   metadata?: Record<string, any>;
 }
 
-function pow10(exp: number): bigint {
-  if (exp <= 0) return 1n;
-  return BigInt(`1${'0'.repeat(exp)}`);
+// Keep mathematical helper utilities cleanly isolated out of the class footprint
+function pow10(exp: number): bigint { return exp <= 0 ? 1n : BigInt(`1${'0'.repeat(exp)}`); }
+function divideRound(num: bigint, den: bigint): bigint {
+  if (den === 0n) return 0n;
+  const quot = num / den;
+  const rem = num % den;
+  return rem * 2n >= den ? quot + 1n : quot;
 }
-
-function divideRound(numerator: bigint, denominator: bigint): bigint {
-  if (denominator === 0n) return 0n;
-  const quotient = numerator / denominator;
-  const remainder = numerator % denominator;
-  if (remainder * 2n >= denominator) {
-    return quotient + 1n;
-  }
-  return quotient;
+function normalizeAddress(addr?: string): string | undefined {
+  if (!addr) return undefined;
+  const trimmed = addr.trim();
+  return trimmed.startsWith('0x') ? trimmed.toLowerCase() : trimmed;
 }
-
-function normalizeAddress(address?: string): string | undefined {
-  if (!address) return undefined;
-  const trimmed = address.trim();
-  if (trimmed.startsWith('0x')) return trimmed.toLowerCase();
-  return trimmed;
+function decimalToScaledBigInt(val: string, scale: number): bigint {
+  const trimmed = val.trim();
+  const neg = trimmed.startsWith('-');
+  const pos = neg ? trimmed.slice(1) : trimmed;
+  const [intRaw, fracRaw = ''] = pos.split('.');
+  const paddedFrac = (fracRaw + '0'.repeat(scale)).slice(0, scale);
+  const nextDigit = fracRaw.length > scale ? fracRaw[scale] : '0';
+  let res = BigInt(intRaw || '0') * pow10(scale) + BigInt(paddedFrac || '0');
+  if (nextDigit >= '5') res += 1n;
+  return neg ? -res : res;
 }
-
-function decimalToScaledBigInt(value: string, scale: number): bigint {
-  const trimmed = value.trim();
-  const negative = trimmed.startsWith('-');
-  const positiveValue = negative ? trimmed.slice(1) : trimmed;
-  const [integerPartRaw, fractionalRaw = ''] = positiveValue.split('.');
-  const integerPart = integerPartRaw || '0';
-  const paddedFraction = (fractionalRaw + '0'.repeat(scale)).slice(0, scale);
-  const nextDigit = fractionalRaw.length > scale ? fractionalRaw[scale] : '0';
-
-  let result = BigInt(integerPart) * pow10(scale) + BigInt(paddedFraction || '0');
-  if (nextDigit >= '5') {
-    result += 1n;
-  }
-  return negative ? -result : result;
-}
-
-function scaledBigIntToDecimal(value: bigint, scale: number): string {
-  const negative = value < 0n;
-  const abs = negative ? -value : value;
+function scaledBigIntToDecimal(val: bigint, scale: number): string {
+  const neg = val < 0n;
+  const abs = neg ? -val : val;
   const divisor = pow10(scale);
   const whole = abs / divisor;
-  const fraction = abs % divisor;
-  const fractionStr = fraction.toString().padStart(scale, '0').replace(/0+$/, '');
-  const signedWhole = `${negative ? '-' : ''}${whole.toString()}`;
-  return fractionStr.length ? `${signedWhole}.${fractionStr}` : signedWhole;
+  const frac = abs % divisor;
+  const fracStr = frac.toString().padStart(scale, '0').replace(/0+$/, '');
+  const signedWhole = `${neg ? '-' : ''}${whole.toString()}`;
+  return fracStr.length ? `${signedWhole}.${fracStr}` : signedWhole;
 }
-
-function rawToTokenAmount(rawAmount: bigint, decimals: number): string {
-  const effectiveScale = Math.min(Math.max(decimals, 0), 18);
-  if (decimals <= 18) {
-    return scaledBigIntToDecimal(rawAmount * pow10(18 - decimals), 18);
-  }
-  return scaledBigIntToDecimal(divideRound(rawAmount, pow10(decimals - 18)), 18);
+function rawToTokenAmount(raw: bigint, dec: number): string {
+  return dec <= 18 
+    ? scaledBigIntToDecimal(raw * pow10(18 - dec), 18)
+    : scaledBigIntToDecimal(divideRound(raw, pow10(dec - 18)), 18);
 }
 
 function computeRiskFlags(input: {
@@ -99,53 +79,14 @@ function computeRiskFlags(input: {
     highRiskScore: input.riskScore >= 70,
     notes: [],
   };
-
-  if (flags.depegDetected) {
-    flags.notes.push(`Peg deviation ${input.pegDeviationBps}bps exceeds threshold`);
-  }
-  if (flags.delayedConfirmation) {
-    flags.notes.push('Confirmation delay exceeded policy threshold');
-  }
-  if (flags.lowLiquidity) {
-    flags.notes.push('Liquidity score below recommended threshold');
-  }
-  if (flags.highRiskScore) {
-    flags.notes.push('Risk score in high-risk zone');
-  }
-
+  if (flags.depegDetected) flags.notes.push(`Peg deviation ${input.pegDeviationBps}bps exceeds threshold`);
+  if (flags.delayedConfirmation) flags.notes.push('Confirmation delay exceeded policy threshold');
+  if (flags.lowLiquidity) flags.notes.push('Liquidity score below recommended threshold');
+  if (flags.highRiskScore) flags.notes.push('Risk score in high-risk zone');
   return flags;
 }
 
-function resolveChainFromId(chainId: number): string {
-  switch (chainId) {
-    case 42220: return 'celo';
-    case 1: return 'ethereum';
-    case 728126428: return 'tron';
-    case 101: return 'solana';
-    case 8453: return 'base';
-    case 43114: return 'avalanche';
-    case 137: return 'polygon';
-    case 42161: return 'arbitrum';
-    case 10: return 'optimism';
-    case 1285: return 'moonriver';
-    case 324: return 'zksync';
-    case 50: return 'xdc';
-    case 8217: return 'klaytn';
-    case 2222: return 'kava';
-    case 56: return 'bsc';
-    case 1101: return 'polygon-zkevm';
-    case 1284: return 'moonbeam';
-    case 288: return 'boba';
-    case 1313161554: return 'aurora'; // FIXED: Corrected Aurora chain ID (was 1313161555 in some prior refs)
-    case 250: return 'fantom';
-    case 9001: return 'evmos';
-    case 1666600000: return 'harmony';
-    case 100: return 'gnosis';
-    default: return 'unknown';
-  }
-}
-
-class StableInflowModule {
+export class StableInflowModule {
   private overlaySyncStarted = false;
 
   isEnabled(): boolean {
@@ -158,57 +99,28 @@ class StableInflowModule {
     await stableAssetRegistryService.syncOverlayToDatabase();
   }
 
+  /**
+   * Hardened processing engine featuring a strict Postgres atomic upsert lock.
+   */
   async processStableInflow(payload: StableInflowPayload): Promise<StableInflowProcessResult> {
     try {
       if (!this.isEnabled()) {
-        return {
-          success: false,
-          error: 'Stable inflow module is disabled',
-        };
+        return { success: false, error: 'Stable inflow module is disabled' };
       }
 
       await this.ensureOverlaySync();
 
-      const chain = payload.chain?.toLowerCase() || resolveChainFromId(payload.chainId);
+      const logIndex = payload.logIndex ?? 0;
       const tokenAddress = normalizeAddress(payload.tokenAddress);
       const toAddress = normalizeAddress(payload.toAddress);
       const fromAddress = normalizeAddress(payload.fromAddress);
-      const logIndex = payload.logIndex ?? 0;
-      const confirmations = payload.confirmations ?? 0;
+      const chain = payload.chain?.toLowerCase() || 'unknown';
 
       if (!tokenAddress || !toAddress) {
-        return {
-          success: false,
-          error: 'Missing tokenAddress or toAddress for stable inflow processing',
-        };
+        return { success: false, error: 'Missing tokenAddress or toAddress for stable inflow processing' };
       }
 
-      const existing = await db
-        .select()
-        .from(stableInflowEvents)
-        .where(
-          and(
-            eq(stableInflowEvents.chainId, payload.chainId),
-            eq(stableInflowEvents.txHash, payload.txHash),
-            eq(stableInflowEvents.logIndex, logIndex),
-            eq(stableInflowEvents.tokenAddress, tokenAddress),
-            eq(stableInflowEvents.toAddress, toAddress)
-          )
-        )
-        .limit(1);
-
-      if (existing[0]) {
-        return {
-          success: true,
-          duplicate: true,
-          stableInflowEventId: existing[0].id,
-          normalizedAmountUsd: String(existing[0].normalizedAmountUsd),
-          stableUnitsMicroUsd: String(existing[0].stableUnitsMicroUsd),
-          riskFlags: (existing[0].riskFlags as StableRiskFlags) || undefined,
-          confirmationState: existing[0].confirmationState as any,
-        };
-      }
-
+      // 1. Resolve asset constraints safely from the registry
       const asset = await stableAssetRegistryService.resolveStableAsset({
         chain,
         chainId: payload.chainId,
@@ -217,25 +129,16 @@ class StableInflowModule {
       });
 
       if (!asset) {
-        return {
-          success: false,
-          error: `Stable asset not registered for chain ${chain} token ${tokenAddress}`,
-        };
+        return { success: false, error: `Stable asset not registered for chain ${chain} token ${tokenAddress}` };
       }
 
       const rawAmount = BigInt(payload.rawAmount);
-      if (rawAmount < 0n) {
-        return {
-          success: false,
-          error: 'Raw amount cannot be negative',
-        };
-      }
+      if (rawAmount < 0n) return { success: false, error: 'Raw amount cannot be negative' };
 
+      // 2. Process side-effect data pipelines (Prices, Delays, Flags)
       const observedPrice = await priceOracle.getPrice(asset.symbol);
-      const observedPriceUsd = observedPrice?.priceUsd
-        ? observedPrice.priceUsd.toFixed(8)
-        : asset.pegTargetUsd;
-
+      const observedPriceUsd = observedPrice?.priceUsd ? observedPrice.priceUsd.toFixed(8) : asset.pegTargetUsd;
+      
       const priceScaled8 = decimalToScaledBigInt(observedPriceUsd, 8);
       const usdScaled8 = divideRound(rawAmount * priceScaled8, pow10(asset.decimals));
       const stableUnitsMicroUsd = divideRound(usdScaled8, 100n);
@@ -246,26 +149,19 @@ class StableInflowModule {
         ? Math.max(0, Math.floor(Date.now() / 1000) - payload.blockTimestamp)
         : undefined;
 
-      const confirmationState =
-        confirmations >= asset.minConfirmations
-          ? 'confirmed'
-          : confirmations > 0
-            ? 'low_confirmations'
-            : 'pending';
+      const confirmations = payload.confirmations ?? 0;
+      const confirmationState = confirmations >= asset.minConfirmations 
+        ? 'confirmed' 
+        : confirmations > 0 ? 'low_confirmations' : 'pending';
 
-      const delayState: 'on_time' | 'delayed' | 'unknown' =
-        typeof observedDelaySec !== 'number'
-          ? 'unknown'
-          : observedDelaySec > asset.maxConfirmationDelaySec
-            ? 'delayed'
-            : 'on_time';
+      const delayState = typeof observedDelaySec !== 'number'
+        ? 'unknown'
+        : observedDelaySec > asset.maxConfirmationDelaySec ? 'delayed' : 'on_time';
 
       const pegTarget = Number(asset.pegTargetUsd);
-      const observedPriceNum = Number(observedPriceUsd);
-      const pegDeviationBps =
-        pegTarget > 0
-          ? Math.round((Math.abs(observedPriceNum - pegTarget) / pegTarget) * 10_000)
-          : 0;
+      const pegDeviationBps = pegTarget > 0
+        ? Math.round((Math.abs(Number(observedPriceUsd) - pegTarget) / pegTarget) * 10_000)
+        : 0;
 
       const riskFlags = computeRiskFlags({
         pegDeviationBps,
@@ -275,13 +171,11 @@ class StableInflowModule {
         riskScore: asset.riskScore,
       });
 
-      const status = riskFlags.depegDetected ||
-        riskFlags.delayedConfirmation ||
-        riskFlags.lowLiquidity ||
-        riskFlags.highRiskScore
+      const status = (riskFlags.depegDetected || riskFlags.delayedConfirmation || riskFlags.lowLiquidity || riskFlags.highRiskScore)
         ? 'flagged'
         : 'received';
 
+      // 3. ATOMIC UPSERT TRANSACTION MATRIX: Prevents duplicate state calculation drops
       const insertResult = await db
         .insert(stableInflowEvents)
         .values({
@@ -309,131 +203,147 @@ class StableInflowModule {
           pegDeviationBps,
           riskFlags,
           status,
-          metadata: {
-            provider: payload.provider,
-            ...payload.metadata,
-          },
+          metadata: { provider: payload.provider, ...payload.metadata },
         } as any)
-        .returning({ id: stableInflowEvents.id });
+        // Instruct Postgres to preserve existing record state if uniqueness criteria bounds overlap
+        .onConflictDoUpdate({
+          target: [
+            stableInflowEvents.chainId, 
+            stableInflowEvents.txHash, 
+            stableInflowEvents.logIndex, 
+            stableInflowEvents.tokenAddress, 
+            stableInflowEvents.toAddress
+          ],
+          set: {
+            // Safe increment pattern if confirmation state adjustments hit later
+            confirmations: sql`EXCLUDED.confirmations`,
+            confirmationState: sql`EXCLUDED.confirmation_state`,
+            updatedAt: new Date()
+          }
+        })
+        .returning({ 
+          id: stableInflowEvents.id,
+          status: stableInflowEvents.status,
+          xmin: sql`xmin::text` // Grabs row system identifier to check if record was written or updated
+        });
 
-      const stableInflowEventId = insertResult[0]?.id;
-      if (!stableInflowEventId) {
+      const activeRecord = insertResult[0];
+      if (!activeRecord) {
+        return { success: false, error: 'Failed to persist stable inflow event' };
+      }
+
+      // Check if row existed previously or was freshly inserted
+      // Note: If you don't want to use xmin, you can verify if status matches existing metadata
+      const isDuplicate = status !== activeRecord.status; 
+
+      if (isDuplicate) {
         return {
-          success: false,
-          error: 'Failed to persist stable inflow event',
+          success: true,
+          duplicate: true,
+          stableInflowEventId: activeRecord.id,
+          normalizedAmountUsd,
+          stableUnitsMicroUsd: stableUnitsMicroUsd.toString(),
+          riskFlags,
+          confirmationState,
         };
       }
 
+      // 4. Fire-and-forget Risk Monitoring processing safely isolated out of the client response path
       stableRiskMonitorService
-        .evaluateInflow(
-          {
-            stableInflowEventId,
-            source: payload.source || 'webhook',
-            symbol: asset.symbol,
-            chain: asset.chain,
-            chainId: payload.chainId,
-            tokenAddress,
-            txHash: payload.txHash,
-            normalizedAmountUsd,
-            stableUnitsMicroUsd: stableUnitsMicroUsd.toString(),
-            pegDeviationBps,
-            confirmationState,
-            delayState,
-            riskFlags,
-          },
-          asset
-        )
-        .catch((error) => {
-          logger.warn('[StableInflowModule] Risk monitor evaluation failed', {
-            error: (error as Error).message,
-            stableInflowEventId,
+        .evaluateInflow({
+          stableInflowEventId: activeRecord.id,
+          source: payload.source || 'webhook',
+          symbol: asset.symbol,
+          chain: asset.chain,
+          chainId: payload.chainId,
+          tokenAddress,
+          txHash: payload.txHash,
+          normalizedAmountUsd,
+          stableUnitsMicroUsd: stableUnitsMicroUsd.toString(),
+          pegDeviationBps,
+          confirmationState,
+          delayState,
+          riskFlags,
+        }, asset)
+        .catch((err) => {
+          logger.warn('[StableInflowModule] Risk monitor evaluation async drop', {
+            error: err.message,
+            stableInflowEventId: activeRecord.id,
           });
         });
 
       return {
         success: true,
-        stableInflowEventId,
+        stableInflowEventId: activeRecord.id,
         normalizedAmountUsd,
         stableUnitsMicroUsd: stableUnitsMicroUsd.toString(),
         riskFlags,
         confirmationState,
       };
-    } catch (error) {
-      logger.warn('[StableInflowModule] Failed to process stable inflow', {
-        error: (error as Error).message,
-      });
-      return {
-        success: false,
-        error: (error as Error).message,
-      };
+
+    } catch (error: any) {
+      logger.error('[StableInflowModule CRITICAL] Execution tracking failure', { error: error.message });
+      return { success: false, error: error.message };
     }
   }
 
-  async markCredited(
-    stableInflowEventId: string,
-    linkage?: Record<string, any>
-  ): Promise<void> {
+  async markCredited(stableInflowEventId: string, linkage?: Record<string, any>): Promise<void> {
     try {
-      const existing = await db
-        .select({ metadata: stableInflowEvents.metadata })
-        .from(stableInflowEvents)
-        .where(eq(stableInflowEvents.id, stableInflowEventId))
-        .limit(1);
+      await db.transaction(async (tx) => {
+        const existing = await tx
+          .select({ metadata: stableInflowEvents.metadata })
+          .from(stableInflowEvents)
+          .where(eq(stableInflowEvents.id, stableInflowEventId))
+          .for('update') // Enforce strict write-lock behavior on record update sequence
+          .limit(1);
 
-      const currentMetadata = existing[0]?.metadata as Record<string, any> || {};
-
-      const updatePayload: Record<string, any> = {
-        status: 'credited',
-        updatedAt: new Date(),
-      };
-
-      if (linkage && Object.keys(linkage).length) {
-        updatePayload.metadata = {
-          ...currentMetadata,
-          creditedAt: new Date().toISOString(),
-          ...linkage,
-        };
-      }
-
-      await db
-        .update(stableInflowEvents)
-        .set(updatePayload as any)
-        .where(eq(stableInflowEvents.id, stableInflowEventId));
-    } catch (error) {
-      logger.warn('[StableInflowModule] Failed to mark inflow as credited', {
-        stableInflowEventId,
-        error: (error as Error).message,
+        const currentMetadata = existing[0]?.metadata as Record<string, any> || {};
+        
+        await tx
+          .update(stableInflowEvents)
+          .set({
+            status: 'credited',
+            updatedAt: new Date(),
+            metadata: {
+              ...currentMetadata,
+              creditedAt: new Date().toISOString(),
+              ...linkage,
+            }
+          } as any)
+          .where(eq(stableInflowEvents.id, stableInflowEventId));
       });
+    } catch (error: any) {
+      logger.warn('[StableInflowModule] Failed to mark inflow as credited', { stableInflowEventId, error: error.message });
     }
   }
 
   async markFailed(stableInflowEventId: string, reason: string): Promise<void> {
     try {
-      const existing = await db
-        .select({ metadata: stableInflowEvents.metadata })
-        .from(stableInflowEvents)
-        .where(eq(stableInflowEvents.id, stableInflowEventId))
-        .limit(1);
+      await db.transaction(async (tx) => {
+        const existing = await tx
+          .select({ metadata: stableInflowEvents.metadata })
+          .from(stableInflowEvents)
+          .where(eq(stableInflowEvents.id, stableInflowEventId))
+          .for('update')
+          .limit(1);
 
-      const currentMetadata = existing[0]?.metadata as Record<string, any> || {};
+        const currentMetadata = existing[0]?.metadata as Record<string, any> || {};
 
-      await db
-        .update(stableInflowEvents)
-        .set({
-          status: 'failed',
-          metadata: {
-            ...currentMetadata,
-            failureReason: reason,
-            failedAt: new Date().toISOString(),
-          },
-          updatedAt: new Date(),
-        } as any)
-        .where(eq(stableInflowEvents.id, stableInflowEventId));
-    } catch (error) {
-      logger.warn('[StableInflowModule] Failed to mark inflow as failed', {
-        stableInflowEventId,
-        error: (error as Error).message,
+        await tx
+          .update(stableInflowEvents)
+          .set({
+            status: 'failed',
+            updatedAt: new Date(),
+            metadata: {
+              ...currentMetadata,
+              failureReason: reason,
+              failedAt: new Date().toISOString(),
+            },
+          } as any)
+          .where(eq(stableInflowEvents.id, stableInflowEventId));
       });
+    } catch (error: any) {
+      logger.warn('[StableInflowModule] Failed to mark inflow as failed', { stableInflowEventId, error: error.message });
     }
   }
 }

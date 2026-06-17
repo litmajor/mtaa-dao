@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { Database } from '../index';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 /**
  * Migration 006: Phase 5.3 Advanced Features (Configuration History, Templates, Alerts)
@@ -12,7 +12,7 @@ import { Database } from '../index';
  * - Performance snapshots for analytics
  */
 
-export async function up(db: Database) {
+export async function up(db: NodePgDatabase<any>) {
   console.log('Running migration 006: Phase 5.3 Advanced Features...');
 
   // Create configuration_history table
@@ -275,7 +275,7 @@ export async function up(db: Database) {
   console.log('Migration 006 completed successfully!');
 }
 
-export async function down(db: Database) {
+export async function down(db: NodePgDatabase<any>) {
   console.log('Rolling back migration 006: Phase 5.3 Advanced Features...');
 
   // Drop tables in reverse order

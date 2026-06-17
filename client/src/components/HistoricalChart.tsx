@@ -7,19 +7,8 @@ import React, { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  ComposedChart,
-  Bar,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-  AreaChart,
-  Area
-} from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 import { useHistoricalData } from '@/hooks/useHistoricalData';
 import { getChangeColor, getVolatilityColor, getPerformanceRating, formatNumber } from '@/hooks/useHistoricalData';
 
@@ -119,107 +108,44 @@ export const HistoricalChart: React.FC<HistoricalChartProps> = ({
       {/* Chart */}
       <Card className="p-4 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700">
         <div className="h-96">
-          <ResponsiveContainer width="100%" height="100%">
-            {chartType === 'candle' ? (
-              <ComposedChart data={chartData}>
-                <defs>
-                  <linearGradient id="volumeGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
-                    <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.2} />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 12 }}
-                  stroke="#94a3b8"
-                />
-                <YAxis
-                  yAxisId="left"
-                  tick={{ fontSize: 12 }}
-                  stroke="#94a3b8"
-                />
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  tick={{ fontSize: 12 }}
-                  stroke="#94a3b8"
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                    border: '1px solid #334155',
-                    borderRadius: '8px',
-                    color: '#e2e8f0'
-                  }}
-                  formatter={(value: any) => {
-                    if (typeof value === 'number') {
-                      return value > 1000 ? `$${(value / 1e6).toFixed(2)}M` : `$${value.toFixed(2)}`;
-                    }
-                    return value;
-                  }}
-                />
-                <Legend />
-                <Bar
-                  yAxisId="right"
-                  dataKey="volume"
-                  fill="url(#volumeGradient)"
-                  opacity={0.6}
-                  name="Volume"
-                />
-                <Line
-                  yAxisId="left"
-                  type="monotone"
-                  dataKey="price"
-                  stroke="#3b82f6"
-                  strokeWidth={2}
-                  dot={false}
-                  name="Close Price"
-                />
-              </ComposedChart>
-            ) : (
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop
-                      offset="0%"
-                      stopColor={stats.changePercent > 0 ? '#22c55e' : '#ef4444'}
-                      stopOpacity={0.3}
-                    />
-                    <stop
-                      offset="100%"
-                      stopColor={stats.changePercent > 0 ? '#22c55e' : '#ef4444'}
-                      stopOpacity={0}
-                    />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.2} />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 12 }}
-                  stroke="#94a3b8"
-                />
-                <YAxis tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                    border: '1px solid #334155',
-                    borderRadius: '8px',
-                    color: '#e2e8f0'
-                  }}
-                  formatter={(value: any) => `$${value.toFixed(2)}`}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="price"
-                  stroke={stats.changePercent > 0 ? '#22c55e' : '#ef4444'}
-                  fill="url(#areaGradient)"
-                  strokeWidth={2}
-                  name="Price"
-                />
-              </AreaChart>
-            )}
-          </ResponsiveContainer>
+          {/* Render mixed Chart.js chart: bar for volume + line for price */}
+          <Chart
+            type="bar"
+            data={{
+              labels: chartData.map(d => d.date),
+              datasets: [
+                {
+                  type: 'bar' as const,
+                  label: 'Volume',
+                  data: chartData.map(d => d.volume),
+                  backgroundColor: 'rgba(59,130,246,0.25)',
+                  yAxisID: 'y1',
+                },
+                {
+                  type: 'line' as const,
+                  label: 'Close Price',
+                  data: chartData.map(d => d.price),
+                  borderColor: '#3b82f6',
+                  tension: 0.2,
+                  pointRadius: 0,
+                  yAxisID: 'y',
+                },
+              ],
+            }}
+            options={{
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { position: 'top' },
+                tooltip: { mode: 'index', intersect: false },
+              },
+              scales: {
+                x: { ticks: { color: '#94a3b8' } },
+                y: { position: 'left', ticks: { color: '#94a3b8' } },
+                y1: { position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#94a3b8' } },
+              },
+            }}
+          />
         </div>
       </Card>
 

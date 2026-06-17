@@ -24,6 +24,24 @@ const logger = Logger.getLogger();
 // Type Definitions
 // ════════════════════════════════════════════════════════════════════════════════
 
+interface EndpointStats {
+  path: string;
+  method: string;
+  callCount: number;
+  avgLatency: number;
+  errorRate?: number;
+}
+
+interface StatsResponse {
+  summary: {
+    totalCalls: number;
+    avgLatency: number;
+    errorCount?: number;
+    errorRate?: number;
+  };
+  endpoints: EndpointStats[];
+}
+
 interface CapacityPlannerThresholds {
   hotspotCallThreshold: number;
   bottleneckDegradationThreshold: number;
@@ -43,12 +61,27 @@ interface CapacitySnapshot {
 
 interface ScalingRecommendation {
   endpoint: string;
-  currentCallRate: number; // calls per minute
-  projectedCallRate: number; // 1 hour from now
+  currentCallRate: number; // calls per period
+  projectedCallRate: number; // projected calls in same period
   recommendedAction: 'none' | 'monitor' | 'scale_up' | 'scale_down';
   confidence: number; // 0-1
   reason: string;
   estimatedLatencyIncrease: number; // ms
+}
+
+// Forecast strategy interface (pluggable)
+export interface ForecastStrategy {
+  project(endpoint: EndpointStats, windowMinutes: number): { projectedCallRate: number; confidence: number };
+}
+
+class DefaultForecastStrategy implements ForecastStrategy {
+  private multiplier: number;
+  constructor(multiplier = 1.25) {
+    this.multiplier = multiplier;
+  }
+  project(endpoint: EndpointStats): { projectedCallRate: number; confidence: number } {
+    return { projectedCallRate: Math.round(endpoint.callCount * this.multiplier), confidence: 0.6 };
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -60,6 +93,13 @@ export class CapacityPlannerAgent {
   private pollInterval: number = 600_000; // 10 minutes default
   private isRunning = false;
   private pollTimer?: NodeJS.Timeout;
+
+  // resilience
+  private consecutiveFailures = 0;
+  private readonly maxConsecutiveFailuresBeforePause = 3;
+  private readonly pauseDurationMs = 10 * 60 * 1000; // 10 minutes
+  private pauseUntil?: number;
+  private readonly maxRetriesPerPoll = 2;
 
   // Historical tracking
   private capacitySnapshots: CapacitySnapshot[] = [];
@@ -78,6 +118,7 @@ export class CapacityPlannerAgent {
   // State
   private baselineMetrics: { name: string; avgLatency: number }[] = [];
   private slackWebhookUrl?: string;
+  private forecastStrategy: ForecastStrategy = new DefaultForecastStrategy();
 
   constructor(
     baseUrl: string = 'http://localhost:5000',
@@ -85,11 +126,13 @@ export class CapacityPlannerAgent {
       pollInterval?: number;
       slackWebhook?: string;
       thresholds?: Partial<CapacityPlannerThresholds>;
+      forecastStrategy?: ForecastStrategy;
     }
   ) {
     this.baseUrl = baseUrl;
     if (options?.pollInterval) this.pollInterval = options.pollInterval;
     if (options?.slackWebhook) this.slackWebhookUrl = options.slackWebhook;
+    if (options?.forecastStrategy) this.forecastStrategy = options.forecastStrategy;
     if (options?.thresholds) {
       this.thresholds = { ...this.thresholds, ...options.thresholds };
     }
@@ -201,33 +244,54 @@ export class CapacityPlannerAgent {
   // ════════════════════════════════════════════════════════════════════════════════
 
   private async pollOnce(): Promise<void> {
-    try {
-      const response = await axios.get(`${this.baseUrl}/api/docs/stats`, {
-        timeout: 15_000,
-      });
+    // Respect pause due to consecutive failures
+    if (this.pauseUntil && Date.now() < this.pauseUntil) {
+      logger.warn('[CAPACITY_PLANNER] Poll paused until', new Date(this.pauseUntil).toISOString());
+      return;
+    }
 
-      const { summary, endpoints } = response.data;
-      if (!summary || !endpoints) {
-        logger.warn('[CAPACITY_PLANNER] Missing data in response');
+    let attempt = 0;
+    let lastError: any = null;
+    while (attempt <= this.maxRetriesPerPoll) {
+      try {
+        const response = await axios.get<StatsResponse>(`${this.baseUrl}/api/docs/stats`, { timeout: 15_000 });
+        const { summary, endpoints } = response.data;
+
+        if (!summary || !Array.isArray(endpoints)) {
+          logger.warn('[CAPACITY_PLANNER] Missing or invalid data in response');
+          return;
+        }
+
+        const snapshot: CapacitySnapshot = {
+          timestamp: new Date(),
+          totalCalls: Number(summary.totalCalls || 0),
+          avgLatency: Number(summary.avgLatency || 0),
+          errorCount: Number(summary.errorCount || 0),
+          errorRate: Number(summary.errorRate || 0),
+          hotEndpoints: this.findHotEndpoints(endpoints),
+          bottlenecks: this.detectBottlenecks(endpoints),
+        };
+
+        this.storeSnapshot(snapshot);
+        await this.analyzeCapacity(snapshot, endpoints);
+
+        // success
+        this.consecutiveFailures = 0;
         return;
+      } catch (err) {
+        lastError = err;
+        attempt += 1;
+        const waitMs = 500 * Math.pow(2, attempt);
+        logger.warn(`[CAPACITY_PLANNER] Poll attempt ${attempt} failed — retrying in ${waitMs}ms`, err instanceof Error ? err.message : err);
+        await new Promise((res) => setTimeout(res, waitMs));
       }
+    }
 
-      // Create snapshot
-      const snapshot: CapacitySnapshot = {
-        timestamp: new Date(),
-        totalCalls: summary.totalCalls,
-        avgLatency: summary.avgLatency,
-        errorCount: summary.errorCount || 0,
-        errorRate: summary.errorRate || 0,
-        hotEndpoints: this.findHotEndpoints(endpoints),
-        bottlenecks: this.detectBottlenecks(endpoints),
-      };
-
-      // Store and analyze
-      this.storeSnapshot(snapshot);
-      await this.analyzeCapacity(snapshot, endpoints);
-    } catch (error) {
-      logger.error('[CAPACITY_PLANNER] Poll failed:', error instanceof Error ? error.message : error);
+    logger.error('[CAPACITY_PLANNER] Poll failed after retries:', lastError instanceof Error ? lastError.message : lastError);
+    this.consecutiveFailures += 1;
+    if (this.consecutiveFailures >= this.maxConsecutiveFailuresBeforePause) {
+      this.pauseUntil = Date.now() + this.pauseDurationMs;
+      logger.error('[CAPACITY_PLANNER] Pausing polling until', new Date(this.pauseUntil).toISOString());
     }
   }
 
@@ -242,54 +306,39 @@ export class CapacityPlannerAgent {
     }
   }
 
-  private findHotEndpoints(endpoints: any[]): Array<{ path: string; method: string; callCount: number }> {
+  private findHotEndpoints(endpoints: EndpointStats[]): Array<{ path: string; method: string; callCount: number }> {
     return endpoints
-      .filter((e) => e.callCount >= this.thresholds.hotspotCallThreshold)
-      .map((e) => ({
-        path: e.path,
-        method: e.method,
-        callCount: e.callCount,
-      }))
+      .filter((e) => Number(e.callCount || 0) >= this.thresholds.hotspotCallThreshold)
+      .map((e) => ({ path: e.path, method: e.method, callCount: Number(e.callCount || 0) }))
       .sort((a, b) => b.callCount - a.callCount)
       .slice(0, 20);
   }
 
-  private detectBottlenecks(endpoints: any[]): Array<{ path: string; reason: string; severity: 'medium' | 'high' }> {
+  private detectBottlenecks(endpoints: EndpointStats[]): Array<{ path: string; reason: string; severity: 'medium' | 'high' }> {
     const bottlenecks: Array<{ path: string; reason: string; severity: 'medium' | 'high' }> = [];
 
     endpoints.forEach((endpoint) => {
-      // High latency with high volume
-      if (endpoint.callCount > 10_000 && endpoint.avgLatency > 1000) {
-        bottlenecks.push({
-          path: endpoint.path,
-          reason: `High latency (${endpoint.avgLatency.toFixed(0)}ms) with high volume (${endpoint.callCount} calls)`,
-          severity: 'high',
-        });
+      const callCount = Number(endpoint.callCount || 0);
+      const avgLatency = Number(endpoint.avgLatency || 0);
+      const errorRate = Number(endpoint.errorRate || 0);
+
+      if (callCount > 10_000 && avgLatency > 1000) {
+        bottlenecks.push({ path: endpoint.path, reason: `High latency (${Math.round(avgLatency)}ms) with high volume (${callCount} calls)`, severity: 'high' });
       }
 
-      // High error rate with high volume
-      if (endpoint.callCount > 10_000 && endpoint.errorRate > 5) {
-        bottlenecks.push({
-          path: endpoint.path,
-          reason: `High error rate (${endpoint.errorRate.toFixed(1)}%) with high volume`,
-          severity: 'high',
-        });
+      if (callCount > 10_000 && errorRate > 5) {
+        bottlenecks.push({ path: endpoint.path, reason: `High error rate (${errorRate.toFixed(1)}%) with high volume`, severity: 'high' });
       }
 
-      // Error rate increase
-      if (endpoint.errorRate > 3 && endpoint.callCount > 5_000) {
-        bottlenecks.push({
-          path: endpoint.path,
-          reason: `Elevated error rate (${endpoint.errorRate.toFixed(1)}%) on medium-volume endpoint`,
-          severity: 'medium',
-        });
+      if (errorRate > 3 && callCount > 5_000) {
+        bottlenecks.push({ path: endpoint.path, reason: `Elevated error rate (${errorRate.toFixed(1)}%) on medium-volume endpoint`, severity: 'medium' });
       }
     });
 
     return bottlenecks;
   }
 
-  private async analyzeCapacity(snapshot: CapacitySnapshot, endpoints: any[]): Promise<void> {
+  private async analyzeCapacity(snapshot: CapacitySnapshot, endpoints: EndpointStats[]): Promise<void> {
     // Find endpoints that need scaling
     const scalingNeeds = this.generateScalingRecommendations(endpoints);
 
@@ -304,6 +353,16 @@ export class CapacityPlannerAgent {
       if (this.recommendationHistory.length > this.MAX_RECOMMENDATIONS) {
         this.recommendationHistory = this.recommendationHistory.slice(-this.MAX_RECOMMENDATIONS);
       }
+
+      // Notify Slack for high-confidence scale_up recommendations
+      const critical = scalingNeeds.filter((r) => r.recommendedAction === 'scale_up' && r.confidence >= 0.8);
+      if (critical.length > 0) {
+        try {
+          await this.sendSlackNotification(critical);
+        } catch (err) {
+          logger.error('[CAPACITY_PLANNER] Slack notification failed:', err instanceof Error ? err.message : err);
+        }
+      }
     }
 
     // Log capacity summary every poll
@@ -315,48 +374,66 @@ export class CapacityPlannerAgent {
     });
   }
 
-  private generateScalingRecommendations(endpoints: any[]): ScalingRecommendation[] {
+  private generateScalingRecommendations(endpoints: EndpointStats[]): ScalingRecommendation[] {
     const recommendations: ScalingRecommendation[] = [];
 
     endpoints
-      .filter((e) => e.callCount >= this.thresholds.scalingCallThreshold)
+      .filter((e) => Number(e.callCount || 0) >= this.thresholds.scalingCallThreshold)
       .forEach((endpoint) => {
-        // Simulate forecast (in real system, use ML model)
-        const projectedIncrease = 1.25; // 25% increase expected
-        const projectedCallRate = endpoint.callCount * projectedIncrease;
+        const { projectedCallRate, confidence } = this.forecastStrategy.project(endpoint, this.thresholds.forecastWindow);
 
         let recommendedAction: 'none' | 'monitor' | 'scale_up' | 'scale_down' = 'none';
-        let confidence = 0.5;
         let reason = 'Stable performance';
 
-        if (endpoint.avgLatency > 800 && projectedCallRate > this.thresholds.scalingCallThreshold * 1.5) {
+        const avgLatency = Number(endpoint.avgLatency || 0);
+
+        if (avgLatency > 800 && projectedCallRate > this.thresholds.scalingCallThreshold * 1.5) {
           recommendedAction = 'scale_up';
-          confidence = 0.85;
           reason = 'High latency with projected volume increase';
         } else if (projectedCallRate > this.thresholds.scalingCallThreshold * 2) {
           recommendedAction = 'scale_up';
-          confidence = 0.75;
           reason = 'Projected 2x volume increase';
-        } else if (endpoint.callCount > this.thresholds.scalingCallThreshold * 1.5 && endpoint.avgLatency > 600) {
+        } else if (Number(endpoint.callCount) > this.thresholds.scalingCallThreshold * 1.5 && avgLatency > 600) {
           recommendedAction = 'monitor';
-          confidence = 0.7;
           reason = 'Monitor for degradation';
         }
 
         if (recommendedAction !== 'none') {
           recommendations.push({
             endpoint: `${endpoint.method} ${endpoint.path}`,
-            currentCallRate: Math.round(endpoint.callCount),
+            currentCallRate: Math.round(Number(endpoint.callCount || 0)),
             projectedCallRate: Math.round(projectedCallRate),
             recommendedAction,
-            confidence,
+            confidence: Math.max(0, Math.min(1, Number(confidence) || 0)),
             reason,
-            estimatedLatencyIncrease: Math.round((endpoint.avgLatency * 0.3) / 100) * 100, // Pessimistic estimate
+            estimatedLatencyIncrease: Math.round((avgLatency * 0.3) / 100) * 100,
           });
         }
       });
 
     return recommendations;
+  }
+
+  private async sendSlackNotification(recs: ScalingRecommendation[]): Promise<void> {
+    if (!this.slackWebhookUrl) return;
+
+    try {
+      const attachments = recs.map((r) => ({
+        color: r.recommendedAction === 'scale_up' ? 'danger' : 'warning',
+        title: `${r.recommendedAction.toUpperCase()}: ${r.endpoint}`,
+        text: `${r.reason} — projected: ${r.projectedCallRate}, confidence: ${Math.round(r.confidence * 100)}%`,
+        fields: [
+          { title: 'Current', value: String(r.currentCallRate), short: true },
+          { title: 'Projected', value: String(r.projectedCallRate), short: true },
+          { title: 'Estimated Latency Increase', value: `${r.estimatedLatencyIncrease}ms`, short: true },
+        ],
+        ts: Math.floor(Date.now() / 1000),
+      }));
+
+      await axios.post(this.slackWebhookUrl, { attachments }, { timeout: 5_000 });
+    } catch (err) {
+      logger.error('[CAPACITY_PLANNER] Failed to send Slack notification:', err instanceof Error ? err.message : err);
+    }
   }
 }
 

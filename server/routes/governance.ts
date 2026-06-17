@@ -272,7 +272,7 @@ router.post('/proposals/:proposalId/cancel', isAuthenticated, async (req, res) =
       )).limit(1);
 
     const userRole = membership.length ? membership[0].role : null;
-    const isProposer = proposalData.proposerId === userId || proposalData.proposer === userId;
+    const isProposer = proposalData.proposerId === userId;
     const isAdmin = userRole === 'admin';
     const isSuperuser = userRole === 'superuser';
 

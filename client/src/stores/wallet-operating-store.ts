@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import Decimal from 'decimal.js'
-import { Transaction, SelectedAccount } from '../types/wallet'
+import { Transaction, SelectedAccount } from '../../../shared/types/wallet'
 
 export type Vault = { id: string; currency?: string; balance?: string | number; type?: string; locked?: boolean; pending?: boolean }
 
@@ -34,7 +34,7 @@ type OperatingState = {
   activeSurface: string | null
   activeAction: ActiveAction
   selectedAccountId?: string
-  selectedAccount?: SelectedAccount
+  selectedAccount?: SelectedAccount | null
   displayUnit: string
   securityState: SecurityState
   onboardingState?: Record<string, unknown>
@@ -196,7 +196,7 @@ export function useWalletOperatingStore() {
     // actions
     setVaults: (v: Vault[]) => { setState({ vaults: v }); return Promise.resolve() },
     setTransactions: (t: Transaction[]) => { setState({ transactions: t }); return Promise.resolve() },
-    setSelectedAccount: (a: SelectedAccount) => { setState({ selectedAccount: a }); return Promise.resolve() },
+    setSelectedAccount: (a: SelectedAccount | null) => { setState({ selectedAccount: a }); return Promise.resolve() },
     setSelectedAccountId: (id?: string) => { setState({ selectedAccountId: id }); return Promise.resolve() },
     setActiveSurface: (s: string | null) => { setState({ activeSurface: s }); return Promise.resolve() },
     openAction: (act: ActiveAction) => { setState({ activeAction: act }); return Promise.resolve() },

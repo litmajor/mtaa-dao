@@ -1,0 +1,70 @@
+# ============================================================
+# STAGE 1: Builder — compile everything
+# ============================================================
+FROM node:22-alpine AS builder
+
+WORKDIR /app
+
+# Install build dependencies (Python for native modules, git for some packages)
+RUN apk add --no-cache python3 make g++ git
+
+# Copy dependency files first for optimal layer caching
+COPY package*.json ./
+
+# Install ALL dependencies (dev + prod) for building
+RUN npm ci
+
+# Copy source code
+COPY . .
+
+# Generate Prisma client if schema exists
+RUN if [ -f prisma/schema.prisma ]; then npx prisma generate; fi
+
+# Build frontend + backend
+RUN npm run build
+
+# ============================================================
+# STAGE 2: Production — minimal runtime image
+# ============================================================
+FROM node:22-alpine AS production
+
+WORKDIR /app
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+# Install only production dependencies
+COPY package*.json ./
+RUN npm ci --omit=dev && \
+    npm cache clean --force
+
+# Copy compiled backend from builder
+COPY --from=builder --chown=nodejs:nodejs /app/server/dist ./server/dist
+
+# Copy compiled frontend from builder
+COPY --from=builder --chown=nodejs:nodejs /app/dist/public ./dist/public
+
+# Copy Prisma files if needed at runtime
+COPY --from=builder --chown=nodejs:nodejs /app/prisma ./prisma
+
+# Generate Prisma client in production (needs schema + binaries)
+RUN if [ -f prisma/schema.prisma ]; then npx prisma generate; fi
+
+# Set environment
+ENV NODE_ENV=production
+ENV PORT=5000
+ENV HOST=0.0.0.0
+
+# Switch to non-root user
+USER nodejs
+
+# Expose port
+EXPOSE 5000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:5000/api/health', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))" || exit 1
+
+# Start compiled backend (NOT tsx — pure Node.js)
+CMD ["node", "server/dist/index.js"]

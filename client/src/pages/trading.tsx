@@ -15,13 +15,14 @@
  * - Market Insights (Auto-calculated analytics)
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { Filter, Settings, TrendingUp, AlertCircle } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
 import { authClient } from '@/utils/authClient';
 
 // Import tab components from YukiDashboard
-import YukiDashboard from '@/components/trading/YukiDashboard';
+const YukiDashboardLazy = lazy(() => import('@/components/trading/YukiDashboard'));
+import { PageLoading } from '@/components/ui/page-loading';
 import Shell from '../components/ui/shell';
 import { Grid } from '../components/ui/grid';
 
@@ -664,7 +665,9 @@ export default function TradingPage() {
               {/* If analyst workspace, show YukiDashboard preview */}
               {viewMode === 'analyst' && (
                 <div className="mb-4">
-                  <YukiDashboard />
+                  <Suspense fallback={<PageLoading />}>
+                    <YukiDashboardLazy />
+                  </Suspense>
                 </div>
               )}
 

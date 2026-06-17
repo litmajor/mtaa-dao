@@ -1,5 +1,6 @@
 import { Server, Socket } from 'socket.io';
-import Redis from 'ioredis';
+import type Redis from 'ioredis';
+import { redis } from '../services/redis';
 import { Server as HTTPServer } from 'http';
 import jwt from 'jsonwebtoken';
 
@@ -44,31 +45,22 @@ class WebSocketManager {
     this.setupRedisSubscriber();
   }
 
-  private setupRedisSubscriber() {
+  private async setupRedisSubscriber() {
     try {
-      const host = process.env.REDIS_HOST || 'localhost';
-      const port = Number(process.env.REDIS_PORT) || 6379;
-      const password = process.env.REDIS_PASSWORD || undefined;
-      const db = Number(process.env.REDIS_DB) || 0;
-      const opts: any = { host, port, db, password };
-      this.redisSub = new Redis(opts);
+      const sub = await redis.getSubscriber();
 
-      this.redisSub.on('error', (err) => {
-        console.warn('[WebSocket] Redis subscriber error', err.message || err);
-      });
-
-      this.redisSub.on('message', (channel: string, message: string) => {
+      sub.on('message', (channel: string, message: string) => {
         try {
           const payload = JSON.parse(message);
-          // Forward to socket.io room matching the channel name
           this.io.to(channel).emit('execution:log', payload);
-        } catch (err) {
-          // Send raw message if JSON parse fails
+        } catch (err: any) {
           this.io.to(channel).emit('execution:log', { raw: message });
         }
       });
-    } catch (err) {
-      console.warn('[WebSocket] Failed to start Redis subscriber', err);
+
+      this.redisSub = sub;
+    } catch (err: any) {
+      console.warn('[WebSocket] Failed to start Redis subscriber', (err && err.message) || err);
       this.redisSub = null;
     }
   }

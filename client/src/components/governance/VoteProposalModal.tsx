@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import * as Lucide from 'lucide-react';
-const { CheckCircle, ArrowDownLeft, MoreHorizontal, Activity, Send, Shield, ChartPie, Users, Target } = (Lucide as any) || {};
+import { CheckCircle, ArrowDownLeft, MoreHorizontal, Activity, Send, Shield, ChartPie, Users, Target } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';

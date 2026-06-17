@@ -5,6 +5,14 @@
  */
 
 import Web3 from 'web3';
+type Web3Type = InstanceType<typeof Web3>;
+
+type TxObject = Record<string, unknown>;
+
+interface SignerAccount {
+  address: string;
+  signTransaction(tx: TxObject): Promise<{ rawTransaction?: string; transactionHash?: string }>;
+}
 import { isAddress } from 'web3-validator';
 import type { TransactionResult, GasConfig, TokenInfo } from './types';
 import { ENHANCED_ERC20_ABI } from './erc20-abi';
@@ -13,12 +21,12 @@ import { ENHANCED_ERC20_ABI } from './erc20-abi';
  * WalletOperationsService - Handles all wallet transaction operations
  */
 export class WalletOperationsService {
-  private web3: Web3;
-  private account: any;
+  private web3: Web3Type;
+  private account: SignerAccount;
   private chainId: number;
   private transactionCache: Map<string, TransactionResult> = new Map();
 
-  constructor(web3: Web3, account: any, chainId: number) {
+  constructor(web3: Web3Type, account: SignerAccount, chainId: number) {
     this.web3 = web3;
     this.account = account;
     this.chainId = chainId;
@@ -34,7 +42,7 @@ export class WalletOperationsService {
     gasConfig?: GasConfig,
     getTokenInfo?: (addr: string) => Promise<TokenInfo>,
     getOptimalGasConfig?: () => Promise<GasConfig>,
-    estimateGasWithBuffer?: (tx: any) => Promise<number>
+    estimateGasWithBuffer?: (tx: TxObject) => Promise<number>
   ): Promise<TransactionResult> {
     if (!isAddress(tokenAddress)) {
       throw new Error('Invalid token address');
@@ -44,13 +52,14 @@ export class WalletOperationsService {
     }
 
     try {
-      const tokenInfo = await (getTokenInfo?.(tokenAddress) || { decimals: 18 } as any);
+      const defaultTokenInfo: TokenInfo = { address: tokenAddress, symbol: 'UNKNOWN', name: 'Unknown', decimals: 18, balance: '0', balanceFormatted: 0 } as unknown as TokenInfo;
+      const tokenInfo = await (getTokenInfo?.(tokenAddress) || defaultTokenInfo);
       const amountWei = BigInt(Math.floor(amount * Math.pow(10, tokenInfo.decimals || 18)));
       const contract = new this.web3.eth.Contract(ENHANCED_ERC20_ABI, tokenAddress);
       const nonce = await this.web3.eth.getTransactionCount(this.account.address);
       const optimalGasConfig = gasConfig || (await getOptimalGasConfig?.()) || {};
 
-      const transaction: any = {
+      const transaction: TxObject = {
         to: tokenAddress,
         data: contract.methods.approve(spender, amountWei.toString()).encodeABI(),
         chainId: this.chainId,
@@ -72,7 +81,7 @@ export class WalletOperationsService {
         timestamp: Date.now()
       };
 
-      this.transactionCache.set(result.hash, result);
+      this.transactionCache.set(result.hash || '', result);
       return result;
     } catch (error) {
       console.error('Token approval failed:', error);
@@ -107,7 +116,7 @@ export class WalletOperationsService {
       const nonce = await this.web3.eth.getTransactionCount(this.account.address);
       const optimalGasConfig = gasConfig || (await getOptimalGasConfig?.()) || {};
 
-      const transaction: any = {
+      const transaction: TxObject = {
         to: toAddress,
         value: amountWei,
         gas: 21000,
@@ -127,7 +136,7 @@ export class WalletOperationsService {
         timestamp: Date.now()
       };
 
-      this.transactionCache.set(result.hash, result);
+      this.transactionCache.set(result.hash || '', result);
       return result;
     } catch (error) {
       console.error('Native token transfer failed:', error);
@@ -155,10 +164,11 @@ export class WalletOperationsService {
     }
 
     try {
-      const tokenInfo = await (getTokenInfo?.(tokenAddress) || { decimals: 18, balance: '0', balanceFormatted: 0 } as any);
+      const defaultTokenInfo: TokenInfo = { address: tokenAddress, symbol: 'UNKNOWN', name: 'Unknown', decimals: 18, balance: '0', balanceFormatted: 0 } as unknown as TokenInfo;
+      const tokenInfo = await (getTokenInfo?.(tokenAddress) || defaultTokenInfo);
       const amountWei = BigInt(Math.floor(amount * Math.pow(10, tokenInfo.decimals || 18)));
 
-      if (BigInt(tokenInfo.balance || 0) < amountWei) {
+      if (BigInt(String(tokenInfo.balance ?? '0')) < amountWei) {
         throw new Error(
           `Insufficient token balance. Have ${tokenInfo.balanceFormatted?.toFixed(6) || '0'} ${tokenInfo.symbol || 'tokens'}, need ${amount}`
         );
@@ -168,7 +178,7 @@ export class WalletOperationsService {
       const nonce = await this.web3.eth.getTransactionCount(this.account.address);
       const optimalGasConfig = gasConfig || (await getOptimalGasConfig?.()) || {};
 
-      const transaction: any = {
+      const transaction: TxObject = {
         to: tokenAddress,
         data: contract.methods.transfer(toAddress, amountWei.toString()).encodeABI(),
         chainId: this.chainId,
@@ -190,7 +200,7 @@ export class WalletOperationsService {
         timestamp: Date.now()
       };
 
-      this.transactionCache.set(result.hash, result);
+      this.transactionCache.set(result.hash || '', result);
       return result;
     } catch (error) {
       console.error('Token transfer failed:', error);
@@ -254,6 +264,6 @@ export class WalletOperationsService {
 }
 
 // Export singleton instance creator
-export const createWalletOperationsService = (web3: Web3, account: any, chainId: number): WalletOperationsService => {
+export const createWalletOperationsService = (web3: Web3Type, account: any, chainId: number): WalletOperationsService => {
   return new WalletOperationsService(web3, account, chainId);
 };

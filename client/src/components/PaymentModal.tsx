@@ -99,17 +99,40 @@ function PaymentModal({ open, onClose }: PaymentModalProps) {
     setLoading(true);
     setStatus('');
     setStep(2);
+
+    // If provider is M-Pesa, attempt Daraja STK push first (feature-guarded server-side).
+    if (provider === 'mpesa') {
+      try {
+        const resp = await fetch('/api/payments/mpesa/stk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, amount: Number(amount), accountReference: undefined, description }),
+        });
+
+        const json = await resp.json().catch(() => ({}));
+
+        if (resp.ok && json?.success) {
+          setStatus('M-Pesa STK initiated — confirm on your phone.');
+          setStep(3);
+          setLoading(false);
+          return;
+        }
+
+        // If STK feature disabled (503) or Daraja failed, fall back to existing /api/payments flow
+        if (resp.status === 503 || !json?.success) {
+          // continue to fallback below
+        }
+      } catch (err) {
+        // network error initiating STK — fallback to legacy flow
+      }
+    }
+
+    // Fallback / legacy payments endpoint
     try {
       const res = await fetch('/api/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider,
-          amount,
-          currency,
-          phone,
-          description,
-        }),
+        body: JSON.stringify({ provider, amount, currency, phone, description }),
       });
       const data = await res.json();
       if (res.ok && data.success) {

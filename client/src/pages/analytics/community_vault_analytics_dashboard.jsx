@@ -2,14 +2,15 @@
 
 import { useMemo, useState } from "react"
 import { useVaultTransactions, useVaultBalance, usePendingDisbursements, useVaultEarningsGraph } from "@/hooks/useVaultHooks"
-import { format } from "date-fns"
+import format from "date-fns/format"
 import { Card, CardHeader, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { DateRangePicker } from "@/components/DateRangePicker"
 import { Button } from "@/components/ui/button"
 import { BarChart2, AlertTriangle, Download, Clock, Info } from "lucide-react"
 import { VaultSelector } from "@/components/VaultSelector"
-import { ResponsiveContainer, AreaChart, Area, Tooltip, XAxis, YAxis } from "recharts"
+import React, { Suspense, lazy } from 'react'
+const VaultEarningsChart = lazy(() => import('@/components/VaultEarningsChart'))
 
 export default function CommunityVaultAnalyticsDashboard({ vaultId: initialVaultId, isElder = false }) {
   const [currency, setCurrency] = useState("cusd")
@@ -149,14 +150,9 @@ export default function CommunityVaultAnalyticsDashboard({ vaultId: initialVault
           <Card>
             <CardHeader className="text-sm">Staking / Earnings (30d)</CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={250}>
-                <AreaChart data={earningsData}>
-                  <XAxis dataKey="date" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis fontSize={10} tickLine={false} axisLine={false} />
-                  <Tooltip />
-                  <Area type="monotone" dataKey="earnings" stroke="#22c55e" fill="#bbf7d0" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
+              <Suspense fallback={<div className="py-8 text-center text-sm text-muted">Loading chart…</div>}>
+                <VaultEarningsChart data={earningsData} />
+              </Suspense>
             </CardContent>
           </Card>
         </TabsContent>

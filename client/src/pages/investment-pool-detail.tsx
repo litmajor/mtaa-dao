@@ -11,7 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { authClient } from '@/utils/authClient';
 import { Loader, ArrowDownLeft, ArrowUpRight, Activity, BarChart2 } from 'lucide-react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, Area, AreaChart } from 'recharts';
+import ChartJS from '@/components/charts/ChartJSSetup';
+import { Chart } from 'react-chartjs-2';
 
 const COLORS = ['#F7931A', '#627EEA', '#14F195', '#F3BA2F', '#23292F', '#345D9D'];
 
@@ -226,26 +227,13 @@ export default function InvestmentPoolDetail() {
                 <CardTitle className="text-white">Portfolio Allocation</CardTitle>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={allocationChartData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, value }) => `${name} ${value}%`}
-                      outerRadius={100}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {allocationChartData.map((entry: any, index: number) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
+                <div style={{ height: 300 }}>
+                  <Chart
+                    type="pie"
+                    data={{ labels: allocationChartData.map((a: any) => a.name), datasets: [{ data: allocationChartData.map((a: any) => a.value), backgroundColor: allocationChartData.map((a: any) => a.color) }] }}
+                    options={{ responsive: true, maintainAspectRatio: false }}
+                  />
+                </div>
               </CardContent>
             </Card>
 
@@ -296,83 +284,20 @@ export default function InvestmentPoolDetail() {
               </CardHeader>
               <CardContent>
                 {chartData?.data && chartData.data.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <AreaChart data={chartData.data}>
-                      <defs>
-                        <linearGradient id="colorTvl" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.8}/>
-                          <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
-                        </linearGradient>
-                        <linearGradient id="colorReturn" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
-                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#ffffff20" />
-                      <XAxis 
-                        dataKey="date" 
-                        stroke="#ffffff60"
-                        tick={{ fill: '#ffffff60' }}
-                        tickFormatter={(date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      />
-                      <YAxis 
-                        yAxisId="left"
-                        stroke="#ffffff60"
-                        tick={{ fill: '#ffffff60' }}
-                        tickFormatter={(value) => `$${value.toLocaleString()}`}
-                      />
-                      <YAxis 
-                        yAxisId="right"
-                        orientation="right"
-                        stroke="#ffffff60"
-                        tick={{ fill: '#ffffff60' }}
-                        tickFormatter={(value) => `${value.toFixed(1)}%`}
-                      />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                        labelStyle={{ color: '#fff' }}
-                        formatter={(value: any, name: string) => {
-                          if (name === 'tvl') return [`$${Number(value).toLocaleString()}`, 'TVL'];
-                          if (name === 'return') return [`${Number(value).toFixed(2)}%`, 'Return'];
-                          if (name === 'sharePrice') return [`$${Number(value).toFixed(4)}`, 'Share Price'];
-                          return [value, name];
-                        }}
-                      />
-                      <Legend 
-                        wrapperStyle={{ color: '#fff' }}
-                        formatter={(value) => {
-                          if (value === 'tvl') return 'TVL';
-                          if (value === 'return') return 'Return %';
-                          if (value === 'sharePrice') return 'Share Price';
-                          return value;
-                        }}
-                      />
-                      <Area 
-                        yAxisId="left"
-                        type="monotone" 
-                        dataKey="tvl" 
-                        stroke="#8b5cf6" 
-                        fillOpacity={1} 
-                        fill="url(#colorTvl)" 
-                      />
-                      <Line 
-                        yAxisId="left"
-                        type="monotone" 
-                        dataKey="sharePrice" 
-                        stroke="#3b82f6" 
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                      <Line 
-                        yAxisId="right"
-                        type="monotone" 
-                        dataKey="return" 
-                        stroke="#10b981" 
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                  <div style={{ height: 300 }}>
+                    <Chart
+                      type="line"
+                      data={{
+                        labels: chartData.data.map((d: any) => new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })),
+                        datasets: [
+                          { label: 'TVL', data: chartData.data.map((d: any) => d.tvl), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.15)', fill: true, yAxisID: 'y' },
+                          { label: 'Share Price', data: chartData.data.map((d: any) => d.sharePrice), borderColor: '#3b82f6', backgroundColor: 'transparent', fill: false, yAxisID: 'y' },
+                          { label: 'Return %', data: chartData.data.map((d: any) => d.return), borderColor: '#10b981', backgroundColor: 'transparent', fill: false, yAxisID: 'y1' }
+                        ]
+                      }}
+                      options={{ responsive: true, maintainAspectRatio: false, scales: { y: { position: 'left', ticks: { callback: (v: any) => `$${Number(v).toLocaleString()}` } }, y1: { position: 'right', grid: { display: false }, ticks: { callback: (v: any) => `${Number(v).toFixed(1)}%` } } } }}
+                    />
+                  </div>
                 ) : (
                   <div className="h-[300px] flex items-center justify-center text-white/60">
                     <div className="text-center">

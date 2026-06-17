@@ -5,6 +5,7 @@
  */
 
 import Web3 from 'web3';
+type Web3Type = InstanceType<typeof Web3>;
 import { isAddress } from 'web3-validator';
 import type { TokenInfo, TokenBalance } from './types';
 import { ENHANCED_ERC20_ABI } from './erc20-abi';
@@ -13,11 +14,11 @@ import { ENHANCED_ERC20_ABI } from './erc20-abi';
  * TokenUtilitiesService - Manages token information and balance operations
  */
 export class TokenUtilitiesService {
-  private web3: Web3;
+  private web3: Web3Type;
   private tokenCache: Map<string, TokenInfo> = new Map();
   private balanceCache: Map<string, Map<string, TokenBalance>> = new Map();
 
-  constructor(web3: Web3) {
+  constructor(web3: Web3Type) {
     this.web3 = web3;
   }
 
@@ -52,14 +53,15 @@ export class TokenUtilitiesService {
         address: tokenAddress,
         name: String(name || 'Unknown'),
         symbol: String(symbol || 'UNKNOWN'),
-        decimals: Number(decimals || 18) as any
+        decimals: Number(decimals || 18),
+        balance: '0'
       };
 
       // Fetch balance if account is provided
       if (accountAddress && isAddress(accountAddress)) {
         try {
           const balance = await (contract.methods as any).balanceOf(accountAddress).call();
-          const balanceBigInt = BigInt(balance || 0);
+          const balanceBigInt = BigInt(String(balance ?? '0'));
           const balanceFormatted = Number(balanceBigInt) / Math.pow(10, tokenInfo.decimals);
 
           tokenInfo.balance = balance.toString();
@@ -109,17 +111,15 @@ export class TokenUtilitiesService {
         (contract.methods as any).symbol().call().catch(() => 'UNKNOWN')
       ]);
 
-      const balanceBigInt = BigInt(balance || 0);
+      const balanceBigInt = BigInt(String(balance ?? '0'));
       const decimalsNum = Number(decimals || 18);
       const balanceFormatted = Number(balanceBigInt) / Math.pow(10, decimalsNum);
 
       const tokenBalance: TokenBalance = {
-        tokenAddress,
-        accountAddress,
+        address: tokenAddress,
         balance: balance.toString(),
         balanceFormatted,
-        symbol: String(symbol || 'UNKNOWN'),
-        timestamp: Date.now()
+        symbol: String(symbol || 'UNKNOWN')
       };
 
       accountBalances.set(tokenAddress, tokenBalance);
@@ -237,6 +237,6 @@ export class TokenUtilitiesService {
 }
 
 // Export singleton instance creator
-export const createTokenUtilitiesService = (web3: Web3): TokenUtilitiesService => {
+export const createTokenUtilitiesService = (web3: Web3Type): TokenUtilitiesService => {
   return new TokenUtilitiesService(web3);
 };

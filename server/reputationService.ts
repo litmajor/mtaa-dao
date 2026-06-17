@@ -1,7 +1,7 @@
 import { db } from './db';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { users, votes, proposals, contributions, daoMemberships } from '../shared/schema';
-import { msiaMoPoints, userReputation, msiaMoConversions, airdropEligibility } from '../shared/reputationSchema';
+import { msiaMoPoints, userGamification, msiaMoConversions, airdropEligibility } from '../shared/reputationSchema';
 
 // Reputation point values for different actions
 export const REPUTATION_VALUES = {
@@ -32,6 +32,7 @@ export const REPUTATION_VALUES = {
   DAILY_STREAK: 5,
   WEEKLY_BONUS: 50,
   MONTHLY_BONUS: 200,
+  DAO_MEMBERSHIP: 20,
 
   // Verification
   PHONE_VERIFIED: 100,
@@ -144,15 +145,15 @@ export class ReputationService {
     const level = this.calculateLevel(totalPoints);
     const nextLevelPoints = this.getNextLevelThreshold(level);
 
-    // Upsert user reputation
+    // Upsert user gamification
     const existingReputation = await db
       .select()
-      .from(userReputation)
-      .where(eq(userReputation.userId, userId));
+      .from(userGamification)
+      .where(eq(userGamification.userId, userId));
 
     if (existingReputation.length > 0) {
       await db
-        .update(userReputation)
+        .update(userGamification)
         .set({
           totalPoints,
           weeklyPoints,
@@ -163,9 +164,9 @@ export class ReputationService {
           lastActivity: new Date(),
           updatedAt: new Date(),
         })
-        .where(eq(userReputation.userId, userId));
+        .where(eq(userGamification.userId, userId));
     } else {
-      await db.insert(userReputation).values({
+      await db.insert(userGamification).values({
         userId,
         totalPoints,
         weeklyPoints,
@@ -201,8 +202,8 @@ export class ReputationService {
   static async applyReputationDecay(userId: string): Promise<void> {
     const reputation = await db
       .select()
-      .from(userReputation)
-      .where(eq(userReputation.userId, userId));
+      .from(userGamification)
+      .where(eq(userGamification.userId, userId));
 
     if (!reputation[0]) return;
 
@@ -223,7 +224,7 @@ export class ReputationService {
 
       if (pointsLost > 0) {
         await db
-          .update(userReputation)
+          .update(userGamification)
           .set({
             totalPoints: decayedPoints,
             badge: this.calculateBadge(decayedPoints),
@@ -231,7 +232,7 @@ export class ReputationService {
             nextLevelPoints: this.getNextLevelThreshold(this.calculateLevel(decayedPoints)),
             updatedAt: new Date(),
           })
-          .where(eq(userReputation.userId, userId));
+          .where(eq(userGamification.userId, userId));
 
         // Log decay event
         await this.awardPoints(
@@ -248,7 +249,7 @@ export class ReputationService {
 
   // Run decay for all users (scheduled job)
   static async runGlobalReputationDecay(): Promise<{ processed: number; decayed: number }> {
-    const allUsers = await db.select().from(userReputation);
+    const allUsers = await db.select().from(userGamification);
     let processed = 0;
     let decayed = 0;
 
@@ -259,8 +260,8 @@ export class ReputationService {
       // Check if points actually decayed
       const afterReputation = await db
         .select()
-        .from(userReputation)
-        .where(eq(userReputation.userId, user.userId));
+        .from(userGamification)
+        .where(eq(userGamification.userId, user.userId));
 
   if (afterReputation[0] && (afterReputation[0].totalPoints ?? 0) < beforePoints) {
         decayed++;
@@ -275,8 +276,8 @@ export class ReputationService {
   static async getUserReputation(userId: string): Promise<any> {
     const reputation = await db
       .select()
-      .from(userReputation)
-      .where(eq(userReputation.userId, userId));
+      .from(userGamification)
+      .where(eq(userGamification.userId, userId));
 
     if (reputation.length === 0) {
       // Initialize reputation for new user
@@ -290,8 +291,8 @@ export class ReputationService {
     // Get updated reputation after potential decay
     const updatedReputation = await db
       .select()
-      .from(userReputation)
-      .where(eq(userReputation.userId, userId));
+      .from(userGamification)
+      .where(eq(userGamification.userId, userId));
 
     return updatedReputation[0];
   }
@@ -300,17 +301,17 @@ export class ReputationService {
   static async getLeaderboard(limit: number = 10): Promise<any[]> {
     return await db
       .select({
-        userId: userReputation.userId,
-        totalPoints: userReputation.totalPoints,
-        badge: userReputation.badge,
-        level: userReputation.level,
+        userId: userGamification.userId,
+        totalPoints: userGamification.totalPoints,
+        badge: userGamification.badge,
+        level: userGamification.level,
         firstName: users.firstName,
         lastName: users.lastName,
         profileImageUrl: users.profileImageUrl,
       })
-      .from(userReputation)
-      .leftJoin(users, eq(userReputation.userId, users.id))
-      .orderBy(desc(userReputation.totalPoints))
+      .from(userGamification)
+      .leftJoin(users, eq(userGamification.userId, users.id))
+      .orderBy(desc(userGamification.totalPoints))
       .limit(limit);
   }
 
@@ -484,8 +485,8 @@ export class ReputationService {
   }> {
     const userRep = await db
       .select()
-      .from(userReputation)
-      .where(eq(userReputation.userId, userId));
+      .from(userGamification)
+      .where(eq(userGamification.userId, userId));
 
     const now = new Date();
     const lastActivity = userRep[0]?.lastActivity ? new Date(userRep[0].lastActivity) : null;
@@ -543,16 +544,16 @@ export class ReputationService {
     // Update user reputation with streak info
     if (userRep.length > 0) {
       await db
-        .update(userReputation)
+        .update(userGamification)
         .set({
           currentStreak,
           longestStreak,
           lastActivity: now,
           updatedAt: now
         })
-        .where(eq(userReputation.userId, userId));
+        .where(eq(userGamification.userId, userId));
     } else {
-      await db.insert(userReputation).values({
+      await db.insert(userGamification).values({
         userId,
         totalPoints: 0,
         weeklyPoints: 0,
@@ -578,8 +579,8 @@ export class ReputationService {
   }> {
     const userRep = await db
       .select()
-      .from(userReputation)
-      .where(eq(userReputation.userId, userId));
+      .from(userGamification)
+      .where(eq(userGamification.userId, userId));
 
     const currentStreak = userRep[0]?.currentStreak || 0;
     const longestStreak = userRep[0]?.longestStreak || 0;

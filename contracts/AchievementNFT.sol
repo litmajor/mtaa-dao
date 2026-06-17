@@ -5,8 +5,8 @@ pragma solidity ^0.8.19;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "./utils/Counters.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract AchievementNFT is ERC721URIStorage, Ownable, ReentrancyGuard {
     using Counters for Counters.Counter;
@@ -40,7 +40,7 @@ contract AchievementNFT is ERC721URIStorage, Ownable, ReentrancyGuard {
     event AchievementSold(uint256 indexed tokenId, address indexed buyer, address indexed seller, uint256 price);
     event AchievementUnlisted(uint256 indexed tokenId);
 
-    constructor() ERC721("Mtaa Achievement", "MTAA-ACH") {
+    constructor() ERC721("Mtaa Achievement", "MTAA-ACH") Ownable(msg.sender) {
         feeCollector = msg.sender;
         
         // Register default achievement types
@@ -144,7 +144,7 @@ contract AchievementNFT is ERC721URIStorage, Ownable, ReentrancyGuard {
         
         uint256 index = 0;
         for (uint256 i = 1; i <= _tokenIds.current(); i++) {
-            if (_exists(i) && ownerOf(i) == user) {
+            if (_ownerOf(i) == user) {
                 tokenIds[index] = i;
                 index++;
             }

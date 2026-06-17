@@ -38,12 +38,12 @@ const CreateVaultLazy = lazy(() => import('./pages/create-vault'));
 const KYCLazy = lazy(() => import('./pages/kyc'));
 const ProfileLazy = lazy(() => import('./pages/profile'));
 const DAOsLazy = lazy(() => import('./pages/daos'));
-// Wallet is imported statically below; remove dead lazy import
+// Wallet page: lazy-load to enable code-splitting
 const ReferralsLazy = lazy(() => import('./pages/referrals'));
 const MorioDemoLazy = lazy(() => import('./pages/MorioDemo'));
 
 
-import Wallet from './pages/wallet';
+const WalletLazy = lazy(() => import('./pages/wallet'));
 const MaonoVaultLandingLazy = lazy(() => import('./pages/maonovault-landing'));
 const MaonoVaultWeb3PageLazy = lazy(() => import('./pages/maonovault-web3'));
 const SettingsLazy = lazy(() => import('./pages/SettingsPage'));
@@ -54,6 +54,8 @@ const MyRewardsLazy = lazy(() => import('./pages/my-rewards'));
 const TradingPageLazy = lazy(() => import('./pages/trading'));
 const YukiDashboardPageLazy = lazy(() => import('./pages/YukiDashboard'));
 const StrategyDetailLazy = lazy(() => import('./components/trading/StrategyDetail'));
+// Visual Strategy Builder (heavy) — load only on demand
+const VisualStrategyBuilderLazy = lazy(() => import('./components/trading/VisualStrategyBuilder'));
 const OpportunitiesPageLazy = lazy(() => import('./pages/opportunities'));
 const UserManagementLazy = lazy(() => import('./pages/admin/UserManagement'));
 const DaoModerationLazy = lazy(() => import('./pages/admin/DaoModeration'));
@@ -112,47 +114,47 @@ import Login from './pages/login';
 import Register from './pages/register';
 import ForgotPassword from './pages/forgot-password';
 import ResetPassword from './pages/reset-password';
-import WalletDashboard from './components/WalletDashboard';
+const WalletDashboardLazy = lazy(() => import('./components/WalletDashboard'));
 import BatchTransfer from './components/batch-transfer';
 import Multisig from './components/multisig';
-import DaoTreasury from './components/dao-treasury';
+const DaoTreasuryLazy = lazy(() => import('./components/dao-treasury'));
 import ArchitectSetupPage from './pages/architect-setup';
 import PricingPage from './pages/pricing';
 import SubscriptionPage from './pages/subscription';
 import TransactionLimitsPage from './pages/transaction-limits';
-import AdminBillingDashboard from './pages/AdminBillingDashboard';
+const AdminBillingDashboardLazy = lazy(() => import('./pages/AdminBillingDashboard'));
 import ReputationLeaderboard from './pages/ReputationLeaderboard';
 import ReputationDashboard from "./pages/ReputationDashboard";
-import DaoSettings from './pages/DaoSettings';
-import SuperUserDashboard from './components/SuperUserDashboard';
+const DaoSettingsLazy = lazy(() => import('./pages/DaoSettings'));
+const SuperUserDashboardLazy = lazy(() => import('./components/SuperUserDashboard'));
 import NotFound from './pages/not-found';
-import PaymentReconciliation from './pages/PaymentReconciliation';
+const PaymentReconciliationLazy = lazy(() => import('./pages/PaymentReconciliation'));
 import MiniPayDemo from './pages/MiniPayDemo';
 import SuccessStories from './pages/success-stories';
 import WalletSetupPage from './pages/wallet-setup';
 import SubprofileSelectionPage from './pages/subprofile-selection';
 
 // DAO sub-pages
-import DaoTreasuryOverview from './pages/dao/dao_treasury_overview';
-import ContributorList from './pages/dao/contributor_list';
-import CommunityVaultAnalytics from './pages/dao/community_vault_analytics';
-import Disbursements from './pages/dao/disbursements';
-import Treasury from './pages/dao/treasury';
+const DaoTreasuryOverviewLazy = lazy(() => import('./pages/dao/dao_treasury_overview'));
+const ContributorListLazy = lazy(() => import('./pages/dao/contributor_list'));
+const CommunityVaultAnalyticsLazy = lazy(() => import('./pages/dao/community_vault_analytics'));
+const DisbursementsLazy = lazy(() => import('./pages/dao/disbursements'));
+const TreasuryLazy = lazy(() => import('./pages/dao/treasury'));
 
 // Payment pages
 // Checkout and Subscribe are lazy-loaded later; remove unused static imports
 
-// Cross-chain integration
-import CrossChainHub from './pages/CrossChainHub';
-import CrossChainBridgePage from './pages/CrossChainBridgePage';
-import CrossChainSwapPage from './pages/CrossChainSwapPage';
-import NFTMarketplace from './pages/NFTMarketplace';
+// Cross-chain integration (lazy-loaded)
+const CrossChainHubLazy = lazy(() => import('./pages/CrossChainHub'));
+const CrossChainBridgePageLazy = lazy(() => import('./pages/CrossChainBridgePage'));
+const CrossChainSwapPageLazy = lazy(() => import('./pages/CrossChainSwapPage'));
+const NFTMarketplaceLazy = lazy(() => import('./pages/NFTMarketplace'));
 
 // Subscription Management
 import SubscriptionManagement from './pages/SubscriptionManagement';
 
-// MaonoVault Management
-import MaonoVaultManagement from "@/pages/MaonoVaultManagement";
+// MaonoVault Management (lazy)
+const MaonoVaultManagementLazy = lazy(() => import('@/pages/MaonoVaultManagement'));
 
 // Vault & Staking Components (NEW - Session Complete)
 const VaultListPageLazy = lazy(() => import('./components/vaults/VaultListPage'));
@@ -187,6 +189,33 @@ const UnifiedDashboardLazy = lazy(() => import('./pages/unified-dashboard'));
 const RevenueDashboardLazy = lazy(() => import('./pages/RevenueDashboard'));
 const CheckoutLazy = lazy(() => import('./pages/Checkout'));
 const SubscribeLazy = lazy(() => import('./pages/Subscribe'));
+// Additional pages discovered but not yet referenced in routes
+const ActivityLazy = lazy(() => import('./pages/activity'));
+const AnalyticsDashboardLazy = lazy(() => import('./pages/analytics-dashboard'));
+const MorioHubLazy = lazy(() => import('./pages/morio-hub'));
+const PaymentRequestsLazy = lazy(() => import('./pages/payment-requests'));
+const ProtocolLazy = lazy(() => import('./pages/protocol'));
+const VaultSuccessLazy = lazy(() => import('./pages/vault-success'));
+const AuditViewerLazy = lazy(() => import('./pages/admin/AuditViewer'));
+const RecoveryDashboardLazy = lazy(() => import('./pages/admin/RecoveryDashboard'));
+const SecuritySettingsLazy = lazy(() => import('./pages/admin/SecuritySettings'));
+const VaultAnalyticsDashboardLazy = lazy(() => import('./pages/analytics/vault_analytics_dashboard'));
+const DaoMembersLazy = lazy(() => import('./pages/dao/[id]/members'));
+const DaoProgressBarLazy = lazy(() => import('./pages/dao/[id]/ProgressBar').then(m => ({ default: (m as any).default || (m as any).ProgressBar || (m as any).ProgressBarComponent })));
+const DaoRulesLazy = lazy(() => import('./pages/dao/[id]/rules'));
+const InviteTokenLazy = lazy(() => import('./pages/invite/[token]'));
+// Additional new pages (stubs) — heavy or missing pages to be code-split
+const ApiKeysLazy = lazy(() => import('./pages/api-keys'));
+const DeveloperConsoleLazy = lazy(() => import('./pages/developer-console'));
+const WalletIntegrationsLazy = lazy(() => import('./pages/wallet-integrations'));
+const OnboardingWizardLazy = lazy(() => import('./pages/onboarding'));
+const AccountSecurityLazy = lazy(() => import('./pages/account-security'));
+const NotificationsSettingsLazy = lazy(() => import('./pages/notifications'));
+const SystemStatusLazy = lazy(() => import('./pages/system-status'));
+const ChartsHubLazy = lazy(() => import('./pages/charts-hub'));
+const StrategyGalleryLazy = lazy(() => import('./pages/strategy-gallery'));
+const ApiDocsLazy = lazy(() => import('./pages/api-docs'));
+const BillingLazy = lazy(() => import('./pages/billing'));
 
 // Protected/Public wrappers (unchanged)
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -345,6 +374,18 @@ function App() {
                         <Route path="/daos" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><DAOsLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/referrals" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><ReferralsLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/settings" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><SettingsLazy /></Suspense></ProtectedRoute>} />
+                        {/* New feature pages (code-split stubs) */}
+                        <Route path="/developer/api-keys" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><ApiKeysLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/developer/console" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><DeveloperConsoleLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/wallet/integrations" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><WalletIntegrationsLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/onboarding" element={<Suspense fallback={<PageLoading />}><OnboardingWizardLazy /></Suspense>} />
+                        <Route path="/account/security" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><AccountSecurityLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/notifications" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><NotificationsSettingsLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/status" element={<Suspense fallback={<PageLoading />}><SystemStatusLazy /></Suspense>} />
+                        <Route path="/charts" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><ChartsHubLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/strategies/gallery" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><StrategyGalleryLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/docs/api" element={<Suspense fallback={<PageLoading />}><ApiDocsLazy /></Suspense>} />
+                        <Route path="/billing" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><BillingLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/session-settings" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><SessionSettingsLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/subscription" element={<ProtectedRoute><SubscriptionPage /></ProtectedRoute>} />
                         <Route path="/transaction-limits" element={<TransactionLimitsPage />} />
@@ -358,7 +399,7 @@ function App() {
                         <Route path="/investment-pools/:id" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><InvestmentPoolDetailLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/escrow" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><EscrowPageLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/escrow/accept/:inviteCode" element={<Suspense fallback={<PageLoading />}><EscrowAcceptLazy /></Suspense>} />
-                        <Route path="/nft-marketplace" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><NFTMarketplace /></Suspense></ProtectedRoute>} />
+                        <Route path="/nft-marketplace" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><NFTMarketplaceLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/strategy/:id" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><StrategyDetailLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/morio" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><MorioDemoLazy /></Suspense></ProtectedRoute>} />
                         {/* Blog routes */}
@@ -369,20 +410,20 @@ function App() {
                         <Route path="/success-stories/submit" element={<Suspense fallback={<PageLoading />}><SubmitSuccessStory /></Suspense>} />
                         {/* Nested DAO routes */}
                         <Route path="/dao" element={<ProtectedRoute><DaoLayout /></ProtectedRoute>}>
-                          <Route path="settings" element={<DaoSettings />} />
-                          <Route path="treasury" element={<Treasury />} />
-                          <Route path="treasury-overview" element={<DaoTreasuryOverview />} />
-                          <Route path="contributors" element={<ContributorList />} />
-                          <Route path="analytics" element={<CommunityVaultAnalytics />} />
-                          <Route path="disbursements" element={<Disbursements />} />
+                          <Route path="settings" element={<Suspense fallback={<PageLoading />}><DaoSettingsLazy /></Suspense>} />
+                          <Route path="treasury" element={<Suspense fallback={<PageLoading />}><TreasuryLazy /></Suspense>} />
+                          <Route path="treasury-overview" element={<Suspense fallback={<PageLoading />}><DaoTreasuryOverviewLazy /></Suspense>} />
+                          <Route path="contributors" element={<Suspense fallback={<PageLoading />}><ContributorListLazy /></Suspense>} />
+                          <Route path="analytics" element={<Suspense fallback={<PageLoading />}><CommunityVaultAnalyticsLazy /></Suspense>} />
+                          <Route path="disbursements" element={<Suspense fallback={<PageLoading />}><DisbursementsLazy /></Suspense>} />
                         </Route>
                         {/* Nested Wallet routes */}
                         <Route path="/wallet" element={<ProtectedRoute><WalletLayout /></ProtectedRoute>}>
-                          <Route index element={<Wallet />} />
-                          <Route path="dashboard" element={<WalletDashboard />} />
+                          <Route index element={<Suspense fallback={<PageLoading />}><WalletLazy /></Suspense>} />
+                          <Route path="dashboard" element={<Suspense fallback={<PageLoading />}><WalletDashboardLazy /></Suspense>} />
                           <Route path="batch-transfer" element={<BatchTransfer />} />
                           <Route path="multisig" element={<Multisig />} />
-                          <Route path="dao-treasury" element={<DaoTreasury />} />
+                          <Route path="dao-treasury" element={<Suspense fallback={<PageLoading />}><DaoTreasuryLazy /></Suspense>} />
                           <Route path="bill-split" element={<Suspense fallback={<PageLoading />}><BillSplitPageLazy /></Suspense>} />
                           <Route path="recurring-payments" element={<Suspense fallback={<PageLoading />}><RecurringPaymentsPageLazy /></Suspense>} />
                         </Route>
@@ -419,11 +460,11 @@ function App() {
                           <Route path="achievements" element={<Suspense fallback={<PageLoading />}><AdminAchievementsLazy /></Suspense>} />
                           <Route path="announcements" element={<Suspense fallback={<PageLoading />}><AdminAnnouncementsLazy /></Suspense>} />
                           <Route path="dao-analytics" element={<Suspense fallback={<PageLoading />}><AdminDAOAnalyticsLazy /></Suspense>} />
-                          <Route path="billing" element={<ProtectedRoute><AdminBillingDashboard /></ProtectedRoute>} />
-                          <Route path="payments" element={<ProtectedRoute><PaymentReconciliation /></ProtectedRoute>} />
+                          <Route path="billing" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><AdminBillingDashboardLazy /></Suspense></ProtectedRoute>} />
+                          <Route path="payments" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><PaymentReconciliationLazy /></Suspense></ProtectedRoute>} />
                         </Route>
                         {/* Legacy Admin routes */}
-                        <Route path="/superuser" element={<SuperuserRoute><SuperUserDashboard /></SuperuserRoute>} />
+                        <Route path="/superuser" element={<SuperuserRoute><Suspense fallback={<PageLoading />}><SuperUserDashboardLazy /></Suspense></SuperuserRoute>} />
                         <Route path="/admin-old/users" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><UserManagementLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/admin-old/daos" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><DaoModerationLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/admin-old/settings" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><SystemSettingsLazy /></Suspense></ProtectedRoute>} />
@@ -437,6 +478,9 @@ function App() {
                         <Route path="/subprofile-selection" element={<ProtectedRoute><SubprofileSelectionPage /></ProtectedRoute>} />
                         {/* Unified Trading Hub - Scalable to 100+ exchanges */}
                         <Route path="/trading" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><TradingPageLazy /></Suspense></ProtectedRoute>} />
+                        {/* Visual Strategy Builder (code-split) */}
+                        <Route path="/builder" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><VisualStrategyBuilderLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/builder/:id" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><VisualStrategyBuilderLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/yuki-dashboard" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><YukiDashboardPageLazy /></Suspense></ProtectedRoute>} />
                         {/* Legacy Exchange Markets - Phase 1 & 2 CCXT Integration */}
                         <Route path="/exchange-markets" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><ExchangeMarketsLazy /></Suspense></ProtectedRoute>} />
@@ -464,9 +508,24 @@ function App() {
                         <Route path="/my-vaults" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><MyVaultsPageLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/staking" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><StakingComponentLazy /></Suspense></ProtectedRoute>} />
                         {/* Cross-chain bridge route */}
-                        <Route path="/cross-chain" element={<ProtectedRoute><CrossChainHub /></ProtectedRoute>} />
-                        <Route path="/cross-chain/bridge" element={<ProtectedRoute><CrossChainBridgePage /></ProtectedRoute>} />
-                        <Route path="/cross-chain/swap" element={<ProtectedRoute><CrossChainSwapPage /></ProtectedRoute>} />
+                        <Route path="/cross-chain" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><CrossChainHubLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/cross-chain/bridge" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><CrossChainBridgePageLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/cross-chain/swap" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><CrossChainSwapPageLazy /></Suspense></ProtectedRoute>} />
+                        {/* Additional discovered pages (previously unreferenced) */}
+                        <Route path="/activity" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><ActivityLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/analytics-dashboard" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><AnalyticsDashboardLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/morio-hub" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><MorioHubLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/payment-requests" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><PaymentRequestsLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/protocol" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><ProtocolLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/vault-success" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><VaultSuccessLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/admin/audit-viewer" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><AuditViewerLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/admin/recovery" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><RecoveryDashboardLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/admin/security-settings" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><SecuritySettingsLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/analytics/vaults" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><VaultAnalyticsDashboardLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/dao/:id/members" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><DaoMembersLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/dao/:id/progress" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><DaoProgressBarLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/dao/:id/rules" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><DaoRulesLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/invite/:token" element={<Suspense fallback={<PageLoading />}><InviteTokenLazy /></Suspense>} />
                         {/* Catch-all 404 */}
                         <Route path="*" element={<NotFound />} />
                       </Routes>

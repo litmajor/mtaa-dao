@@ -1,31 +1,8 @@
 // --- User Profile & Settings ---
 // Add these methods to the main DatabaseStorage class below:
 import { db } from './db';
-import { eq, inArray, or, and, desc, sql, isNull } from 'drizzle-orm';
-import { users, daos, daoMemberships, votes, contributions, vaults, budgetPlans, billingHistory, tasks, proposals, walletTransactions, config, logs, sessions, chains, notifications, taskHistory, proposalComments, proposalLikes, commentLikes, daoMessages, notificationPreferences, auditLogs, systemLogs, notificationHistory } from '../shared/schema';
-
-
-// Deduct a fee from a vault's balance
-export async function deductVaultFee(vaultId: string, fee: number): Promise<boolean> {
-  // Fetch the vault
-  const [vault] = await db.select().from(vaults).where(eq(vaults.id, vaultId));
-  if (!vault || vault.balance == null) return false;
-  const currentBalance = typeof vault.balance === 'string' ? parseFloat(vault.balance) : vault.balance;
-  if (isNaN(currentBalance) || currentBalance < fee) return false;
-  // Deduct the fee
-  const newBalance = (currentBalance - fee).toString();
-  await db.update(vaults)
-    .set({ balance: newBalance, updatedAt: new Date() })
-    .where(eq(vaults.id, vaultId));
-  return true;
-}
-
-// Utility to check if a DAO is premium
-export function isDaoPremium(dao: Dao): boolean {
-  if (!dao || !dao.plan) return false;
-  // Assuming 'plan' is a string field that can be 'free', 'premium',
-  return dao.plan === 'premium';
-}
+import { eq, inArray, or, and, desc, sql, isNull, not } from 'drizzle-orm';
+import { users, daos, daoMemberships, votes, contributions, vaults, budgetPlans, billingHistory, tasks, proposals, walletTransactions, config, logs, sessions, chains, notifications, taskHistory, proposalComments, proposalLikes, commentLikes, daoMessages, userNotificationPreferences, auditLogs, systemLogs, notificationHistory } from '../shared/schema';
 
 
 // Drizzle type aliases
@@ -136,7 +113,6 @@ export interface IStorage {
   // Notification history operations
   createNotificationHistory(userId: string, type: string, title: string, message: string, metadata?: any): Promise<any>;
   getUserNotificationHistory(userId: string, args: { limit?: number; offset?: number }): Promise<any[]>;
-  markNotificationAsRead(notificationId: string, userId: string): Promise<any>;
 }
 
 export interface DaoAnalytics {
@@ -150,6 +126,21 @@ export interface DaoAnalytics {
 }
 
 export class DatabaseStorage implements IStorage {
+  // Lazily reference the shared `db` to avoid circular initialization order
+  private db!: typeof db;
+
+  constructor() {
+    // Define a lazy getter so accessing `this.db` resolves to the imported
+    // `db` at access time rather than during module evaluation. This avoids
+    // `Cannot access 'db' before initialization` when modules circularly
+    // reference each other during startup.
+    Object.defineProperty(this, 'db', {
+      get: () => db,
+      enumerable: true,
+      configurable: true,
+    });
+  }
+
   /**
    * Update user info by userId. Accepts any allowed user fields.
    */
@@ -169,7 +160,7 @@ export class DatabaseStorage implements IStorage {
     if (!result[0]) throw new Error('Failed to update user');
     return result[0];
   }
-  private db = db; // Make db instance available within the class
+
 
   async incrementDaoMemberCount(daoId: string): Promise<any> {
     if (!daoId) throw new Error('DAO ID required');
@@ -273,19 +264,19 @@ export class DatabaseStorage implements IStorage {
      } else {
        whereClause = eq(tasks.daoId, daoId);
      }
-     const result = await this.db.select().from(tasks).where(whereClause);
-     return result.length;
+    const result = await this.db.select({ count: sql`count(*)` }).from(tasks).where(whereClause);
+    return Number(result[0]?.count) || 0;
 }
 
   async getLogCount(): Promise<number> {
-    const result = await this.db.select().from(logs);
-    return result.length;
+    const result = await this.db.select({ count: sql`count(*)` }).from(logs);
+    return Number(result[0]?.count) || 0;
   }
 
 
   async getBillingCount(): Promise<number> {
-    const result = await this.db.select().from(billingHistory);
-    return result.length;
+    const result = await this.db.select({ count: sql`count(*)` }).from(billingHistory);
+    return Number(result[0]?.count) || 0;
   }
 
   async getChainInfo(): Promise<{ chainId: number; name: string; rpcUrl: string }> {
@@ -300,16 +291,13 @@ export class DatabaseStorage implements IStorage {
 
 
   async getTopMembers({ limit = 10 }: { limit?: number } = {}): Promise<{ userId: string; count: number }[]> {
-    // Top members by contribution count
-    const allContributions = await this.db.select().from(contributions);
-    const counts: Record<string, number> = {};
-    allContributions.forEach(c => {
-      if (c.userId) counts[c.userId] = (counts[c.userId] || 0) + 1;
-    });
-    return Object.entries(counts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, limit)
-      .map(([userId, count]) => ({ userId, count }));
+    // Top members by contribution count (DB-side GROUP BY)
+    const rows = await this.db.select({ userId: contributions.userId, cnt: sql`count(*)` })
+      .from(contributions)
+      .groupBy(contributions.userId)
+      .orderBy(desc(sql`count(*)`))
+      .limit(limit);
+    return rows.map(r => ({ userId: r.userId as string, count: Number((r as any).cnt) }));
   }
   async createUser(userData: any): Promise<any> {
     // Accept only allowed fields for user creation
@@ -368,8 +356,8 @@ export class DatabaseStorage implements IStorage {
     return { google: user.googleId || null, telegram: user.telegramId || null };
   }
   async updateUserSocialLinks(userId: string, data: any): Promise<any> {
-    // Accept only fields that exist in your schema, e.g. phone, email, etc.
-    const allowed = (({ phone, email }) => ({ phone, email }))(data);
+    // Only allow social fields (googleId, telegramId, twitterHandle, linkedin, website)
+    const allowed = (({ googleId, telegramId, twitterHandle, linkedin, website }) => ({ googleId, telegramId, twitterHandle, linkedin, website }))(data);
     (allowed as any).updatedAt = new Date();
     const result = await this.db.update(users).set(allowed).where(eq(users.id, userId)).returning();
     if (!result[0]) throw new Error('Failed to update social links');
@@ -416,7 +404,28 @@ export class DatabaseStorage implements IStorage {
     if (!result) throw new Error('Session not found or already revoked');
   }
   async deleteUserAccount(userId: string): Promise<void> {
-    await this.db.delete(users).where(eq(users.id, userId));
+    if (!userId) throw new Error('User ID required');
+    const now = new Date();
+    return await this.db.transaction(async tx => {
+      // Soft-delete user and anonymize key PII fields
+      await tx.update(users).set({
+        deleted_at: now as any,
+        email: `deleted+${userId}@example.invalid`,
+        phone: null,
+        name: 'Deleted User',
+        avatar: null,
+        updatedAt: now
+      } as any).where(eq(users.id, userId));
+
+      // Remove active sessions
+      await tx.delete(sessions).where(eq(sessions.userId, userId));
+
+      // Mark DAO memberships as removed
+      await tx.update(daoMemberships).set({ status: 'removed', updatedAt: now }).where(eq(daoMemberships.userId, userId));
+
+      // Mark contributions as anonymous to avoid exposing PII while preserving referential integrity
+      await tx.update(contributions).set({ isAnonymous: true, updatedAt: now }).where(eq(contributions.userId, userId));
+    });
   }
   async createWalletTransaction(data: WalletTransactionInput): Promise<any> {
     if (!data.amount || !data.currency || !data.type || !data.status || !data.provider) {
@@ -445,13 +454,22 @@ async getBudgetPlanCount(userId: string, month: string): Promise<number> {
 
   async createDao(dao: any): Promise<Dao> {
     if (!dao.name || !dao.creatorId) throw new Error('Name and creatorId required');
-     dao.createdAt = new Date();
-     dao.updatedAt = new Date();
-     dao.memberCount = 1; // Creator is the first member
-     const result = await this.db.insert(daos).values(dao).returning();
-     if (!result[0]) throw new Error('Failed to create DAO');
-     await this.createDaoMembership({ daoId: result[0].id, userId: dao.creatorId, status: 'approved', role: 'admin' });
-     return result[0];
+    const now = new Date();
+    const toInsert = { ...dao, createdAt: now, updatedAt: now, memberCount: 1 } as any;
+    return await this.db.transaction(async tx => {
+      const [created] = await tx.insert(daos).values(toInsert).returning();
+      if (!created) throw new Error('Failed to create DAO');
+      const membership = {
+        daoId: created.id,
+        userId: dao.creatorId,
+        status: 'approved',
+        role: 'admin',
+        createdAt: now,
+        updatedAt: now
+      } as any;
+      await tx.insert(daoMemberships).values(membership).returning();
+      return created;
+    });
    }
 
   async setDaoInviteCode(daoId: string, code: string): Promise<any> {
@@ -482,23 +500,19 @@ async getBudgetPlanCount(userId: string, month: string): Promise<number> {
   }
 
   async getReferralLeaderboard(limit = 10): Promise<any> {
-    // Aggregate referrals and join user info
-    const allUsers = await this.db.select().from(users);
-    const counts: Record<string, { count: number, user: any }> = {};
-    allUsers.forEach(u => {
-      if (u.referredBy) {
-        if (!counts[u.referredBy]) {
-          const refUser = allUsers.find(x => x.id === u.referredBy);
-          counts[u.referredBy] = { count: 0, user: refUser };
-        }
-        counts[u.referredBy].count++;
-      }
-    });
-    const leaderboard = Object.entries(counts)
-      .map(([userId, { count, user }]) => ({ userId, count, user }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, limit);
-    return leaderboard;
+    // DB-side aggregation: count referrals grouped by referrer id
+    const rows = await this.db.select({ referrerId: users.referredBy, cnt: sql`count(*)` })
+      .from(users)
+      .where(not(isNull(users.referredBy)))
+      .groupBy(users.referredBy)
+      .orderBy(desc(sql`count(*)`))
+      .limit(limit);
+    const refIds = rows.map(r => r.referrerId).filter(Boolean) as string[];
+    if (refIds.length === 0) return [];
+    const refUsers = await this.db.select().from(users).where(inArray(users.id, refIds));
+    const userMap: Record<string, any> = {};
+    refUsers.forEach(u => { userMap[u.id] = u; });
+    return rows.map(r => ({ userId: r.referrerId as string, count: Number((r as any).cnt), user: userMap[r.referrerId as string] || null }));
   }
 
   async getUser(userId: string): Promise<any> {
@@ -535,9 +549,9 @@ async getBudgetPlanCount(userId: string, month: string): Promise<number> {
 
   async createProposal(proposal: any): Promise<any> {
     if (!proposal.title || !proposal.daoId) throw new Error('Proposal must have title and daoId');
-    proposal.createdAt = new Date();
-    proposal.updatedAt = new Date();
-    const result = await this.db.insert(proposals).values(proposal).returning();
+    const now = new Date();
+    const toInsert = { ...proposal, createdAt: now, updatedAt: now } as any;
+    const result = await this.db.insert(proposals).values(toInsert).returning();
     if (!result[0]) throw new Error('Failed to create proposal');
     return result[0];
   }
@@ -564,16 +578,20 @@ async getBudgetPlanCount(userId: string, month: string): Promise<number> {
 }
 
   async updateProposalVotes(proposalId: string, voteType: string): Promise<any> {
-    // Transactionally increment vote count
-    const proposal = await this.getProposal(proposalId);
-    if (!proposal) throw new Error('Proposal not found');
-    const field = voteType === 'yes' ? 'yesVotes' : 'noVotes';
-    const update: any = { updatedAt: new Date() };
-    update[field] = (proposal[field] || 0) + 1;
-    const result = await this.db.update(proposals)
-      .set(update)
-      .where(eq(proposals.id, proposalId))
-      .returning();
+    if (!proposalId) throw new Error('Proposal ID required');
+    const isYes = voteType === 'yes';
+    let result;
+    if (isYes) {
+      result = await this.db.update(proposals)
+        .set({ yesVotes: sql`${proposals.yesVotes} + 1`, updatedAt: new Date() })
+        .where(eq(proposals.id, proposalId))
+        .returning();
+    } else {
+      result = await this.db.update(proposals)
+        .set({ noVotes: sql`${proposals.noVotes} + 1`, updatedAt: new Date() })
+        .where(eq(proposals.id, proposalId))
+        .returning();
+    }
     if (!result[0]) throw new Error('Failed to update proposal votes');
     return result[0];
   }
@@ -588,6 +606,13 @@ async getBudgetPlanCount(userId: string, month: string): Promise<number> {
 
   async createVote(vote: any): Promise<any> {
     if (!vote.proposalId || !vote.userId) throw new Error('Vote must have proposalId and userId');
+    // Ensure daoId is present on vote
+    if (!vote.daoId) {
+      const prop = await this.db.select({ daoId: proposals.daoId }).from(proposals)
+        .where(eq(proposals.id, vote.proposalId)).limit(1);
+      if (!prop[0]) throw new Error('Proposal not found for vote');
+      vote.daoId = prop[0].daoId;
+    }
     vote.createdAt = new Date();
     vote.updatedAt = new Date();
     const result = await this.db.insert(votes).values(vote).returning();
@@ -601,7 +626,6 @@ async getBudgetPlanCount(userId: string, month: string): Promise<number> {
   }
 
   async getContributions(userId?: string, daoId?: string): Promise<any> {
-    let whereClause = undefined;
     if (userId && daoId) {
       return await this.db.select().from(contributions)
         .where(and(eq(contributions.userId, userId), eq(contributions.daoId, daoId)))
@@ -621,15 +645,15 @@ async getBudgetPlanCount(userId: string, month: string): Promise<number> {
 
   async getContributionsCount(userId: string, daoId: string): Promise<number> {
     if (!userId || !daoId) throw new Error('User ID and DAO ID required');
-    const result = await this.db.select().from(contributions)
+    const result = await this.db.select({ count: sql`count(*)` }).from(contributions)
       .where(and(eq(contributions.userId, userId), eq(contributions.daoId, daoId)));
-    return result.length;
+    return Number(result[0]?.count) || 0;
   }
   async getVotesCount(daoId: string, proposalId: string): Promise<number> {
-    if (!proposalId || !daoId) throw new Error('User ID and DAO ID required');
-    const result = await this.db.select().from(votes)
-      .where(and(eq(votes.userId, proposalId), eq(votes.daoId, daoId)));
-    return result.length;
+    if (!proposalId || !daoId) throw new Error('Proposal ID and DAO ID required');
+    const result = await this.db.select({ count: sql`count(*)` }).from(votes)
+      .where(and(eq(votes.proposalId, proposalId), eq(votes.daoId, daoId)));
+    return Number(result[0]?.count) || 0;
   }
 
 
@@ -642,9 +666,9 @@ async getBudgetPlanCount(userId: string, month: string): Promise<number> {
 
   async createContribution(contribution: any): Promise<any> {
     if (!contribution.userId || !contribution.daoId) throw new Error('Contribution must have userId and daoId');
-    contribution.createdAt = new Date();
-    contribution.updatedAt = new Date();
-    const result = await this.db.insert(contributions).values(contribution).returning();
+    const now = new Date();
+    const toInsert = { ...contribution, createdAt: now, updatedAt: now } as any;
+    const result = await this.db.insert(contributions).values(toInsert).returning();
     if (!result[0]) throw new Error('Failed to create contribution');
     return result[0];
   }
@@ -665,18 +689,45 @@ async getBudgetPlanCount(userId: string, month: string): Promise<number> {
     return await this.db.select().from(vaults).where(eq(vaults.userId, userId));
   }
 
+  // Deduct a fee from a vault's balance (class method)
+  async deductVaultFee(vaultId: string, fee: number): Promise<boolean> {
+    const [vault] = await this.db.select().from(vaults).where(eq(vaults.id, vaultId));
+    if (!vault || vault.balance == null) return false;
+    const currentBalance = typeof vault.balance === 'string' ? parseFloat(vault.balance) : vault.balance;
+    if (isNaN(currentBalance) || currentBalance < fee) return false;
+    const newBalance = (currentBalance - fee).toString();
+    await this.db.update(vaults)
+      .set({ balance: newBalance, updatedAt: new Date() })
+      .where(eq(vaults.id, vaultId));
+    return true;
+  }
+
+  // Utility to check if a DAO is premium
+  isDaoPremium(dao: Dao): boolean {
+    if (!dao || !(dao as any).plan) return false;
+    return (dao as any).plan === 'premium';
+  }
+
   async upsertVault(vault: any): Promise<any> {
     if (!vault.id) throw new Error('Vault must have id');
-    vault.updatedAt = new Date();
-    const updated = await this.db.update(vaults)
-      .set(vault)
-      .where(eq(vaults.id, vault.id))
-      .returning();
-    if (updated[0]) return updated[0];
-    vault.createdAt = new Date();
-    const inserted = await this.db.insert(vaults).values(vault).returning();
-    if (!inserted[0]) throw new Error('Failed to upsert vault');
-    return inserted[0];
+    const now = new Date();
+    vault.updatedAt = now;
+    vault.createdAt = vault.createdAt || now;
+    const [result] = await this.db.insert(vaults).values(vault).onConflictDoUpdate({
+      target: vaults.id,
+      set: {
+        name: vault.name ?? vaults.name,
+        description: vault.description ?? vaults.description,
+        currency: vault.currency ?? vaults.currency,
+        address: vault.address ?? vaults.address,
+        balance: vault.balance ?? vaults.balance,
+        isActive: vault.isActive ?? vaults.isActive,
+        vaultConfig: vault.vaultConfig ?? vaults.vaultConfig,
+        updatedAt: now
+      }
+    }).returning();
+    if (!result) throw new Error('Failed to upsert vault');
+    return result;
   }
 
   async getVaultTransactions(vaultId: string, limit = 10, offset = 0): Promise<any[]> {
@@ -696,25 +747,21 @@ async getBudgetPlanCount(userId: string, month: string): Promise<number> {
 
   async upsertBudgetPlan(plan: any): Promise<any> {
     if (!plan.id) throw new Error('Budget plan must have id');
-    plan.updatedAt = new Date();
-    const updated = await this.db.update(budgetPlans)
-      .set(plan)
-      .where(eq(budgetPlans.id, plan.id))
-      .returning();
-    if (updated[0]) return updated[0];
-    plan.createdAt = new Date();
-    const inserted = await this.db.insert(budgetPlans).values(plan).returning();
-    if (!inserted[0]) throw new Error('Failed to upsert budget plan');
-    return inserted[0];
-  }
-  async updateDaoInviteCode(daoId: string, code: string): Promise<any> {
-    if (!daoId || !code) throw new Error('DAO ID and code required');
-    const result = await this.db.update(daos)
-      .set({ inviteCode: code, updatedAt: new Date() })
-      .where(eq(daos.id, daoId))
-      .returning();
-    if (!result[0]) throw new Error('Failed to update invite code');
-    return result[0];
+    const now = new Date();
+    plan.updatedAt = now;
+    plan.createdAt = plan.createdAt || now;
+    const [result] = await this.db.insert(budgetPlans).values(plan).onConflictDoUpdate({
+      target: budgetPlans.id,
+      set: {
+        category: plan.category ?? budgetPlans.category,
+        allocatedAmount: plan.allocatedAmount ?? budgetPlans.allocatedAmount,
+        spentAmount: plan.spentAmount ?? budgetPlans.spentAmount,
+        month: plan.month ?? budgetPlans.month,
+        updatedAt: now
+      }
+    }).returning();
+    if (!result) throw new Error('Failed to upsert budget plan');
+    return result;
   }
 
   async getTasks(daoId?: string, status?: string): Promise<any> {
@@ -734,9 +781,9 @@ async getBudgetPlanCount(userId: string, month: string): Promise<number> {
 
   async createTask(task: any): Promise<any> {
     if (!task.title || !task.daoId) throw new Error('Task must have title and daoId');
-    task.createdAt = new Date();
-    task.updatedAt = new Date();
-    const result = await this.db.insert(tasks).values(task).returning();
+    const now = new Date();
+    const toInsert = { ...task, createdAt: now, updatedAt: now } as any;
+    const result = await this.db.insert(tasks).values(toInsert).returning();
     if (!result[0]) throw new Error('Failed to create task');
     return result[0];
   }
@@ -834,7 +881,11 @@ async getBudgetPlanCount(userId: string, month: string): Promise<number> {
 
   async getAllDaoBillingHistory(): Promise<any> {
     // Return all billing history entries sorted by createdAt desc
-    if (!billingHistory) throw new Error('Billing history table not found');
+    if (!billingHistory) {
+      throw new Error('Billing history table not found');
+    }
+
+    
     return await this.db.select().from(billingHistory).orderBy(desc(billingHistory.createdAt));
   }
 
@@ -850,33 +901,38 @@ async getBudgetPlanCount(userId: string, month: string): Promise<number> {
   async getDaoAnalytics(daoId: string): Promise<DaoAnalytics> {
     if (!daoId) throw new Error('DAO ID required');
 
-    const [dao, members, proposals, contributions, vaults] = await Promise.all([
+    const [dao, members, proposalRows, contributions, vaultRows] = await Promise.all([
       this.getDao(daoId),
       this.getDaoMembershipsByStatus(daoId, 'approved'),
-      this.getProposals().then((proposals: Proposal[]) =>
-        proposals.filter((p: Proposal) => p.daoId === daoId && p.status === 'active')
-      ),
+      // Query proposals filtered by DAO and active status directly in DB
+      this.db.select().from(proposals).where(and(eq(proposals.daoId, daoId), eq(proposals.status, 'active'))),
       this.getContributions(undefined, daoId),
-      this.getUserVaults(daoId),
+      // Fetch vaults belonging to the DAO
+      this.db.select().from(vaults).where(eq(vaults.daoId, daoId)),
     ]);
 
     const recentActivity = [
-      ...proposals.map((p: Proposal) => ({ type: 'proposal' as const, createdAt: p.createdAt })),
+      ...proposalRows.map((p: Proposal) => ({ type: 'proposal' as const, createdAt: p.createdAt })),
       ...contributions.map((c: Contribution) => ({ type: 'contribution' as const, createdAt: c.createdAt })),
       ...members.map((m: DaoMembership) => ({ type: 'membership' as const, createdAt: m.createdAt })),
     ].sort((a: { createdAt: Date }, b: { createdAt: Date }) =>
       b.createdAt.getTime() - a.createdAt.getTime()
     ).slice(0, 10);
 
-const vaultBalance = vaults.reduce((sum: number, v: Vault) => sum + (typeof v.balance === 'string' ? parseFloat(v.balance) || 0 : 0), 0);
+    const vaultBalance = vaultRows.reduce((sum: number, v: Vault) => {
+      const bal = typeof v.balance === 'string'
+        ? parseFloat(v.balance) || 0
+        : (v.balance ?? 0);
+      return sum + (typeof bal === 'number' ? bal : Number(bal));
+    }, 0);
     return {
       memberCount: members.length,
-      activeProposals: proposals.length,
+      activeProposals: proposalRows.length,
       totalContributions: contributions.length,
       vaultBalance,
       recentActivity,
       createdAt: dao.createdAt,
-      updatedAt: dao.updatedAt,
+      updatedAt: dao.updatedAt, 
     };
   }
 
@@ -886,13 +942,11 @@ const vaultBalance = vaults.reduce((sum: number, v: Vault) => sum + (typeof v.ba
    * Returns true if at least one exists, false otherwise.
    */
   async hasActiveContributions(userId: string, daoId: string): Promise<boolean> {
-    // Example implementation: check for at least one contribution or vote
-    const contributions = await this.getContributions(userId, daoId);
-    if (contributions && contributions.length > 0) return true;
-    if (typeof this.getVotesByUserAndDao === "function") {
-      const votes = await this.getVotesByUserAndDao(userId, daoId);
-      if (votes && votes.length > 0) return true;
-    }
+    if (!userId || !daoId) throw new Error('User ID and DAO ID required');
+    const contribs = await this.db.select().from(contributions).where(and(eq(contributions.userId, userId), eq(contributions.daoId, daoId))).limit(1);
+    if (contribs && contribs.length > 0) return true;
+    const votesRes = await this.db.select().from(votes).where(and(eq(votes.userId, userId), eq(votes.daoId, daoId))).limit(1);
+    if (votesRes && votesRes.length > 0) return true;
     return false;
   }
 
@@ -935,7 +989,7 @@ const vaultBalance = vaults.reduce((sum: number, v: Vault) => sum + (typeof v.ba
       return Number(result[0]?.count) || 0;
     } catch (error) {
       console.error('Error getting unread notification count:', error);
-      return 0;
+      throw error;
     }
   }
 
@@ -990,7 +1044,7 @@ const vaultBalance = vaults.reduce((sum: number, v: Vault) => sum + (typeof v.ba
       return notification;
     } catch (error) {
       console.error('Error marking notification as read:', error);
-      return null;
+      throw error;
     }
   }
 
@@ -1019,26 +1073,33 @@ const vaultBalance = vaults.reduce((sum: number, v: Vault) => sum + (typeof v.ba
       return !!result;
     } catch (error) {
       console.error('Error deleting notification:', error);
-      return false;
+      throw error;
     }
   }
 
   async getUserNotificationPreferences(userId: string): Promise<any> {
     try {
       const [preferences] = await this.db.select()
-        .from(notificationPreferences)
-        .where(eq(notificationPreferences.userId, userId));
+        .from(userNotificationPreferences)
+          .where(eq(userNotificationPreferences.userId, userId));
 
       if (!preferences) {
         // Create default preferences
-        const [newPreferences] = await this.db.insert(notificationPreferences)
+        const [newPreferences] = await this.db.insert(userNotificationPreferences)
           .values({
             userId,
             emailNotifications: true,
             pushNotifications: true,
-            daoUpdates: true,
+            inAppNotifications: true,
+            smsNotifications: false,
             proposalUpdates: true,
-            taskUpdates: true,
+            treasuryUpdates: true,
+            membershipUpdates: true,
+            votingReminders: true,
+            daoAnnouncements: true,
+            weeklyDigest: false,
+            dailyDigest: false,
+            unsubscribeAll: false,
           })
           .returning();
 
@@ -1054,9 +1115,9 @@ const vaultBalance = vaults.reduce((sum: number, v: Vault) => sum + (typeof v.ba
 
   async updateUserNotificationPreferences(userId: string, updates: any): Promise<any> {
     try {
-      const [preferences] = await this.db.update(notificationPreferences)
+      const [preferences] = await this.db.update(userNotificationPreferences)
         .set({ ...updates, updatedAt: new Date() })
-        .where(eq(notificationPreferences.userId, userId))
+        .where(eq(userNotificationPreferences.userId, userId))
         .returning();
 
       return preferences;
@@ -1070,10 +1131,10 @@ const vaultBalance = vaults.reduce((sum: number, v: Vault) => sum + (typeof v.ba
     try {
       return await this.db.select({ id: users.id })
         .from(users)
-        .where(eq(users.isBanned, false));
+        .where(and(eq(users.isBanned, false), isNull(users.deleted_at)));
     } catch (error) {
       console.error('Error fetching active users:', error);
-      return [];
+      throw error;
     }
   }
 
@@ -1251,7 +1312,7 @@ export const revokeUserSession = (userId: string, sessionId: string) => storage.
 export const deleteUserAccount = (userId: string) => storage.deleteUserAccount(userId);
 export const getBudgetPlanCount = (userId: string, month: string) => storage.getBudgetPlanCount(userId, month);
 export const createDao = (dao: any) => storage.createDao(dao);
-export const updateDaoInviteCode = (daoId: string, code: string) => storage.updateDaoInviteCode(daoId, code);
+// `updateDaoInviteCode` was removed — use `setDaoInviteCode` instead
 export const deleteProposal = (id: string, userId: string) => storage.deleteProposal(id, userId);
 export const updateProposal = (id: string, data: any, userId: string) => storage.updateProposal(id, data, userId);
 export const getVaultTransactions = (vaultId: string, limit?: number, offset?: number) => storage.getVaultTransactions(vaultId, limit, offset);
@@ -1343,52 +1404,40 @@ export async function toggleProposalLike(
   userId: string,
   daoId?: string
 ): Promise<{ liked: boolean; likesCount: number }> {
-  // Check if like already exists
-  const [existingLike] = await db
-    .select()
-    .from(proposalLikes)
-    .where(
-      and(
-        eq(proposalLikes.proposalId, proposalId as any),
-        eq(proposalLikes.userId, userId)
-      )
-    );
-  
-  if (existingLike) {
-    // Remove the like
-    await db
-      .delete(proposalLikes)
-      .where(eq(proposalLikes.id, existingLike.id));
-    
-    // Get updated count
-    const [countResult] = await db
-      .select({ count: sql`count(*)` })
+  if (!daoId) throw new Error('DAO ID required');
+  return await db.transaction(async tx => {
+    const [existingLike] = await tx
+      .select()
       .from(proposalLikes)
-      .where(eq(proposalLikes.proposalId, proposalId as any));
-    
-    const likesCount = Number(countResult?.count ?? 0);
-    return { liked: false, likesCount };
-  } else {
-    // Add the like
-    const [tempDao] = await db.select().from(daos).limit(1);
-    const effectiveDaoId = daoId || (tempDao?.id as string);
-    
-    await db.insert(proposalLikes).values({
+      .where(
+        and(
+          eq(proposalLikes.proposalId, proposalId as any),
+          eq(proposalLikes.userId, userId)
+        )
+      );
+
+    if (existingLike) {
+      await tx.delete(proposalLikes).where(eq(proposalLikes.id, existingLike.id));
+      const [countResult] = await tx
+        .select({ count: sql`count(*)` })
+        .from(proposalLikes)
+        .where(eq(proposalLikes.proposalId, proposalId as any));
+      return { liked: false, likesCount: Number(countResult?.count ?? 0) };
+    }
+
+    await tx.insert(proposalLikes).values({
       proposalId: proposalId as any,
       userId,
-      daoId: effectiveDaoId as any,
+      daoId: daoId as any,
       createdAt: new Date(),
     } as any);
-    
-    // Get updated count
-    const [countResult] = await db
+
+    const [countResult] = await tx
       .select({ count: sql`count(*)` })
       .from(proposalLikes)
       .where(eq(proposalLikes.proposalId, proposalId as any));
-    
-    const likesCount = Number(countResult?.count ?? 0);
-    return { liked: true, likesCount };
-  }
+    return { liked: true, likesCount: Number(countResult?.count ?? 0) };
+  });
 }
 
 /**
@@ -1412,66 +1461,44 @@ export async function toggleCommentLike(
   userId: string,
   daoId?: string
 ): Promise<{ liked: boolean; likesCount: number }> {
-  // Check if like already exists
-  const [existingLike] = await db
-    .select()
-    .from(commentLikes)
-    .where(
-      and(
-        eq(commentLikes.commentId, commentId as any),
-        eq(commentLikes.userId, userId)
-      )
-    );
-  
-  if (existingLike) {
-    // Remove the like
-    await db
-      .delete(commentLikes)
-      .where(eq(commentLikes.id, existingLike.id));
-    
-    // Get updated count
-    const [countResult] = await db
-      .select({ count: sql`count(*)` })
+  if (!daoId) throw new Error('DAO ID required');
+  return await db.transaction(async tx => {
+    const [existingLike] = await tx
+      .select()
       .from(commentLikes)
-      .where(eq(commentLikes.commentId, commentId as any));
-    
-    const likesCount = Number(countResult?.count ?? 0);
-    
-    // Update comment's denormalized count
-    await db
-      .update(proposalComments)
-      .set({ likesCount })
-      .where(eq(proposalComments.id, commentId as any));
-    
-    return { liked: false, likesCount };
-  } else {
-    // Add the like
-    const [tempDao] = await db.select().from(daos).limit(1);
-    const effectiveDaoId = daoId || (tempDao?.id as string);
-    
-    await db.insert(commentLikes).values({
+      .where(
+        and(
+          eq(commentLikes.commentId, commentId as any),
+          eq(commentLikes.userId, userId)
+        )
+      );
+
+    if (existingLike) {
+      await tx.delete(commentLikes).where(eq(commentLikes.id, existingLike.id));
+      const [countResult] = await tx
+        .select({ count: sql`count(*)` })
+        .from(commentLikes)
+        .where(eq(commentLikes.commentId, commentId as any));
+      const likesCount = Number(countResult?.count ?? 0);
+      await tx.update(proposalComments).set({ likesCount }).where(eq(proposalComments.id, commentId as any));
+      return { liked: false, likesCount };
+    }
+
+    await tx.insert(commentLikes).values({
       commentId: commentId as any,
       userId,
-      daoId: effectiveDaoId as any,
+      daoId: daoId as any,
       createdAt: new Date(),
     } as any);
-    
-    // Get updated count
-    const [countResult] = await db
+
+    const [countResult] = await tx
       .select({ count: sql`count(*)` })
       .from(commentLikes)
       .where(eq(commentLikes.commentId, commentId as any));
-    
     const likesCount = Number(countResult?.count ?? 0);
-    
-    // Update comment's denormalized count
-    await db
-      .update(proposalComments)
-      .set({ likesCount })
-      .where(eq(proposalComments.id, commentId as any));
-    
+    await tx.update(proposalComments).set({ likesCount }).where(eq(proposalComments.id, commentId as any));
     return { liked: true, likesCount };
-  }
+  });
 }
 
 /**
