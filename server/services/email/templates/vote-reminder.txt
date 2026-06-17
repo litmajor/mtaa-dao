@@ -1,0 +1,3 @@
+Reminder to vote on: {{proposal.title}}
+
+{{proposal.url}}

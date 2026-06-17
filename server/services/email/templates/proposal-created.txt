@@ -1,0 +1,5 @@
+New proposal: {{proposal.title}}
+
+{{proposal.summary}}
+
+View: {{proposal.url}}

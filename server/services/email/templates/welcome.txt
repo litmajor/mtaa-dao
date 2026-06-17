@@ -1,0 +1,3 @@
+Welcome {{user.name}}
+
+Thanks for joining MtaaDAO. Visit {{appUrl}} to get started.

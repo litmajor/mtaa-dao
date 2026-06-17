@@ -1,0 +1,3 @@
+Your withdrawal of {{amount}} has been processed.
+
+Transaction: {{txId}}
