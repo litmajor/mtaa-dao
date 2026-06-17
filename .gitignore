@@ -71,3 +71,4 @@ cache/solidity-files-cache.json
 
 # Ignore saved deployment state (sensitive addresses). Keep if you want to track deployments manually.
 /deployments/
+.env
