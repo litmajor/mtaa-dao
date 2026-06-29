@@ -402,28 +402,9 @@ contract MTAAToken is ERC20, ERC20Burnable, ERC20Permit, ERC20Votes, Ownable, Pa
     }
 
     function vestSchedules(uint256[] calldata indices) external {
-        if (stakingManager == address(0)) revert("StakingManagerNotSet");
-        uint256 len = indices.length;
-        if (len == 0) revert NothingToVest();
-
-        uint256 totalRelease;
-        for (uint256 i; i < len; ++i) {
-            uint256 scheduleIdx = indices[i];
-            // manager will perform validation per-schedule and emit events; we only
-            // call it to perform accounting and token transfers.
-            // Delegate: manager will transfer vested tokens back to caller.
-            // We call manager.getVestableAmountForSchedule to accumulate totalRelease here
-            uint256 claimable = MtaaStakingVestingManager(stakingManager).getVestableAmountForSchedule(msg.sender, scheduleIdx);
-            if (claimable == 0) continue;
-            totalRelease += claimable;
-            // Let manager mark claimed; manager does not mint — token will handle minting if needed.
-        }
-
-        if (totalRelease == 0) revert NothingToVest();
-
-        // Request manager to perform vesting transfers and bookkeeping
-        // For now, instruct callers to use the staking manager directly.
-        revert("Use stakingManager.vesting execution directly");
+        if (address(stakingManagerContract) == address(0)) revert("StakingManagerNotSet");
+        // Delegate vesting execution to the staking manager which holds the tokens
+        stakingManagerContract.vestSchedulesFor(msg.sender, indices);
     }
 
     function getVestableAmountForSchedule(address beneficiary, uint256 idx)

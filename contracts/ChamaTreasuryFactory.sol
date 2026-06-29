@@ -48,6 +48,8 @@ contract ChamaTreasuryFactory is Ownable, Pausable {
     address public platformTreasury;
     address public strategyRegistry;
     address public apyCalculator;
+    address public platformFeeCollector;
+    address public subscriptionManager;
 
     mapping(DAOType => FeeTier) public feeTiers;
     mapping(string => address) public treasuryByDaoId;
@@ -185,6 +187,9 @@ contract ChamaTreasuryFactory is Ownable, Pausable {
             if (apyCalculator != address(0)) {
                 deployed.setApyCalculator(apyCalculator);
             }
+            if (platformFeeCollector != address(0) || subscriptionManager != address(0)) {
+                deployed.setPlatformWallets(platformFeeCollector, subscriptionManager);
+            }
         } catch {
             revert DeploymentFailed();
         }
@@ -225,6 +230,9 @@ contract ChamaTreasuryFactory is Ownable, Pausable {
             }
             if (apyCalculator != address(0)) {
                 deployed.setApyCalculator(apyCalculator);
+            }
+            if (platformFeeCollector != address(0) || subscriptionManager != address(0)) {
+                deployed.setPlatformWallets(platformFeeCollector, subscriptionManager);
             }
         } catch {
             revert DeploymentFailed();
@@ -277,13 +285,20 @@ contract ChamaTreasuryFactory is Ownable, Pausable {
     }
 
     function setStrategyRegistry(address _registry) external onlyOwner {
-        if (_registry == address(0)) revert InvalidAddress();
         strategyRegistry = _registry;
+        emit ConfigUpdated("strategyRegistry", _registry);
     }
 
     function setApyCalculator(address _calculator) external onlyOwner {
-        if (_calculator == address(0)) revert InvalidAddress();
         apyCalculator = _calculator;
+        emit ConfigUpdated("apyCalculator", _calculator);
+    }
+
+    function setPlatformWallets(address _collector, address _subManager) external onlyOwner {
+        platformFeeCollector = _collector;
+        subscriptionManager = _subManager;
+        emit ConfigUpdated("platformFeeCollector", _collector);
+        emit ConfigUpdated("subscriptionManager", _subManager);
     }
 
     function setDefaultTimelocks(uint256 _smallLimit, uint256 _smallDelay, uint256 _largeDelay) external onlyOwner {

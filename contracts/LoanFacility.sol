@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
  * @title LoanFacility
@@ -43,6 +44,9 @@ contract LoanFacility is ReentrancyGuard, Ownable, Pausable {
     // State variables
     IERC20 public stablecoin;           // USDC or similar
     address public elderCouncil;        // Authority to approve/forgive loans
+    IERC20 public mtaaToken;            // For fee discounts
+    address public platformFeeCollector;
+    uint256 public loanOriginationFeeBps = 50; // 0.50%
     
     uint256 public nextLoanId = 1;
     uint256 public nextRepaymentId = 1;
@@ -147,9 +151,20 @@ contract LoanFacility is ReentrancyGuard, Ownable, Pausable {
         EmergencyLoan storage loan = loans[loanId];
         require(loan.status == LoanStatus.APPROVED, "Loan not approved");
         
-        // Transfer funds from contract to borrower
+        uint256 feeBps = getDiscountedFeeBps(loan.borrower);
+        uint256 feeAmount = (loan.principal * feeBps) / 10000;
+        uint256 netAmount = loan.principal - feeAmount;
+
+        if (feeAmount > 0 && platformFeeCollector != address(0)) {
+            require(
+                stablecoin.transfer(platformFeeCollector, feeAmount),
+                "Fee transfer failed"
+            );
+        }
+        
+        // Transfer net funds from contract to borrower
         require(
-            stablecoin.transfer(loan.borrower, loan.principal),
+            stablecoin.transfer(loan.borrower, netAmount),
             "Transfer failed"
         );
         
@@ -299,5 +314,31 @@ contract LoanFacility is ReentrancyGuard, Ownable, Pausable {
      */
     function emergencyWithdraw(uint256 amount) external onlyOwner {
         require(stablecoin.transfer(owner(), amount), "Transfer failed");
+    }
+    // --- Admin and Utility Functions ---
+    
+    function setPlatformFeeCollector(address _collector) external onlyOwner {
+        platformFeeCollector = _collector;
+    }
+
+    function setMtaaToken(address _mtaaToken) external onlyOwner {
+        mtaaToken = IERC20(_mtaaToken);
+    }
+
+    function setLoanOriginationFeeBps(uint256 _bps) external onlyOwner {
+        require(_bps <= 1000, "Fee too high");
+        loanOriginationFeeBps = _bps;
+    }
+
+    function getDiscountedFeeBps(address user) public view returns (uint256) {
+        if (address(mtaaToken) == address(0)) return loanOriginationFeeBps;
+        
+        uint256 mtaaBalance = mtaaToken.balanceOf(user);
+        uint256 n = mtaaBalance / 1e18;
+        uint256 root = Math.sqrt(n);
+        uint256 discountPct = (root * 25) / 10; // root * 2.5
+        if (discountPct > 50) discountPct = 50;
+        
+        return (loanOriginationFeeBps * (100 - discountPct)) / 100;
     }
 }

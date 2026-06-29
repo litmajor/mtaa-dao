@@ -9,6 +9,7 @@ import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import "./security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 
 interface IMTAAToken {
     function burn(uint256 amount) external;
@@ -295,6 +296,21 @@ contract MaonoVault_Phase1B is
         }
     }
 
+    /**
+     * @notice Calculate the MTAA-based discount for fees (0 to 50)
+     */
+    function getDiscountedFeePct(address user) public view returns (uint256) {
+        if (address(mtaaToken) == address(0)) return 0;
+        
+        uint256 mtaaBalance = IERC20(mtaaToken).balanceOf(user);
+        uint256 n = mtaaBalance / 1e18;
+        uint256 root = Math.sqrt(n);
+        uint256 discountPct = (root * 25) / 10; // root * 2.5
+        if (discountPct > 50) discountPct = 50;
+        
+        return discountPct;
+    }
+
     // ======================================================================
     // UPKEEP COLLECTION
     // ======================================================================
@@ -310,7 +326,9 @@ contract MaonoVault_Phase1B is
 
         if (block.timestamp < state.lastUpkeepPayment + 30 days) revert UpkeepNotDue();
 
-        uint256 upkeepCost = UPKEEP_COSTS_MONTHLY[uint256(vaultType)];
+        uint256 baseUpkeepCost = UPKEEP_COSTS_MONTHLY[uint256(vaultType)];
+        uint256 discountPct = getDiscountedFeePct(msg.sender);
+        uint256 upkeepCost = (baseUpkeepCost * (100 - discountPct)) / 100;
 
         // Auto-hibernate if balance insufficient (check, don't revert — retention design)
         if (IERC20(mtaaToken).balanceOf(msg.sender) < upkeepCost) {

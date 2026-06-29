@@ -53,6 +53,11 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
     uint256 public maxSlippageBps;
     address public stablecoin; // Primary stablecoin used for buys/sells (e.g., cUSD)
     uint256 public withdrawalLockupPeriod; // seconds (0 = disabled)
+    
+    // Protocol Fees
+    address public platformFeeCollector;
+    uint256 public constant PROTOCOL_WITHDRAW_FEE_BPS = 25; // 0.25%
+    uint256 public constant PROTOCOL_REBALANCE_FEE_BPS = 15; // 0.15%
 
     // Track user's last deposit timestamp for withdrawal lockup enforcement
     mapping(address => uint256) private lastDepositTime;
@@ -258,6 +263,15 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
      */
     function invest(uint256 usdAmount) external nonReentrant whenNotPaused returns (uint256 sharesMinted) {
         require(usdAmount >= minimumInvestment, "Below minimum investment");
+        require(stablecoin != address(0), "Stablecoin not set");
+        
+        uint8 stableDecimals = 18;
+        try ERC20(stablecoin).decimals() returns (uint8 sd) { stableDecimals = sd; } catch {}
+        uint256 stablePrice = IPriceOracle(priceOracle).getPrice(stablecoin);
+        require(stablePrice > 0, "Stablecoin oracle malfunction");
+        uint256 stableAmount = (usdAmount * (10 ** stableDecimals)) / stablePrice;
+        IERC20(stablecoin).safeTransferFrom(msg.sender, address(this), stableAmount);
+
         
         // Calculate shares to mint based on current pool value
         if (totalSupply() == 0) {
@@ -300,6 +314,7 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
      */
     function withdraw(uint256 shares) external nonReentrant returns (uint256 netAmount) {
         require(balanceOf(msg.sender) >= shares, "Insufficient shares");
+        require(stablecoin != address(0), "Stablecoin not set");
 
         // Enforce withdrawal lockup if configured
         if (withdrawalLockupPeriod > 0) {
@@ -311,9 +326,10 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
         // Calculate USD value of shares
         uint256 usdValue = (shares * totalValueLocked) / totalSupply();
         
-        // Calculate performance fee
+        // Calculate performance fee and protocol fee
         uint256 fee = (usdValue * performanceFee) / 10000;
-        netAmount = usdValue - fee;
+        uint256 protocolFee = (usdValue * PROTOCOL_WITHDRAW_FEE_BPS) / 10000;
+        netAmount = usdValue - fee - protocolFee;
         
         // Burn shares
         _burn(msg.sender, shares);
@@ -321,10 +337,23 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
         // Update TVL
         totalValueLocked -= usdValue;
         
-        // Transfer fee to collector
-        if (fee > 0) {
-            // Fee transfer would happen here via stablecoin
-            // IERC20(stablecoin).safeTransfer(feeCollector, fee);
+        // Transfer fees to collectors
+        uint8 stableDecimals = 18;
+        try ERC20(stablecoin).decimals() returns (uint8 sd) { stableDecimals = sd; } catch {}
+        uint256 stablePrice = IPriceOracle(priceOracle).getPrice(stablecoin);
+        require(stablePrice > 0, "Stablecoin oracle malfunction");
+
+        uint256 stableNetAmount = (netAmount * (10 ** stableDecimals)) / stablePrice;
+        uint256 stableFeeAmount = (fee * (10 ** stableDecimals)) / stablePrice;
+        uint256 stableProtocolFeeAmount = (protocolFee * (10 ** stableDecimals)) / stablePrice;
+
+        IERC20(stablecoin).safeTransfer(msg.sender, stableNetAmount);
+        
+        if (stableFeeAmount > 0 && feeCollector != address(0)) {
+            IERC20(stablecoin).safeTransfer(feeCollector, stableFeeAmount);
+        }
+        if (stableProtocolFeeAmount > 0 && platformFeeCollector != address(0)) {
+            IERC20(stablecoin).safeTransfer(platformFeeCollector, stableProtocolFeeAmount);
         }
         
         emit Withdrawal(msg.sender, shares, usdValue, fee);
@@ -347,6 +376,18 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
     function setWithdrawalLockupPeriod(uint256 secondsLock) external onlyRole(MANAGER_ROLE) {
         withdrawalLockupPeriod = secondsLock;
         emit MinimumInvestmentUpdated(minimumInvestment); // reuse event for visibility (no dedicated event)
+    }
+
+    /**
+     * @notice Get symbol hash by token address
+     */
+    function _getSymbolHash(address token) internal view returns (bytes32) {
+        for (uint256 i = 0; i < activeAssetSymbols.length; ++i) {
+            if (assets[activeAssetSymbols[i]].tokenAddress == token) {
+                return activeAssetSymbols[i];
+            }
+        }
+        revert("Asset not found");
     }
 
     /**
@@ -391,6 +432,9 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
                 uint256 minOut = (expectedTarget * (10000 - maxSlippageBps)) / 10000;
 
                 IUniswapRouter(uniswapRouter).swapExactTokensForTokens(amt, minOut, path, address(this), block.timestamp + 300);
+                
+                bytes32 symbolHash = _getSymbolHash(token);
+                assets[symbolHash].balance = IERC20(token).balanceOf(address(this));
             } else {
                 // Sell token to stablecoin
                 IERC20(token).safeIncreaseAllowance(uniswapRouter, amt);
@@ -408,6 +452,9 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
                 uint256 minOut = (expectedStable * (10000 - maxSlippageBps)) / 10000;
 
                 IUniswapRouter(uniswapRouter).swapExactTokensForTokens(amt, minOut, path, address(this), block.timestamp + 300);
+                
+                bytes32 symbolHash = _getSymbolHash(token);
+                assets[symbolHash].balance = IERC20(token).balanceOf(address(this));
             }
         }
 

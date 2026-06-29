@@ -3,10 +3,11 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "./utils/Counters.sol";
+import "./AgentIds.sol";
 
 /**
  * @title AuditLog
- * @notice Immutable on-chain audit trail for all DAO governance and treasury actions
+ * @notice Immutable on-chain audit trail for all DAO governance, treasury, and agent actions
  * @dev Addresses auditability gap from Phase 2 security audit
  */
 contract AuditLog is AccessControl {
@@ -15,6 +16,7 @@ contract AuditLog is AccessControl {
     bytes32 public constant LOGGER_ROLE = keccak256("LOGGER_ROLE");
     
     enum ActionType {
+        // DAO & Governance
         TransactionProposed,
         TransactionApproved,
         TransactionExecuted,
@@ -28,7 +30,36 @@ contract AuditLog is AccessControl {
         MemberPromoted,
         MemberDemoted,
         MemberRemoved,
-        GovernanceParameterChanged
+        GovernanceParameterChanged,
+        
+        // Agent Events
+        AgentRegistered,
+        AgentDeactivated,
+        AgentReactivated,
+        AgentConfigUpdated,
+        AgentCapabilityAdded,
+        AgentCapabilityRemoved,
+        AgentFeeUpdated,
+        AgentPayoutPercentageUpdated,
+        
+        // Subscription Events
+        SubscriptionCreated,
+        SubscriptionRenewed,
+        SubscriptionCancelled,
+        SubscriptionExpired,
+        SubscriptionTierUpgraded,
+        SubscriptionTierDowngraded,
+        
+        // Payment Events
+        PaymentProcessed,
+        PaymentSettled,
+        PaymentRefunded,
+        
+        // Revenue Events
+        RevenueDistributed,
+        EarningsWithdrawn,
+        TreasuryWithdrawal,
+        CommunityPoolWithdrawal
     }
     
     struct AuditEntry {

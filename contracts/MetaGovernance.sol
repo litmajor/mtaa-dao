@@ -49,6 +49,7 @@ contract MetaGovernance is Ownable, Pausable {
     uint256 public parentDAOId;
     uint256 public totalChildDAOs;
     uint256 public votingPeriod = 7 days;              // Default 1 week
+    uint256 public quorumThreshold = 1;                 // Minimum votes required per child DAO aggregation
     
     mapping(uint256 => CrossDAOProposal) public proposals;
     mapping(uint256 => DAOWeight) public daoWeights;
@@ -222,6 +223,7 @@ contract MetaGovernance is Ownable, Pausable {
         uint256 votesFor = proposal.childVotesFor[childDAOId];
         uint256 votesAgainst = proposal.childVotesAgainst[childDAOId];
         uint256 totalVotes = votesFor + votesAgainst;
+        require(totalVotes >= quorumThreshold, "Quorum not met");
         
         // Weight the votes by DAO weight
         if (votesFor > votesAgainst) {

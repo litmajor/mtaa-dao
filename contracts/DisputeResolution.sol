@@ -61,6 +61,7 @@ contract DisputeResolution is Ownable, ReentrancyGuard {
         string remedyDescription;
         uint256 resolvedAt;
         bool appealed;
+        string appealGrounds;
         uint256 appealDeadline;
     }
 
@@ -120,7 +121,8 @@ contract DisputeResolution is Ownable, ReentrancyGuard {
 
     event DisputeAppealed(
         uint256 indexed disputeId,
-        address indexed appellant
+        address indexed appellant,
+        string grounds
     );
 
     event AppealResolved(
@@ -378,11 +380,12 @@ contract DisputeResolution is Ownable, ReentrancyGuard {
         if (msg.value < disputeFilingFee) revert InsufficientFee();
 
         dispute.appealed = true;
+        dispute.appealGrounds = grounds;
         dispute.status = DisputeStatus.APPEALED;
 
         payable(feeRecipient).transfer(msg.value);
 
-        emit DisputeAppealed(disputeId, msg.sender);
+        emit DisputeAppealed(disputeId, msg.sender, grounds);
     }
 
     /**

@@ -7,6 +7,10 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/proxy/Clones.sol";               // UPGRADE #1
 
+interface IDAOSpawnGateway {
+    function consumeSpawnCredit(address user, uint256 vaultType) external;
+}
+
 // ---------------------------------------------------------------------------
 // VAULT INTERFACE — required for clone initialization
 // ---------------------------------------------------------------------------
@@ -123,46 +127,20 @@ contract MaonoVaultFactory_Phase1B is Ownable2Step {   // UPGRADE #4
     mapping(address user => uint256 count) public userVaultCount;
     uint256 public constant MAX_VAULTS_PER_USER = 5;
 
-    // Spawn cost accounting
-    mapping(address user => uint256) public spawnCostsPaid;
-    uint256 public totalSpawnCostCollected;
-    uint256 public totalSpawnCostBurned;
-    uint256 public totalSpawnCostToTreasury;
-
     // ======================================================================
-    // SPAWN COST CONFIGURATION  (Celo-Optimised)
+    // SPAWN GATEWAY
     // ======================================================================
-    uint256[5] public SPAWN_COSTS = [
-        150 ether,   // SAVINGS   — cheapest, casual savers
-        250 ether,   // ESCROW    — Chama default
-        400 ether,   // BUSINESS
-        600 ether,   // INVESTING
-        1000 ether   // CUSTOM    — maximum features
-    ];
-
-    // Burn split per vault type (basis points, 10000 = 100 %)
-    uint256[5] public SPAWN_BURN_PERCENTAGES = [
-        10000,   // SAVINGS    100 % burn
-        5000,    // ESCROW      50 % burn / 50 % treasury
-        5000,    // BUSINESS    50 / 50
-        3000,    // INVESTING   30 % burn / 70 % treasury
-        3000     // CUSTOM      30 / 70
-    ];
+    address public spawnGateway;
 
     // ======================================================================
     // EVENTS
     // ======================================================================
-    /// @dev ⚠️  Breaking change vs Phase 1A — added `implementation` parameter.
-    ///          Indexers must update their ABI.
     event VaultDeployed(
         address indexed vault,
         address indexed owner,
         address indexed asset,
         string  name,
         uint256 vaultType,
-        uint256 spawnCostPaid,
-        uint256 burnAmount,
-        uint256 treasuryAmount,
         address implementation,   // UPGRADE #1
         uint256 timestamp
     );
@@ -170,14 +148,7 @@ contract MaonoVaultFactory_Phase1B is Ownable2Step {   // UPGRADE #4
     event AssetAdded(address indexed asset, string symbol, uint256 timestamp);
     event AssetRemoved(address indexed asset, uint256 timestamp);
 
-    event SpawnCostCollected(
-        address indexed user,
-        uint256 vaultType,
-        uint256 totalCost,
-        uint256 burnAmount,
-        uint256 treasuryAmount,
-        uint256 timestamp
-    );
+    event SpawnGatewayUpdated(address indexed oldGateway, address indexed newGateway, uint256 timestamp);
 
     event PriceOracleUpdated(address indexed newOracle, uint256 timestamp);
 
@@ -270,30 +241,9 @@ contract MaonoVaultFactory_Phase1B is Ownable2Step {   // UPGRADE #4
         if (vaultType > 4)                                    revert InvalidVaultType();
         if (userVaultCount[msg.sender] >= MAX_VAULTS_PER_USER) revert MaxVaultsPerUserExceeded();
 
-        // ── Spawn Cost Collection  (FIX #1) ─────────────────────────────────
-        uint256 spawnCost     = SPAWN_COSTS[vaultType];
-        uint256 burnPct       = SPAWN_BURN_PERCENTAGES[vaultType];
-        uint256 burnAmount    = (spawnCost * burnPct) / 10000;
-        uint256 treasuryAmount = spawnCost - burnAmount;
-
-        // SafeERC20: reverts automatically on failure (no manual bool check needed)
-        IERC20(mtaaToken).safeTransferFrom(msg.sender, address(this), spawnCost);
-
-        if (burnAmount > 0) {
-            try IMTAAToken(mtaaToken).burn(burnAmount) {
-                totalSpawnCostBurned += burnAmount;
-            } catch {
-                revert BurnFailed();
-            }
-        }
-
-        if (treasuryAmount > 0) {
-            IERC20(mtaaToken).safeTransfer(platformTreasury, treasuryAmount);
-            totalSpawnCostToTreasury += treasuryAmount;
-        }
-
-        totalSpawnCostCollected    += spawnCost;
-        spawnCostsPaid[msg.sender] += spawnCost;
+        // ── Spawn Cost Collection (Delegated) ───────────────────────────────
+        if (spawnGateway == address(0)) revert InvalidAddress();
+        IDAOSpawnGateway(spawnGateway).consumeSpawnCredit(msg.sender, vaultType);
 
         // ── UPGRADE #1: Clone instead of `new` ──────────────────────────────
         // Cache impl address — used in registry and event below
@@ -333,13 +283,8 @@ contract MaonoVaultFactory_Phase1B is Ownable2Step {   // UPGRADE #4
             isActive:       true
         });
 
-        emit SpawnCostCollected(
-            msg.sender, vaultType, spawnCost, burnAmount, treasuryAmount, block.timestamp
-        );
-
         emit VaultDeployed(
             vault, msg.sender, asset, name, vaultType,
-            spawnCost, burnAmount, treasuryAmount,
             impl,                            // UPGRADE #1
             block.timestamp
         );
@@ -447,16 +392,11 @@ contract MaonoVaultFactory_Phase1B is Ownable2Step {   // UPGRADE #4
         return supportedAssetsList;
     }
 
-    function getSpawnCost(uint256 vaultType)
-        external
-        view
-        returns (uint256 cost, uint256 burnAmount, uint256 treasuryAmount)
-    {
-        if (vaultType > 4) revert InvalidVaultType();
-        cost = SPAWN_COSTS[vaultType];
-        uint256 burnPct = SPAWN_BURN_PERCENTAGES[vaultType];
-        burnAmount     = (cost * burnPct) / 10000;
-        treasuryAmount = cost - burnAmount;
+    function setSpawnGateway(address _newGateway) external onlyOwner {
+        if (_newGateway == address(0)) revert InvalidAddress();
+        address old = spawnGateway;
+        spawnGateway = _newGateway;
+        emit SpawnGatewayUpdated(old, _newGateway, block.timestamp);
     }
 
     function getTotalVaultsDeployed() external view returns (uint256) {
@@ -472,17 +412,11 @@ contract MaonoVaultFactory_Phase1B is Ownable2Step {   // UPGRADE #4
         view
         returns (
             uint256 totalVaults,
-            uint256 totalSpawnCosts,
-            uint256 totalBurned,
-            uint256 totalToTreasury,
             uint256 supportedAssetCount
         )
     {
         return (
             deployedVaults.length,
-            totalSpawnCostCollected,
-            totalSpawnCostBurned,
-            totalSpawnCostToTreasury,
             supportedAssetsList.length
         );
     }

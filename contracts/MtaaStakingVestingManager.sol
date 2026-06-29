@@ -54,6 +54,7 @@ contract MtaaStakingVestingManager is Ownable {
     event Unstaked(address indexed user, uint256 indexed stakeId, uint256 amount, uint256 reward);
     event StakeRewardsClaimed(address indexed user, uint256 indexed stakeId, uint256 reward);
     event VestingScheduleCreated(address indexed beneficiary, uint256 scheduleIndex, uint256 amount, uint8 vestingType);
+    event VestingReleased(address indexed beneficiary, uint256 amount);
 
     modifier onlyToken() {
         if (msg.sender != tokenContract) revert("Unauthorized");
@@ -190,5 +191,38 @@ contract MtaaStakingVestingManager is Ownable {
         for (uint256 i; i < len; ++i) {
             total += this.getVestableAmountForSchedule(beneficiary, i);
         }
+    }
+
+    /**
+     * @notice Vest (release) accumulated vested tokens for `beneficiary`.
+     * @dev Callable only by the token contract (see `onlyToken` modifier).
+     */
+    function vestSchedulesFor(address beneficiary, uint256[] calldata indices) external onlyToken returns (uint256 totalVested) {
+        uint256 len = indices.length;
+        if (len == 0) revert("Nothing to vest");
+
+        for (uint256 i = 0; i < len; ++i) {
+            uint256 idx = indices[i];
+            VestingSchedule storage s = vestingSchedules[beneficiary][idx];
+            if (s.totalAmount == 0) continue; // skip non-existent schedule
+
+            uint256 currentTime = block.timestamp;
+            if (currentTime < s.startTime + s.cliffPeriod) continue;
+
+            uint256 elapsed = currentTime - s.startTime;
+            uint256 unlocked = elapsed >= s.duration ? s.totalAmount : (s.totalAmount * elapsed) / s.duration;
+            uint256 claimable = unlocked - s.claimed;
+            if (claimable == 0) continue;
+
+            s.claimed += claimable;
+            totalVested += claimable;
+
+            // transfer vested tokens out to beneficiary
+            token.safeTransfer(beneficiary, claimable);
+        }
+
+        if (totalVested == 0) revert("Nothing to vest");
+        emit VestingReleased(beneficiary, totalVested);
+        return totalVested;
     }
 }

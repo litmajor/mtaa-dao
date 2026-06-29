@@ -144,6 +144,11 @@ contract ChamaTreasury is ReentrancyGuard, Pausable {
     address public apyCalculator;
     // Modules (contracts) allowed to create proposals on behalf of external modules
     mapping(address => bool) public approvedProposers;
+
+    // --- Protocol Fee & Subscriptions ---
+    uint256 public protocolFeeBps = 30; // 0.3%
+    address public platformFeeCollector;
+    address public subscriptionManager;
     // --- Activation confirmations for switching to LIVE_VAULT (multisig) ---
     mapping(address => bool) public activationConfirmed;
     uint256 public activationConfirmationCount;
@@ -427,16 +432,42 @@ contract ChamaTreasury is ReentrancyGuard, Pausable {
             emit MemberAdded(msg.sender);
         }
 
+        uint256 feeAmount = (amount * protocolFeeBps) / 10000;
+        uint256 netAmount = amount - feeAmount;
+
         stablecoin.safeTransferFrom(msg.sender, address(this), amount);
+        if (feeAmount > 0) {
+            _routeProtocolFee(feeAmount);
+        }
 
         ContributionRecord storage record = contributions[msg.sender];
-        record.totalAmountStable += amount;
+        record.totalAmountStable += netAmount;
         record.contributionCount++;
         record.lastContribution = block.timestamp;
 
-        totalContributionsStable += amount;
+        totalContributionsStable += netAmount;
 
         emit ContributionDeposited(msg.sender, amount, block.timestamp);
+    }
+
+    function _routeProtocolFee(uint256 feeAmount) internal {
+        if (feeAmount == 0 || platformFeeCollector == address(0)) return;
+        stablecoin.safeTransfer(platformFeeCollector, feeAmount);
+    }
+
+    // =========================================================================
+    // LAYER 3 SUBSCRIPTIONS
+    // =========================================================================
+
+    /**
+     * @notice Called by DAOSubscriptionManager to pull the monthly subscription fee
+     * @param amount The fee to deduct from the DAO's treasury
+     */
+    function paySubscription(uint256 amount) external nonReentrant {
+        if (msg.sender != subscriptionManager) revert("Not subscription manager");
+        if (amount == 0 || platformFeeCollector == address(0)) return;
+        
+        stablecoin.safeTransfer(platformFeeCollector, amount);
     }
 
     // =========================================================================
@@ -588,6 +619,16 @@ contract ChamaTreasury is ReentrancyGuard, Pausable {
         apyCalculator = _calculator;
     }
 
+    function setPlatformWallets(address _collector, address _subManager) external onlyDeployer {
+        platformFeeCollector = _collector;
+        subscriptionManager = _subManager;
+    }
+
+    function setProtocolFeeBps(uint256 _bps) external onlyDeployer {
+        require(_bps <= 1000, "Fee too high"); // max 10%
+        protocolFeeBps = _bps;
+    }
+
     function confirmProposal(uint256 proposalId)
         external
         onlySigner
@@ -644,10 +685,17 @@ contract ChamaTreasury is ReentrancyGuard, Pausable {
         p.status = ProposalStatus.EXECUTED;
 
         if (mode == TreasuryMode.LIVE_VAULT) {
+            uint256 feeAmount = (p.amount * protocolFeeBps) / 10000;
+            uint256 netAmount = p.amount - feeAmount;
+
             uint256 balance = stablecoin.balanceOf(address(this));
             if (balance < p.amount)
                 revert InsufficientVaultBalance(balance, p.amount);
-            stablecoin.safeTransfer(p.recipient, p.amount);
+                
+            stablecoin.safeTransfer(p.recipient, netAmount);
+            if (feeAmount > 0) {
+                _routeProtocolFee(feeAmount);
+            }
 
             if (p.proposedBy != address(0)) {
                 try IRotationModule(p.proposedBy).onTreasuryProposalExecuted(proposalId, p.recipient, p.amount) {

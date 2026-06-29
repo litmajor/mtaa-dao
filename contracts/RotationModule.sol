@@ -107,6 +107,9 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
     mapping(uint256 => address) public proposalVault;
     mapping(uint256 => uint256) public proposalCycle;
 
+    address public platformFeeCollector;
+    uint256 public constant PROTOCOL_ROTATION_FEE_BPS = 20; // 0.2%
+
     // =========================================================================
     // EVENTS
     // =========================================================================
@@ -383,13 +386,33 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
             revert InsufficientFunds(treasuryBalance, amountToSend);
         }
 
+        // Calculate protocol fee
+        uint256 feeAmount = 0;
+        uint256 netAmount = amountToSend;
+        if (platformFeeCollector != address(0)) {
+            feeAmount = (amountToSend * PROTOCOL_ROTATION_FEE_BPS) / 10000;
+            netAmount = amountToSend - feeAmount;
+        }
+
+        // Create a ChamaTreasury proposal for the platform fee (if any)
+        if (feeAmount > 0) {
+            IChamaTreasury(config.chamaTreasury).proposeWithdrawalByModule(
+                platformFeeCollector,
+                feeAmount,
+                0,
+                "Rotation protocol fee",
+                0, // ProposalType.WITHDRAWAL
+                0
+            );
+        }
+
         // Create a ChamaTreasury proposal for the payout instead of pulling
         // funds via approval. Record the mapping so we can confirm once the
         // treasury executes the proposal.
         string memory reason = "Rotation payout";
         uint256 proposalId = IChamaTreasury(config.chamaTreasury).proposeWithdrawalByModule(
             cycle.currentRecipient,
-            amountToSend,
+            netAmount,
             0,
             reason,
             0, // ProposalType.WITHDRAWAL
@@ -698,5 +721,9 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
         }
 
         return (true, "Ready");
+    }
+
+    function setPlatformFeeCollector(address _collector) external onlyOwner {
+        platformFeeCollector = _collector;
     }
 }
