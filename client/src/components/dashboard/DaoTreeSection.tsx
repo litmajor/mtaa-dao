@@ -4,24 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ChevronDown, ChevronRight, Users, DollarSign, Activity, TrendingUp } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-
-interface Dao {
-  id: string;
-  name: string;
-  memberCount: number;
-  activeMembers: number;
-  treasury: number;
-  governance: {
-    participationRate: number;
-    proposalCount: number;
-    approvalRate: number;
-  };
-  health: number;
-  trend: 'improving' | 'stable' | 'declining';
-}
+import type { UnifiedDashboardDao } from '../../../../shared/types/dao';
 
 interface DaoTreeSectionProps {
-  daos: Dao[];
+  daos: UnifiedDashboardDao[];
   userBalances: Record<string, number>;
   loading?: boolean;
   searchQuery?: string;

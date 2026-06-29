@@ -173,8 +173,7 @@ const BlockchainWarningBanner = () => (
 );
 
 const MINIMUM_QUORUM = 20; // 20% minimum quorum
-
-const CreateDAOFlowContent = () => {
+const CreateDAOFlowContent: React.FC = () => {
   // Orchestrator system for stateful UI feedback
   const orchestrator = useDAOOrchestrator();
 
@@ -338,6 +337,61 @@ const CreateDAOFlowContent = () => {
     return daoTypeOptions;
   };
 
+  const contractFriendlyName = (contract: string) => {
+    const map: Record<string, string> = {
+      ChamaTreasury: 'Group Treasury',
+      MultiAssetVault: 'Multi-Asset Vault',
+      'MaonoVault:escrow': 'Escrow Vault',
+      'MaonoVault:savings': 'Savings Vault',
+      'MaonoVault:investing': 'Yield Vault',
+      'MaonoVault:business': 'Business Vault',
+      'MaonoVault:custom': 'Custom Strategy Vault',
+      LoanFacility: 'Loan Facility',
+      RotationModule: 'Rotation Module',
+      GovernanceAccessManager: 'Access Manager'
+    };
+    return map[contract] ?? contract;
+  };
+
+  const hasDaoTypeConfigKey = (typeId: string): typeId is keyof typeof DAO_TYPE_CONFIG => {
+    return Object.prototype.hasOwnProperty.call(DAO_TYPE_CONFIG, typeId);
+  };
+
+  const getDaoTypeConfig = (typeId?: string) => {
+    if (!typeId || !hasDaoTypeConfigKey(typeId)) return null;
+    return DAO_TYPE_CONFIG[typeId];
+  };
+
+  const getDaoTypeDisplayName = (typeId?: string) => {
+    return daoTypeOptions.find(type => type.id === typeId)?.label || typeId || 'DAO';
+  };
+
+  const renderDaoTypePersonas = (typeId?: string) => {
+    const config = getDaoTypeConfig(typeId);
+    if (!config) return null;
+    const personas: string[] = [config.primaryPersona];
+    if ('secondaryPersona' in config && config.secondaryPersona) personas.push(config.secondaryPersona);
+    if ('tertiaryPersona' in config && config.tertiaryPersona) personas.push(config.tertiaryPersona);
+    return personas.map(persona => {
+      const label = persona === 'okedi' ? 'Community' : persona === 'yuki' ? 'Yield' : persona === 'amara' ? 'DeFi' : persona;
+      return (
+        <Badge key={persona} variant="outline" className="text-[11px]">
+          {label}
+        </Badge>
+      );
+    });
+  };
+
+  const renderDaoTypeContracts = (typeId?: string) => {
+    const config = getDaoTypeConfig(typeId);
+    if (!config) return null;
+    return config.contracts.spawnsOnCreate.map(contract => (
+      <Badge key={contract} variant="secondary" className="text-[11px]">
+        {contractFriendlyName(contract)}
+      </Badge>
+    ));
+  };
+
   // Get user's current subscription tier (you'll need to fetch this)
   // NOTE: This requires React Query to be set up in your project.
   // If you don't have it, you'll need to replace this with a state management solution
@@ -357,8 +411,11 @@ const CreateDAOFlowContent = () => {
   const steps = [
     { id: 1, title: 'Group Type', icon: Settings },
     { id: 2, title: 'Name & Info', icon: Settings },
-    { id: 3, title: 'Members', icon: Users },
-    { id: 4, title: 'Confirm', icon: CheckCircle }
+    { id: 3, title: 'Governance', icon: Settings },
+    { id: 4, title: 'Treasury', icon: Wallet },
+    { id: 5, title: 'Members', icon: Users },
+    { id: 6, title: 'Elders', icon: Users },
+    { id: 7, title: 'Confirm', icon: CheckCircle }
   ];
 
   const logoOptions = ['🏛️', '🌍', '🤝', '💎', '🚀', '⚡', '🌱', '🔥', '💰'];
@@ -581,7 +638,9 @@ const CreateDAOFlowContent = () => {
     enableSocialReactions: boolean;
     enableDiscovery: boolean;
     featuredMessage: string;
+    daoId?: string;
     deployedAddress?: string;
+    vaultAddress?: string | null;
     daoType?: 'free' | 'shortTerm' | 'collective' | 'governance' | 'meta' | 'harambee' | 'savings' | 'community' | 'investment' | 'merryGoRound';
     duration?: number;
     selectedElders: string[]; // NEW: Track selected elders
@@ -718,10 +777,8 @@ const CreateDAOFlowContent = () => {
         .filter(m => m.address !== walletAddress)
         .map(m => m.address);
 
-      const typeConfig = DAO_TYPE_CONFIG[daoData.daoType || ''] || {};
-
-      // Client-side subscription gating: show upsell prompt if user tier is insufficient
-      const requiredTier = typeConfig.requiredTier || 'free';
+      const typeConfig = getDaoTypeConfig(daoData.daoType);
+      const requiredTier = typeConfig?.requiredTier || 'free';
       const tierHierarchy = ['free', 'growth', 'professional', 'enterprise'];
       const userTierIndex = Math.max(0, tierHierarchy.indexOf(userTier));
       const requiredTierIndex = Math.max(0, tierHierarchy.indexOf(requiredTier));
@@ -742,8 +799,8 @@ const CreateDAOFlowContent = () => {
             daoType: daoData.daoType,
             category: daoData.category,
             treasuryType: daoData.treasuryType,
-        modules: typeConfig.modules || [],
-        features: { ...(typeConfig.features || {}) },
+            modules: typeConfig?.contracts?.spawnsOnCreate || [],  // optional chaining
+            features: typeConfig?.features ? { ...typeConfig.features } : {},  // null-safe
             customTokenAddress: daoData.treasuryType === 'custom' ? daoData.customTokenAddress : undefined,
             durationDays: daoData.duration,
             rotationFrequency: daoData.daoType === 'shortTerm' ? 'monthly' : undefined
@@ -758,8 +815,13 @@ const CreateDAOFlowContent = () => {
           }
         });
 
-      if (result && result.daoAddress) {
-        setDaoData(prev => ({ ...prev, deployedAddress: result.daoAddress }));
+      if (result && (result.daoId || result.daoAddress)) {
+        setDaoData(prev => ({
+          ...prev,
+          daoId: result.daoId || result.daoAddress,
+          deployedAddress: result.daoAddress || result.daoId,
+          vaultAddress: result.vaultAddress ?? result.treasuryAddress ?? null,
+        }));
         setCurrentStep(5);
       } else {
         throw new Error(result?.error || 'Deployment failed');
@@ -777,13 +839,13 @@ const CreateDAOFlowContent = () => {
       return; // Errors will be shown via ErrorAlert
     }
 
-    if (currentStep < 4) {
+    if (currentStep < 7) {
       setCurrentStep(currentStep + 1);
       return;
     }
 
     // On final confirmation, deploy the DAO
-    if (currentStep === 4) {
+    if (currentStep === 7) {
       deployDAO();
       return;
     }
@@ -845,6 +907,12 @@ const CreateDAOFlowContent = () => {
                       </Badge>
                     ))}
                   </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {renderDaoTypePersonas(type.id)}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {renderDaoTypeContracts(type.id)}
+                  </div>
                 </div>
                 {daoData.daoType === type.id && (
                   <CheckCircle className="w-6 h-6 text-teal-500 flex-shrink-0" />
@@ -868,7 +936,7 @@ const CreateDAOFlowContent = () => {
             <div className="py-4">
               <p className="text-sm">Creating a <strong>{daoData.daoType}</strong> requires a <strong>{upsellRequiredTier}</strong> subscription. Upgrade to unlock this DAO type and its features.</p>
               <ul className="mt-3 text-sm list-disc list-inside">
-                {(DAO_TYPE_CONFIG[daoData.daoType || '']?.features ? Object.keys(DAO_TYPE_CONFIG[daoData.daoType || ''].features) : []).map(f => (
+                {(getDaoTypeConfig(daoData.daoType)?.features ? Object.keys(getDaoTypeConfig(daoData.daoType)!.features) : []).map(f => (
                   <li key={f}>{f}</li>
                 ))}
               </ul>
@@ -1322,12 +1390,41 @@ const CreateDAOFlowContent = () => {
       }
     }, [treasury, analyze]);
 
+    const selectedTypeConfig = getDaoTypeConfig(daoData.daoType);
+    const deploymentContracts = selectedTypeConfig?.contracts?.spawnsOnCreate || [];
+
     return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Set Up Your Group's Treasury</h2>
         <p className="text-gray-600 dark:text-gray-400">This is where your group's money will be kept - like a shared bank account</p>
       </div>
+
+      {selectedTypeConfig && (
+        <Card className="bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+          <CardHeader>
+            <CardTitle className="text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <Zap className="w-5 h-5" />
+              What this DAO type deploys
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {getDaoTypeDisplayName(daoData.daoType)} will create these contracts when the group is set up.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {deploymentContracts.map(contract => (
+                <Badge key={contract} variant="outline" className="text-xs">
+                  {contractFriendlyName(contract)}
+                </Badge>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {renderDaoTypePersonas(daoData.daoType)}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Treasury Configuration Summary */}
       {treasury && (
@@ -1761,7 +1858,11 @@ const CreateDAOFlowContent = () => {
   );
 
   // Step 7 - Preview
-  const renderPreview = () => (
+  const renderPreview = () => {
+    const typeConfig = getDaoTypeConfig(daoData.daoType);
+    const deploymentContracts = typeConfig?.contracts?.spawnsOnCreate || [];
+
+    return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Review Your DAO</h2>
@@ -1769,13 +1870,42 @@ const CreateDAOFlowContent = () => {
       </div>
 
       <div className="grid gap-6">
+        {typeConfig && (
+          <Card className="bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+            <CardHeader className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Zap className="w-5 h-5" />
+                Deployment Summary
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                This DAO type will deploy the key contracts needed for your group and treasury.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {deploymentContracts.map(contract => (
+                  <Badge key={contract} variant="outline" className="text-xs">
+                    {contractFriendlyName(contract)}
+                  </Badge>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {renderDaoTypePersonas(daoData.daoType)}
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Some advanced capabilities may unlock later through governance. We will deploy the core treasury and vault contracts up front.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Settings className="w-5 h-5" />
               Basic Information
             </CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => setCurrentStep(1)}>
+            <Button variant="ghost" size="sm" onClick={() => setCurrentStep(2)}>
               Edit
             </Button>
           </CardHeader>
@@ -1944,14 +2074,34 @@ const CreateDAOFlowContent = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label className="text-xs text-gray-500 dark:text-gray-400">DAO ADDRESS</Label>
+            <Label className="text-xs text-gray-500 dark:text-gray-400">DAO ID</Label>
             <div className="flex items-center gap-2 mt-1">
               <code className="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded text-sm font-mono flex-1">
-                {daoData.deployedAddress || '0x8f2e...A4D9'}
+                {daoData.daoId || daoData.deployedAddress || 'N/A'}
               </code>
-              <Button size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(daoData.deployedAddress || '')}>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  navigator.clipboard.writeText(daoData.daoId || daoData.deployedAddress || '')
+                }
+              >
                 <Copy className="w-4 h-4" />
               </Button>
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-xs text-gray-500 dark:text-gray-400">On-chain Vault / Treasury</Label>
+            <div className="flex items-center gap-2 mt-1">
+              <code className="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded text-sm font-mono flex-1">
+                {daoData.vaultAddress || 'Pending deployment or not configured'}
+              </code>
+              {daoData.vaultAddress ? (
+                <Button size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(daoData.vaultAddress || '')}>
+                  <Copy className="w-4 h-4" />
+                </Button>
+              ) : null}
             </div>
           </div>
 
@@ -1972,11 +2122,17 @@ const CreateDAOFlowContent = () => {
           <Settings className="w-4 h-4 mr-2" />
           Go to Dashboard
         </Button>
-        <Button variant="outline" onClick={() => window.location.href = `/dao/${daoData.deployedAddress}/invite`}>
+        <Button
+          variant="outline"
+          onClick={() => window.location.href = `/dao/${daoData.daoId || daoData.deployedAddress}/invite`}
+        >
           <Users className="w-4 h-4 mr-2" />
           Manage Invites
         </Button>
-        <Button variant="outline" onClick={() => window.location.href = `/dao/${daoData.deployedAddress}/fund`}>
+        <Button
+          variant="outline"
+          onClick={() => window.location.href = `/dao/${daoData.daoId || daoData.deployedAddress}/fund`}
+        >
           <Wallet className="w-4 h-4 mr-2" />
           Fund Treasury
         </Button>
@@ -1988,9 +2144,12 @@ const CreateDAOFlowContent = () => {
     switch (currentStep) {
       case 1: return renderDaoTypeSelection();
       case 2: return renderBasicInfo();
-      case 3: return renderMembers();
-      case 4: return renderPreview();
-      case 5: return renderSuccess();
+      case 3: return renderGovernance();
+      case 4: return renderTreasury();
+      case 5: return renderMembers();
+      case 6: return renderElderSelection();
+      case 7: return renderPreview();
+      case 8: return renderSuccess();
       default: return renderDaoTypeSelection();
     }
   };
@@ -2077,7 +2236,7 @@ const CreateDAOFlowContent = () => {
             {lastSaved && (
               <div className="text-xs text-gray-500 mb-4 flex items-center gap-2">
                 <CheckCircle className="w-3 h-3 text-green-600" />
-                Draft auto-saved at {lastSaved.toLocaleTimeString()}
+                Draft auto-saved at {lastSaved?.toLocaleTimeString()}
               </div>
             )}
 
@@ -2087,7 +2246,7 @@ const CreateDAOFlowContent = () => {
           </CardContent>
         </Card>
 
-        {currentStep < 5 && (
+        {currentStep < 8 && (
           <div className="flex justify-between items-center">
             <div className="flex gap-2">
               <Button
@@ -2115,7 +2274,7 @@ const CreateDAOFlowContent = () => {
               disabled={!isStepValid}
               className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700"
             >
-              {currentStep === 4 ? 'Create' : 'Continue'}
+              {currentStep === 7 ? 'Create' : 'Continue'}
               <ChevronUp className="w-4 h-4" />
             </Button>
           </div>
@@ -2137,5 +2296,6 @@ const CreateDAOFlow = () => {
     </DAOOrchestratorProvider>
   );
 };
+}
 
-export default CreateDAOFlow;
+export default CreateDAOFlowContent;

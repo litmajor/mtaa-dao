@@ -20,13 +20,15 @@ import {
   Plus,
 } from 'lucide-react';
 import { getOkediDashboard, DAOInfo, ProposalInfo, TransactionInfo, EscrowInfo, DaoChatData, ChatMessage } from '../../api/dashboardApi';
+import type { OkediDashboardDataT } from '../../api/dashboardApi';
 import UnifiedBalance from './UnifiedBalance';
-import KycChecklistModal from '../kyc/KycChecklistModal';
+const KycChecklistModal = React.lazy(() => import('../kyc/KycChecklistModal').then((mod: any) => ({ default: mod.default || mod.KycChecklistModal || mod } as any)));
 import { CreateProposalModal } from '../governance/CreateProposalModal';
 import DAOCardComponent from '../governance/DAOCard';
 import { RoleProgressModal } from '../governance/RoleProgressModal';
 import { VoteProposalModal } from '../governance/VoteProposalModal';
 import { ProposalResultsCard } from '../governance/ProposalResultsCard';
+import { useDaoContext } from '@/contexts/dao-context';
 
 /* ============================================================================
  * FIXED: Added proper TypeScript interfaces to replace 'any' types
@@ -59,7 +61,7 @@ const PREVIEW_LIMITS = {
   DAOS: 4,
   PROPOSALS: 3,
   ESCROWS: 3,
-  TRANSACTIONS: 10,
+  TRANSACTIONS: 5,
   CHAT_MESSAGES: 5,
   RECENT_VOTES: 3,
 };
@@ -425,16 +427,31 @@ BalanceHeader.displayName = 'BalanceHeader';
 // GLOBAL STATE BAR
 // Persistent topmost organizational heartbeat
 // ============================================================================
-const GlobalStateBar = React.memo(({ data, online, lastUpdated }: { data?: any; online?: boolean; lastUpdated?: Date }) => {
+type GlobalStateBarData = OkediDashboardDataT;
+
+const formatGlobalValue = (value: number | string | undefined) => {
+  if (typeof value === 'number') {
+    return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+
+  return value ?? '—';
+};
+
+const titleCase = (value?: string) => {
+  if (!value) return '—';
+  return value.charAt(0).toUpperCase() + value.slice(1);
+};
+
+const GlobalStateBar = React.memo(({ data, online, lastUpdated }: { data?: GlobalStateBarData; online?: boolean; lastUpdated?: Date }) => {
   const navItems = [
-    { id: 'treasury', label: 'Treasury NAV', value: data?.totalBalance },
-    { id: 'proposals', label: 'Active Proposals', value: data?.activeProposals?.length || 0 },
-    { id: 'members', label: 'Total Members', value: data?.memberCount || data?.membersCount || 0 },
-    { id: 'exposure', label: 'Treasury Exposure', value: data?.treasuryExposure || '—' },
-    { id: 'regime', label: 'Market Regime', value: data?.marketRegime || 'Neutral' },
-    { id: 'exchanges', label: 'Connected Exchanges', value: (data?.connectedExchanges || []).length || 0 },
-    { id: 'risk', label: 'Risk Level', value: data?.riskLevel || 'Medium' },
-    { id: 'pending', label: 'Pending Actions', value: data?.pendingActions?.length || 0 },
+    { id: 'treasury', label: 'Treasury NAV', value: formatGlobalValue(data?.totalBalance) },
+    { id: 'proposals', label: 'Active Proposals', value: formatGlobalValue(data?.activeProposals?.length || 0) },
+    { id: 'members', label: 'Total Members', value: formatGlobalValue(data?.memberCount ?? data?.daoCount ?? 0) },
+    { id: 'exposure', label: 'Treasury Exposure', value: formatGlobalValue(data?.treasuryExposure ?? 0) },
+    { id: 'regime', label: 'Market Regime', value: titleCase(data?.marketRegime) },
+    { id: 'exchanges', label: 'Connected Exchanges', value: formatGlobalValue(data?.connectedExchanges ?? 0) },
+    { id: 'risk', label: 'Risk Level', value: titleCase(data?.riskLevel) },
+    { id: 'pending', label: 'Pending Actions', value: formatGlobalValue(data?.pendingActionsCount ?? 0) },
   ];
 
   return (
@@ -462,7 +479,8 @@ GlobalStateBar.displayName = 'GlobalStateBar';
 // ============================================================================
 // DOMAIN NAV (Top-level organizational domains)
 // ============================================================================
-const DOMAIN_LIST = ['Treasury','Governance','Markets','Members','Intelligence','Automation','Operations'];
+// Trimmed to the four chama pillars plus chat and intelligence
+const DOMAIN_LIST = ['Treasury','Governance','Members','Chat','Intelligence'];
 
 
 // ============================================================================
@@ -841,11 +859,16 @@ export default function OkediDashboard() {
   const [userAddress, setUserAddress] = useState<string>('');
   const [selectedUserForRole, setSelectedUserForRole] = useState<string | null>(null);
   const [showRoleProgressModal, setShowRoleProgressModal] = useState(false);
+  const [selectedDAOForRole, setSelectedDAOForRole] = useState<string | null>(null);
   const userId = data?.currentUser?.id || '';
+  const [showVoteProposalModal, setShowVoteProposalModal] = useState(false);
+  const [selectedProposal, setSelectedProposal] = useState<any | null>(null);
+  const { selectedDaoId, isLoading: daoContextLoading } = useDaoContext();
   
   // Governance State
   const [showCreateProposalModal, setShowCreateProposalModal] = useState(false);
   const [selectedDAOForProposal, setSelectedDAOForProposal] = useState<string | null>(null);
+  const activeDaoId = selectedDaoId || data?.selectedDaoId || (data?.myDAOs || [])[0]?.id || null;
   
   // ============================================================================
   // DATA FETCHING
@@ -855,6 +878,11 @@ export default function OkediDashboard() {
   // IMPACT: Real-time dashboard reflecting actual user data
   
   useEffect(() => {
+    if (daoContextLoading) {
+      setLoading(true);
+      return;
+    }
+
     let isMounted = true;
     
     const loadData = async () => {
@@ -872,9 +900,9 @@ export default function OkediDashboard() {
             setShowFirstRun(true);
           }
           // if there is a DAO and onboarding not complete, show checklist
-          const firstDao = (dashboardData?.myDAOs || [])[0];
-          if (firstDao) {
-            const onboard = firstDao.onboarding || firstDao.onboardingState || null;
+          const dashboardDao = (dashboardData?.myDAOs || []).find((dao: any) => dao.id === (selectedDaoId || dashboardData?.selectedDaoId)) || (dashboardData?.myDAOs || [])[0];
+          if (dashboardDao) {
+            const onboard = dashboardDao.onboarding || dashboardDao.onboardingState || null;
             // treat null as not complete
             if (!onboard || !onboard.complete) {
               setShowOnboardingChecklist(true);
@@ -901,25 +929,40 @@ export default function OkediDashboard() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [daoContextLoading, selectedDaoId]);
 
-  // Fetch recent payments for primary DAO (first DAO) to show a quick list
+  // Fetch recent payments for the selected DAO to show a quick list
   useEffect(() => {
-    const firstDao = (data?.myDAOs || [])[0];
-    if (!firstDao) return;
+    if (!activeDaoId) return;
     let mounted = true;
     (async () => {
       try {
-        const res = await fetch(`/api/v1/daos/${firstDao.id}/payments`);
-        if (!res.ok) return;
-        const j = await res.json();
-        if (mounted) setRecentPayments(j.data || []);
+        const res = await fetch(`/api/v1/daos/${activeDaoId}/payments`, { credentials: 'include' });
+        if (res.ok) {
+          const j = await res.json();
+          if (mounted) setRecentPayments(j.data || j.payments || []);
+          return;
+        }
+
+        const ledgerRes = await fetch(`/api/v1/daos/${activeDaoId}/contributions/ledger?limit=10`, { credentials: 'include' });
+        if (!ledgerRes.ok) return;
+        const ledgerJson = await ledgerRes.json();
+        const ledgerPayments = (ledgerJson.ledger || []).map((entry: any) => ({
+          id: entry.id,
+          contributorId: entry.contributor || entry.userId,
+          amount: Number(entry.amount || 0),
+          currency: entry.currency || 'KES',
+          status: entry.transactionHash ? 'confirmed' : 'recorded',
+          daoId: activeDaoId,
+          source: 'contribution-ledger',
+        }));
+        if (mounted) setRecentPayments(ledgerPayments);
       } catch (err) {
         // ignore
       }
     })();
     return () => { mounted = false; };
-  }, [data?.myDAOs]);
+  }, [activeDaoId]);
 
   // Minimal first-run component: collects chama name then routes into simplified flow
   const FirstRun = ({ userName }: { userName?: string }) => {
@@ -1053,9 +1096,28 @@ export default function OkediDashboard() {
   }, [data?.referralStats?.referralLink, showToast]);
   
   const handleVote = useCallback((daoId: string) => {
-    console.log('Voting in DAO:', daoId);
-    showToast('Vote submitted successfully!', 'success');
-  }, [showToast]);
+    // Open the vote modal with either a real proposal (if present) or a placeholder
+    const dao = data?.myDAOs?.find((d: any) => d.id === daoId);
+    const proposal = (dao && ((dao.proposals && dao.proposals[0]) || (dao.recentProposals && dao.recentProposals[0]))) || {
+      id: `proposal-${Date.now()}`,
+      title: 'Community Proposal (placeholder)',
+      description: 'No proposal details available. This is a placeholder to allow voting in the dashboard.',
+      type: 'general',
+      status: 'voting',
+      daoId: daoId,
+      daoName: dao?.name || 'DAO',
+      createdBy: dao?.createdBy || data?.currentUser?.id || '',
+      createdByName: dao?.createdByName || data?.currentUser?.name || '',
+      createdAt: new Date(),
+      votingEndsAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 3),
+      currentVotes: { for: 0, against: 0, abstain: 0 },
+      votesRequired: 1,
+      userVotingPower: data?.currentUser?.votingPower || 1,
+    };
+
+    setSelectedProposal(proposal);
+    setShowVoteProposalModal(true);
+  }, [data]);
   
   const handleSend = useCallback((daoId: string) => {
     const kycStatus = data?.kycStatus || 'not-started';
@@ -1085,21 +1147,12 @@ export default function OkediDashboard() {
   }, []);
 
   const quickActions = useMemo(() => [
-    { id: 'record-payment', label: 'Record Payment', icon: <Plus className="h-5 w-5" />, onClick: () => { trackQuickActionClick('record-payment', 'Record Payment'); setShowRecordPaymentModal(true); }, color: 'bg-emerald-600', description: 'Record M-Pesa or cash' },
-    { id: 'receive', label: 'Receive', icon: <ArrowUpRight className="h-5 w-5" />, onClick: () => { trackQuickActionClick('receive', 'Receive'); setShowReceiveModal(true); }, color: 'bg-green-600', description: 'Get funds' },
-    { id: 'send', label: 'Send', icon: <Send className="h-5 w-5" />, onClick: () => { trackQuickActionClick('send', 'Send'); handleSend(''); }, color: 'bg-blue-600', description: 'Send funds' },
-    { id: 'transfer', label: 'Transfer', icon: <ArrowLeftRight className="h-5 w-5" />, onClick: () => { trackQuickActionClick('transfer', 'Transfer'); setShowTransferModal(true); }, color: 'bg-orange-600', description: 'Move between' },
-    { id: 'links', label: 'Payment Links', icon: <Share className="h-5 w-5" />, onClick: () => { trackQuickActionClick('links', 'Payment Links'); setShowPaymentLinksModal(true); }, color: 'bg-cyan-600', description: 'Create & manage' },
-    { id: 'split', label: 'Batch Transfer', icon: <Users className="h-5 w-5" />, onClick: () => { trackQuickActionClick('split', 'Batch Transfer'); setShowBatchTransferModal(true); }, color: 'bg-pink-600', description: 'Send to many' },
-    { id: 'bill', label: 'Bill Split', icon: <Split className="h-5 w-5" />, onClick: () => { trackQuickActionClick('bill', 'Bill Split'); setShowBillSplitModal(true); }, color: 'bg-red-600', description: 'Split expenses' },
-    { id: 'recurring', label: 'Recurring', icon: <Repeat className="h-5 w-5" />, onClick: () => { trackQuickActionClick('recurring', 'Recurring Payments'); setShowRecurringPaymentModal(true); }, color: 'bg-indigo-600', description: 'Automate payments' },
-    { id: 'escrow', label: 'Escrow', icon: <Lock className="h-5 w-5" />, onClick: () => { trackQuickActionClick('escrow', 'Escrow'); window.location.href = '/wallet?action=escrow'; }, color: 'bg-purple-600', description: 'Secure payment' },
-    { id: 'vote', label: 'Vote', icon: <CheckCircle className="h-5 w-5" />, onClick: () => { trackQuickActionClick('vote', 'Vote'); window.location.href = '/governance'; }, color: 'bg-amber-600', description: 'Vote now' },
-    { id: 'refer', label: 'Refer', icon: <Gift className="h-5 w-5" />, onClick: () => { trackQuickActionClick('refer', 'Refer'); window.location.href = '/referrals'; }, color: 'bg-yellow-600', description: 'Earn rewards' },
-    { id: 'settings', label: 'Settings', icon: <Settings className="h-5 w-5" />, onClick: () => { trackQuickActionClick('settings', 'Settings'); window.location.href = '/settings'; }, color: 'bg-slate-600', description: 'Account' },
-    { id: 'analytics', label: 'Analytics', icon: <TrendingUp className="h-5 w-5" />, onClick: () => { trackQuickActionClick('analytics', 'Analytics'); window.location.href = '/wallet?action=analytics'; }, color: 'bg-indigo-600', description: 'View stats' },
-    { id: 'chat', label: 'Chat', icon: <MessageCircle className="h-5 w-5" />, onClick: () => { trackQuickActionClick('chat', 'Chat'); window.location.href = '/dao-chat'; }, color: 'bg-teal-600', description: 'DAO chat' },
-  ], [trackQuickActionClick, handleSend]);
+    { id: 'record-payment', label: 'Record Payment', icon: <Plus className="h-5 w-5" />, onClick: () => { trackQuickActionClick('record-payment', 'Record Payment'); activeDaoId ? setShowRecordPaymentModal(true) : showToast('Select a DAO before recording payment', 'warning'); }, color: 'bg-emerald-600', description: 'Record M-Pesa or cash' },
+    { id: 'invite-member', label: 'Invite Member', icon: <Users className="h-5 w-5" />, onClick: () => { trackQuickActionClick('invite-member', 'Invite Member'); if (activeDaoId) window.location.href = `/dao/${activeDaoId}/members`; }, color: 'bg-purple-600', description: 'Add to chama' },
+    { id: 'vote', label: 'Vote', icon: <CheckCircle className="h-5 w-5" />, onClick: () => { trackQuickActionClick('vote', 'Vote'); if (activeDaoId) handleVote(activeDaoId); }, color: 'bg-amber-600', description: 'Vote now' },
+    { id: 'create-proposal', label: 'Create Proposal', icon: <MoreHorizontal className="h-5 w-5" />, onClick: () => { trackQuickActionClick('create-proposal', 'Create Proposal'); if (activeDaoId) { setSelectedDAOForProposal(activeDaoId); setShowCreateProposalModal(true); } }, color: 'bg-blue-600', description: 'Start decision' },
+    { id: 'send-receive', label: 'Send / Receive', icon: <Send className="h-5 w-5" />, onClick: () => { trackQuickActionClick('send-receive', 'Send / Receive'); if (activeDaoId) handleSend(activeDaoId); }, color: 'bg-green-600', description: 'Move funds' },
+  ], [activeDaoId, trackQuickActionClick, handleSend, handleVote, showToast]);
   
   const handleActionClick = useCallback((actionId: string) => {
     console.log('Quick action clicked:', actionId);
@@ -1298,8 +1351,7 @@ export default function OkediDashboard() {
     // ONBOARDING CHECKLIST (blocks full dashboard until complete)
     // ============================================================================
     if (showOnboardingChecklist && onboardingState) {
-      const firstDao = (data?.myDAOs || [])[0];
-      const daoId = firstDao?.id;
+      const daoId = activeDaoId;
 
       const markStep = async (step: string) => {
         try {
@@ -1495,18 +1547,22 @@ export default function OkediDashboard() {
           </div>
 
           {/* KYC CHECKLIST MODAL */}
-          <KycChecklistModal
-            visible={showKycModal && kycRequired}
-            onClose={() => {
-              setShowKycModal(false);
-              setKycRequired(false);
-            }}
-            onProceed={() => {
-              setShowKycModal(false);
-              setKycRequired(false);
-              window.location.href = '/kyc';
-            }}
-          />
+          <Suspense fallback={null}>
+            {showKycModal && kycRequired && (
+              React.createElement(KycChecklistModal as any, {
+                visible: true,
+                onClose: () => {
+                  setShowKycModal(false);
+                  setKycRequired(false);
+                },
+                onProceed: () => {
+                  setShowKycModal(false);
+                  setKycRequired(false);
+                  window.location.href = '/kyc';
+                }
+              })
+            )}
+          </Suspense>
           
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* MY DAOs */}
@@ -1557,8 +1613,10 @@ export default function OkediDashboard() {
                           setSelectedDAOForProposal(daoId);
                           setShowCreateProposalModal(true);
                         }}
-                        onActivityClick={(daoId) => {
+                        onActivityClick={() => {
+                          // Open role progress for the current user in this DAO
                           setSelectedUserForRole(userId); // Use current user
+                          setSelectedDAOForRole(dao.id);
                           setShowRoleProgressModal(true);
                         }}
                         showRoleProgress={true}
@@ -1600,10 +1658,9 @@ export default function OkediDashboard() {
                                   try {
                                     const res = await fetch(`/api/v1/daos/${p.daoId}/payments/${p.id}/confirm`, { method: 'POST' });
                                     if (res.ok) {
-                                      // refresh the payments list for the primary DAO
-                                      const firstDao = (data?.myDAOs || [])[0];
-                                      if (firstDao) {
-                                        const rr = await fetch(`/api/v1/daos/${firstDao.id}/payments`);
+                                      // refresh the payments list for the selected DAO
+                                      if (activeDaoId) {
+                                        const rr = await fetch(`/api/v1/daos/${activeDaoId}/payments`, { credentials: 'include' });
                                         if (rr.ok) {
                                           const jj = await rr.json();
                                           setRecentPayments(jj.data || []);
@@ -1880,22 +1937,7 @@ export default function OkediDashboard() {
             </div>
           )}
           
-          {/* TIP OF THE DAY */}
-          <div className={SECONDARY_SURFACE}>
-            <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
-              <Gift className="h-5 w-5 text-yellow-400" />
-              Tip of the Day
-            </h3>
-            <p className="text-slate-300 text-sm">{data?.tipOfTheDay || 'Welcome to OKEDI Dashboard!'}</p>
-            <div className="flex gap-2 mt-3">
-              <Button variant="outline" className="text-xs">
-                Next Tip
-              </Button>
-              <Button variant="outline" className="text-xs">
-                Dismiss
-              </Button>
-            </div>
-          </div>
+          {/* Tip panel removed per request */}
           
         </div>
         
@@ -1973,10 +2015,37 @@ export default function OkediDashboard() {
         )}
 
         {/* RECORD PAYMENT MODAL (OKEDI) */}
-        {showRecordPaymentModal && (
+        {showRecordPaymentModal && activeDaoId && (
           <Suspense fallback={<div>Loading...</div>}>
-            {React.createElement(RecordPaymentModal as any, { isOpen: showRecordPaymentModal, daoId: (data?.myDAOs||[])[0]?.id, onClose: () => setShowRecordPaymentModal(false), onSuccess: (res:any) => { setToast({ message: 'Payment recorded', type: 'success' }); setRecentPayments(prev => [ ...(prev||[]).slice(0,9), { id: res.paymentId, contributorId: (data?.currentUser?.id || ''), amount: Number((res.amountKES||0)), currency: 'KES', status: 'pending', daoId: (data?.myDAOs||[])[0]?.id } ]); } })}
+            {React.createElement(RecordPaymentModal as any, { isOpen: showRecordPaymentModal, daoId: activeDaoId, onClose: () => setShowRecordPaymentModal(false), onSuccess: (res:any) => { setToast({ message: 'Payment recorded', type: 'success' }); setRecentPayments(prev => [ ...(prev||[]).slice(0,9), { id: res.paymentId || res.contributionId, contributorId: (data?.currentUser?.id || ''), amount: Number((res.amountKES||res.amount||0)), currency: 'KES', status: 'pending', daoId: activeDaoId } ]); } })}
           </Suspense>
+        )}
+
+        {/* ROLE PROGRESS MODAL (opens when clicking activity) */}
+        {showRoleProgressModal && selectedDAOForRole && (
+          <RoleProgressModal
+            isOpen={showRoleProgressModal}
+            onClose={() => { setShowRoleProgressModal(false); setSelectedDAOForRole(null); }}
+            daoId={selectedDAOForRole}
+            daoName={data?.myDAOs?.find((d: any) => d.id === selectedDAOForRole)?.name || ''}
+            currentRole={(data?.myDAOs?.find((d: any) => d.id === selectedDAOForRole)?.role as any) || 'member'}
+            currentActivityPoints={data?.myDAOs?.find((d: any) => d.id === selectedDAOForRole)?.activityPoints || 0}
+            activityHistory={data?.myDAOs?.find((d: any) => d.id === selectedDAOForRole)?.activity || []}
+            promotionHistory={[]}
+            memberSince={new Date(data?.myDAOs?.find((d: any) => d.id === selectedDAOForRole)?.memberSince || Date.now())}
+            onRequestPromotion={() => {}}
+            promotionEligible={Boolean(data?.myDAOs?.find((d: any) => d.id === selectedDAOForRole)?.promotionEligible)}
+          />
+        )}
+
+        {/* VOTE PROPOSAL MODAL */}
+        {showVoteProposalModal && selectedProposal && (
+          <VoteProposalModal
+            isOpen={showVoteProposalModal}
+            proposal={selectedProposal}
+            onClose={() => { setShowVoteProposalModal(false); setSelectedProposal(null); }}
+            onVoteSuccess={(voteType: string) => { showToast('Vote submitted!', 'success'); setShowVoteProposalModal(false); setSelectedProposal(null); }}
+          />
         )}
 
         {/* CREATE PROPOSAL MODAL */}

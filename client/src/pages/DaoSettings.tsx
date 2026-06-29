@@ -17,8 +17,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { ShortTermDaoExtension } from '@/components/ShortTermDaoExtension';
 import { FreeTierLimitWarning } from '@/components/FreeTierLimitWarning';
 import { authClient } from '@/utils/authClient';
+import { useDaoContext } from '@/contexts/dao-context';
 
 export default function DaoSettings({ daoName = "Your DAO" }) {
+  const { selectedDaoId, selectedDao, daos } = useDaoContext();
   // Platform-set constants
   const disbursementFee = 2;
   const withdrawalFee = 2;
@@ -26,10 +28,9 @@ export default function DaoSettings({ daoName = "Your DAO" }) {
   const [isLoading, setIsLoading] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Dummy DAO data for demonstration - replace with actual data fetching
-  const daoId = "dummy-dao-id";
+  const daoId = selectedDaoId || '';
   const dao = {
-    daoType: "short_term",
+    daoType: selectedDao?.type || "short_term",
     plan: "initial",
     extensionCount: 1,
     planExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
@@ -67,8 +68,9 @@ export default function DaoSettings({ daoName = "Your DAO" }) {
     setSaveSuccess(false);
     (async () => {
       try {
-            // derive daoId from selected context if available
-            const daoId = (localStorage.getItem('selectedDaoId') || 'dummy-dao-id');
+        if (!daoId) {
+          throw new Error('Select a DAO before saving settings');
+        }
 
             // Check local role guard before attempting server save
             if (!canEdit) {
@@ -122,12 +124,13 @@ export default function DaoSettings({ daoName = "Your DAO" }) {
   useEffect(() => {
     (async () => {
       try {
-        const daoId = (localStorage.getItem('selectedDaoId') || '');
-        if (!daoId) return;
+        if (!daoId) {
+          setUserRole(null);
+          setCanEdit(false);
+          return;
+        }
 
-        // Get user's DAOs to determine role
-        const myDaos = await authClient.get('/api/users/my-daos');
-        const found = Array.isArray(myDaos) ? myDaos.find((d: any) => d.id === daoId) : null;
+        const found = daos.find((d: any) => d.id === daoId) || selectedDao;
         const role = found?.role || null;
         setUserRole(role);
         setCanEdit(role === 'admin' || role === 'elder');
@@ -153,7 +156,7 @@ export default function DaoSettings({ daoName = "Your DAO" }) {
         console.warn('Failed to determine DAO role', err);
       }
     })();
-  }, [setDraft]);
+  }, [daoId, daos, selectedDao, setDraft]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4 flex items-center justify-center">
@@ -172,10 +175,16 @@ export default function DaoSettings({ daoName = "Your DAO" }) {
             <Settings className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-4xl font-bold text-white mb-2 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-            {daoName}
+            {selectedDao?.name || daoName}
           </h1>
           <p className="text-lg text-gray-300">Configure your DAO's fee structure</p>
         </div>
+
+        {!daoId && (
+          <div className="mb-6 p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-800">
+            Select a DAO from the global switcher to edit settings.
+          </div>
+        )}
 
         {/* Role banner for non-admins */}
         {!canEdit && (

@@ -10,27 +10,22 @@ import { Badge } from "@/components/ui/badge";
 import { DaoOnboardingTour } from '@/components/DaoOnboardingTour';
 import Shell from '../components/ui/shell';
 import { Grid } from '../components/ui/grid';
+import type { ClientDAO } from '../../../shared/types/dao';
 
 type DaoRole = "elder" | "proposer" | "member" | null;
 
-interface DAO {
-  id: number;
-  name: string;
-  description: string;
-  memberCount: number;
-  treasuryBalance: number;
-  role: DaoRole;
+// Extends canonical ClientDAO with page-local UI-only fields
+interface DAO extends ClientDAO {
+  id: any; // API returns number IDs on legacy routes
   isJoined: boolean;
-  gradient: string;
-  theme: string;
-  trending: boolean;
-  growthRate: number;
-  recentActivity: string;
-  avatar: string;
-  // Added missing properties for UI rendering
+  theme?: string;
+  trending?: boolean;
+  growthRate?: number;
+  recentActivity?: string;
+  avatar?: string;
   regionalTags?: string[];
   causeTags?: string[];
-  primaryCause?: string; // User's custom cause description
+  primaryCause?: string;
   featuredMessage?: string;
   enableSocialReactions?: boolean;
   supportCount?: number;

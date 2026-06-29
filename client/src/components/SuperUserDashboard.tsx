@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Shield, BarChart, Users, Coins, Network, Eye, Loader2, Settings, AlertTriangle, TrendingUp, Clock, Database, Server, Activity } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../pages/hooks/useAuth';
+import AdminWorkersCard from './admin/AdminWorkersCard';
 
 type ChainInfo = {
   chain?: string;
@@ -454,6 +455,10 @@ export default function SuperUserDashboard() {
                     </div>
                     <p className="text-white/70">Create and manage investment pools</p>
                   </Link>
+                  <div className="bg-white/10 rounded-2xl p-6">
+                    <h3 className="text-lg font-bold text-white mb-4">Worker Status</h3>
+                    <AdminWorkersCard />
+                  </div>
                 </div>
 
                 {/* Recent DAOs */}

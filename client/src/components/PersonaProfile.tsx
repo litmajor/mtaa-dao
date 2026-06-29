@@ -74,13 +74,13 @@ const PERSONA_INFO: Record<string, { name: string; role: string; icon: string; c
   },
   yuki: {
     name: 'Yuki',
-    role: 'Developer/Trader',
-    icon: '🛠️',
+    role: 'DeFi Trading',
+    icon: '📈',
     color: '#06B6D4'
   },
   amara: {
     name: 'Amara',
-    role: 'Investor/Analyst/Manager',
+    role: 'Long-term / Investing',
     icon: '💰',
     color: '#EC4899'
   }

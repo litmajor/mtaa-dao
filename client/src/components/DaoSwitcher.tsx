@@ -1,30 +1,25 @@
-
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { Check, ChevronDown, TrendingUp, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import { ChevronDown, Check, Users, TrendingUp } from 'lucide-react';
-import { apiGet } from '@/lib/api';
+import { useDaoContext } from '@/contexts/dao-context';
 
 export default function DaoSwitcher() {
   const navigate = useNavigate();
-  const { id: currentDaoId } = useParams();
+  const { id: routeDaoId } = useParams();
+  const { daos, selectedDaoId, selectDao, isLoading } = useDaoContext();
   const [open, setOpen] = useState(false);
 
-  // Fetch user's DAOs
-  const { data: daos = [] } = useQuery({
-    queryKey: ['/api/v1/daos'],
-    queryFn: async () => {
-      const data = await apiGet<any[]>('/api/v1/daos');
-      return Array.isArray(data) ? data.filter((d: any) => d.isJoined) : [];
-    },
-  });
+  const activeDaoId = routeDaoId || selectedDaoId || null;
+  const currentDao = useMemo(
+    () => daos.find((dao) => dao.id === activeDaoId) || daos[0] || null,
+    [activeDaoId, daos]
+  );
 
-  const currentDao = daos.find((d: any) => d.id === parseInt(currentDaoId || '0'));
-
-  const switchDao = (daoId: number) => {
+  const switchDao = (daoId: string) => {
+    selectDao(daoId);
     navigate(`/dao/${daoId}`);
     setOpen(false);
   };
@@ -52,25 +47,27 @@ export default function DaoSwitcher() {
         </SheetHeader>
 
         <div className="mt-6 space-y-2">
-          {daos.length === 0 ? (
+          {isLoading ? (
+            <div className="text-center py-8 text-gray-500">Loading groups...</div>
+          ) : daos.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
               <p className="text-sm">No groups yet</p>
-              <Button 
+              <Button
                 onClick={() => navigate('/daos')}
-                size="sm" 
+                size="sm"
                 className="mt-4"
               >
                 Discover Groups
               </Button>
             </div>
           ) : (
-            daos.map((dao: any) => (
+            daos.map((dao) => (
               <button
                 key={dao.id}
                 onClick={() => switchDao(dao.id)}
                 className={`w-full p-3 rounded-lg flex items-start gap-3 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${
-                  dao.id === parseInt(currentDaoId || '0') ? 'bg-purple-50 dark:bg-purple-900/20 border-2 border-purple-500' : 'border border-gray-200 dark:border-gray-700'
+                  dao.id === activeDaoId ? 'bg-purple-50 dark:bg-purple-900/20 border-2 border-purple-500' : 'border border-gray-200 dark:border-gray-700'
                 }`}
               >
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${
@@ -78,23 +75,23 @@ export default function DaoSwitcher() {
                 }`}>
                   {dao.avatar || dao.name[0]}
                 </div>
-                
+
                 <div className="flex-1 text-left">
                   <div className="flex items-center justify-between mb-1">
                     <p className="font-semibold text-sm">{dao.name}</p>
-                    {dao.id === parseInt(currentDaoId || '0') && (
+                    {dao.id === activeDaoId && (
                       <Check className="w-4 h-4 text-purple-600" />
                     )}
                   </div>
-                  
+
                   <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
                     <span className="flex items-center gap-1">
                       <Users className="w-3 h-3" />
-                      {dao.memberCount}
+                      {dao.memberCount ?? 0}
                     </span>
                     <span className="flex items-center gap-1">
                       <TrendingUp className="w-3 h-3" />
-                      ${dao.treasuryBalance?.toLocaleString() || 0}
+                      ${Number(dao.treasuryBalance ?? 0).toLocaleString()}
                     </span>
                   </div>
 

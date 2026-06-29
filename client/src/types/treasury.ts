@@ -4,8 +4,8 @@
  * multi-chain, multi-token treasury management
  */
 
-// DAO Type Union
-export type DAOType = 'free' | 'shortTerm' | 'collective' | 'governance' | 'meta';
+// DAO Type Union — matches DaoType in shared/types/dao.ts and the dao_type column in the daos table
+export type DAOType = 'harambee' | 'shortTerm' | 'savings' | 'community' | 'investment' | 'merryGoRound';
 
 // Supported blockchain networks
 export type ChainType = 'CELO' | 'ETH' | 'BSC' | 'POLYGON' | 'ARBITRUM';

@@ -28,7 +28,7 @@ import { useAccount, useBalance } from 'wagmi';
 interface VaultFormData {
   name: string;
   description: string;
-  vaultType: 'regular' | 'savings' | 'locIUSE ALL IMPORTS AND UPDATE THE WIZARD TO ANDLE BOTH THE DAO/USER VAULT CREATION, DEPENDS WITH CONTEXTked_savings' | 'yield' | 'dao_treasury';
+  vaultType: 'regular' | 'savings' | 'locked_savings' | 'yield' | 'dao_treasury';
   primaryCurrency: 'CELO' | 'cUSD' | 'cEUR' | 'cREAL' | 'USDT' | 'USDC' | 'VEUR' | 'MTAA';
   yieldStrategy?: string;
   riskLevel: 'low' | 'medium' | 'high';
@@ -37,6 +37,8 @@ interface VaultFormData {
   daoId?: string;
   performanceFee?: string;
   managementFee?: string;
+  isMultiAsset: boolean;
+  allocations: { symbol: string; percentage: number }[];
 }
 
 const VAULT_TYPES = [
@@ -94,10 +96,12 @@ const CURRENCIES = [
 
 export function VaultCreationWizard({ 
   onClose, 
-  onSuccess 
+  onSuccess,
+  daoId
 }: { 
   onClose: () => void; 
   onSuccess: (vaultId: string) => void;
+  daoId?: string;
 }) {
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -106,13 +110,16 @@ export function VaultCreationWizard({
   const [formData, setFormData] = useState<VaultFormData>({
     name: '',
     description: '',
-    vaultType: 'regular',
+    vaultType: daoId ? 'dao_treasury' : 'regular',
     primaryCurrency: 'cUSD',
     riskLevel: 'low',
-    minDeposit: '10',
-    maxDeposit: '1000000',
+    minDeposit: '',
+    maxDeposit: '',
+    daoId: daoId || '',
     performanceFee: '15',
-    managementFee: '2'
+    managementFee: '2',
+    isMultiAsset: false,
+    allocations: [{ symbol: 'cUSD', percentage: 100 }]
   });
 
   const { address } = useAccount();
@@ -145,6 +152,17 @@ export function VaultCreationWizard({
         if (maxDep < minDep) {
           setError('Maximum deposit must be greater than minimum');
           return false;
+        }
+        if (formData.isMultiAsset) {
+          const totalAllocation = formData.allocations.reduce((sum, a) => sum + (Number(a.percentage) || 0), 0);
+          if (Math.abs(totalAllocation - 100) > 0.01) {
+            setError(`Total token allocation must be exactly 100%. Current: ${totalAllocation}%`);
+            return false;
+          }
+          if (formData.allocations.some(a => (Number(a.percentage) || 0) <= 0)) {
+            setError('All selected tokens must have an allocation > 0%');
+            return false;
+          }
         }
         return true;
       case 3:
@@ -343,30 +361,122 @@ export function VaultCreationWizard({
           {step === 2 && (
             <div className="space-y-6">
               <div>
-                <Label htmlFor="currency">Primary Currency * <TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger></Label>
-                <TooltipContent>Choose a stablecoin for lower volatility.</TooltipContent>
-                <Select 
-                  value={formData.primaryCurrency} 
-                  onValueChange={(value) => updateField('primaryCurrency', value)}
-                >
-                  <SelectTrigger className="mt-1" aria-label="Select currency">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CURRENCIES.map((currency) => (
-                      <SelectItem key={currency.symbol} value={currency.symbol}>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{currency.symbol}</span>
-                          <span className="text-sm text-gray-500">- {currency.name}</span>
-                          {currency.stable && (
-                            <Badge variant="outline" className="text-xs">Stable</Badge>
-                          )}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label className="mb-3 block">Vault Architecture * <TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger></Label>
+                <TooltipContent>Single token or multi-asset portfolio</TooltipContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Card
+                    className={`cursor-pointer transition-all ${!formData.isMultiAsset ? 'ring-2 ring-blue-600 bg-blue-50' : 'hover:shadow-md'}`}
+                    onClick={() => {
+                      updateField('isMultiAsset', false);
+                      updateField('allocations', [{ symbol: formData.primaryCurrency, percentage: 100 }]);
+                    }}
+                  >
+                    <CardContent className="p-4 text-center">
+                      <Wallet className={`w-8 h-8 mx-auto mb-2 ${!formData.isMultiAsset ? 'text-blue-600' : 'text-gray-400'}`} />
+                      <h4 className="font-semibold mb-1">Single Asset</h4>
+                      <p className="text-xs text-gray-500">One primary token (e.g. cUSD)</p>
+                    </CardContent>
+                  </Card>
+                  <Card
+                    className={`cursor-pointer transition-all ${formData.isMultiAsset ? 'ring-2 ring-blue-600 bg-blue-50' : 'hover:shadow-md'}`}
+                    onClick={() => updateField('isMultiAsset', true)}
+                  >
+                    <CardContent className="p-4 text-center">
+                      <TrendingUp className={`w-8 h-8 mx-auto mb-2 ${formData.isMultiAsset ? 'text-blue-600' : 'text-gray-400'}`} />
+                      <h4 className="font-semibold mb-1">Multi-Asset Portfolio</h4>
+                      <p className="text-xs text-gray-500">Basket of weighted tokens</p>
+                    </CardContent>
+                  </Card>
+                </div>
               </div>
+
+              {!formData.isMultiAsset ? (
+                <div>
+                  <Label htmlFor="currency">Primary Currency * <TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger></Label>
+                  <TooltipContent>Choose a stablecoin for lower volatility.</TooltipContent>
+                  <Select 
+                    value={formData.primaryCurrency} 
+                    onValueChange={(value) => {
+                      updateField('primaryCurrency', value);
+                      updateField('allocations', [{ symbol: value, percentage: 100 }]);
+                    }}
+                  >
+                    <SelectTrigger className="mt-1" aria-label="Select currency">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CURRENCIES.map((currency) => (
+                        <SelectItem key={currency.symbol} value={currency.symbol}>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{currency.symbol}</span>
+                            <span className="text-sm text-gray-500">- {currency.name}</span>
+                            {currency.stable && (
+                              <Badge variant="outline" className="text-xs">Stable</Badge>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div className="space-y-4 border p-4 rounded-lg bg-gray-50/50">
+                  <div className="flex items-center justify-between">
+                    <Label>Token Allocations *</Label>
+                    <Badge variant={formData.allocations.reduce((sum, a) => sum + (Number(a.percentage) || 0), 0) === 100 ? "default" : "destructive"}>
+                      Total: {formData.allocations.reduce((sum, a) => sum + (Number(a.percentage) || 0), 0)}%
+                    </Badge>
+                  </div>
+                  <div className="space-y-3">
+                    {formData.allocations.map((alloc, idx) => (
+                      <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-3">
+                        <Select 
+                          value={alloc.symbol} 
+                          onValueChange={(val) => {
+                            const newAllocs = [...formData.allocations];
+                            newAllocs[idx].symbol = val;
+                            updateField('allocations', newAllocs);
+                            if (idx === 0) updateField('primaryCurrency', val as any);
+                          }}
+                        >
+                          <SelectTrigger className="w-full sm:w-48"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {CURRENCIES.map(c => <SelectItem key={c.symbol} value={c.symbol}>{c.symbol}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <div className="flex items-center gap-2 flex-1">
+                          <Input 
+                            type="number" min="0" max="100" value={alloc.percentage} 
+                            onChange={(e) => {
+                              const newAllocs = [...formData.allocations];
+                              newAllocs[idx].percentage = Number(e.target.value);
+                              updateField('allocations', newAllocs);
+                            }}
+                            className="w-full"
+                            placeholder="Percentage"
+                          />
+                          <span className="text-sm font-medium text-gray-500 w-6">%</span>
+                        </div>
+                        {idx > 0 && (
+                          <Button variant="ghost" size="icon" onClick={() => {
+                            updateField('allocations', formData.allocations.filter((_, i) => i !== idx));
+                          }}>
+                            <span className="sr-only">Remove</span>
+                            <Info className="w-4 h-4 rotate-45 text-red-500" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <Button 
+                    type="button" variant="outline" size="sm" className="mt-2 w-full sm:w-auto"
+                    onClick={() => updateField('allocations', [...formData.allocations, { symbol: 'CELO', percentage: 0 }])}
+                    disabled={formData.allocations.length >= CURRENCIES.length}
+                  >
+                    <Plus className="w-4 h-4 mr-2" /> Add Token
+                  </Button>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>

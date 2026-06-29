@@ -85,13 +85,13 @@ export interface OkediDashboardData {
   fiatCurrency?: string;
 }
 
-// FIXED: Added missing schema interfaces for type safety
+// Added missing schema interfaces for type safety
 export interface DAOInfo {
   id: string;
   name: string;
   logo?: string;
   members: number;
-  role: 'founder' | 'admin' | 'member';
+  role: 'founder' | 'admin' | 'member' | 'elder';
 }
 
 export interface ProposalInfo {
@@ -160,7 +160,7 @@ export interface DashboardResponse<T> {
  */
 export async function getOkediDashboard() {
   try {
-    const res = await fetch('/api/dashboard/okedi', {
+    const res = await fetch('/api/v1/dashboard/okedi', {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include', // Include auth cookies
@@ -183,7 +183,7 @@ export async function getOkediDashboard() {
  */
 export async function getUserPersona() {
   try {
-    const res = await fetch('/api/users/persona-data', {
+    const res = await fetch('/api/v1/users/persona-data', {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -206,7 +206,7 @@ export async function getUserPersona() {
  */
 export async function getUserDAOs() {
   try {
-    const res = await fetch('/api/users/my-daos', {
+    const res = await fetch('/api/v1/users/my-daos', {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -229,7 +229,7 @@ export async function getUserDAOs() {
  */
 export async function getYukiDashboard() {
   try {
-    const res = await fetch('/api/dashboard/yuki', {
+    const res = await fetch('/api/v1/dashboard/yuki', {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -252,7 +252,7 @@ export async function getYukiDashboard() {
  */
 export async function getAmaraDashboard() {
   try {
-    const res = await fetch('/api/dashboard/amara', {
+    const res = await fetch('/api/v1/dashboard/amara', {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',

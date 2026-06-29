@@ -1,268 +1,377 @@
+import { useEffect, useMemo, useState } from "react";
+import { useParams } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { isAddress } from "viem";
+import { AlertCircle, Bot, Calendar, CheckCircle, Clock, Crown, ExternalLink, Shield, Wallet } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/components/ui/use-toast";
+import { authClient } from "@/utils/authClient";
 
-import React, { useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { useToast } from '@/components/ui/use-toast';
-import { authClient } from '@/utils/authClient';
-import { 
-  CreditCard, 
-  Vault, 
-  Users, 
-  CheckCircle, 
-  AlertCircle,
-  TrendingUp,
-  Calendar,
-  DollarSign,
-  Settings
-} from 'lucide-react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+const SUBSCRIPTION_MANAGER_ADDRESS = import.meta.env.VITE_DAO_SUBSCRIPTION_MANAGER_ADDRESS as `0x${string}` | undefined;
+const MAX_ACCEPTABLE_CUSD = (1n << 256n) - 1n;
 
-type PaymentMethod = 'stripe' | 'vault' | 'split_equal' | 'split_custom' | 'split_percentage';
+const DAO_SUBSCRIPTION_MANAGER_ABI = [
+  {
+    type: "function",
+    name: "subscribe",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "daoTreasury", type: "address" },
+      { name: "tierId", type: "uint256" },
+      { name: "durationMonths", type: "uint256" },
+      { name: "maxAcceptableCUSD", type: "uint256" }
+    ],
+    outputs: []
+  }
+] as const;
+
+const TIERS = [
+  {
+    id: "free",
+    tierId: 0,
+    name: "Free",
+    price: "KES 0",
+    description: "Manual proposals, manual treasury transactions, and basic voting.",
+    limits: "20 members, 1 active vault",
+    icon: <Shield className="w-5 h-5 text-slate-600" />,
+    features: ["Manual proposal creation", "Manual treasury transactions", "Basic voting"]
+  },
+  {
+    id: "pro",
+    tierId: 1,
+    name: "Pro",
+    price: "KES 1,000/mo",
+    description: "AI-assisted governance, DeFi automation, and advanced treasury analytics.",
+    limits: "100 members, 5 active vaults",
+    icon: <Bot className="w-5 h-5 text-orange-600" />,
+    features: ["AI risk scoring", "Proposal summaries", "Auto-rebalancing", "Historical treasury reports"]
+  },
+  {
+    id: "collective",
+    tierId: 2,
+    name: "Collective",
+    price: "KES 5,000/mo",
+    description: "Custom AI controls, unrestricted governance, priority execution, and branding.",
+    limits: "Unlimited members and vaults",
+    icon: <Crown className="w-5 h-5 text-emerald-600" />,
+    features: ["Custom AI parameters", "Sub-DAOs", "Complex voting strategies", "Priority support"]
+  }
+] as const;
+
+type Tier = (typeof TIERS)[number];
 
 interface SubscriptionDetails {
   currentPlan: string;
   status: string;
-  nextBillingDate: string;
-  billingHistory: any[];
+  nextBillingDate?: string | null;
+  daoTreasuryAddress?: string | null;
+  userRole?: string | null;
+  isAdmin?: boolean;
+  billingHistory?: Array<{
+    id: string;
+    description?: string | null;
+    createdAt?: string | null;
+    currency?: string | null;
+    amount?: string | null;
+    status?: string | null;
+  }>;
+}
+
+async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
+  const response = await authClient.fetch(url, options);
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.error?.message || payload?.error || payload?.message || `HTTP ${response.status}`);
+  }
+
+  const payload = await response.json();
+  return (payload?.data ?? payload) as T;
 }
 
 export default function SubscriptionManagement() {
-  const { daoId } = useParams();
+  const params = useParams<{ daoId?: string; id?: string }>();
+  const daoId = params.daoId ?? params.id;
+  const { address, isConnected } = useAccount();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
-  const [selectedPlan, setSelectedPlan] = useState('premium');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('vault');
-  const [selectedVaultId, setSelectedVaultId] = useState('');
-  const [splitType, setSplitType] = useState<'equal' | 'custom' | 'percentage'>('equal');
 
-  // Fetch subscription details
-  const { data: subscription, isLoading } = useQuery<SubscriptionDetails>({
-    queryKey: ['subscription', daoId],
-    queryFn: async () => {
-      return await authClient.get(`/api/subscription-management/${daoId}`);
-    }
+  const [pendingTier, setPendingTier] = useState<Tier | null>(null);
+  const [syncedHash, setSyncedHash] = useState<`0x${string}` | null>(null);
+
+  const subscriptionQuery = useQuery<SubscriptionDetails>({
+    queryKey: ["subscription-management", daoId],
+    enabled: !!daoId,
+    queryFn: () => requestJson<SubscriptionDetails>(`/api/subscription-management/${daoId}`)
   });
 
-  // Fetch DAO vaults
-  const { data: vaults } = useQuery({
-    queryKey: ['dao-vaults', daoId],
-    queryFn: async () => {
-      return await authClient.get(`/api/v1/daos/${daoId}/treasury/vaults`);
-    }
+  const { writeContract, data: txHash, error: writeError, isPending: isWritePending } = useWriteContract();
+  const receipt = useWaitForTransactionReceipt({
+    hash: txHash,
+    query: { enabled: !!txHash }
   });
 
-  // Upgrade mutation
-  const upgradeMutation = useMutation({
-    mutationFn: async (data: any) => {
-      return await authClient.post(`/api/subscription-management/${daoId}/upgrade`, data);
+  const syncMutation = useMutation({
+    mutationFn: async ({ tier, hash }: { tier: Tier; hash: `0x${string}` }) => {
+      return requestJson(`/api/subscription-management/${daoId}/upgrade`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plan: tier.id,
+          tierId: tier.tierId,
+          durationMonths: 1,
+          paymentMethod: "onchain",
+          transactionHash: hash,
+          daoTreasury: subscriptionQuery.data?.daoTreasuryAddress
+        })
+      });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['subscription', daoId] });
+      queryClient.invalidateQueries({ queryKey: ["subscription-management", daoId] });
       toast({
-        title: 'Success!',
-        description: 'Subscription upgraded successfully'
+        title: "Subscription synced",
+        description: "The confirmed on-chain upgrade is now reflected in the app."
       });
+      setPendingTier(null);
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({
-        title: 'Error',
+        title: "Backend sync failed",
         description: error.message,
-        variant: 'destructive'
+        variant: "destructive"
       });
     }
   });
 
-  const handleUpgrade = () => {
-    const upgradeData: any = {
-      plan: selectedPlan,
-      paymentMethod
-    };
+  useEffect(() => {
+    if (!receipt.isSuccess || !txHash || !pendingTier || syncedHash === txHash) return;
+    setSyncedHash(txHash);
+    syncMutation.mutate({ tier: pendingTier, hash: txHash });
+  }, [pendingTier, receipt.isSuccess, syncMutation, syncedHash, txHash]);
 
-    if (paymentMethod === 'vault') {
-      upgradeData.vaultId = selectedVaultId;
+  useEffect(() => {
+    if (!writeError) return;
+    toast({
+      title: "Transaction rejected",
+      description: writeError.message,
+      variant: "destructive"
+    });
+  }, [toast, writeError]);
+
+  const currentTier = useMemo(() => {
+    return TIERS.find((tier) => tier.id === subscriptionQuery.data?.currentPlan) ?? TIERS[0];
+  }, [subscriptionQuery.data?.currentPlan]);
+
+  const daoTreasuryAddress = subscriptionQuery.data?.daoTreasuryAddress;
+  const hasSubscriptionManager = !!SUBSCRIPTION_MANAGER_ADDRESS && isAddress(SUBSCRIPTION_MANAGER_ADDRESS);
+  const hasDaoTreasury = !!daoTreasuryAddress && isAddress(daoTreasuryAddress);
+  const isBusy = isWritePending || receipt.isLoading || syncMutation.isPending;
+
+  const handleUpgrade = (tier: Tier) => {
+    if (!subscriptionQuery.data?.isAdmin) {
+      toast({
+        title: "Admin access required",
+        description: "Only DAO admins can manage subscriptions.",
+        variant: "destructive"
+      });
+      return;
     }
 
-    if (paymentMethod.startsWith('split')) {
-      upgradeData.splitConfig = { type: splitType };
+    if (!isConnected || !address) {
+      toast({
+        title: "Wallet required",
+        description: "Connect the DAO admin wallet before upgrading.",
+        variant: "destructive"
+      });
+      return;
     }
 
-    upgradeMutation.mutate(upgradeData);
+    if (!hasSubscriptionManager || !SUBSCRIPTION_MANAGER_ADDRESS) {
+      toast({
+        title: "Subscription contract missing",
+        description: "Set VITE_DAO_SUBSCRIPTION_MANAGER_ADDRESS before upgrading.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!hasDaoTreasury || !daoTreasuryAddress) {
+      toast({
+        title: "DAO treasury missing",
+        description: "This DAO does not have a valid on-chain treasury address.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setPendingTier(tier);
+    setSyncedHash(null);
+    writeContract({
+      address: SUBSCRIPTION_MANAGER_ADDRESS,
+      abi: DAO_SUBSCRIPTION_MANAGER_ABI,
+      functionName: "subscribe",
+      args: [daoTreasuryAddress as `0x${string}`, BigInt(tier.tierId), 1n, MAX_ACCEPTABLE_CUSD]
+    });
   };
 
-  if (isLoading) return <div className="p-8">Loading...</div>;
+  if (subscriptionQuery.isLoading) {
+    return <div className="p-8">Loading subscription...</div>;
+  }
 
-  const pricing = {
-    community: { amount: 0, currency: 'KES' },
-    growth: { amount: 300, currency: 'KES' },
-    professional: { amount: 1200, currency: 'KES' }
-  };
+  if (subscriptionQuery.isError) {
+    return (
+      <div className="max-w-3xl mx-auto p-6">
+        <Card className="border-red-200">
+          <CardContent className="p-6 flex gap-3 text-red-700">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <p>{subscriptionQuery.error.message}</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!subscriptionQuery.data?.isAdmin) {
+    return (
+      <div className="max-w-3xl mx-auto p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="w-5 h-5" />
+              Admin Access Required
+            </CardTitle>
+            <CardDescription>Only DAO admins can manage subscription tiers.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-gray-600">Your current DAO role is {subscriptionQuery.data?.userRole || "not a member"}.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-3xl font-bold">Subscription Management</h1>
-          <p className="text-gray-600">Manage your DAO's subscription and billing</p>
+          <p className="text-gray-600">Upgrade your DAO tier through the on-chain subscription manager.</p>
         </div>
-        <Badge variant={subscription?.status === 'active' ? 'default' : 'secondary'}>
-          {subscription?.currentPlan?.toUpperCase()}
+        <Badge variant={subscriptionQuery.data.status === "active" ? "default" : "secondary"} className="w-fit">
+          {currentTier.name} - {subscriptionQuery.data.status || "active"}
         </Badge>
       </div>
 
-      {/* Current Subscription Status */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <CheckCircle className="w-5 h-5 text-green-600" />
+            <CheckCircle className="w-5 h-5 text-emerald-600" />
             Current Subscription
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <p className="text-sm text-gray-600">Plan</p>
-              <p className="text-lg font-semibold">{subscription?.currentPlan || 'Free'}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Status</p>
-              <p className="text-lg font-semibold">{subscription?.status || 'Active'}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Next Billing</p>
-              <p className="text-lg font-semibold">
-                {subscription?.nextBillingDate 
-                  ? new Date(subscription.nextBillingDate).toLocaleDateString()
-                  : 'N/A'
-                }
-              </p>
-            </div>
+        <CardContent className="grid md:grid-cols-3 gap-4">
+          <div>
+            <p className="text-sm text-gray-600">Plan</p>
+            <p className="text-lg font-semibold">{currentTier.name}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600">Next Billing</p>
+            <p className="text-lg font-semibold">
+              {subscriptionQuery.data.nextBillingDate
+                ? new Date(subscriptionQuery.data.nextBillingDate).toLocaleDateString()
+                : "N/A"}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600">DAO Treasury</p>
+            <p className="text-sm font-mono truncate">{daoTreasuryAddress || "Not configured"}</p>
           </div>
         </CardContent>
       </Card>
 
-      {/* Upgrade Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Upgrade to Premium</CardTitle>
-          <CardDescription>Choose your payment method and upgrade your DAO</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Payment Method Selection */}
-          <div className="space-y-4">
-            <Label className="text-base font-semibold">Payment Method</Label>
-            <RadioGroup value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as PaymentMethod)}>
-              <div className="flex items-center space-x-2 p-4 border rounded-lg hover:bg-gray-50">
-                <RadioGroupItem value="vault" id="vault" />
-                <Label htmlFor="vault" className="flex items-center gap-2 cursor-pointer flex-1">
-                  <Vault className="w-5 h-5 text-blue-600" />
-                  <div>
-                    <p className="font-medium">Pay from DAO Vault</p>
-                    <p className="text-sm text-gray-600">Automatic payment from DAO treasury</p>
-                  </div>
-                </Label>
-              </div>
+      {(!hasSubscriptionManager || !hasDaoTreasury) && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="p-4 flex gap-3 text-amber-800">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <p className="text-sm">
+              {!hasSubscriptionManager
+                ? "Missing VITE_DAO_SUBSCRIPTION_MANAGER_ADDRESS. Upgrades are disabled until the frontend knows the deployed contract address."
+                : "This DAO needs a valid chama treasury address before on-chain subscription upgrades can run."}
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
-              <div className="flex items-center space-x-2 p-4 border rounded-lg hover:bg-gray-50">
-                <RadioGroupItem value="stripe" id="stripe" />
-                <Label htmlFor="stripe" className="flex items-center gap-2 cursor-pointer flex-1">
-                  <CreditCard className="w-5 h-5 text-purple-600" />
-                  <div>
-                    <p className="font-medium">Pay with Stripe</p>
-                    <p className="text-sm text-gray-600">Card payment via Stripe</p>
-                  </div>
-                </Label>
-              </div>
+      <div className="grid md:grid-cols-3 gap-6">
+        {TIERS.map((tier) => {
+          const isCurrent = tier.id === currentTier.id;
+          const canUpgrade = tier.id !== "free" && !isCurrent;
 
-              <div className="flex items-center space-x-2 p-4 border rounded-lg hover:bg-gray-50">
-                <RadioGroupItem value="split_equal" id="split_equal" />
-                <Label htmlFor="split_equal" className="flex items-center gap-2 cursor-pointer flex-1">
-                  <Users className="w-5 h-5 text-green-600" />
-                  <div>
-                    <p className="font-medium">Split Equally Among Members</p>
-                    <p className="text-sm text-gray-600">Automatic equal split between all members</p>
-                  </div>
-                </Label>
-              </div>
-
-              <div className="flex items-center space-x-2 p-4 border rounded-lg hover:bg-gray-50">
-                <RadioGroupItem value="split_custom" id="split_custom" />
-                <Label htmlFor="split_custom" className="flex items-center gap-2 cursor-pointer flex-1">
-                  <Settings className="w-5 h-5 text-orange-600" />
-                  <div>
-                    <p className="font-medium">Custom Split by Role</p>
-                    <p className="text-sm text-gray-600">Admins/Elders pay more, members less</p>
-                  </div>
-                </Label>
-              </div>
-
-              <div className="flex items-center space-x-2 p-4 border rounded-lg hover:bg-gray-50">
-                <RadioGroupItem value="split_percentage" id="split_percentage" />
-                <Label htmlFor="split_percentage" className="flex items-center gap-2 cursor-pointer flex-1">
-                  <TrendingUp className="w-5 h-5 text-indigo-600" />
-                  <div>
-                    <p className="font-medium">Split by Voting Power/Contribution</p>
-                    <p className="text-sm text-gray-600">Based on member contribution level</p>
-                  </div>
-                </Label>
-              </div>
-            </RadioGroup>
-          </div>
-
-          {/* Vault Selection */}
-          {paymentMethod === 'vault' && (
-            <div className="space-y-2">
-              <Label>Select Vault</Label>
-              <Select value={selectedVaultId} onValueChange={setSelectedVaultId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose a vault" />
-                </SelectTrigger>
-                <SelectContent>
-                  {vaults?.vaults?.map((vault: any) => (
-                    <SelectItem key={vault.id} value={vault.id}>
-                      {vault.name} - Balance: {vault.balance} {vault.currency}
-                    </SelectItem>
+          return (
+            <Card key={tier.id} className={isCurrent ? "border-emerald-500 border-2" : ""}>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  {tier.icon}
+                  {tier.name}
+                </CardTitle>
+                <CardDescription>{tier.description}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div>
+                  <p className="text-3xl font-bold">{tier.price}</p>
+                  <p className="text-sm text-gray-500">{tier.limits}</p>
+                </div>
+                <div className="space-y-2">
+                  {tier.features.map((feature) => (
+                    <div key={feature} className="flex items-start gap-2 text-sm">
+                      <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+                      <span>{feature}</span>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+                </div>
+                {isCurrent ? (
+                  <Button disabled className="w-full">Current Plan</Button>
+                ) : canUpgrade ? (
+                  <Button
+                    onClick={() => handleUpgrade(tier)}
+                    disabled={isBusy || !hasSubscriptionManager || !hasDaoTreasury}
+                    className="w-full"
+                  >
+                    <Wallet className="w-4 h-4 mr-2" />
+                    {pendingTier?.id === tier.id && isBusy ? "Processing..." : `Upgrade to ${tier.name}`}
+                  </Button>
+                ) : (
+                  <Button disabled variant="outline" className="w-full">Included by default</Button>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
 
-          {/* Pricing Info */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <DollarSign className="w-5 h-5 text-blue-600" />
-                <span className="font-semibold">Total Amount</span>
-              </div>
-              <span className="text-2xl font-bold text-blue-600">
-                KES {pricing[selectedPlan as keyof typeof pricing].amount}
-              </span>
-            </div>
-            {paymentMethod.startsWith('split') && (
-              <p className="text-sm text-gray-600 mt-2">
-                Will be automatically split among all active members
+      {(txHash || syncMutation.isPending) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="w-5 h-5" />
+              Upgrade Status
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-gray-600">
+            <p>Wallet transaction: {receipt.isSuccess ? "confirmed" : receipt.isLoading ? "confirming" : "submitted"}</p>
+            <p>Backend sync: {syncMutation.isSuccess ? "complete" : syncMutation.isPending ? "syncing" : "waiting"}</p>
+            {txHash && (
+              <p className="font-mono break-all flex items-center gap-2">
+                {txHash}
+                <ExternalLink className="w-4 h-4 flex-shrink-0" />
               </p>
             )}
-          </div>
+          </CardContent>
+        </Card>
+      )}
 
-          <Button 
-            onClick={handleUpgrade} 
-            className="w-full"
-            disabled={upgradeMutation.isPending || (paymentMethod === 'vault' && !selectedVaultId)}
-          >
-            {upgradeMutation.isPending ? 'Processing...' : 'Upgrade to Premium'}
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* Billing History */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -271,28 +380,28 @@ export default function SubscriptionManagement() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-2">
-            {subscription?.billingHistory?.length > 0 ? (
-              subscription.billingHistory.map((bill: any) => (
-                <div key={bill.id} className="flex items-center justify-between p-3 border rounded-lg">
+          {subscriptionQuery.data.billingHistory?.length ? (
+            <div className="space-y-2">
+              {subscriptionQuery.data.billingHistory.map((bill) => (
+                <div key={bill.id} className="flex items-center justify-between p-3 border rounded-lg gap-4">
                   <div>
-                    <p className="font-medium">{bill.description}</p>
+                    <p className="font-medium">{bill.description || "Subscription payment"}</p>
                     <p className="text-sm text-gray-600">
-                      {new Date(bill.createdAt).toLocaleDateString()}
+                      {bill.createdAt ? new Date(bill.createdAt).toLocaleDateString() : "N/A"}
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold">{bill.currency} {bill.amount}</p>
-                    <Badge variant={bill.status === 'completed' ? 'default' : 'secondary'}>
-                      {bill.status}
+                    <p className="font-semibold">{bill.currency || "KES"} {bill.amount || "0"}</p>
+                    <Badge variant={bill.status === "completed" || bill.status === "paid" ? "default" : "secondary"}>
+                      {bill.status || "completed"}
                     </Badge>
                   </div>
                 </div>
-              ))
-            ) : (
-              <p className="text-center text-gray-500 py-4">No billing history yet</p>
-            )}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-center text-gray-500 py-4">No billing history yet</p>
+          )}
         </CardContent>
       </Card>
     </div>

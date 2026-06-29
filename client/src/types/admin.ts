@@ -1,4 +1,5 @@
 // Admin Dashboard Types
+import type { ClientDAO } from '../../../shared/types/dao';
 
 export interface AnalyticsMetrics {
   monthlyRevenue: number;
@@ -82,14 +83,8 @@ export interface BetaAccessUser {
   grantedBy: string;
 }
 
-export interface DAO {
-  id: string;
-  name: string;
-  description: string;
-  status: 'active' | 'inactive' | 'suspended';
-  memberCount: number;
-  treasuryBalance: number;
-  createdAt: string;
+// Admin DAO view — extends ClientDAO with admin-specific fields
+export interface DAO extends ClientDAO {
   creator: string;
 }
 

@@ -14,7 +14,7 @@ import { DividendReinvestmentPanel } from './DividendReinvestmentPanel';
 import { MarginLendingPanel } from './MarginLendingPanel';
 import { FixedIncomePanel } from './FixedIncomePanel';
 import './treasury-panels.css';
-import '@/components/treasury/TreasuryDashboard.css';
+import './TreasuryDashboard.css';
 
 interface TreasuryDashboardProps {
   userId: string;

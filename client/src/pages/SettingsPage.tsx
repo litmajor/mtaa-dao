@@ -1,27 +1,42 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Helmet } from "react-helmet-async";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { User, Lock, Bell, Palette, Zap } from "lucide-react";
 import { useAuth } from "@/pages/hooks/useAuth";
 import { PageLoading } from "@/components/ui/page-loading";
-import { PersonaModeSelector } from "@/components/PersonaModeSelector";
+import { useLocation } from "wouter";
+
+// Tab Components
+import { ProfileTab } from "@/components/settings/ProfileTab";
+import { PersonaTab } from "@/components/settings/PersonaTab";
+import { SecurityTab } from "@/components/settings/SecurityTab";
+import { NotificationsTab } from "@/components/settings/NotificationsTab";
+import { PreferencesTab } from "@/components/settings/PreferencesTab";
+import { ApiKeysTab } from "@/components/settings/ApiKeysTab";
+import { AdminTab } from "@/components/settings/AdminTab";
+
+import { User, Lock, Bell, Palette, Zap, KeyRound, ShieldAlert } from "lucide-react";
 
 /**
- * Unified Settings Page - Phase 3
- * 
- * Tabs:
- * ✅ Subprofile: Choose active subprofile (okedi/yuki/amara)
- * ✅ Profile: Name, email, avatar, bio
- * ✅ Security: Password, 2FA, sessions
- * ✅ Notifications: Email, push preferences
- * ✅ Preferences: Theme, language, timezone
+ * Comprehensive Settings Page
+ * Replaces the legacy SettingsPage with a wired, 7-tab configuration panel.
  */
-
 export default function SettingsPage() {
   const { user, isLoading } = useAuth();
-  const [activeTab, setActiveTab] = useState("subprofile");
+  const [, setLocation] = useLocation();
+  const [activeTab, setActiveTab] = useState("profile");
+
+  // Read hash from URL to jump to specific tab (e.g. /settings#security)
+  useEffect(() => {
+    const hash = window.location.hash.replace('#', '');
+    if (['profile', 'persona', 'security', 'notifications', 'preferences', 'api-keys', 'admin'].includes(hash)) {
+      setActiveTab(hash);
+    }
+  }, []);
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    window.location.hash = value;
+  };
 
   if (isLoading) {
     return <PageLoading message="Loading settings..." />;
@@ -29,234 +44,129 @@ export default function SettingsPage() {
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-gray-500">Unable to load settings</p>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-white">
+        <p className="text-gray-400 mb-4">Please log in to view settings.</p>
+        <button 
+          onClick={() => setLocation("/login")}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-md"
+        >
+          Go to Login
+        </button>
       </div>
     );
   }
 
+  const isAdmin = user.role === 'admin';
+
   return (
     <>
       <Helmet>
-        <title>Account Settings | Mtaa DAO</title>
-        <meta
-          name="description"
-          content="Manage your account, security, and preferences"
-        />
+        <title>Account Settings | MtaaDAO</title>
+        <meta name="description" content="Manage your account, security, and preferences" />
       </Helmet>
 
-      <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
+      <div className="min-h-screen bg-[#050505] text-white">
         {/* Header */}
-        <div className="border-b border-slate-700 bg-slate-900/50 backdrop-blur-sm">
-          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <h1 className="text-3xl font-bold text-white">Account Settings</h1>
-            <p className="text-slate-400 mt-2">Manage your account, subprofile, and preferences</p>
+        <div className="border-b border-white/10 bg-black/40 backdrop-blur-md sticky top-0 z-10">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <h1 className="text-3xl font-bold text-white tracking-tight">Settings</h1>
+            <p className="text-gray-400 mt-2">Manage your account, personas, and global preferences.</p>
           </div>
         </div>
 
-        {/* Settings Content */}
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            {/* Tab Navigation */}
-            <TabsList className="grid w-full grid-cols-5 mb-8 bg-slate-800 border border-slate-700">
-              <TabsTrigger value="subprofile" className="flex items-center gap-2">
-                <Zap className="h-4 w-4" />
-                <span className="hidden sm:inline">Subprofile</span>
-              </TabsTrigger>
-              <TabsTrigger value="profile" className="flex items-center gap-2">
-                <User className="h-4 w-4" />
-                <span className="hidden sm:inline">Profile</span>
-              </TabsTrigger>
-              <TabsTrigger value="security" className="flex items-center gap-2">
-                <Lock className="h-4 w-4" />
-                <span className="hidden sm:inline">Security</span>
-              </TabsTrigger>
-              <TabsTrigger value="notifications" className="flex items-center gap-2">
-                <Bell className="h-4 w-4" />
-                <span className="hidden sm:inline">Alerts</span>
-              </TabsTrigger>
-              <TabsTrigger value="preferences" className="flex items-center gap-2">
-                <Palette className="h-4 w-4" />
-                <span className="hidden sm:inline">Prefs</span>
-              </TabsTrigger>
-            </TabsList>
+        {/* Content */}
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full flex flex-col md:flex-row gap-8">
+            
+            {/* Sidebar Navigation */}
+            <div className="w-full md:w-64 shrink-0">
+              <TabsList className="flex flex-col h-auto bg-transparent space-y-1 p-0">
+                <TabsTrigger 
+                  value="profile" 
+                  className="w-full justify-start gap-3 px-4 py-3 h-auto data-[state=active]:bg-white/10 data-[state=active]:text-white text-gray-400 hover:text-white rounded-xl"
+                >
+                  <User className="h-5 w-5" /> Profile & Wallet
+                </TabsTrigger>
+                
+                <TabsTrigger 
+                  value="persona" 
+                  className="w-full justify-start gap-3 px-4 py-3 h-auto data-[state=active]:bg-white/10 data-[state=active]:text-white text-gray-400 hover:text-white rounded-xl"
+                >
+                  <Zap className="h-5 w-5" /> Personas
+                </TabsTrigger>
 
-            {/* SUBPROFILE TAB - NEW */}
-            <TabsContent value="subprofile" className="space-y-6">
-              <Card className="bg-slate-800 border-slate-700">
-                <CardHeader>
-                  <CardTitle className="text-white">Active Subprofile</CardTitle>
-                  <CardDescription>
-                    Switch between subprofiles to organize your dashboard and AI guidance.
-                    All features are accessible from any subprofile.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <PersonaModeSelector variant="full" />
-                </CardContent>
-              </Card>
+                <TabsTrigger 
+                  value="security" 
+                  className="w-full justify-start gap-3 px-4 py-3 h-auto data-[state=active]:bg-white/10 data-[state=active]:text-white text-gray-400 hover:text-white rounded-xl"
+                >
+                  <Lock className="h-5 w-5" /> Security
+                </TabsTrigger>
 
-              <Card className="bg-slate-800 border-slate-700">
-                <CardHeader>
-                  <CardTitle className="text-white text-lg">What are Subprofiles?</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <h4 className="font-semibold text-white mb-2">🎤 Okedi - Community Manager</h4>
-                    <p className="text-slate-300 text-sm">
-                      Focus on governance, creating DAOs, and leading communities. This subprofile prioritizes governance features.
-                    </p>
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-white mb-2">🛠️ Yuki - Trader</h4>
-                    <p className="text-slate-300 text-sm">
-                      Focus on trading, yield farming, and smart contracts. This subprofile prioritizes trading and DeFi features.
-                    </p>
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-white mb-2">💰 Amara - Investor</h4>
-                    <p className="text-slate-300 text-sm">
-                      Focus on passive income and wealth building. This subprofile prioritizes investment and yield opportunities.
-                    </p>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-4">
-                    💡 Tip: Your subprofile can be changed anytime. All features remain accessible - subprofiles just change how your dashboard is organized and what Morio (our AI) focuses on.
-                  </p>
-                </CardContent>
-              </Card>
-            </TabsContent>
+                <TabsTrigger 
+                  value="notifications" 
+                  className="w-full justify-start gap-3 px-4 py-3 h-auto data-[state=active]:bg-white/10 data-[state=active]:text-white text-gray-400 hover:text-white rounded-xl"
+                >
+                  <Bell className="h-5 w-5" /> Notifications
+                </TabsTrigger>
 
-            {/* PROFILE TAB */}
-            <TabsContent value="profile" className="space-y-6">
-              <Card className="bg-slate-800 border-slate-700">
-                <CardHeader>
-                  <CardTitle className="text-white">Profile Information</CardTitle>
-                  <CardDescription>
-                    Update your personal information
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">Username</label>
-                    <div className="p-3 bg-slate-700 rounded-lg text-slate-200">{user?.username}</div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">Email</label>
-                    <div className="p-3 bg-slate-700 rounded-lg text-slate-200">{user?.email}</div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">Account Created</label>
-                    <div className="p-3 bg-slate-700 rounded-lg text-slate-200">
-                      {user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
+                <TabsTrigger 
+                  value="preferences" 
+                  className="w-full justify-start gap-3 px-4 py-3 h-auto data-[state=active]:bg-white/10 data-[state=active]:text-white text-gray-400 hover:text-white rounded-xl"
+                >
+                  <Palette className="h-5 w-5" /> Preferences
+                </TabsTrigger>
 
-            {/* SECURITY TAB */}
-            <TabsContent value="security" className="space-y-6">
-              <Card className="bg-slate-800 border-slate-700">
-                <CardHeader>
-                  <CardTitle className="text-white">Security Settings</CardTitle>
-                  <CardDescription>
-                    Manage your account security
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <h4 className="font-semibold text-white mb-2">Password</h4>
-                    <Button variant="outline" className="text-slate-300 border-slate-600 hover:bg-slate-700">
-                      Change Password
-                    </Button>
-                  </div>
-                  <hr className="border-slate-700" />
-                  <div>
-                    <h4 className="font-semibold text-white mb-2">Two-Factor Authentication</h4>
-                    <p className="text-slate-400 text-sm mb-3">Add an extra layer of security to your account</p>
-                    <Button variant="outline" className="text-slate-300 border-slate-600 hover:bg-slate-700">
-                      Enable 2FA
-                    </Button>
-                  </div>
-                  <hr className="border-slate-700" />
-                  <div>
-                    <h4 className="font-semibold text-white mb-2">Active Sessions</h4>
-                    <p className="text-slate-400 text-sm mb-3">Manage devices with access to your account</p>
-                    <Button variant="outline" className="text-slate-300 border-slate-600 hover:bg-slate-700">
-                      View Sessions
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
+                <TabsTrigger 
+                  value="api-keys" 
+                  className="w-full justify-start gap-3 px-4 py-3 h-auto data-[state=active]:bg-white/10 data-[state=active]:text-white text-gray-400 hover:text-white rounded-xl"
+                >
+                  <KeyRound className="h-5 w-5" /> API Keys
+                </TabsTrigger>
 
-            {/* NOTIFICATIONS TAB */}
-            <TabsContent value="notifications" className="space-y-6">
-              <Card className="bg-slate-800 border-slate-700">
-                <CardHeader>
-                  <CardTitle className="text-white">Notification Preferences</CardTitle>
-                  <CardDescription>
-                    Control how you receive updates
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between p-3 bg-slate-700 rounded-lg">
-                    <span className="text-slate-300">Email Notifications</span>
-                    <input type="checkbox" defaultChecked className="h-4 w-4" />
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-slate-700 rounded-lg">
-                    <span className="text-slate-300">DAO Updates</span>
-                    <input type="checkbox" defaultChecked className="h-4 w-4" />
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-slate-700 rounded-lg">
-                    <span className="text-slate-300">Trading Alerts</span>
-                    <input type="checkbox" defaultChecked className="h-4 w-4" />
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-slate-700 rounded-lg">
-                    <span className="text-slate-300">Weekly Summary</span>
-                    <input type="checkbox" defaultChecked className="h-4 w-4" />
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
+                {isAdmin && (
+                  <TabsTrigger 
+                    value="admin" 
+                    className="w-full justify-start gap-3 px-4 py-3 h-auto data-[state=active]:bg-red-500/20 data-[state=active]:text-red-400 text-gray-400 hover:text-white rounded-xl mt-4 border border-transparent data-[state=active]:border-red-500/30"
+                  >
+                    <ShieldAlert className="h-5 w-5" /> Admin Panel
+                  </TabsTrigger>
+                )}
+              </TabsList>
+            </div>
 
-            {/* PREFERENCES TAB */}
-            <TabsContent value="preferences" className="space-y-6">
-              <Card className="bg-slate-800 border-slate-700">
-                <CardHeader>
-                  <CardTitle className="text-white">User Preferences</CardTitle>
-                  <CardDescription>
-                    Customize your experience
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">Theme</label>
-                    <select className="w-full p-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200">
-                      <option>Dark (Current)</option>
-                      <option>Light</option>
-                      <option>Auto</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">Language</label>
-                    <select className="w-full p-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200">
-                      <option>English</option>
-                      <option>Swahili</option>
-                      <option>French</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">Timezone</label>
-                    <select className="w-full p-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200">
-                      <option>Africa/Nairobi (UTC+3)</option>
-                      <option>UTC</option>
-                      <option>America/New_York</option>
-                    </select>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
+            {/* Tab Contents */}
+            <div className="flex-1 min-w-0">
+              <TabsContent value="profile" className="m-0 border-none outline-none">
+                <ProfileTab />
+              </TabsContent>
+              
+              <TabsContent value="persona" className="m-0 border-none outline-none">
+                <PersonaTab />
+              </TabsContent>
+              
+              <TabsContent value="security" className="m-0 border-none outline-none">
+                <SecurityTab />
+              </TabsContent>
+              
+              <TabsContent value="notifications" className="m-0 border-none outline-none">
+                <NotificationsTab />
+              </TabsContent>
+              
+              <TabsContent value="preferences" className="m-0 border-none outline-none">
+                <PreferencesTab />
+              </TabsContent>
+              
+              <TabsContent value="api-keys" className="m-0 border-none outline-none">
+                <ApiKeysTab />
+              </TabsContent>
+
+              {isAdmin && (
+                <TabsContent value="admin" className="m-0 border-none outline-none">
+                  <AdminTab />
+                </TabsContent>
+              )}
+            </div>
+            
           </Tabs>
         </div>
       </div>

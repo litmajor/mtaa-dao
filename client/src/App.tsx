@@ -11,6 +11,7 @@ import { MorioProvider } from "@/components/MorioProvider";
 import { AuthProvider } from './contexts/auth-context';
 import { NavigationProvider } from './contexts/navigation-context';
 import { PersonaProvider } from './contexts/persona-context';
+import { DaoProvider } from './contexts/dao-context';
 import MorioFloatingChat from './components/MorioFloatingChat';
 import { AlertToastManager } from './components/notifications/AlertToastManager';
 // Register workspace panels (core + Yuki/Amara) on app startup
@@ -303,6 +304,7 @@ function App() {
           <ThemeProvider>
             <TooltipProvider>
               <PersonaProvider>
+                <DaoProvider userId={userId} initialDaoId={user?.currentDaoId}>
                 <MorioProvider userId={userId} daoId={user?.currentDaoId}>
                   <div className="min-h-screen bg-background text-foreground">
                     {/* Real-time Alert/Toast Manager */}
@@ -388,6 +390,7 @@ function App() {
                         <Route path="/billing" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><BillingLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/session-settings" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><SessionSettingsLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/subscription" element={<ProtectedRoute><SubscriptionPage /></ProtectedRoute>} />
+                        <Route path="/subscription/:daoId" element={<ProtectedRoute><SubscriptionManagement /></ProtectedRoute>} />
                         <Route path="/transaction-limits" element={<TransactionLimitsPage />} />
                         <Route path="/analytics" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><AnalyticsPageLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/opportunities" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><OpportunitiesPageLazy /></Suspense></ProtectedRoute>} />
@@ -534,7 +537,9 @@ function App() {
                     {isAuthenticated && <Suspense fallback={null}><MobileNav /></Suspense>}
                     {isAuthenticated && <MorioFloatingChat />}
                   </div>
-                </MorioProvider>              </PersonaProvider>              </TooltipProvider>
+                </MorioProvider>
+                </DaoProvider>
+              </PersonaProvider>              </TooltipProvider>
             </ThemeProvider>
           </NavigationProvider>
       </HelmetProvider>

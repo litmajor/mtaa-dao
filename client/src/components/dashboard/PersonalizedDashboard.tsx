@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, ChevronDown, Wallet, Gamepad2, Sparkles, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
 import { DashboardPersona, PersonaData, useDashboardPersona } from "@/hooks/useDashboardPersona";
@@ -20,9 +20,11 @@ import { AmaraDashboard } from "./AmaraDashboard";
 export function PersonalizedDashboard() {
   const activeSubprofile = useActiveSubprofile(); // Get active subprofile from PersonaContext
   const { persona, personaData, loading: personaLoading } = useDashboardPersona();
+  const { switchSubprofile } = usePersona();
   const [refreshing, setRefreshing] = useState(false);
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showPersonaDropdown, setShowPersonaDropdown] = useState(false);
 
   // Use activeSubprofile from context if available, otherwise fall back to persona hook
   const currentPersona = activeSubprofile || persona;
@@ -63,7 +65,24 @@ export function PersonalizedDashboard() {
     setRefreshing(false);
   }
 
+  const handlePersonaSwitch = async (newPersona: 'okedi' | 'yuki' | 'amara') => {
+    setShowPersonaDropdown(false);
+    await switchSubprofile(newPersona);
+  };
+
   if (personaLoading || loading) {
+    // Show persona-specific skeletons if available
+    if (currentPersona === 'amara') {
+      const { AmaraDashboardSkeleton } = require('./AmaraDashboardSkeleton');
+      return <AmaraDashboardSkeleton />;
+    }
+
+    if (currentPersona === 'yuki') {
+      const { YukiDashboardSkeleton } = require('../trading/YukiDashboardSkeleton');
+      return <YukiDashboardSkeleton />;
+    }
+
+    // Default fallback skeleton
     return (
       <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
         <div className="text-center">
@@ -83,31 +102,99 @@ export function PersonalizedDashboard() {
             <div>
               <h1 className="text-3xl font-bold text-white">
                 {currentPersona === "okedi" && "🎤 Community Dashboard"}
-                {currentPersona === "yuki" && "🛠️ Trader Dashboard"}
-                {currentPersona === "amara" && "💰 Investor Dashboard"}
+                {currentPersona === "yuki" && "📈 Trading Dashboard"}
+                {currentPersona === "amara" && "💰 Investing Dashboard"}
               </h1>
               <p className="text-slate-400 text-sm mt-1">
                 {currentPersona === "okedi" && "Govern DAOs and lead communities"}
-                {currentPersona === "yuki" && "Trade, yield farm, and execute smart contracts"}
-                {currentPersona === "amara" && "Build wealth through passive income"}
+                {currentPersona === "yuki" && "DeFi trading, liquidity, and analytics"}
+                {currentPersona === "amara" && "Long-term investments and yield opportunities"}
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="gap-2"
-            >
-              <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-              Refresh
-            </Button>
+            
+            <div className="flex items-center gap-3">
+              {/* Persona Switcher Dropdown */}
+              <div className="relative">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex items-center gap-2 border-slate-700 bg-slate-800 text-white hover:bg-slate-700"
+                  onClick={() => setShowPersonaDropdown(!showPersonaDropdown)}
+                >
+                  {currentPersona === 'okedi' && <>💳 Okedi (Foundation)</>}
+                  {currentPersona === 'yuki' && <>📈 Yuki (Trading)</>}
+                  {currentPersona === 'amara' && <>💰 Amara (Long-term / Investing)</>}
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+                
+                {showPersonaDropdown && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowPersonaDropdown(false)} />
+                    <div className="absolute right-0 mt-2 w-64 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 overflow-hidden">
+                      <div className="p-2">
+                        <p className="text-xs text-slate-400 font-semibold px-3 py-2 uppercase tracking-wider">Switch Persona</p>
+                        <button
+                          onClick={() => handlePersonaSwitch('okedi')}
+                          className={`w-full text-left px-3 py-2 text-sm text-white hover:bg-slate-700 rounded-md flex items-center gap-3 transition-colors ${
+                            currentPersona === 'okedi' ? 'bg-slate-700/50 text-blue-400' : ''
+                          }`}
+                        >
+                          <Wallet className="h-4 w-4 text-blue-400" />
+                          <div>
+                            <div className="font-medium">Okedi</div>
+                            <div className="text-[10px] text-slate-400">Foundation & Governance</div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => handlePersonaSwitch('yuki')}
+                          className={`w-full text-left px-3 py-2 text-sm text-white hover:bg-slate-700 rounded-md flex items-center gap-3 transition-colors ${
+                            currentPersona === 'yuki' ? 'bg-slate-700/50 text-green-400' : ''
+                          }`}
+                        >
+                          <TrendingUp className="h-4 w-4 text-green-400" />
+                          <div>
+                            <div className="font-medium">Yuki</div>
+                            <div className="text-[10px] text-slate-400">DeFi Trading & Liquidity</div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => handlePersonaSwitch('amara')}
+                          className={`w-full text-left px-3 py-2 text-sm text-white hover:bg-slate-700 rounded-md flex items-center gap-3 transition-colors ${
+                            currentPersona === 'amara' ? 'bg-slate-700/50 text-pink-400' : ''
+                          }`}
+                        >
+                          <Sparkles className="h-4 w-4 text-pink-400" />
+                          <div>
+                            <div className="font-medium">Amara</div>
+                            <div className="text-[10px] text-slate-400">Long-term & Investing</div>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="gap-2 border-slate-700 bg-slate-800 text-white hover:bg-slate-700"
+              >
+                <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                Refresh
+              </Button>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div 
+        key={currentPersona} 
+        className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-2 duration-300 ease-out"
+      >
         {currentPersona === "okedi" && (
           <OkediDashboard data={dashboardData} />
         )}

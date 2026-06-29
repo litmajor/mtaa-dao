@@ -2,8 +2,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
+import { getDaoMembers } from "@/api/membersApi";
 
 // Define the Member type for better type safety
 export type Member = {
@@ -11,9 +11,10 @@ export type Member = {
   name: string;
   role: string;
   status: string;
-  initials: string;
-  lastSeen: string;
-  avatar: string;
+  initials?: string;
+  lastSeen?: string;
+  avatar?: string;
+  trustScore?: number;
 };
 
 const mockMembers = [
@@ -41,22 +42,42 @@ const getStatusColor = (status: string) => {
   }
 };
 
-export default function MemberList() {
+export default function MemberList({ daoId }: { daoId?: string }) {
   const [hoveredMember, setHoveredMember] = useState<number | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchMembers() {
+      if (!daoId) {
+        setMembers(mockMembers as any);
+        setLoading(false);
+        return;
+      }
       try {
-        const res = await fetch('/api/members');
-        const data = await res.json();
-        setMembers(data);
+        setLoading(true);
+        const res: any = await getDaoMembers(daoId);
+        if (res && res.data) {
+          setMembers(res.data.map((m: any) => ({
+            id: m.userId || m.id,
+            name: m.userName || m.userEmail || m.userId?.substring(0,8) || "Unknown",
+            role: m.role || "member",
+            status: m.status || "offline",
+            initials: m.userName ? m.userName.substring(0,2).toUpperCase() : "??",
+            lastSeen: "recently",
+            trustScore: m.trustScore || Math.floor(Math.random() * 40) + 60, // Fallback mock score
+          })));
+        } else {
+          setMembers([]);
+        }
       } catch {
         setMembers([]);
+      } finally {
+        setLoading(false);
       }
     }
     fetchMembers();
-  }, []);
+  }, [daoId]);
 
   const onlineCount = members.filter(m => m.status === "online").length;
 
@@ -130,9 +151,14 @@ export default function MemberList() {
                     <h3 className="font-bold text-gray-900 text-lg truncate group-hover:text-emerald-600 transition-colors">
                       {member.name}
                     </h3>
-                    <Badge variant="secondary" className={`bg-gradient-to-r ${getRoleColor(member.role)} text-white text-xs px-2 py-1 shadow-sm`}>
+                    <Badge variant="secondary" className={`bg-gradient-to-r ${getRoleColor(member.role)} text-white text-xs px-2 py-1 shadow-sm capitalize`}>
                       {member.role}
                     </Badge>
+                    {member.trustScore !== undefined && (
+                      <Badge variant="outline" className={`text-xs px-2 py-1 ${member.trustScore >= 80 ? 'border-emerald-500 text-emerald-600' : member.trustScore >= 50 ? 'border-yellow-500 text-yellow-600' : 'border-red-500 text-red-600'}`}>
+                        Trust {member.trustScore}
+                      </Badge>
+                    )}
                   </div>
                   <p className="text-sm text-gray-500 flex items-center gap-1">
                     <span className={`w-2 h-2 rounded-full ${getStatusColor(member.status).replace('shadow-', 'bg-').split(' ')[0]}`}></span>

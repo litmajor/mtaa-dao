@@ -11,7 +11,7 @@ export interface DAOCardProps {
     name: string;
     description?: string;
     memberCount?: number;
-    role?: 'member' | 'elder' | 'admin';
+    role?: 'member' | 'elder' | 'admin' | 'founder' | 'secretary';
     treasury?: number;
     activityPoints?: number;
     promotionEligible?: boolean;

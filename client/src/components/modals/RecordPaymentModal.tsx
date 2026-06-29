@@ -8,6 +8,10 @@ export default function RecordPaymentModal({ isOpen, onClose, daoId, onSuccess }
   const [mpesaCode, setMpesaCode] = useState<string>('');
   const [note, setNote] = useState<string>('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [contributorName, setContributorName] = useState<string>('');
+  const [contributorPhone, setContributorPhone] = useState<string>('');
+  const [purpose, setPurpose] = useState<string>('monthly');
+  const [cycle, setCycle] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -37,7 +41,17 @@ export default function RecordPaymentModal({ isOpen, onClose, daoId, onSuccess }
       if (!memberId) { setError('Select a member'); setLoading(false); return; }
       if (!amountKES || Number(amountKES) <= 0) { setError('Enter amount'); setLoading(false); return; }
 
-      const payload = { memberId, amountKES: Number(amountKES), method, mpesaCode: mpesaCode || undefined, note };
+      const payload = { 
+        memberId, 
+        amountKES: Number(amountKES), 
+        method, 
+        mpesaCode: mpesaCode || undefined, 
+        note,
+        contributorName: contributorName || undefined,
+        contributorPhone: contributorPhone || undefined,
+        purpose,
+        cycle: cycle || undefined
+      };
       const res = await fetch(`/api/v1/daos/${daoId}/payments/record`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!res.ok) {
         const j = await res.json();
@@ -96,6 +110,33 @@ export default function RecordPaymentModal({ isOpen, onClose, daoId, onSuccess }
             <label htmlFor="amountInput" className="text-xs text-slate-400">Amount (KES)</label>
             <input id="amountInput" type="number" inputMode="numeric" min="1" placeholder="0"
               value={amountKES} onChange={(e) => setAmountKES(e.target.value)} className="w-full mt-1 p-2 bg-slate-800 rounded text-white" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-slate-400">Contributor Name (Optional)</label>
+              <input value={contributorName} onChange={(e) => setContributorName(e.target.value)} className="w-full mt-1 p-2 bg-slate-800 rounded text-white" placeholder="e.g. John Doe" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-400">Phone (Optional)</label>
+              <input value={contributorPhone} onChange={(e) => setContributorPhone(e.target.value)} className="w-full mt-1 p-2 bg-slate-800 rounded text-white" placeholder="e.g. 254..." />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-slate-400">Purpose</label>
+              <select value={purpose} onChange={(e) => setPurpose(e.target.value)} className="w-full mt-1 p-2 bg-slate-800 rounded text-white">
+                <option value="monthly">Monthly Contribution</option>
+                <option value="fine">Late Fine</option>
+                <option value="loan_repayment">Loan Repayment</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400">Cycle (Optional)</label>
+              <input value={cycle} onChange={(e) => setCycle(e.target.value)} className="w-full mt-1 p-2 bg-slate-800 rounded text-white" placeholder="e.g. 2026-06" />
+            </div>
           </div>
 
           <div>

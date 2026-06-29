@@ -5,6 +5,7 @@ import { Input } from '../ui/input';
 import { useToast } from '../ui/use-toast';
 import SignerCard from './SignerCard';
 import { useWalletProviders } from '../../../hooks/useWalletProviders';
+import { useFeature, LockedFeatureCard } from '@/hooks/useFeature';
 
 interface MultisigWallet {
   id?: string;
@@ -82,7 +83,14 @@ export default function MultisigWizard({ daoId, initialSigners = [], onClose, on
 
   const wallet = useWalletProviders(8453);
 
+  // Feature gating for multisig
+  const { accessible: multisigAccessible, presentation: multisigPresentation, unlock: multisigUnlock } = useFeature('treasury.multisig');
+
   const startDeploy = async () => {
+    if (!multisigAccessible) {
+      toast({ title: 'Locked', description: 'Multisig is not available for your account', variant: 'destructive' });
+      return;
+    }
     if (simulationMode) {
       setDeploying(true);
       setProgress(5);

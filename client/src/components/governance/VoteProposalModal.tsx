@@ -151,7 +151,7 @@ export function VoteProposalModal({
     mutationFn: async (voteType: VoteType) => {
       await apiRequest(
         'POST',
-        `/api/governance/${proposal!.daoId}/proposals/${proposal!.id}/vote`,
+        `/api/v1/daos/${proposal!.daoId}/proposals/${proposal!.id}/vote`,
         {
           voteType,
           votingPower: proposal!.userVotingPower,

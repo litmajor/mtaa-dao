@@ -11,6 +11,9 @@ import { Link } from 'react-router-dom';
  * - Opportunities list (yield farming, trading, arbitrage)
  * - Governance alerts and market signals
  * - Power tools for advanced trading
+ * -Will be granted access to deeper intelligence tools like asset-graphs, sentiment analysis, and strategy automation in future iterations.
+ * Its the least developed but most mature dashboard, designed for active traders and investors who want to monitor their portfolio and discover new opportunities.
+ *
  */
 
 interface DashboardData {
