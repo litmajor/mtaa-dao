@@ -23,7 +23,10 @@ export const pool = new Pool({
   connectionTimeoutMillis: DEFAULT_CONN_TIMEOUT,
   keepAlive: true,
   keepAliveInitialDelayMillis: 10000,
-  ssl: process.env.DATABASE_SSL === 'true' || false,
+  // Smart SSL detection: enable for Neon or when explicitly requested
+  ssl: process.env.DATABASE_URL.includes('neon') || process.env.DATABASE_SSL === 'true'
+    ? { rejectUnauthorized: false }
+    : false,
 });
 
 // Handle pool errors

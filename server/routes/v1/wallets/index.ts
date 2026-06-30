@@ -33,6 +33,7 @@ import railsRouter from './rails';
 import paymentLinksRouter from './payment-links';
 import invoicesRouter from './invoices';
 import escrowRouter from './escrow';
+import transactionsRouter from './transactions';
 
 const router = express.Router();
 
@@ -137,11 +138,15 @@ router.use('/payment-links', paymentLinksRouter);
 router.use('/invoices', invoicesRouter);
 
 /**
- * Escrow operations (24 endpoints)
- * Trustless P2P transactions with milestones, mediators, and guardians
- * Invite-based acceptance, dispute resolution, reputation system
- * Endpoint: /v1/wallets/escrow/*
+ * Escrow Services
+ * Create, release, dispute escrows
  */
-router.use('/escrow', escrowRouter);
+router.use('/escrows', escrowRouter);
+
+/**
+ * Transaction History
+ * Get comprehensive wallet transaction history
+ */
+router.use('/transactions', transactionsRouter);
 
 export default router;

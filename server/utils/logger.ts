@@ -1,7 +1,6 @@
 import { createLogger, format, transports } from 'winston';
 import { Logger as WinstonLogger } from 'winston';
-import { env, isDevelopment, isProduction } from '../../shared/config.js';
-import { storage } from '../storage';
+import { env, isDevelopment, isProduction } from '../../shared/config.ts';
 
 const { combine, timestamp, errors, json, colorize, simple, printf } = format;
 
@@ -71,6 +70,10 @@ export class Logger {
     this.context = context;
   }
 
+  static getLogger(): Logger {
+    return logger;
+  }
+
   // Create child logger with additional context
   child(context: LogContext): Logger {
     return new Logger(this.service, { ...this.context, ...context });
@@ -79,35 +82,39 @@ export class Logger {
   private logToDatabase(level: string, message: string, metadata: any = {}): Promise<any> {
     // During startup, skip INFO logs to DB to avoid pool saturation
     // Console output is still visible - this only skips database writes
-    const isStartup = global['isServerStarting'] === true;
+    const isStartup = (globalThis as typeof globalThis & { isServerStarting?: boolean }).isServerStarting === true;
     if (isStartup && level === 'info') {
       return Promise.resolve(); // Return resolved Promise, skip DB write
     }
 
-    // If storage is not ready yet, skip DB logging
-    if (!storage || typeof storage.createSystemLog !== 'function') {
-      return Promise.resolve();
-    }
+    return (async () => {
+      try {
+        const storageModule = await import('../storage.ts');
+        const storage = storageModule.storage;
 
-    // Non-blocking: fire and forget, don't await database writes
-    try {
-      return storage
-        .createSystemLog(level, message, this.service, {
-          ...this.context,
-          ...metadata
-        })
-        .catch((error: any) => {
-          // Silent fail - database logging shouldn't crash server
-          // Only log critical errors to console
-          const errorMsg = error?.message || String(error);
-          if (errorMsg.includes('Connection terminated') || errorMsg.includes('ECONNREFUSED')) {
-            console.error('[DBLog] Database connection unavailable');
-          }
-        });
-    } catch (err) {
-      // If storage call fails, silently return resolved promise
-      return Promise.resolve();
-    }
+        // If storage is not ready yet, skip DB logging
+        if (!storage || typeof storage.createSystemLog !== 'function') {
+          return Promise.resolve();
+        }
+
+        return storage
+          .createSystemLog(level, message, this.service, {
+            ...this.context,
+            ...metadata
+          })
+          .catch((error: any) => {
+            // Silent fail - database logging shouldn't crash server
+            // Only log critical errors to console
+            const errorMsg = error?.message || String(error);
+            if (errorMsg.includes('Connection terminated') || errorMsg.includes('ECONNREFUSED')) {
+              console.error('[DBLog] Database connection unavailable');
+            }
+          });
+      } catch (err) {
+        // If storage call fails, silently return resolved promise
+        return Promise.resolve();
+      }
+    })();
   }
 
   private log(level: string, message: string, meta: any = {}) {
@@ -173,14 +180,6 @@ export class Logger {
 
 // Export default logger instance
 export const logger = new Logger();
-
-// Static accessor for legacy usage: Logger.getLogger()
-// Returns the module-level logger instance
-export namespace Logger {
-  export function getLogger(): Logger {
-    return logger;
-  }
-}
 
 // Express middleware for request logging
 export const requestLogger = (req: any, res: any, next: any) => {

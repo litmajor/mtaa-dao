@@ -7,16 +7,21 @@ import { AppError, ValidationError } from '../middleware/errorHandler';
 import Stripe from 'stripe';
 
 const stripe = process.env.STRIPE_SECRET_KEY 
-  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-08-27.basil" })
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2026-05-27.dahlia" })
   : null;
 
-export type PaymentMethod = 'stripe' | 'vault' | 'split_equal' | 'split_custom' | 'split_percentage';
+export type PaymentMethod = 'stripe' | 'vault' | 'split_equal' | 'split_custom' | 'split_percentage' | 'onchain';
+export type SubscriptionPlan = 'free' | 'pro' | 'collective';
 
 export interface SubscriptionUpgradeRequest {
   daoId: string;
   userId: string;
-  plan: 'free' | 'premium';
+  plan: SubscriptionPlan | 'premium';
   paymentMethod: PaymentMethod;
+  tierId?: number;
+  durationMonths?: number;
+  transactionHash?: string;
+  daoTreasury?: string;
   splitConfig?: {
     type: 'equal' | 'custom' | 'percentage';
     customShares?: { [userId: string]: number };
@@ -34,11 +39,36 @@ export interface BillSplitResult {
 }
 
 export class SubscriptionService {
+  private normalizePlan(plan: string): SubscriptionPlan {
+    if (plan === 'premium') return 'pro';
+    if (plan === 'pro' || plan === 'collective' || plan === 'free') return plan;
+    return 'free';
+  }
+
+  private getPricing() {
+    return {
+      free: { KES: 0, USD: 0, EUR: 0, name: 'Free' },
+      pro: { KES: 1500, USD: 12, EUR: 11, name: 'Pro' },
+      collective: { KES: 5000, USD: 40, EUR: 37, name: 'Collective' }
+    };
+  }
   
   async upgradeSubscription(request: SubscriptionUpgradeRequest) {
     const logger = Logger.getLogger();
     
     try {
+      if (!request.userId) {
+        throw new AppError('User not authenticated', 401);
+      }
+
+      const plan = this.normalizePlan(request.plan);
+      const pricing = this.getPricing();
+      const planPricing = pricing[plan];
+
+      if (!planPricing) {
+        throw new ValidationError('Invalid subscription plan');
+      }
+
       // Validate DAO exists and user is admin
       const dao = await db.query.daos.findFirst({
         where: eq(daos.id, request.daoId)
@@ -56,30 +86,30 @@ export class SubscriptionService {
         )
       });
 
-      if (!membership || !['admin', 'elder'].includes(membership.role || '')) {
+      if (!membership || membership.role !== 'admin') {
         throw new AppError('Only DAO admins can manage subscriptions', 403);
       }
-
-      const pricing = {
-        premium: { KES: 1500, USD: 9.99, EUR: 8.99 }
-      };
 
       let billingRecord;
       let splitResults: BillSplitResult[] = [];
 
       switch (request.paymentMethod) {
+        case 'onchain':
+          billingRecord = await this.processOnchainPayment(request, plan, planPricing);
+          break;
+
         case 'stripe':
-          billingRecord = await this.processStripePayment(request, pricing);
+          billingRecord = await this.processStripePayment({ ...request, plan }, pricing);
           break;
         
         case 'vault':
-          billingRecord = await this.processVaultPayment(request, pricing);
+          billingRecord = await this.processVaultPayment({ ...request, plan }, pricing);
           break;
         
         case 'split_equal':
         case 'split_custom':
         case 'split_percentage':
-          const result = await this.processSplitPayment(request, pricing);
+          const result = await this.processSplitPayment({ ...request, plan }, pricing);
           billingRecord = result.billingRecord;
           splitResults = result.splitResults;
           break;
@@ -88,33 +118,41 @@ export class SubscriptionService {
           throw new ValidationError('Invalid payment method');
       }
 
-      // Update DAO subscription
+      const nextBillingDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+      // Update DAO subscription state to match the confirmed subscription period.
       await db.update(daos).set({
-        plan: request.plan,
-        planExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        plan,
+        subscriptionPlan: plan,
+        planExpiresAt: nextBillingDate,
         billingStatus: 'active',
-        nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        nextBillingDate,
         updatedAt: new Date()
       }).where(eq(daos.id, request.daoId));
 
       // Create/update subscription record
-      await db.insert(subscriptions).values({
-        userId: request.userId,
-        daoId: request.daoId,
-        plan: request.plan,
-        status: 'active',
-        startDate: new Date(),
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-      }).onConflictDoUpdate({
-        target: [subscriptions.daoId],
-        set: {
-          plan: request.plan,
+      const existingSubscription = await db.query.subscriptions.findFirst({
+        where: eq(subscriptions.daoId, request.daoId)
+      });
+
+      if (existingSubscription) {
+        await db.update(subscriptions).set({
+          plan,
           status: 'active',
           startDate: new Date(),
-          endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          endDate: nextBillingDate,
           updatedAt: new Date()
-        }
-      });
+        }).where(eq(subscriptions.id, existingSubscription.id));
+      } else {
+        await db.insert(subscriptions).values({
+          userId: request.userId,
+          daoId: request.daoId,
+          plan,
+          status: 'active',
+          startDate: new Date(),
+          endDate: nextBillingDate
+        });
+      }
 
       logger.info(`Subscription upgraded for DAO ${request.daoId} using ${request.paymentMethod}`);
 
@@ -122,6 +160,12 @@ export class SubscriptionService {
         success: true,
         billingRecord,
         splitResults: splitResults.length > 0 ? splitResults : undefined,
+        subscription: {
+          daoId: request.daoId,
+          plan,
+          status: 'active',
+          nextBillingDate
+        },
         message: 'Subscription upgraded successfully'
       };
 
@@ -129,6 +173,30 @@ export class SubscriptionService {
       logger.error(`Subscription upgrade failed: ${error.message}`, error);
       throw error;
     }
+  }
+
+  private async processOnchainPayment(
+    request: SubscriptionUpgradeRequest,
+    plan: SubscriptionPlan,
+    pricing: { KES: number; name: string }
+  ) {
+    if (plan === 'free') {
+      throw new ValidationError('Free tier does not require an on-chain subscription transaction');
+    }
+
+    if (!request.transactionHash || !/^0x[a-fA-F0-9]{64}$/.test(request.transactionHash)) {
+      throw new ValidationError('Valid transaction hash required for on-chain subscription sync');
+    }
+
+    const [billingRecord] = await db.insert(billingHistory).values({
+      daoId: request.daoId,
+      amount: pricing.KES.toString(),
+      currency: 'KES',
+      status: 'completed',
+      description: `On-chain subscription sync for ${pricing.name} plan (${request.transactionHash})`
+    }).returning();
+
+    return billingRecord;
   }
 
   private async processStripePayment(request: SubscriptionUpgradeRequest, pricing: any) {
@@ -207,6 +275,9 @@ export class SubscriptionService {
     let memberShares: { [userId: string]: number } = {};
 
     if (request.paymentMethod === 'split_equal') {
+      if (memberCount === 0) {
+        throw new ValidationError('No active members available for split billing');
+      }
       const perMember = amount / memberCount;
       members.forEach(m => {
         memberShares[m.userId] = perMember;
@@ -245,7 +316,7 @@ export class SubscriptionService {
     return { billingRecord, splitResults };
   }
 
-  async getSubscriptionDetails(daoId: string) {
+  async getSubscriptionDetails(daoId: string, userId?: string) {
     const dao = await db.query.daos.findFirst({
       where: eq(daos.id, daoId)
     });
@@ -260,10 +331,23 @@ export class SubscriptionService {
       limit: 10
     });
 
+    const membership = userId
+      ? await db.query.daoMemberships.findFirst({
+          where: and(
+            eq(daoMemberships.daoId, daoId),
+            eq(daoMemberships.userId, userId),
+            eq(daoMemberships.status, 'approved')
+          )
+        })
+      : null;
+
     return {
-      currentPlan: dao?.plan || 'free',
+      currentPlan: this.normalizePlan(((dao?.plan || dao?.subscriptionPlan || 'free') as any)),
       status: dao?.billingStatus || 'active',
       nextBillingDate: dao?.nextBillingDate,
+      daoTreasuryAddress: dao?.chamaTreasuryAddress || dao?.vaultAddress || null,
+      userRole: membership?.role || null,
+      isAdmin: membership?.role === 'admin',
       subscription,
       billingHistory: history
     };
@@ -278,13 +362,15 @@ export class SubscriptionService {
       )
     });
 
-    if (!membership || !['admin', 'elder'].includes(membership.role || '')) {
+    if (!membership || membership.role !== 'admin') {
       throw new AppError('Only DAO admins can cancel subscriptions', 403);
     }
 
     await db.update(daos).set({
       plan: 'free',
+      subscriptionPlan: 'free',
       billingStatus: 'cancelled',
+      nextBillingDate: null,
       updatedAt: new Date()
     }).where(eq(daos.id, daoId));
 

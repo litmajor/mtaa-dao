@@ -243,6 +243,26 @@ export class RedisCacheService {
   }
 
   /**
+   * List keys matching a Redis-style pattern. Falls back to in-memory keys when Redis unavailable.
+   */
+  async keys(pattern: string): Promise<string[]> {
+    try {
+      if (this.fallbackMode || !this.client) {
+        // Convert Redis glob pattern to RegExp
+        const esc = (s: string) => s.replace(/[-/\\^$+?.()|[\]{}]/g, '\\$&');
+        const regex = new RegExp('^' + pattern.split('*').map(esc).join('.*') + '$');
+        return Array.from(this.memoryCache.keys()).filter(k => regex.test(k));
+      }
+
+      const keys = await this.client.keys(pattern);
+      return keys;
+    } catch (error: any) {
+      logger.warn(`Cache keys() error for pattern ${pattern}:`, error.message || error);
+      return [];
+    }
+  }
+
+  /**
    * Warm cache with pre-loaded data
    * Called on startup to load high-traffic keys
    */

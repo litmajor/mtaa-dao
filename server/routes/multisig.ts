@@ -21,6 +21,15 @@ import { eq, and, desc } from 'drizzle-orm';
 const logger = Logger.getLogger();
 const router = express.Router();
 
+// Deprecation middleware: mark legacy multisig endpoints as deprecated
+// and suggest the canonical v1 DAO-scoped multisig endpoints.
+router.use((req, res, next) => {
+  res.setHeader('X-Deprecated', 'true');
+  res.setHeader('X-Redirect-To', '/api/v1/daos/:daoId/treasury/multisig');
+  res.setHeader('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+  next();
+});
+
 /**
  * GET /api/multisig/:daoId/pending
  * Get all pending multisig approvals for this DAO

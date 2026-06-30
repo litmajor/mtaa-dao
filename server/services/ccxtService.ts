@@ -169,6 +169,11 @@ export class CCXTAggregator {
 
   constructor() {
     this.initializeExchanges();
+    // Warm-up markets asynchronously to avoid thundering herd during first scans
+    // Fire-and-forget: warmup uses the same limiters and will log failures
+    this.warmupMarkets().catch((err) => {
+      logger.warn(`[CCXTAggregator] Warmup markets failed: ${err?.message || err}`);
+    });
   }
 
   /**
@@ -260,8 +265,14 @@ export class CCXTAggregator {
 
       logger.info(`[CCXTAggregator] Loading markets for ${exchangeName}...`);
       const start = Date.now();
-      // Force a fresh load from the exchange (ensures we update stale markets when TTL expired)
-      await exchange.loadMarkets(true);
+      // Load markets from exchange (do NOT force refresh every time)
+      // Add a short timeout to avoid permanently blocking callers if an exchange stalls
+      const LOAD_MARKETS_TIMEOUT_MS = parseInt(process.env.CCXT_LOADMARKETS_TIMEOUT || '20000');
+      const loadOp = exchange.loadMarkets();
+      await Promise.race([
+        loadOp,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('loadMarkets timeout')), LOAD_MARKETS_TIMEOUT_MS)),
+      ]);
       logger.info(
         `[CCXTAggregator] loadMarkets complete for ${exchangeName} ` +
         `(${Object.keys(exchange.markets).length} markets, ${Date.now() - start}ms)`
@@ -282,6 +293,46 @@ export class CCXTAggregator {
     return loadPromise;
   }
 
+  /**
+   * Warm up markets for all initialized exchanges. Uses the same per-exchange limiter
+   * so it won't saturate the event loop or CCXT internal rate limits.
+   */
+  private async warmupMarkets(): Promise<void> {
+    try {
+      logger.info('[CCXTAggregator] Warmup: pre-loading markets for available exchanges');
+      const names = Array.from(this.exchanges.keys());
+      await Promise.all(
+        names.map((n) => this.ensureMarketsLoaded(n).catch((err) => {
+          logger.warn(`[CCXTAggregator] Warmup failed for ${n}: ${err?.message || err}`);
+        }))
+      );
+      logger.info('[CCXTAggregator] Warmup complete');
+    } catch (err: any) {
+      logger.warn('[CCXTAggregator] Warmup encountered errors:', err?.message || err);
+    }
+  }
+
+  /**
+   * Clear any pending markets-loading promises. Used by external callers
+   * (eg. background job timeouts) to recover from stuck network requests.
+   */
+  clearMarketsLoadingLocks(): void {
+    const count = this.marketsLoadingPromise.size;
+    if (count > 0) {
+      logger.warn(`[CCXTAggregator] Clearing ${count} markets-loading lock(s)`);
+    }
+    this.marketsLoadingPromise.clear();
+  }
+
+  clearMarketsLoadingForExchange(exchangeName: string): boolean {
+    if (this.marketsLoadingPromise.has(exchangeName)) {
+      this.marketsLoadingPromise.delete(exchangeName);
+      logger.warn(`[CCXTAggregator] Cleared markets-loading lock for ${exchangeName}`);
+      return true;
+    }
+    return false;
+  }
+
   // ---------------------------------------------------------------------------
   // PRICE DISCOVERY METHODS
   // ---------------------------------------------------------------------------
@@ -299,99 +350,103 @@ export class CCXTAggregator {
     exchangeName: string,
     symbol: string
   ): Promise<CachedPrice | null> {
-    const response = await unifiedCache.getOrFetchPrice(exchangeName, symbol, async () => {
-      return this.tickerLimiter(async () => {  // FIX #5: uses dedicated ticker limiter
-        const exchange = this.exchanges.get(exchangeName);
-        if (!exchange) {
-          throw new Error(`Exchange ${exchangeName} not initialized`);
-        }
+    // Outer limiter to avoid flooding unifiedCache with concurrent callers
+    const response = await this.tickerLimiter(async () =>
+      unifiedCache.getOrFetchPrice(exchangeName, symbol, async () => {
+        // Inner limiter still used to ensure background refreshes (stale-while-revalidate)
+        return this.tickerLimiter(async () => {  // FIX #5: uses dedicated ticker limiter
+          const exchange = this.exchanges.get(exchangeName);
+          if (!exchange) {
+            throw new Error(`Exchange ${exchangeName} not initialized`);
+          }
 
-        const formattedSymbol = await this.formatSymbolForExchange(exchangeName, symbol);
-        if (!formattedSymbol) {
-          // FIX #1: Throw typed symbol error instead of returning null
-          throw new CCXTSymbolError(
-            `Symbol ${symbol} not supported on ${exchangeName}`
-          );
-        }
-
-        const startTime = Date.now();
-
-        try {
-          // 🔴 CCXT API CALL #1: fetchTicker (Price Discovery)
-          const ticker = await exchange.fetchTicker(formattedSymbol);
-          const duration = Date.now() - startTime;
-
-          externalAPITracker.recordCall({
-            timestamp: new Date().toISOString(),
-            type: 'ccxt',
-            service: exchangeName,
-            endpoint: `/fetchTicker/${formattedSymbol}`,
-            method: 'GET',
-            statusCode: 200,
-            duration,
-            dataSize: ticker ? JSON.stringify(ticker).length : 0,
-          });
-
-          // FIX #6: Fall back to baseVolume when quoteVolume is missing/zero
-          const volume =
-            ticker['quoteVolume'] ||
-            (ticker['baseVolume'] && ticker['last']
-              ? ticker['baseVolume'] * ticker['last']
-              : ticker['baseVolume'] || 0);
-
-          const price: CachedPrice = {
-            symbol: formattedSymbol,
-            exchange: exchangeName,
-            bid: ticker['bid'] || 0,
-            ask: ticker['ask'] || 0,
-            last: ticker['last'] || 0,
-            volume,                            // FIX #6
-            timestamp: ticker['timestamp'] || Date.now(),
-          };
-
-          return price;
-        } catch (error: any) {
-          const duration = Date.now() - startTime;
-
-          externalAPITracker.recordCall({
-            timestamp: new Date().toISOString(),
-            type: 'ccxt',
-            service: exchangeName,
-            endpoint: `/fetchTicker/${symbol}`,
-            method: 'GET',
-            statusCode: 500,
-            duration,
-            error: error.message,
-          });
-
-          // FIX #1: Classify and re-throw — do NOT swallow into null
-          if (
-            error instanceof ccxt.BadSymbol ||
-            error.message?.includes('does not have market symbol') ||
-            error.message?.includes('Invalid pair') ||
-            error.message?.includes('not found')
-          ) {
+          const formattedSymbol = await this.formatSymbolForExchange(exchangeName, symbol);
+          if (!formattedSymbol) {
+            // FIX #1: Throw typed symbol error instead of returning null
             throw new CCXTSymbolError(
-              `Symbol ${symbol} not found on ${exchangeName}: ${error.message}`
+              `Symbol ${symbol} not supported on ${exchangeName}`
             );
           }
 
-          if (
-            error instanceof ccxt.RateLimitExceeded ||
-            error.message?.includes('rate limit') ||
-            error.message?.includes('too many requests')
-          ) {
-            throw new CCXTRateLimitError(
-              `Rate limit hit on ${exchangeName}: ${error.message}`
-            );
-          }
+          const startTime = Date.now();
 
-          // Network / unknown — propagate as-is so caller can classify
-          logger.error(`[CCXTAggregator] fetchTicker error on ${exchangeName}:${symbol}: ${error.message}`);
-          throw error;
-        }
-      });
-    });
+          try {
+            // 🔴 CCXT API CALL #1: fetchTicker (Price Discovery)
+            const ticker = await exchange.fetchTicker(formattedSymbol);
+            const duration = Date.now() - startTime;
+
+            externalAPITracker.recordCall({
+              timestamp: new Date().toISOString(),
+              type: 'ccxt',
+              service: exchangeName,
+              endpoint: `/fetchTicker/${formattedSymbol}`,
+              method: 'GET',
+              statusCode: 200,
+              duration,
+              dataSize: ticker ? JSON.stringify(ticker).length : 0,
+            });
+
+            // FIX #6: Fall back to baseVolume when quoteVolume is missing/zero
+            const volume =
+              ticker['quoteVolume'] ||
+              (ticker['baseVolume'] && ticker['last']
+                ? ticker['baseVolume'] * ticker['last']
+                : ticker['baseVolume'] || 0);
+
+            const price: CachedPrice = {
+              symbol: formattedSymbol,
+              exchange: exchangeName,
+              bid: ticker['bid'] || 0,
+              ask: ticker['ask'] || 0,
+              last: ticker['last'] || 0,
+              volume,                            // FIX #6
+              timestamp: ticker['timestamp'] || Date.now(),
+            };
+
+            return price;
+          } catch (error: any) {
+            const duration = Date.now() - startTime;
+
+            externalAPITracker.recordCall({
+              timestamp: new Date().toISOString(),
+              type: 'ccxt',
+              service: exchangeName,
+              endpoint: `/fetchTicker/${symbol}`,
+              method: 'GET',
+              statusCode: 500,
+              duration,
+              error: error.message,
+            });
+
+            // FIX #1: Classify and re-throw — do NOT swallow into null
+            if (
+              error instanceof ccxt.BadSymbol ||
+              error.message?.includes('does not have market symbol') ||
+              error.message?.includes('Invalid pair') ||
+              error.message?.includes('not found')
+            ) {
+              throw new CCXTSymbolError(
+                `Symbol ${symbol} not found on ${exchangeName}: ${error.message}`
+              );
+            }
+
+            if (
+              error instanceof ccxt.RateLimitExceeded ||
+              error.message?.includes('rate limit') ||
+              error.message?.includes('too many requests')
+            ) {
+              throw new CCXTRateLimitError(
+                `Rate limit hit on ${exchangeName}: ${error.message}`
+              );
+            }
+
+            // Network / unknown — propagate as-is so caller can classify
+            logger.error(`[CCXTAggregator] fetchTicker error on ${exchangeName}:${symbol}: ${error.message}`);
+            throw error;
+          }
+        });
+      })
+    );
 
     return response.data;
   }
@@ -409,7 +464,14 @@ export class CCXTAggregator {
       this.getTickerFromExchange(ex, symbol)
         .then((price) => ({ exchange: ex, price }))
         .catch((error) => {
-          logger.error(`Failed to fetch from ${ex}: ${error.message}`);
+          // Known symbol errors are expected for some exchanges; log at debug to reduce noise
+          if (error instanceof CCXTSymbolError) {
+            logger.debug(`Skipped unsupported pair ${symbol} on ${ex}: ${error.message}`);
+          } else if (error instanceof CCXTRateLimitError) {
+            logger.warn(`Rate limit hit for ${ex} while fetching ${symbol}: ${error.message}`);
+          } else {
+            logger.error(`Failed to fetch from ${ex}: ${error.message}`);
+          }
           return { exchange: ex, price: null };
         })
     );

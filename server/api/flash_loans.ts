@@ -6,6 +6,7 @@
 
 import { Router, Request, Response } from 'express';
 import { ethers } from 'ethers';
+import { createWalletIfValid } from '../utils/cryptoWallet';
 
 const router = Router();
 
@@ -414,7 +415,11 @@ router.post('/flash-loans/execute', async (req: Request, res: Response) => {
     }
 
     const provider = new ethers.JsonRpcProvider(RPC_URL);
-    const signer = new ethers.Wallet(PRIVATE_KEY, provider);
+    const signer = createWalletIfValid(PRIVATE_KEY, provider);
+    if (!signer) {
+      console.error('Invalid FLASH_EXECUTOR_PRIVATE_KEY or PRIVATE_KEY; cannot execute on-chain flash loans');
+      return res.status(500).json({ error: 'Server not configured to execute on-chain flash loans' });
+    }
 
     // Minimal ABI for executor
     const executorAbi = [

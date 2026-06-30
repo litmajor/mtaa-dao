@@ -1,4 +1,5 @@
 import { db } from '../storage';
+import { pool } from '../db';
 import { 
   users, 
   wallets, 
@@ -12,6 +13,7 @@ import {
 import { eq, desc, and, or } from 'drizzle-orm';
 import type { User } from '@shared/schema';
 import TreasuryService from './treasuryService';
+import type { OkediDashboardData, BalanceSource } from '../../shared/types/dashboard';
 
 export type DashboardPersona = 'okedi' | 'yuki' | 'amara';
 
@@ -33,76 +35,7 @@ export interface DAOData {
   treasury?: number;
 }
 
-export interface OkediDashboardData {
-  totalBalance: number;
-  trustScore: number;
-  governanceScore: number;
-  votesCount: number;
-  proposalsCreated: number;
-  memberSince: string;
-  daoCount: number;
-  cryptoCurrency: string;
-  fiatCurrency: string;
-  recentTransactions: Array<{
-    id: string;
-    type: string;
-    amount: number;
-    from?: string;
-    to?: string;
-    timestamp: string;
-    status: string;
-  }>;
-  myDAOs: Array<{
-    id: string;
-    name: string;
-    description?: string;
-    role: string;
-    memberCount: number;
-    treasuryBalance?: number;
-  }>;
-  activeProposals: Array<{
-    id: string;
-    title: string;
-    description?: string;
-    votesRequired: number;
-    currentVotes: number;
-    status: string;
-    daysLeft?: number;
-    daoName?: string;
-  }>;
-  activeEscrows: Array<{
-    id: string;
-    amount: number;
-    currency: string;
-    description: string;
-    status: string;
-    daysLeft: number;
-    participantName?: string;
-  }>;
-  governanceStats?: {
-    votesCast: number;
-    proposalsVoted: number;
-    governancePower: number;
-    daoMemberCount: number;
-    influenceRank?: number;
-  };
-  referralStats?: {
-    totalEarnings: number;
-    activeReferrals: number;
-    referralLink: string;
-  };
-  daoChat?: {
-    daoId: string;
-    daoName: string;
-    messages: Array<{
-      id: string;
-      author: string;
-      text: string;
-      timestamp: string;
-    }>;
-  };
-  tipOfTheDay: string;
-}
+// Use canonical OkediDashboardData from shared types
 
 export interface YukiDashboardData {
   personalBalance: number;
@@ -287,7 +220,7 @@ export async function getUserDAOs(userId: string): Promise<DAOData[]> {
  * Get OKEDI dashboard data - Complete 25+ Features Implementation
  * Fully integrated with escrow, governance, and referral systems
  */
-export async function getOkediDashboard(userId: string): Promise<OkediDashboardData> {
+export async function getOkediDashboard(userId: string, selectedDaoId?: string): Promise<OkediDashboardData> {
   try {
     // Get user and verify exists
     const user = await db.query.users.findFirst({
@@ -334,7 +267,13 @@ export async function getOkediDashboard(userId: string): Promise<OkediDashboardD
     });
 
     const totalDAOCount = allMemberships.length;
-    const daoIdList = allMemberships.map(m => m.daoId);
+    const selectedMembership = selectedDaoId
+      ? allMemberships.find((membership) => membership.daoId === selectedDaoId)
+      : undefined;
+    const scopedMemberships = selectedDaoId && selectedMembership
+      ? [selectedMembership]
+      : allMemberships;
+    const daoIdList = scopedMemberships.map(m => m.daoId);
 
     // Get active proposals for user's DAOs
     let activeProposals: any[] = [];
@@ -380,12 +319,30 @@ export async function getOkediDashboard(userId: string): Promise<OkediDashboardD
       console.warn('Failed to fetch DAO treasury balances:', err);
     }
 
+    const memberCount = scopedMemberships.reduce(
+      (sum, membership) => sum + Number(membership.dao.memberCount || 0),
+      0
+    );
+
+    let connectedExchanges = 0;
+    try {
+      const exchangeResult = await pool.query(
+        `SELECT COUNT(*)::int AS count
+         FROM cex_credentials
+         WHERE user_id = $1 AND is_active = true`,
+        [userId]
+      );
+      connectedExchanges = Number(exchangeResult.rows[0]?.count || 0);
+    } catch (err) {
+      console.warn('Failed to fetch connected exchange count:', err);
+    }
+
     // Real governance stats based on actual blockchain data
     const governanceStats = {
       votesCast,
       proposalsVoted: votesCast,
       governancePower: Math.min(100, (totalBalance / 100) + (votesCast * 2)),
-      daoMemberCount: totalDAOCount,
+      daoMemberCount: scopedMemberships.length,
       influenceRank: Math.max(1, 100 - ((votesCast + proposalsCreated) % 50))
     };
 
@@ -436,30 +393,25 @@ export async function getOkediDashboard(userId: string): Promise<OkediDashboardD
       console.warn('Failed to fetch escrow data:', err);
     }
 
-    // DAO Chat (from first DAO)
-    const daoChat = allMemberships.length > 0 ? {
-      daoId: allMemberships[0].daoId,
-      daoName: allMemberships[0].dao.name,
-      messages: [
-        {
-          id: 'msg_1',
-          author: 'Alice Smith',
-          text: 'Great vote on the proposal! Your support really helped.',
-          timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
-        },
-        {
-          id: 'msg_2',
-          author: 'Bob Johnson',
-          text: 'When\'s the next meeting? I want to present my idea.',
-          timestamp: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString()
-        },
-        {
-          id: 'msg_3',
-          author: 'You',
-          text: 'Next Tuesday at 5pm, looking forward to your presentation!',
-          timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString()
-        }
-      ]
+    const pendingActionsCount =
+      activeProposals.length +
+      activeEscrows.length +
+      recentTxs.filter((tx) => tx.status === 'pending').length +
+      (kycStatus === 'verified' ? 0 : 1);
+
+    const marketRegime: 'bull' | 'bear' | 'neutral' =
+      governanceScore >= 250 ? 'bull' : governanceScore <= 75 ? 'bear' : 'neutral';
+
+    const riskLevel: 'low' | 'medium' | 'high' =
+      pendingActionsCount > 8 ? 'high' : pendingActionsCount > 3 ? 'medium' : 'low';
+
+    const activeMembership = scopedMemberships[0];
+
+    // DAO Chat (from selected DAO when available)
+    const daoChat = activeMembership ? {
+      daoId: activeMembership.daoId,
+      daoName: activeMembership.dao.name,
+      messages: []
     } : undefined;
 
     // Tip of the day
@@ -477,7 +429,46 @@ export async function getOkediDashboard(userId: string): Promise<OkediDashboardD
     const dayOfYear = Math.floor(Date.now() / (1000 * 60 * 60 * 24));
     const tipOfTheDay = tips[dayOfYear % tips.length];
 
+    // KYC and transfer limits (safe defaults if not present)
+    const kycStatus = (user as any)?.kycStatus || 'not-started';
+    const kycProgress = Number((user as any)?.kycProgress || 0);
+    const transferLimits = kycStatus === 'verified' ? {
+      daily: 10000,
+      monthly: 30000,
+      verifiedDaily: 10000,
+      verifiedMonthly: 30000
+    } : kycStatus === 'pending' ? {
+      daily: 2000,
+      monthly: 8000,
+      verifiedDaily: 0,
+      verifiedMonthly: 0
+    } : {
+      daily: 1000,
+      monthly: 3000,
+      verifiedDaily: 0,
+      verifiedMonthly: 0
+    };
+
+    // Map userBalances to BalanceSource entries for frontend
+    const balanceSources: any[] = (balances || []).map((b: any) => ({
+      source: 'okedi',
+      custodyType: 'non-custodial',
+      amount: parseFloat(b.balance || '0'),
+      currency: (b as any)?.wallet?.currency || 'cUSD',
+      label: (b as any)?.label || 'Primary Wallet',
+      updatedAt: (b as any)?.updatedAt ? new Date((b as any).updatedAt).toISOString() : new Date().toISOString(),
+      status: 'verified'
+    }));
+
+    const currentUser = {
+      id: user.id,
+      name: (user as any)?.name || (user as any)?.displayName || '',
+      walletAddress: ((balances || [])[0] as any)?.wallet?.address || (user as any)?.walletAddress,
+      votingPower: (user as any)?.votingPower || votesCast || 0
+    };
+
     return {
+      selectedDaoId: activeMembership?.daoId,
       totalBalance,
       trustScore,
       governanceScore,
@@ -485,37 +476,52 @@ export async function getOkediDashboard(userId: string): Promise<OkediDashboardD
       proposalsCreated,
       memberSince,
       daoCount: totalDAOCount,
+      memberCount,
+      treasuryExposure: totalDAOTreasury,
+      currentUser,
+      kycStatus,
+      kycProgress,
+      transferLimits,
       cryptoCurrency: (user as any)?.cryptoCurrency || 'cUSD',
       fiatCurrency: (user as any)?.fiatCurrency || 'USD',
-      recentTransactions: recentTxs.map(tx => ({
-        id: tx.id,
-        type: tx.type || 'transfer',
-        amount: parseFloat(tx.amount || '0'),
-        from: tx.fromUserId || undefined,
-        to: tx.toUserId || undefined,
-        timestamp: tx.createdAt instanceof Date ? tx.createdAt.toISOString() : new Date(tx.createdAt || Date.now()).toISOString(),
-        status: tx.status || 'completed'
-      })),
+      marketRegime,
+      pendingActionsCount,
+      connectedExchanges,
+      riskLevel,
+      recentTransactions: recentTxs.map(tx => {
+        const status = (tx.status === 'pending' || tx.status === 'completed' || tx.status === 'confirmed' || tx.status === 'failed') ? tx.status : 'completed';
+        return ({
+          id: tx.id,
+          type: tx.type || 'transfer',
+          amount: parseFloat(tx.amount || '0'),
+          currency: tx.currency || 'cUSD',
+          from: tx.fromUserId || undefined,
+          to: tx.toUserId || undefined,
+          timestamp: tx.createdAt instanceof Date ? tx.createdAt.toISOString() : new Date(tx.createdAt || Date.now()).toISOString(),
+          status: status as 'pending' | 'completed' | 'confirmed' | 'failed'
+        } as OkediDashboardData['recentTransactions'][number]);
+      }),
+      balances: balanceSources,
       myDAOs: await Promise.all(allMemberships.map(async (m) => {
         try {
           const treasuryBalance = await TreasuryService.getBalance(m.dao.id);
-          return {
+          return ({
             id: m.dao.id,
             name: m.dao.name,
             description: m.dao.description || undefined,
-            role: m.role || 'member',
+            role: (m.role as any) || 'member',
             memberCount: m.dao.memberCount || 0,
             treasuryBalance: parseFloat(treasuryBalance.total)
-          };
+          } as OkediDashboardData['myDAOs'][number]);
         } catch (err) {
-          return {
+          return ({
             id: m.dao.id,
             name: m.dao.name,
             description: m.dao.description || undefined,
             role: m.role || 'member',
             memberCount: m.dao.memberCount || 0,
             treasuryBalance: 0
-          };
+          } as OkediDashboardData['myDAOs'][number]);
         }
       })),
       activeProposals: activeProposals.map((p: any) => ({
@@ -532,7 +538,7 @@ export async function getOkediDashboard(userId: string): Promise<OkediDashboardD
       governanceStats,
       referralStats,
       daoChat,
-      tipOfTheDay
+      // tipOfTheDay intentionally omitted from API contract (UI may compute client-side)
     };
   } catch (error) {
     console.error('Error getting Okedi dashboard:', error);
@@ -544,9 +550,20 @@ export async function getOkediDashboard(userId: string): Promise<OkediDashboardD
       proposalsCreated: 0,
       memberSince: 'Jan 2024',
       daoCount: 0,
+      currentUser: { id: userId, name: 'Guest', walletAddress: undefined, votingPower: 0 },
+      kycStatus: 'not-started',
+      kycProgress: 0,
+      transferLimits: { daily: 1000, monthly: 3000, verifiedDaily: 0, verifiedMonthly: 0 },
       cryptoCurrency: 'cUSD',
       fiatCurrency: 'USD',
+      memberCount: 0,
+      treasuryExposure: 0,
+      marketRegime: 'neutral',
+      pendingActionsCount: 0,
+      connectedExchanges: 0,
+      riskLevel: 'low',
       recentTransactions: [],
+      balances: [],
       myDAOs: [],
       activeProposals: [],
       activeEscrows: [],
@@ -561,8 +578,7 @@ export async function getOkediDashboard(userId: string): Promise<OkediDashboardD
         totalEarnings: 0,
         activeReferrals: 0,
         referralLink: ''
-      },
-      tipOfTheDay: 'Welcome to Mtaa DAO!'
+      }
     };
   }
 }

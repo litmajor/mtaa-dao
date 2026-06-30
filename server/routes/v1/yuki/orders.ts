@@ -23,6 +23,7 @@ import { executionMetrics } from '../../../../shared/schema.js';
 import { ccxtService } from '../../../services/ccxtService';
 import { orderRouter } from '../../../services/orderRouter';
 import { unifiedStatsUpdater } from '../../../services/unifiedStatsUpdater';
+import { redis } from '../../../services/redis';
 
 const router = express.Router();
 

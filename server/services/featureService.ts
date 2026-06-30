@@ -5,6 +5,7 @@
  */
 
 import { db } from '../db';
+import { logger } from '../utils/logger';
 
 export interface FeatureConfig {
   name: string;
@@ -188,6 +189,189 @@ export const DEFAULT_FEATURES: FeatureVisibilityMap = {
     description: 'Moderation tools',
     category: 'dao',
   },
+
+  // Add to DEFAULT_FEATURES:
+
+// ========== TRADING / YUKI (10 Features) ==========
+'trading.cex': {
+  name: 'CEX Trading',
+  enabled: getEnvBoolean('FEATURE_TRADING_CEX', false), // off until ready
+  releaseDate: '2026-01-15',
+  phase: 8,
+  description: 'Centralised exchange trading via CCXT',
+  category: 'trading',
+},
+'trading.dex_swap': {
+  name: 'DEX Swap',
+  enabled: getEnvBoolean('FEATURE_TRADING_DEX_SWAP', false),
+  releaseDate: '2026-01-15',
+  phase: 8,
+  description: 'Token swaps on Ubeswap, Mento, Uniswap V3',
+  category: 'trading',
+},
+'trading.limit_orders': {
+  name: 'Limit Orders',
+  enabled: getEnvBoolean('FEATURE_TRADING_LIMIT_ORDERS', false),
+  releaseDate: '2026-02-01',
+  phase: 9,
+  description: 'Limit orders on CEX via CCXT',
+  category: 'trading',
+},
+'trading.smart_routing': {
+  name: 'Smart Order Routing',
+  enabled: getEnvBoolean('FEATURE_TRADING_SMART_ROUTING', false),
+  releaseDate: '2026-02-01',
+  phase: 9,
+  description: 'AI-optimized order splitting across DEX and CEX',
+  category: 'trading',
+  dependencies: ['trading.cex', 'trading.dex_swap'],
+},
+'trading.arbitrage_cex': {
+  name: 'CEX Arbitrage',
+  enabled: getEnvBoolean('FEATURE_TRADING_ARB_CEX', false),
+  releaseDate: '2026-02-15',
+  phase: 9,
+  description: 'Automated CEX-CEX spread detection and execution',
+  category: 'trading',
+  dependencies: ['trading.cex'],
+},
+'trading.arbitrage_dex': {
+  name: 'DEX/Cross-Chain Arbitrage',
+  enabled: getEnvBoolean('FEATURE_TRADING_ARB_DEX', false),
+  releaseDate: '2026-03-01',
+  phase: 10,
+  description: 'CEX-DEX and cross-chain price spread detection',
+  category: 'trading',
+  dependencies: ['trading.cex', 'trading.dex_swap'],
+},
+'trading.algo': {
+  name: 'Algorithmic Trading',
+  enabled: getEnvBoolean('FEATURE_TRADING_ALGO', false),
+  releaseDate: '2026-03-01',
+  phase: 10,
+  description: 'Automated trading bots and strategies',
+  category: 'trading',
+  dependencies: ['trading.cex', 'trading.smart_routing'],
+},
+'trading.leverage': {
+  name: 'Leverage Trading',
+  enabled: getEnvBoolean('FEATURE_TRADING_LEVERAGE', false),
+  releaseDate: '2026-04-01',
+  phase: 11,
+  description: 'Leveraged trading on supported DEXes',
+  category: 'trading',
+  dependencies: ['trading.dex_swap'],
+},
+'trading.market_intelligence': {
+  name: 'Market Intelligence',
+  enabled: getEnvBoolean('FEATURE_TRADING_MARKET_INTEL', false),
+  releaseDate: '2026-01-15',
+  phase: 8,
+  description: 'Signals, regime state, multi-chain opportunity scanner',
+  category: 'trading',
+},
+'trading.dex_screener': {
+  name: 'DEX Screener',
+  enabled: getEnvBoolean('FEATURE_TRADING_DEX_SCREENER', false),
+  releaseDate: '2026-01-15',
+  phase: 8,
+  description: 'Multi-chain DEX pair discovery via DexScreener',
+  category: 'trading',
+},
+
+// ========== CHAMA / OKEDI (6 Features) ==========
+'chama.rotation': {
+  name: 'Chama Rotation',
+  enabled: getEnvBoolean('FEATURE_CHAMA_ROTATION', true),
+  releaseDate: '2025-11-22',
+  phase: 2,
+  description: 'Merry-go-round payout configuration and execution',
+  category: 'chama',
+},
+'chama.contributions': {
+  name: 'Contribution Tracking',
+  enabled: getEnvBoolean('FEATURE_CHAMA_CONTRIBUTIONS', true),
+  releaseDate: '2025-11-22',
+  phase: 2,
+  description: 'Member contribution history and standing',
+  category: 'chama',
+},
+'chama.mpesa': {
+  name: 'M-Pesa Integration',
+  enabled: getEnvBoolean('FEATURE_CHAMA_MPESA', true),
+  releaseDate: '2025-11-22',
+  phase: 2,
+  description: 'M-Pesa contributions and payouts via Daraja',
+  category: 'chama',
+},
+'chama.whatsapp': {
+  name: 'WhatsApp Integration',
+  enabled: getEnvBoolean('FEATURE_CHAMA_WHATSAPP', false), // behind flag until tested
+  releaseDate: '2026-01-01',
+  phase: 5,
+  description: 'Chama management via WhatsApp',
+  category: 'chama',
+},
+'chama.telegram': {
+  name: 'Telegram Bot',
+  enabled: getEnvBoolean('FEATURE_CHAMA_TELEGRAM', false),
+  releaseDate: '2026-01-01',
+  phase: 5,
+  description: 'DAO alerts and management via Telegram',
+  category: 'chama',
+},
+'chama.poc': {
+  name: 'Proof of Contribution',
+  enabled: getEnvBoolean('FEATURE_CHAMA_POC', true),
+  releaseDate: '2025-11-22',
+  phase: 3,
+  description: 'On-chain proof of contribution for credit/reputation',
+  category: 'chama',
+},
+
+// ========== DEFI / AMARA (5 Features) ==========
+'defi.yield_farming': {
+  name: 'Yield Farming',
+  enabled: getEnvBoolean('FEATURE_DEFI_YIELD', false),
+  releaseDate: '2026-02-01',
+  phase: 9,
+  description: 'Liquidity provision on Ubeswap, Moola',
+  category: 'defi',
+},
+'defi.staking': {
+  name: 'Staking',
+  enabled: getEnvBoolean('FEATURE_DEFI_STAKING', true),
+  releaseDate: '2025-12-01',
+  phase: 6,
+  description: 'CELO validator staking and MTAA staking',
+  category: 'defi',
+},
+'defi.multisig': {
+  name: 'Treasury Multisig',
+  enabled: getEnvBoolean('FEATURE_DEFI_MULTISIG', true),
+  releaseDate: '2025-12-01',
+  phase: 6,
+  description: 'Multi-signature treasury control',
+  category: 'defi',
+  dependencies: ['dao.treasury'],
+},
+'defi.dhf': {
+  name: 'Decentralised Hedge Fund',
+  enabled: getEnvBoolean('FEATURE_DEFI_DHF', false),
+  releaseDate: '2026-04-01',
+  phase: 11,
+  description: 'DHF vault template deployment',
+  category: 'defi',
+},
+'defi.rebalancing': {
+  name: 'Auto-Rebalancing',
+  enabled: getEnvBoolean('FEATURE_DEFI_REBALANCING', false),
+  releaseDate: '2026-03-01',
+  phase: 10,
+  description: 'Automated portfolio rebalancing',
+  category: 'defi',
+  dependencies: ['trading.dex_swap', 'defi.staking'],
+},
 
   // ========== WALLET FEATURES (9 Features) ==========
   'wallet.list': {
@@ -1058,43 +1242,101 @@ export function getFeaturesByCategory(category: string): FeatureVisibilityMap {
 /**
  * Enable feature flag
  */
-export function enableFeature(featureKey: string): void {
+export const OVERRIDE_TTL_SECONDS = 86400 * 30; // 30 days
+
+export async function enableFeature(featureKey: string): Promise<void> {
   if (DEFAULT_FEATURES[featureKey]) {
     DEFAULT_FEATURES[featureKey].enabled = true;
-    // cache.clear(`feature:${featureKey}`); // cache module not available
+    try {
+      const { redis } = await import('./redis');
+      await redis.set(`feature:override:${featureKey}`, 'true', OVERRIDE_TTL_SECONDS);
+      logger.info(`[FeatureService] Persisted override enable for ${featureKey}`);
+    } catch (err) {
+      logger.warn(`[FeatureService] Failed to persist enable override for ${featureKey}`, err);
+    }
   }
 }
 
 /**
  * Disable feature flag
  */
-export function disableFeature(featureKey: string): void {
+export async function disableFeature(featureKey: string): Promise<void> {
   if (DEFAULT_FEATURES[featureKey]) {
     DEFAULT_FEATURES[featureKey].enabled = false;
-    // cache.clear(`feature:${featureKey}`); // cache module not available
+    try {
+      const { redis } = await import('./redis');
+      await redis.set(`feature:override:${featureKey}`, 'false', OVERRIDE_TTL_SECONDS);
+      logger.info(`[FeatureService] Persisted override disable for ${featureKey}`);
+    } catch (err) {
+      logger.warn(`[FeatureService] Failed to persist disable override for ${featureKey}`, err);
+    }
   }
 }
 
 /**
  * Release all features of a specific phase
  */
-export function releasePhase(phase: number): void {
-  Object.entries(DEFAULT_FEATURES).forEach(([, feature]) => {
+export async function releasePhase(phase: number): Promise<void> {
+  const promises: Promise<void>[] = [];
+  for (const [key, feature] of Object.entries(DEFAULT_FEATURES)) {
     if (feature.phase <= phase) {
       feature.enabled = true;
+      const p = (async () => {
+        try {
+          const { redis } = await import('./redis');
+          await redis.set(`feature:override:${key}`, 'true', OVERRIDE_TTL_SECONDS);
+        } catch (e) {
+          logger.warn('[FeatureService] releasePhase persist failed', e);
+        }
+      })();
+      promises.push(p);
     }
-  });
-  // cache.clear('features:*'); // cache module not available
+  }
+  await Promise.all(promises);
 }
 
 /**
  * Release all features immediately
  */
-export function releaseAllFeatures(): void {
-  Object.entries(DEFAULT_FEATURES).forEach(([, feature]) => {
+export async function releaseAllFeatures(): Promise<void> {
+  const promises: Promise<void>[] = [];
+  for (const [key, feature] of Object.entries(DEFAULT_FEATURES)) {
     feature.enabled = true;
-  });
-  // cache.clear('features:*'); // cache module not available
+    const p = (async () => {
+      try {
+        const { redis } = await import('./redis');
+        await redis.set(`feature:override:${key}`, 'true', OVERRIDE_TTL_SECONDS);
+      } catch (e) {
+        logger.warn('[FeatureService] releaseAll persist failed', e);
+      }
+    })();
+    promises.push(p);
+  }
+  await Promise.all(promises);
+}
+
+/**
+ * Load persisted feature overrides from Redis and apply them to DEFAULT_FEATURES
+ */
+export async function loadFeatureOverrides(): Promise<void> {
+  try {
+    const { redis } = await import('./redis');
+    const keys = Object.keys(DEFAULT_FEATURES);
+    let applied = 0;
+    for (const key of keys) {
+      const override = await redis.get(`feature:override:${key}`);
+      if (override === 'true') {
+        DEFAULT_FEATURES[key].enabled = true;
+        applied++;
+      } else if (override === 'false') {
+        DEFAULT_FEATURES[key].enabled = false;
+        applied++;
+      }
+    }
+    logger.info(`[FeatureService] Loaded ${applied} feature overrides from Redis`);
+  } catch (err) {
+    logger.warn('[FeatureService] Failed to load feature overrides from Redis', err);
+  }
 }
 
 /**

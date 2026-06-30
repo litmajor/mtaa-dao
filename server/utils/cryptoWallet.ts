@@ -1,12 +1,20 @@
-
 import crypto from 'crypto';
-import { generateMnemonic, mnemonicToSeedSync, validateMnemonic } from 'bip39';
+import { promisify } from 'util';
 import { ethers } from 'ethers';
 
+// Promisify intensive crypto operations to keep the event loop non-blocking
+const pbkdf2Async = promisify(crypto.pbkdf2);
+
+// Configuration Constants
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
 const SALT_LENGTH = 16;
 const IV_LENGTH = 12;
-const AUTH_TAG_LENGTH = 16;
+const PBKDF2_ITERATIONS = 600000; // OWASP 2026 Security Standard
+const KEY_LENGTH = 32;
+const DIGEST = 'sha256';
+
+// Standard Ethereum derivation path
+const DEFAULT_DERIVATION_PATH = "m/44'/60'/0'/0/0";
 
 export interface WalletCredentials {
   address: string;
@@ -22,48 +30,73 @@ export interface EncryptedWallet {
 }
 
 /**
- * Generate a new wallet with BIP39 mnemonic
+ * Normalizes and validates a private key string.
+ * Returns a 0x-prefixed 64-character hex string or null.
+ */
+export function normalizePrivateKey(key: string | undefined | null): string | null {
+  if (!key) return null;
+  let pk = String(key).trim();
+  if (!pk.startsWith('0x')) pk = `0x${pk}`;
+  return /^0x[0-9a-fA-F]{64}$/.test(pk) ? pk : null;
+}
+
+/**
+ * Validates a BIP39 mnemonic phrase using native Ethers v6 methods.
+ */
+export function isValidMnemonic(mnemonic: string | undefined | null): boolean {
+  if (!mnemonic) return false;
+  return ethers.Mnemonic.isValidMnemonic(mnemonic.trim());
+}
+
+/**
+ * Generate a new wallet with an Ethers-native BIP39 mnemonic.
  */
 export function generateWalletFromMnemonic(wordCount: 12 | 24 = 12): WalletCredentials {
-  const strength = wordCount === 12 ? 128 : 256;
-  const mnemonic = generateMnemonic(strength);
+  const entropyLength = wordCount === 12 ? 16 : 32;
+  const entropy = crypto.randomBytes(entropyLength);
   
-  // Create wallet from mnemonic using ethers
-  // Use ethers HDNode for derivation
-  const mnemonicWallet = ethers.Mnemonic.fromPhrase(mnemonic);
-  const hdnode = ethers.HDNodeWallet.fromMnemonic(mnemonicWallet, "m/44'/60'/0'/0/0");
-  
+  // Create phrase directly from secure entropy source
+  const mnemonicPhrase = ethers.Mnemonic.entropyToPhrase(entropy);
+  const mnemonicInstance = ethers.Mnemonic.fromPhrase(mnemonicPhrase);
+  const hdNode = ethers.HDNodeWallet.fromMnemonic(mnemonicInstance, DEFAULT_DERIVATION_PATH);
+
   return {
-    address: hdnode.address,
-    privateKey: hdnode.privateKey,
-    mnemonic
+    address: hdNode.address,
+    privateKey: hdNode.privateKey,
+    mnemonic: mnemonicPhrase
   };
 }
 
 /**
- * Recover wallet from mnemonic phrase
+ * Recover a wallet from a mnemonic phrase securely.
  */
-export function recoverWalletFromMnemonic(mnemonic: string): WalletCredentials {
-  if (!validateMnemonic(mnemonic)) {
-    throw new Error('Invalid mnemonic phrase');
+export function recoverWalletFromMnemonic(mnemonic: string, path = DEFAULT_DERIVATION_PATH): WalletCredentials {
+  const cleanedMnemonic = mnemonic.trim();
+  if (!isValidMnemonic(cleanedMnemonic)) {
+    throw new Error('WalletRecoveryError: Invalid BIP39 mnemonic phrase provided.');
   }
-  
-  const mnemonicWallet = ethers.Mnemonic.fromPhrase(mnemonic);
-  const hdnode = ethers.HDNodeWallet.fromMnemonic(mnemonicWallet, "m/44'/60'/0'/0/0");
-  
+
+  const mnemonicInstance = ethers.Mnemonic.fromPhrase(cleanedMnemonic);
+  const hdNode = ethers.HDNodeWallet.fromMnemonic(mnemonicInstance, path);
+
   return {
-    address: hdnode.address,
-    privateKey: hdnode.privateKey,
-    mnemonic
+    address: hdNode.address,
+    privateKey: hdNode.privateKey,
+    mnemonic: cleanedMnemonic
   };
 }
 
 /**
- * Import wallet from private key
+ * Import a wallet from a raw private key string.
  */
 export function importWalletFromPrivateKey(privateKey: string): WalletCredentials {
-  const wallet = new ethers.Wallet(privateKey);
-  
+  const normalizedKey = normalizePrivateKey(privateKey);
+  if (!normalizedKey) {
+    throw new Error('WalletImportError: Invalid private key format. Must be a 32-byte hex string.');
+  }
+
+  const wallet = new ethers.Wallet(normalizedKey);
+
   return {
     address: wallet.address,
     privateKey: wallet.privateKey
@@ -71,11 +104,13 @@ export function importWalletFromPrivateKey(privateKey: string): WalletCredential
 }
 
 /**
- * Encrypt wallet data with user password
+ * Encrypt wallet credentials using non-blocking asynchronous AES-256-GCM.
  */
-export function encryptWallet(walletData: WalletCredentials, password: string): EncryptedWallet {
+export async function encryptWallet(walletData: WalletCredentials, password: string): Promise<EncryptedWallet> {
   const salt = crypto.randomBytes(SALT_LENGTH);
-  const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
+  
+  // Offloads expensive key derivation math to the libuv thread pool
+  const key = await pbkdf2Async(password, salt, PBKDF2_ITERATIONS, KEY_LENGTH, DIGEST);
   const iv = crypto.randomBytes(IV_LENGTH);
   
   const cipher = crypto.createCipheriv(ENCRYPTION_ALGORITHM, key, iv);
@@ -84,12 +119,11 @@ export function encryptWallet(walletData: WalletCredentials, password: string): 
     privateKey: walletData.privateKey,
     mnemonic: walletData.mnemonic
   });
-  
+
   let encrypted = cipher.update(dataToEncrypt, 'utf8', 'hex');
   encrypted += cipher.final('hex');
-  
   const authTag = cipher.getAuthTag();
-  
+
   return {
     encryptedData: encrypted,
     salt: salt.toString('hex'),
@@ -99,34 +133,49 @@ export function encryptWallet(walletData: WalletCredentials, password: string): 
 }
 
 /**
- * Decrypt wallet data with user password
+ * Decrypt wallet credentials using non-blocking asynchronous AES-256-GCM.
  */
-export function decryptWallet(encryptedWallet: EncryptedWallet, password: string): WalletCredentials {
+export async function decryptWallet(encryptedWallet: EncryptedWallet, password: string): Promise<WalletCredentials> {
   const salt = Buffer.from(encryptedWallet.salt, 'hex');
-  const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
+  
+  // Offloads expensive key derivation math to the libuv thread pool
+  const key = await pbkdf2Async(password, salt, PBKDF2_ITERATIONS, KEY_LENGTH, DIGEST);
   const iv = Buffer.from(encryptedWallet.iv, 'hex');
   const authTag = Buffer.from(encryptedWallet.authTag, 'hex');
-  
+
   const decipher = crypto.createDecipheriv(ENCRYPTION_ALGORITHM, key, iv);
   decipher.setAuthTag(authTag);
-  
-  let decrypted = decipher.update(encryptedWallet.encryptedData, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  
+
+  let decrypted: string;
+  try {
+    decrypted = decipher.update(encryptedWallet.encryptedData, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+  } catch (error) {
+    throw new Error('WalletDecryptionError: Failed to decrypt wallet. Invalid password or tampered data.');
+  }
+
   const walletData = JSON.parse(decrypted);
+  const normalizedKey = normalizePrivateKey(walletData.privateKey);
   
-  const wallet = new ethers.Wallet(walletData.privateKey);
-  
+  if (!normalizedKey) {
+    throw new Error('WalletDecryptionError: Decrypted private key is malformed or corrupted.');
+  }
+
+  const wallet = new ethers.Wallet(normalizedKey);
+
   return {
     address: wallet.address,
-    privateKey: walletData.privateKey,
+    privateKey: wallet.privateKey,
     mnemonic: walletData.mnemonic
   };
 }
 
 /**
- * Validate mnemonic phrase
+ * Helper to safely instantiate an Ethers wallet instance for on-chain interactions.
  */
-export function isValidMnemonic(mnemonic: string): boolean {
-  return validateMnemonic(mnemonic);
+export function createWalletInstance(key: string | undefined | null, provider?: ethers.Provider): ethers.Wallet | null {
+  const normalizedKey = normalizePrivateKey(key);
+  if (!normalizedKey) return null;
+  return provider ? new ethers.Wallet(normalizedKey, provider) : new ethers.Wallet(normalizedKey);
 }
+export const createWalletIfValid = createWalletInstance; // Alias for clarity in context of private key usage

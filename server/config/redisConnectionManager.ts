@@ -126,30 +126,71 @@ class RedisConnectionManager {
     
     return new Promise((resolve, reject) => {
       if (client.isOpen) {
+        // Already open — ensure policy is correct asynchronously
+        this.ensureNoEvictionPolicy(client).catch((err) => {
+          logger.debug('[REDIS] Policy validation skipped (already open):', String(err));
+        });
         resolve(client);
         return;
       }
 
       const onReady = () => {
         client.removeListener('error', onError);
-        resolve(client);
+
+        // Validate and correct eviction policy asynchronously before resolving
+        this.ensureNoEvictionPolicy(client)
+          .catch((err) => logger.warn('[REDIS] Policy validation failed:', String(err)))
+          .finally(() => resolve(client));
       };
 
       const onError = (err: Error) => {
-        client.removeListener('connect', onReady);
+        client.removeListener('ready', onReady);
         reject(err);
       };
 
-      client.once('connect', onReady);
+      client.once('ready', onReady);
       client.once('error', onError);
 
       // Timeout after 10s
       setTimeout(() => {
-        client.removeListener('connect', onReady);
+        client.removeListener('ready', onReady);
         client.removeListener('error', onError);
         reject(new Error('Redis initialization timeout (10s)'));
       }, 10000);
     });
+  }
+
+  /**
+   * Ensure Redis eviction policy is set to `noeviction`. Attempt to auto-correct
+   * if it differs. Non-fatal — failures here are logged but do not stop startup.
+   */
+  private static async ensureNoEvictionPolicy(client: RedisClientType): Promise<void> {
+    try {
+      // Use a loose typing for config access since client.config may vary between redis clients
+      const resp = await (client as any).config('GET', 'maxmemory-policy');
+      let current: string | undefined;
+
+      if (Array.isArray(resp) && resp.length >= 2) {
+        current = String(resp[1]);
+      } else if (resp && typeof resp === 'object') {
+        current = (resp['maxmemory-policy'] || resp.maxmemory_policy || Object.values(resp)[0]) as string;
+      } else if (typeof resp === 'string') {
+        current = resp;
+      }
+
+      if (!current) {
+        logger.debug('[REDIS] Could not determine maxmemory-policy from CONFIG GET response');
+        return;
+      }
+
+      if (current.toLowerCase() !== 'noeviction') {
+        logger.warn(`[REDIS] Eviction policy is ${current}. Correcting to noeviction`);
+        await (client as any).config('SET', 'maxmemory-policy', 'noeviction');
+        logger.info('[REDIS] Eviction policy set to noeviction');
+      }
+    } catch (err) {
+      logger.warn(`[REDIS] Could not validate/modify eviction policy: ${String(err)}`);
+    }
   }
 
   /**

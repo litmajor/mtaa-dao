@@ -55,8 +55,8 @@ import rulesRoutes from './routes/rules';
 import blogRoutes from './routes/blog';
 import supportRoutes from './routes/support';
 import successStoriesRoutes from './routes/success-stories';
-// Import Yuki trading platform routes
-import yukiRoutes from './routes/yuki';
+// Import Yuki trading platform routes (V1 - versioned)
+import yukiRoutesV1 from './routes/v1/yuki';
 import marketDataRoutes from './routes/marketData';
 import executionQualityRoutes from './routes/executionQuality';
 import marketInsightsRoutes from './routes/marketInsights';
@@ -101,6 +101,7 @@ import { authOauthGoogleHandler } from './api/auth_oauth_google';
 import { authOauthGoogleCallbackHandler } from './api/auth_oauth_google_callback';
 import { accountDeleteHandler } from './api/account_delete';
 import { daoDeployHandler } from './api/dao_deploy';
+import { getSpawnFeeQuote, SPAWN_FEE_KES } from './services/daoSpawnService';
 import { paymentsEstimateGasHandler } from './api/payments_estimate_gas';
 import { paymentsIndexHandler } from './api/payments_index';
 import { getWalletTransactions, createWalletTransaction } from './api/wallet_transactions';
@@ -186,6 +187,7 @@ import {
 // Import new strategy and WebSocket routes
 
 import { webSocketPriceStream } from './services/webSocketPriceStream';
+import dashboardRouter from './routes/dashboard';
 
 export async function registerRoutes(app: Express, server: HTTPServer) {
   console.log('[ROUTES] *** STARTING ROUTE REGISTRATION ***');
@@ -235,6 +237,13 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
     res.set('X-Deprecated', 'true');
     res.set('X-Redirect-To', '/api/health');
     res.status(301).redirect('/api/health');
+  });
+
+  // Backwards compatibility: public impact stats (frontend sometimes requests /public/impact-stats)
+  app.get('/public/impact-stats', (req, res) => {
+    res.set('X-Deprecated', 'true');
+    res.set('X-Redirect-To', '/api/public/impact-stats');
+    res.status(301).redirect('/api/public/impact-stats');
   });
 
   // Route: /api/morio/health → /api/health/morio (move)
@@ -392,10 +401,140 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
     return mpesaStatusRoutes(req, res, next);
   });
 
-  app.use('/api/deposits', depositsWithdrawalsRoutes);
-  app.use('/api/withdrawals', depositsWithdrawalsRoutes);
-  app.use('/api/transactions', depositsWithdrawalsRoutes);
+  // ============================================================================
+  // DEPOSITS, WITHDRAWALS & TRANSACTIONS CONSOLIDATION
+  // ============================================================================
+  // CANONICAL ENDPOINT: /api/v1/wallets/* (v1 API with full implementation)
+  // LEGACY ENDPOINTS: /api/deposits, /api/withdrawals, /api/transactions
+  // 
+  // These 3 legacy paths were routing to identical handlers via depositsWithdrawalsRoutes.
+  // Consolidating to v1 API endpoint to reduce duplication.
+  console.log('[ROUTES] Mounting deposit/withdrawal legacy routes (redirecting to v1)...');
+  
+  // Canonical: Already mounted in index.ts via v1WalletsRouter at /api/v1/wallets
+  // Deprecation redirects for backwards compatibility
+  app.use('/api/deposits', (req, res, next) => {
+    res.set('Deprecation', 'true');
+    res.set('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.set('X-API-Warn', 'Endpoint moved to /api/v1/wallets. All paths work at the new location.');
+    const newPath = `/api/v1/wallets${req.path}`;
+    res.set('X-Redirect-To', newPath);
+    res.redirect(307, newPath);
+  });
+  
+  app.use('/api/withdrawals', (req, res, next) => {
+    res.set('Deprecation', 'true');
+    res.set('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.set('X-API-Warn', 'Endpoint moved to /api/v1/wallets. All paths work at the new location.');
+    const newPath = `/api/v1/wallets${req.path}`;
+    res.set('X-Redirect-To', newPath);
+    res.redirect(307, newPath);
+  });
+  
+  app.use('/api/transactions', (req, res, next) => {
+    res.set('Deprecation', 'true');
+    res.set('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.set('X-API-Warn', 'Endpoint moved to /api/v1/wallets. All paths work at the new location.');
+    const newPath = `/api/v1/wallets${req.path}`;
+    res.set('X-Redirect-To', newPath);
+    res.redirect(307, newPath);
+  });
+  
   app.use('/api/p2p-transfers', p2pTransfersRoutes);
+
+  // ============================================================================
+  // CONSOLIDATED ROUTE REDIRECTS (DEPRECATION)
+  // ============================================================================
+  // These routes have been consolidated to single canonical endpoints.
+  // Old paths maintained for backwards compatibility.
+  
+  // Feature Analytics consolidation
+  console.log('[ROUTES] Setting up consolidated feature analytics redirect...');
+  app.use('/api/feature-analytics', (req, res, next) => {
+    res.set('Deprecation', 'true');
+    res.set('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.set('X-API-Warn', 'Endpoint consolidated to /api/features');
+    const newPath = `/api/features${req.path}`;
+    res.set('X-Redirect-To', newPath);
+    res.redirect(307, newPath);
+  });
+  
+  // Graph Propagation consolidation
+  console.log('[ROUTES] Setting up consolidated graph propagation redirect...');
+  app.use('/api/graph-propagation', (req, res, next) => {
+    res.set('Deprecation', 'true');
+    res.set('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.set('X-API-Warn', 'Endpoint consolidated to /api/propagation');
+    const newPath = `/api/propagation${req.path}`;
+    res.set('X-Redirect-To', newPath);
+    res.redirect(307, newPath);
+  });
+  
+  // DEX Screener consolidation
+  console.log('[ROUTES] Setting up consolidated DEX screener redirect...');
+  app.use('/api/dex-screener', (req, res, next) => {
+    res.set('Deprecation', 'true');
+    res.set('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.set('X-API-Warn', 'Endpoint consolidated to /api/dex');
+    const newPath = `/api/dex${req.path}`;
+    res.set('X-Redirect-To', newPath);
+    res.redirect(307, newPath);
+  });
+  
+  // API Registry consolidation
+  console.log('[ROUTES] Setting up consolidated API registry redirect...');
+  app.use('/api/api-registry', (req, res, next) => {
+    res.set('Deprecation', 'true');
+    res.set('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.set('X-API-Warn', 'Endpoint consolidated to /api/docs');
+    const newPath = `/api/docs${req.path}`;
+    res.set('X-Redirect-To', newPath);
+    res.redirect(307, newPath);
+  });
+  
+  // Proposal Execution consolidation
+  console.log('[ROUTES] Setting up consolidated proposal execution redirect...');
+  app.use('/api/proposal-execution', (req, res, next) => {
+    res.set('Deprecation', 'true');
+    res.set('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.set('X-API-Warn', 'Endpoint consolidated to /api/v1/daos/:daoId/proposals. See mapping in X-Legacy-Redirect-Info.');
+    
+    // Parse legacy path and convert to v1
+    // Legacy: /api/proposal-execution/:daoId/queue → /api/v1/daos/:daoId/proposals/execution/queue
+    // Legacy: /api/proposal-execution/:daoId/execute/:proposalId → /api/v1/daos/:daoId/proposals/:proposalId/execute
+    // Legacy: /api/proposal-execution/:daoId/cancel/:executionId → /api/v1/daos/:daoId/proposals/execution/:executionId (DELETE)
+    
+    const pathParts = req.path.split('/').filter(p => p);
+    if (pathParts.length >= 2) {
+      const daoId = pathParts[0];
+      const operation = pathParts[1];
+      
+      let newPath: string;
+      if (operation === 'queue') {
+        newPath = `/api/v1/daos/${daoId}/proposals/execution/queue`;
+      } else if (operation === 'execute' && pathParts[2]) {
+        const proposalId = pathParts[2];
+        newPath = `/api/v1/daos/${daoId}/proposals/${proposalId}/execute`;
+      } else if (operation === 'cancel' && pathParts[2]) {
+        const executionId = pathParts[2];
+        newPath = `/api/v1/daos/${daoId}/proposals/execution/${executionId}`;
+        // Note: Method should be DELETE for cancel
+        res.set('X-Legacy-Method-Hint', 'Use DELETE method for cancel operations');
+      } else {
+        // Fallback
+        newPath = `/api/v1/daos${req.path}`;
+      }
+      
+      res.set('X-Redirect-To', newPath);
+      res.set('X-Legacy-Redirect-Info', `Mapped from legacy proposal-execution structure to v1 daos/:daoId/proposals`);
+      res.redirect(307, newPath);
+      return;
+    }
+    
+    // Fallback redirect
+    res.set('X-Redirect-To', '/api/v1/daos');
+    res.redirect(307, '/api/v1/daos');
+  });
 
   // Treasury Data API - Real-time treasury state from smart contracts
   console.log('[ROUTES] Mounting treasury data routes...');
@@ -485,9 +624,26 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   console.log('[ROUTES] Mounting graph propagation routes...');
   app.use('/api/propagation', graphPropagationRoutes);
 
-  // Yuki Trading Platform
-  console.log('[ROUTES] Mounting Yuki trading platform routes...');
-  app.use('/api/yuki', yukiRoutes);
+  // Yuki Trading Platform (V1 - versioned API)
+  console.log('[ROUTES] Mounting Yuki trading platform routes at /api/v1/yuki...');
+  app.use('/api/v1/yuki', yukiRoutesV1);
+
+  // Deprecation redirect: /api/yuki → /api/v1/yuki
+  console.log('[ROUTES] Setting up Yuki versioning redirect...');
+  app.all('/api/yuki*', (req, res) => {
+    const newPath = `/api/v1/yuki${req.url.substring('/yuki'.length)}`;
+    res.status(307);
+    res.setHeader('Location', newPath);
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+    res.setHeader('X-Redirect-To', newPath);
+    res.json({
+      deprecated: true,
+      message: 'Yuki API has been moved to /api/v1/yuki',
+      newLocation: newPath,
+      sunsetDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
+    });
+  });
 
   // Symbol Universe & CEX Price Integration
   console.log('[ROUTES] Mounting symbol universe routes...');
@@ -527,7 +683,7 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   // MTAA Staking & Governance - moved to v1 API
 
   // DAO deployment (canonical endpoint - requires canCreateDAO permission)
-  app.post('/api/dao/deploy', isAuthenticated, requireRole('admin', 'moderator'), validate({ body: daoDeploySchema }), async (req, res, next) => {
+  app.post('/api/dao/deploy', isAuthenticated, validate({ body: daoDeploySchema }), async (req, res, next) => {
     try {
       req.body = sanitizeObject(req.body);
       await daoDeployHandler(req, res);
@@ -537,7 +693,7 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   });
   
   // Backwards compatibility (deprecated alias)
-  app.post('/api/dao-deploy', isAuthenticated, requireRole('admin', 'moderator'), async (req, res, next) => {
+  app.post('/api/dao-deploy', isAuthenticated, async (req, res, next) => {
     try {
       res.set('X-Deprecated', 'true');
       res.set('X-Redirect-To', '/api/dao/deploy');
@@ -547,8 +703,184 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
     }
   });
 
+  /**
+   * POST /api/dao/initiate-spawn-payment
+   * Phase 1: Initiates an M-Pesa STK push for the DAO spawn fee.
+   * On webhook confirmation the server calls DAOSpawnGateway and deploys the DAO.
+   *
+   * Body: { daoData, founderWallet, phone, invitedMembers, selectedElders }
+   * Response: { reference, spawnFeeKES, checkoutRequestId }
+   */
+  app.post('/api/dao/initiate-spawn-payment', isAuthenticated, async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      req.body = sanitizeObject(req.body);
+      const { daoData, founderWallet, phone, invitedMembers, selectedElders, multisig } = req.body;
+
+      if (!daoData?.daoType || !phone || !founderWallet) {
+        return res.status(400).json({ error: 'daoData.daoType, phone, and founderWallet are required' });
+      }
+
+      const daoType = (daoData.daoType as string).toLowerCase().replace(/-/g, '');
+      const { kes: spawnFeeKES, cusdEstimate, rate } = await getSpawnFeeQuote(daoType);
+
+      // Initiate the STK push via the existing payments route logic
+      const mpesaEnabled = String(process.env.FEATURE_MPESA_STK) === 'true';
+      if (!mpesaEnabled) {
+        return res.status(503).json({ error: 'M-Pesa STK feature is not enabled' });
+      }
+
+      const shortcode = process.env.MPESA_SHORTCODE;
+      const passkey = process.env.MPESA_PASSKEY || process.env.MPESA_PASSWORD;
+      const callbackUrl = process.env.MPESA_CALLBACK_URL || `${process.env.APP_BASE_URL || ''}/webhooks/mpesa`;
+      const mpesaEnv = (process.env.MPESA_ENVIRONMENT || 'sandbox').toLowerCase();
+      if (!shortcode || !passkey) {
+        return res.status(503).json({ error: 'M-Pesa shortcode/passkey not configured' });
+      }
+
+      const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+      const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64');
+
+      // Fetch Daraja token
+      const mpesaConsumerKey = process.env.MPESA_CONSUMER_KEY;
+      const mpesaConsumerSecret = process.env.MPESA_CONSUMER_SECRET;
+      if (!mpesaConsumerKey || !mpesaConsumerSecret) {
+        return res.status(503).json({ error: 'M-Pesa consumer key/secret not configured' });
+      }
+      const mpesaBase = mpesaEnv === 'live' ? 'https://api.safaricom.co.ke' : 'https://sandbox.safaricom.co.ke';
+      const tokenResp = await fetch(
+        `${mpesaBase}/oauth/v1/generate?grant_type=client_credentials`,
+        { headers: { Authorization: `Basic ${Buffer.from(`${mpesaConsumerKey}:${mpesaConsumerSecret}`).toString('base64')}` } }
+      );
+      const tokenData = await tokenResp.json() as any;
+      const mpesaToken = tokenData.access_token;
+      if (!mpesaToken) {
+        return res.status(502).json({ error: 'Failed to obtain M-Pesa access token' });
+      }
+
+      const stkBody = {
+        BusinessShortCode: shortcode,
+        Password: password,
+        Timestamp: timestamp,
+        TransactionType: 'CustomerPayBillOnline',
+        Amount: spawnFeeKES,
+        PartyA: phone.replace(/[^0-9+]/g, ''),
+        PartyB: shortcode,
+        PhoneNumber: phone.replace(/[^0-9+]/g, ''),
+        CallBackURL: callbackUrl,
+        AccountReference: `MtaaDAO-${daoType.toUpperCase()}`,
+        TransactionDesc: `MtaaDAO ${daoType} DAO Spawn Fee`,
+      };
+
+      const stkResp = await fetch(`${mpesaBase}/mpesa/stkpush/v1/processrequest`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${mpesaToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(stkBody),
+      });
+
+      const stkData = await stkResp.json() as any;
+      if (!stkResp.ok) {
+        return res.status(502).json({ error: 'Daraja STK request failed', details: stkData });
+      }
+
+      const checkoutRequestId = stkData?.CheckoutRequestID;
+      const reference = `SPAWN-${Date.now()}-${founderWallet.slice(2, 8)}`;
+
+      // Persist the pending payment with full DAO creation payload embedded
+      const { paymentTransactions } = await import('../shared/schema');
+      const { db } = await import('./db');
+      await db.insert(paymentTransactions).values({
+        reference,
+        userId: (req as any).user?.id || founderWallet,
+        provider: 'mpesa',
+        amount: String(spawnFeeKES),
+        currency: 'KES',
+        type: 'dao_spawn_fee',
+        status: 'pending',
+        metadata: {
+          purpose: 'dao_spawn_fee',
+          spawnStatus: 'awaiting_payment',
+          checkoutRequestId,
+          founderWallet,
+          daoType,
+          spawnFeeKES,
+          cusdEstimate,
+          rate,
+          pendingDaoData: { daoData, founderWallet, invitedMembers: invitedMembers || [], selectedElders: selectedElders || [], multisig },
+          darajaResponse: stkData,
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as any);
+
+      return res.status(202).json({
+        success: true,
+        reference,
+        checkoutRequestId,
+        spawnFeeKES,
+        cusdEstimate,
+        message: `Please enter your M-Pesa PIN to pay KES ${spawnFeeKES} and create your ${daoType} DAO.`,
+      });
+    } catch (error: any) {
+      next(error);
+    }
+  });
+
   // DAO Rotation Management (DAO admin/owner only)
   app.get('/api/dao/:daoId/rotation/status', isAuthenticated, validateDaoIdMiddleware, getRotationStatusHandler);
+
+  /**
+   * GET /api/dao/spawn-fee-quote/:daoType
+   * Returns the KES spawn fee and estimated cUSD equivalent for a given DAO type.
+   * Used by the frontend to display "Pay KES 1,000" before initiating payment.
+   */
+  app.get('/api/dao/spawn-fee-quote/:daoType', isAuthenticated, async (req: express.Request, res: express.Response) => {
+    try {
+      const daoType = (req.params.daoType || '').toLowerCase().replace(/-/g, '');
+      const quote = await getSpawnFeeQuote(daoType);
+      return res.json({ success: true, daoType, ...quote });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * GET /api/dao/spawn-status/:reference
+   * Poll the status of a pending DAO spawn payment.
+   * Returns spawnStatus: 'awaiting_payment' | 'processing' | 'completed' | 'spawn_failed'
+   */
+  app.get('/api/dao/spawn-status/:reference', isAuthenticated, async (req: express.Request, res: express.Response) => {
+    try {
+      const { reference } = req.params;
+      const { paymentTransactions: ptTable } = await import('../shared/schema');
+      const { db: dbConn } = await import('./db');
+      const { eq: eqOp } = await import('drizzle-orm');
+
+      const [tx] = await dbConn
+        .select()
+        .from(ptTable)
+        .where(eqOp(ptTable.reference, reference))
+        .limit(1);
+
+      if (!tx) {
+        return res.status(404).json({ success: false, error: 'Reference not found' });
+      }
+
+      const meta = (tx.metadata as any) ?? {};
+      return res.json({
+        success: true,
+        reference,
+        paymentStatus: tx.status,
+        spawnStatus: meta.spawnStatus ?? 'unknown',
+        daoId: meta.daoId ?? null,
+        spawnFeeKES: meta.spawnFeeKES ?? null,
+        error: meta.spawnError ?? null,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+
   app.post('/api/dao/:daoId/rotation/process', isAuthenticated, validateDaoIdMiddleware, requireDAORole('owner', 'admin'), processRotationHandler);
   app.get('/api/dao/:daoId/rotation/next-recipient', isAuthenticated, validateDaoIdMiddleware, getNextRecipientHandler);
 
@@ -894,8 +1226,8 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   });
 
   // Admin AI Metrics routes (protected)
-  console.log('[ROUTES] Mounting admin AI metrics routes...');
-  app.use('/api/admin', isAuthenticated, requireRole('super_admin', 'admin'), adminAIMetricsRoutes);
+  //  CONSOLIDATED: adminAIMetricsRoutes merged into adminConsolidated (index.ts line 1226)
+  console.log('[ROUTES] Admin routes consolidated at /api/admin (via index.ts)');
 
   // DAO Abuse Prevention routes (authenticated users)
   const daoAbusePreventionRouter = await import('./routes/dao-abuse-prevention');
@@ -927,5 +1259,7 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   // Mark routes as registered so index.ts doesn't re-mount duplicates
   (app as any).locals = (app as any).locals || {};
   (app as any).locals.routesRegistered = true;
-
+  
+  // Mount API V1 routes
+  app.use('/api/v1', dashboardRouter);
 }

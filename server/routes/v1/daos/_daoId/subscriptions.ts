@@ -48,29 +48,22 @@ const SUBSCRIPTION_PLANS = {
     name: 'Free',
     price: 0,
     price_usd: 0,
-    features: ['Basic proposals', 'Up to 50 members', 'Community support', 'Basic treasury'],
+    features: ['Manual operations', 'Basic proposals', 'Standard vaults'],
     limits: { members: 50, proposals: 10, storage: '100MB', apiCalls: 1000 }
   },
   pro: {
     name: 'Pro',
-    price: 2999, // KES cents (29.99 KES)
-    price_usd: 30,
-    features: ['Advanced proposals', 'Up to 500 members', 'Priority support', 'Custom branding', 'Advanced treasury'],
+    price: 100000, // KES 1,000/month
+    price_usd: 8,
+    features: ['AI Agents', 'Auto-rebalancing', 'Auto-management', 'Advanced treasury'],
     limits: { members: 500, proposals: 100, storage: '1GB', apiCalls: 10000 }
-  },
-  enterprise: {
-    name: 'Enterprise',
-    price: 9999, // KES cents (99.99 KES)
-    price_usd: 100,
-    features: ['Unlimited proposals', 'Unlimited members', '24/7 support', 'White-label solution', 'Advanced security'],
-    limits: { members: -1, proposals: -1, storage: '10GB', apiCalls: -1 }
   },
   collective: {
     name: 'Collective',
-    price: 150000, // KES 1,500/month
-    price_usd: 12,
+    price: 500000, // KES 5,000/month
+    price_usd: 40,
     billing: 'monthly',
-    features: ['Unlimited everything', 'Priority support', 'Custom governance', 'Advanced analytics'],
+    features: ['Priority support', 'Custom AI parameters', 'White-label UI', 'Unlimited everything'],
     limits: { members: -1, proposals: -1, storage: '50GB', apiCalls: -1 }
   }
 };

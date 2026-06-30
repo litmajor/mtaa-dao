@@ -3,6 +3,8 @@
  * SYNCHRONIZER Agent Type Definitions
  */
 
+import { AgentMetrics } from '../framework/base-agent';
+
 export enum SyncMode {
   STEADY_BEAT = 'steady_beat',
   DELTA_ONLY = 'delta_only',
@@ -55,7 +57,7 @@ export interface SyncResult {
   resolvedState?: StateSnapshot;
 }
 
-export interface SyncMetrics {
+export interface SyncMetrics extends AgentMetrics {
   syncLatency: number[];
   heartbeatFrequency: number;
   rollbackEvents: number;

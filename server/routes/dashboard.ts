@@ -70,7 +70,8 @@ router.get('/dashboard/okedi', isAuthenticated, async (req: Request, res: Respon
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const dashboardData = await getOkediDashboard(userId);
+    const daoId = typeof req.query.daoId === 'string' ? req.query.daoId : undefined;
+    const dashboardData = await getOkediDashboard(userId, daoId);
 
     res.json(dashboardData);
   } catch (error) {

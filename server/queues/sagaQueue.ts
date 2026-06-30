@@ -1,4 +1,4 @@
-import { Queue, Worker, QueueScheduler, Job } from 'bullmq';
+import { Queue, Worker, Job } from 'bullmq';
 import IORedis from 'ioredis';
 import { paymentRecoverySAGA } from '../services/PaymentRecoverySAGAOrchestrator';
 import { sagaReconciledCounter } from '../utils/metrics';
@@ -15,12 +15,12 @@ const redisUrl = process.env.REDIS_URL || (() => {
   return `redis://${host}:${port}`;
 })();
 
-const connection = new IORedis(redisUrl);
+// Use connection options object to avoid cross-module ioredis type mismatch
+const connectionOptions = { url: redisUrl };
 
 const QUEUE_NAME = process.env.SAGA_RECONCILE_QUEUE_NAME || 'saga-reconcile-queue';
 
-const queue = new Queue(QUEUE_NAME, { connection });
-const scheduler = new QueueScheduler(QUEUE_NAME, { connection });
+const queue = new Queue(QUEUE_NAME, { connection: connectionOptions as any });
 
 let worker: Worker | null = null;
 
@@ -48,7 +48,7 @@ export function startSagaWorker(opts?: { concurrency?: number }) {
   const concurrency = opts?.concurrency ?? Number(process.env.SAGA_WORKER_CONCURRENCY || '4');
 
   worker = new Worker(QUEUE_NAME, async (job: Job) => {
-    const { sagaId } = job.data as { sagaId: string };
+    const { sagaId } = (job?.data || {}) as { sagaId: string };
     logger.info(`[SagaQueue] Processing reconcile job for ${sagaId}`);
     try {
       const result = await paymentRecoverySAGA.reconcileSaga(sagaId);
@@ -61,14 +61,14 @@ export function startSagaWorker(opts?: { concurrency?: number }) {
       try { await sendSAGADegradedAlert(sagaId, 'RECONCILE_WORKER', err); } catch(_){}
       throw err; // rethrow to allow retries/backoff
     }
-  }, { connection, concurrency });
+  }, { connection: connectionOptions as any, concurrency });
 
   worker.on('failed', (job, err) => {
-    logger.warn(`[SagaQueue] Job ${job.id} failed: ${err?.message || String(err)}`);
+    logger.warn(`[SagaQueue] Job ${job?.id ?? 'unknown'} failed: ${err?.message || String(err)}`);
   });
 
   worker.on('completed', (job) => {
-    logger.debug(`[SagaQueue] Job ${job.id} completed`);
+    logger.debug(`[SagaQueue] Job ${job?.id ?? 'unknown'} completed`);
   });
 
   logger.info(`[SagaQueue] Worker started (concurrency=${concurrency})`);
@@ -79,7 +79,6 @@ export async function stopSagaWorker() {
     await worker.close();
     worker = null;
   }
-  try { await scheduler.close(); } catch (e) {}
   try { await queue.close(); } catch (e) {}
 }
 

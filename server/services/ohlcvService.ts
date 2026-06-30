@@ -573,9 +573,9 @@ class OHLCVServiceProduction {
         }
       }
 
-      // Method 2: Pattern deletion (if supported)
+      // Method 2: Pattern deletion (if supported by cacheService)
       try {
-        await cacheService.delete(`ohlcv:${symbol}:*`);
+        await cacheService.clear(`ohlcv:${symbol}:*`);
       } catch (error) {
         // Pattern deletion not supported - that's OK, we deleted explicitly above
         logger.debug(`Pattern deletion not supported by cacheService (OK)`);
@@ -593,14 +593,20 @@ class OHLCVServiceProduction {
    */
   async ensureStaleCacheBackup(symbol: string, timeframe: string): Promise<void> {
     try {
-      const cacheKey = `ohlcv:${symbol}:${timeframe}:*`;
-      const data = await cacheService.get(cacheKey);
-      
-      if (data) {
-        const staleCacheKey = `${cacheKey}:stale`;
-        await cacheService.set(staleCacheKey, data, this.STALE_CACHE_TTL);
-        logger.debug(`Backed up stale cache for ${symbol}/${timeframe}`);
+      // Enumerate exact keys for this symbol/timeframe and back them up
+      const pattern = `ohlcv:${symbol}:${timeframe}:*`;
+      const keys = await (cacheService as any).keys(pattern);
+      for (const key of keys) {
+        try {
+          const data = await cacheService.get(key);
+          if (!data) continue;
+          const staleCacheKey = `${key}:stale`;
+          await cacheService.set(staleCacheKey, data, this.STALE_CACHE_TTL);
+        } catch (err) {
+          logger.debug(`Failed to backup key ${key} for ${symbol}:`, err);
+        }
       }
+      logger.debug(`Backed up stale cache for ${symbol}/${timeframe} (keys: ${keys.length})`);
     } catch (error) {
       // Stale cache backup is best-effort
       logger.debug(`Stale cache backup failed for ${symbol}:`, error);
@@ -674,6 +680,36 @@ class OHLCVServiceProduction {
       this.exchangeCapabilities.set(symbol, new Set());
     }
     this.exchangeCapabilities.get(symbol)!.add(exchange);
+  }
+
+  /**
+   * Seed the data source registry for a symbol with a known list of exchanges.
+   * This avoids expensive discovery probes against CCXT when the market universe
+   * builder already knows where symbols are listed.
+   */
+  seedDataSourceRegistry(symbol: string, exchanges: string[], quoteCurrencies: string[] = ['USDT']): void {
+    try {
+      const pairs = exchanges.map(ex => ({
+        pair: `${symbol}/${(quoteCurrencies && quoteCurrencies[0]) || 'USDT'}`,
+        exchange: ex,
+        quoteCurrency: (quoteCurrencies && quoteCurrencies[0]) || 'USDT',
+        minOrder: undefined,
+        hasOHLCV: true,
+        lastVerified: Date.now()
+      }));
+
+      const registry: DataSourceRegistry = { symbol, pairs };
+      this.dataSourceRegistry.set(symbol, registry);
+
+      // Populate exchangeCapabilities for quick lookups
+      for (const ex of exchanges) {
+        this.registerDataSource(symbol, ex);
+      }
+
+      logger.debug(`[OHLCV] Seeded dataSourceRegistry for ${symbol} (${exchanges.length} exchanges)`);
+    } catch (err) {
+      logger.debug(`[OHLCV] Failed to seed dataSourceRegistry for ${symbol}:`, err);
+    }
   }
 
   private categorizeLiquidity(candles: OHLCVCandle[]): 'excellent' | 'good' | 'fair' | 'poor' {

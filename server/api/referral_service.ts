@@ -9,10 +9,12 @@
  */
 
 import { db } from '../db';
-import { daoInvitations, daoMemberships, referralRewards, users } from '../../shared/schema';
-import { eq, and } from 'drizzle-orm';
+import { daoInvitations, daoMemberships, referralRewards, users, daos, contributions, userActivities, notificationHistory } from '../../shared/schema';
+import { eq, and, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import type { Request, Response } from 'express';
+import { logger } from '../utils/logger';
+import { createReferralWithFullVerification } from '../services/sybil-defense';
 
 // ============================================
 // TYPES
@@ -148,14 +150,47 @@ export async function acceptInvitationWithReferral(
       })
       .returning();
 
-    // NOW award referral rewards (only if user completed signup)
+    // NOW verify referral through sybil defense gates (only if user completed signup)
     if (invitation.referrerId && user.createdAt) {
-      await awardReferralReward(
-        invitation.daoId,
-        invitation.referrerId,
-        userId,
-        'invitation_accepted'
-      );
+      try {
+        // Run full verification with all 5 gates
+        const signupContext = {
+          ipAddress: user.lastLoginIp || '0.0.0.0',
+          country: user.country || 'UNKNOWN',
+          deviceFingerprint: user.deviceFingerprint || 'unknown',
+          userAgent: 'referral_accept'
+        };
+        
+        const verificationResult = await createReferralWithFullVerification(
+          invitation.referrerId,
+          userId,
+          signupContext
+        );
+        
+        if (verificationResult.isActive) {
+          // All verification gates passed - award referral reward
+          await awardReferralReward(
+            invitation.daoId,
+            invitation.referrerId,
+            userId,
+            'invitation_accepted'
+          );
+          logger.info('Referral verification passed - reward awarded', {
+            referrerId: invitation.referrerId,
+            userId
+          });
+        } else {
+          // Failed verification - don't award but don't reject either
+          logger.warn('Referral verification failed - no reward awarded', {
+            referrerId: invitation.referrerId,
+            userId,
+            failedGates: verificationResult.verification.failedGates
+          });
+        }
+      } catch (verErr) {
+        logger.error('Sybil verification error', { referrerId: invitation.referrerId, userId, error: String(verErr) });
+        // Still create membership, but don't award reward on verification error
+      }
     }
 
     return membership;
@@ -396,6 +431,7 @@ async function calculateRewardAmount(
 
   if (!dao) return 0;
 
+  if (!dao.createdAt) return 0;
   const daoAge = Date.now() - new Date(dao.createdAt).getTime();
   const monthsOld = daoAge / (1000 * 60 * 60 * 24 * 30);
 
@@ -505,7 +541,7 @@ export async function pingInactiveReferral(
       .limit(1)
       .then(rows => rows[0]);
 
-    const daysSinceActivity = lastActivity
+    const daysSinceActivity = lastActivity && lastActivity.createdAt
       ? (Date.now() - new Date(lastActivity.createdAt).getTime()) / (1000 * 60 * 60 * 24)
       : 999;
 
@@ -671,14 +707,3 @@ export async function getReferralStatusHandler(req: Request, res: Response) {
     res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to get status' });
   }
 }
-
-export default {
-  createInvitationWithTracking,
-  acceptInvitationWithReferral,
-  getReferralStatus,
-  getUserReferralAnalytics,
-  validateReferralEligibility,
-  validateReferralHandler,
-  getReferralAnalyticsHandler,
-  getReferralStatusHandler
-};

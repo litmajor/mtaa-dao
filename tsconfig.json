@@ -1,8 +1,21 @@
 {
-  "include": ["client/src/**/*", "shared/**/*", "server/**/*", "server/register.ts", "pages/**/*"],
-  "exclude": ["node_modules", "build", "dist", "**/*.test.ts", "**/*.test.tsx", "**/__tests__/**"],
+  "include": [
+    "client/src/**/*",
+    "shared/**/*",
+    "server/**/*",
+    "server/register.ts",
+    "pages/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "build",
+    "dist",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/__tests__/**"
+  ],
   "compilerOptions": {
-    "ignoreDeprecations": "6.0",
+    "ignoreDeprecations": "5.0",
     "target": "ES2020",
     "downlevelIteration": true,
     "incremental": true,
@@ -10,7 +23,11 @@
     "noEmit": true,
     "module": "ESNext",
     "strict": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2020",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "jsx": "preserve",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -20,12 +37,26 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
-    "types": ["node", "vite/client", "jest", "@testing-library/jest-dom", "./server/types"],
+    "types": [
+      "node",
+      "vite/client",
+      "jest",
+      "@testing-library/jest-dom",
+      "./server/types"
+    ],
     "paths": {
-      "@/*": ["./client/src/*"],
-      "@shared/*": ["./shared/*"],
-      "lucide-react": ["./client/src/lib/icons.tsx"],
-      "lucide-react/*": ["./client/src/lib/*"]
+      "@/*": [
+        "./client/src/*"
+      ],
+      "@shared/*": [
+        "./shared/*"
+      ],
+      "lucide-react": [
+        "./client/src/lib/icons.tsx"
+      ],
+      "lucide-react/*": [
+        "./client/src/lib/*"
+      ]
     }
   }
 }

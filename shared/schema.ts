@@ -1,9 +1,3 @@
-// Unique constraints for proposal_likes and comment_likes are enforced at the database level.
-// Add these to your migration or run manually:
-// ALTER TABLE proposal_likes ADD CONSTRAINT proposal_likes_unique UNIQUE (proposal_id, user_id);
-// ALTER TABLE comment_likes ADD CONSTRAINT comment_likes_unique UNIQUE (comment_id, user_id);
-
-
 import {
   pgTable,
   text,
@@ -179,6 +173,7 @@ export const users = pgTable("users", {
   referralRewards: varchar("referral_rewards"),
   // wallet address used in multiple server callsites
   walletAddress: varchar("wallet_address"),
+  persona: varchar("persona"),
   bio: text("bio"),
   location: varchar("location"),
   website: varchar("website"),
@@ -254,6 +249,14 @@ export const users = pgTable("users", {
   deleted_by: varchar("deleted_by"),
   delete_reason: text("delete_reason"),
   deleted_recovery_deadline: timestamp("deleted_recovery_deadline"),
+
+  // ========================================
+  // APPLICATION PIN
+  // ========================================
+  appPin: text("app_pin"), // bcrypt hashed PIN
+  pinEnabledForLogin: boolean("pin_enabled_for_login").default(false),
+  pinEnabledForTransfers: boolean("pin_enabled_for_transfers").default(true),
+  pinEnabledFor2FA: boolean("pin_enabled_for_2fa").default(false),
 });
 
 // Beta Access table for tracking feature access
@@ -367,6 +370,8 @@ export const daos = pgTable("daos", {
   //  DEPRECATED: treasuryBalance is now computed from treasuryPositions + stableInflowEvents
   // DO NOT UPDATE THIS DIRECTLY - it will drift from actual on-chain state
   // Query: SELECT SUM(tp.balance) FROM treasuryPositions tp WHERE tp.daoId = $1
+  treasuryHealth: varchar("treasury_health").default("unknown"), // healthy, warning, critical
+  treasuryFrozen: boolean("treasury_frozen").default(false), // true, false
   treasuryBalance: decimal("treasury_balance", { precision: 10, scale: 2 }).default("0"),
   // New: integer smallest-unit representation for treasury (e.g. cents or wei)
   // Use numeric(38,0) for arbitrarily large integer storage
@@ -408,7 +413,7 @@ export const daos = pgTable("daos", {
   // On-chain vault addresses for rotation/distributions
   vaultAddress: varchar("vault_address"),
   chamaTreasuryAddress: varchar("chama_treasury_address"),
-
+  maonoVaultAddress: varchar("maono_vault_address"),
   // Withdrawal and duration configuration
   withdrawalMode: varchar("withdrawal_mode").default("multisig"), // direct, multisig, rotation
   durationModel: varchar("duration_model").default("time"), // time, rotation, ongoing
@@ -443,6 +448,29 @@ export const daoSettings = pgTable("dao_settings", {
   description: text("description"),
   metadata: jsonb("metadata").default({}),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// DAO Agent Subscriptions (Synced from AgentPaymentGateway)
+export const daoAgentSubscriptions = pgTable("dao_agent_subscriptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }).notNull(),
+  agentId: varchar("agent_id").notNull(), // bytes32 hex string
+  isActive: boolean("is_active").default(true),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  unique_dao_agent: uniqueIndex("unique_dao_agent_idx").on(table.daoId, table.agentId),
+}));
+
+export type DaoAgentSubscription = typeof daoAgentSubscriptions.$inferSelect;
+export type InsertDaoAgentSubscription = typeof daoAgentSubscriptions.$inferInsert;
+
+// Indexer Checkpoints (For tracking smart contract events)
+export const indexerCheckpoints = pgTable("indexer_checkpoints", {
+  id: varchar("id").primaryKey(), // e.g., 'agent_payment_gateway'
+  lastIndexedBlock: integer("last_indexed_block").notNull(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
@@ -748,6 +776,10 @@ export const vaults = pgTable("vaults", {
   ownerId: uuid("owner_id"), // userId or daoId depending on ownerType
   treasuryId: uuid("treasury_id").references(() => daos.id), // link to DAO treasury (optional, only for DAO vaults)
   vaultConfig: jsonb("vault_config"), // JSONB config for type-specific settings (lockDuration, strategy params, etc)
+
+  // On-chain role-grant tx hashes (nullable)
+  managerRoleGrantTx: varchar("manager_role_grant_tx"),
+  rebalancerRoleGrantTx: varchar("rebalancer_role_grant_tx"),
 
   updatedAt: timestamp("updated_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
@@ -1947,6 +1979,7 @@ export const subscriptions = pgTable("subscriptions", {
 // User Reputation table
 // Re-export canonical gamification table for backward compatibility
 import { userGamification } from './reputationSchema';
+import MaonoVaultDashboard from "@/pages/maonovault-dashboard";
 export const userReputation = userGamification;
 
 // Platform Announcements table
@@ -3298,6 +3331,10 @@ export const taskHistory = pgTable("task_history", {
 
 // Export types
 export type Dao = typeof daos.$inferSelect;
+export type SelectDao = typeof daos.$inferSelect;
+export type InsertDao = typeof daos.$inferInsert;
+// Canonical DAO type union — matches the 6 active product DAO types
+export type DaoType = 'harambee' | 'shortTerm' | 'savings' | 'community' | 'investment' | 'merryGoRound';
 export type Proposal = typeof proposals.$inferSelect;
 export type Vote = typeof votes.$inferSelect;
 export type Contribution = typeof contributions.$inferSelect;
@@ -4414,6 +4451,31 @@ export const mlTrainingData = pgTable('ml_training_data', {
 
 export type MLTrainingDataRecord = typeof mlTrainingData.$inferSelect;
 export type InsertMLTrainingDataRecord = typeof mlTrainingData.$inferInsert;
+
+// DAO Tasks - Formal storage for DAO task management
+export const daoTasks = pgTable('dao_tasks', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  daoId: uuid('dao_id').references(() => daos.id, { onDelete: 'cascade' }).notNull(),
+  title: varchar('title').notNull(),
+  description: text('description').default(''),
+  reward: decimal('reward', { precision: 10, scale: 2 }).default('0'),
+  difficulty: varchar('difficulty').default('medium'),
+  category: varchar('category').default('General'),
+  estimatedTime: varchar('estimated_time'),
+  deadline: timestamp('deadline'),
+  status: varchar('status').default('open'), // open, claimed, completed, cancelled
+  createdBy: varchar('created_by').references(() => users.id),
+  claimer: varchar('claimer').references(() => users.id),
+  verifiedBy: varchar('verified_by').references(() => users.id),
+  cancelledBy: varchar('cancelled_by').references(() => users.id),
+  claimedAt: timestamp('claimed_at'),
+  completedAt: timestamp('completed_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export type DaoTask = typeof daoTasks.$inferSelect;
+export type InsertDaoTask = typeof daoTasks.$inferInsert;
 
 // Operational Framework Schema Extensions
 export * from '../server/services/operational/schema';

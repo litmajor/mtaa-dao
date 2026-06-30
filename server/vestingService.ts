@@ -225,12 +225,17 @@ export class VestingService {
       throw new Error('No tokens available to claim');
     }
 
-    // Get user wallet address
-  // NOTE: users table does not have walletAddress column. You must implement wallet address retrieval differently if needed.
-  // Skipping token send and wallet address logic due to missing column.
-  const txHash = "claimed";
+    // Enqueue a payout in referral_payouts (ledger) so the payout-worker will process on-chain transfer.
+    // Attempt to locate the user's primary wallet in wallet_connections
+    const walletRow = await db
+      .select()
+      .from((await import('../shared/walletIntegrationSchema')).walletConnections)
+      .where(eq((await import('../shared/walletIntegrationSchema')).walletConnections.userId, userId))
+      .limit(1);
 
-    // Update claimed amount
+    const walletAddress = walletRow[0]?.walletAddress || null;
+
+    // Update claimed amount in schedule
     await db
       .update(vestingSchedules)
       .set({
@@ -239,14 +244,34 @@ export class VestingService {
       .where(eq(vestingSchedules.id, scheduleId));
 
     // Record claim
-    await db.insert(vestingClaims).values({
+    const claimId = (await db.insert(vestingClaims).values({
       scheduleId,
       userId,
       claimedAmount: claimableAmount.toString(),
-      transactionHash: txHash,
-    });
+      transactionHash: null,
+    }).returning())[0].id;
 
-    return txHash;
+    // If walletAddress exists, insert into referral_payouts ledger so worker can process
+    if (walletAddress) {
+      const { referralPayouts } = await import('../shared/financialEnhancedSchema');
+      const payoutId = (await db.insert(referralPayouts).values({
+        referralRewardId: null,
+        referrerId: userId,
+        amount: claimableAmount.toString(),
+        currency: 'MTAA',
+        payoutMethod: 'onchain',
+        destinationAddress: walletAddress,
+        status: 'pending',
+        metadata: { claimId },
+        createdAt: new Date()
+      } as any).returning())[0].id;
+
+      // Return the payout ledger id as the transaction reference (worker will add tx hash)
+      return payoutId;
+    }
+
+    // No wallet found — return claim record id as fallback and require manual settlement
+    return claimId;
   }
 
   // Get user's vesting overview

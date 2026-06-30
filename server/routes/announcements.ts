@@ -76,7 +76,9 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/announcements/:id/view - Mark announcement as viewed
-router.post('/:id/view', async (req, res) => {
+// ⚠️ SECURITY: Requires authentication
+import { isAuthenticated } from '../auth';
+router.post('/:id/view', isAuthenticated, async (req, res) => {
   try {
     const userId = (req.user as any)?.id;
     const { id } = req.params;

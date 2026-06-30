@@ -200,6 +200,57 @@ class UnifiedStatsUpdater {
     }
   }
 
+  /**
+   * Schedule a non-blocking venue stats update. Use this when callers should not
+   * wait for cross-chain finality or long-running aggregation to complete.
+   */
+  scheduleVenueExecutionStats(
+    userId: string,
+    symbol: string,
+    venue: string,
+    timeWindow: string = '1 day'
+  ) {
+    setImmediate(async () => {
+      try {
+        await this.updateVenueExecutionStats(userId, symbol, venue, timeWindow);
+      } catch (err) {
+        logger.warn('[Stats] Scheduled venue update failed:', err);
+      }
+    });
+  }
+
+  /**
+   * Schedule a non-blocking exchange balance update.
+   */
+  scheduleExchangeBalanceSummary(
+    userId: string,
+    exchangeId: string,
+    totalValue: number,
+    totalAssets: number,
+    estimatedGasCost: number
+  ) {
+    setImmediate(async () => {
+      try {
+        await this.updateExchangeBalanceSummary(userId, exchangeId, totalValue, totalAssets, estimatedGasCost);
+      } catch (err) {
+        logger.warn('[Stats] Scheduled exchange balance update failed:', err);
+      }
+    });
+  }
+
+  /**
+   * Schedule a non-blocking order execution summary update.
+   */
+  scheduleOrderExecutionSummary(exchange: string, symbol: string, timeWindow: string = '30 days') {
+    setImmediate(async () => {
+      try {
+        await this.updateOrderExecutionSummary(exchange, symbol, timeWindow);
+      } catch (err) {
+        logger.warn('[Stats] Scheduled order execution update failed:', err);
+      }
+    });
+  }
+
   private async validateAndFixVenueStats(
     userId: string,
     symbol: string,

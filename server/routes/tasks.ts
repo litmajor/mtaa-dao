@@ -4,6 +4,7 @@ import { tasks, taskHistory, users, daoMemberships } from '../../shared/schema';
 import { contributionGraph } from '../../shared/reputationSchema';
 import { eq, and, or, desc, sql } from 'drizzle-orm';
 import { z } from 'zod';
+import { isAuthenticated } from '../auth';
 import { ReputationService, REPUTATION_VALUES } from '../reputationService';
 
 const router = express.Router();
@@ -196,7 +197,8 @@ router.get('/categories', async (req, res) => {
 });
 
 // Claim task
-router.post('/:taskId/claim', async (req, res) => {
+//  SECURITY: Requires authentication - user owns their claimed tasks
+router.post('/:taskId/claim', isAuthenticated, async (req, res) => {
   try {
     const { taskId } = req.params;
     const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
@@ -245,7 +247,8 @@ router.post('/:taskId/claim', async (req, res) => {
 });
 
 // Submit task completion
-router.post('/:taskId/submit', async (req, res) => {
+//  SECURITY: Requires authentication - user owns their task submissions
+router.post('/:taskId/submit', isAuthenticated, async (req, res) => {
   try {
     const { taskId } = req.params;
     const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;

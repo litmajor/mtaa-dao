@@ -2,7 +2,7 @@ import { ethers } from 'ethers';
 import { logger } from '../utils/logger';
 import { priceOracle } from './priceOracle';
 import { tokenService } from './tokenService';
-import { TokenRegistry } from '../../shared/tokenRegistry';
+import { tokenRegistry } from './tokenRegistry';
 
 /**
  * DEX Integration Service
@@ -220,6 +220,16 @@ class DEXIntegrationService {
       const volume = fromPrice.metadata?.volume24h || fromPrice.volume24h || 1000000;
       const priceImpact = DEXIntegrationService.estimatePriceImpact(amountIn * fromPriceValue, volume);
 
+      // Try on-chain quote first for Celo
+      if (chain === 'celo' && this.provider) {
+        try {
+          const onChain = await this.getOnChainQuote(fromAsset, toAsset, amountIn);
+          if (onChain) return onChain;
+        } catch (err: any) {
+          logger.debug(`[DEXService] On-chain quote failed, falling back to oracle: ${err?.message || err}`);
+        }
+      }
+
       // Estimate gas (average for Celo)
       const estimatedGas = 0.001; // ~0.001 CELO
 
@@ -237,6 +247,50 @@ class DEXIntegrationService {
       logger.error('Error getting swap quote:', error);
       return null;
     }
+  }
+
+  /**
+   * Get an on-chain AMM quote via Ubeswap router for Celo
+   */
+  private async getOnChainQuote(fromAsset: string, toAsset: string, amountIn: number): Promise<SwapQuote | null> {
+    if (!this.provider) return null;
+
+    const UBESWAP_ROUTER = '0xE3D8bd6Aed4F159bc8000a9cD47CffDb95F96121';
+    const ROUTER_ABI = ['function getAmountsOut(uint256 amountIn, address[] path) view returns (uint256[])'];
+    const CELO_NATIVE = '0x471EcE3750Da237f93B8E339c536989b8978a438';
+
+    const celoTokens = tokenRegistry.getCeloDEXTokens();
+    const fromEntry = celoTokens.get((fromAsset || '').toUpperCase());
+    const toEntry = celoTokens.get((toAsset || '').toUpperCase());
+    if (!fromEntry || !toEntry) return null;
+
+    const router = new ethers.Contract(UBESWAP_ROUTER, ROUTER_ABI, this.provider);
+    const amountInWei = ethers.parseUnits(amountIn.toString(), fromEntry.decimals);
+
+    let amounts: bigint[];
+    let path: string[] = [fromEntry.address, toEntry.address];
+    try {
+      amounts = await (router as any).getAmountsOut(amountInWei, path);
+    } catch {
+      path = [fromEntry.address, CELO_NATIVE, toEntry.address];
+      amounts = await (router as any).getAmountsOut(amountInWei, path);
+    }
+
+    const amountOut = amounts[amounts.length - 1];
+    const amountOutNum = Number(ethers.formatUnits(amountOut, toEntry.decimals));
+    const exchangeRate = amountOutNum / amountIn;
+    const priceImpact = Math.abs(1 - exchangeRate); // simplified
+
+    return {
+      fromAsset,
+      toAsset,
+      amountIn,
+      estimatedAmountOut: amountOutNum,
+      exchangeRate,
+      priceImpact: priceImpact * 100,
+      estimatedGas: 0.001,
+      dex: 'ubeswap',
+    };
   }
 
   /**
@@ -317,15 +371,16 @@ class DEXIntegrationService {
       }
 
       const routerAddress = dexConfig.address;
-      
+      const chain = dexConfig.chain;
+
       // Route to appropriate swap handler based on DEX type
       if (dexConfig.type === 'uniswap-v3') {
-        return await this.executeUniswapV3Swap(quote, slippageTolerance, routerAddress);
+        return await this.executeUniswapV3Swap(quote, slippageTolerance, routerAddress, chain);
       } else if (dexConfig.type === 'uniswap-v2') {
-        return await this.executeUniswapV2Swap(quote, slippageTolerance, routerAddress);
+        return await this.executeUniswapV2Swap(quote, slippageTolerance, routerAddress, chain);
       } else {
         // Default to V2 style (Ubeswap, Sushiswap)
-        return await this.executeUniswapV2Swap(quote, slippageTolerance, routerAddress);
+        return await this.executeUniswapV2Swap(quote, slippageTolerance, routerAddress, chain);
       }
     } catch (error) {
       logger.error('❌ Real swap execution failed:', error);
@@ -342,7 +397,8 @@ class DEXIntegrationService {
   private async executeUniswapV2Swap(
     quote: SwapQuote,
     slippageTolerance: number,
-    routerAddress: string
+    routerAddress: string,
+    chain: string
   ): Promise<SwapResult> {
     if (!this.wallet || !this.provider) {
       throw new Error('Wallet not initialized');
@@ -352,50 +408,47 @@ class DEXIntegrationService {
       // Create router contract
       const router = new ethers.Contract(routerAddress, SUSHISWAP_ROUTER_ABI, this.wallet);
 
-      // Get token addresses
-      const network = process.env.NODE_ENV === 'production' ? 'mainnet' : 'testnet';
-      const fromToken = TokenRegistry.getToken(quote.fromAsset);
-      const toToken = TokenRegistry.getToken(quote.toAsset);
+      let fromAddress: string, toAddress: string, fromDecimals: number, toDecimals: number;
 
-      if (!fromToken || !toToken) {
-        throw new Error(`Token not found in registry: ${quote.fromAsset} or ${quote.toAsset}`);
-      }
+      if (chain === 'celo') {
+        const celoTokens = tokenRegistry.getCeloDEXTokens();
+        const fromEntry = celoTokens.get((quote.fromAsset || '').toUpperCase());
+        const toEntry = celoTokens.get((quote.toAsset || '').toUpperCase());
 
-      const fromAddress = fromToken.address[network];
-      const toAddress = toToken.address[network];
+        if (!fromEntry || !toEntry) {
+          throw new Error(`Token not found in tokens.config.json: ${quote.fromAsset} or ${quote.toAsset}`);
+        }
 
-      if (!fromAddress || !toAddress) {
-        throw new Error(`Token address not configured for network: ${network}`);
+        fromAddress = fromEntry.address;
+        toAddress = toEntry.address;
+        fromDecimals = fromEntry.decimals;
+        toDecimals = toEntry.decimals;
+      } else {
+        throw new Error('executeUniswapV2Swap currently supports only Celo chain in this service');
       }
 
       logger.info(`Token addresses: ${quote.fromAsset} = ${fromAddress}, ${quote.toAsset} = ${toAddress}`);
 
-      // Approve token spending
-      logger.info(`📝 Approving ${quote.fromAsset} for spending...`);
-      const approvalTx = await tokenService.approveToken(
-        quote.fromAsset,
-        routerAddress,
-        quote.amountIn.toString()
-      );
-      logger.info(`✅ Approval tx: ${approvalTx}`);
+      // Prepare amounts
+      const amountIn = ethers.parseUnits(quote.amountIn.toString(), fromDecimals);
+      const estimatedOut = ethers.parseUnits(quote.estimatedAmountOut.toString(), toDecimals);
 
-      // Prepare swap parameters
-      const amountIn = ethers.parseUnits(quote.amountIn.toString(), fromToken.decimals);
-      const estimatedOut = ethers.parseUnits(quote.estimatedAmountOut.toString(), toToken.decimals);
-      
+      // Approve token spending using local approve logic
+      await this.approveToken(fromAddress, routerAddress, amountIn, this.wallet);
+
       // Calculate minimum output with slippage tolerance
       const slippageDecimal = slippageTolerance / 100;
-      const amountOutMin = estimatedOut * BigInt(Math.floor((1 - slippageDecimal) * 10000)) / BigInt(10000);
+      const amountOutMin = (BigInt(estimatedOut.toString()) * BigInt(Math.floor((1 - slippageDecimal) * 10000))) / BigInt(10000);
 
       const path = [fromAddress, toAddress];
       const deadline = Math.floor(Date.now() / 1000) + 1200; // 20 minutes from now
 
-      logger.info(`Swap params: amountIn=${ethers.formatUnits(amountIn, fromToken.decimals)} ${quote.fromAsset}, ` +
-                  `amountOutMin=${ethers.formatUnits(amountOutMin, toToken.decimals)} ${quote.toAsset}`);
+      logger.info(`Swap params: amountIn=${ethers.formatUnits(amountIn, fromDecimals)} ${quote.fromAsset}, ` +
+                  `amountOutMin=${ethers.formatUnits(amountOutMin, toDecimals)} ${quote.toAsset}`);
 
-      // Execute swap
-      logger.info(`🚀 Executing swap on ${quote.dex}...`);
-      const swapTx = await router.swapExactTokensForTokens(
+      // Execute swap (cast to any for dynamic ABI)
+      logger.info(`Executing swap on ${quote.dex}...`);
+      const swapTx = await (router as any).swapExactTokensForTokens(
         amountIn,
         amountOutMin,
         path,
@@ -403,8 +456,6 @@ class DEXIntegrationService {
         deadline,
         {
           gasLimit: 500000,
-          maxFeePerGas: undefined,
-          maxPriorityFeePerGas: undefined
         }
       );
 
@@ -436,7 +487,8 @@ class DEXIntegrationService {
   private async executeUniswapV3Swap(
     quote: SwapQuote,
     slippageTolerance: number,
-    routerAddress: string
+    routerAddress: string,
+    chain: string
   ): Promise<SwapResult> {
     if (!this.wallet || !this.provider) {
       throw new Error('Wallet not initialized');
@@ -450,26 +502,30 @@ class DEXIntegrationService {
       // Create router contract with V3 ABI
       const router = new ethers.Contract(routerAddress, UNISWAP_V3_ROUTER_ABI, this.wallet);
 
-      const network = process.env.NODE_ENV === 'production' ? 'mainnet' : 'testnet';
-      const fromToken = TokenRegistry.getToken(quote.fromAsset);
-      const toToken = TokenRegistry.getToken(quote.toAsset);
+      let fromAddress: string, toAddress: string, fromDecimals: number, toDecimals: number;
 
-      if (!fromToken || !toToken) {
-        throw new Error(`Token not found in registry: ${quote.fromAsset} or ${quote.toAsset}`);
+      if (chain === 'celo') {
+        const celoTokens = tokenRegistry.getCeloDEXTokens();
+        const fromEntry = celoTokens.get((quote.fromAsset || '').toUpperCase());
+        const toEntry = celoTokens.get((quote.toAsset || '').toUpperCase());
+
+        if (!fromEntry || !toEntry) {
+          throw new Error(`Token not found in tokens.config.json: ${quote.fromAsset} or ${quote.toAsset}`);
+        }
+
+        fromAddress = fromEntry.address;
+        toAddress = toEntry.address;
+        fromDecimals = fromEntry.decimals;
+        toDecimals = toEntry.decimals;
+
+        // Approve token spending
+        await this.approveToken(fromAddress, routerAddress, ethers.parseUnits(quote.amountIn.toString(), fromDecimals) as bigint, this.wallet as any);
+      } else {
+        throw new Error('executeUniswapV3Swap currently supports only Celo chain in this service');
       }
 
-      const fromAddress = fromToken.address[network];
-      const toAddress = toToken.address[network];
-
-      // Approve token spending
-      await tokenService.approveToken(
-        quote.fromAsset,
-        routerAddress,
-        quote.amountIn.toString()
-      );
-
-      const amountIn = ethers.parseUnits(quote.amountIn.toString(), fromToken.decimals);
-      const estimatedOut = ethers.parseUnits(quote.estimatedAmountOut.toString(), toToken.decimals);
+      const amountIn = ethers.parseUnits(quote.amountIn.toString(), fromDecimals);
+      const estimatedOut = ethers.parseUnits(quote.estimatedAmountOut.toString(), toDecimals);
       
       const slippageDecimal = slippageTolerance / 100;
       const amountOutMinimum = estimatedOut * BigInt(Math.floor((1 - slippageDecimal) * 10000)) / BigInt(10000);
@@ -530,6 +586,33 @@ class DEXIntegrationService {
   }
 
   /**
+   * Approve token with zero-then-set pattern
+   */
+  private async approveToken(tokenAddress: string, spender: string, amount: bigint, wallet: ethers.Wallet): Promise<void> {
+    const ERC20_ABI = [
+      'function allowance(address owner, address spender) view returns (uint256)',
+      'function approve(address spender, uint256 amount) returns (bool)'
+    ];
+
+    const token = new ethers.Contract(tokenAddress, ERC20_ABI, wallet);
+    const allowance: bigint = BigInt((await token.allowance(wallet.address, spender)).toString());
+    if (allowance >= amount) return;
+
+    try {
+      if (allowance > 0n) {
+        const tx0 = await token.approve(spender, 0n);
+        await tx0.wait(1);
+      }
+    } catch (err) {
+      logger.debug('Zero-allowance reset failed, continuing to set new allowance');
+    }
+
+    const tx = await token.approve(spender, amount);
+    await tx.wait(1);
+    logger.info(`[DEXIntegration] Approved ${amount.toString()} for ${spender} (token ${tokenAddress}) - tx ${tx.hash}`);
+  }
+
+  /**
    * Execute multiple swaps (for rebalancing)
    */
   async executeMultipleSwaps(
@@ -560,15 +643,48 @@ class DEXIntegrationService {
    * Estimate price impact based on trade size and liquidity
    */
   static estimatePriceImpact(tradeSize: number, volume24h: number): number {
-    if (volume24h === 0) return 0.05; // Default 5% if no volume data
+    // Production-grade price impact estimator combining:
+    //  - theoretical AMM constant-product model (approximate)
+    //  - empirical square-root market-impact law (ADV-based)
+    //  - fee and volatility scaling with sensible caps
+    // Returns a fractional impact (e.g. 0.02 => 2%).
 
-    // Simplified price impact calculation
-    // In reality, this depends on the specific liquidity pool
-    const tradeSizeUsd = tradeSize; // Assuming USD value
-    const impactFactor = tradeSizeUsd / volume24h;
+    if (!isFinite(tradeSize) || tradeSize <= 0) return 0;
 
-    // Price impact increases non-linearly with trade size
-    return Math.min(impactFactor * 100, 0.10); // Cap at 10%
+    // Defensive fallback for missing/zero ADV
+    const safeVolume = (isFinite(volume24h) && volume24h > 0) ? volume24h : Math.max(tradeSize * 2, 1000);
+
+    // Tunable constants (can be overridden via env)
+    const LIQUIDITY_MULTIPLIER = Number(process.env.DEX_IMPACT_LIQUIDITY_MULTIPLIER) || 3; // estimate liquidity ≈ X * daily volume
+    const EMPIRICAL_COEFF = Number(process.env.DEX_IMPACT_EMPIRICAL_COEFF) || 0.08; // calibrates sqrt-law term
+    const EMPIRICAL_ALPHA = 0.5; // square-root law exponent
+    const FEE_ESTIMATE = 0.003; // typical AMM taker fee (0.3%) — included as baseline cost
+    const MIN_IMPACT = 1e-4; // 0.01% min
+    const MAX_IMPACT = Number(process.env.DEX_IMPACT_MAX) || 0.25; // 25% hard cap
+
+    // Estimate notional pool liquidity (USD) from daily volume — conservative multiplier
+    const estimatedLiquidity = Math.max(safeVolume * LIQUIDITY_MULTIPLIER, tradeSize * 2, 1000);
+
+    // Theoretical AMM impact: for a symmetric pool (reserves ≈ liquidity/2 each side),
+    // price impact ≈ dx / reserve ≈ 2 * tradeSize / totalLiquidity
+    const ammImpact = Math.min(1, 2 * tradeSize / estimatedLiquidity);
+
+    // Empirical square-root market impact: impact ∝ coeff * (trade / ADV)^0.5
+    const empiricalImpact = EMPIRICAL_COEFF * Math.pow(tradeSize / safeVolume, EMPIRICAL_ALPHA);
+
+    // Volume ratio multiplier: if trade is a large fraction of ADV, scale up conservatively
+    const volumeRatio = tradeSize / safeVolume; // e.g., 0.05 => 5% of ADV
+    const volumeScale = Math.min(Math.max(volumeRatio, 1e-6), 10);
+
+    // Blend models with conservative weighting
+    const combined = 0.65 * ammImpact + 0.30 * empiricalImpact + 0.05 * empiricalImpact * volumeScale;
+
+    // Add fee floor and apply bounds
+    let impact = combined + FEE_ESTIMATE;
+    if (!isFinite(impact) || impact <= 0) impact = MIN_IMPACT;
+    impact = Math.min(impact, MAX_IMPACT);
+
+    return impact;
   }
 
   /**
@@ -580,14 +696,16 @@ class DEXIntegrationService {
     amountIn: number
   ): Promise<SwapQuote | null> {
     try {
-      // Get quotes from multiple DEXes
-      const quotes: SwapQuote[] = [];
+      // Get quotes from DEXes filtered to the requested chain (prefer Celo)
+      const chain = 'celo';
+      const relevantDexes = Object.entries(this.DEX_ROUTERS)
+        .filter(([, cfg]) => cfg.chain === chain)
+        .map(([id]) => id);
 
-      for (const dex of Object.keys(this.DEX_ROUTERS)) {
-        const quote = await this.getSwapQuote(fromAsset, toAsset, amountIn, dex);
-        if (quote) {
-          quotes.push(quote);
-        }
+      const quotes: SwapQuote[] = [];
+      for (const dex of relevantDexes) {
+        const quote = await this.getSwapQuote(fromAsset, toAsset, amountIn, dex, chain);
+        if (quote) quotes.push(quote);
       }
 
       if (quotes.length === 0) return null;

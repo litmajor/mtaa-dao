@@ -17,6 +17,9 @@ import { daoMemberships, vaults } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
 import type { ChatMessage } from '../agents/morio/types';
 import type { User } from '../../shared/schema';
+// Import Morio sub-routers
+import morioDataHubRoutes from './morio-data-hub';
+import morioElderInsightsRoutes from './morio-elder-insights';
 
 const router = Router();
 
@@ -338,6 +341,10 @@ router.get('/user-context', [authenticateToken], async (req: any, res: Response)
     });
   }
 });
+
+// ✅ Mount Morio sub-routers at proper nested paths
+router.use('/data-hub', morioDataHubRoutes);
+router.use('/elder-insights', morioElderInsightsRoutes);
 
 export default router;
 

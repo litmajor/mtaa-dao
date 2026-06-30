@@ -24,6 +24,7 @@
 
 import { tokenRegistry } from './tokenRegistry';
 import { ccxtService, CCXTSymbolError, CCXTRateLimitError } from './ccxtService';
+import { marketUniverseBuilder } from './marketUniverseBuilder';
 import { cacheManager } from '../core/consolidation/DataCacheConsolidation';
 import { priceOracle } from './priceOracle';
 import { SYMBOL_UNIVERSE_CONFIG } from '../config/symbolUniverseConfig';
@@ -67,6 +68,12 @@ const COMMON_FALLBACK_PAIRS = [
 // FIX #3: Quote currencies to filter markets by during discovery.
 // Previously only used exchange-config supportedQuotes which omitted BTC/ETH.
 const DISCOVERY_QUOTE_CURRENCIES = ['USDT', 'USD', 'USDC', 'BUSD', 'BTC', 'ETH'];
+
+// Tokens that are native to Celo or otherwise not listed on centralized exchanges
+// (uppercase keys for case-insensitive comparisons)
+const CEX_INCOMPATIBLE = new Set([
+  'CKES', 'CUSD', 'CEUR', 'CREAL', 'CELO', 'MTAA'
+]);
 
 /**
  * Symbol Universe Service — single source of truth for symbols
@@ -118,10 +125,163 @@ export class SymbolUniverseService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   getAllSymbols(): string[] {
+    // Backwards-compatible: return on-chain registry symbols by default
+    return this.getAllOnChainSymbols();
+  }
+
+  /**
+   * Explicit: return all on-chain symbols from the token registry
+   */
+  getAllOnChainSymbols(): string[] {
     if (this.allSymbolsCache) return Array.from(this.allSymbolsCache);
-    const tokens = tokenRegistry.getAllTokens();
-    this.allSymbolsCache = new Set(tokens.map((t: any) => t.symbol));
-    return Array.from(this.allSymbolsCache);
+    try {
+      const tokens = (tokenRegistry as any).getAllTokens?.() || [];
+      this.allSymbolsCache = new Set((tokens as any[]).map((t: any) => String(t.symbol).toUpperCase()));
+      return Array.from(this.allSymbolsCache);
+    } catch (err) {
+      logger.warn('[getAllOnChainSymbols] tokenRegistry lookup failed, returning empty list');
+      return [];
+    }
+  }
+
+  /**
+   * Build a list of CEX-tradable symbols by consulting the market universe builder.
+   * Returns symbols sorted by number of exchanges listing them (descending).
+   * This is the preferred method as it leverages pre-built universe data.
+   */
+  async getAllCEXSymbols(options?: { limit?: number; minExchanges?: number }): Promise<string[]> {
+    try {
+      // Get configured CEX exchanges
+      const cexConfig = SYMBOL_UNIVERSE_CONFIG.priceSources.cex as Record<string, any>;
+      const exchanges = Object.keys(cexConfig).filter((e) => cexConfig[e]?.enabled);
+
+      // Build/fetch the market universe from CCXT
+      await marketUniverseBuilder.buildUniverse(exchanges);
+      
+      // Get top symbols by arbitrage eligibility (most liquid, most exchanges)
+      const limit = options?.limit ?? 500;
+      const topSymbols = marketUniverseBuilder.getTopArbitrageSymbols(limit);
+      
+      logger.debug(
+        `[getAllCEXSymbols] Built CEX symbol list: ${topSymbols.length} symbols ` +
+        `(limit: ${limit})`
+      );
+      
+      return topSymbols;
+    } catch (err) {
+      logger.warn(
+        `[getAllCEXSymbols] Failed to build universe, falling back to manual discovery: ${err instanceof Error ? err.message : err}`
+      );
+      
+      // Fallback to manual discovery (pre-universe method)
+      const cexConfig = SYMBOL_UNIVERSE_CONFIG.priceSources.cex as Record<string, any>;
+      const exchanges = Object.keys(cexConfig).filter((e) => cexConfig[e]?.enabled);
+
+      const symbolToExchanges: Map<string, Set<string>> = new Map();
+
+      const promises = exchanges.map((ex) =>
+        this.getSupportedPairs(ex)
+          .then((pairs) => ({ ex, pairs }))
+          .catch((err) => {
+            logger.debug(`[getAllCEXSymbols] ${ex} discovery failed: ${err?.message || err}`);
+            return { ex, pairs: [] as string[] };
+          })
+      );
+
+      const results = await Promise.all(promises);
+
+      for (const { ex, pairs } of results) {
+        for (const p of pairs) {
+          const parts = String(p).toUpperCase().split('/');
+          if (parts.length !== 2) continue;
+          const [base, quote] = parts;
+          if (!DISCOVERY_QUOTE_CURRENCIES.includes(quote)) continue;
+          if (CEX_INCOMPATIBLE.has(base)) continue;
+
+          if (!symbolToExchanges.has(base)) symbolToExchanges.set(base, new Set());
+          symbolToExchanges.get(base)!.add(ex);
+        }
+      }
+
+      const arr = Array.from(symbolToExchanges.entries())
+        .map(([symbol, exSet]) => ({ symbol, count: exSet.size }))
+        .sort((a, b) => b.count - a.count || a.symbol.localeCompare(b.symbol));
+
+      const limit = options?.limit ?? 500;
+      return arr.slice(0, limit).map((r) => r.symbol);
+    }
+  }
+
+  /**
+   * Produce a list of arbitrage-eligible pairs (e.g. 'BTC/USDT') that are
+   * tradable on at least `minExchanges` exchanges. Prefers `preferredQuote`.
+   * Uses the market universe builder for pre-built pair data.
+   */
+  async getArbitrageEligiblePairs(options?: { minExchanges?: number; preferredQuote?: string; limit?: number }): Promise<string[]> {
+    try {
+      const minExchanges = options?.minExchanges ?? 2;
+      const preferredQuote = (options?.preferredQuote || 'USDT').toUpperCase();
+      const limit = options?.limit ?? 200;
+
+      // Get configured CEX exchanges
+      const cexConfig = SYMBOL_UNIVERSE_CONFIG.priceSources.cex as Record<string, any>;
+      const exchanges = Object.keys(cexConfig).filter((e) => cexConfig[e]?.enabled);
+
+      // Build/fetch the market universe from CCXT
+      await marketUniverseBuilder.buildUniverse(exchanges);
+      
+      // Get trading pairs from universe (already filtered for arbitrage eligibility)
+      const pairs = marketUniverseBuilder.getTradingPairs(limit, preferredQuote);
+      
+      logger.debug(
+        `[getArbitrageEligiblePairs] Got ${pairs.length} arb-eligible pairs ` +
+        `(minExchanges: ${minExchanges}, quote: ${preferredQuote}, limit: ${limit})`
+      );
+      
+      return pairs;
+    } catch (err) {
+      logger.warn(
+        `[getArbitrageEligiblePairs] Failed to use universe builder, falling back to manual discovery: ${err instanceof Error ? err.message : err}`
+      );
+
+      // Fallback to manual discovery (pre-universe method)
+      const minExchanges = options?.minExchanges ?? 2;
+      const preferredQuote = (options?.preferredQuote || 'USDT').toUpperCase();
+      const cexConfig = SYMBOL_UNIVERSE_CONFIG.priceSources.cex as Record<string, any>;
+      const exchanges = Object.keys(cexConfig).filter((e) => cexConfig[e]?.enabled);
+
+      const pairToExchanges: Map<string, Set<string>> = new Map();
+
+      const promises = exchanges.map((ex) =>
+        this.getSupportedPairs(ex)
+          .then((pairs) => ({ ex, pairs }))
+          .catch((err) => ({ ex, pairs: [] as string[] }))
+      );
+
+      const results = await Promise.all(promises);
+
+      for (const { ex, pairs } of results) {
+        for (const p of pairs) {
+          const up = String(p).toUpperCase();
+          const parts = up.split('/');
+          if (parts.length !== 2) continue;
+          const [base, quote] = parts;
+          if (CEX_INCOMPATIBLE.has(base)) continue;
+          if (quote !== preferredQuote) continue; // Only count pairs in preferred quote
+
+          if (!pairToExchanges.has(up)) pairToExchanges.set(up, new Set());
+          pairToExchanges.get(up)!.add(ex);
+        }
+      }
+
+      const eligible = Array.from(pairToExchanges.entries())
+        .filter(([pair, exSet]) => exSet.size >= minExchanges)
+        .map(([pair, exSet]) => ({ pair, count: exSet.size }))
+        .sort((a, b) => b.count - a.count || a.pair.localeCompare(b.pair));
+
+      const limit = options?.limit ?? 200;
+      return eligible.slice(0, limit).map((r) => r.pair);
+    }
   }
 
   // ---------------------------------------------------------------------------

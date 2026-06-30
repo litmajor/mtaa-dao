@@ -7,7 +7,7 @@ import { users, daos, vaults, walletTransactions, referralRewards } from "./sche
 import { createInsertSchema } from "drizzle-zod";
 
 /**
- * 1. USER BALANCES TABLE (HIGH PRIORITY) ⭐⭐⭐⭐⭐
+ * 1. USER BALANCES TABLE (HIGH PRIORITY)
  * Purpose: Fast balance lookups without complex transaction queries
  * Benefits: 
  * - Real-time balance display
@@ -36,7 +36,7 @@ export const userBalances = pgTable("user_balances", {
 });
 
 /**
- * 2. DAO TREASURIES TABLE (HIGH PRIORITY) ⭐⭐⭐⭐⭐
+ * 2. DAO TREASURIES TABLE (HIGH PRIORITY)  -- linked to chama treasury
  * Purpose: Dedicated DAO treasury management separate from vaults
  * Benefits:
  * - Multi-sig controls
@@ -259,6 +259,20 @@ export const gasPriceHistory = pgTable("gas_price_history", {
 });
 
 /**
+ * 8b. NONCE COUNTERS (for durable on-chain nonce allocation)
+ * Purpose: provide an atomic counter per sending address so workers can claim a contiguous nonce range
+ * Benefits:
+ * - Avoids deriving nonce from historical rows
+ * - Enables atomic claim/advance pattern using INSERT ... ON CONFLICT
+ */
+export const nonceCounters = pgTable("nonce_counters", {
+  address: varchar("address").primaryKey(),
+  // Store as numeric to avoid JS bigint precision issues in the DB layer
+  nextNonce: decimal("next_nonce", { precision: 30, scale: 0 }).default("0"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+/**
  * 7. REFERRAL PAYOUTS TABLE (MEDIUM PRIORITY) ⭐⭐⭐
  * Purpose: Track referral commission payouts
  * Benefits:
@@ -282,9 +296,18 @@ export const referralPayouts = pgTable("referral_payouts", {
   destinationAccount: varchar("destination_account"), // for bank transfer
   
   // Status
-  status: varchar("status").default("pending"), // pending, processing, completed, failed, cancelled
-  transactionId: uuid("transaction_id"),
+  // Saga / ledger fields for blockchain lifecycle
+  // status values: pending, processing, completed, failed
+  status: varchar("status").default("pending"),
+  // Optional request id for idempotency (use on-chain requestID if contract supports it)
+  requestId: uuid("request_id"),
+  // Store blockchain Tx hash when submitted
   transactionHash: varchar("transaction_hash"),
+  // Nonce (stored as string to avoid JS numeric precision issues) — use blockchain nonce when needed
+  nonce: varchar("nonce"),
+  // Last RPC / on-chain error message
+  lastError: text("last_error"),
+  transactionId: uuid("transaction_id"),
   
   // Timing
   requestedAt: timestamp("requested_at").defaultNow(),
@@ -303,7 +326,7 @@ export const referralPayouts = pgTable("referral_payouts", {
 });
 
 /**
- * 8. RECURRING PAYMENTS TABLE (LOW PRIORITY) ⭐⭐
+ * 8. RECURRING PAYMENTS TABLE 
  * Purpose: Handle recurring DAO contributions and subscriptions
  * Benefits:
  * - Automated contributions
@@ -362,7 +385,7 @@ export const recurringPayments = pgTable("recurring_payments", {
 });
 
 /**
- * 9. FINANCIAL REPORTS TABLE (LOW PRIORITY) ⭐⭐
+ * 9. FINANCIAL REPORTS TABLE (LOW PRIORITY) 
  * Purpose: Store auto-generated financial reports
  * Benefits:
  * - Historical reports
@@ -428,6 +451,7 @@ export type TransactionFee = typeof transactionFees.$inferSelect;
 export type CurrencySwap = typeof currencySwaps.$inferSelect;
 export type MpesaTransaction = typeof mpesaTransactions.$inferSelect;
 export type GasPriceHistory = typeof gasPriceHistory.$inferSelect;
+export type NonceCounter = typeof nonceCounters.$inferSelect;
 export type ReferralPayout = typeof referralPayouts.$inferSelect;
 export type RecurringPayment = typeof recurringPayments.$inferSelect;
 export type FinancialReport = typeof financialReports.$inferSelect;
@@ -439,6 +463,7 @@ export const insertTransactionFeeSchema = createInsertSchema(transactionFees);
 export const insertCurrencySwapSchema = createInsertSchema(currencySwaps);
 export const insertMpesaTransactionSchema = createInsertSchema(mpesaTransactions);
 export const insertGasPriceHistorySchema = createInsertSchema(gasPriceHistory);
+export const insertNonceCountersSchema = createInsertSchema(nonceCounters);
 export const insertReferralPayoutSchema = createInsertSchema(referralPayouts);
 export const insertRecurringPaymentSchema = createInsertSchema(recurringPayments);
 export const insertFinancialReportSchema = createInsertSchema(financialReports);

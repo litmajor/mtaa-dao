@@ -6,10 +6,10 @@
 import ccxtService from './ccxtService';
 import { analyzeOrderBook, OrderBookMetrics } from './orderBookAnalyzer';
 import { logger } from '../utils/logger';
-import pLimit from 'p-limit';
+// Note: concurrency is managed at the CCXT service layer; avoid a global limiter here
 import NodeCache from 'node-cache';
 
-const limiter = pLimit(5);
+// Removed global limiter to avoid competing concurrency layers. CCXT service controls concurrency.
 const arbitrageCache = new NodeCache({ stdTTL: 60 }); // 1 minute (volatile data)
 
 export interface ArbitrageOpportunity {
@@ -90,30 +90,28 @@ async function fetchPricesMultiExchange(
   symbol: string,
   exchanges: string[]
 ): Promise<ExchangePair[]> {
-  const pricePromises = exchanges.map((exchange) =>
-    limiter(async () => {
-      try {
-        const ticker = await ccxtService.getTickerFromExchange(exchange, symbol);
-        if (!ticker) return null;
+  const pricePromises = exchanges.map(async (exchange) => {
+    try {
+      const ticker = await ccxtService.getTickerFromExchange(exchange, symbol);
+      if (!ticker) return null;
 
-        // Get order book for bid/ask
-        const orderBook = await analyzeOrderBook(symbol, exchange, 20).catch(() => null);
+      // Get order book for bid/ask when available
+      const orderBook = await analyzeOrderBook(symbol, exchange, 20).catch(() => null);
 
-        return {
-          exchange,
-          symbol,
-          bidPrice: orderBook?.bids[0]?.price || ticker.last,
-          askPrice: orderBook?.asks[0]?.price || ticker.last,
-          lastPrice: ticker.last,
-          volume: 0, // Quote volume not available in CachedPrice
-          timestamp: Date.now()
-        };
-      } catch (error: any) {
-        logger.warn(`Failed to fetch prices from ${exchange}: ${error.message}`);
-        return null;
-      }
-    })
-  );
+      return {
+        exchange,
+        symbol,
+        bidPrice: orderBook?.bids?.[0]?.price ?? ticker.bid ?? ticker.last ?? 0,
+        askPrice: orderBook?.asks?.[0]?.price ?? ticker.ask ?? ticker.last ?? 0,
+        lastPrice: ticker.last ?? 0,
+        volume: (ticker as any).volume ?? 0,
+        timestamp: (ticker as any).timestamp ?? Date.now(),
+      };
+    } catch (error: any) {
+      logger.warn(`Failed to fetch prices from ${exchange}: ${error?.message || error}`);
+      return null;
+    }
+  });
 
   const results = await Promise.all(pricePromises);
   return results.filter((r): r is ExchangePair => r !== null);
@@ -236,8 +234,8 @@ export async function findProfitableSymbols(
   try {
     logger.debug(`Scanning ${symbols.length} symbols for arbitrage opportunities`);
 
-    const symbolPromises = symbols.map((symbol) =>
-      limiter(async () => {
+    const symbolPromises: Promise<{ symbol: string; bestOpportunity: ArbitrageOpportunity } | null>[] =
+      symbols.map(async (symbol) => {
         try {
           const bestOpportunity = await findBestArbitrage(symbol, exchanges);
           if (bestOpportunity && bestOpportunity.netProfitPercent >= minProfitPercent) {
@@ -248,8 +246,7 @@ export async function findProfitableSymbols(
           logger.warn(`Failed to analyze ${symbol}`);
           return null;
         }
-      })
-    );
+      });
 
     const results = await Promise.all(symbolPromises);
     return results.filter(

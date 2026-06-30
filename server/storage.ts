@@ -1180,14 +1180,41 @@ async getBudgetPlanCount(userId: string, month: string): Promise<number> {
 
   // System logging operations
   async createSystemLog(level: string, message: string, service: string = 'api', metadata?: any): Promise<any> {
-    const result = await this.db.insert(systemLogs).values({
-      level,
-      message,
-      service,
-      metadata,
-      timestamp: new Date(),
-    }).returning();
-    return result[0];
+    try {
+      const result = await this.db.insert(systemLogs).values({
+        level,
+        message,
+        service,
+        metadata,
+        timestamp: new Date(),
+      }).returning();
+      return result[0];
+    } catch (err) {
+      // If DB write fails (eg. pool exhausted), surface full error and persist to fallback file
+      try {
+        const { inspect } = await import('util');
+        const { appendFileSync, mkdirSync, existsSync } = await import('fs');
+        const { join } = await import('path');
+        console.error('[Storage] Failed to write system log to DB:', inspect(err, { depth: 5 }));
+
+        const logsDir = join(process.cwd(), 'server', 'logs');
+        if (!existsSync(logsDir)) mkdirSync(logsDir, { recursive: true });
+        const fallbackPath = join(logsDir, 'fallback-system-logs.jsonl');
+        const payload = {
+          level,
+          message,
+          service,
+          metadata,
+          timestamp: new Date().toISOString(),
+          dbError: typeof err === 'object' ? (err as any).message || JSON.stringify(err) : String(err),
+        };
+        appendFileSync(fallbackPath, JSON.stringify(payload) + '\n');
+      } catch (fsErr) {
+        console.error('[Storage] Failed to write fallback system log:', fsErr);
+      }
+      // Re-throw so callers can decide how to proceed (errorHandler will catch and log)
+      throw err;
+    }
   }
 
 

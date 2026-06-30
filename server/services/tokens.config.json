@@ -1,6 +1,147 @@
 {
-  "native": [],
-  "stablecoins": [],
-  "wrapped": [],
-  "governance": []
+  "native": [
+    {
+      "symbol": "CELO",
+      "name": "Celo",
+      "address": "0x471EcE3750Da237f93B8E339c536989b8978a438",
+      "decimals": 18,
+      "chain": "celo",
+      "chainId": 42220,
+      "coingeckoId": "celo",
+      "category": "native",
+      "celoNativeOnly": true
+    }
+  ],
+  "stablecoins": [
+    {
+      "symbol": "cUSD",
+      "name": "Celo Dollar",
+      "address": "0x765DE816845861e75A25fCA122bb6898B8B1282a",
+      "decimals": 18,
+      "chain": "celo",
+      "chainId": 42220,
+      "coingeckoId": "celo-dollar",
+      "category": "stablecoin",
+      "celoNativeOnly": true
+    },
+    {
+      "symbol": "cEUR",
+      "name": "Celo Euro",
+      "address": "0xD8763CBa276a3738E6DE85b4b3bF5FDed6D6CA73",
+      "decimals": 18,
+      "chain": "celo",
+      "chainId": 42220,
+      "coingeckoId": "celo-euro",
+      "category": "stablecoin",
+      "celoNativeOnly": true
+    },
+    {
+      "symbol": "cKES",
+      "name": "Celo Kenyan Shilling",
+      "address": "0x456235e1159dC4a8ac8339ee4D08853a5e2A0dB6",
+      "decimals": 18,
+      "chain": "celo",
+      "chainId": 42220,
+      "coingeckoId": "celo-kenyan-shilling",
+      "category": "stablecoin",
+      "celoNativeOnly": true
+    },
+    {
+      "symbol": "cREAL",
+      "name": "Celo Brazilian Real",
+      "address": "0xe8537ead75ff72da7c5a4d8d5fFd51053c6e62e5",
+      "decimals": 18,
+      "chain": "celo",
+      "chainId": 42220,
+      "coingeckoId": "celo-brazilian-real",
+      "category": "stablecoin",
+      "celoNativeOnly": true
+    },
+    {
+      "symbol": "USDC",
+      "name": "USD Coin (Native Celo)",
+      "address": "0xcebA9300f2b948710d2653dD7B07f33A8B32118C",
+      "decimals": 6,
+      "chain": "celo",
+      "chainId": 42220,
+      "coingeckoId": "usd-coin",
+      "category": "stablecoin",
+      "cexSymbol": "USDC",
+      "hasCEXLiquidity": true
+    },
+    {
+      "symbol": "USDT",
+      "name": "Tether USD (Bridged Celo)",
+      "address": "0x88eeC49252c8cbc039DCdB394c0c2BA2f1637EA0",
+      "decimals": 6,
+      "chain": "celo",
+      "chainId": 42220,
+      "coingeckoId": "tether",
+      "category": "stablecoin",
+      "cexSymbol": "USDT",
+      "hasCEXLiquidity": true
+    }
+  ],
+  "wrapped": [
+    {
+      "symbol": "WETH",
+      "name": "Wrapped Ether (Celo)",
+      "address": "0x2DEf4285787d58a2f811AF50739649C0DdA7Df1B",
+      "decimals": 18,
+      "chain": "celo",
+      "chainId": 42220,
+      "coingeckoId": "weth",
+      "category": "wrapped",
+      "cexSymbol": "ETH",
+      "hasCEXLiquidity": true
+    },
+    {
+      "symbol": "WBTC",
+      "name": "Wrapped Bitcoin (Celo)",
+      "address": "0xBAAB46E6c1f18122e6b5Aac009B2438d92dE7535",
+      "decimals": 8,
+      "chain": "celo",
+      "chainId": 42220,
+      "coingeckoId": "wrapped-bitcoin",
+      "category": "wrapped",
+      "cexSymbol": "BTC",
+      "hasCEXLiquidity": true
+    },
+    {
+      "symbol": "axlUSDC",
+      "name": "Axelar Wrapped USDC",
+      "address": "0xEB466342C4d449BC9f53A865D5Cb90586f405215",
+      "decimals": 6,
+      "chain": "celo",
+      "chainId": 42220,
+      "coingeckoId": "usd-coin",
+      "category": "bridge",
+      "cexSymbol": "USDC",
+      "hasCEXLiquidity": true
+    }
+  ],
+  "governance": [
+    {
+      "symbol": "UBE",
+      "name": "Ubeswap",
+      "address": "0x00Be915B9dCf56a3CBE739D9B9c202ca692409EC",
+      "decimals": 18,
+      "chain": "celo",
+      "chainId": 42220,
+      "coingeckoId": "ubeswap",
+      "category": "governance",
+      "celoNativeOnly": true
+    },
+    {
+      "symbol": "MTAA",
+      "name": "MtaaDAO Token",
+      "address": "0x8D037B92Bba45B07Ba17297C7696cBEE7eD77B7E",
+      "decimals": 18,
+      "chain": "celo",
+      "chainId": 42220,
+      "coingeckoId": "mtaa",
+      "category": "governance",
+      "celoNativeOnly": true
+    }
+  ]
 }

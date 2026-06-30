@@ -72,8 +72,7 @@ import kycRouter from './routes/kyc';
 import referralRewardsRouter from './routes/referral-rewards';
 import economyRouter from './routes/economy';
 import morioRoutes from './routes/morio';
-import morioDataHubRoutes from './routes/morio-data-hub';
-import morioElderInsightsRoutes from './routes/morio-elder-insights';
+// ✅ Removed: morioDataHubRoutes and morioElderInsightsRoutes (now mounted internally via morio.ts)
 import jobRoutes from './routes/jobs';
 import websocketMonitoringRoutes from './routes/websocket-monitoring';
 import logsRoutes from './routes/logs';
@@ -87,7 +86,7 @@ import personasRouter from './routes/personas';
 import paymentRequestsRoutes from './routes/payment-requests';
 import dexScreenerRoutes from './routes/dex-screener'; 
 import amaraRoutes from './routes/amara'; 
-import strategiesRouter from './routes/v1/strategies'; 
+import strategiesRouter from './routes/v1/yuki/strategies'; 
 import adminConsolidated from './routes/adminConsolidated'; 
 
 // Core & Advanced Infrastructure Services
@@ -105,6 +104,8 @@ import { opportunityStream } from './websocket/opportunityStream';
 import { marketStreamService } from './services/marketStreamService';
 import { pool, waitForDatabase } from './db';
 import { startPriceCollectionJob } from './services/cexPriceBackgroundJob';
+import { marketUniverseBuilder } from './services/marketUniverseBuilder';
+import { tokenDiscoveryService } from './services/tokenDiscoveryService';
 import { initTreasuryMonitoring, stopTreasuryMonitoring } from './services/treasury-monitoring.service';
 import { startRotationEventListener } from './services/rotation_listener';
 import { startAchievementListener } from './services/achievement_listener';
@@ -327,7 +328,6 @@ router.use('/proposal-execution', proposalExecutionRouter);
 router.use('/poll-proposals', pollProposalsRouter);
 router.use('/job-health', jobHealthRoutes);
 router.use('/reputation', reputationRoutes);
-router.use('/admin/operational-framework', operationalFrameworkRoutes);
 router.use('/admin/health', healthAdminRoutes);
 router.use('/kotanipay-status', kotaniPayStatusRoutes);
 router.use('/mpesa-status', mpesaStatusRoutes);
@@ -342,9 +342,8 @@ router.use('/payment-gateway', paymentGatewayRoutes);
 router.use('/kyc', kycRouter);
 router.use('/referral-rewards', referralRewardsRouter);
 router.use('/economy', economyRouter);
+// MORIO CONSOLIDATED: data-hub and elder-insights now mounted as /morio/data-hub and /morio/elder-insights
 router.use('/morio', morioRoutes);
-router.use('/morio-data-hub', morioDataHubRoutes);
-router.use('/morio-elder-insights', morioElderInsightsRoutes);
 router.use('/jobs', jobRoutes);
 router.use('/websocket-monitoring', websocketMonitoringRoutes);
 router.use('/logs', logsRoutes);
@@ -352,15 +351,16 @@ router.use('/public-stats', publicStatsRoutes);
 router.use('/analyzer', analyzerRoutes);
 router.use('/defender', defenderRoutes);
 router.use('/exchanges', exchangeRoutes);
-router.use('/feature-analytics', featureAnalyticsRoutes);
-router.use('/graph-propagation', graphPropagationRoutes);
+// ⚠️ CONSOLIDATED ROUTES (now mounted at /api/* in app.use() section):
+//  - /feature-analytics → /api/features (line ~1231)
+//  - /graph-propagation → /api/propagation (line ~1233)
+//  - /dex-screener → /api/dex (line ~1267)
+//  - /api-registry → /api/docs (line ~1317)
+// Deprecation redirects added to server/routes.ts for backwards compatibility
 router.use('/personas', personasRouter);
 router.use('/payment-requests', paymentRequestsRoutes);
-router.use('/dex-screener', dexScreenerRoutes);
 router.use('/amara', amaraRoutes);
-router.use('/v1/strategies', strategiesRouter);
 router.use('/admin-consolidated', adminConsolidated);
-router.use('/api-registry', apiRegistryRoutes);
 
 app.use('/api', router);
 
@@ -420,6 +420,15 @@ process.on('uncaughtException', (error) => {
         new Promise((_, reject) => setTimeout(() => reject(new Error('Redis connect timeout')), 5000))
       ]);
       console.log('[STARTUP] ✅ Redis connected successfully');
+      try {
+        const { loadFeatureOverrides } = await import('./services/featureService');
+        if (typeof loadFeatureOverrides === 'function') {
+          await loadFeatureOverrides();
+          logger.info('[STARTUP] ✅ Feature overrides loaded from Redis');
+        }
+      } catch (e) {
+        logger.warn('[STARTUP] Could not load feature overrides from Redis', e as any);
+      }
     } catch (redisErr) {
       console.warn('[STARTUP] Redis unavailable - falling back to internal in-memory system storage matrices.', redisErr instanceof Error ? redisErr.message : redisErr);
     }
@@ -523,6 +532,15 @@ process.on('uncaughtException', (error) => {
     } catch (err) {
       logger.warn('[STARTUP] Rewards batch worker failed to start:', err);
     }
+    
+    // Agent Payment Gateway indexer for intelligence dashboards
+    try {
+      const { agentPaymentIndexer } = await import('./services/AgentPaymentIndexer');
+      await agentPaymentIndexer.start();
+      logger.info('[STARTUP] ✅ AgentPaymentIndexer started');
+    } catch (err) {
+      logger.warn('[STARTUP] AgentPaymentIndexer failed to start:', err);
+    }
 
     // STAGE E: AGENT NETWORK & REAL-TIME INGESTION STREAM AUTOMATION 
     console.log('[STARTUP] Spawning decoupled agent networks and running graph adaptors...');
@@ -578,6 +596,21 @@ process.on('uncaughtException', (error) => {
     } catch (discoveryError) {
       logger.error('[STARTUP] Failed to initialize Market Discovery System:', discoveryError);
       // Don't fail startup - market discovery is optional
+    }
+
+    // Initialize Token Discovery unified universe (resilient startup with local fallback)
+    console.log('[STARTUP] Initializing Token Discovery unified universe (with local fallback)...');
+    try {
+      await tokenDiscoveryService.buildUnifiedUniverse();
+      logger.info('[STARTUP] ✅ Token universe built successfully');
+    } catch (error) {
+      logger.error('[STARTUP] Failed to build fresh universe, loading local fallback cache...', error);
+      try {
+        await tokenDiscoveryService.loadFallbackUniverse();
+        logger.info('[STARTUP] ✅ Loaded fallback token universe cache');
+      } catch (fallbackErr) {
+        logger.error('[STARTUP] Failed to load fallback universe cache:', fallbackErr);
+      }
     }
 
     // Initialize Operational Framework
@@ -1210,8 +1243,6 @@ process.on('uncaughtException', (error) => {
     } else {
       console.log('[STARTUP] Skipping duplicate mount: /api/morio (handled by registerRoutes)');
     }
-    app.use('/api/morio/data-hub', isAuthenticated, morioDataHubRoutes);
-    app.use('/api/morio/elder-insights', isAuthenticated, morioElderInsightsRoutes);
     app.use('/api/personas', isAuthenticated, personasRouter);
     app.use('/api/public-stats', publicStatsRoutes);
     // Treasury intelligence routes moved to v1 API
@@ -1393,6 +1424,33 @@ process.on('uncaughtException', (error) => {
 
         if (typeof _deferStartPriceJob !== 'undefined' && _deferStartPriceJob) {
           try {
+            // Build dynamic trading pairs universe from configured exchanges
+            try {
+              const { symbolUniverseService } = await import('./services/symbolUniverseService');
+              const cexConfig: Record<string, any> = { binance: { enabled: true }, kraken: { enabled: true }, coinbase: { enabled: true }, bybit: { enabled: true }, kucoin: { enabled: true }, okx: { enabled: true } };
+              const exchanges = Object.keys(cexConfig).filter((e: string) => cexConfig[e]?.enabled);
+              
+              // Explicitly build universe upfront with stats logging
+              await marketUniverseBuilder.buildUniverse(exchanges);
+              const stats = marketUniverseBuilder.getStats();
+              logger.info(
+                `[STARTUP] Market Universe Built: ${stats.total} total assets, ` +
+                `${stats.arbitrageEligible} arb-eligible (2+ exchanges), ` +
+                `${stats.withMetadata} with metadata, age: ${stats.ageMs}ms`
+              );
+              
+              // Now get dynamic trading pairs
+              const pairs = await symbolUniverseService.getArbitrageEligiblePairs({ minExchanges: 2, preferredQuote: 'USDT', limit: 200 });
+              if (pairs && pairs.length > 0) {
+                _pendingPriceJobConfig.tradingPairs = pairs;
+                logger.info(`[STARTUP] Using dynamic tradingPairs for price job (${pairs.length} pairs)`);
+              } else {
+                logger.warn('[STARTUP] No dynamic tradingPairs found - falling back to static pending list');
+              }
+            } catch (e) {
+              logger.warn('[STARTUP] Failed to build dynamic tradingPairs:', e instanceof Error ? e.message : e);
+            }
+
             await startPriceCollectionJob(pool, _pendingPriceJobConfig);
             logger.info('✅ CEX Price Background Job initialized (deferred)');
           } catch (err) {

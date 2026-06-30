@@ -6,7 +6,11 @@
  */
 
 import { ethers } from 'ethers';
-import { WalletOperationsService } from './wallet-operations';
+import Web3 from 'web3';
+import { createWalletIfValid, recoverWalletFromMnemonic } from '../utils/cryptoWallet';
+import { createWalletOperationsService } from './wallet-operations';
+import { createTokenUtilitiesService } from './token-utilities';
+import { createDeFiService } from './defi-service';
 import { ChainManager, SUPPORTED_CHAINS } from './networks-config';
 
 /**
@@ -40,17 +44,11 @@ export class WalletManager {
    * Validate private key format
    */
   static validatePrivateKey(privateKey: string): boolean {
-    try {
-      // Check if it's a valid Ethereum private key (64 hex chars or 66 with 0x)
-      if (!/^0x?[0-9a-fA-F]{64}$/.test(privateKey)) {
-        return false;
-      }
-      // Try to create a wallet from it
-      new ethers.Wallet(privateKey);
-      return true;
-    } catch {
-      return false;
-    }
+    // Basic format check
+    if (!/^0x?[0-9a-fA-F]{64}$/.test(privateKey)) return false;
+    // Use centralized helper to verify
+    const w = createWalletIfValid(privateKey);
+    return !!w;
   }
 
   /**
@@ -69,7 +67,8 @@ export class WalletManager {
   static getAddressFromPrivateKey(privateKey: string): string {
     try {
       const normalized = this.normalizePrivateKey(privateKey);
-      const wallet = new ethers.Wallet(normalized);
+      const wallet = createWalletIfValid(normalized);
+      if (!wallet) throw new Error('Invalid private key');
       return wallet.address;
     } catch {
       throw new Error('Invalid private key');
@@ -81,11 +80,11 @@ export class WalletManager {
    */
   static createWalletFromMnemonic(mnemonic: string, index: number = 0) {
     try {
-      const wallet = ethers.Wallet.fromMnemonic(mnemonic, `m/44'/60'/0'/0/${index}`);
+      const creds = recoverWalletFromMnemonic(mnemonic, `m/44'/60'/0'/0/${index}`);
       return {
-        address: wallet.address,
-        privateKey: wallet.privateKey,
-        mnemonic,
+        address: creds.address,
+        privateKey: creds.privateKey,
+        mnemonic: creds.mnemonic || mnemonic
       };
     } catch {
       throw new Error('Invalid mnemonic');
@@ -97,10 +96,13 @@ export class WalletManager {
  * Legacy EnhancedAgentWallet wrapper
  */
 export class EnhancedAgentWallet {
-  private walletService: WalletOperationsService;
+  private walletService: any;
   public address: string;
   private privateKey: string;
   private networkConfig: any;
+  private web3: any;
+  private tokenUtilities: any;
+  private defiService?: any;
 
   constructor(privateKey: string, networkConfig: any) {
     // Validate and normalize private key
@@ -111,13 +113,38 @@ export class EnhancedAgentWallet {
 
     this.privateKey = normalized;
     this.networkConfig = networkConfig;
-    
-    // Get address from private key
-    const wallet = new ethers.Wallet(normalized);
+
+    // Create an ethers provider and wallet for signing
+    const ethersProvider = new ethers.JsonRpcProvider(networkConfig.rpcUrl);
+    const wallet = createWalletIfValid(normalized, ethersProvider);
+    if (!wallet) throw new Error('Invalid private key');
     this.address = wallet.address;
 
-    // Create wallet operations service
-    this.walletService = new WalletOperationsService(normalized, networkConfig.rpcUrl);
+    // Web3 instance for on-chain contract interactions
+    this.web3 = new Web3(networkConfig.rpcUrl);
+
+    // Signer adapter expected by WalletOperationsService
+    const signerAccount = {
+      address: wallet.address,
+      signTransaction: async (tx: Record<string, unknown>) => {
+        const ethersTx: any = {
+          to: (tx as any).to,
+          data: (tx as any).data,
+          nonce: (tx as any).nonce !== undefined ? Number((tx as any).nonce) : undefined,
+          chainId: (tx as any).chainId !== undefined ? Number((tx as any).chainId) : (networkConfig.chainId || 1)
+        };
+        if ((tx as any).value !== undefined) ethersTx.value = (tx as any).value;
+        if ((tx as any).gas !== undefined) ethersTx.gasLimit = (tx as any).gas;
+        if ((tx as any).gasPrice !== undefined) ethersTx.gasPrice = (tx as any).gasPrice;
+
+        const raw = await wallet.signTransaction(ethersTx);
+        return { rawTransaction: raw };
+      }
+    };
+
+    this.walletService = createWalletOperationsService(this.web3, signerAccount, networkConfig.chainId || 1);
+    this.tokenUtilities = createTokenUtilitiesService(this.web3);
+    this.defiService = undefined;
   }
 
   /**
@@ -132,9 +159,9 @@ export class EnhancedAgentWallet {
    */
   async transfer(toAddress: string, amount: string, tokenAddress?: string) {
     if (tokenAddress) {
-      return this.walletService.transferToken(toAddress, amount, tokenAddress);
+      return this.walletService.sendTokenHuman(tokenAddress, toAddress, Number(amount));
     } else {
-      return this.walletService.transferNative(toAddress, amount);
+      return this.walletService.sendNativeToken(toAddress, Number(amount));
     }
   }
 
@@ -143,9 +170,10 @@ export class EnhancedAgentWallet {
    */
   async getBalance(tokenAddress?: string) {
     if (tokenAddress) {
-      return this.walletService.getTokenBalance(tokenAddress);
+      return this.tokenUtilities.getTokenBalance(tokenAddress, this.address);
     } else {
-      return this.walletService.getNativeBalance();
+      const balanceWei = await this.web3.eth.getBalance(this.address);
+      return this.web3.utils.fromWei(balanceWei as any, 'ether');
     }
   }
 
@@ -153,7 +181,11 @@ export class EnhancedAgentWallet {
    * Swap tokens
    */
   async swap(fromToken: string, toToken: string, amount: string) {
-    return this.walletService.swapTokens(fromToken, toToken, amount);
+    if (!this.defiService) {
+      this.defiService = createDeFiService(this.web3, this.address, this.networkConfig.chainId || 1);
+    }
+    const quote = await this.defiService.getSwapQuote(fromToken, toToken, Number(amount), 0);
+    return this.defiService.executeSwap(quote);
   }
 }
 

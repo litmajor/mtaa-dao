@@ -387,6 +387,35 @@ class MetricsCollector {
 
     this.addBusinessMetric(metrics);
   }
+
+  // Worker-specific metrics helpers
+  public recordWorkerProcessed(count: number = 1, labels?: Record<string, string>) {
+    try {
+      prometheus.counter('worker_payouts_processed_total', labels);
+      if (count > 1) {
+        // approximate multiple increments by calling counter multiple times
+        for (let i = 1; i < count; i++) prometheus.counter('worker_payouts_processed_total', labels);
+      }
+    } catch (err) {
+      logger.debug('Failed to record worker processed metric', err);
+    }
+  }
+
+  public recordWorkerDuration(ms: number, labels?: Record<string, string>) {
+    try {
+      prometheus.histogram('worker_payout_processing_ms', ms, labels);
+    } catch (err) {
+      logger.debug('Failed to record worker duration metric', err);
+    }
+  }
+
+  public recordWorkerFailure(labels?: Record<string, string>) {
+    try {
+      prometheus.counter('worker_payouts_failed_total', labels);
+    } catch (err) {
+      logger.debug('Failed to record worker failure metric', err);
+    }
+  }
 }
 
 export const metricsCollector = MetricsCollector.getInstance();

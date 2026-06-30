@@ -71,9 +71,30 @@ class NotificationService extends EventEmitter {
     });
 
     // Initialize Telegram bot if token is provided
-    if (process.env.TELEGRAM_BOT_TOKEN) {
-      this.telegramBot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
-      this.setupTelegramHandlers();
+    const ttoken = process.env.TELEGRAM_BOT_TOKEN?.trim();
+    const tokenPattern = /^\d+:[A-Za-z0-9_-]+$/;
+    if (ttoken) {
+      if (!tokenPattern.test(ttoken)) {
+        console.warn('TELEGRAM_BOT_TOKEN appears invalid; skipping Telegram initialization');
+      } else {
+        try {
+          this.telegramBot = new TelegramBot(ttoken, { polling: true });
+
+          // Quick validation: ensure the token is accepted by Telegram API
+          this.telegramBot.getMe().then((me) => {
+            console.log('Telegram bot initialized as', (me as any).username || (me as any).id);
+          }).catch((err) => {
+            console.error('Telegram bot validation failed; disabling Telegram integration', err?.response?.statusCode ?? err?.message ?? err);
+            try { this.telegramBot?.stopPolling(); } catch (e) {}
+            this.telegramBot = null;
+          });
+
+          this.setupTelegramHandlers();
+        } catch (err) {
+          console.error('Failed to initialize Telegram bot:', err);
+          this.telegramBot = null;
+        }
+      }
     }
   }
 
@@ -118,7 +139,14 @@ class NotificationService extends EventEmitter {
     });
 
     this.telegramBot.on('polling_error', (error: any) => {
-      console.error('Telegram polling error:', error.code ?? '', error.message);
+      console.error('Telegram polling error:', error.code ?? '', error?.response?.statusCode ?? '', error?.message ?? error);
+      const status = error?.response?.statusCode;
+      // If token is invalid/unauthorized or resource not found, stop polling to avoid log spam
+      if (status === 401 || status === 404 || error?.code === 'ETELEGRAM') {
+        console.error('Unrecoverable Telegram polling error — stopping polling and disabling Telegram bot.');
+        try { this.telegramBot?.stopPolling(); } catch (e) {}
+        this.telegramBot = null;
+      }
     });
   }
 

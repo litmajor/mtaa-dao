@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { ethers } from 'ethers';
+import { createWalletIfValid } from '../utils/cryptoWallet';
 
 const RPC_URL = process.env.RPC_URL || 'http://localhost:8545';
 const PRIVATE_KEY = process.env.ROTATION_SIGNER_PRIVATE_KEY || '';
@@ -17,7 +18,8 @@ export async function distributeToRecipientOnChain(vaultAddress: string) {
   if (!PRIVATE_KEY) throw new Error('ROTATION_SIGNER_PRIVATE_KEY not configured');
 
   const provider = new ethers.JsonRpcProvider(RPC_URL);
-  const signer = new ethers.Wallet(PRIVATE_KEY, provider);
+  const signer = createWalletIfValid(PRIVATE_KEY, provider);
+  if (!signer) throw new Error('ROTATION_SIGNER_PRIVATE_KEY not configured or invalid');
 
   const abi = loadAbi();
   const contract = new ethers.Contract(ROTATION_MODULE_ADDRESS, abi, signer);

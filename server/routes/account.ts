@@ -4,6 +4,8 @@ import { users, sessions } from "../../shared/schema";
 import { eq, and } from "drizzle-orm";
 import { authenticate } from "../auth";
 import bcrypt from "bcryptjs";
+import * as otplib from 'otplib';
+import qrcode from 'qrcode';
 
 const router = Router();
 
@@ -236,14 +238,42 @@ router.post("/export", authenticate, async (req, res) => {
 router.post("/2fa/enable", authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
+    const { method = 'authenticator' } = req.body;
 
-    // TODO: Implement 2FA setup with QR code generation
-    // For now, just return a placeholder response
-    
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+    });
+
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    let qrCodeUrl = "";
+    let secret = "";
+
+    if (method === 'authenticator') {
+      secret = otplib.generateSecret();
+      const label = (user.email ?? user.username ?? "") as string;
+      const otpauth = otplib.generateURI({
+        secret,
+        label,
+        issuer: 'MtaaDAO',
+      });
+      qrCodeUrl = await qrcode.toDataURL(otpauth);
+    }
+
+    await db.update(users)
+      .set({ 
+        twoFactorEnabled: true,
+        twoFactorMethod: method,
+        twoFactorSecret: secret || null,
+        updatedAt: new Date() 
+      })
+      .where(eq(users.id, userId));
+
     res.json({ 
       success: true,
-      message: "2FA setup initiated (feature in progress)",
-      qrCode: "data:image/png;base64,placeholder" // Placeholder
+      message: "2FA setup initiated successfully",
+      qrCode: qrCodeUrl,
+      secret: secret
     });
   } catch (error) {
     console.error("Error enabling 2FA:", error);
@@ -256,12 +286,23 @@ router.post("/2fa/disable", authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
 
-    // TODO: Implement 2FA removal
-    // For now, just return a placeholder response
-    
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+    });
+
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    await db.update(users)
+      .set({ 
+        twoFactorEnabled: false,
+        twoFactorSecret: null,
+        updatedAt: new Date() 
+      })
+      .where(eq(users.id, userId));
+
     res.json({ 
       success: true,
-      message: "2FA disabled successfully (feature in progress)"
+      message: "2FA disabled successfully"
     });
   } catch (error) {
     console.error("Error disabling 2FA:", error);
@@ -269,5 +310,90 @@ router.post("/2fa/disable", authenticate, async (req, res) => {
   }
 });
 
-export default router;
+// GET /api/account/pin-settings - Fetch current PIN configuration
+router.get("/pin-settings", authenticate, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+    });
 
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json({
+      hasPinSetup: !!user.appPin,
+      pinEnabledForLogin: user.pinEnabledForLogin,
+      pinEnabledForTransfers: user.pinEnabledForTransfers,
+      pinEnabledFor2FA: user.pinEnabledFor2FA,
+    });
+  } catch (error) {
+    console.error("Error fetching PIN settings:", error);
+    res.status(500).json({ error: "Failed to fetch PIN settings" });
+  }
+});
+
+// PUT /api/account/pin-settings - Update PIN toggles
+router.put("/pin-settings", authenticate, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { pinEnabledForLogin, pinEnabledForTransfers, pinEnabledFor2FA } = req.body;
+
+    await db.update(users).set({
+      pinEnabledForLogin,
+      pinEnabledForTransfers,
+      pinEnabledFor2FA,
+    }).where(eq(users.id, userId));
+
+    res.json({ success: true, message: "PIN settings updated" });
+  } catch (error) {
+    console.error("Error updating PIN settings:", error);
+    res.status(500).json({ error: "Failed to update PIN settings" });
+  }
+});
+
+// POST /api/account/pin - Set or update the 6-digit Application PIN
+router.post("/pin", authenticate, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { currentPin, newPin } = req.body;
+
+    if (!newPin || newPin.length !== 4 && newPin.length !== 6 || !/^\d+$/.test(newPin)) {
+      return res.status(400).json({ error: "New PIN must be 4 or 6 digits" });
+    }
+
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Verify current PIN if one exists
+    if (user.appPin) {
+      if (!currentPin) {
+        return res.status(400).json({ error: "Current PIN is required to set a new PIN" });
+      }
+      const isValid = await bcrypt.compare(currentPin, user.appPin);
+      if (!isValid) {
+        return res.status(401).json({ error: "Current PIN is incorrect" });
+      }
+    }
+
+    // Hash and store the new PIN
+    const hashedPin = await bcrypt.hash(newPin, 10);
+    
+    await db.update(users).set({
+      appPin: hashedPin
+    }).where(eq(users.id, userId));
+
+    res.json({ success: true, message: "Application PIN securely updated" });
+  } catch (error) {
+    console.error("Error updating PIN:", error);
+    res.status(500).json({ error: "Failed to update PIN" });
+  }
+});
+
+export default router;

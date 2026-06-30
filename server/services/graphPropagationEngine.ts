@@ -13,7 +13,7 @@
  * │ Technical Analysis Service (Signal Annotation)        │
  * │ └─ Indicators & regime signals                        │
  * ├─────────────────────────────────────────────────────────┤
- * │ Graph Propagation Engine (THIS LAYER) ⚡             │
+ * │ Graph Propagation Engine (THIS LAYER)             │
  * │ ├─ Node State Schema (extended)                       │
  * │ ├─ Edge Weights (5 types)                             │
  * │ ├─ Propagation Scorer (cascade logic)                 │
@@ -295,6 +295,8 @@ export interface CascadeEffect {
   
   // Metadata
   reasoning: string; // why is this cascade happening?
+  // Hop distance from original source (1 = direct neighbor)
+  hop?: number;
 }
 
 /**
@@ -338,24 +340,51 @@ export class PropagationScorer {
   computeCascades(delta: PropagationDelta): CascadeEffect[] {
     const sourceNode = this.nodeMap.get(delta.nodeId);
     if (!sourceNode) return [];
-    
+
     const cascades: CascadeEffect[] = [];
-    
-    // Find all outgoing edges
+
+    // Multi-hop BFS traversal with dampening
+    const maxHops = 3;
+    const visited = new Set<string>();
+    visited.add(delta.nodeId);
+
+    type QueueEntry = { currentId: string; edge: GraphEdge; hop: number; };
+    const queue: QueueEntry[] = [];
+
+    // Seed with direct neighbors
     const neighbors = this.edgeMap.get(delta.nodeId) || new Map();
-    
-    neighbors.forEach((edge, targetNodeId) => {
-      const cascade = this.scoreCascade(
-        sourceNode,
-        this.nodeMap.get(targetNodeId)!,
-        edge,
-        delta
-      );
+    neighbors.forEach((edge, targetId) => {
+      const targetNode = this.nodeMap.get(targetId);
+      if (!targetNode) return;
+      queue.push({ currentId: targetId, edge, hop: 1 });
+    });
+
+    while (queue.length > 0) {
+      const entry = queue.shift()!;
+      const { currentId, edge, hop } = entry;
+
+      if (visited.has(currentId)) continue;
+
+      const targetNode = this.nodeMap.get(currentId);
+      if (!targetNode) continue; // safety
+
+      const cascade = this.scoreCascade(sourceNode, targetNode, edge, delta, hop);
       if (cascade) {
+        cascade.hop = hop;
         cascades.push(cascade);
       }
-    });
-    
+
+      visited.add(currentId);
+
+      if (hop < maxHops) {
+        const nextNeighbors = this.edgeMap.get(currentId) || new Map();
+        nextNeighbors.forEach((nextEdge, nextId) => {
+          if (visited.has(nextId)) return;
+          queue.push({ currentId: nextId, edge: nextEdge, hop: hop + 1 });
+        });
+      }
+    }
+
     return cascades;
   }
   
@@ -366,18 +395,34 @@ export class PropagationScorer {
     sourceNode: GraphNode,
     targetNode: GraphNode,
     edge: GraphEdge,
-    delta: PropagationDelta
+    delta: PropagationDelta,
+    hop: number = 1
   ): CascadeEffect | null {
-    // Skip cascades below confidence threshold
-    if (delta.magnitude < 0.3) return null;
-    
+    // Effective magnitude considers edge weight, type multiplier, correlation metadata, and hop dampening
+    const typeMult = edge.typeMultiplier || 1;
+    const corrFactor = edge.edgeType === 'correlates_with' && edge.metadata?.correlation
+      ? Math.abs(edge.metadata.correlation)
+      : 1;
+
+    const hopDampening = Math.pow(0.6, hop - 1);
+
+    const effectiveMagnitude = delta.magnitude * (edge.weight || 1) * typeMult * corrFactor * hopDampening;
+
+    // Edge-specific thresholding (contagion is more sensitive)
+    const baseThreshold = delta.threshold || 0.3;
+    const edgeThreshold = edge.edgeType === 'contagion' ? Math.min(0.12, baseThreshold * 0.6) : baseThreshold * Math.pow(0.8, hop - 1);
+
+    if (effectiveMagnitude < edgeThreshold) return null;
+
     const adjustment = this.calculateAdjustment(
       sourceNode,
       targetNode,
       edge,
-      delta
+      delta,
+      hop,
+      effectiveMagnitude
     );
-    
+
     return {
       sourceNode: sourceNode.nodeId,
       targetNode: targetNode.nodeId,
@@ -385,7 +430,7 @@ export class PropagationScorer {
       edgeWeight: edge.weight,
       adjustmentDirection: adjustment.direction,
       adjustmentPercent: adjustment.percent,
-      confidence: this.calculateConfidence(edge, delta),
+      confidence: this.calculateConfidence(edge, delta) * Math.pow(0.9, hop - 1),
       reasoning: this.generateReasoning(edge, delta),
     };
   }
@@ -397,24 +442,41 @@ export class PropagationScorer {
     sourceNode: GraphNode,
     targetNode: GraphNode,
     edge: GraphEdge,
-    delta: PropagationDelta
+    delta: PropagationDelta,
+    hop: number,
+    effectiveMagnitude: number
   ): { direction: 'same' | 'opposite'; percent: number } {
-    // Most edges propagate in same direction (volatility up → related asset volatility up)
-    // except for inverse correlations which propagate opposite
-    
+    // Direction: inverse correlation causes opposite adjustment
     const isInverseCorrelation =
       edge.edgeType === 'correlates_with' &&
       edge.metadata?.correlation &&
       edge.metadata.correlation < -0.5;
-    
+
     const direction = isInverseCorrelation ? 'opposite' : 'same';
-    
-    // Percent = edge weight * magnitude (stronger edges propagate more)
-    const percent = edge.weight * delta.magnitude;
-    
+
+    // Base percent starts from effectiveMagnitude (already includes edge weight and hop dampening)
+    let percent = effectiveMagnitude;
+
+    // Use propagation state context to modulate percent
+    const sourceState = sourceNode.propagationState;
+    const targetState = targetNode.propagationState;
+
+    const sourceBoost = (sourceState.signalConfidence || 0) * 0.25 + (sourceState.volatilityScore || 0) * 0.15;
+    const targetDamp = (targetState.liquidityScore || 0) * 0.35; // deeper liquidity dampens propagation
+
+    percent = percent * (1 + sourceBoost - targetDamp);
+
+    // If edge has explicit correlation metadata, scale by that
+    if (edge.edgeType === 'correlates_with' && edge.metadata?.correlation) {
+      percent = percent * Math.abs(edge.metadata.correlation);
+    }
+
+    // Clamp
+    percent = Math.max(0, Math.min(1, percent));
+
     return {
       direction,
-      percent: Math.min(percent, 1), // cap at 100%
+      percent,
     };
   }
   
@@ -667,10 +729,39 @@ export class StateDispatcher {
         node.propagationState.dataFreshness = 1; // Mark as fresh
       }
       
+      // Recompute propagatedRiskScore based on updated state
+      try {
+        node.propagationState.propagatedRiskScore = this.computePropagatedRiskScore(node.propagationState);
+      } catch (e) {
+        // if recompute fails, keep previous value
+      }
+
       modified.set(update.nodeId, node);
     });
     
     return modified;
+  }
+
+  /**
+   * Compute a conservative propagated risk score from propagation state
+   * Weighted composite of structural/contagion/volatility/liquidity factors
+   */
+  private computePropagatedRiskScore(state: PropagationState): number {
+    const causality = state.causalityRisk || 0;
+    const depeg = state.depegRisk || 0;
+    const counterparty = state.counterpartyRisk || 0;
+    const volatility = state.volatilityScore || 0;
+    const liquidity = typeof state.liquidityScore === 'number' ? state.liquidityScore : 0.5;
+
+    // Weighted combination (tunable)
+    const raw =
+      0.35 * causality +
+      0.25 * depeg +
+      0.2 * counterparty +
+      0.15 * volatility +
+      0.05 * (1 - liquidity);
+
+    return Math.max(0, Math.min(1, raw));
   }
 }
 
@@ -683,6 +774,7 @@ export class GraphPropagationEngine {
   private dispatcher: StateDispatcher;
   private nodes: Map<string, GraphNode> = new Map();
   private edges: Map<string, GraphEdge> = new Map();
+  private initialized: boolean = false;
   
   constructor() {
     this.scorer = new PropagationScorer([], []);
@@ -694,10 +786,11 @@ export class GraphPropagationEngine {
    */
   initializeGraph(nodes: GraphNode[], edges: GraphEdge[]): void {
     this.nodes = new Map(nodes.map(n => [n.nodeId, n]));
-    this.edges = new Map(edges.map((e, i) => [`${e.from}_${e.to}`, e]));
+    this.edges = new Map(edges.map((e, i) => [`${e.from}->${e.to}`, e]));
     
     this.scorer = new PropagationScorer(nodes, edges);
     this.dispatcher = new StateDispatcher(nodes);
+    this.initialized = true;
     
     logger.info(`📊 Graph initialized: ${nodes.length} nodes, ${edges.length} edges`);
   }
@@ -710,9 +803,20 @@ export class GraphPropagationEngine {
    * 4. Return modified nodes
    */
   propagate(delta: PropagationDelta): Map<string, GraphNode> {
+    if (!this.initialized) {
+      logger.warn(`Attempted to propagate before engine initialized: ${delta.nodeId}`);
+      return new Map();
+    }
+
     logger.info(
       `⚡ Propagating ${delta.deltaType} change on ${delta.nodeId} (magnitude: ${delta.magnitude})`
     );
+    
+    // Guard: ensure source node exists
+    if (!this.nodes.has(delta.nodeId)) {
+      logger.warn(`Propagate called for unknown node: ${delta.nodeId}`);
+      return new Map();
+    }
     
     // Step 1: Score cascades
     const cascades = this.scorer.computeCascades(delta);
@@ -734,14 +838,30 @@ export class GraphPropagationEngine {
    */
   propagateBatch(deltas: PropagationDelta[]): Map<string, GraphNode> {
     const allModified = new Map<string, GraphNode>();
-    
+    if (!this.initialized) {
+      logger.warn('Attempted batch propagate before engine initialized');
+      return allModified;
+    }
+
+    // Collect cascades for all deltas first (snapshot behavior)
+    const allCascades: CascadeEffect[] = [];
     deltas.forEach(delta => {
-      const modified = this.propagate(delta);
-      modified.forEach((node, nodeId) => {
-        allModified.set(nodeId, node);
-      });
+      if (!this.nodes.has(delta.nodeId)) {
+        logger.warn(`Batch propagate: unknown source node ${delta.nodeId}, skipping`);
+        return;
+      }
+      const cascades = this.scorer.computeCascades(delta);
+      if (cascades && cascades.length > 0) {
+        allCascades.push(...cascades);
+      }
     });
-    
+
+    // Apply all cascades at once and commit a single update set
+    const updates = this.dispatcher.applyPropagation(allCascades);
+    const modified = this.dispatcher.commitUpdates(updates);
+
+    modified.forEach((node, nodeId) => allModified.set(nodeId, node));
+
     return allModified;
   }
   

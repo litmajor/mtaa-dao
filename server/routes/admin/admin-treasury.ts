@@ -1,12 +1,15 @@
+import { DaoStorage } from '../../storage/storage-dao';
 import { Router, Request, Response } from 'express';
 import { db } from '../../db';
 import { logger } from '../../utils/logger';
 import { daos, daoMemberships, vaults, vaultTransactions } from '../../../shared/schema';
 import { eq, desc, sql, and } from 'drizzle-orm';
 import { requireRole } from '../../middleware/rbac';
+import featureGate from '../../middleware/featureGate';
 import { logAuditEvent, AuditEventType } from '../../services/auditLogging';
 
 const router = Router();
+const daoStorage = new DaoStorage();
 const requireSuperAdmin = requireRole('super_admin');
 
 /**
@@ -27,7 +30,7 @@ const requireSuperAdmin = requireRole('super_admin');
  */
 
 // GET /api/admin/daos/:daoId/treasury - Get treasury overview for a DAO
-router.get('/daos/:daoId/treasury', async (req: Request, res: Response) => {
+router.get('/daos/:daoId/treasury', featureGate('treasury.view'), async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const adminId = (req.user as any)?.id;
@@ -58,7 +61,7 @@ router.get('/daos/:daoId/treasury', async (req: Request, res: Response) => {
     const vaultList = await db
       .select({
         id: vaults.id,
-        tokenAddress: vaults.tokenAddress,
+        address: vaults.address,
         balance: vaults.balance,
         isActive: vaults.isActive,
       })
@@ -66,13 +69,14 @@ router.get('/daos/:daoId/treasury', async (req: Request, res: Response) => {
       .where(eq(vaults.daoId, daoId));
 
     // Calculate total value (simplified - would need oracle for real prices)
-    const totalBalance = vaultList.reduce((sum, v) => sum + parseFloat(v.balance.toString()), 0);
+    const totalBalance = vaultList.reduce((sum: number, v: any) => sum + parseFloat((v.balance || '0').toString()), 0);
 
     // Get recent transactions
     const recentTransactions = await db
       .select({
         id: vaultTransactions.id,
-        type: vaultTransactions.type,
+        transactionType: vaultTransactions.transactionType,
+        tokenSymbol: vaultTransactions.tokenSymbol,
         amount: vaultTransactions.amount,
         createdAt: vaultTransactions.createdAt,
         status: vaultTransactions.status,
@@ -86,8 +90,17 @@ router.get('/daos/:daoId/treasury', async (req: Request, res: Response) => {
       dao: {
         id: dao[0].id,
         name: dao[0].name,
-        treasuryHealth: dao[0].treasuryHealth || 'healthy',
-        isFrozen: dao[0].treasuryFrozen || false,
+        treasuryHealth: (() => {
+          try {
+            const bal = parseFloat((dao[0].treasuryBalance ?? '0').toString());
+            if (bal <= 1000) return 'at_risk';
+            if (bal > 100000) return 'healthy';
+            return 'stable';
+          } catch (e) {
+            return 'healthy';
+          }
+        })(),
+        isFrozen: !!(await daoStorage.getDaoSetting(daoId, 'treasury_frozen'))?.settingValue,
       },
       vaults: vaultList,
       summary: {
@@ -106,7 +119,7 @@ router.get('/daos/:daoId/treasury', async (req: Request, res: Response) => {
 });
 
 // GET /api/admin/daos/:daoId/treasury/transactions - Get treasury transactions
-router.get('/daos/:daoId/treasury/transactions', async (req: Request, res: Response) => {
+router.get('/daos/:daoId/treasury/transactions', featureGate('treasury.view'), async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const { page = '1', limit = '20', type = '', status = '' } = req.query;
@@ -153,7 +166,7 @@ router.get('/daos/:daoId/treasury/transactions', async (req: Request, res: Respo
 
     // Filter by type if provided
     if (type && typeof type === 'string' && type !== 'all') {
-      conditions.push(eq(vaultTransactions.type, type));
+      conditions.push(eq(vaultTransactions.transactionType, type));
     }
 
     // Filter by status if provided
@@ -165,9 +178,8 @@ router.get('/daos/:daoId/treasury/transactions', async (req: Request, res: Respo
       .select({
         id: vaultTransactions.id,
         vaultId: vaultTransactions.vaultId,
-        type: vaultTransactions.type,
+        transactionType: vaultTransactions.transactionType,
         amount: vaultTransactions.amount,
-        description: vaultTransactions.description,
         createdAt: vaultTransactions.createdAt,
         status: vaultTransactions.status,
       })
@@ -203,7 +215,7 @@ router.get('/daos/:daoId/treasury/transactions', async (req: Request, res: Respo
 });
 
 // POST /api/admin/daos/:daoId/treasury/freeze - Freeze treasury (Super Admin Emergency)
-router.post('/daos/:daoId/treasury/freeze', requireSuperAdmin, async (req: Request, res: Response) => {
+router.post('/daos/:daoId/treasury/freeze', requireSuperAdmin, featureGate('treasury.view'), async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const { reason } = req.body;
@@ -215,13 +227,7 @@ router.post('/daos/:daoId/treasury/freeze', requireSuperAdmin, async (req: Reque
     }
 
     // Freeze the treasury
-    await db
-      .update(daos)
-      .set({
-        treasuryFrozen: true,
-        updatedAt: new Date(),
-      })
-      .where(eq(daos.id, daoId));
+    await daoStorage.upsertDaoSetting(daoId, 'treasury_frozen', true, { description: reason });
 
     // Log audit event
     await logAuditEvent({
@@ -257,7 +263,7 @@ router.post('/daos/:daoId/treasury/freeze', requireSuperAdmin, async (req: Reque
 });
 
 // POST /api/admin/daos/:daoId/treasury/unfreeze - Unfreeze treasury (Super Admin Emergency)
-router.post('/daos/:daoId/treasury/unfreeze', requireSuperAdmin, async (req: Request, res: Response) => {
+router.post('/daos/:daoId/treasury/unfreeze', requireSuperAdmin, featureGate('treasury.view'), async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const { reason } = req.body;
@@ -269,13 +275,7 @@ router.post('/daos/:daoId/treasury/unfreeze', requireSuperAdmin, async (req: Req
     }
 
     // Unfreeze the treasury
-    await db
-      .update(daos)
-      .set({
-        treasuryFrozen: false,
-        updatedAt: new Date(),
-      })
-      .where(eq(daos.id, daoId));
+    await daoStorage.upsertDaoSetting(daoId, 'treasury_frozen', false, { description: reason });
 
     // Log audit event
     await logAuditEvent({
@@ -311,7 +311,7 @@ router.post('/daos/:daoId/treasury/unfreeze', requireSuperAdmin, async (req: Req
 });
 
 // GET /api/admin/daos/:daoId/treasury/health - Get treasury health status
-router.get('/daos/:daoId/treasury/health', async (req: Request, res: Response) => {
+router.get('/daos/:daoId/treasury/health', featureGate('treasury.view'), async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const adminId = (req.user as any)?.id;
@@ -346,7 +346,7 @@ router.get('/daos/:daoId/treasury/health', async (req: Request, res: Response) =
       .from(vaults)
       .where(eq(vaults.daoId, daoId));
 
-    const totalBalance = vaultList.reduce((sum, v) => sum + parseFloat(v.balance.toString()), 0);
+    const totalBalance = vaultList.reduce((sum: number, v: any) => sum + parseFloat((v.balance || '0').toString()), 0);
 
     // Get transaction volume (last 30 days)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -382,7 +382,7 @@ router.get('/daos/:daoId/treasury/health', async (req: Request, res: Response) =
 });
 
 // GET /api/admin/treasury/status - Get all DAOs treasury status (Super Admin only)
-router.get('/treasury/status', requireSuperAdmin, async (req: Request, res: Response) => {
+router.get('/treasury/status', requireSuperAdmin, featureGate('treasury.view'), async (req: Request, res: Response) => {
   try {
     const { page = '1', limit = '20' } = req.query;
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
@@ -391,8 +391,7 @@ router.get('/treasury/status', requireSuperAdmin, async (req: Request, res: Resp
       .select({
         id: daos.id,
         name: daos.name,
-        treasuryHealth: daos.treasuryHealth,
-        treasuryFrozen: daos.treasuryFrozen,
+        treasuryBalance: daos.treasuryBalance,
         updatedAt: daos.updatedAt,
       })
       .from(daos)
@@ -404,8 +403,15 @@ router.get('/treasury/status', requireSuperAdmin, async (req: Request, res: Resp
       .select({ count: sql<number>`count(*)` })
       .from(daos);
 
+    const daosWithFlags = await Promise.all(daoTreasuryStatus.map(async (d: any) => {
+      const frozen = !!(await daoStorage.getDaoSetting(d.id, 'treasury_frozen'))?.settingValue;
+      const bal = parseFloat((d.treasuryBalance ?? '0').toString());
+      const health = bal <= 1000 ? 'at_risk' : (bal > 100000 ? 'healthy' : 'stable');
+      return { id: d.id, name: d.name, treasuryBalance: d.treasuryBalance, treasuryHealth: health, isFrozen: frozen, updatedAt: d.updatedAt };
+    }));
+
     res.json({
-      daos: daoTreasuryStatus,
+      daos: daosWithFlags,
       pagination: {
         page: parseInt(page as string),
         limit: parseInt(limit as string),

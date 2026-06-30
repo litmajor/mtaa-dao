@@ -3,6 +3,8 @@
  * Unified smart routing for DEX/CEX fragmentation
  */
 
+import { AgentMetrics } from '../framework/base-agent';
+
 export enum TradingRouteType {
   DIRECT_DEX = 'direct_dex',           // Single DEX swap
   AGGREGATED_DEX = 'aggregated_dex',   // Multi-path optimal split
@@ -43,6 +45,7 @@ export interface RoutingPath {
   }>;
   totalInputAmount: string;
   expectedOutputAmount: string;
+  slippage: number;
   estimatedGas: string;
   priceImpact: number;
   executionTime: number;
@@ -94,7 +97,7 @@ export interface ArbOpportunity {
   window: { start: Date; end: Date; durationSeconds: number };
 }
 
-export interface TradingMetrics {
+export interface TradingMetrics extends AgentMetrics {
   totalSwaps: number;
   successfulSwaps: number;
   failedSwaps: number;

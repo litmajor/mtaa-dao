@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { authenticateToken } from '../middleware/auth';
+import { isAuthenticated } from '../auth';
 import { AchievementSystemService } from '../services/achievementSystemService';
 import { AppError } from '../middleware/errorHandler';
 
@@ -66,7 +66,7 @@ router.get('/:achievementId', async (req: Request, res: Response) => {
 /**
  * POST /api/achievements - Create new achievement (admin only)
  */
-router.post('/', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+router.post('/', isAuthenticated, requireAdmin, async (req: Request, res: Response) => {
   try {
     const achievementData = req.body;
     
@@ -86,8 +86,9 @@ router.post('/', authenticateToken, requireAdmin, async (req: Request, res: Resp
 
 /**
  * GET /api/achievements/user/progress - Get user's achievement progress
+ * ⚠️ SECURITY: Requires authentication - user owns their progress data
  */
-router.get('/user/progress', async (req: Request, res: Response) => {
+router.get('/user/progress', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const userId = (req.user as any)?.id || (req.user as any)?.sub;
     
@@ -107,8 +108,9 @@ router.get('/user/progress', async (req: Request, res: Response) => {
 
 /**
  * PUT /api/achievements/user/progress/:achievementId - Update achievement progress
+ * ⚠️ SECURITY: Requires authentication - user owns their progress data
  */
-router.put('/user/progress/:achievementId', async (req: Request, res: Response) => {
+router.put('/user/progress/:achievementId', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const userId = (req.user as any)?.id || (req.user as any)?.sub;
     const { progressValue, progressPercent } = req.body;
@@ -152,8 +154,9 @@ router.post('/:achievementId/unlock', async (req: Request, res: Response) => {
 
 /**
  * POST /api/achievements/:achievementId/claim - Claim achievement reward
+ * ⚠️ SECURITY: Requires authentication - user owns their rewards
  */
-router.post('/:achievementId/claim', async (req: Request, res: Response) => {
+router.post('/:achievementId/claim', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const userId = (req.user as any)?.id || (req.user as any)?.sub;
     
@@ -222,7 +225,7 @@ router.get('/user/badges', async (req: Request, res: Response) => {
 /**
  * POST /api/achievements/badges - Create badge (admin only)
  */
-router.post('/badges', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+router.post('/badges', isAuthenticated, requireAdmin, async (req: Request, res: Response) => {
   try {
     const badge = await AchievementSystemService.createBadge(req.body);
     
@@ -240,7 +243,7 @@ router.post('/badges', authenticateToken, requireAdmin, async (req: Request, res
 /**
  * POST /api/achievements/:achievementId/milestones - Create milestone (admin only)
  */
-router.post('/:achievementId/milestones', async (req: Request, res: Response) => {
+router.post('/:achievementId/milestones', isAuthenticated, requireAdmin, async (req: Request, res: Response) => {
   try {
     // TODO: Add admin role check
     const milestone = await AchievementSystemService.createMilestone({
@@ -281,7 +284,7 @@ router.get('/leaderboard', async (req: Request, res: Response) => {
 /**
  * POST /api/achievements/leaderboard/update - Update leaderboard rankings (admin only)
  */
-router.post('/leaderboard/update', async (req: Request, res: Response) => {
+router.post('/leaderboard/update', isAuthenticated, requireAdmin, async (req: Request, res: Response) => {
   try {
     // TODO: Add admin role check
     await AchievementSystemService.updateLeaderboard();

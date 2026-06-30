@@ -1,15 +1,21 @@
 /**
  * Job Status Routes
  * Endpoints for monitoring and retrieving results of async jobs
+ * 
+ * SECURITY: Internal async job results - super admin only
  */
 
 import { Router, Request, Response } from 'express';
-import { authenticateToken } from '../middleware/auth';
+import { isAuthenticated } from '../auth';
+import { requireRole } from '../middleware/rbac';
 import { jobQueueService } from '../services/jobQueueService';
 import { engineService } from '../services/engineService';
 import { logger } from '../utils/logger';
 
 const router = Router();
+
+// All job endpoints require super_admin authentication
+router.use(isAuthenticated, requireRole('super_admin'));
 
 /**
  * GET /api/jobs/:jobId

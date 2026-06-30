@@ -9,6 +9,8 @@
  */
 
 import express, { Router, Request, Response } from 'express';
+import { isAuthenticated } from '../auth';
+import { requireRole } from '../middleware/rbac';
 import { automaticPhaseManager } from '../services/automaticPhaseManager';
 import { marketDiscoveryScannerService } from '../services/marketDiscoveryScannerService';
 import { efficientPairDiscoveryService } from '../services/efficientPairDiscoveryService';
@@ -16,6 +18,9 @@ import { dexAssetDiscoveryService } from '../services/dexAssetDiscoveryService';
 import { logger } from '../utils/logger';
 
 const router = Router();
+
+// All market discovery endpoints require super_admin authentication
+router.use(isAuthenticated, requireRole('super_admin'));
 
 /**
  * GET /api/admin/market-discovery/status

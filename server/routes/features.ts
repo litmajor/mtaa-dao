@@ -22,6 +22,7 @@ import {
   checkFeatureGating,
 } from '../services/gatingService';
 import { requireAuth } from '../middleware/auth';
+import { requireRole } from '../middleware/rbac';
 
 const router = Router();
 
@@ -177,13 +178,8 @@ router.get('/by-category/:category', (req: Request, res: Response) => {
  * Enable a specific feature
  * Requires admin authentication
  */
-router.post('/enable/:featureKey', (req: Request, res: Response) => {
+router.post('/enable/:featureKey', requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
   try {
-    // TODO: Add admin authentication middleware here
-    // if (!req.user?.isAdmin) {
-    //   return res.status(403).json({ error: 'Unauthorized' });
-    // }
-
     const { featureKey } = req.params;
     const feature = getFeature(featureKey);
 
@@ -194,7 +190,7 @@ router.post('/enable/:featureKey', (req: Request, res: Response) => {
       });
     }
 
-    enableFeature(featureKey);
+    await enableFeature(featureKey);
     res.json({
       success: true,
       message: `Feature ${featureKey} enabled`,
@@ -214,13 +210,8 @@ router.post('/enable/:featureKey', (req: Request, res: Response) => {
  * Disable a specific feature
  * Requires admin authentication
  */
-router.post('/disable/:featureKey', (req: Request, res: Response) => {
+router.post('/disable/:featureKey', requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
   try {
-    // TODO: Add admin authentication middleware here
-    // if (!req.user?.isAdmin) {
-    //   return res.status(403).json({ error: 'Unauthorized' });
-    // }
-
     const { featureKey } = req.params;
     const feature = getFeature(featureKey);
 
@@ -231,7 +222,7 @@ router.post('/disable/:featureKey', (req: Request, res: Response) => {
       });
     }
 
-    disableFeature(featureKey);
+    await disableFeature(featureKey);
     res.json({
       success: true,
       message: `Feature ${featureKey} disabled`,
@@ -251,13 +242,8 @@ router.post('/disable/:featureKey', (req: Request, res: Response) => {
  * Release all features up to a specific phase
  * Requires admin authentication
  */
-router.post('/release-phase/:phase', (req: Request, res: Response) => {
+router.post('/release-phase/:phase', requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
   try {
-    // TODO: Add admin authentication middleware here
-    // if (!req.user?.isAdmin) {
-    //   return res.status(403).json({ error: 'Unauthorized' });
-    // }
-
     const phase = parseInt(req.params.phase, 10);
     if (isNaN(phase)) {
       return res.status(400).json({
@@ -266,7 +252,7 @@ router.post('/release-phase/:phase', (req: Request, res: Response) => {
       });
     }
 
-    releasePhase(phase);
+    await releasePhase(phase);
     const features = getFeaturesByPhase(phase);
 
     res.json({
@@ -289,14 +275,9 @@ router.post('/release-phase/:phase', (req: Request, res: Response) => {
  * Release all features immediately
  * Requires admin authentication
  */
-router.post('/release-all', (req: Request, res: Response) => {
+router.post('/release-all', requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
   try {
-    // TODO: Add admin authentication middleware here
-    // if (!req.user?.isAdmin) {
-    //   return res.status(403).json({ error: 'Unauthorized' });
-    // }
-
-    releaseAllFeatures();
+    await releaseAllFeatures();
     const features = getAllFeatures();
 
     res.json({

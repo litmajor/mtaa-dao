@@ -9,6 +9,8 @@ import { db } from '../../../../db';
 import { deposits, withdrawals } from '@shared/transactionFlowSchema';
 import { eq } from 'drizzle-orm';
 import { logger } from '../../../../utils/logger';
+import gatewayService from '../../../../services/gatewayService';
+import { userStorage } from '../../../../storage/storage-user';
 import {
   flutterwaveConfig,
   paystackConfig,
@@ -513,6 +515,47 @@ router.post('/mpesa', async (req: Request, res: Response) => {
       ip: clientIP,
       timestamp: new Date().toISOString(),
     });
+
+    // If this deposit was intended as an agent payment, attempt to call
+    // the on-chain AgentPaymentGateway to record the KES payment and
+    // activate the subscription. This is best-effort and does not block
+    // the webhook response (fire-and-forget).
+    try {
+      const metadata = depositQuery[0].metadata ? JSON.parse(depositQuery[0].metadata) : {};
+      const agentId = metadata?.agentId || metadata?.agent_id || metadata?.agent;
+      if (agentId) {
+        // Prefer explicit amount from the STK callback metadata
+        let kesAmount = Number(depositQuery[0].amount || 0);
+        if (ResultCode === 0 && stkCallback?.CallbackMetadata?.Item) {
+          const amt = stkCallback.CallbackMetadata.Item.find((i: any) => i.Name === 'Amount')?.Value;
+          if (amt) kesAmount = Number(amt);
+        }
+
+        // Resolve user's primary blockchain wallet
+        let payerWallet: string | null = null;
+        try {
+          const wallets = await userStorage.getWalletAddresses(depositQuery[0].userId);
+          if (wallets && wallets.length) payerWallet = wallets[0].walletAddress;
+        } catch (e) {
+          logger.warn('Failed to resolve user wallet for on-chain gateway call', { error: (e as Error).message });
+        }
+
+        if (!payerWallet) {
+          logger.warn('No blockchain wallet found for user; skipping on-chain gateway call', { userId: depositQuery[0].userId, depositId: depositQuery[0].id });
+        } else {
+          void (async () => {
+            try {
+              const tx = await gatewayService.payAgentInKES(agentId, Math.round(kesAmount), payerWallet as string, txId);
+              logger.info('Triggered on-chain payAgentInKES', { depositId: depositQuery[0].id, txHash: tx.hash || tx.transactionHash });
+            } catch (err: any) {
+              logger.error('Failed on-chain payAgentInKES invocation', { error: err?.message || String(err), depositId: depositQuery[0].id });
+            }
+          })();
+        }
+      }
+    } catch (err: any) {
+      logger.debug('Could not parse deposit metadata or invoke gateway', { error: err?.message || String(err) });
+    }
 
     res.json({ ResultCode: 0 });
   } catch (error) {

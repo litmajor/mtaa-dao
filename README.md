@@ -38,6 +38,22 @@
 - ✅ **Vote delegation** – scoped by category or specific proposals
 - ✅ **Task & bounty marketplace** – community-driven contributions
 - ✅ **Escrow system** – secure payments with dispute resolution
+
+---
+
+## ⚙️ Worker Observability (Payouts)
+
+Short instructions for monitoring and smoke-testing the referral payout worker are in [docs/worker-observability.md](docs/worker-observability.md).
+
+Quick dry-run smoke test:
+
+```bash
+# from repo root
+NODE_ENV=development npx ts-node scripts/smoke-payout-worker.ts
+```
+
+Set `ADMIN_ALERT_WEBHOOK` to a Discord webhook to receive critical alerts when payouts fail after retries.
+
 - ✅ **Proposal comments** – engagement with likes/reactions
 - ✅ **Automated execution** – approved proposals trigger on-chain actions
 

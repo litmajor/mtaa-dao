@@ -97,7 +97,7 @@ class AdvancedMicrostructureIndicators {
     if (cached) return cached;
 
     try {
-      const trades = await ccxtService.fetchTrades(symbol, exchange, 100);
+      const trades = await ccxtService.fetchTrades(exchange, symbol, 100);
 
       // Calculate buy vs sell volume
       const buyVolume = trades
@@ -160,7 +160,7 @@ class AdvancedMicrostructureIndicators {
 
     try {
       // Fetch OHLCV data
-      const ohlcv = await ccxtService.fetchOHLCV(symbol, exchange, '1h', periods);
+      const ohlcv = await ccxtService.getOHLCVFromExchange(exchange, symbol, '1h', periods);
 
       // Calculate returns and volatilities
       const returns = [];
@@ -236,9 +236,9 @@ class AdvancedMicrostructureIndicators {
 
     try {
       const [orderBook, trades, currentTicker] = await Promise.all([
-        ccxtService.fetchOrderBook(symbol, exchange, 50),
-        ccxtService.fetchTrades(symbol, exchange, 50),
-        ccxtService.fetchTicker(symbol, exchange)
+        ccxtService.fetchOrderBook(exchange, symbol, 50),
+        ccxtService.fetchTrades(exchange, symbol, 50),
+        ccxtService.fetchTicker(exchange, symbol)
       ]);
 
       // Calculate adverse selection indicator
@@ -312,9 +312,9 @@ class AdvancedMicrostructureIndicators {
 
     try {
       const [orderBook, trades, ticker] = await Promise.all([
-        ccxtService.fetchOrderBook(symbol, exchange, 100),
-        ccxtService.fetchTrades(symbol, exchange, 100),
-        ccxtService.fetchTicker(symbol, exchange)
+        ccxtService.fetchOrderBook(exchange, symbol, 100),
+        ccxtService.fetchTrades(exchange, symbol, 100),
+        ccxtService.fetchTicker(exchange, symbol)
       ]);
 
       // Calculate immediate impact

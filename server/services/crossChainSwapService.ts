@@ -4,6 +4,7 @@
  */
 
 import { ethers } from 'ethers';
+import { createWalletIfValid } from '../utils/cryptoWallet';
 import { ChainRegistry, SupportedChain, CHAIN_CONFIGS } from '../../shared/chainRegistry';
 import { Logger } from '../utils/logger';
 import { AppError } from '../middleware/errorHandler';
@@ -219,7 +220,8 @@ export class CrossChainSwapService {
     if (!fromConfig) throw new Error(`Target system configuration footprint missing for chain: ${quote.fromChain}`);
 
     const provider = new ethers.JsonRpcProvider(fromConfig.rpcUrl);
-    const signer = new ethers.Wallet(process.env.BRIDGE_PRIVATE_KEY || '', provider);
+    const signer = createWalletIfValid(process.env.BRIDGE_PRIVATE_KEY || '', provider);
+    if (!signer) throw new Error('Missing or invalid BRIDGE_PRIVATE_KEY');
 
     if (quote.fromChain === 'celo') {
       return this.bridgeViaCeloPortal(quote, signer);
@@ -291,7 +293,8 @@ export class CrossChainSwapService {
     if (!toConfig) throw new Error(`Target configuration missing for network identifier: ${quote.toChain}`);
 
     const provider = new ethers.JsonRpcProvider(toConfig.rpcUrl);
-    const signer = new ethers.Wallet(process.env.SWAP_PRIVATE_KEY || '', provider);
+    const signer = createWalletIfValid(process.env.SWAP_PRIVATE_KEY || '', provider);
+    if (!signer) throw new Error('Missing or invalid SWAP_PRIVATE_KEY');
 
     const tx = await this.executeSwapVia1Inch(quote, signer, provider);
     return tx.hash;

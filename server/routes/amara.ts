@@ -12,24 +12,44 @@
  */
 
 import express, { Request, Response } from 'express';
+import { isAuthenticated } from '../auth';
 import { assetGraphService } from '../services/assetGraphService';
 import { Logger } from '../utils/logger';
 
 const logger = Logger.getLogger();
 const router = express.Router();
 
-// Middleware to extract user ID
-function extractUserId(req: any): string {
-  return req.user?.id || req.query.userId || 'test-user';
+/**
+ * Verify user owns the requested data
+ * Query param userId must match authenticated user to prevent enumeration
+ */
+function verifyUserOwnership(req: any): string | null {
+  const authenticatedUserId = req.user?.id;
+  const queryUserId = req.query.userId;
+  
+  if (!authenticatedUserId) {
+    return null;
+  }
+  
+  // If query param provided, must match authenticated user
+  if (queryUserId && queryUserId !== authenticatedUserId) {
+    return null;
+  }
+  
+  return authenticatedUserId;
 }
 
 /**
  * GET /api/dashboard/portfolio
  * Full portfolio view for Amara Dashboard
+ * SECURITY: User can only view their own portfolio
  */
-router.get('/portfolio', async (req: Request, res: Response) => {
+router.get('/portfolio', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const userId = extractUserId(req);
+    const userId = verifyUserOwnership(req);
+    if (!userId) {
+      return res.status(403).json({ success: false, error: 'Unauthorized' });
+    }
     logger.debug(`[Amara] Loading portfolio for ${userId}`);
 
     const portfolioView = await assetGraphService.getAmaraPortfolioView(userId);
@@ -50,10 +70,14 @@ router.get('/portfolio', async (req: Request, res: Response) => {
 /**
  * GET /api/dashboard/positions
  * All positions grouped by type
+ * SECURITY: User can only view their own positions
  */
-router.get('/positions', async (req: Request, res: Response) => {
+router.get('/positions', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const userId = extractUserId(req);
+    const userId = verifyUserOwnership(req);
+    if (!userId) {
+      return res.status(403).json({ success: false, error: 'Unauthorized' });
+    }
     logger.debug(`[Amara] Loading positions for ${userId}`);
 
     const graph = await assetGraphService.loadUserGraph(userId);
@@ -85,10 +109,14 @@ router.get('/positions', async (req: Request, res: Response) => {
 /**
  * GET /api/dashboard/positions/:protocol
  * Positions in specific protocol
+ * SECURITY: User can only view their own positions
  */
-router.get('/positions/:protocol', async (req: Request, res: Response) => {
+router.get('/positions/:protocol', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const userId = extractUserId(req);
+    const userId = verifyUserOwnership(req);
+    if (!userId) {
+      return res.status(403).json({ success: false, error: 'Unauthorized' });
+    }
     const { protocol } = req.params;
 
     logger.debug(`[Amara] Loading ${protocol} positions for ${userId}`);
@@ -120,10 +148,14 @@ router.get('/positions/:protocol', async (req: Request, res: Response) => {
 /**
  * GET /api/dashboard/exposures
  * Asset exposures (net BTC, net ETH, etc)
+ * SECURITY: User can only view their own exposures
  */
-router.get('/exposures', async (req: Request, res: Response) => {
+router.get('/exposures', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const userId = extractUserId(req);
+    const userId = verifyUserOwnership(req);
+    if (!userId) {
+      return res.status(403).json({ success: false, error: 'Unauthorized' });
+    }
     logger.debug(`[Amara] Loading exposures for ${userId}`);
 
     const graph = await assetGraphService.loadUserGraph(userId);
@@ -159,10 +191,14 @@ router.get('/exposures', async (req: Request, res: Response) => {
 /**
  * GET /api/dashboard/exposures/:asset
  * Exposure for specific asset
+ * SECURITY: User can only view their own exposures
  */
-router.get('/exposures/:asset', async (req: Request, res: Response) => {
+router.get('/exposures/:asset', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const userId = extractUserId(req);
+    const userId = verifyUserOwnership(req);
+    if (!userId) {
+      return res.status(403).json({ success: false, error: 'Unauthorized' });
+    }
     const { asset } = req.params;
 
     logger.debug(`[Amara] Loading ${asset} exposure for ${userId}`);
@@ -203,10 +239,14 @@ router.get('/exposures/:asset', async (req: Request, res: Response) => {
 /**
  * GET /api/dashboard/risks
  * All risks (liquidation, IL, protocol exposure)
+ * SECURITY: User can only view their own risks
  */
-router.get('/risks', async (req: Request, res: Response) => {
+router.get('/risks', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const userId = extractUserId(req);
+    const userId = verifyUserOwnership(req);
+    if (!userId) {
+      return res.status(403).json({ success: false, error: 'Unauthorized' });
+    }
     logger.debug(`[Amara] Loading risks for ${userId}`);
 
     const graph = await assetGraphService.loadUserGraph(userId);
@@ -242,10 +282,14 @@ router.get('/risks', async (req: Request, res: Response) => {
 /**
  * GET /api/dashboard/yields
  * Yield tracking and opportunities
+ * SECURITY: User can only view their own yields
  */
-router.get('/yields', async (req: Request, res: Response) => {
+router.get('/yields', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const userId = extractUserId(req);
+    const userId = verifyUserOwnership(req);
+    if (!userId) {
+      return res.status(403).json({ success: false, error: 'Unauthorized' });
+    }
     logger.debug(`[Amara] Loading yields for ${userId}`);
 
     const graph = await assetGraphService.loadUserGraph(userId);
@@ -311,10 +355,14 @@ router.get('/yields', async (req: Request, res: Response) => {
 /**
  * GET /api/dashboard/summary
  * Quick summary for dashboard header
+ * SECURITY: User can only view their own summary
  */
-router.get('/summary', async (req: Request, res: Response) => {
+router.get('/summary', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const userId = extractUserId(req);
+    const userId = verifyUserOwnership(req);
+    if (!userId) {
+      return res.status(403).json({ success: false, error: 'Unauthorized' });
+    }
     const graph = await assetGraphService.loadUserGraph(userId);
     const metrics = graph.portfolioMetrics;
 
@@ -358,7 +406,7 @@ function generateRiskRecommendations(graph: any): string[] {
   }
 
   const protocolExposure = Math.max(
-    ...Array.from(graph.byProtocol.values()).map((nodes: string[]) =>
+    ...Array.from(graph.byProtocol.values() as IterableIterator<string[]>).map((nodes: string[]) =>
       nodes.reduce((sum: number, id: string) => sum + (graph.nodes.get(id)?.balanceUSD || 0), 0)
     )
   );

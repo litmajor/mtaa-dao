@@ -7,11 +7,16 @@ import { Logger } from '../utils/logger';
 const router = Router();
 const logger = Logger.getLogger();
 
+function getUserId(req: any): string | undefined {
+  return req.user?.id || req.user?.claims?.id || req.user?.claims?.sub;
+}
+
 // Get subscription details for a DAO
 router.get('/:daoId', isAuthenticated, async (req, res) => {
   try {
     const { daoId } = req.params;
-    const details = await subscriptionService.getSubscriptionDetails(daoId);
+    const userId = getUserId(req);
+    const details = await subscriptionService.getSubscriptionDetails(daoId, userId);
     res.json(details);
   } catch (error: any) {
     logger.error('Get subscription details error:', error);
@@ -23,11 +28,11 @@ router.get('/:daoId', isAuthenticated, async (req, res) => {
 router.post('/:daoId/upgrade', isAuthenticated, async (req, res) => {
   try {
     const { daoId } = req.params;
-    const userId = (req.user as any)?.claims?.id;
+    const userId = getUserId(req);
     
     const result = await subscriptionService.upgradeSubscription({
       daoId,
-      userId,
+      userId: userId || '',
       ...req.body
     });
     
@@ -42,9 +47,9 @@ router.post('/:daoId/upgrade', isAuthenticated, async (req, res) => {
 router.post('/:daoId/cancel', isAuthenticated, async (req, res) => {
   try {
     const { daoId } = req.params;
-    const userId = (req.user as any)?.claims?.id;
+    const userId = getUserId(req);
     
-    const result = await subscriptionService.cancelSubscription(daoId, userId);
+    const result = await subscriptionService.cancelSubscription(daoId, userId || '');
     res.json(result);
   } catch (error: any) {
     logger.error('Subscription cancel error:', error);

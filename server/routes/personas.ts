@@ -48,8 +48,10 @@ router.get('/', (req, res) => {
 /**
  * GET /api/personas/current
  * Get current user's persona
+ * SECURITY: Requires authentication
  */
-router.get('/current', async (req, res) => {
+import { isAuthenticated } from '../auth';
+router.get('/current', isAuthenticated, async (req, res) => {
   try {
     const userId = (req.user as any)?.id;
     if (!userId) {
@@ -72,8 +74,9 @@ router.get('/current', async (req, res) => {
 /**
  * POST /api/personas/select
  * Set user's persona (typically at signup)
+ * SECURITY: Requires authentication
  */
-router.post('/select', async (req, res) => {
+router.post('/select', isAuthenticated, async (req, res) => {
   try {
     const userId = (req.user as any)?.id;
     if (!userId) {

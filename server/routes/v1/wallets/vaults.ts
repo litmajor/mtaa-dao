@@ -23,10 +23,120 @@ import { rateLimitPerUser } from '../../../middleware/rateLimit';
 import { logConsolidatedAuditEvent } from '../../../services/auditConsolidated';
 import { eq } from 'drizzle-orm';
 import { db } from '../../../storage';
-import { vaults, vaultTransactions } from '@shared/schema';
+import { vaults, vaultTransactions, vaultTokenHoldings } from '@shared/schema';
 import { getEventEmitter } from '../../../middleware/websocket-event-emitter';
 
 const router = express.Router({ mergeParams: true });
+
+// ════════════════════════════════════════════════════════════════════════════════
+// GET ALL PERSONAL VAULTS
+// ════════════════════════════════════════════════════════════════════════════════
+router.get(
+  '/',
+  authenticate,
+  async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const userVaults = await db
+        .select()
+        .from(vaults)
+        .where(eq(vaults.ownerId, userId));
+
+      res.json({
+        success: true,
+        data: userVaults,
+      });
+    } catch (error) {
+      console.error('Failed to get personal vaults:', error);
+      res.status(500).json({ error: 'Failed to fetch personal vaults' });
+    }
+  }
+);
+
+// ════════════════════════════════════════════════════════════════════════════════
+// CREATE PERSONAL VAULT
+// ════════════════════════════════════════════════════════════════════════════════
+router.post(
+  '/',
+  authenticate,
+  rateLimitPerUser('wallet-vaults-create', 5, '1hour'),
+  async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { name, description, vaultType, primaryCurrency, daoId, ...config } = req.body;
+
+      // Ensure limit for personal vaults (Free Tier = 3 maximum)
+      if (!daoId) {
+        const existingPersonalVaults = await db
+          .select()
+          .from(vaults)
+          .where(eq(vaults.ownerId, userId));
+
+        // Let's assume standard tier logic here, currently capping at 3
+        if (existingPersonalVaults.length >= 3) {
+          return res.status(400).json({
+            error: 'Vault limit reached',
+            reason: 'You can only create up to 3 personal vaults on the Free tier.',
+          });
+        }
+      }
+
+      const vaultId = randomUUID();
+
+      await db.insert(vaults).values({
+        id: vaultId as any,
+        name: name || 'Personal Vault',
+        vaultType: vaultType || 'regular',
+        currency: primaryCurrency || 'cUSD',
+        ownerId: daoId || userId,
+        ownerType: daoId ? 'dao' : 'user',
+        userId: daoId ? undefined : userId,
+        daoId: daoId || undefined,
+        creatorId: userId,
+        balance: '0',
+        vaultConfig: config,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      } as any);
+
+      // Initialize token holdings if multi-asset allocations are provided
+      if (config.isMultiAsset && Array.isArray(config.allocations)) {
+        const holdingsToInsert = config.allocations.map((alloc: any) => ({
+          vaultId: vaultId,
+          tokenSymbol: alloc.symbol,
+          balance: '0',
+          valueUSD: '0',
+        }));
+        
+        if (holdingsToInsert.length > 0) {
+          await db.insert(vaultTokenHoldings).values(holdingsToInsert);
+        }
+      }
+
+      // Log creation
+      await logConsolidatedAuditEvent({
+        user_id: userId,
+        action: 'vault_created',
+        severity: 'low',
+        details: {
+          vaultId,
+          name,
+          vaultType,
+          isDaoVault: !!daoId
+        },
+      } as any);
+
+      res.status(201).json({
+        success: true,
+        vaultId,
+        message: 'Vault created successfully',
+      });
+    } catch (error) {
+      console.error('Vault creation error:', error);
+      res.status(500).json({ error: 'Failed to create vault' });
+    }
+  }
+);
 
 // ════════════════════════════════════════════════════════════════════════════════
 // USER VAULT WITHDRAWAL

@@ -7,6 +7,7 @@
 
 import { logger } from '../utils/logger';
 import { graphPropagationEngine, PropagationDelta } from './graphPropagationEngine';
+import { graphPropagationBus } from './graphPropagationBus';
 
 export interface TAUpdate {
   symbol: string;
@@ -107,20 +108,23 @@ export async function processTAUpdate(update: TAUpdate): Promise<{
       `[TA→Propagation] ${update.symbol} (${update.timeframe}): ${action} → ${update.currentSignalBias} (conf: ${(update.signalConfidence * 100).toFixed(0)}%, mag: ${(delta.magnitude * 100).toFixed(1)}%)`
     );
     
-    // Trigger propagation
-    const modified = graphPropagationEngine.propagate(delta);
-    
-    // Update node with new signal state
-    const node = graphPropagationEngine.getNode(update.symbol);
-    if (node) {
-      node.previousSignalBias = update.previousSignalBias;
-      node.propagationState.signalBias = update.currentSignalBias;
-      node.propagationState.signalConfidence = update.signalConfidence;
-      node.propagationState.signalWeight = update.signalWeight;
-      node.propagationState.trendStrength = update.trendStrength;
-      node.propagationState.volatilityRegime = update.volatilityRegime;
-      node.signalChanged = signalFlipped;
-      node.propagationState.updatedAt = update.timestamp;
+    // Emit event on bus; fallback to direct propagation
+    if (graphPropagationBus.listenerCount('signal_change') > 0) {
+      graphPropagationBus.emit('signal_change', update.symbol, update.previousSignalBias, update.currentSignalBias, update.signalConfidence);
+    } else {
+      const modified = graphPropagationEngine.propagate(delta);
+      // Update node with new signal state
+      const node = graphPropagationEngine.getNode(update.symbol);
+      if (node) {
+        node.previousSignalBias = update.previousSignalBias;
+        node.propagationState.signalBias = update.currentSignalBias;
+        node.propagationState.signalConfidence = update.signalConfidence;
+        node.propagationState.signalWeight = update.signalWeight;
+        node.propagationState.trendStrength = update.trendStrength;
+        node.propagationState.volatilityRegime = update.volatilityRegime;
+        node.signalChanged = signalFlipped;
+        node.propagationState.updatedAt = update.timestamp;
+      }
     }
     
     return {

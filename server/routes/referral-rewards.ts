@@ -1,30 +1,173 @@
 import { Router } from "express";
 import { db } from "../db";
 import { eq, desc, gte, lte, and, sql } from "drizzle-orm";
+import { referralPayouts } from "../../shared/financialEnhancedSchema";
 import { authenticate, type AuthRequest } from "../auth";
+import { randomUUID } from 'crypto';
 import { requireAdmin } from "../nextAuthMiddleware";
 import { logger } from "../utils/logger";
 import cron, { ScheduledTask } from "node-cron";
+import { detectReferrerAnomalies } from "../services/sybil-defense";
 
 const router = Router();
+
+// Ensure imported drizzle helpers are referenced here where relevant.
+// `referralPayouts` is used for inserts; other helpers are available for future refactorings.
+void eq; void desc; void gte; void lte; void and;
 
 // Store cron job reference for cleanup
 let weeklyDistributionJob: ScheduledTask | null = null;
 
-// Configuration
-const WEEKLY_REWARD_POOL = 10000; // 10,000 MTAA tokens
-const REWARD_DISTRIBUTION = [
-  { rank: 1, percentage: 30, amount: 3000 },
-  { rank: 2, percentage: 20, amount: 2000 },
-  { rank: 3, percentage: 15, amount: 1500 },
-  { rank: 4, percentage: 10, amount: 1000 },
-  { rank: 5, percentage: 8, amount: 800 },
-  { rank: 6, percentage: 6, amount: 600 },
-  { rank: 7, percentage: 5, amount: 500 },
-  { rank: 8, percentage: 4, amount: 400 },
-  { rank: 9, percentage: 1.5, amount: 150 },
-  { rank: 10, percentage: 0.5, amount: 50 },
-];
+// Configuration: HYBRID TIERED MODEL (not top-10, but progressive tiers)
+// Bronze: 1-5 referrals → Points only
+// Silver: 6-20 referrals → 200 base reward
+// Gold: 21+ referrals → 500 base reward
+// Quality multiplier (1.0-1.5x) applied to Silver/Gold based on active ratio
+// 90-day vesting: 25% immediate + 25% at 30/60/90 days
+
+const REFERRAL_TIERS = {
+  bronze: { minRefs: 1, maxRefs: 5, baseReward: 0, pointsOnly: true },
+  silver: { minRefs: 6, maxRefs: 20, baseReward: 200, pointsOnly: false },
+  gold: { minRefs: 21, maxRefs: Infinity, baseReward: 500, pointsOnly: false },
+};
+
+const WEEKLY_REWARD_POOL = 10000; // 10,000 MTAA tokens (distributed proportionally among Silver/Gold)
+
+// Helper: distribute rewards for a given weekEnding (Date)
+async function distributeWeekRewards(weekEndDate: Date) {
+  const weekStartDate = new Date(weekEndDate);
+  weekStartDate.setDate(weekEndDate.getDate() - 7);
+  weekStartDate.setHours(0, 0, 0, 0);
+  weekEndDate.setHours(23, 59, 59, 999);
+
+  // Check if already distributed
+  const existing = await db.execute(sql`
+    SELECT COUNT(*) as count FROM referral_rewards WHERE "weekEnding" = ${weekEndDate}
+  `);
+  if (parseInt((existing.rows[0] as any).count) > 0) {
+    return { alreadyDistributed: true, distributions: [] };
+  }
+
+  const allReferrers = await db.execute(sql`
+    SELECT 
+      u.id,
+      COUNT(DISTINCT r.id)::integer as "totalReferrals",
+      COUNT(DISTINCT CASE WHEN r."isActive" = true THEN r.id END)::integer as "activeReferrals",
+      SUM(CASE WHEN r."isActive" = true THEN 1 ELSE 0 END)::float / NULLIF(COUNT(r.id), 0) as "qualityScore"
+    FROM users u
+    LEFT JOIN referrals r ON u.id = r."referrerId"
+    WHERE r."createdAt" >= ${weekStartDate}
+      AND r."createdAt" < ${weekEndDate}
+    GROUP BY u.id
+    HAVING COUNT(r.id) >= 1  -- Lowered from 3 to 1 (all tiers now eligible)
+  `);
+
+  const distributions: any[] = [];
+  for (const user of (allReferrers.rows as any[])) {
+    const totalRefs = user.totalReferrals || 0;
+    const activeRefs = user.activeReferrals || 0;
+    
+    // Determine tier: Bronze (1-5), Silver (6-20), Gold (21+)
+    let tierName = 'none';
+    let baseReward = 0;
+    
+    if (totalRefs >= 21) {
+      tierName = 'gold';
+      baseReward = REFERRAL_TIERS.gold.baseReward;
+    } else if (totalRefs >= 6) {
+      tierName = 'silver';
+      baseReward = REFERRAL_TIERS.silver.baseReward;
+    } else if (totalRefs >= 1) {
+      tierName = 'bronze';
+      baseReward = REFERRAL_TIERS.bronze.baseReward;  // 0 for points only
+    } else {
+      continue;  // No referrals, skip
+    }
+
+    // Skip if no base reward (Bronze tier doesn't get MTAA, only points)
+    if (baseReward === 0) {
+      logger.info('Bronze tier referrer - points only', { userId: user.id, totalRefs });
+      continue;
+    }
+    
+    // CRITICAL: Check for anomalies before awarding to prevent sybil attacks
+    try {
+      const anomalyAssessment = await detectReferrerAnomalies(user.id, 168); // 7 days lookback
+      
+      if (anomalyAssessment.riskLevel === 'critical') {
+        logger.warn('SYBIL ATTACK DETECTED: Suspending referrer from rewards', {
+          referrerId: user.id,
+          tier: tierName,
+          totalRefs,
+          riskScore: anomalyAssessment.riskScore,
+          flags: anomalyAssessment.flags
+        });
+        // Skip this referrer's reward and send alert
+        try {
+          await fetch(process.env.ADMIN_ALERT_WEBHOOK || '', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              content: `🚨 **SYBIL ATTACK**: Referrer ${user.id} risk score ${anomalyAssessment.riskScore}/100 - suspended from rewards (${tierName.toUpperCase()} tier, ${totalRefs} referrals)`
+            })
+          }).catch(() => {});
+        } catch (e) {
+          logger.debug('Admin alert send failed', e);
+        }
+        continue; // Skip to next referrer
+      }
+      
+      if (anomalyAssessment.riskLevel === 'high') {
+        logger.info('High-risk referrer - reward approved with monitoring', {
+          referrerId: user.id,
+          tier: tierName,
+          riskScore: anomalyAssessment.riskScore,
+          flags: anomalyAssessment.flags
+        });
+      }
+    } catch (anomalyErr) {
+      logger.error('Failed to check referrer anomalies - proceeding with caution', {
+        referrerId: user.id,
+        error: String(anomalyErr)
+      });
+      // On error, still award but log it
+    }
+
+    // Quality multiplier (max 1.5x) — applied to Silver/Gold tiers
+    const qualityScore = parseFloat(user.qualityScore || '0');
+    const qualityMultiplier = 1 + (qualityScore * 0.5); // 1.0 to 1.5
+    const bonusAmount = baseReward * (qualityMultiplier - 1);
+    const totalReward = baseReward + bonusAmount;
+
+    // Create reward with 90-day vesting: 25% immediate + 25% at 30/60/90 days
+    await db.execute(sql`
+      INSERT INTO referral_rewards (
+        "userId", "weekEnding", tier, "baseReward", 
+        "qualityMultiplier", "bonusAmount", "totalReward",
+        "claimedAmount", status, "vestingSchedule", "createdAt"
+      )
+      VALUES (
+        ${user.id}, ${weekEndDate}, ${tierName}, ${baseReward},
+        ${qualityMultiplier}, ${bonusAmount}, ${totalReward},
+        0, 'pending', '{\"immediate\": 25, \"30d\": 25, \"60d\": 25, \"90d\": 25}'::jsonb,
+        NOW()
+      )
+    `);
+
+    distributions.push({ 
+      userId: user.id, 
+      tier: tierName,
+      totalReferrals: totalRefs,
+      activeReferrals: activeRefs,
+      qualityScore: (qualityScore * 100).toFixed(0) + '%',
+      baseReward,
+      qualityMultiplier: qualityMultiplier.toFixed(2) + 'x',
+      totalReward: totalReward.toFixed(2)
+    });
+  }
+
+  return { alreadyDistributed: false, distributions };
+}
 
 // GET /api/referral-rewards/current-week - Get current week's leaderboard with potential rewards
 router.get("/current-week", authenticate, async (req, res) => {
@@ -39,6 +182,7 @@ router.get("/current-week", authenticate, async (req, res) => {
 
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 7);
+    weekEnd.setHours(23, 59, 59, 999);
 
     // Get top referrers for current week
     const topReferrers = await db.execute(sql`
@@ -63,11 +207,23 @@ router.get("/current-week", authenticate, async (req, res) => {
 
     // Calculate potential rewards
     const leaderboard = (topReferrers.rows as any[]).map((user, index) => {
-      const rank = index + 1;
-      const rewardConfig = REWARD_DISTRIBUTION.find(r => r.rank === rank);
-      const baseReward = rewardConfig?.amount || 0;
+      const totalRefs = parseInt(user.referralCount);
       
-      // Quality multiplier (max 2x)
+      // Determine tier for display
+      let tierName = 'none';
+      let baseReward = 0;
+      if (totalRefs >= 21) {
+        tierName = 'gold';
+        baseReward = REFERRAL_TIERS.gold.baseReward;
+      } else if (totalRefs >= 6) {
+        tierName = 'silver';
+        baseReward = REFERRAL_TIERS.silver.baseReward;
+      } else if (totalRefs >= 1) {
+        tierName = 'bronze';
+        baseReward = REFERRAL_TIERS.bronze.baseReward;
+      }
+      
+      // Quality multiplier (max 1.5x)
       const qualityScore = parseFloat(user.qualityScore || '0');
       const qualityMultiplier = 1 + (qualityScore * 0.5); // 50% active = 1.25x, 100% active = 1.5x
       const qualityBonus = baseReward * (qualityMultiplier - 1);
@@ -75,10 +231,10 @@ router.get("/current-week", authenticate, async (req, res) => {
       const totalReward = baseReward + qualityBonus;
       
       return {
-        rank,
+        tier: tierName,
         userId: user.id,
         name: `${user.firstName} ${user.lastName}`,
-        referralCount: parseInt(user.referralCount),
+        referralCount: totalRefs,
         activeReferrals: parseInt(user.activeReferrals),
         qualityScore: parseFloat((qualityScore * 100).toFixed(1)),
         baseReward,
@@ -160,116 +316,114 @@ router.post("/claim/:rewardId", authenticate, async (req, res) => {
     const rewardId = req.params.rewardId;
     const { claimAmount } = req.body; // Optional: allow partial claims
 
-    // Get reward details
-    const reward = await db.execute(sql`
-      SELECT * FROM referral_rewards
-      WHERE id = ${rewardId}
-        AND "userId" = ${userId}
-    `);
+    // Use a transaction and SELECT ... FOR UPDATE to avoid race conditions
+    const payoutId = randomUUID();
+    const claimId = randomUUID();
+    const requestId = randomUUID();
+    let actualClaimAmount: number = 0;
 
-    if (!reward.rows.length) {
-      return res.status(404).json({ error: "Reward not found" });
-    }
+    await db.transaction(async tx => {
+      // Lock the reward row
+      const rewardRow = await tx.execute(sql`
+        SELECT * FROM referral_rewards
+        WHERE id = ${rewardId}
+          AND "userId" = ${userId}
+        FOR UPDATE
+      `);
 
-    const rewardData = reward.rows[0] as any;
-    const totalReward = parseFloat(rewardData.totalReward);
-    const claimedAmount = parseFloat(rewardData.claimedAmount || '0');
-    
-    // Check if already fully claimed
-    if (rewardData.status === 'claimed') {
-      return res.status(400).json({ error: "Reward already fully claimed" });
-    }
-    
-    // Calculate claimable amount based on vesting schedule
-    const now = new Date();
-    const createdAt = new Date(rewardData.createdAt);
-    const daysSinceCreation = Math.floor((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
-    
-    // 4-tranche vesting: 25% immediate, 25% at 30d, 25% at 60d, 25% at 90d
-    let vestedPercentage = 0;
-    if (daysSinceCreation >= 90) vestedPercentage = 100;
-    else if (daysSinceCreation >= 60) vestedPercentage = 75;
-    else if (daysSinceCreation >= 30) vestedPercentage = 50;
-    else vestedPercentage = 25; // Immediate unlock
+      if (!rewardRow.rows.length) {
+        throw { status: 404, message: 'Reward not found' };
+      }
 
-    const vestedAmount = (totalReward * vestedPercentage) / 100;
-    const availableAmount = vestedAmount - claimedAmount;
+      const rewardData = rewardRow.rows[0] as any;
+      if (rewardData.status === 'claimed') {
+        throw { status: 400, message: 'Reward already fully claimed' };
+      }
 
-    if (availableAmount <= 0) {
-      const nextVestingDate = new Date(createdAt.getTime() + (daysSinceCreation < 30 ? 30 : daysSinceCreation < 60 ? 60 : 90) * 24 * 60 * 60 * 1000);
-      return res.status(400).json({ 
-        error: "No tokens available to claim yet",
-        nextVestingDate,
-        nextVestingPercentage: daysSinceCreation >= 90 ? null : (daysSinceCreation < 30 ? 50 : daysSinceCreation < 60 ? 75 : 100)
-      });
-    }
+      // Recalculate vesting and available amount from locked row
+      const now = new Date();
+      const createdAt = new Date(rewardData.createdAt);
+      const daysSinceCreation = Math.floor((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
+      let vestedPercentage = 0;
+      if (daysSinceCreation >= 90) vestedPercentage = 100;
+      else if (daysSinceCreation >= 60) vestedPercentage = 75;
+      else if (daysSinceCreation >= 30) vestedPercentage = 50;
+      else vestedPercentage = 25;
 
-    // Use requested amount or available amount if not specified
-    const actualClaimAmount = claimAmount ? Math.min(claimAmount, availableAmount) : availableAmount;
-    
-    if (actualClaimAmount <= 0) {
-      return res.status(400).json({ error: "Invalid claim amount" });
-    }
+      const totalReward = parseFloat(rewardData.totalReward);
+      const claimedAmountDb = parseFloat(rewardData.claimedAmount || '0');
+      const vestedAmount = (totalReward * vestedPercentage) / 100;
+      const availableAmount = vestedAmount - claimedAmountDb;
 
-    // Blockchain/token transfer implementation:
-    // 1. Get user's wallet address from database (SELECT wallet_address FROM users WHERE id = ?)
-    // 2. Initialize contract with ethers.js: new Contract(MTAA_ADDRESS, ERC20_ABI, signer)
-    // 3. Build transfer: const tx = await contract.transfer(walletAddress, actualClaimAmount)
-    // 4. Wait for confirmation: const receipt = await tx.wait()
-    // 5. Check receipt.status === 1 to confirm success
-    // 6. Store transaction hash in reward_claims table
-    // 7. Update user's claimedRewards field
-    // 8. Emit RewardClaimed event with user, amount, txHash
-    // Error handling:
-    // - Insufficient balance: catch and return 500 error
-    // - Network failure: retry logic with exponential backoff
-    // - Gas price spike: implement dynamic gas price calculation
-    
-    await db.execute(sql`
-      UPDATE referral_rewards
-      SET 
-        "claimedAmount" = "claimedAmount" + ${actualClaimAmount},
-        status = CASE 
-          WHEN ("claimedAmount" + ${actualClaimAmount}) >= "totalReward" THEN 'claimed'
-          ELSE 'vesting'
-        END,
-        "updatedAt" = NOW()
-      WHERE id = ${rewardId}
-    `);
+      if (availableAmount <= 0) {
+        const nextVestingDate = new Date(createdAt.getTime() + (daysSinceCreation < 30 ? 30 : daysSinceCreation < 60 ? 60 : 90) * 24 * 60 * 60 * 1000);
+        throw { status: 400, message: 'No tokens available to claim yet', meta: { nextVestingDate } };
+      }
 
-    // Log the claim in reward_claims table for audit
-    await db.execute(sql`
-      INSERT INTO reward_claims (id, "rewardId", amount, "claimedAt")
-      VALUES (gen_random_uuid(), ${rewardId}, ${actualClaimAmount}, NOW())
-    `);
+      // Validate requested amount
+      actualClaimAmount = claimAmount ? Number(claimAmount) : availableAmount;
+      if (isNaN(actualClaimAmount) || actualClaimAmount <= 0) {
+        throw { status: 400, message: 'Invalid claim amount' };
+      }
+      if (actualClaimAmount > availableAmount) {
+        throw { status: 400, message: 'Claim amount exceeds available vested amount' };
+      }
 
-    logger.info(`User ${userId} claimed ${actualClaimAmount} MTAA from reward ${rewardId}. Vested: ${vestedPercentage}%`);
+      // Fetch user's wallet address inside transaction
+      const walletRow = await tx.execute(sql`SELECT wallet_address FROM users WHERE id = ${userId} LIMIT 1`);
+      const walletAddress = walletRow.rows[0]?.wallet_address || null;
+      if (!walletAddress) {
+        throw { status: 400, message: 'No destination wallet configured for user' };
+      }
 
-    // Calculate next vesting tranche
-    let nextVestingDate = null;
-    let nextVestingPercentage = null;
-    if (daysSinceCreation < 30) {
-      nextVestingDate = new Date(createdAt.getTime() + 30 * 24 * 60 * 60 * 1000);
-      nextVestingPercentage = 50;
-    } else if (daysSinceCreation < 60) {
-      nextVestingDate = new Date(createdAt.getTime() + 60 * 24 * 60 * 60 * 1000);
-      nextVestingPercentage = 75;
-    } else if (daysSinceCreation < 90) {
-      nextVestingDate = new Date(createdAt.getTime() + 90 * 24 * 60 * 60 * 1000);
-      nextVestingPercentage = 100;
-    }
+      // Apply updates and inserts
+      await tx.execute(sql`
+        UPDATE referral_rewards
+        SET 
+          "claimedAmount" = "claimedAmount" + ${actualClaimAmount},
+          status = CASE 
+            WHEN ("claimedAmount" + ${actualClaimAmount}) >= "totalReward" THEN 'claimed'
+            ELSE 'vesting'
+          END,
+          "updatedAt" = NOW()
+        WHERE id = ${rewardId}
+      `);
 
-    res.json({
-      success: true,
-      claimed: actualClaimAmount,
-      remaining: totalReward - (claimedAmount + actualClaimAmount),
-      vestedPercentage,
-      nextVestingDate,
-      nextVestingPercentage,
-      transactionId: null, // Would be populated on blockchain transfer
+      await tx.execute(sql`
+        INSERT INTO reward_claims (id, "rewardId", amount, "claimedAt")
+        VALUES (${claimId}, ${rewardId}, ${actualClaimAmount}, NOW())
+      `);
+
+      await tx.insert(referralPayouts).values({
+        referrerId: userId,
+        referralRewardId: rewardId,
+        amount: String(actualClaimAmount),
+        currency: 'MTAA',
+        payoutMethod: 'onchain',
+        destinationAddress: walletAddress,
+        status: 'pending',
+        requestId: undefined,
+        metadata: { payoutId, claimId } as any,
+        createdAt: new Date(),
+      } as any);
+    }).catch(err => {
+      if (err && err.status) {
+        // propogate known error
+        throw err;
+      }
+      throw err;
     });
+
+    logger.info(`User ${userId} queued claim ${claimId} -> payout ${payoutId} amount ${actualClaimAmount} MTAA`);
+
+    // Return 202 Accepted to indicate asynchronous processing
+    return res.status(202).json({ success: true, queued: true, payoutId, requestId });
   } catch (error) {
     logger.error("Error claiming reward:", error);
+    if (error && (error as any).status) {
+      const e = error as any;
+      return res.status(e.status).json({ error: e.message, ...(e.meta ? { meta: e.meta } : {}) });
+    }
     res.status(500).json({ error: "Failed to claim reward" });
   }
 });
@@ -284,71 +438,10 @@ router.post("/distribute", authenticate, requireAdmin, async (req, res) => {
     }
 
     const weekEndDate = new Date(weekEnding);
-    const weekStartDate = new Date(weekEndDate);
-    weekStartDate.setDate(weekEndDate.getDate() - 7);
+    const { alreadyDistributed, distributions } = await distributeWeekRewards(weekEndDate);
 
-    // Check if already distributed
-    const existing = await db.execute(sql`
-      SELECT COUNT(*) as count
-      FROM referral_rewards
-      WHERE "weekEnding" = ${weekEndDate}
-    `);
-
-    if (parseInt((existing.rows[0] as any).count) > 0) {
-      return res.status(400).json({ error: "Rewards already distributed for this week" });
-    }
-
-    // Get top referrers
-    const topReferrers = await db.execute(sql`
-      SELECT 
-        u.id,
-        COUNT(DISTINCT r.id) as "referralCount",
-        COUNT(DISTINCT CASE WHEN r."isActive" = true THEN r.id END) as "activeReferrals",
-        SUM(CASE WHEN r."isActive" = true THEN 1 ELSE 0 END)::float / NULLIF(COUNT(r.id), 0) as "qualityScore"
-      FROM users u
-      LEFT JOIN referrals r ON u.id = r."referrerId"
-      WHERE r."createdAt" >= ${weekStartDate}
-        AND r."createdAt" < ${weekEndDate}
-      GROUP BY u.id
-      HAVING COUNT(r.id) >= 3
-      ORDER BY COUNT(r.id) DESC, "activeReferrals" DESC
-      LIMIT 10
-    `);
-
-    // Distribute rewards
-    const distributions = [];
-    for (let index = 0; index < (topReferrers.rows as any[]).length; index++) {
-      const user = topReferrers.rows[index] as any;
-      const rank = index + 1;
-      const rewardConfig = REWARD_DISTRIBUTION.find(r => r.rank === rank);
-      
-      if (!rewardConfig) continue;
-
-      const baseReward = rewardConfig.amount;
-      const qualityScore = parseFloat(user.qualityScore || '0');
-      const qualityMultiplier = 1 + (qualityScore * 0.5);
-      const bonusAmount = baseReward * (qualityMultiplier - 1);
-      const totalReward = baseReward + bonusAmount;
-
-      await db.execute(sql`
-        INSERT INTO referral_rewards (
-          id, "userId", "weekEnding", rank, "baseReward", 
-          "qualityMultiplier", "bonusAmount", "totalReward",
-          "claimedAmount", status, "vestingSchedule", "createdAt"
-        )
-        VALUES (
-          gen_random_uuid(), ${user.id}, ${weekEndDate}, ${rank}, ${baseReward},
-          ${qualityMultiplier}, ${bonusAmount}, ${totalReward},
-          0, 'pending', '{"immediate": 25, "30d": 25, "60d": 25, "90d": 25}'::jsonb,
-          NOW()
-        )
-      `);
-
-      distributions.push({
-        userId: user.id,
-        rank,
-        totalReward,
-      });
+    if (alreadyDistributed) {
+      return res.status(400).json({ error: 'Rewards already distributed for this week' });
     }
 
     logger.info(`Distributed ${distributions.length} rewards for week ending ${weekEnding}`);
@@ -366,7 +459,7 @@ router.post("/distribute", authenticate, requireAdmin, async (req, res) => {
 });
 
 // GET /api/referral-rewards/leaderboard - Get ranking with quality scoring
-router.get("/leaderboard", async (req, res) => {
+router.get("/leaderboard", authenticate, async (req, res) => {
   try {
     const { timeframe = 'all-time', limit = 50 } = req.query;
     
@@ -444,7 +537,13 @@ router.get("/stats", authenticate, async (req, res) => {
     const currentWeekPool = WEEKLY_REWARD_POOL;
     const totalDistributed = parseFloat((stats.rows[0] as any)?.totalDistributed || '0');
     const totalClaimed = parseFloat((stats.rows[0] as any)?.totalClaimed || '0');
-    const avgWeeklyDistribution = totalDistributed / Math.max(1, parseInt((stats.rows[0] as any)?.totalDistributions || '1') / 10);
+
+    // Compute average weekly distribution by counting distinct weekEnding values
+    const weekCountRow = await db.execute(sql`
+      SELECT COUNT(DISTINCT "weekEnding") as "weekCount" FROM referral_rewards
+    `);
+    const weekCount = parseInt((weekCountRow.rows[0] as any)?.weekCount || '0');
+    const avgWeeklyDistribution = totalDistributed / Math.max(1, weekCount);
 
     res.json({
       uniqueWinners: parseInt((stats.rows[0] as any)?.uniqueWinners || '0'),
@@ -468,71 +567,19 @@ function initWeeklyDistributionJob() {
   weeklyDistributionJob = cron.schedule('0 9 * * 1', async () => {
     try {
       logger.info('Starting weekly reward distribution job...');
-      
       const now = new Date();
       const weekEnding = new Date(now);
-      weekEnding.setDate(now.getDate() - now.getDay() + 7); // Next Sunday
-      
-      // Check if already distributed
-      const existing = await db.execute(sql`
-        SELECT COUNT(*) as count FROM referral_rewards WHERE "weekEnding" = ${weekEnding}
-      `);
+      // Calculate last Sunday as week ending (end-of-day)
+      weekEnding.setDate(now.getDate() - now.getDay());
+      weekEnding.setHours(23, 59, 59, 999);
 
-      if (parseInt((existing.rows[0] as any).count) > 0) {
+      const { alreadyDistributed, distributions } = await distributeWeekRewards(weekEnding);
+      if (alreadyDistributed) {
         logger.info(`Rewards already distributed for week ending ${weekEnding}`);
         return;
       }
 
-      // Get top 10 referrers for the past week
-      const weekStartDate = new Date(weekEnding);
-      weekStartDate.setDate(weekEnding.getDate() - 7);
-
-      const topReferrers = await db.execute(sql`
-        SELECT 
-          u.id,
-          COUNT(DISTINCT r.id) as "referralCount",
-          COUNT(DISTINCT CASE WHEN r."isActive" = true THEN r.id END) as "activeReferrals",
-          SUM(CASE WHEN r."isActive" = true THEN 1 ELSE 0 END)::float / NULLIF(COUNT(r.id), 0) as "qualityScore"
-        FROM users u
-        LEFT JOIN referrals r ON u.id = r."referrerId"
-        WHERE r."createdAt" >= ${weekStartDate}
-          AND r."createdAt" < ${weekEnding}
-        GROUP BY u.id
-        HAVING COUNT(r.id) >= 3
-        ORDER BY COUNT(r.id) DESC, "activeReferrals" DESC
-        LIMIT 10
-      `);
-
-      // Distribute rewards
-      for (let index = 0; index < (topReferrers.rows as any[]).length; index++) {
-        const user = topReferrers.rows[index] as any;
-        const rank = index + 1;
-        const rewardConfig = REWARD_DISTRIBUTION.find(r => r.rank === rank);
-        
-        if (!rewardConfig) continue;
-
-        const baseReward = rewardConfig.amount;
-        const qualityScore = parseFloat(user.qualityScore || '0');
-        const qualityMultiplier = 1 + (qualityScore * 0.5);
-        const bonusAmount = baseReward * (qualityMultiplier - 1);
-        const totalReward = baseReward + bonusAmount;
-
-        await db.execute(sql`
-          INSERT INTO referral_rewards (
-            id, "userId", "weekEnding", rank, "baseReward", 
-            "qualityMultiplier", "bonusAmount", "totalReward",
-            "claimedAmount", status, "vestingSchedule", "createdAt"
-          )
-          VALUES (
-            gen_random_uuid(), ${user.id}, ${weekEnding}, ${rank}, ${baseReward},
-            ${qualityMultiplier}, ${bonusAmount}, ${totalReward},
-            0, 'pending', '{"immediate": 25, "30d": 25, "60d": 25, "90d": 25}'::jsonb,
-            NOW()
-          )
-        `);
-      }
-
-      logger.info(`Distributed rewards for week ending ${weekEnding}. Top ${Math.min(10, topReferrers.rows.length)} referrers rewarded.`);
+      logger.info(`Distributed rewards for week ending ${weekEnding}. Top ${Math.min(10, distributions.length)} referrers rewarded.`);
     } catch (error) {
       logger.error('Error in weekly distribution job:', error);
     }
@@ -541,8 +588,12 @@ function initWeeklyDistributionJob() {
   logger.info('Weekly reward distribution job initialized (runs every Monday at 9 AM UTC)');
 }
 
-// Start the cron job when router loads
-initWeeklyDistributionJob();
+// Start the cron job when router loads (only in production)
+if (process.env.NODE_ENV === 'production') {
+  initWeeklyDistributionJob();
+} else {
+  logger.info('Weekly reward distribution job not started (NODE_ENV != production)');
+}
 
 // Cleanup function
 function stopWeeklyDistributionJob() {

@@ -7,6 +7,7 @@
 
 import { logger } from '../utils/logger';
 import { graphPropagationEngine, PropagationDelta } from './graphPropagationEngine';
+import { graphPropagationBus } from './graphPropagationBus';
 
 export interface OHLCVUpdate {
   symbol: string;
@@ -84,19 +85,25 @@ export async function processOHLCVUpdate(update: OHLCVUpdate): Promise<{
       `[OHLCV→Propagation] ${update.symbol}: vol ${update.previousVolatility.toFixed(3)} → ${update.volatility.toFixed(3)} (Δ${(delta.magnitude * 100).toFixed(1)}%)`
     );
     
-    // Trigger propagation
-    const modified = graphPropagationEngine.propagate(delta);
-    
-    // Update node with new volatility state
-    const node = graphPropagationEngine.getNode(update.symbol);
-    if (node) {
-      node.propagationState.volatilityScore = update.volatility;
-      node.propagationState.volatilityRegime = update.volatilityRegime;
-      node.propagationState.liquidityScore = update.liquidityScore;
-      node.currentPrice = update.price;
-      node.propagationState.updatedAt = update.timestamp;
+    // Emit on the propagation bus; if no listeners, fallback to direct propagation
+    let modified = new Map<string, any>();
+    if (graphPropagationBus.listenerCount('volatility_change') > 0) {
+      graphPropagationBus.emit('volatility_change', update.symbol, update.previousVolatility, update.volatility);
+      // integration hooks will call propagate and monitoring
+    } else {
+      // Fallback: direct propagation
+      modified = graphPropagationEngine.propagate(delta);
+      // Update node with new volatility state
+      const node = graphPropagationEngine.getNode(update.symbol);
+      if (node) {
+        node.propagationState.volatilityScore = update.volatility;
+        node.propagationState.volatilityRegime = update.volatilityRegime;
+        node.propagationState.liquidityScore = update.liquidityScore;
+        node.currentPrice = update.price;
+        node.propagationState.updatedAt = update.timestamp;
+      }
     }
-    
+
     return {
       propagated: true,
       delta,

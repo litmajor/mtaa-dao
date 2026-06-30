@@ -62,7 +62,7 @@ export class SystemMetadataModel extends EventEmitter {
       version: now.toISOString(),
       capturedAt: now,
       services: discoveredServices,
-      dependencies: this.dependencyGraph.edges.values().flat(),
+      dependencies: Array.from(this.dependencyGraph.edges.values()).flat(),
       privilegeMatrix,
       expectedServices,
       missingServices,

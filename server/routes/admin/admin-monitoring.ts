@@ -27,6 +27,8 @@ import {
   supportTicketMetrics,
 } from '../../../shared/monitoringMetricsSchema';
 import { eq, desc, sql, and, gte, lte, like } from 'drizzle-orm';
+import { referralPayouts } from '../../../shared/financialEnhancedSchema';
+import { getPayoutWorkerStatus } from '../../workers/payout-worker';
 import { requireRole } from '../../middleware/rbac';
 import { cacheManager } from '../../core/consolidation/DataCacheConsolidation';
 import { MonitoringAggregationService } from '../../services/metricsAggregationService';
@@ -140,6 +142,32 @@ router.get('/monitoring/defi-protocols', requireSuperAdmin, async (req: Request,
   } catch (error) {
     logger.error('DeFi protocols error:', error);
     res.status(500).json({ error: 'Failed to fetch DeFi protocols' });
+  }
+});
+
+// GET /api/admin/monitoring/workers
+router.get('/monitoring/workers', requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const [pending] = await db.select({ count: sql<number>`count(*)` }).from(referralPayouts).where(eq(referralPayouts.status, 'pending'));
+    const [processing] = await db.select({ count: sql<number>`count(*)` }).from(referralPayouts).where(eq(referralPayouts.status, 'processing'));
+    const [failed] = await db.select({ count: sql<number>`count(*)` }).from(referralPayouts).where(eq(referralPayouts.status, 'failed'));
+    const [completed] = await db.select({ count: sql<number>`count(*)` }).from(referralPayouts).where(eq(referralPayouts.status, 'completed'));
+
+    const workerStatus = getPayoutWorkerStatus ? getPayoutWorkerStatus() : { isRunning: false, lastRunAt: null };
+
+    res.json({
+      payouts: {
+        pending: pending.count || 0,
+        processing: processing.count || 0,
+        failed: failed.count || 0,
+        completed: completed.count || 0,
+      },
+      worker: workerStatus,
+      timestamp: new Date(),
+    });
+  } catch (error) {
+    logger.error('Workers monitoring error', error);
+    res.status(500).json({ error: 'Failed to fetch worker status' });
   }
 });
 

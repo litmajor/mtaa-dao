@@ -25,33 +25,38 @@ import { MessageType } from '../../core/agent-framework/message-bus';
 
 const logger = new Logger('synchronizer-agent');
 
-export class SynchronizerAgent extends BaseAgent {
+export class SynchronizerAgent extends BaseAgent<SyncMetrics> {
   private vectorClock: VectorClock;
   private stateDiffer: StateDiffer;
   private recoveryManager: RecoveryManager;
   private communicator: AgentCommunicator;
   private stateSnapshots: Map<string, StateSnapshot> = new Map();
-  private syncMode: SyncMode = SyncMode.STEADY_BEAT;
-  private agentStatus: AgentStatus = AgentStatus.ALIVE;
-  private sequenceNumber: number = 0;
   private privateKey: Buffer;
-  private trustedAgents: Set<string> = new Set();
-  private metrics: SyncMetrics;
   private eventEmitter: EventEmitter;
 
   constructor(agentId: string = 'SYNC-MTAA-001', variant: string = 'AETHRA') {
-    super({
-      id: agentId,
-      name: 'SYNCHRONIZER',
-      version: '1.0.0',
-      capabilities: [
-        'state_synchronization',
-        'conflict_resolution',
-        'rollback_recovery',
-        'vector_clock_sync',
-        'distributed_consensus'
-      ]
-    });
+    super(
+      {
+        id: agentId,
+        name: 'SYNCHRONIZER',
+        version: '1.0.0',
+        capabilities: [
+          'state_synchronization',
+          'conflict_resolution',
+          'rollback_recovery',
+          'vector_clock_sync',
+          'distributed_consensus'
+        ]
+      },
+      {
+        // Synchronizer-specific initial metrics (base metrics merged in BaseAgent)
+        syncLatency: [],
+        heartbeatFrequency: 0,
+        rollbackEvents: 0,
+        clusterDriftIndex: 0,
+        commitIntegrityScore: 1.0
+      }
+    );
 
     this.vectorClock = new VectorClock({ [agentId]: 0 });
     this.stateDiffer = new StateDiffer();
@@ -59,22 +64,13 @@ export class SynchronizerAgent extends BaseAgent {
     this.privateKey = this.generateKey();
     this.eventEmitter = new EventEmitter();
     this.communicator = new AgentCommunicator(agentId);
-    
+
     this.setupMessageHandlers();
 
-    // Initialize metrics with BaseAgent AgentMetrics properties
-    this.metrics = {
-      tasksProcessed: 0,
-      averageProcessingTime: 0,
-      errorRate: 0,
-      lastActive: new Date(),
-      // Synchronizer-specific metrics
-      syncLatency: [],
-      heartbeatFrequency: 0,
-      rollbackEvents: 0,
-      clusterDriftIndex: 0,
-      commitIntegrityScore: 1.0
-    } as any;
+    // Ensure sequenceNumber and syncMode defaults
+    this.sequenceNumber = this.sequenceNumber ?? 0;
+    this.syncMode = (this.syncMode as unknown as SyncMode) ?? SyncMode.STEADY_BEAT;
+    this.agentStatus = (this.agentStatus as unknown as AgentStatus) ?? AgentStatus.ALIVE;
   }
 
   private setupMessageHandlers(): void {
@@ -138,11 +134,9 @@ export class SynchronizerAgent extends BaseAgent {
     
     // Register agent with unified health registry
     try {
-      healthRegistry.recordComponentSuccess('agent', {
-        id: this.config.id,
-        name: 'SYNCHRONIZER',
-        status: 'initialized'
-      });
+      healthRegistry.registerAgent(this.config.id, 'SYNCHRONIZER');
+      // record an initial heartbeat with zero latency
+      healthRegistry.recordAgentHeartbeat(this.config.id, 0, 'healthy');
     } catch (error) {
       logger.warn('Failed to register agent with health registry:', error);
     }
@@ -174,12 +168,14 @@ export class SynchronizerAgent extends BaseAgent {
   // === Core Synchronization Methods ===
 
   generateBeat(): SyncBeat {
-    this.sequenceNumber++;
+    this.sequenceNumber = (this.sequenceNumber ?? 0) + 1;
+
+    const status = (this.agentStatus as unknown as AgentStatus) ?? AgentStatus.ALIVE;
 
     const currentState = {
       snapshots: this.stateSnapshots.size,
       mode: this.syncMode,
-      status: this.agentStatus
+      status
     };
 
     const stateHash = this.stateDiffer.computeStateHash(currentState);
@@ -187,9 +183,9 @@ export class SynchronizerAgent extends BaseAgent {
     const beatData = {
       timestamp: Date.now(),
       agentId: this.config.id,
-      status: this.agentStatus,
+      status,
       stateHash,
-      sequenceNumber: this.sequenceNumber
+      sequenceNumber: this.sequenceNumber as number
     };
 
     const messageStr = JSON.stringify(beatData);
@@ -348,20 +344,29 @@ export class SynchronizerAgent extends BaseAgent {
 
   // === Public API Methods ===
 
-  getMetrics(): SyncMetrics & { agentId: string; status: string; snapshots: number } {
+  getMetrics(): SyncMetrics & { agentId: string; status: AgentStatus; snapshots: number } {
     const avgLatency = this.metrics.syncLatency.length > 0
       ? this.metrics.syncLatency.reduce((a, b) => a + b, 0) / this.metrics.syncLatency.length
       : 0;
 
     return {
-      agentId: this.config.id,
-      status: this.agentStatus,
-      snapshots: this.stateSnapshots.size,
+      // base agent metrics
+      tasksProcessed: this.metrics.tasksProcessed,
+      averageProcessingTime: this.metrics.averageProcessingTime,
+      errorRate: this.metrics.errorRate,
+      lastActive: this.metrics.lastActive,
+
+      // synchronizer-specific metrics
       syncLatency: [avgLatency],
       heartbeatFrequency: this.metrics.heartbeatFrequency,
       rollbackEvents: this.metrics.rollbackEvents,
       clusterDriftIndex: this.metrics.clusterDriftIndex,
-      commitIntegrityScore: this.metrics.commitIntegrityScore
+      commitIntegrityScore: this.metrics.commitIntegrityScore,
+
+      // metadata
+      agentId: this.config.id,
+      status: (this.agentStatus as unknown as AgentStatus) || AgentStatus.OFFLINE,
+      snapshots: this.stateSnapshots.size
     };
   }
 

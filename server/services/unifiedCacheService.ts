@@ -122,7 +122,6 @@ class UnifiedCacheService {
   ): Promise<CacheResponse<CachedPrice>> {
     const key = `prices:${exchange}:${symbol}`;
     const staleKey = `${key}:stale`;
-
     try {
       // 1. Check fresh cache
       if (this.isConnected && this.redis) {
@@ -137,7 +136,7 @@ class UnifiedCacheService {
         }
       }
 
-      // 2. Check stale cache (return while fetching fresh in background)
+      // 2. Check stale cache
       let staleData: CachedPrice | null = null;
       if (this.isConnected && this.redis) {
         const stale = await this.redis.get(staleKey);
@@ -145,27 +144,25 @@ class UnifiedCacheService {
           staleData = JSON.parse(stale);
         }
       } else {
-        // Fallback to memory
         const memStale = this.fallbackMemory.get(staleKey);
         if (memStale && memStale.expiry > Date.now()) {
           staleData = memStale.data;
         }
       }
 
-      // 3. Fetch fresh data asynchronously
-      const freshDataPromise = fetcher();
-
-      // 3a. If we have stale data, return it immediately
+      // 3. If stale exists, return it immediately and schedule a lazy background refresh
       if (staleData) {
-        freshDataPromise
-          .then((fresh) => {
-            if (fresh) {
-              this.setPrice(key, fresh, false).catch(() => {});
-            }
-          })
-          .catch((error) => {
-            logger.debug(`Failed to refresh price ${exchange}:${symbol}:`, error.message);
-          });
+        setImmediate(() => {
+          fetcher()
+            .then((fresh) => {
+              if (fresh) {
+                this.setPrice(key, fresh, false).catch(() => {});
+              }
+            })
+            .catch((error) => {
+              logger.debug(`Failed background refresh price ${exchange}:${symbol}:`, error?.message || error);
+            });
+        });
 
         return {
           data: staleData,
@@ -175,8 +172,8 @@ class UnifiedCacheService {
         };
       }
 
-      // 3b. Otherwise, wait for fresh data
-      const fresh = await freshDataPromise;
+      // 4. No fresh or stale cache — fetch synchronously
+      const fresh = await fetcher();
       if (!fresh) {
         throw new Error(`Failed to fetch price for ${exchange}:${symbol}`);
       }
@@ -275,23 +272,19 @@ class UnifiedCacheService {
         }
       }
 
-      // 4. Fetch fresh in background
-      const freshDataPromise = fetcher();
-
-      // 4a. Return stale immediately if available
+      // If stale available, schedule lazy background refresh and return stale immediately
       if (staleData && staleData.length > 0) {
-        freshDataPromise
-          .then((fresh) => {
-            if (fresh && fresh.length > 0) {
-              this.setCandles(key, fresh, freshTTL, false).catch(() => {});
-            }
-          })
-          .catch((error) => {
-            logger.debug(
-              `Failed to refresh candles ${symbol}:${timeframe}:`,
-              error.message
-            );
-          });
+        setImmediate(() => {
+          fetcher()
+            .then((fresh) => {
+              if (fresh && fresh.length > 0) {
+                this.setCandles(key, fresh, freshTTL, false).catch(() => {});
+              }
+            })
+            .catch((error) => {
+              logger.debug(`Failed background refresh candles ${symbol}:${timeframe}:`, error?.message || error);
+            });
+        });
 
         return {
           data: staleData,
@@ -301,10 +294,29 @@ class UnifiedCacheService {
         };
       }
 
-      // 4b. Otherwise wait for fresh
-      const fresh = await freshDataPromise;
+      // Otherwise fetch synchronously
+      const fresh = await fetcher();
+
+      // If the fetcher returned empty (no market/candle data), return a degraded
+      // but graceful response instead of throwing. Throwing here cascades into
+      // DB logging attempts and can exhaust connection pools under heavy parallelism.
       if (!fresh || fresh.length === 0) {
-        throw new Error(`Failed to fetch candles for ${symbol}:${timeframe}`);
+        logger.debug(`[Cache] No candle data for ${symbol}:${timeframe} — returning empty degraded response`);
+
+        // Attempt to set an empty cache entry so repeated callers will hit cache briefly
+        // and avoid immediate repeated fetch storms. Ignore errors from setting cache.
+        try {
+          await this.setCandles(key, [], freshTTL, false);
+        } catch (err) {
+          logger.debug(`[Cache] Failed to set empty candles cache for ${symbol}:${timeframe}:`, (err as any)?.message || err);
+        }
+
+        return {
+          data: [],
+          source: 'fresh',
+          quality: 'degraded',
+          timestamp: Date.now(),
+        };
       }
 
       await this.setCandles(key, fresh, freshTTL, false);

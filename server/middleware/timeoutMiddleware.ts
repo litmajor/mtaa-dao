@@ -37,7 +37,7 @@ export const ROUTE_TIMEOUT_MAP = [
   // Moderate routes (10s)
   { pattern: /^\/api\/vault\/analytics/, timeout: TIMEOUT_CATEGORIES.MODERATE, description: 'Vault analytics' },
   { pattern: /^\/api\/investment-pools\/?$/, timeout: TIMEOUT_CATEGORIES.MODERATE, description: 'Pool listing' },
-  { pattern: /^\/api\/morio-data-hub/, timeout: TIMEOUT_CATEGORIES.MODERATE, description: 'Data hub queries' },
+  { pattern: /^\/api\/morio\/data-hub/, timeout: TIMEOUT_CATEGORIES.MODERATE, description: 'Data hub queries' },
   { pattern: /^\/api\/prices/, timeout: TIMEOUT_CATEGORIES.MODERATE, description: 'Price fetching' },
   
   // Heavy compute routes (30-60s - auto-queue after 5s if not complete)
@@ -85,7 +85,7 @@ function getTimeoutForRoute(path: string): { timeoutMs: number; queueType?: stri
  * Timeout Middleware Factory
  * Creates middleware that wraps route handlers with timeout + auto-queue logic
  */
-export function createTimeoutMiddleware(config: TimeoutConfig = {}) {
+export function createTimeoutMiddleware(config: Partial<TimeoutConfig> = {}) {
   const defaultTimeoutMs = config.defaultTimeoutMs || TIMEOUT_CATEGORIES.MODERATE;
   const heavyComputeTimeoutMs = config.heavyComputeTimeoutMs || TIMEOUT_CATEGORIES.HEAVY;
 

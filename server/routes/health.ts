@@ -1,12 +1,13 @@
 // Simple health check endpoint for API
 import express, { Request, Response, Router } from 'express';
 import { authenticate } from '../auth';
+import { requireRole } from '../middleware/rbac';
 import { db } from '../storage';
 import { metricsCollector } from '../monitoring/metricsCollector';
 import { logger } from '../utils/logger';
 import { env } from '../../shared/config.js';
 import { getRedisInstance, getRedisInstanceCount, isRedisConnected } from '../config/redisConnectionManager';
-import { RedisViolationScanner } from '../utils/redisViolationScanner';
+import { RedisViolationScanner, RedisViolation } from '../utils/redisViolationScanner';
 
 const router = express.Router();
 
@@ -263,19 +264,19 @@ router.get('/live', (req: Request, res: Response) => {
 });
 
 // Metrics endpoint for monitoring systems (JSON format)
-router.get('/metrics', authenticate, (req: Request, res: Response) => {
+router.get('/metrics', authenticate, requireRole('super_admin'), (req: Request, res: Response) => {
   const metrics = metricsCollector.getMetrics();
   res.json(metrics);
 });
 
 // Prometheus metrics endpoint
-router.get('/metrics/prometheus', authenticate, (req: Request, res: Response) => {
+router.get('/metrics/prometheus', authenticate, requireRole('super_admin'), (req: Request, res: Response) => {
   res.set('Content-Type', 'text/plain');
   res.send(metricsCollector.getPrometheusMetrics());
 });
 
 // System resource monitoring
-router.get('/system', authenticate, (req: Request, res: Response) => {
+router.get('/system', authenticate, requireRole('super_admin'), (req: Request, res: Response) => {
   const memoryUsage = process.memoryUsage();
   const cpuUsage = process.cpuUsage();
   
@@ -298,7 +299,7 @@ router.get('/system', authenticate, (req: Request, res: Response) => {
 });
 
 // Operational system health (consolidated from /api/admin/operational/health)
-router.get('/operational', authenticate, (req: Request, res: Response) => {
+router.get('/operational', authenticate, requireRole('super_admin'), (req: Request, res: Response) => {
   const systemHealth: Record<string, 'healthy' | 'warning' | 'critical'> = {
     database: 'healthy',
     blockchain: 'healthy',
@@ -323,7 +324,7 @@ router.get('/operational', authenticate, (req: Request, res: Response) => {
 });
 
 // Morio AI Assistant health (consolidated from /api/morio/health)
-router.get('/morio', authenticate, (req: Request, res: Response) => {
+router.get('/morio', authenticate, requireRole('super_admin'), (req: Request, res: Response) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -336,7 +337,7 @@ router.get('/morio', authenticate, (req: Request, res: Response) => {
 });
 
 // DEX service health (consolidated from /api/dex/health)
-router.get('/dex', authenticate, (req: Request, res: Response) => {
+router.get('/dex', authenticate, requireRole('super_admin'), (req: Request, res: Response) => {
   res.json({
     available: true,
     supportedCount: 5,
@@ -345,7 +346,7 @@ router.get('/dex', authenticate, (req: Request, res: Response) => {
 });
 
 // Graph propagation service health (consolidated from /api/propagation/health)
-router.get('/propagation', authenticate, (req: Request, res: Response) => {
+router.get('/propagation', authenticate, requireRole('super_admin'), (req: Request, res: Response) => {
   res.json({
     success: true,
     status: 'healthy',
@@ -357,7 +358,7 @@ router.get('/propagation', authenticate, (req: Request, res: Response) => {
 });
 
 // CONSOLIDATED SUBSYSTEMS HEALTH - Master endpoint for all service health
-router.get('/subsystems', authenticate, (req: Request, res: Response) => {
+router.get('/subsystems', authenticate, requireRole('super_admin'), (req: Request, res: Response) => {
   try {
     const now = new Date().toISOString();
     
@@ -522,7 +523,7 @@ router.get('/subsystems', authenticate, (req: Request, res: Response) => {
 });
 
 // Redis connection diagnostics - Shows singleton instance count and connection status
-router.get('/redis', authenticate, async (req: Request, res: Response) => {
+router.get('/redis', authenticate, requireRole('super_admin'), async (req: Request, res: Response) => {
   try {
     const instanceCount = getRedisInstanceCount();
     const isConnected = isRedisConnected();
@@ -592,10 +593,8 @@ router.get('/redis', authenticate, async (req: Request, res: Response) => {
 });
 
 // Redis violation scanner - Detects services bypassing singleton pattern
-router.get('/redis-violations', authenticate, async (req: Request, res: Response) => {
+router.get('/redis-violations', authenticate, requireRole('super_admin'), async (req: Request, res: Response) => {
   try {
-    const scanner = new RedisViolationScanner();
-    
     // Get server directory - look for common locations
     const basePaths = [
       process.cwd(),
@@ -623,15 +622,15 @@ router.get('/redis-violations', authenticate, async (req: Request, res: Response
     logger.info(`Running Redis violation scan in: ${serverDir}`);
     
     // Run scan in background to avoid timeout
-    const violations = scanner.scanProject(serverDir);
+    const violations = RedisViolationScanner.scanProject(serverDir);
     
     // Categorize violations
-    const critical = violations.filter(v => v.severity === 'critical');
-    const high = violations.filter(v => v.severity === 'high');
-    const medium = violations.filter(v => v.severity === 'medium');
+    const critical = violations.filter((v: RedisViolation) => v.severity === 'critical');
+    const high = violations.filter((v: RedisViolation) => v.severity === 'high');
+    const medium = violations.filter((v: RedisViolation) => v.severity === 'medium');
 
     // Generate human-readable report
-    const report = scanner.generateReport(violations);
+    const report = RedisViolationScanner.generateReport(violations);
 
     res.json({
       success: true,
@@ -647,26 +646,26 @@ router.get('/redis-violations', authenticate, async (req: Request, res: Response
       
       // Quick reference of violations by file
       violations: {
-        critical: critical.map(v => ({
+        critical: critical.map((v: RedisViolation) => ({
           file: v.file,
           line: v.line,
           type: v.type,
           code: v.code,
-          fix: scanner.getFix(v)
+          fix: RedisViolationScanner.getFix(v)
         })),
-        high: high.map(v => ({
+        high: high.map((v: RedisViolation) => ({
           file: v.file,
           line: v.line,
           type: v.type,
           code: v.code,
-          fix: scanner.getFix(v)
+          fix: RedisViolationScanner.getFix(v)
         })),
-        medium: medium.map(v => ({
+        medium: medium.map((v: RedisViolation) => ({
           file: v.file,
           line: v.line,
           type: v.type,
           code: v.code,
-          fix: scanner.getFix(v)
+          fix: RedisViolationScanner.getFix(v)
         }))
       },
       

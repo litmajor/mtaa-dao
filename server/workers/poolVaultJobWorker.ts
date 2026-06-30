@@ -16,13 +16,13 @@ export class PoolVaultJobWorker {
     jobQueueService.registerProcessor(
       'pool-rebalance',
       async (job: Job<JobPayload>) => await this.processPoolRebalance(job),
-      { concurrency: 2 } // 2 concurrent rebalances
+      2 // 2 concurrent rebalances
     );
 
     jobQueueService.registerProcessor(
       'vault-rebalance',
       async (job: Job<JobPayload>) => await this.processVaultRebalance(job),
-      { concurrency: 2 } // 2 concurrent vault rebalances
+      2 // 2 concurrent vault rebalances
     );
 
     logger.info('[PoolVaultJobWorker] Initialized with 2 pool + 2 vault slots');

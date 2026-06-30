@@ -232,6 +232,7 @@ export async function executeGuardedJob<T>(
     skipIfRunning?: boolean; // default: true
     logDuration?: boolean; // default: true
     timeout?: number; // max ms to allow, default: no timeout
+    onTimeout?: () => void; // optional callback invoked when timeout occurs
   }
 ): Promise<{ executed: boolean; result?: T; error?: Error; duration: number }> {
   const skipIfRunning = options?.skipIfRunning ?? true;
@@ -256,24 +257,32 @@ export async function executeGuardedJob<T>(
   }
 
   JobExecutionRegistry.markStart(jobName);
+  const start = Date.now();
 
   try {
     let result: T;
 
     if (timeout) {
-      // Execute with timeout
+      // Execute with timeout. If the timeout fires, call optional onTimeout handler
       result = await Promise.race([
         executeFn(),
         new Promise<T>((_, reject) =>
-          setTimeout(() => reject(new Error(`Job timeout after ${timeout}ms`)), timeout)
+          setTimeout(() => {
+            try {
+              options?.onTimeout?.();
+            } catch (e) {
+              // swallow errors from onTimeout
+            }
+            reject(new Error(`Job timeout after ${timeout}ms`));
+          }, timeout)
         ),
       ]);
     } else {
       result = await executeFn();
     }
 
+    const duration = Date.now() - start;
     const stats = JobExecutionRegistry.getStats(jobName)!;
-    const duration = stats.lastDuration;
 
     if (logDuration) {
       logger.debug(`[JOBS] ${jobName} completed`, {
@@ -291,12 +300,13 @@ export async function executeGuardedJob<T>(
       duration,
     };
   } catch (error) {
+    const duration = Date.now() - start;
     JobExecutionRegistry.markEnd(jobName, error instanceof Error ? error : new Error(String(error)));
 
     return {
       executed: true,
       error: error instanceof Error ? error : new Error(String(error)),
-      duration: JobExecutionRegistry.getStats(jobName)?.lastDuration || 0,
+      duration,
     };
   }
 }

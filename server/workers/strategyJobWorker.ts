@@ -17,13 +17,13 @@ export class StrategyJobWorker {
     jobQueueService.registerProcessor(
       'strategy-backtest',
       async (job: Job<JobPayload>) => await this.processBacktest(job),
-      { concurrency: 2 } // 2 concurrent backtests
+      2 // 2 concurrent backtests
     );
 
     jobQueueService.registerProcessor(
       'strategy-optimize',
       async (job: Job<JobPayload>) => await this.processOptimize(job),
-      { concurrency: 1 } // 1 concurrent optimization
+      1 // 1 concurrent optimization
     );
 
     logger.info('[StrategyJobWorker] Initialized with 2 backtest + 1 optimize slots');

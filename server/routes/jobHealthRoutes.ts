@@ -5,9 +5,14 @@
  */
 
 import express from 'express';
+import { isAuthenticated } from '../auth';
+import { requireRole } from '../middleware/rbac';
 import { JobMonitoringService } from '../services/jobMonitoringService';
 
 const router = express.Router();
+
+// All job health endpoints require super_admin authentication
+router.use(isAuthenticated, requireRole('super_admin'));
 
 /**
  * GET /admin/jobs/health

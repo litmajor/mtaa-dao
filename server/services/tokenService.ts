@@ -1,8 +1,10 @@
 // Phase 3: Enhanced Token Service with multi-token support
 import { ethers } from 'ethers';
+import { logger } from '../utils/logger';
+import { createWalletIfValid } from '../utils/cryptoWallet';
 import { TOKEN_REGISTRY, TokenInfo, TokenRegistry, YIELD_STRATEGIES } from '../../shared/tokenRegistry';
 import { db } from '../db';
-import { users, vaultGovernanceProposals } from '../../shared/schema';
+import { users, proposals } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 
 // Enhanced ERC20 ABI with additional functions for Phase 3
@@ -89,7 +91,25 @@ export class TokenService {
     // Set polling interval for faster updates (optional)
     this.provider.pollingInterval = 12000; // 12 seconds
     
-    this.signer = privateKey ? new ethers.Wallet(privateKey, this.provider) : undefined;
+    // Validate and create signer only if a plausible private key is provided
+    if (privateKey) {
+      let pk = String(privateKey).trim();
+      if (!pk.startsWith('0x')) pk = `0x${pk}`;
+      if (!/^0x[0-9a-fA-F]{64}$/.test(pk)) {
+        logger.warn('Invalid private key provided to TokenService; signer will not be created', { privateKeyMasked: `${pk.slice(0, 10)}...` });
+        this.signer = undefined;
+      } else {
+        try {
+          this.signer = createWalletIfValid(pk, this.provider) as any;
+        } catch (err: any) {
+          logger.warn('Failed to create signer for TokenService; signer will not be created', { error: err?.message ?? String(err) });
+          this.signer = undefined;
+        }
+      }
+    } else {
+      this.signer = undefined;
+    }
+
     this.network = network;
 
     // Initialize contracts for active tokens
@@ -323,10 +343,18 @@ export class TokenService {
     const tokenId = tokenMap[symbol];
     if (!tokenId) throw new Error(`${symbol} not mapped in CoinGecko`);
 
-    const response = await fetch(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${tokenId}&vs_currencies=usd&include_market_cap=false&include_24hr_vol=false&include_24hr_change=false`,
-      { timeout: 5000 }
-    );
+    const controller = new AbortController();
+    const timeoutMs = 5000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    let response: Response;
+    try {
+      response = await fetch(
+        `https://api.coingecko.com/api/v3/simple/price?ids=${tokenId}&vs_currencies=usd&include_market_cap=false&include_24hr_vol=false&include_24hr_change=false`,
+        { signal: controller.signal }
+      );
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) throw new Error(`CoinGecko API error: ${response.statusText}`);
 
@@ -353,10 +381,15 @@ export class TokenService {
     const tokenAddress = tokenMap[symbol];
     if (!tokenAddress) throw new Error(`${symbol} not mapped in DeFiLlama`);
 
-    const response = await fetch(
-      `https://coins.llama.fi/price/current/${tokenAddress}`,
-      { timeout: 5000 }
-    );
+    const controller = new AbortController();
+    const timeoutMs = 5000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    let response: Response;
+    try {
+      response = await fetch(`https://coins.llama.fi/price/current/${tokenAddress}`, { signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) throw new Error(`DeFiLlama API error: ${response.statusText}`);
 
@@ -481,19 +514,27 @@ export class TokenService {
     if (!proposer) throw new Error('Proposer not found');
 
     // Create governance proposal in database
+    // Insert into the canonical `proposals` table (matches schema)
+    // daoId is required by the schema; use DEFAULT_DAO_ID env or a sentinel placeholder
+    const daoIdFallback = process.env.DEFAULT_DAO_ID || '00000000-0000-0000-0000-000000000000';
+    const voteEndTime = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
     const [proposal] = await db
-      .insert(vaultGovernanceProposals)
+      .insert(proposals)
       .values({
         id: crypto.randomUUID(),
         title: `Add ${tokenInfo.symbol} (${tokenInfo.name}) to Treasury`,
         description: description || `Governance proposal to add ${tokenInfo.name} (${tokenInfo.symbol}) to the token treasury`,
-        proposerId: proposerId,
         proposalType: 'token_addition',
-        details: JSON.stringify(proposalData),
-        votingStartBlock: currentBlock,
-        votingEndBlock: votingEndBlock,
-        minQuorum: 4, // 4% of tokens
+        proposer: proposerId,
+        proposerId: proposerId,
+        userId: proposerId,
+        daoId: daoIdFallback,
+        voteStartTime: new Date(),
+        voteEndTime: voteEndTime,
+        quorumRequired: 4,
         status: 'active',
+        metadata: { proposalData },
         createdAt: new Date(),
         updatedAt: new Date()
       })

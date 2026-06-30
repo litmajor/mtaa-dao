@@ -22,7 +22,7 @@
 import ccxt from 'ccxt';
 import { CEXPriceRepository } from '../repositories/cexPriceRepository';
 import { cacheManager } from '../core/consolidation/DataCacheConsolidation';
-import { ccxtService } from './ccxtService';
+import { ccxtService, CCXTSymbolError } from './ccxtService';
 import { symbolUniverseService } from './symbolUniverseService';
 import { logger } from '../utils/logger';
 import { Pool } from 'pg';
@@ -76,6 +76,8 @@ export class CEXPriceCollector {
   private db: Pool;
   private cache: any;
   private activeCollections: Set<string> = new Set();
+  // Track per-exchange safety-valve timeout handles so they can be cancelled
+  private activeTimeouts: Map<string, NodeJS.Timeout> = new Map();
   private lastCollectionTime: Map<string, number> = new Map();
   private collectionErrors: Map<string, number> = new Map();
   private perExchangeLatency: Map<string, number[]> = new Map();
@@ -127,13 +129,17 @@ export class CEXPriceCollector {
     this.activeCollections.add(exchange);
     this.failureLog.set(exchange as string, []);
 
-    // Safety valve: clear stuck collections
-    const timeoutHandle = setTimeout(() => {
+    // Safety valve: clear stuck collections (register handle so caller can cancel on global abort)
+    let timeoutHandle: NodeJS.Timeout | null = null;
+    timeoutHandle = setTimeout(() => {
       if (this.activeCollections.has(exchange)) {
         logger.warn(`[CEXPriceCollector] Force-clearing stuck collection for ${exchange}`);
         this.activeCollections.delete(exchange);
       }
+      // remove fired timeout handle
+      this.activeTimeouts.delete(exchange as string);
     }, this.COLLECTION_TIMEOUT * 2);
+    this.activeTimeouts.set(exchange as string, timeoutHandle);
 
     try {
       let processedCount = 0;
@@ -203,7 +209,12 @@ export class CEXPriceCollector {
         error: error instanceof Error ? error.message : 'Unknown error',
       };
     } finally {
-      clearTimeout(timeoutHandle);
+      if (timeoutHandle) {
+        try {
+          clearTimeout(timeoutHandle);
+        } catch (e) {}
+        this.activeTimeouts.delete(exchange as string);
+      }
       this.activeCollections.delete(exchange);
       this.recordExchangeLatency(exchange as string, Date.now() - startTime);
     }
@@ -364,33 +375,17 @@ export class CEXPriceCollector {
     exchange: keyof typeof SUPPORTED_EXCHANGES,
     originalPair: string
   ): Promise<any | null> {
-    const [base, quote] = originalPair.split('/');
-    if (!base || !quote) return null;
-
-    const symbolsToTry = [
-      originalPair,
-      `${base}/${quote.slice(0, 3)}`,
-      `${base.toUpperCase()}/${quote.toUpperCase()}`,
-      `${base.toLowerCase()}/${quote.toLowerCase()}`,
-    ].filter((s, i, arr) => arr.indexOf(s) === i);
-
-    for (const symbol of symbolsToTry) {
-      try {
-        const result = await ccxtService.getTickerFromExchange(exchange as string, symbol);
-        if (result) return { ...result, _resolvedSymbol: symbol };
-      } catch (error: any) {
-        const isMissingPair =
-          error.code === 'BadSymbol' ||
-          error.message?.includes('does not have market symbol') ||
-          error.message?.includes('Invalid pair') ||
-          error.message?.includes('not found');
-
-        if (isMissingPair) continue;
-        throw error; // non-symbol error — propagate
-      }
+    // Simplified: rely on CCXTAggregator.formatSymbolForExchange and
+    // getTickerFromExchange to perform symbol normalization and market loading.
+    try {
+      const ticker = await ccxtService.getTickerFromExchange(exchange as string, originalPair);
+      if (!ticker) return null;
+      return { ...ticker, _resolvedSymbol: ticker.symbol };
+    } catch (error: any) {
+      // If CCXT reports the symbol is not supported on this exchange, return null
+      if (error instanceof CCXTSymbolError) return null;
+      throw error;
     }
-
-    return null;
   }
 
   /**
@@ -403,7 +398,18 @@ export class CEXPriceCollector {
   ): Promise<T> {
     try {
       return await fn();
-    } catch (error) {
+    } catch (error: any) {
+      // Deterministic symbol errors should not be retried
+      if (
+        error instanceof CCXTSymbolError ||
+        error?.code === 'BadSymbol' ||
+        error?.message?.includes('does not have market symbol') ||
+        error?.message?.includes('Invalid pair') ||
+        error?.message?.includes('not found')
+      ) {
+        throw error;
+      }
+
       if (retries > 0) {
         await this.delay(this.RETRY_DELAY);
         return this.fetchWithRetry(fn, retries - 1);
@@ -709,6 +715,28 @@ export class CEXPriceCollector {
       };
     }
     return result;
+  }
+
+  /**
+   * Force-clear any active collection locks. This is used by callers (eg. background
+   * schedulers) to release stuck in-progress flags when an external timeout occurs.
+   */
+  clearAllActiveCollections(): void {
+    const count = this.activeCollections.size;
+    if (count > 0) {
+      logger.warn(`[CEXPriceCollector] Clearing ${count} active collection lock(s)`);
+    }
+    // Clear active collection flags
+    this.activeCollections.clear();
+    // Clear and cancel any registered safety-valve timeouts so they don't fire later
+    for (const [ex, handle] of this.activeTimeouts.entries()) {
+      try {
+        clearTimeout(handle);
+      } catch (e) {}
+    }
+    this.activeTimeouts.clear();
+    // also clear failure logs to avoid reporting stale failures
+    this.failureLog.clear();
   }
 
   private delay(ms: number): Promise<void> {

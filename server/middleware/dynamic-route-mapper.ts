@@ -266,7 +266,15 @@ export function registerExpressRoutes(app: Express) {
     for (const layer of router.stack) {
       if (layer.route) {
         // It's a route
-        const path = basePath + (layer.route.path || '');
+        // Ensure both basePath and route.path are strings (safety check)
+        const routePath = typeof layer.route.path === 'string' ? layer.route.path : '';
+        const path = (basePath + routePath).replace(/RegExp/g, ''); // Remove any stray RegExp strings
+        
+        // Skip routes with invalid paths
+        if (!path || typeof path !== 'string') {
+          continue;
+        }
+        
         const methods = Object.keys(layer.route.methods) as any[];
 
         for (const method of methods) {
@@ -287,12 +295,43 @@ export function registerExpressRoutes(app: Express) {
         }
       } else if (layer.name === 'router' && layer.handle.stack) {
         // It's a sub-router
-        const prefix = layer.regexp
-          .source.replace(/\\/g, '')
-          .replace(/\?/g, '')
-          .replace(/\$/g, '')
-          .replace(/\^/g, '')
-          .replace(/[()]/g, '');
+        // Properly extract the path prefix from the router layer
+        // layer.regexp is Express's internal regex for matching, e.g., /^\/v1\/?$/i for /v1
+        let prefix = '';
+        
+        // First, try to use the mount path if available
+        if (layer.route && typeof layer.route.path === 'string') {
+          prefix = layer.route.path;
+        } else if (layer.regexp && typeof layer.regexp.source === 'string') {
+          // Extract path from regexp source more carefully
+          // Express regexes typically look like: /^\/path\/?$/i or /^\/path(?:\/|$)/i
+          const regexSource = layer.regexp.source;
+          
+          // Skip if this looks like a parameter pattern (e.g., for :id matching)
+          if (regexSource.includes('(?:') || regexSource.includes('\\d')) {
+            // This is likely a parameter pattern, skip it
+            prefix = '';
+          } else {
+            // Remove start anchor, end anchor, and common suffixes
+            let path = regexSource
+              .replace(/^\^/, '')           // Remove start anchor ^
+              .replace(/\$.*$/, '')         // Remove end anchor and beyond
+              .replace(/\(\?:\\\\\/\|\$\)$/g, '') // Remove optional trailing slash pattern
+              .replace(/\\\/\|\$/, '')      // Remove | pattern
+              .replace(/\\\//g, '/');       // Unescape forward slashes
+            
+            // Clean up any remaining regex metacharacters
+            if (path && path !== '/' && !path.includes('RegExp')) {
+              prefix = path;
+            }
+          }
+        }
+        
+        // Ensure prefix is a string (safety check to prevent RegExp objects)
+        if (typeof prefix !== 'string') {
+          prefix = '';
+        }
+        
         scanRouter(layer.handle, basePath + prefix);
       }
     }

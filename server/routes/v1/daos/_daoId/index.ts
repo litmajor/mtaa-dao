@@ -28,6 +28,8 @@ import governanceRouter from './governance';
 import abuseRouter from './abuse';
 import contributionsRouter from './contributions';
 import billingRouter from './billing';
+import intelligenceRouter from './intelligence';
+import tasksRouter from './tasks';
 
 const router = express.Router({ mergeParams: true });
 
@@ -107,5 +109,18 @@ router.use('/billing', billingRouter);
  * Features: Proof generation, trust scores, ledger exports
  */
 router.use('/contributions', contributionsRouter);
+
+/**
+ * Intelligence Sub-Router
+ * Real-time DAO events and insights
+ */
+router.use('/intelligence', intelligenceRouter);
+
+/**
+ * Tasks Sub-Router
+ * DAO task bounty board — create, claim, verify tasks with rewards
+ * Admin/elder: create, verify, cancel | Members: list, claim
+ */
+router.use('/tasks', tasksRouter);
 
 export default router;

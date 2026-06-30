@@ -5,7 +5,7 @@
 
 import { BaseAgent } from '../agents/framework/base-agent';
 import { SynchronizerAgent } from '../agents/synchronizer';
-import { TradingAgentBase } from '../agents/trading';
+import { TradingAgentBase, IRouteExecutor } from '../agents/trading';
 import { AnomalyDetectionAgent } from '../agents/anomaly-detection';
 import { ComplianceAgent } from '../agents/compliance';
 import { GovernanceAnalyticsAgent } from '../agents/governance';
@@ -70,9 +70,16 @@ export class AgentRegistry {
         case 'synchronizer':
           instance = new SynchronizerAgent(id);
           break;
-        case 'trading':
-          instance = new TradingAgentBase(id);
+        case 'trading': {
+          // Provide a minimal default executor for local-only agents.
+          const defaultExecutor: IRouteExecutor = {
+            async execute(_route, _inputAmount) {
+              return { txHash: '', actualOutput: '0', actualSlippage: 0, gasCost: '0' };
+            }
+          };
+          instance = new TradingAgentBase(defaultExecutor, id);
           break;
+        }
         case 'anomaly_detection':
           instance = new AnomalyDetectionAgent(id);
           break;

@@ -371,7 +371,7 @@ export class HealthRegistry extends EventEmitter {
 
   private dbHealth: DatabaseHealthStatus = {
     isConnected: false,
-    status: 'unknown',
+    status: 'disconnected',
     latency: null,
     queryFailureRate: 0,
     slowQueryCount: 0,
@@ -525,6 +525,14 @@ export class HealthRegistry extends EventEmitter {
 
   getLastSnapshot(): SystemHealthSnapshot | null {
     return this.lastSnapshot;
+  }
+
+  /**
+   * Backwards-compatible getter used by callers expecting a synchronous snapshot.
+   * Returns the last snapshot if available, otherwise generates and returns a fresh snapshot.
+   */
+  getSnapshot(): SystemHealthSnapshot {
+    return this.lastSnapshot ?? this.takeSnapshot();
   }
 
   // ===== MONITORING =====

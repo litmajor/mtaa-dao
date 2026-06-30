@@ -29,6 +29,7 @@ import { orderRouter } from './orderRouter';
 import { collectorService } from './collectorService';
 import { engineService } from './engineService';
 import { TokenRegistry } from '../../shared/tokenRegistry'; // FIX 1: instance, not class
+import { symbolUniverseService } from './symbolUniverseService'; // NEW: CEX asset discovery
 import { executeGuardedJob } from '../utils/jobExecutionGuard';
 import pLimit from 'p-limit';
 
@@ -82,6 +83,11 @@ class OpportunityEngineService {
   private discoveredAssets: string[] = [];
   private assetsLastDiscovered = 0;
   private readonly ASSET_DISCOVERY_INTERVAL = 300_000; // 5 minutes
+  // Tokens that are native to Celo or otherwise not listed on centralized exchanges
+  // (uppercase keys for case-insensitive comparisons)
+  private readonly CEX_INCOMPATIBLE = new Set([
+    'CKES', 'CUSD', 'CEUR', 'CREAL', 'CELO', 'MTAA'
+  ]);
 
   constructor() {
     logger.info('[OpportunityEngine] Initialized');
@@ -144,14 +150,40 @@ class OpportunityEngineService {
 
     logger.info('[OpportunityEngine] Discovering tradeable assets…');
 
-    // Method 1: collectorService
+    // Method 1: symbolUniverseService (via marketUniverseBuilder) — NEW: preferred
+    try {
+      const symbols = await symbolUniverseService.getAllCEXSymbols({ limit: 100 });
+      if (symbols && symbols.length > 0) {
+        // Already filtered by CEX_INCOMPATIBLE upstream, but apply local filter for safety
+        const filtered = symbols
+          .map((s: string) => String(s))
+          .filter((s: string) => !this.CEX_INCOMPATIBLE.has(s.toUpperCase()));
+
+        this.discoveredAssets = filtered;
+        this.assetsLastDiscovered = now;
+        logger.info(
+          `[OpportunityEngine] Discovered ${this.discoveredAssets.length} CEX assets via symbolUniverseService`
+        );
+        return this.discoveredAssets;
+      }
+    } catch (err) {
+      logger.debug('[OpportunityEngine] symbolUniverseService discovery failed:', err);
+    }
+
+    // Method 2: collectorService (fallback)
     try {
       const symbols = await collectorService.getActiveSymbols?.(); // FIX 7: don't pass empty []
       if (symbols && symbols.length > 0) {
-        this.discoveredAssets = symbols.slice(0, 100);
+        // Filter out CEX-incompatible native tokens
+        const filtered = symbols
+          .map((s: string) => String(s))
+          .filter((s: string) => !this.CEX_INCOMPATIBLE.has(s.toUpperCase()))
+          .slice(0, 100);
+
+        this.discoveredAssets = filtered;
         this.assetsLastDiscovered = now;
         logger.info(
-          `[OpportunityEngine] Discovered ${this.discoveredAssets.length} assets via collectorService`
+          `[OpportunityEngine] Discovered ${this.discoveredAssets.length} assets via collectorService (excluded ${symbols.length - filtered.length})`
         );
         return this.discoveredAssets;
       }
@@ -159,7 +191,7 @@ class OpportunityEngineService {
       logger.debug('[OpportunityEngine] collectorService discovery failed:', err);
     }
 
-    // Method 2: TokenRegistry — FIX 2: use real TokenMetadata fields only
+    // Method 3: TokenRegistry (fallback) — FIX 2: use real TokenMetadata fields only
     try {
       const allTokens = TokenRegistry.getAllTokens();
       const discovered = allTokens
@@ -170,10 +202,12 @@ class OpportunityEngineService {
         .slice(0, 100);
 
       if (discovered.length > 0) {
-        this.discoveredAssets = discovered;
+        // Filter out CEX-incompatible native tokens
+        const filtered = discovered.filter((s: string) => !this.CEX_INCOMPATIBLE.has(s.toUpperCase()));
+        this.discoveredAssets = filtered;
         this.assetsLastDiscovered = now;
         logger.info(
-          `[OpportunityEngine] Discovered ${discovered.length} assets via tokenRegistry`
+          `[OpportunityEngine] Discovered ${filtered.length} assets via tokenRegistry (excluded ${discovered.length - filtered.length})`
         );
         return this.discoveredAssets;
       }
@@ -182,17 +216,18 @@ class OpportunityEngineService {
       logger.debug('[OpportunityEngine] tokenRegistry discovery failed:', err);
     }
 
-    // Method 3: hardcoded fallback
+    // Method 4: hardcoded fallback
     const fallback = [
-      'CELO', 'USDC', 'USDT', 'ETH', 'BTC', 'DAI', 'cUSD', 'cEUR',
+      'CELO', 'USDC', 'USDT', 'ETH', 'BTC', 'DAI',
       'MATIC', 'AAVE', 'LINK', 'UNI', 'SUSHI',
     ];
     logger.warn(
       `[OpportunityEngine] Using hardcoded fallback (${fallback.length} symbols)`
     );
-    this.discoveredAssets = fallback;
+    const filteredFallback = fallback.filter((s) => !this.CEX_INCOMPATIBLE.has(s.toUpperCase()));
+    this.discoveredAssets = filteredFallback;
     this.assetsLastDiscovered = now;
-    return fallback;
+    return filteredFallback;
   }
 
   // ---------------------------------------------------------------------------
@@ -246,10 +281,14 @@ class OpportunityEngineService {
       const tf1d = tfIndicators.get('1d');
 
       if (!tf15m || !tf1h || !tf4h || !tf1d) {
+        // In development or degraded modes some timeframes may be missing.
+        // Instead of hard-blocking further processing, return a neutral-but-passing score
+        // so arbitrage detection can still run. Debug-log the missing data for visibility.
+        logger.debug(`[OpportunityEngine] Incomplete timeframe data for ${asset} — using neutral pass`);
         return {
-          signalStrength: 0,
+          signalStrength: 35,
           direction: 'neutral',
-          reasoning: ['Incomplete timeframe data'],
+          reasoning: ['Incomplete timeframe data — neutral pass'],
         };
       }
 
@@ -319,8 +358,12 @@ class OpportunityEngineService {
   private async performScaledCEXScan(): Promise<OpportunityData[]> {
     const t0 = Date.now();
 
-    const assetsToScan = await this.discoverAssetsForScanning();
-    logger.info(`[CEXScan] Scanning ${assetsToScan.length} assets`);
+    const discovered = await this.discoverAssetsForScanning();
+    // Exclude native / CEX-incompatible tokens from CEX tracking — not listed on most CEX order books
+    const assetsToScan = discovered.filter((a) => !this.CEX_INCOMPATIBLE.has(String(a).toUpperCase()));
+    logger.info(
+      `[CEXScan] Scanning ${assetsToScan.length} assets (excluded ${Array.from(this.CEX_INCOMPATIBLE).join(', ')})`
+    );
 
     const allIndicators = await this.fetchMultiTimeframeIndicators(
       assetsToScan.slice(0, 100)

@@ -25,6 +25,7 @@ import {
   type DaoTypeKey,
 } from '../../contracts/chamaTreasuryDeployer';
 import { ethers } from 'ethers';
+import { createWalletIfValid } from '../utils/cryptoWallet';
 import { registerEscrowReferral } from '../services/referral-integration';
 
 const logger = new Logger('dao-deploy');
@@ -470,6 +471,72 @@ export async function daoDeployHandler(req: Request, res: Response) {
 
     logger.info(`Vault record created: ${vault.id}`);
 
+    // ── 6.a Grant roles on an existing MultiAssetVault to the ChamaTreasury
+    // If the client provided a `multiAssetVaultAddress` (or daoData.vaultAddress),
+    // attempt to grant MANAGER_ROLE and REBALANCER_ROLE to the deployed ChamaTreasury.
+    // This is idempotent: we first check hasRole before calling grantRole.
+    const multiAssetVaultAddress = (req.body as any).multiAssetVaultAddress || (daoData as any).vaultAddress || null;
+    if (multiAssetVaultAddress && treasuryAddress) {
+      try {
+        const rpcUrl = process.env.CELO_RPC_URL || process.env.RPC_URL;
+        const pk = process.env.PLATFORM_PRIVATE_KEY;
+        if (!rpcUrl || !pk) throw new Error('Missing PLATFORM_PRIVATE_KEY or RPC URL for role grants');
+
+        const provider = new ethers.JsonRpcProvider(rpcUrl);
+        const wallet = createWalletIfValid(pk, provider);
+        if (!wallet) throw new Error('Invalid PLATFORM_PRIVATE_KEY; cannot perform on-chain role grants');
+
+        const VAULT_ABI = [
+          'function hasRole(bytes32 role, address account) view returns (bool)',
+          'function grantRole(bytes32 role, address account)'
+        ];
+
+        const vaultContract = new ethers.Contract(multiAssetVaultAddress, VAULT_ABI, wallet);
+
+        const MANAGER_ROLE = ethers.keccak256(ethers.toUtf8Bytes('MANAGER_ROLE'));
+        const REBALANCER_ROLE = ethers.keccak256(ethers.toUtf8Bytes('REBALANCER_ROLE'));
+
+        // Helper to grant if missing. Returns txHash string when granted, null otherwise.
+        async function ensureGrant(role: string, subject: string): Promise<string | null> {
+          try {
+            const has = await vaultContract.hasRole(role, subject);
+            if (has) {
+              logger.info(`Vault ${multiAssetVaultAddress} already has role ${role} for ${subject}`);
+              return null;
+            }
+            const tx = await vaultContract.grantRole(role, subject);
+            const receipt = await tx.wait();
+            logger.info(`Granted role ${role} to ${subject} on vault ${multiAssetVaultAddress} tx=${receipt.transactionHash}`);
+            return receipt.transactionHash as string;
+          } catch (err) {
+            logger.warn(`Could not grant role ${role} to ${subject} on ${multiAssetVaultAddress}`, err);
+            return null;
+          }
+        }
+
+        // Perform grants but do not fail the overall DAO creation if they fail
+        const managerTx = await ensureGrant(MANAGER_ROLE, treasuryAddress);
+        if (managerTx) {
+          try {
+            await db.update(vaults).set({ managerRoleGrantTx: managerTx, updatedAt: new Date() } as any).where(eq(vaults.id, vault.id));
+          } catch (err) {
+            logger.warn('Failed to persist manager role grant tx in DB', err);
+          }
+        }
+
+        const rebalancerTx = await ensureGrant(REBALANCER_ROLE, treasuryAddress);
+        if (rebalancerTx) {
+          try {
+            await db.update(vaults).set({ rebalancerRoleGrantTx: rebalancerTx, updatedAt: new Date() } as any).where(eq(vaults.id, vault.id));
+          } catch (err) {
+            logger.warn('Failed to persist rebalancer role grant tx in DB', err);
+          }
+        }
+      } catch (err) {
+        logger.warn('Role grant flow skipped or failed', err);
+      }
+    }
+
     // Update DAO record with treasury address if we got one
     if (treasuryAddress) {
       await db
@@ -594,7 +661,8 @@ export async function daoDeployHandler(req: Request, res: Response) {
         if (!rpcUrl || !pk) throw new Error('Missing PLATFORM_PRIVATE_KEY or RPC URL');
 
         const provider = new ethers.JsonRpcProvider(rpcUrl);
-        const wallet = new ethers.Wallet(pk, provider);
+        const wallet = createWalletIfValid(pk, provider);
+        if (!wallet) throw new Error('Invalid PLATFORM_PRIVATE_KEY; cannot perform on-chain reward pull');
 
         const REWARDS_ABI = [
           'function pullRewardsFrom(address from, uint256 amount) external',
@@ -706,7 +774,10 @@ export async function daoDeployHandler(req: Request, res: Response) {
 
     return res.status(201).json({
       success: true,
+      daoId: dao.id,
       daoAddress: dao.id,
+      vaultId: vault.id,
+      vaultAddress: treasuryAddress || null,
       treasuryAddress: treasuryAddress || null,
       treasuryPending: !treasuryAddress,
       dao: {

@@ -159,11 +159,15 @@ class OrderRouter {
   private executionHistory = new Map<string, ExecutionRecord[]>(); // Track execution history for learning
   private performanceMemory = new Map<string, PerformanceMemory>(); // Real-time performance tracking
   private confidenceScores = new Map<string, ConfidenceScore>(); // Confidence scores by venue/symbol
+  private readonly MEMORY_REDIS_KEY = 'orderrouter:performance:v1';
+  private readonly MEMORY_TTL_SECONDS = 86400 * 30; // 30 days
 
   constructor() {
     logger.info('✅ Order Router Service initialized (v2: Adaptive Intelligence)');
     this.initializeConfidenceScores();
     this.initializePerformanceMemory();
+    // Load persisted performance memory (fire-and-forget)
+    this.loadPerformanceMemory().catch((err) => logger.warn(`[OrderRouter] Failed to load persisted memory: ${err?.message || err}`));
   }
 
   /**
@@ -419,6 +423,13 @@ class OrderRouter {
 
     logger.info(`[SELF-CORRECT] ${record.exchange}: slippage=${memory.avgSlippage.toFixed(3)}%, fillRate=${(memory.fillRate * 100).toFixed(1)}%, trustScore=${memory.trustScore.toFixed(0)}`);
 
+    // Persist updated performance memory asynchronously (best-effort)
+    try {
+      void this.persistPerformanceMemory();
+    } catch (err) {
+      logger.warn('[OrderRouter] Failed to persist performance memory (async):', err instanceof Error ? err.message : err);
+    }
+
     // Publish a lightweight execution event for real-time consumers
     try {
       const payload = {
@@ -493,6 +504,58 @@ class OrderRouter {
       latencyVariance,
       failureRate: 1 - successCount / history.length,
     };
+  }
+
+  /**
+   * Persist performance memory to Redis (best-effort)
+   */
+  async persistPerformanceMemory(): Promise<void> {
+    try {
+      const { redis } = await import('./redis');
+      // Serialize Date -> ISO strings
+      const serialized = JSON.stringify(
+        Array.from(this.performanceMemory.entries()).map(([k, v]) => [k, {
+          ...v,
+          lastExecutionTime: v.lastExecutionTime ? v.lastExecutionTime.toISOString() : undefined,
+        }])
+      );
+      await redis.set(this.MEMORY_REDIS_KEY, serialized, this.MEMORY_TTL_SECONDS);
+    } catch (err: any) {
+      logger.warn(`[OrderRouter] Failed to persist memory: ${err?.message || err}`);
+    }
+  }
+
+  /**
+   * Load performance memory from Redis (if present)
+   */
+  async loadPerformanceMemory(): Promise<void> {
+    try {
+      const { redis } = await import('./redis');
+      const raw = await redis.get(this.MEMORY_REDIS_KEY);
+      if (!raw) return;
+      const entries: Array<[string, PerformanceMemory]> = JSON.parse(raw);
+      for (const [key, memory] of entries) {
+        this.performanceMemory.set(key, {
+          ...memory,
+          lastExecutionTime: memory.lastExecutionTime ? new Date(memory.lastExecutionTime as any) : undefined,
+        });
+      }
+      logger.info(`[OrderRouter] Loaded ${entries.length} performance memory entries from Redis`);
+    } catch (err: any) {
+      logger.warn(`[OrderRouter] Failed to load memory: ${err?.message || err}`);
+    }
+  }
+
+  /**
+   * Get cUSD price in USD for normalization between on-chain cUSD and CEX USD quotes
+   */
+  private async getCUSDPriceInUSD(): Promise<number> {
+    try {
+      const ticker = await ccxtService.getTickerFromExchange('coinbase', 'CUSD/USD');
+      return (ticker && typeof ticker.last === 'number') ? ticker.last : 1.0;
+    } catch (err) {
+      return 1.0; // Default to peg if unavailable
+    }
   }
 
   /**
@@ -588,12 +651,23 @@ class OrderRouter {
     intent?: TradingIntent
   ): Promise<VenueOption | null> {
     try {
+      // Normalize cUSD <> USD spread when comparing on-chain cUSD DEX prices to CEX USD prices
+      const cUSDprice = await this.getCUSDPriceInUSD();
+      const normalizedAmount = amount * cUSDprice;
+
       const quote = await dexService.getSwapQuote(
         side === 'buy' ? 'cUSD' : symbol,
         side === 'buy' ? symbol : 'cUSD',
-        amount,
-        'ubeswap'
+        normalizedAmount,
+        'ubeswap',
+        'celo'
       );
+
+      // Adjust output for cUSD/USD spread
+      if (quote) {
+        quote.estimatedAmountOut = (quote.estimatedAmountOut || 0) * cUSDprice;
+        quote.exchangeRate = (quote.exchangeRate || 1) * cUSDprice;
+      }
 
       if (!quote) {
         return null;
@@ -757,41 +831,54 @@ class OrderRouter {
       let bestSplitCost = Infinity;
       let bestSplit: Array<{ venue: 'dex' | 'cex'; exchange?: string; amount: number }> = [];
 
-      // Test 11 different split ratios (0%, 10%, 20%, ..., 100% to DEX)
-      for (let dexPercent = 0; dexPercent <= 10; dexPercent++) {
-        const ratio = dexPercent / 10;
+      // Continuous optimization: adapt granularity to order size
+      const SPLIT_STEPS = totalAmount > 10000 ? 50 : 11;
+      for (let step = 0; step <= SPLIT_STEPS; step++) {
+        const ratio = step / SPLIT_STEPS;
         const dexAmount = totalAmount * ratio;
-        const cexAmount = totalAmount * (1 - ratio);
+        const cexAmount = totalAmount - dexAmount;
 
-        // Calculate cost for this split
         let splitCost = 0;
+        const candidateSplit: Array<{ venue: 'dex' | 'cex'; exchange?: string; amount: number }> = [];
 
         if (dexAmount > 0 && dexOption) {
-          // DEX cost with non-linear slippage scaling
           const dexSlippage = this.calculateNonLinearSlippage(
             dexAmount,
             this.performanceMemory.get('dex')?.liquidityDepth || 50000,
             dexOption.slippage ? dexOption.slippage / (totalAmount * dexOption.price) : 0.014
           );
           splitCost += dexAmount * dexOption.price + dexSlippage + (dexOption.gasCost || 0);
+          candidateSplit.push({ venue: 'dex', amount: dexAmount });
         }
 
         if (cexAmount > 0 && cexOptions.length > 0) {
-          // Use best CEX for this portion
-          const bestCex = cexOptions[0];
-          splitCost += cexAmount * bestCex.price + (bestCex.fee || 0);
+          if (totalAmount > 5000 && cexOptions.length >= 2) {
+            // Distribute CEX portion across top 2 exchanges by confidence
+            const sortedCex = cexOptions.slice().sort((a, b) => {
+              const sa = this.getConfidenceScore(a.exchange || '', symbol).calculatedScore || 0;
+              const sb = this.getConfidenceScore(b.exchange || '', symbol).calculatedScore || 0;
+              return sb - sa;
+            });
+            const [cex1, cex2] = [sortedCex[0], sortedCex[1]];
+            const cex1Ratio = 0.6;
+            const cex1Amount = cexAmount * cex1Ratio;
+            const cex2Amount = cexAmount - cex1Amount;
+
+            splitCost += cex1Amount * cex1.price + (cex1.fee || 0);
+            splitCost += cex2Amount * cex2.price + (cex2.fee || 0);
+
+            candidateSplit.push({ venue: 'cex', exchange: cex1.exchange, amount: cex1Amount });
+            candidateSplit.push({ venue: 'cex', exchange: cex2.exchange, amount: cex2Amount });
+          } else {
+            const bestCex = cexOptions[0];
+            splitCost += cexAmount * bestCex.price + (bestCex.fee || 0);
+            candidateSplit.push({ venue: 'cex', exchange: bestCex.exchange, amount: cexAmount });
+          }
         }
 
-        // Track best split
         if (splitCost < bestSplitCost) {
           bestSplitCost = splitCost;
-          bestSplit = [];
-          if (dexAmount > 0) {
-            bestSplit.push({ venue: 'dex', amount: dexAmount });
-          }
-          if (cexAmount > 0) {
-            bestSplit.push({ venue: 'cex', exchange: cexOptions[0].exchange, amount: cexAmount });
-          }
+          bestSplit = candidateSplit;
         }
       }
 

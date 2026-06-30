@@ -21,6 +21,7 @@ export interface TokenInfo {
   maxDailyVolume?: string; // In token units
   requiresKyc?: boolean;
   emerging?: boolean; // Mark tokens as emerging/new
+  celoNativeOnly?: boolean; // mark tokens that are Celo-native and shouldn't be treated as CEX-listed
   
   // Multi-chain support
   chains?: {
@@ -38,7 +39,7 @@ export interface TokenInfo {
     riskScore?: 'low' | 'medium' | 'high';
     liquidityScore?: number;        // 1-100, higher = more liquidity
     volatilityScore?: number;       // 1-100, higher = more volatile
-    supportedExchanges?: string[]; // Exchanges where token is traded
+      supportedExchanges?: string[]; // Exchanges where token is traded
   };
 }
 
@@ -146,8 +147,9 @@ export const TOKEN_REGISTRY: Record<string, TokenInfo> = {
       riskScore: 'low',
       liquidityScore: 70,
       volatilityScore: 5,
-      supportedExchanges: ['binance', 'coinbase', 'kraken']
-    }
+      supportedExchanges: []
+    },
+    celoNativeOnly: true,
   },
 
   cKES: {
@@ -169,8 +171,9 @@ export const TOKEN_REGISTRY: Record<string, TokenInfo> = {
       riskScore: 'low',
       liquidityScore: 45,
       volatilityScore: 8,
-      supportedExchanges: ['binance', 'bybit', 'kucoin']
-    }
+      supportedExchanges: []
+    },
+    celoNativeOnly: true,
   },
 
   USDT: {
@@ -381,6 +384,25 @@ export class TokenRegistry {
     return TokenRegistry.getAllTokens();
   }
 
+  /**
+   * Get all Celo-native symbols that should NEVER hit CEX APIs.
+   * Includes both native assets and tokens with no meaningful CEX presence.
+   */
+  static getCeloNativeSymbols(): Set<string> {
+    return new Set(
+      Object.values(TOKEN_REGISTRY)
+        .filter(t => 
+          t.category === 'native' || 
+          t.category === 'stablecoin' ||
+          t.symbol === 'MTAA'
+        )
+        .map(t => t.symbol)
+    );
+    // Returns: Set { 'CELO', 'cUSD', 'cEUR', 'cKES', 'MTAA', 'USDT', 'USDC' }
+    // Note: USDT and USDC included because as bridged tokens on Celo,
+    // they behave differently than native USDT/USDC on Ethereum
+  }
+
   static addCustomToken(symbol: string, tokenInfo: TokenInfo): void {
     // This will be controlled by DAO governance
     TOKEN_REGISTRY[symbol] = tokenInfo;
@@ -393,6 +415,15 @@ export class TokenRegistry {
   // Get all supported tokens
   static getAllTokens(): TokenInfo[] {
     return Object.values(TOKEN_REGISTRY);
+  }
+
+  /**
+   * Return tokens that are safe to treat as CEX-tradable (not celo-native-only)
+   */
+  static getCEXTradableSymbols(): string[] {
+    return Object.values(TOKEN_REGISTRY)
+      .filter(t => !t.celoNativeOnly)
+      .map(t => t.symbol);
   }
 
   // Get token by address

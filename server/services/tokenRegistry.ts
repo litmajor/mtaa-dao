@@ -58,6 +58,10 @@ export interface TokenMetadata {
   description?: string;
   /** ISO timestamp — injected automatically during load if absent in JSON */
   added: string;
+  // NEW: CEX bridging fields
+  celoNativeOnly?: boolean; // true = no CEX order book, DEX-only
+  hasCEXLiquidity?: boolean; // true = this token (or its cexSymbol) trades on CEX
+  cexSymbol?: string; // the symbol to use on CEXes (e.g. WETH -> ETH)
 }
 
 export interface TokenRegistryFilter {
@@ -308,6 +312,67 @@ class TokenRegistry {
   }
 
   // ---------------------------------------------------------------------------
+  // CEX Market Universe Helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get tokens relevant for CEX market universe building.
+   * Filters out Celo-native-only tokens and returns metadata by symbol for enrichment.
+   * Prefers ethereum > polygon > bsc chain priority when symbol exists on multiple chains.
+   */
+  getCEXRelevantSymbols(): Map<string, TokenMetadata> {
+    // New shape: return map keyed by CEX symbol (e.g. ETH, BTC, USDC)
+    // Value contains minimal enrichment: celoAddress, cexSymbol, coingeckoId, decimals
+    const result = new Map<string, {
+      celoAddress: string;
+      cexSymbol: string;
+      coingeckoId?: string;
+      decimals: number;
+    }>();
+
+    for (const token of this.tokens.values()) {
+      // Skip explicit Celo-native-only tokens
+      if (token.celoNativeOnly) continue;
+
+      // Normalize CEX symbol (wrapped tokens map to their underlying CEX symbol)
+      const cexSymbol = (token.cexSymbol || token.symbol || '').toUpperCase();
+      if (!cexSymbol) continue;
+
+      const hasCEXLiquidity = token.hasCEXLiquidity || ['CELO', 'BTC', 'ETH', 'USDC', 'USDT'].includes(cexSymbol);
+      if (!hasCEXLiquidity) continue;
+
+      if (!result.has(cexSymbol)) {
+        result.set(cexSymbol, {
+          celoAddress: token.address,
+          cexSymbol,
+          coingeckoId: token.coingeckoId,
+          decimals: token.decimals,
+        });
+      }
+    }
+
+    logger.debug(`[getCEXRelevantSymbols] Built CEX metadata map: ${result.size} symbols`);
+    // NOTE: returns Map keyed by CEX symbol (ETH, BTC, USDC, USDT, CELO)
+    return result as unknown as Map<string, TokenMetadata>;
+  }
+
+  /**
+   * Return a map of all Celo DEX tokens keyed by symbol (uppercase) -> address/decimals/meta
+   */
+  getCeloDEXTokens(): Map<string, { address: string; symbol: string; decimals: number; coingeckoId?: string }> {
+    const m = new Map<string, { address: string; symbol: string; decimals: number; coingeckoId?: string }>();
+    for (const token of this.tokens.values()) {
+      m.set((token.symbol || '').toUpperCase(), {
+        address: token.address,
+        symbol: token.symbol,
+        decimals: token.decimals,
+        coingeckoId: token.coingeckoId,
+      });
+    }
+    return m;
+  }
+
+  // ---------------------------------------------------------------------------
   // Stats
   // ---------------------------------------------------------------------------
 
@@ -329,5 +394,15 @@ class TokenRegistry {
 // ============= SERVICE INSTANCE =============
 
 const tokenRegistry = new TokenRegistry();
+
+// ============= NAMED EXPORTS FOR CEX MARKET BUILDING =============
+
+/**
+ * Get tokens relevant for CEX market universe building.
+ * Filters out Celo-native-only tokens and returns metadata by symbol for enrichment.
+ */
+export function getCEXRelevantSymbols(): Map<string, TokenMetadata> {
+  return tokenRegistry.getCEXRelevantSymbols();
+}
 
 export { tokenRegistry, TokenRegistry };

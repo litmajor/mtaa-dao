@@ -1,8 +1,8 @@
 // hardhat.config.ts
 // Production-Ready Hardhat Configuration with Security Hardening
 
+import hardhatToolboxMochaEthersPlugin from "@nomicfoundation/hardhat-toolbox-mocha-ethers";
 import { HardhatUserConfig } from "hardhat/config";
-import "@nomicfoundation/hardhat-toolbox-mocha-ethers"; 
 // Note: `hardhat-gas-reporter` is incompatible with Hardhat 3 in this project setup.
 // Temporarily remove its import to avoid runtime errors during migration.
 // import "hardhat-gas-reporter";
@@ -12,10 +12,13 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 const config = {
+  plugins: [hardhatToolboxMochaEthersPlugin],
+
   
   solidity: {
     version: "0.8.24",
     settings: {
+      evmVersion: "cancun",
       viaIR: true,
       optimizer: {
         enabled: true,
@@ -133,7 +136,7 @@ const config = {
 
   paths: {
     sources: "./contracts",
-    tests: "./test",
+    tests: "./tests",
     cache: "./cache",
     artifacts: "./artifacts",
   },

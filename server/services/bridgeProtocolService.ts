@@ -4,6 +4,7 @@
  */
 
 import { ethers } from 'ethers';
+import { createWalletIfValid } from '../utils/cryptoWallet';
 import { ChainRegistry, SupportedChain, CHAIN_CONFIGS } from '../../shared/chainRegistry';
 import { Logger } from '../utils/logger';
 import { AppError } from '../middleware/errorHandler';
@@ -72,7 +73,8 @@ export class BridgeProtocolService {
       if (!providerUrl) throw new AppError(`No RPC provider found for source chain: ${sourceChain}`, 400);
       
       const provider = new ethers.JsonRpcProvider(providerUrl);
-      const signer = new ethers.Wallet(process.env.BRIDGE_PRIVATE_KEY || '', provider);
+      const signer = createWalletIfValid(process.env.BRIDGE_PRIVATE_KEY, provider);
+      if (!signer) throw new AppError('Missing or invalid BRIDGE_PRIVATE_KEY for bridge protocol operations', 500);
 
       const lzEndpointContract = new ethers.Contract(sourceConfig.endpoint, this.LZ_ENDPOINT_ABI, signer);
       const payloadBytes = ethers.toUtf8Bytes(payload);
@@ -134,7 +136,8 @@ export class BridgeProtocolService {
       if (!providerUrl) throw new AppError(`No RPC configuration discovered: ${sourceChain}`, 400);
       
       const provider = new ethers.JsonRpcProvider(providerUrl);
-      const signer = new ethers.Wallet(process.env.BRIDGE_PRIVATE_KEY || '', provider);
+      const signer = createWalletIfValid(process.env.BRIDGE_PRIVATE_KEY, provider);
+      if (!signer) throw new AppError('Missing or invalid BRIDGE_PRIVATE_KEY for bridge protocol operations', 500);
 
       const gatewayContract = new ethers.Contract(sourceConfig.gateway, this.AXELAR_GATEWAY_ABI, signer);
       const payloadBytes = ethers.toUtf8Bytes(payload);

@@ -42,7 +42,14 @@ export enum MessageType {
   // System messages
   AGENT_ONLINE = 'agent_online',
   AGENT_OFFLINE = 'agent_offline',
-  HEALTH_CHECK = 'health_check'
+  HEALTH_CHECK = 'health_check',
+  METRICS_UPDATE = 'metrics_update',
+  ALERT_REQUEST = 'alert_request',
+  PRICE_UPDATE = 'price_update',
+  LIQUIDITY_UPDATE = 'liquidity_update',
+  EXECUTION_REQUEST= 'execution_request',
+
+
 }
 
 export type MessagePriority = 'low' | 'medium' | 'high' | 'critical';

@@ -172,7 +172,7 @@ export class CircuitBreakerConsolidated extends EventEmitter {
   /**
    * Record successful execution
    */
-  private recordSuccess() {
+  public recordSuccess() {
     this.successCount++;
     this.totalSuccesses++;
     this.lastSuccessTime = new Date();
@@ -198,7 +198,7 @@ export class CircuitBreakerConsolidated extends EventEmitter {
   /**
    * Record failed execution
    */
-  private recordFailure(error: any) {
+  public recordFailure(error: any) {
     this.failureCount++;
     this.totalFailures++;
     this.lastFailureTime = new Date();

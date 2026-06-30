@@ -8,7 +8,8 @@ export enum AgentStatus {
   INITIALIZING = 'initializing',
   ACTIVE = 'active',
   PAUSED = 'paused',
-  ERROR = 'error'
+  ERROR = 'error',
+  STOPPED = 'stopped'
 }
 
 export interface AgentConfig {
@@ -29,27 +30,36 @@ export interface AgentMetrics {
   lastActive: Date;
 }
 
-
-export abstract class BaseAgent {
+/**
+ * BaseAgent is generically typed so subclasses may extend the metrics shape
+ * while preserving the BaseAgent contract. Subclasses should extend with
+ * their concrete metrics type, e.g. `BaseAgent<SyncMetrics>`.
+ */
+export abstract class BaseAgent<TMetrics extends AgentMetrics = AgentMetrics> {
   protected config: AgentConfig;
   protected status: AgentStatus;
-  protected metrics: AgentMetrics;
+  protected metrics: TMetrics;
   protected startTime: Date;
   public agentStatus?: string;
   public syncMode?: string;
   public sequenceNumber?: number;
   public trustedAgents?: Set<string>;
 
-  constructor(config: AgentConfig) {
+  constructor(config: AgentConfig, initialMetrics?: Partial<TMetrics>) {
     this.config = config;
     this.status = AgentStatus.INITIALIZING;
     this.startTime = new Date();
-    this.metrics = {
+
+    const defaultMetrics: AgentMetrics = {
       tasksProcessed: 0,
       averageProcessingTime: 0,
       errorRate: 0,
       lastActive: new Date()
     };
+
+    // Merge default base metrics with any subclass-specific initial values.
+    this.metrics = ({ ...(defaultMetrics as object), ...(initialMetrics || {}) as object } as unknown) as TMetrics;
+
     if (config.agentStatus) this.agentStatus = config.agentStatus;
     if (config.syncMode) this.syncMode = config.syncMode;
     if (config.sequenceNumber !== undefined) this.sequenceNumber = config.sequenceNumber;
@@ -57,15 +67,15 @@ export abstract class BaseAgent {
   }
 
   abstract initialize(): Promise<void>;
-  abstract process(data: any): Promise<any>;
+  abstract process(data: unknown): Promise<unknown>;
   abstract shutdown(): Promise<void>;
 
   getStatus(): AgentStatus {
     return this.status;
   }
 
-  getMetrics(): AgentMetrics {
-    return { ...this.metrics };
+  getMetrics(): TMetrics {
+    return { ...(this.metrics as object) } as TMetrics;
   }
 
   getConfig(): AgentConfig {
@@ -74,16 +84,16 @@ export abstract class BaseAgent {
 
   protected updateMetrics(processingTime: number, success: boolean): void {
     this.metrics.tasksProcessed++;
-    this.metrics.averageProcessingTime = 
-      (this.metrics.averageProcessingTime * (this.metrics.tasksProcessed - 1) + processingTime) / 
+    this.metrics.averageProcessingTime =
+      (this.metrics.averageProcessingTime * (this.metrics.tasksProcessed - 1) + processingTime) /
       this.metrics.tasksProcessed;
-    
+
     if (!success) {
-      this.metrics.errorRate = 
-        (this.metrics.errorRate * (this.metrics.tasksProcessed - 1) + 1) / 
+      this.metrics.errorRate =
+        (this.metrics.errorRate * (this.metrics.tasksProcessed - 1) + 1) /
         this.metrics.tasksProcessed;
     }
-    
+
     this.metrics.lastActive = new Date();
   }
 

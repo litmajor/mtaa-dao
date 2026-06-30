@@ -14,6 +14,7 @@ import {
   achievementTierEnum
 } from '../../shared/achievementSystemSchema';
 import { ethers } from 'ethers';
+import { createWalletIfValid } from '../utils/cryptoWallet';
 
 export class AchievementSystemService {
   private static nftContract: any;
@@ -21,7 +22,10 @@ export class AchievementSystemService {
   // Initialize NFT contract connection
   static async initializeContract(contractAddress: string, abi: any[]) {
     const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
-    const signer = new ethers.Wallet(process.env.PRIVATE_KEY || '', provider);
+    const signer = createWalletIfValid(process.env.PRIVATE_KEY, provider);
+    if (!signer) {
+      throw new Error('Missing or invalid PRIVATE_KEY for AchievementSystemService contract initialization');
+    }
     this.nftContract = new ethers.Contract(contractAddress, abi, signer);
   }
   

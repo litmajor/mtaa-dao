@@ -47,16 +47,18 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import express from 'express';
 import daoIdRouter from './_daoId';
 
-const router = express.Router({ mergeParams: true });
-
 /**
- * Mount DAO-scoped consolidation router
- * This router includes ALL Phase 2 routes (chat, governance, investment-pools, treasury)
- * under the unified /:daoId parameter structure with shared middleware
+ * ✅ FIXED: Direct export of DAO-scoped router
+ * 
+ * This router is ALREADY mounted at /:daoId in the parent daos.ts file,
+ * so we export the router directly without re-mounting.
+ * 
+ * Parent mount location: server/routes/v1/daos.ts line 567
+ *   router.use('/:daoId', daoIdRouter);  // ← Points to THIS exported router
+ * 
+ * ✅ Correctly results in: /api/v1/daos/:daoId/[resource]
+ * ❌ Previously resulted in: /api/v1/daos/:daoId/:daoId/[resource] (BROKEN)
  */
-router.use('/:daoId', daoIdRouter);
-
-export default router;
+export default daoIdRouter;

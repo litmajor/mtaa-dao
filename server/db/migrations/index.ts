@@ -8,6 +8,7 @@ import { migrateNotificationTables } from './001-notification-system';
 import { migrateRulesEngine } from './002-rules-engine';
 import { migrateLimitOrdersTables } from './003-limit-orders';
 import { migrateCrossChainTables, rollbackCrossChainTables } from './007-cross-chain-support';
+import { migrateAgentSubscriptions, rollbackAgentSubscriptions } from './018-agent-subscriptions-indexer';
 
 export interface MigrationResult {
   success: boolean;
@@ -59,6 +60,12 @@ export async function runAllMigrations(): Promise<MigrationResult> {
       // Non-critical, continue with other migrations
     }
 
+    try {
+      await migrateAgentSubscriptions();
+    } catch (err: any) {
+      errors.push(`Agent subscriptions migration failed: ${err.message}`);
+    }
+
     const duration = Date.now() - startTime;
     console.log(`\n✅ All migrations completed in ${duration}ms`);
 
@@ -85,6 +92,12 @@ export async function rollbackMigrations(): Promise<MigrationResult> {
   try {
     console.log('🔄 Rolling back migrations...\n');
     
+    try {
+      await rollbackAgentSubscriptions();
+    } catch (err: any) {
+      errors.push(`Agent subscriptions rollback failed: ${err.message}`);
+    }
+
     try {
       await rollbackCrossChainTables();
     } catch (err: any) {
@@ -159,6 +172,9 @@ export async function dryRunMigrations(): Promise<{
       'cross_chain_trading_pairs',
       'cross_chain_transfers',
       'cross_chain_swaps',
+      // Agent network & indexer tables
+      'dao_agent_subscriptions',
+      'indexer_checkpoints',
     ],
     willModify: [],
     risks: [
@@ -166,6 +182,7 @@ export async function dryRunMigrations(): Promise<{
       'Note: Ensure database user has sufficient permissions to create tables',
       'Note: Consider running migrations during maintenance window for production',
       'Note: Cross-chain transfers require bridge contracts to be deployed and configured',
+      'Note: Agent subscriptions require smart contract event listener daemon processes',
     ],
   };
 }

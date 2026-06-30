@@ -111,6 +111,10 @@ const updateUserSettingsSchema = z.object({
   sessionTimeout: z.number().int().positive().optional(),
   highContrast: z.boolean().optional(),
   reducedMotion: z.boolean().optional(),
+  notifyGovernance: z.boolean().optional(),
+  notifyTreasury: z.boolean().optional(),
+  notifyMorio: z.boolean().optional(),
+  notifyWeeklySummary: z.boolean().optional(),
 });
 
 const addApiKeySchema = z.object({

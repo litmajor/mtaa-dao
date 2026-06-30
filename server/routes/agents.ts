@@ -3,9 +3,9 @@
  * Endpoints for managing and monitoring system agents
  * 
  * SECURITY:
- * ✅ All GET endpoints require authentication
- * ✅ All mutation endpoints rate-limited (10/min for admins)
- * ✅ Sensitive metrics endpoints require auth to prevent enumeration
+ * All GET endpoints require authentication
+ * All mutation endpoints rate-limited (10/min for admins)
+ * Sensitive metrics endpoints require auth to prevent enumeration
  */
 
 import { Router, Request, Response } from 'express';
@@ -14,29 +14,45 @@ import { Logger } from '../utils/logger';
 import { requireRole } from '../middleware/rbac';
 import { isAuthenticated } from '../nextAuthMiddleware';
 import { createRateLimiter } from '../middleware/rateLimiting';
+import { ethers } from 'ethers';
+import gatewayService from '../services/gatewayService';
+import { createWalletIfValid } from '../utils/cryptoWallet';
 
 const logger = new Logger('agent-api');
 const router = Router();
 const requireAdmin = requireRole('admin');
 
-// 🔴 CRITICAL: Rate limiting for agent management operations
+// CRITICAL: Rate limiting for agent management operations
 const agentMutationLimiter = createRateLimiter({
   windowMs: 60 * 1000, // 1 minute
   maxRequests: 10,
   keyGenerator: (req) => `agent:mutation:${(req as any).user?.id || req.ip}`,
 });
 
-// 🔴 CRITICAL: Rate limiting for metric queries (expensive operations)
+// CRITICAL: Rate limiting for metric queries (expensive operations)
 const agentMetricsLimiter = createRateLimiter({
   windowMs: 60 * 1000, // 1 minute
   maxRequests: 5,
   keyGenerator: (req) => `agent:metrics:${(req as any).user?.id || req.ip}`,
 });
 
+// Local request type when authentication populates `req.user`
+interface RequestWithUser extends Request {
+  user?: { id?: string };
+}
+
+// Minimal typed interface for the on-chain AgentRegistry contract used here.
+interface AgentRegistryContract {
+  callStatic: {
+    registerAgent(agentAddress: string, name: string, description: string, category: number, autonomy: number): Promise<string>;
+  };
+  registerAgent(agentAddress: string, name: string, description: string, category: number, autonomy: number): Promise<{ hash: string; wait(confirmations?: number): Promise<unknown> }>;
+}
+
 /**
  * GET /api/agents
  * Get all agents with status
- * 🔴 CRITICAL: Requires authentication - prevents agent enumeration
+ * CRITICAL: Requires authentication - prevents agent enumeration
  */
 router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   try {
@@ -63,14 +79,12 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
 
 /**
  * GET /api/agents/:agentId
- * Get specific agent details
- * 🔴 CRITICAL: Requires authentication - prevents agent profiling
+ *  CRITICAL: Requires authentication - prevents agent profiling
  */
 router.get('/:agentId', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { agentId } = req.params;
     const agent = agentRegistry.getAgent(agentId);
-
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
@@ -97,11 +111,21 @@ router.get('/:agentId', isAuthenticated, async (req: Request, res: Response) => 
 /**
  * POST /api/agents
  * Create a new agent
- * 🔴 CRITICAL: Rate limited - prevents agent creation spam
+ *  CRITICAL: Rate limited - prevents agent creation spam
  */
 router.post('/', requireAdmin, agentMutationLimiter, async (req: Request, res: Response) => {
   try {
-    const { type, agentId } = req.body;
+    const {
+      type,
+      agentId,
+      registerOnChain = false,
+      agentAddress: onChainAgentAddress,
+      agentName,
+      description = '',
+      category = 0,
+      autonomyLevel = 0,
+      paymentConfig = {}
+    } = req.body;
 
     if (!type) {
       return res.status(400).json({ error: 'Agent type is required' });
@@ -112,7 +136,115 @@ router.post('/', requireAdmin, agentMutationLimiter, async (req: Request, res: R
       return res.status(400).json({ error: `Invalid agent type. Must be one of: ${validTypes.join(', ')}` });
     }
 
-    const agent = await agentRegistry.createAgent(type, agentId);
+    // If requested, attempt on-chain registration and payment configuration
+    let canonicalAgentId: string | undefined = agentId;
+    if (registerOnChain) {
+      if (!onChainAgentAddress || !agentName) {
+        return res.status(400).json({ error: 'agentAddress and agentName are required for on-chain registration' });
+      }
+
+      const AGENT_REGISTRY_ADDR = process.env.AGENT_REGISTRY_ADDR || process.env.AGENT_REGISTRY_ADDRESS || '';
+      const RPC_URL = process.env.RPC_URL || '';
+      const PRIVATE_KEY = process.env.PRIVATE_KEY || '';
+
+      if (!AGENT_REGISTRY_ADDR || !RPC_URL || !PRIVATE_KEY) {
+        logger.warn('Missing on-chain config for agent registration; falling back to local-only registration');
+      } else {
+        try {
+          const provider = new ethers.JsonRpcProvider(RPC_URL);
+
+          // Normalize and validate private key before creating a Wallet
+          let pk = String(PRIVATE_KEY || '').trim();
+          if (pk && !pk.startsWith('0x')) pk = `0x${pk}`;
+
+          if (!pk || !/^0x[0-9a-fA-F]{64}$/.test(pk)) {
+            logger.warn('Invalid PRIVATE_KEY format for on-chain registration; falling back to local-only registration');
+          } else {
+            const wallet = createWalletIfValid(pk, provider);
+            if (!wallet) {
+              logger.warn('PRIVATE_KEY invalid for on-chain registration; falling back to local-only registration');
+            } else {
+              const registryAbi = [
+                'function registerAgent(address,string,string,uint8,uint8) returns (bytes32)'
+              ];
+
+              const registry = new ethers.Contract(AGENT_REGISTRY_ADDR, registryAbi, wallet) as unknown as AgentRegistryContract;
+
+            // Attempt to preview the agentId via callStatic (may be unsupported or revert)
+            let previewId: string | undefined;
+            try {
+              previewId = await registry.callStatic.registerAgent(
+                onChainAgentAddress,
+                agentName,
+                description,
+                Number(category),
+                Number(autonomyLevel)
+              );
+            } catch {
+              previewId = undefined;
+            }
+
+            // perform the actual registration transaction
+            const tx = await registry.registerAgent(
+              onChainAgentAddress,
+              agentName,
+              description,
+              Number(category),
+              Number(autonomyLevel)
+            );
+            await tx.wait();
+
+            // Prefer previewId if available, otherwise derive a fallback canonical id
+            canonicalAgentId = previewId ?? canonicalAgentId ?? `${onChainAgentAddress}-${Date.now()}`;
+            logger.info('On-chain AgentRegistry.registerAgent succeeded', { agentId: canonicalAgentId, txHash: (tx as any).hash });
+
+            // configure payment on the gateway if requested
+            const {
+              feeInKES = 0,
+              feeInUSD = 0,
+              defaultTier = 0,
+              defaultSubscriptionDuration = 0,
+              payoutPercentage = 100,
+              treasuryPercentage = 0,
+              communityPercentage = 0,
+              acceptsMTAA = true,
+              acceptsKES = true
+            } = paymentConfig || {};
+
+            try {
+              if (canonicalAgentId) {
+                await gatewayService.configureAgent(
+                  canonicalAgentId,
+                  onChainAgentAddress,
+                  feeInKES,
+                  feeInUSD,
+                  defaultTier,
+                  defaultSubscriptionDuration,
+                  payoutPercentage,
+                  treasuryPercentage,
+                  communityPercentage,
+                  acceptsMTAA,
+                  acceptsKES
+                );
+                logger.info('Configured on-chain payment settings for agent', { agentId: canonicalAgentId });
+              } else {
+                logger.warn('Skipping gateway configuration: canonicalAgentId is not available');
+              }
+            } catch (gwErr: unknown) {
+              const gwMsg = gwErr instanceof Error ? gwErr.message : String(gwErr);
+              logger.warn('Failed to configure payment on gateway; agent remains registered on-chain', { error: gwMsg });
+            }
+          }
+        }
+        } catch (err: any) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.warn('On-chain agent registration failed; falling back to local-only', { error: msg });
+        }
+      }
+    }
+
+    // Create the local agent record using the canonicalAgentId when available
+    const agent = await agentRegistry.createAgent(type, canonicalAgentId);
     await agentRegistry.initializeAgent(agent.id);
 
     res.json({

@@ -5,6 +5,7 @@ import { paymentTransactions } from '../shared/schema';
 import { eq } from 'drizzle-orm';
 import { logger } from './utils/logger';
 import { creditUserWalletOnDeposit } from './services/ledgerService';
+import { triggerDAOSpawnFromPayment } from './services/daoSpawnService';
 
 const router = express.Router();
 
@@ -200,6 +201,17 @@ async function updateTransactionState(
       } catch (err: any) {
         // Log but don't throw; webhook lifecycle should remain idempotent and acknowledged.
         logger.error('[LEDGER COMMIT FAILED]', { reference, error: err?.message || err });
+      }
+
+      // If this was a DAO spawn fee payment, trigger the on-chain spawn + DAO creation.
+      const metadata = (existingTx as any)?.metadata ?? {};
+      if (metadata?.purpose === 'dao_spawn_fee' && metadata?.spawnStatus !== 'completed') {
+        // Fire-and-forget: spawn is async and idempotent; webhook must ACK quickly.
+        setImmediate(() => {
+          triggerDAOSpawnFromPayment(reference).catch((err) =>
+            logger.error('[DAO SPAWN TRIGGER FAILED]', { reference, error: err?.message })
+          );
+        });
       }
     }
 

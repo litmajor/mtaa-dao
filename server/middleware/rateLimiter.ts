@@ -154,6 +154,66 @@ export const yukiFlashLoanLimiter = rateLimiter({
   keyGenerator: (req) => `yuki_flashloan:${(req as any).user?.id || req.ip}`,
 });
 
+// ════════════════════════════════════════════════════════════════════════════════
+// TREASURY MULTISIG RATE LIMITERS
+// Critical financial operations requiring stricter rate limiting
+// ════════════════════════════════════════════════════════════════════════════════
+
+// Multisig wallet creation (one-time operation, very low rate)
+export const treasuryMultisigCreateLimiter = rateLimiter({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5, // 5 multisig creation attempts per hour per DAO
+  message: 'Too many multisig wallet creation attempts. Multisig creation is rate-limited. Please try again in 1 hour.',
+  keyGenerator: (req) => {
+    const daoId = (req as any).params?.daoId || (req as any).body?.daoId;
+    return `treasury_multisig_create:${daoId}:${(req as any).user?.id}`;
+  },
+});
+
+// Multisig withdrawal proposal (moderate rate)
+export const treasuryMultisigProposeLimiter = rateLimiter({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10, // 10 proposals per hour per user
+  message: 'Too many withdrawal proposals. You have reached the proposal limit. Please try again in 1 hour.',
+  keyGenerator: (req) => {
+    const daoId = (req as any).params?.daoId || (req as any).body?.daoId;
+    return `treasury_multisig_propose:${daoId}:${(req as any).user?.id}`;
+  },
+});
+
+// Multisig signature submission (higher rate allowed)
+export const treasuryMultisigSignLimiter = rateLimiter({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 20, // 20 signatures per 5 minutes per user
+  message: 'Too many signature submissions. Please slow down.',
+  keyGenerator: (req) => {
+    const daoId = (req as any).params?.daoId || (req as any).body?.daoId;
+    return `treasury_multisig_sign:${daoId}:${(req as any).user?.id}`;
+  },
+});
+
+// Multisig execution (critical operation, very limited)
+export const treasuryMultisigExecuteLimiter = rateLimiter({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10, // 10 executions per hour per DAO
+  message: 'Too many execution attempts. Multisig executions are rate-limited. Please try again in 1 hour.',
+  keyGenerator: (req) => {
+    const daoId = (req as any).params?.daoId || (req as any).body?.daoId;
+    return `treasury_multisig_execute:${daoId}`;
+  },
+});
+
+// Multisig configuration reads (high rate allowed)
+export const treasuryMultisigReadLimiter = rateLimiter({
+  windowMs: 60 * 1000, // 1 minute
+  max: 50, // 50 reads per minute
+  message: 'Too many read requests. Please slow down.',
+  keyGenerator: (req) => {
+    const daoId = (req as any).params?.daoId;
+    return `treasury_multisig_read:${daoId}:${(req as any).user?.id || req.ip}`;
+  },
+});
+
 // Strategy backtesting (heavy ML compute)
 export const yukiBacktestLimiter = rateLimiter({
   windowMs: 60 * 1000, // 1 minute

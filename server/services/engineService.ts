@@ -1,8 +1,7 @@
 /**
  * Engine Service
  * Compute Orchestration Layer - Manages job execution, status tracking, and progress updates
- * 
- * Responsibilities:
+ * * Responsibilities:
  * 1. Coordinate backtest/optimize job execution
  * 2. Monitor job status and provide real-time progress via Redis pub/sub
  * 3. Handle job retries with exponential backoff
@@ -26,6 +25,10 @@ import {
   obv,
   mfi
 } from './indicators';
+import pLimit from 'p-limit';
+
+// Tokens that should not be queried against public CEX OHLCV endpoints
+const CELO_NATIVE_SYMBOLS = new Set(['CKES', 'CUSD', 'CEUR', 'CREAL', 'CELO', 'MTAA']);
 
 export interface JobProgress {
   jobId: string;
@@ -49,7 +52,7 @@ export interface JobMonitoringOptions {
 /**
  * Engine Service - Coordinate compute job execution and monitoring
  */
-class EngineService {
+export class EngineService {
   private readonly JOB_STATUS_PREFIX = 'engine:job:';
   private readonly JOB_RESULT_PREFIX = 'engine:result:';
   private readonly JOB_CHANNEL_PREFIX = 'engine:progress:';
@@ -281,14 +284,12 @@ class EngineService {
     jobType: string,
     estimatedDuration?: number
   ): void {
-    // Only monitor if not already monitoring
     if (this.activeJobs.has(jobId)) {
       return;
     }
 
     logger.debug(`[Engine] Started monitoring job ${jobId}`);
 
-    // Set up periodic status check
     const monitoringInterval = setInterval(async () => {
       try {
         const status = await this.getJobStatus(jobId);
@@ -299,7 +300,6 @@ class EngineService {
           return;
         }
 
-        // Stop monitoring if job is completed or failed
         if (status.status === 'completed' || status.status === 'failed') {
           clearInterval(monitoringInterval);
           this.activeJobs.delete(jobId);
@@ -340,7 +340,6 @@ class EngineService {
 
   /**
    * Subscribe to job progress updates via Redis pub/sub
-   * Client usage: const listener = engineService.subscribeToJobProgress(jobId, (update) => {...})
    */
   subscribeToJobProgress(
     jobId: string,
@@ -357,8 +356,6 @@ class EngineService {
       }
     };
 
-    // In real implementation, would use redis.subscribe()
-    // For now, return unsubscribe function
     return () => {
       logger.debug(`[Engine] Unsubscribed from job ${jobId} progress`);
     };
@@ -375,8 +372,6 @@ class EngineService {
     failed: number;
   }> {
     try {
-      // Note: Redis KEYS command not available in RedisService fallback mode
-      // Returns empty stats when Redis connection unavailable
       const stats = {
         totalActive: 0,
         queued: 0,
@@ -403,7 +398,6 @@ class EngineService {
   /**
    * Get cached prices for multiple symbols from Redis
    * Falls back to collector if not in cache
-   * Used by: Opportunity Engine, Risk Analysis, Portfolio Monitoring
    */
   async getAssetPrices(
     symbols: string[],
@@ -416,7 +410,6 @@ class EngineService {
       const results = new Map<string, any>();
       const { fallbackToCollector = true } = options || {};
 
-      // Try to fetch from Redis cache first
       const cachedPrices = await Promise.allSettled(
         symbols.map(async (symbol) => {
           const cacheKey = `collector:price:${symbol}`;
@@ -435,7 +428,6 @@ class EngineService {
         }
       }
 
-      // If symbols missing and fallback enabled, query collector
       if (missingSymbols.length > 0 && fallbackToCollector) {
         try {
           const { collectorService } = await import('./collectorService');
@@ -468,6 +460,13 @@ class EngineService {
     limit: number = 100
   ): Promise<any[] | null> {
     try {
+      // 🛡️ Guard Check: Block native platform tokens (Celo native/stablecoins) from reaching centralized public CEX APIs
+      const baseSym = String(symbol).includes('/') ? String(symbol).split('/')[0] : String(symbol);
+      if (CELO_NATIVE_SYMBOLS.has(baseSym.toUpperCase())) {
+        logger.debug(`[Engine] Bypassing external public exchange queries for native asset: ${symbol}`);
+        return null;
+      }
+
       const cacheKey = `collector:ohlc:${symbol}:${timeframe}`;
       const cached = await redis.get(cacheKey);
 
@@ -476,14 +475,12 @@ class EngineService {
         return JSON.parse(cached);
       }
 
-      // Fallback: Try fetching via CCXT directly if production service unavailable
       try {
         const { ccxtService: ccxtSvc } = await import('./ccxtService');
         const result = await ccxtSvc.getOHLCV(symbol, timeframe, limit);
         const ohlcData = result?.data || result || [];
 
         if (ohlcData && Array.isArray(ohlcData) && ohlcData.length > 0) {
-          // Cache for 5 minutes (technical analysis updates)
           await redis.set(cacheKey, JSON.stringify(ohlcData), 300);
           return ohlcData;
         }
@@ -500,14 +497,6 @@ class EngineService {
 
   /**
    * Get OHLCV data with multi-service fallback & production hardening
-   * Tries: ohlcvService (production with fallback) → ohlcvServicev1 (foundation) → cexPriceCollector
-   * 
-   * Benefits:
-   * • Multi-exchange fallback (Binance → Kraken → Coinbase)
-   * • Circuit breaker for failed exchanges
-   * • Stale cache graceful degradation
-   * • Exchange health scoring & automatic recovery
-   * • Better error handling for production
    */
   async getOHLCDataMultiService(
     symbol: string,
@@ -515,7 +504,14 @@ class EngineService {
     limit: number = 100
   ): Promise<any[] | null> {
     try {
-      // Try production OHLCV service first (has multi-exchange fallback + health scoring)
+      // 🛡️ Guard Check: Block native platform tokens (Celo native/stablecoins) from reaching centralized public CEX APIs
+      const baseSym = String(symbol).includes('/') ? String(symbol).split('/')[0] : String(symbol);
+      if (CELO_NATIVE_SYMBOLS.has(baseSym.toUpperCase())) {
+        logger.debug(`[Engine] Bypassing external production service queries for native asset: ${symbol}`);
+        return null;
+      }
+
+      // Try production OHLCV service first
       try {
         const { ohlcvService: productionService } = await import('./ohlcvService');
         const response = await productionService.getCandles(symbol, timeframe, limit);
@@ -524,9 +520,8 @@ class EngineService {
           logger.debug(
             `[Engine] OHLCV from production service: ${symbol}/${timeframe} (${response.data.length} candles, ${response.quality}, via ${response.exchangeUsed})`
           );
-          // Convert to standard format
           return response.data.map((candle: any) => [
-            candle.timestamp * 1000, // Convert back to ms for consistency
+            candle.timestamp * 1000,
             candle.open,
             candle.high,
             candle.low,
@@ -560,7 +555,6 @@ class EngineService {
         logger.debug(`[Engine] Foundation OHLCV service unavailable`);
       }
 
-      // No OHLC data available from any service
       logger.debug(`[Engine] No OHLC data available for ${symbol}/${timeframe}`);
       return null;
     } catch (error) {
@@ -571,30 +565,6 @@ class EngineService {
 
   /**
    * Get OHLCV for MULTIPLE TIMEFRAMES in parallel
-   * 
-   * Fetches multiple timeframes simultaneously: 1h, 4h, 1d, etc.
-   * Much faster than sequential fetching
-   * 
-   * Strategy:
-   * • All timeframes fetched in parallel via Promise.all
-   * • Each timeframe cached independently with Redis key pattern
-   * • Handles partial failures (1h succeeds, 4h fails - return what succeeded)
-   * 
-   * Returns: Map<timeframe, OHLCV array>
-   * Example: {
-   *   '1h': [[ts, o, h, l, c, v, vq], ...],  // 100 candles
-   *   '4h': [[ts, o, h, l, c, v, vq], ...],  // 100 candles
-   *   '1d': [[ts, o, h, l, c, v, vq], ...]   // 100 candles (might be fewer)
-   * }
-   * 
-   * Performance:
-   * • Cache hits: ~10-20ms total (3 timeframes)
-   * • Network fresh: ~100-150ms total (vs 300ms sequential)
-   * • Exchange fallback: ~200-300ms (with retries)
-   * 
-   * Used by: Opportunity Engine (multi-horizon signal detection)
-   *          Arbitrage (timeframe arbitrage detection)
-   *          Risk Assessment (volatility across horizons)
    */
   async getOHLCDataMultiTimeframe(
     symbol: string,
@@ -609,7 +579,6 @@ class EngineService {
         `[Engine] Fetching OHLCV for ${symbol} across ${timeframes.length} timeframes in parallel: ${timeframes.join(', ')}`
       );
 
-      // Fetch all timeframes in PARALLEL (not sequential)
       const ohlcvPromises = timeframes.map((tf) =>
         this.getOHLCDataMultiService(symbol, tf, limit)
           .then((data) => ({ timeframe: tf, data }))
@@ -621,7 +590,6 @@ class EngineService {
 
       const allResults = await Promise.all(ohlcvPromises);
 
-      // Collect successful results
       let successCount = 0;
       for (const { timeframe, data } of allResults) {
         if (data && data.length > 0) {
@@ -644,14 +612,6 @@ class EngineService {
 
   /**
    * Calculate indicators for MULTIPLE TIMEFRAMES from parallel-fetched OHLCV
-   * 
-   * Strategy:
-   * 1. Fetch all OHLCV timeframes in parallel
-   * 2. Calculate indicators for each timeframe in parallel
-   * 3. Cache each (symbol, timeframe, indicator) triplet
-   * 4. Return organized results
-   * 
-   * Much more efficient than doing this sequentially
    */
   private async calculateIndicatorsMultiTimeframe(
     symbol: string,
@@ -660,7 +620,6 @@ class EngineService {
     const results = new Map<string, any>();
 
     try {
-      // Calculate indicators for all timeframes in parallel
       const indicatorPromises = Array.from(timeframesToOHLCV.entries()).map(([timeframe, ohlcData]) =>
         this.calculateIndicators(ohlcData, symbol)
           .then((indicators) => ({ timeframe, indicators }))
@@ -673,7 +632,7 @@ class EngineService {
       const allResults = await Promise.all(indicatorPromises);
 
       for (const { timeframe, indicators } of allResults) {
-        if (Object.keys(indicators).length > 0) {
+        if (indicators && Object.keys(indicators).length > 0) {
           results.set(timeframe, indicators);
         }
       }
@@ -687,8 +646,6 @@ class EngineService {
 
   /**
    * Get technical indicators for a single symbol
-   * Indicators: RSI, MACD, SMA, Bollinger Bands, ATR, Stochastic, etc.
-   * Used by: Asset State Engine, Trading Signals, Opportunity Detection
    */
   async getTechnicalIndicators(symbol: string, timeframe: string = '1h'): Promise<any | null> {
     try {
@@ -700,19 +657,24 @@ class EngineService {
         return JSON.parse(cached);
       }
 
-      // Calculate indicators from OHLC if available
-      const ohlcData = await this.getOHLCData(symbol, timeframe);
-      if (!ohlcData || ohlcData.length === 0) {
-        logger.warn(`[Engine] No OHLC data for indicator calculation on ${symbol}`);
+      // Use the multi-service OHLCV fetch which handles production fallback gracefully
+      const ohlcData = await this.getOHLCDataMultiService(symbol, timeframe);
+      
+      // 🛡️ Depth Check: Require a minimum tracking payload length to calculate stable TA indicators
+      if (!ohlcData || ohlcData.length < 30) {
+        logger.warn(
+          `[Engine] Insufficient structural history depth for ${symbol}:${timeframe}. ` +
+          `Got ${ohlcData?.length || 0}/30 required candles. Aborting signal calculation.`
+        );
         return null;
       }
 
       try {
-        // Import indicators library (placeholder - implement your indicator calculation)
         const indicators = await this.calculateIndicators(ohlcData, symbol);
 
-        // Cache for 5 minutes
-        await redis.set(cacheKey, JSON.stringify(indicators), 300);
+        if (indicators) {
+          await redis.set(cacheKey, JSON.stringify(indicators), 300);
+        }
         return indicators;
       } catch (error) {
         logger.warn(`[Engine] Failed to calculate indicators for ${symbol}:`, error);
@@ -726,8 +688,6 @@ class EngineService {
 
   /**
    * Batch fetch technical indicators for multiple symbols in parallel
-   * Optimization: Promise.all for parallel calculation
-   * Used by: Batch Analysis, Opportunity Scanning, Risk Assessment
    */
   async getTechnicalIndicatorsBatch(
     symbols: string[],
@@ -742,7 +702,6 @@ class EngineService {
       const results = new Map<string, any>();
 
       if (parallel && symbols.length > 1) {
-        // Parallel batch fetching
         const batches = [];
         for (let i = 0; i < symbols.length; i += batchSize) {
           const batch = symbols.slice(i, i + batchSize);
@@ -767,7 +726,6 @@ class EngineService {
           }
         }
       } else {
-        // Sequential fallback for small symbol lists
         for (const symbol of symbols) {
           const data = await this.getTechnicalIndicators(symbol, timeframe);
           if (data) {
@@ -786,23 +744,6 @@ class EngineService {
 
   /**
    * MULTI-TIMEFRAME: Get indicators for ONE symbol across MULTIPLE timeframes
-   * 
-   * Strategy: Fetch all timeframes in PARALLEL (not sequential)
-   * 
-   * Before (Sequential - slow):
-   *   const tf1h = await getTechnicalIndicators(symbol, '1h')      // Wait
-   *   const tf4h = await getTechnicalIndicators(symbol, '4h')      // Wait
-   *   const tf1d = await getTechnicalIndicators(symbol, '1d')      // Wait
-   * 
-   * After (Parallel - fast):
-   *   const [tf1h, tf4h, tf1d] = await Promise.all([...])         // All at once
-   * 
-   * Returns: { '1h': {...}, '4h': {...}, '1d': {...} }
-   * Each timeframe cached independently for 5 minutes
-   * 
-   * Used by: Opportunity Engine (sees short/medium/long term signals)
-   *          Arbitrage (scales analysis across timeframes)
-   *          Risk Assessment (multi-horizon volatility)
    */
   async getTechnicalIndicatorsMultiTimeframe(
     symbol: string,
@@ -814,7 +755,6 @@ class EngineService {
     try {
       logger.info(`[Engine] Fetching indicators for ${symbol} across ${timeframes.length} timeframes: ${timeframes.join(', ')}`);
 
-      // PARALLEL fetch: all timeframes at once, not sequential
       const indicatorPromises = timeframes.map((tf) =>
         this.getTechnicalIndicators(symbol, tf)
           .then((indicators) => ({ timeframe: tf, indicators }))
@@ -826,7 +766,6 @@ class EngineService {
 
       const allResults = await Promise.all(indicatorPromises);
 
-      // Organize results by timeframe
       let successCount = 0;
       for (const { timeframe, indicators } of allResults) {
         if (indicators) {
@@ -847,52 +786,12 @@ class EngineService {
 
   /**
    * MULTI-TIMEFRAME BATCH: Get indicators for MULTIPLE symbols across MULTIPLE timeframes
-   * 
-   * Strategy: NESTED PARALLEL
-   * • Outer: All symbols in parallel via Promise.all
-   * • Inner: All timeframes per symbol in parallel via Promise.all
-   * 
-   * Before (Sequential - very slow for 100 symbols × 3 timeframes = 300 fetches):
-   *   for each symbol:
-   *     for each timeframe:
-   *       await getTechnicalIndicators()
-   * 
-   * After (Nested parallel - 300% faster):
-   *   Promise.all(
-   *     symbols.map(symbol =>
-   *       Promise.all(
-   *         timeframes.map(tf => getTechnicalIndicators(symbol, tf))
-   *       )
-   *     )
-   *   )
-   * 
-   * Returns: Map<symbol, Map<timeframe, indicators>>
-   * Example: {
-   *   'BTC': { '1h': {...}, '4h': {...}, '1d': {...} },
-   *   'ETH': { '1h': {...}, '4h': {...}, '1d': {...} },
-   *   'SOL': { '1h': {...}, '4h': {...}, '1d': {...} }
-   * }
-   * 
-   * Cache Strategy:
-   * • Each (symbol, timeframe) pair cached independently
-   * • 5-minute TTL for live trading data
-   * • Cache keys: engine:indicators:{symbol}:{timeframe}
-   * 
-   * Used by: Opportunity Engine (scales from 5 assets to 100+)
-   *          Arbitrage Engine (comprehensive market scanning)
-   *          Portfolio Analysis (multi-horizon risk assessment)
-   * 
-   * Latency:
-   * • 5 symbols × 3 timeframes = 15 total fetches
-   *   - Sequential: ~500ms (33ms per fetch)
-   *   - Parallel cache hits: ~50ms (all hit cache)
-   *   - Parallel fresh: ~150ms (all in parallel)
    */
   async getTechnicalIndicatorsBatchMultiTimeframe(
     symbols: string[],
     timeframes: string[] = ['1h', '4h', '1d'],
     options?: {
-      batchSize?: number; // Symbol batching (prevent overwhelming redis)
+      batchSize?: number;
     }
   ): Promise<Map<string, Map<string, any>>> {
     const startTime = Date.now();
@@ -905,29 +804,28 @@ class EngineService {
         `[Engine] Multi-timeframe batch: ${symbols.length} symbols × ${timeframes.length} timeframes = ${symbols.length * timeframes.length} total computations`
       );
 
-      // Process symbols in batches to avoid Redis connection pool exhaustion
       let successCount = 0;
       let totalCount = 0;
+
+      // Concurrency limiter to avoid overwhelming DB/cache/remote services
+      const limiter = pLimit(5);
 
       for (let i = 0; i < symbols.length; i += batchSize) {
         const symbolBatch = symbols.slice(i, i + batchSize);
 
-        // For each symbol batch, fetch all timeframes in parallel
         const batchPromises = symbolBatch.map((symbol) =>
-          this.getTechnicalIndicatorsMultiTimeframe(symbol, timeframes)
-            .then((timeframeIndicators) => ({
-              symbol,
-              timeframeIndicators,
-            }))
-            .catch((error) => {
-              logger.warn(`[Engine] Failed to get multi-timeframe for ${symbol}:`, error);
-              return { symbol, timeframeIndicators: new Map() };
-            })
+          limiter(() =>
+            this.getTechnicalIndicatorsMultiTimeframe(symbol, timeframes)
+              .then((timeframeIndicators) => ({ symbol, timeframeIndicators }))
+              .catch((error) => {
+                logger.warn(`[Engine] Failed to get multi-timeframe for ${symbol}:`, error);
+                return { symbol, timeframeIndicators: new Map() };
+              })
+          )
         );
 
         const batchResults = await Promise.all(batchPromises);
 
-        // Store results
         for (const { symbol, timeframeIndicators } of batchResults) {
           if (timeframeIndicators.size > 0) {
             results.set(symbol, timeframeIndicators);
@@ -955,8 +853,7 @@ class EngineService {
 
   /**
    * Get all cached asset prices for Opportunity Engine
-   * Supports pagination - enables scanning of thousands of assets
-   * Used by: Opportunity Engine (currently limited to 5 assets - can now scale to all)
+   * Supports pagination - enables scanning of thousands of assets safely
    */
   async getAllAssetPricesForOpportunityEngine(options?: {
     limit?: number;
@@ -965,325 +862,68 @@ class EngineService {
   }): Promise<Array<{ symbol: string; price: number; volume?: number; timestamp: number }>> {
     try {
       const { limit = 1000, offset = 0, minVolume = 0 } = options || {};
+      const results: Array<{ symbol: string; price: number; volume?: number; timestamp: number }> = [];
 
-      // Note: Redis keys scanning not available in RedisService fallback mode
-      // This operation requires direct Redis connection with KEYS command
-      // For now, return empty results with a note to implement proper Redis scanning
-      logger.warn('[Engine] Redis key scanning not available in fallback mode');
-
-      const prices: Array<{ symbol: string; price: number; volume?: number; timestamp: number }> = [];
-
-      // Sort by volume (highest first) and apply pagination
-      prices.sort((a, b) => (b.volume || 0) - (a.volume || 0));
-      const paginated = prices.slice(offset, offset + limit);
-
-      logger.info(`[Engine] getAllAssetPricesForOpportunityEngine: ${paginated.length} assets (total: ${prices.length})`);
-      return paginated;
-    } catch (error) {
-      logger.error(`[Engine] Failed to get all asset prices:`, error);
-      return [];
-    }
-  }
-
-  /**
-   * Get all asset pairs for arbitrage detection
-   * Generates pairs for DEX/CEX comparison across entire asset pool
-   * Used by: Arbitrage Detection (currently only selected pairs - can now scale to all)
-   */
-  async getAllAssetPairsForArbitrage(options?: {
-    limit?: number;
-    includeChains?: string[];
-    excludeStablecoins?: boolean;
-  }): Promise<Array<{ symbol1: string; symbol2: string; type: 'dex-cex' | 'cex-cex' | 'dex-dex' }>> {
-    try {
-      const { limit = 10000, excludeStablecoins = false } = options || {};
-
-      // Get all cached prices
-      const allPrices = await this.getAllAssetPricesForOpportunityEngine({ limit: 1000 });
-
-      // Filter out stablecoins if requested
-      let symbols = allPrices.map((p) => p.symbol);
-      if (excludeStablecoins) {
-        symbols = symbols.filter(
-          (s) =>
-            !s.toLowerCase().includes('usdt') &&
-            !s.toLowerCase().includes('usdc') &&
-            !s.toLowerCase().includes('usdx') &&
-            !s.toLowerCase().includes('dai')
-        );
-      }
-
-      // Generate trading pairs (Cartesian product of top assets)
-      const pairs: Array<{ symbol1: string; symbol2: string; type: 'dex-cex' | 'cex-cex' | 'dex-dex' }> = [];
-      const pairsToCheck = Math.min(symbols.length, 50); // Limit computation to top 50 assets
-
-      for (let i = 0; i < pairsToCheck; i++) {
-        for (let j = i + 1; j < pairsToCheck && pairs.length < limit; j++) {
-          pairs.push({
-            symbol1: symbols[i],
-            symbol2: symbols[j],
-            type: 'dex-cex', // Can expand to detect actual pair types
-          });
+      // Safe production approach: use standard collection hash tables if key scanning is unavailable
+      const compactPricesRaw = await redis.get('collector:prices:summary');
+      if (compactPricesRaw) {
+        const parsed = JSON.parse(compactPricesRaw);
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter(item => (item.volume || 0) >= minVolume);
+          return filtered.slice(offset, offset + limit);
         }
       }
 
-      logger.info(`[Engine] getAllAssetPairsForArbitrage: ${pairs.length} pairs generated from ${symbols.length} assets`);
-      return pairs;
+      logger.debug('[Engine] getAllAssetPricesForOpportunityEngine fallback executed (No structured summary hash located)');
+      return results;
     } catch (error) {
-      logger.error(`[Engine] Failed to get asset pairs for arbitrage:`, error);
+      logger.error('[Engine] Failed to retrieve asset prices matrix summary:', error);
       return [];
     }
   }
 
   /**
-   * Get complete asset snapshot: price + OHLC + indicators + metadata
-   * Single call for all data needed by analysis engines
-   * Used by: Opportunity Engine, Risk Assessment, Portfolio Analysis
+   * Internal processor mapping raw multi-dimensional arrays into mathematically isolated indicators
    */
-  async getAssetSnapshot(symbol: string, timeframe: string = '1h'): Promise<any | null> {
+  private async calculateIndicators(ohlcData: any[][], symbol: string): Promise<any> {
     try {
-      const cacheKey = `engine:snapshot:${symbol}:${timeframe}`;
-      const cached = await redis.get(cacheKey);
+      // Deconstruct column tuples securely: matrix arrays format -> [timestamp, open, high, low, close, volume]
+      const closes = ohlcData.map(c => c[4]);
+      const highs  = ohlcData.map(c => c[1]);
+      const lows   = ohlcData.map(c => c[2]);
+      const volumes = ohlcData.map(c => c[5]);
 
-      if (cached) {
-        logger.debug(`[Engine] Snapshot cache hit for ${symbol}`);
-        return JSON.parse(cached);
-      }
+      // Execution of pipeline-imported statistical calculations
+      const rsiSeries = rsi(closes, 14);
+      const macdSeries = macd(closes, 12, 26, 9);
+      const atrSeries = atr(highs, lows, closes, 14);
+      const sma20Series = sma(closes, 20);
+      const bbSeries = bollingerBands(closes, 20, 2);
 
-      // Fetch all data in parallel
-      const [priceMap, ohlcData, indicators] = await Promise.allSettled([
-        this.getAssetPrices([symbol]),
-        this.getOHLCData(symbol, timeframe),
-        this.getTechnicalIndicators(symbol, timeframe),
-      ]);
+      const totalCandles = ohlcData.length;
 
-      const snapshot = {
+      // Extract the absolute latest index records from structural calculations
+      return {
         symbol,
-        timeframe,
-        timestamp: Date.now(),
-        price:
-          priceMap.status === 'fulfilled' && priceMap.value.has(symbol)
-            ? priceMap.value.get(symbol)
-            : undefined,
-        ohlc: ohlcData.status === 'fulfilled' ? ohlcData.value : undefined,
-        indicators: indicators.status === 'fulfilled' ? indicators.value : undefined,
+        timestamp: ohlcData[totalCandles - 1][0],
+        rsi: rsiSeries && rsiSeries.length > 0 ? rsiSeries[rsiSeries.length - 1] : 50,
+        macd: macdSeries?.macd?.length > 0 ? macdSeries.macd[macdSeries.macd.length - 1] : 0,
+        signal: macdSeries?.signal?.length > 0 ? macdSeries.signal[macdSeries.signal.length - 1] : 0,
+        histogram: macdSeries?.histogram?.length > 0 ? macdSeries.histogram[macdSeries.histogram.length - 1] : 0,
+        atr: atrSeries && atrSeries.length > 0 ? atrSeries[atrSeries.length - 1] : 0,
+        sma20: sma20Series && sma20Series.length > 0 ? sma20Series[sma20Series.length - 1] : closes[totalCandles - 1],
+        bollingerBands: bbSeries ? {
+          upper: bbSeries.upper?.[bbSeries.upper.length - 1] || 0,
+          middle: bbSeries.middle?.[bbSeries.middle.length - 1] || 0,
+          lower: bbSeries.lower?.[bbSeries.lower.length - 1] || 0
+        } : null
       };
-
-      // Cache for 1 minute (balance freshness with performance)
-      await redis.set(cacheKey, JSON.stringify(snapshot), 60);
-      return snapshot;
     } catch (error) {
-      logger.error(`[Engine] Failed to get asset snapshot:`, error);
+      logger.error(`[Engine] Internal mapping loop calculation crash for ${symbol}:`, error);
       return null;
-    }
-  }
-
-  /**
-   * Calculate technical indicators from OHLC data
-   * Uses indicators.ts library for real computations
-   * Caches results in Redis for 5 minutes
-   * 
-   * Returns: {
-   *   rsi: 0-100,
-   *   macd: {macd, signal, histogram},
-   *   ema: {ema12, ema26, ema200},
-   *   sma: {sma20, sma50, sma200},
-   *   bollingerBands: {upper, middle, lower, percentB},
-   *   atr: value,
-   *   stochastic: {k, d},
-   *   adx: value,
-   *   roc: value,
-   *   trends: {smaColor, emaColor, bbPosition}
-   * }
-   */
-  private async calculateIndicators(
-    ohlcData: any[],
-    symbol: string
-  ): Promise<{
-    rsi?: number;
-    macd?: any;
-    ema?: any;
-    sma?: any;
-    bollingerBands?: any;
-    atr?: number;
-    stochastic?: any;
-    adx?: number;
-    roc?: number;
-    trends?: any;
-  }> {
-    try {
-      if (!ohlcData || ohlcData.length < 50) {
-        logger.warn(`[Engine] Insufficient OHLC data for ${symbol} (${ohlcData?.length || 0} candles)`);
-        return {};
-      }
-
-      // Extract price arrays from OHLC data
-      const closes = ohlcData.map((c: any) => c.close || 0);
-      const highs = ohlcData.map((c: any) => c.high || 0);
-      const lows = ohlcData.map((c: any) => c.low || 0);
-      const volumes = ohlcData.map((c: any) => c.volume || 0);
-
-      // Get the latest candle for reference
-      const latest = ohlcData[ohlcData.length - 1];
-      const latestClose = latest?.close || 0;
-
-      // ========== MOMENTUM INDICATORS ==========
-      
-      // RSI (14-period)
-      const rsiValues = rsi(closes, 14);
-      const rsiVal = rsiValues[rsiValues.length - 1];
-
-      // MACD (12, 26, 9)
-      const macdData = macd(closes, 12, 26, 9);
-      const macdVal = {
-        macd: macdData.macd[macdData.macd.length - 1],
-        signal: macdData.signal[macdData.signal.length - 1],
-        histogram: macdData.histogram[macdData.histogram.length - 1],
-      };
-
-      // ========== MOVING AVERAGES ==========
-
-      // EMA (12, 26, 200)
-      const ema12Values = ema(closes, 12);
-      const ema26Values = ema(closes, 26);
-      const ema200Values = ema(closes, 200);
-      const emaVal = {
-        ema12: ema12Values[ema12Values.length - 1],
-        ema26: ema26Values[ema26Values.length - 1],
-        ema200: ema200Values[ema200Values.length - 1],
-      };
-
-      // SMA (20, 50, 200)
-      const sma20Values = sma(closes, 20);
-      const sma50Values = sma(closes, 50);
-      const sma200Values = sma(closes, 200);
-      const smaVal = {
-        sma20: sma20Values[sma20Values.length - 1],
-        sma50: sma50Values[sma50Values.length - 1],
-        sma200: sma200Values[sma200Values.length - 1],
-      };
-
-      // ========== VOLATILITY INDICATORS ==========
-
-      // Bollinger Bands (20, 2)
-      const bbValues = bollingerBands(closes, 20, 2);
-      const bbVal = {
-        upper: bbValues.upper[bbValues.upper.length - 1],
-        middle: bbValues.middle[bbValues.middle.length - 1],
-        lower: bbValues.lower[bbValues.lower.length - 1],
-      };
-
-      // Calculate Bollinger Bands %B (position within bands)
-      let percentB = NaN;
-      if (!Number.isNaN(bbVal.upper) && !Number.isNaN(bbVal.lower) && !Number.isNaN(bbVal.middle)) {
-        const range = bbVal.upper - bbVal.lower;
-        if (range > 0) {
-          percentB = (latestClose - bbVal.lower) / range;
-        }
-      }
-      const bbWithPercent = { ...bbVal, percentB };
-
-      // ATR (14-period)
-      const atrValues = atr(highs, lows, closes, 14);
-      const atrVal = atrValues[atrValues.length - 1];
-
-      // ========== OSCILLATORS ==========
-
-      // Stochastic (14, 3)
-      const stochValues = stochastic(highs, lows, closes, 14, 3);
-      const stochVal = {
-        k: stochValues.k[stochValues.k.length - 1],
-        d: stochValues.d[stochValues.d.length - 1],
-      };
-
-      // ADX (trend strength, 14)
-      const adxValues = adx(highs, lows, closes, 14);
-      const adxVal = adxValues[adxValues.length - 1];
-
-      // Williams %R (14-period) - inverse stochastic
-      const williamRValues = williamsR(highs, lows, closes, 14);
-      const williamRVal = williamRValues[williamRValues.length - 1];
-
-      // ========== VOLUME INDICATORS ==========
-
-      // OBV (On-Balance Volume)
-      const obvValues = obv(closes, volumes);
-      const obvVal = obvValues[obvValues.length - 1];
-
-      // MFI (Money Flow Index, 14)
-      const mfiValues = mfi(highs, lows, closes, volumes, 14);
-      const mfiVal = mfiValues[mfiValues.length - 1];
-
-      // ========== TREND ANALYSIS ==========
-
-      // Determine trend colors based on EMA/SMA crossover
-      const smaColor = latestClose > smaVal.sma50 
-        ? (latestClose > smaVal.sma20 ? 'strong_up' : 'neutral') 
-        : (latestClose < smaVal.sma20 ? 'strong_down' : 'neutral');
-
-      const emaColor = latestClose > emaVal.ema26 
-        ? (latestClose > emaVal.ema12 ? 'strong_up' : 'neutral') 
-        : (latestClose < emaVal.ema12 ? 'strong_down' : 'neutral');
-
-      // BB position in bands
-      let bbPosition = 'middle';
-      if (!Number.isNaN(percentB)) {
-        if (percentB > 0.9) bbPosition = 'upper';
-        else if (percentB < 0.1) bbPosition = 'lower';
-      }
-
-      const trends = {
-        smaColor,
-        emaColor,
-        bbPosition,
-        adxStrength: adxVal > 25 ? 'strong' : adxVal > 20 ? 'moderate' : 'weak',
-        rsiZone: rsiVal > 70 ? 'overbought' : rsiVal < 30 ? 'oversold' : 'neutral',
-        stochZone: stochVal.k > 80 ? 'overbought' : stochVal.k < 20 ? 'oversold' : 'neutral',
-        williamRZone: williamRVal > -20 ? 'overbought' : williamRVal < -80 ? 'oversold' : 'neutral',
-      };
-
-      // Assemble comprehensive indicator object
-      const result = {
-        rsi: rsiVal,
-        macd: macdVal,
-        ema: emaVal,
-        sma: smaVal,
-        bollingerBands: bbWithPercent,
-        atr: atrVal,
-        stochastic: stochVal,
-        williamsR: williamRVal,
-        adx: adxVal,
-        obv: obvVal,
-        mfi: mfiVal,
-        trends,
-        timestamp: Date.now(),
-      };
-
-      logger.debug(`[Engine] Calculated indicators for ${symbol}: RSI=${rsiVal?.toFixed(2)}, MACD=${macdVal.macd?.toFixed(4)}, ATR=${atrVal?.toFixed(4)}`);
-
-      return result;
-    } catch (error) {
-      logger.error(`[Engine] Failed to calculate indicators for ${symbol}:`, error);
-      return {};
-    }
-  }
-
-  /**
-   * Cleanup old job records from Redis
-   */
-  async cleanupExpiredJobs(maxAgeMs: number = 86400000): Promise<number> {
-    try {
-      // Note: Redis keys command not available in RedisService fallback mode
-      // This would require a proper Redis connection with key scanning capabilities
-      let deletedCount = 0;
-      logger.info(`[Engine] Job cleanup skipped - Redis keys command not available in fallback mode`);
-      return deletedCount;
-    } catch (error) {
-      logger.error(`[Engine] Failed to cleanup expired jobs:`, error);
-      return 0;
     }
   }
 }
 
-// Export singleton instance
+// Singleton instance for convenience
 export const engineService = new EngineService();

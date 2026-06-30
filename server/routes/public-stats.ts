@@ -34,4 +34,32 @@ publicStatsRouter.get('/', async (req, res) => {
   }
 });
 
+// GET /api/public/impact-stats - Public impact feed (alias for frontend)
+publicStatsRouter.get('/impact-stats', async (req, res) => {
+  try {
+    const [
+      userCount,
+      daoCount,
+      vaultData,
+      recentActivity
+    ] = await Promise.all([
+      db.select({ count: sql<number>`count(*)` }).from(users),
+      db.select({ count: sql<number>`count(*)` }).from(daos),
+      db.select({ total: sql<number>`sum(cast(balance as decimal))` }).from(vaults),
+      db.select({ count: sql<number>`count(*)` }).from(walletTransactions).where(sql`created_at > NOW() - INTERVAL '30 days'`)
+    ]);
+
+    res.json({
+      totalUsers: Number(userCount[0]?.count || 0),
+      totalDaos: Number(daoCount[0]?.count || 0),
+      totalTVL: Number(vaultData[0]?.total || 0),
+      monthlyTransactions: Number(recentActivity[0]?.count || 0),
+      recentHighlights: [], // placeholder for aggregated impact stories
+    });
+  } catch (error) {
+    console.error('Error fetching impact-stats:', error);
+    res.status(500).json({ error: 'Failed to fetch impact stats' });
+  }
+});
+
 export default publicStatsRouter;

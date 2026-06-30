@@ -104,7 +104,9 @@ router.get('/leaderboard', async (req: Request, res: Response) => {
 });
 
 // POST /api/referrals/distribute-reward
-router.post('/distribute-reward', async (req: Request, res: Response) => {
+//  SECURITY: Super admin only - arbitrary reward distribution
+import { requireRole } from '../middleware/rbac';
+router.post('/distribute-reward', isAuthenticated, requireRole('super_admin'), async (req: Request, res: Response) => {
   try {
     const { referrerId, newUserId, rewardAmount = 20 } = req.body;
 

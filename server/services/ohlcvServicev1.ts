@@ -186,14 +186,8 @@ class OHLCVService {
         };
       }
 
-      // Fetch from CCXT
-      const candles = await ccxtService.fetchOHLCV(
-        symbol,
-        timeframe,
-        undefined,
-        limit,
-        exchange
-      );
+      // Fetch from CCXT via CCXT service (exchange-specific)
+      const candles = await ccxtService.getOHLCVFromExchange(exchange, symbol, timeframe, limit);
 
       if (!candles || candles.length === 0) {
         logger.warn(`No OHLCV data returned for ${symbol}/${timeframe}`);
@@ -463,41 +457,14 @@ class OHLCVService {
     symbol: string,
     exchanges: string[] = ['binance', 'kraken', 'coinbase']
   ): Promise<DataSourceRegistry> {
-    const pairs: DataSourceRegistry['pairs'] = [];
+    // This method is deprecated for bulk discovery — prefer seeding via MarketUniverseBuilder
+    // For backward compatibility, return any cached registry or an empty result.
+    const cached = this.dataSourceRegistry.get(symbol);
+    if (cached) return cached;
 
-    for (const exchange of exchanges) {
-      try {
-        // Try common quote currencies
-        for (const quote of ['USDT', 'USDC', 'USD', 'EUR']) {
-          const pair = `${symbol}/${quote}`;
-          
-          // Quick test: can we fetch one candle?
-          const test = await ccxtService.fetchOHLCV(pair, '1h', undefined, 1, exchange);
-          
-          if (test && test.length > 0) {
-            pairs.push({
-              pair,
-              exchange,
-              quoteCurrency: quote,
-              hasOHLCV: true,
-              lastVerified: Date.now()
-            });
-          }
-        }
-      } catch (error) {
-        // Exchange doesn't have this symbol, or API error
-        logger.debug(`${exchange} does not carry ${symbol}`);
-      }
-    }
-
-    const registry: DataSourceRegistry = {
-      symbol,
-      pairs
-    };
-
-    // Cache for Symbol Universe to use
+    logger.warn('[OHLCV] discoverAvailablePairs() is deprecated — use marketUniverseBuilder to seed registry');
+    const registry: DataSourceRegistry = { symbol, pairs: [] };
     this.dataSourceRegistry.set(symbol, registry);
-
     return registry;
   }
 
@@ -519,7 +486,7 @@ class OHLCVService {
    * • Choose primary vs fallback exchange
    * • Understand liquidity distribution
    */
-  getDataSourcesTory(symbol: string): DataSourceRegistry | undefined {
+  getDataSourceRegistry(symbol: string): DataSourceRegistry | undefined {
     return this.dataSourceRegistry.get(symbol);
   }
 
@@ -543,10 +510,32 @@ class OHLCVService {
       const avgPrice = closes.reduce((a, b) => a + b) / closes.length;
       const volatility = await this.getVolatility(symbol, '1h', 24);
 
+      // Try to get market cap from PriceOracle first
+      let marketCapEstimate: number | null = null;
+      let confidence: 'high' | 'medium' | 'low' = 'low';
+      try {
+        const { priceOracle } = await import('./priceOracle');
+        const prices = await priceOracle.getPrices([symbol]);
+        const pd = prices.get(symbol.toUpperCase()) || prices.get(symbol);
+        if (pd && pd.marketCap && pd.marketCap > 0) {
+          marketCapEstimate = pd.marketCap;
+          confidence = 'high';
+        }
+      } catch (err) {
+        // ignore - best-effort
+      }
+
+      if (!marketCapEstimate) {
+        // Heuristic fallback: estimate based on recent quote volume
+        const avgVolume = candles.data.reduce((sum, c) => sum + (c.volume_quote || c.volume), 0) / candles.data.length;
+        marketCapEstimate = avgVolume * 50; // heuristic multiplier
+        confidence = 'low';
+      }
+
       return {
         avgPriceUSD: avgPrice,
         volatilityScore: volatility?.current || 0,
-        marketCapCategory: this.categorizeMarketCap(avgPrice),
+        marketCapCategory: this.categorizeMarketCapByValue(marketCapEstimate),
         liquidityCategory: this.categorizeLiquidity(candles.data)
       };
     } catch (error) {
@@ -566,12 +555,12 @@ class OHLCVService {
     this.exchangeCapabilities.get(symbol)!.add(exchange);
   }
 
-  private categorizeMarketCap(avgPrice: number): 'mega' | 'large' | 'mid' | 'small' | 'micro' {
-    if (avgPrice > 1000) return 'mega';
-    if (avgPrice > 100) return 'large';
-    if (avgPrice > 10) return 'mid';
-    if (avgPrice > 0.01) return 'small';
-    return 'micro';
+  private categorizeMarketCapByValue(marketCap: number): 'mega' | 'large' | 'mid' | 'small' | 'micro' {
+    if (marketCap > 500e9) return 'mega';        // > $500B
+    if (marketCap > 50e9) return 'large';        // > $50B
+    if (marketCap > 5e9) return 'mid';           // > $5B
+    if (marketCap > 500e6) return 'small';       // > $500M
+    return 'micro';                              // < $500M
   }
 
   private categorizeLiquidity(candles: OHLCVCandle[]): 'excellent' | 'good' | 'fair' | 'poor' {

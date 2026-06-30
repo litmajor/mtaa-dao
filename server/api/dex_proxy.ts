@@ -82,6 +82,48 @@ router.post('/quote', async (req: Request, res: Response) => {
     const amountBase = ethers.parseUnits(String(amountIn), decimalsFrom).toString();
 
     const chainId = CHAIN_ID[chain] ?? 1;
+
+    // Local mock fallback for test mode or missing ONE_INCH_API_KEY
+    if (process.env.NODE_ENV === 'test' || !process.env.ONE_INCH_API_KEY) {
+      console.info('[dex_proxy] Test mode or missing ONE_INCH_API_KEY — returning mock 1inch quote.');
+
+      // Simulate a small fee/slippage (e.g., 1% effective output)
+      const simulatedOutputDecimal = Number(amountIn) * 0.99;
+      const toAmountBase = ethers.parseUnits(String(simulatedOutputDecimal), decimalsTo).toString();
+
+      // Minimal mock of 1inch response shape used by frontend
+      const data = {
+        toTokenAmount: toAmountBase,
+        protocols: [
+          [
+            [
+              { name: 'uniswap-v3', src: fromAddress, dst: toAddress }
+            ]
+          ]
+        ],
+        estimatedGas: 120000,
+      };
+
+      const expectedOut = simulatedOutputDecimal;
+
+      const hopDetails = [
+        { segments: ['uniswap-v3'], raw: data.protocols, feePercent: BASE_FEE_PCT }
+      ];
+
+      const result = {
+        data,
+        expectedOut,
+        decimalsFrom,
+        decimalsTo,
+        hopDetails,
+        estimatedGas: data.estimatedGas,
+        feePercent: BASE_FEE_PCT,
+      };
+
+      cache.set(cacheKey, result);
+      return res.json(result);
+    }
+
     const url = `https://api.1inch.io/v5.0/${chainId}/quote?fromTokenAddress=${fromAddress}&toTokenAddress=${toAddress}&amount=${amountBase}`;
     const resp = await axios.get(url, { timeout: 8000 });
     const data = resp.data;

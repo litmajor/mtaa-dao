@@ -4,9 +4,9 @@
  * Core business logic for treasury operations with REAL database queries
  * Handles deposits, withdrawals, multisig approvals, contributions, etc.
  * 
- * ✅ IMPLEMENTED: All methods use actual Drizzle ORM queries
- * ✅ VERIFIED: All parameters used in database operations
- * ✅ FIXED: Decimal field type handling for Drizzle compatibility
+ *  IMPLEMENTED: All methods use actual Drizzle ORM queries
+ *  VERIFIED: All parameters used in database operations
+ *  FIXED: Decimal field type handling for Drizzle compatibility
  */
 
 import { db } from '../storage';

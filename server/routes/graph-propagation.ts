@@ -12,6 +12,7 @@ import { propagationMonitoringService } from '../services/propagationMonitoringS
 import { productionHardeningService, circuitBreaker } from '../services/productionHardeningService';
 import { logger } from '../utils/logger';
 import { authenticate } from '../auth';
+import { requireRole } from '../middleware/rbac';
 
 const router = Router();
 
@@ -148,8 +149,9 @@ router.get('/circuit-breaker', asyncHandler(async (req: Request, res: Response) 
 /**
  * POST /api/propagation/circuit-breaker/reset
  * Reset circuit breaker
+ * ⚠️ SECURITY: State mutation - super admin only
  */
-router.post('/circuit-breaker/reset', asyncHandler(async (req: Request, res: Response) => {
+router.post('/circuit-breaker/reset', requireRole('super_admin'), asyncHandler(async (req: Request, res: Response) => {
   try {
     circuitBreaker.reset();
     
@@ -183,8 +185,9 @@ router.get('/snapshots', asyncHandler(async (req: Request, res: Response) => {
 /**
  * POST /api/propagation/snapshots/create
  * Create new state snapshot
+ * ⚠️ SECURITY: State mutation - super admin only
  */
-router.post('/snapshots/create', asyncHandler(async (req: Request, res: Response) => {
+router.post('/snapshots/create', requireRole('super_admin'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const nodes = graphPropagationEngine.getAllNodes();
     const snapshot = productionHardeningService.snapshot(nodes, 'Manual snapshot from API', 'API');
@@ -205,8 +208,9 @@ router.post('/snapshots/create', asyncHandler(async (req: Request, res: Response
 /**
  * POST /api/propagation/snapshots/restore/:snapshotId
  * Restore from state snapshot
+ * ⚠️ SECURITY: State mutation - super admin only
  */
-router.post('/snapshots/restore/:snapshotId', asyncHandler(async (req: Request, res: Response) => {
+router.post('/snapshots/restore/:snapshotId', requireRole('super_admin'), asyncHandler(async (req: Request, res: Response) => {
   const { snapshotId } = req.params;
   const timestamp = parseInt(snapshotId, 10);
   

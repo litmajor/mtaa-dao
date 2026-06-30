@@ -70,6 +70,8 @@ class PriceOracleService {
   
   // Request deduplication (local, per-instance)
   private pendingRequests: Map<string, Promise<PriceData | null>> = new Map();
+  // Lightweight cache of token registry names (symbol -> name)
+  private _tokenRegistryCache: Map<string, string> | null = null;
 
   // Legacy fallback chains placeholder (dynamic registry used instead).
   // Kept as an empty map to remain backwards compatible with callers
@@ -134,6 +136,41 @@ class PriceOracleService {
       this.registerSymbolMapping(symbol, coinGeckoId);
     }
     logger.info(`[PriceOracle] Registered ${mappings.size} symbol mappings`);
+  }
+
+  constructor() {
+    // Seed mappings & token name cache from server token registry (best-effort)
+    void this.seedFromTokenRegistry().catch((err) => {
+      logger.warn('[PriceOracle] Failed to seed from token registry on init:', (err && (err as Error).message) || err);
+    });
+  }
+
+  /**
+   * Seed symbol→CoinGecko mappings and local name cache from server tokenRegistry.
+   * This ensures Celo-native tokens and many discovered assets are resolvable by default.
+   */
+  private async seedFromTokenRegistry(): Promise<void> {
+    try {
+      const { tokenRegistry } = await import('./tokenRegistry');
+      const all = tokenRegistry.getAllTokens();
+      const mappings = new Map<string, string>();
+      const nameCache = new Map<string, string>();
+
+      for (const t of all) {
+        if (t.symbol) {
+          const sym = t.symbol.toUpperCase();
+          if (t.coingeckoId) mappings.set(sym, t.coingeckoId);
+          if (t.name) nameCache.set(sym, t.name);
+        }
+      }
+
+      if (mappings.size > 0) this.registerSymbolMappings(mappings);
+      if (nameCache.size > 0) this._tokenRegistryCache = nameCache;
+
+      logger.info(`[PriceOracle] Seeded ${mappings.size} symbol→coingecko mappings and ${nameCache.size} names from tokenRegistry`);
+    } catch (err: any) {
+      logger.warn(`[PriceOracle] seedFromTokenRegistry failed: ${err?.message || err}`);
+    }
   }
 
   /**
@@ -310,38 +347,27 @@ class PriceOracleService {
         return cached.data;
       }
 
-      // Try Gateway Agent first
+      // Try Gateway Agent first (use proper request-response with timeout)
       try {
-        const gatewayService = getGatewayAgentService();
-        if (gatewayService.isHealthy()) {
-          const priceRequest = await gatewayService.requestPrices(
-            [resolvedSymbol],
-            undefined,
-            undefined
-          );
+        const gatewayResponse = await this.requestPricesFromGateway([resolvedSymbol], 2000);
+        const priceData = gatewayResponse?.payload?.data?.[0];
+        if (priceData && priceData.price > 0) {
+          const result: PriceData = {
+            symbol: resolvedSymbol,
+            name: this.getCoinName(resolvedSymbol),
+            priceUsd: priceData.price,
+            priceChange24h: priceData.change24h || 0,
+            marketCap: priceData.marketCap || 0,
+            volume24h: priceData.volume24h || 0,
+            lastUpdated: new Date(),
+          };
 
-          await new Promise((resolve) => setTimeout(resolve, 50));
-
-          const priceData = priceRequest?.payload?.data?.[0];
-          if (priceData && priceData.price > 0) {
-            const result: 
-            PriceData = {
-              symbol: resolvedSymbol,
-              name: this.getCoinName(resolvedSymbol),
-              priceUsd: priceData.price,
-              priceChange24h: priceData.change24h || 0,
-              marketCap: priceData.marketCap || 0,
-              volume24h: priceData.volume24h || 0,
-              lastUpdated: new Date(),
-            };
-
-            this.cache.set(resolvedSymbol, { data: result, timestamp: Date.now() });
-            logger.debug(`[PriceOracle-Gateway] Price for ${symbol}: $${priceData.price}`);
-            return result;
-          }
+          this.cache.set(resolvedSymbol, { data: result, timestamp: Date.now() });
+          logger.debug(`[PriceOracle-Gateway] Price for ${symbol}: $${priceData.price}`);
+          return result;
         }
       } catch (gatewayError) {
-        logger.debug(`[PriceOracle] Gateway failed for ${symbol}, trying CoinGecko`);
+        logger.debug(`[PriceOracle] Gateway failed for ${symbol}, trying CoinGecko: ${(gatewayError as any)?.message || gatewayError}`);
       }
 
       // Fallback to CoinGecko
@@ -355,15 +381,23 @@ class PriceOracleService {
       if (this.shouldApplyBackoff()) {
         await this.waitForBackoff();
       }
+      // Acquire cross-instance fetch lock to prevent duplicate CoinGecko requests
+      const lockKey = resolvedSymbol;
+      const lockAcquired = await this.acquireFetchLock(lockKey);
+      if (!lockAcquired) {
+        // Another instance is fetching — wait briefly and return cached if available
+        await new Promise((r) => setTimeout(r, 500));
+        const cachedLater = this.cache.get(resolvedSymbol);
+        if (cachedLater && Date.now() - cachedLater.timestamp < this.CACHE_DURATION) return cachedLater.data;
+        return null;
+      }
 
-      const response = await fetch(
-        `${this.API_BASE}/simple/price?ids=${coinId}&vs_currencies=usd&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true`
-      );
-
-      this.rateLimitState.requestCount++;
+      try {
+        const response = await fetch(
+          `${this.API_BASE}/simple/price?ids=${coinId}&vs_currencies=usd&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true`
+        );
 
       if (response.status === 429) {
-        // Too many requests - apply backoff
         logger.warn('[PriceOracle] CoinGecko returned 429 (rate limited)');
         this.applyBackoff();
         return null;
@@ -372,6 +406,9 @@ class PriceOracleService {
       if (!response.ok) {
         throw new Error(`CoinGecko API error: ${response.statusText}`);
       }
+
+        // Count this successful request towards the rate limit
+        this.incrementRateLimitCounter();
 
       // Reset rate limit state if we had previously backed off
       if (this.rateLimitState.backoffMultiplier > 1) {
@@ -396,10 +433,14 @@ class PriceOracleService {
         lastUpdated: new Date(coinData.last_updated_at * 1000),
       };
 
-      this.cache.set(resolvedSymbol, { data: priceData, timestamp: Date.now() });
-      logger.debug(`[PriceOracle-CoinGecko] Price for ${symbol}: $${coinData.usd}`);
+        this.cache.set(resolvedSymbol, { data: priceData, timestamp: Date.now() });
+        logger.debug(`[PriceOracle-CoinGecko] Price for ${symbol}: $${coinData.usd}`);
 
-      return priceData;
+        return priceData;
+      } finally {
+        // Ensure lock is released
+        await this.releaseFetchLock(lockKey);
+      }
     } catch (error) {
       logger.error(`[PriceOracle] Error fetching price for ${symbol}:`, error);
       return null;
@@ -441,41 +482,29 @@ class PriceOracleService {
       return prices;
     }
 
-    // Try Gateway Agent for batch
+    // Try Gateway Agent for batch (use proper timeout)
     try {
-      const gatewayService = getGatewayAgentService();
-      if (gatewayService.isHealthy()) {
-        const priceRequest = await gatewayService.requestPrices(
-          notCached.map(s => s.toUpperCase()),
-          undefined,
-          undefined
-        );
+      const gatewayResp = await this.requestPricesFromGateway(notCached.map(s => s.toUpperCase()), 2000);
+      const priceDataList = gatewayResp?.payload?.data || [];
+      for (const priceData of priceDataList) {
+        if (priceData && priceData.price > 0) {
+          const result: PriceData = {
+            symbol: priceData.symbol,
+            name: this.getCoinName(priceData.symbol),
+            priceUsd: priceData.price,
+            priceChange24h: priceData.change24h || 0,
+            marketCap: priceData.marketCap || 0,
+            volume24h: priceData.volume24h || 0,
+            lastUpdated: new Date(),
+          };
 
-        await new Promise((resolve) => setTimeout(resolve, 50));
-
-        const priceDataList = priceRequest?.payload?.data || [];
-        for (const priceData of priceDataList) {
-          if (priceData && priceData.price > 0) {
-            const result: PriceData = {
-              symbol: priceData.symbol,
-              name: this.getCoinName(priceData.symbol),
-              priceUsd: priceData.price,
-              priceChange24h: priceData.change24h || 0,
-              marketCap: priceData.marketCap || 0,
-              volume24h: priceData.volume24h || 0,
-              lastUpdated: new Date(),
-            };
-
-            prices.set(priceData.symbol, result);
-            this.cache.set(priceData.symbol, { data: result, timestamp: Date.now() });
-            logger.debug(`[PriceOracle-Gateway-Batch] Price for ${priceData.symbol}: $${priceData.price}`);
-          }
-        }
-
-        if (prices.size === symbols.length) {
-          return prices;
+          prices.set(priceData.symbol, result);
+          this.cache.set(priceData.symbol, { data: result, timestamp: Date.now() });
+          logger.debug(`[PriceOracle-Gateway-Batch] Price for ${priceData.symbol}: $${priceData.price}`);
         }
       }
+
+      if (prices.size === symbols.length) return prices;
     } catch (gatewayError) {
       logger.debug('[PriceOracle] Gateway batch failed, falling back to CoinGecko');
     }
@@ -516,8 +545,6 @@ class PriceOracleService {
         `${this.API_BASE}/simple/price?ids=${coinIds.join(',')}&vs_currencies=usd&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true`
       );
 
-      this.rateLimitState.requestCount++;
-
       if (response.status === 429) {
         logger.warn('[PriceOracle] CoinGecko batch returned 429 (rate limited)');
         this.applyBackoff();
@@ -528,7 +555,10 @@ class PriceOracleService {
         throw new Error(`CoinGecko API error: ${response.statusText}`);
       }
 
-      // Reset rate limit on success
+      // Count this successful request
+      this.incrementRateLimitCounter();
+
+      // Reset rate limit on periodic boundary
       if (this.rateLimitState.requestCount % this.RATE_LIMIT_THRESHOLD === 0) {
         this.resetRateLimitState();
       }
@@ -668,7 +698,7 @@ class PriceOracleService {
         return prices;
       }
 
-      const priceRequest = await gatewayService.requestPrices(symbols, undefined, undefined);
+      const priceRequest = await this.requestPricesFromGateway(symbols, 2000);
       const priceDataList = priceRequest?.payload?.data || [];
 
       for (const priceData of priceDataList) {
@@ -692,6 +722,28 @@ class PriceOracleService {
     } catch (error) {
       logger.debug('[PriceOracle] Gateway service failed:', error);
       return prices;
+    }
+  }
+
+  /**
+   * Request prices from Gateway Agent with a timeout.
+   * Returns the raw agent response or null on timeout/failure.
+   */
+  private async requestPricesFromGateway(symbols: string[], timeoutMs = 2000): Promise<any | null> {
+    try {
+      const gatewayService = getGatewayAgentService();
+      if (!gatewayService.isHealthy()) return null;
+
+      const p = gatewayService.requestPrices(symbols, undefined, undefined);
+      const res = await Promise.race([
+        p,
+        new Promise(resolve => setTimeout(() => resolve(null), timeoutMs))
+      ]);
+
+      return res;
+    } catch (err) {
+      logger.debug('[PriceOracle] requestPricesFromGateway failed:', err);
+      return null;
     }
   }
 
@@ -727,8 +779,6 @@ class PriceOracleService {
         `${this.API_BASE}/simple/price?ids=${coinIds.join(',')}&vs_currencies=usd&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true`
       );
 
-      this.rateLimitState.requestCount++;
-
       if (response.status === 429) {
         logger.warn('[PriceOracle-CoinGecko] Rate limited (429)');
         this.applyBackoff();
@@ -738,6 +788,9 @@ class PriceOracleService {
       if (!response.ok) {
         throw new Error(`CoinGecko API error: ${response.statusText}`);
       }
+
+      // Count successful request
+      this.incrementRateLimitCounter();
 
       const data: CoinGeckoResponse = await response.json();
 
@@ -794,6 +847,37 @@ class PriceOracleService {
    * Get coin name from symbol
    */
   private getCoinName(symbol: string): string {
+    const uc = symbol.toUpperCase();
+    try {
+      if (this._tokenRegistryCache && this._tokenRegistryCache.has(uc)) {
+        return this._tokenRegistryCache.get(uc) as string;
+      }
+      // lazy-load token names from registry if not yet cached
+      if (!this._tokenRegistryCache) {
+        try {
+          // synchronous require to avoid circular import issues
+          // tokenRegistry exposes getCeloDEXTokens etc.
+          // We'll build a name cache from tokenRegistry.getAllTokens()
+          // and cache it locally for fast lookups.
+          // Note: this is best-effort and won't throw on failure.
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const tr = require('./tokenRegistry');
+          const all = tr.tokenRegistry?.getAllTokens ? tr.tokenRegistry.getAllTokens() : [];
+          const cache = new Map<string, string>();
+          for (const t of all) {
+            if (t && t.symbol && t.name) cache.set((t.symbol || '').toUpperCase(), t.name);
+          }
+          this._tokenRegistryCache = cache;
+          if (cache.has(uc)) return cache.get(uc) as string;
+        } catch {
+          // ignore and fallback to built-in map
+        }
+      }
+
+    } catch (err) {
+      // ignore and fallback
+    }
+
     const names: Record<string, string> = {
       BTC: 'Bitcoin',
       ETH: 'Ethereum',
@@ -808,8 +892,14 @@ class PriceOracleService {
       AAVE: 'Aave',
       LINK: 'Chainlink',
       UNI: 'Uniswap',
+      CELO: 'Celo',
+      CUSD: 'Celo Dollar',
+      CEUR: 'Celo Euro',
+      CKES: 'Celo Kenyan Shilling',
+      UBE: 'Ubeswap'
     };
-    return names[symbol.toUpperCase()] || symbol.toUpperCase();
+
+    return names[uc] || uc;
   }
 
   /**

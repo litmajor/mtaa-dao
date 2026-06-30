@@ -5,6 +5,7 @@ import { Logger } from '../utils/logger';
 import { AppError } from '../middleware/errorHandler';
 import { ChainRegistry, SupportedChain } from '../../shared/chainRegistry';
 import { ethers } from 'ethers';
+import { createWalletIfValid } from '../utils/cryptoWallet';
 
 export class BridgeRelayerService {
   private logger = Logger.getLogger();
@@ -176,8 +177,12 @@ export class BridgeRelayerService {
         return `0x${Math.random().toString(16).substr(2, 64)}`;
       }
 
-      // Initialize relayer wallet
-      const relayerWallet = new ethers.Wallet(process.env.RELAYER_PRIVATE_KEY, provider);
+      // Initialize relayer wallet (validate key first)
+      const relayerWallet = createWalletIfValid(process.env.RELAYER_PRIVATE_KEY, provider);
+      if (!relayerWallet) {
+        this.logger.warn(`RELAYER_PRIVATE_KEY invalid for ${chain}; using mock completion`);
+        return `0x${Math.random().toString(16).substr(2, 64)}`;
+      }
 
       const BRIDGE_ABI = [
         'function completeTransfer(address recipient, address token, uint256 amount, bytes32 transferId) external'

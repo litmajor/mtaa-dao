@@ -4,11 +4,16 @@
  */
 
 import { Router } from 'express';
+import { isAuthenticated } from '../auth';
+import { requireRole } from '../middleware/rbac';
 import { DefenderAgent } from '../agents/defender';
 import { AgentBehavior } from '../agents/defender/types';
 
 const router = Router();
 const defender = new DefenderAgent('MTAA-001');
+
+// All defender endpoints require super_admin authentication
+router.use(isAuthenticated, requireRole('super_admin'));
 
 // Initialize defender on import
 defender.initialize().catch(console.error);

@@ -8,6 +8,7 @@
 import { logger } from '../utils/logger';
 import { graphPropagationEngine, PropagationDelta } from './graphPropagationEngine';
 import { propagationMonitoringService } from './propagationMonitoringService';
+import { graphPropagationBus } from './graphPropagationBus';
 
 /**
  * Initialize graph propagation hooks
@@ -127,10 +128,9 @@ function setupOHLCVHooks(): void {
     }
   };
   
-  // Export these for external use
-  (globalThis as any).__graphPropagation = (globalThis as any).__graphPropagation || {};
-  (globalThis as any).__graphPropagation.onVolatilityChange = onVolatilityChange;
-  (globalThis as any).__graphPropagation.onLiquidityChange = onLiquidityChange;
+  // Register on the event bus
+  graphPropagationBus.on('volatility_change', onVolatilityChange as any);
+  graphPropagationBus.on('liquidity_change', onLiquidityChange as any);
   
   logger.info('✅ OHLCV hooks registered');
 }
@@ -213,10 +213,8 @@ function setupTAHooks(): void {
     }
   };
   
-  // Export these for external use
-  (globalThis as any).__graphPropagation = (globalThis as any).__graphPropagation || {};
-  (globalThis as any).__graphPropagation.onSignalChange = onSignalChange;
-  (globalThis as any).__graphPropagation.onRegimeChange = onRegimeChange;
+  graphPropagationBus.on('signal_change', onSignalChange as any);
+  graphPropagationBus.on('regime_change', onRegimeChange as any);
   
   logger.info('✅ TA hooks registered');
 }
@@ -288,10 +286,8 @@ function setupNURUHooks(): void {
     }
   };
   
-  // Export these for external use
-  (globalThis as any).__graphPropagation = (globalThis as any).__graphPropagation || {};
-  (globalThis as any).__graphPropagation.onNURUDecisionCycle = onNURUDecisionCycle;
-  (globalThis as any).__graphPropagation.onCapitalDecision = onCapitalDecision;
+  graphPropagationBus.on('nuru_cycle', onNURUDecisionCycle as any);
+  graphPropagationBus.on('capital_decision', onCapitalDecision as any);
   
   logger.info('✅ NURU hooks registered');
 }

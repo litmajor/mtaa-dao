@@ -106,16 +106,16 @@ export async function analyzeTreasuryHandler(req: Request, res: Response) {
     const treasury = {
       daoId,
       daoType: (daoData.daoType || 'free') as any,
-      assets: holdings.map(h => ({
-        symbol: h.tokenSymbol,
-        chain: 'CELO' as any, // Default to CELO, can be extended
-        amount: h.tokenAmount,
-        decimals: h.tokenDecimals || 18,
+      assets: holdings.map((h: any) => ({
+        symbol: (h as any).tokenSymbol,
+        chain: (h as any).chain || 'CELO',
+        amount: (h as any).balance ?? (h as any).tokenAmount ?? '0',
+        decimals: (h as any).tokenDecimals ?? 18,
       })),
-      multisigRequired: (daoData as any).treasuryMultisigEnabled || false,
-      minSigners: (daoData as any).treasuryRequiredSignatures || 1,
+      multisigRequired: Boolean((daoData as any).treasuryMultisigEnabled),
+      minSigners: Number((daoData as any).treasuryRequiredSignatures || 1),
       customTokenAllowed: true,
-    };
+    } as any;
 
     // Generate real treasury intelligence
     const intelligence = await generateTreasuryIntelligence(treasury, priceData);
